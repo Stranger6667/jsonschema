@@ -109,7 +109,7 @@ fn parse_inner<'a>(
     // makes that dependent on the order definitions were registered in. Re-parsing with the folded
     // keys added, until none are new, settles it: the result no longer depends on the order.
     let mut folded = assumptions.clone();
-    let mut tracks = spells_dynamic_reference(value, ctx.draft());
+    let mut tracks = false;
     let mut reparsed_for_bodies = false;
     loop {
         let attempt = parse_once(value, ctx, resolver, &folded, pruning, tracks)?;
@@ -169,11 +169,7 @@ fn parse_once<'a>(
     state.facts.merges_object_leaves =
         matches!(ctx.draft(), Draft::Draft4) && merges_object_leaves(value);
     if !tracks_dynamic_scope {
-        // The root document was already scanned; its verdict seeds the per-resource memo.
-        let mut spelling_scans = AHashMap::default();
-        spelling_scans.insert(Arc::clone(&state.root_base_uri), false);
         state.dynamic_scope = DynamicScope::Untracked {
-            spelling_scans,
             needs_tracking: false,
         };
     }
@@ -245,13 +241,8 @@ struct DocumentFacts {
 enum DynamicScope {
     /// A dynamic reference is spelled: digests are computed and definition keys specialized.
     Tracked,
-    /// No dynamic reference is spelled, so keys stay unspecialized. Keeps per-resource scan
-    /// verdicts - scanning every resolved target's subtree instead is quadratic on nested
-    /// definitions - and records when a lazily resolved target voids the assumption.
-    Untracked {
-        spelling_scans: AHashMap<Arc<str>, bool>,
-        needs_tracking: bool,
-    },
+    /// No dynamic reference has been reached, so keys stay unspecialized until one does.
+    Untracked { needs_tracking: bool },
 }
 
 impl DynamicScope {
@@ -267,6 +258,12 @@ impl DynamicScope {
                 ..
             }
         )
+    }
+
+    fn request_tracking(&mut self) {
+        if let Self::Untracked { needs_tracking } = self {
+            *needs_tracking = true;
+        }
     }
 }
 
@@ -402,29 +399,11 @@ fn resource_root_has_recursive_anchor(contents: &Value) -> bool {
         == Some(true)
 }
 
-/// Whether `value` spells a reference keyword the draft resolves through the dynamic scope,
-/// mirroring the reference gates in [`parse_schema_in_scope`]. Over-approximates on purpose - a
-/// spelling inside a `const` value counts - because missing one would skip the environment
-/// specialization a real dynamic reference needs.
-fn spells_dynamic_reference(value: &Value, draft: Draft) -> bool {
-    if matches!(draft, Draft::Draft201909) {
-        return spells_key(value, "$recursiveRef");
-    }
-    if draft.is_known_keyword("$dynamicRef") {
-        return spells_key(value, "$dynamicRef");
-    }
-    false
-}
-
-fn spells_key(value: &Value, keyword: &str) -> bool {
-    match value {
-        Value::Object(map) => {
-            map.get(keyword).is_some_and(Value::is_string)
-                || map.values().any(|entry| spells_key(entry, keyword))
-        }
-        Value::Array(items) => items.iter().any(|item| spells_key(item, keyword)),
-        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => false,
-    }
+/// Whether this schema object carries a reference whose resolver consults the dynamic scope.
+fn has_dynamic_reference(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
+    (draft.is_known_keyword("$dynamicRef") && map.get("$dynamicRef").is_some_and(Value::is_string))
+        || (matches!(draft, Draft::Draft201909)
+            && map.get("$recursiveRef").is_some_and(Value::is_string))
 }
 
 /// The definition key `key` takes under `env`.
@@ -497,6 +476,13 @@ fn parse_schema_in_scope<'a>(
             return Ok(None);
         };
         return parse_schema_in_scope(&degraded, ctx, is_root, resolver, state);
+    }
+
+    // An untracked attempt stops before resolving a dynamic reference. Re-running it with the
+    // scope tracked gives every reachable target the environment-specialized key it requires.
+    if !state.dynamic_scope.tracked() && has_dynamic_reference(map, ctx.draft()) {
+        state.dynamic_scope.request_tracking();
+        return Ok(None);
     }
 
     // The reference keywords are independent and may be spelled together, so each contributes a
@@ -1853,29 +1839,6 @@ fn ensure_definition<'a>(
     env: &DynamicEnv,
     state: &mut ParseState<'a>,
 ) -> Result<bool, CanonicalizationError> {
-    // An untracked parse assumed no dynamic reference exists; a target that spells one - reachable
-    // only through an externally registered resource, since the root was scanned - voids that
-    // assumption for every key minted so far, so the whole document reparses with tracking on.
-    // Scanned per resource root rather than per target subtree, and memoized.
-    if let DynamicScope::Untracked {
-        spelling_scans,
-        needs_tracking,
-    } = &mut state.dynamic_scope
-    {
-        let base = resolver.base_uri();
-        let spells = if let Some(&spells) = spelling_scans.get(base.as_str()) {
-            spells
-        } else {
-            let (contents, _, resource_draft) = resolver.lookup("#")?.into_inner();
-            let spells = spells_dynamic_reference(contents, resource_draft);
-            spelling_scans.insert(Arc::from(base.as_str()), spells);
-            spells
-        };
-        if spells {
-            *needs_tracking = true;
-            return Ok(false);
-        }
-    }
     debug_assert!(
         state.dynamic_scope.tracked() || env.is_empty(),
         "an untracked parse keeps the digest empty"
