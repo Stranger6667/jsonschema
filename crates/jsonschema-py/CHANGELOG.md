@@ -2,8 +2,15 @@
 
 ## [Unreleased]
 
+### Added
+
+- `retriever`, `registry`, and `base_uri` arguments to `canonicalize`.
+- Canonicalization of a `oneOf` whose branches name disjoint targets, which degrades to a union.
+- Canonicalization of a vacuous `patternProperties` entry beside schema-valued `additionalProperties`, where matching keys escape its value constraint.
+
 ### Performance
 
+- Up to 150x faster canonicalization of `not` over a union of many branches.
 - 2% faster emission of canonical schemas, which no longer formats copied string values.
 - 5% faster emission of canonical schemas, which no longer formats object keys while copying them.
 - Up to 12% faster canonicalization of schemas that repeatedly intersect the same branches.
@@ -17,16 +24,6 @@
 - 5% faster canonicalization of objects, whose property maps no longer reach the allocator.
 - Up to 8% faster canonicalization of schemas that reach `true` and `false` subschemas repeatedly.
 - 2% faster canonicalization of schemas that assert known string formats.
-
-### Added
-
-- `retriever`, `registry`, and `base_uri` arguments to `canonicalize`.
-- Canonicalization of a `oneOf` whose branches name disjoint targets, which degrades to a union.
-- Canonicalization of a vacuous `patternProperties` entry beside schema-valued `additionalProperties`, where matching keys escape its value constraint.
-
-### Performance
-
-- Up to 150x faster canonicalization of `not` over a union of many branches.
 
 ## [0.49.6] - 2026-08-06
 
