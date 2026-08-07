@@ -1644,6 +1644,26 @@ fn intersect_folds(left: &Value, right: &Value, expected: &Value) {
     );
 }
 
+#[test]
+fn intersect_is_commutative_and_idempotent() {
+    let schemas = [
+        json!({"type": "string", "minLength": 2}),
+        json!({"anyOf": [{"type": "string"}, {"type": "integer"}]}),
+        json!({"const": "a"}),
+        json!({"type": "object", "properties": {"id": {"type": "integer"}}}),
+    ]
+    .map(|schema| canonicalize(&schema).expect("canonicalizes"));
+    for left in &schemas {
+        assert_eq!(left.intersect(left).expect("intersects"), *left);
+        for right in &schemas {
+            assert_eq!(
+                left.intersect(right).expect("intersects"),
+                right.intersect(left).expect("intersects")
+            );
+        }
+    }
+}
+
 // A pattern the canonical form does not model keeps the whole document raw.
 fn unmodeled() -> Value {
     json!({"if": {}, "unevaluatedProperties": false})

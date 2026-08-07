@@ -1,6 +1,7 @@
 //! Shared state for one canonicalization run: draft, pattern engine, and a compiled-regex cache.
 use std::{
     cell::{Cell, RefCell},
+    cmp::Ordering,
     sync::Arc,
 };
 
@@ -91,17 +92,23 @@ impl CanonicalizationContext {
 
     /// The intersection of these two, from an earlier run of the same pair.
     pub(crate) fn recall_intersection(&self, left: &Schema, right: &Schema) -> Option<Schema> {
-        self.intersections
-            .borrow()
-            .get(&(left.clone(), right.clone()))
-            .cloned()
+        let key = intersection_key(left.clone(), right.clone());
+        self.intersections.borrow().get(&key).cloned()
     }
 
     pub(crate) fn remember_intersection(&self, left: Schema, right: Schema, result: &Schema) {
         let mut intersections = self.intersections.borrow_mut();
         if intersections.len() < INTERSECTION_CACHE_CAPACITY {
-            intersections.insert((left, right), result.clone());
+            intersections.insert(intersection_key(left, right), result.clone());
         }
+    }
+}
+
+fn intersection_key(left: Schema, right: Schema) -> (Schema, Schema) {
+    match left.cached_hash().cmp(&right.cached_hash()) {
+        Ordering::Greater => (right, left),
+        Ordering::Equal if left > right => (right, left),
+        Ordering::Less | Ordering::Equal => (left, right),
     }
 }
 
