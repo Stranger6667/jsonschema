@@ -2145,7 +2145,6 @@ fn restrict_members(
                             &matchers,
                             member,
                             UncheckableFacet::Skipped,
-                            ctx
                         ),
                         Verdict::Rejects
                     )
@@ -2291,7 +2290,7 @@ fn leaf_absorbs_member(
             .any(|leaf| matches!(object_leaf_admits(leaf, map, ctx), Verdict::Admits)),
         Value::String(_) => strings.iter().any(|(leaf, matchers)| {
             matches!(
-                string_leaf_admits(leaf, matchers, member, UncheckableFacet::Undecided, ctx),
+                string_leaf_admits(leaf, matchers, member, UncheckableFacet::Undecided),
                 Verdict::Admits
             )
         }),
@@ -2315,13 +2314,13 @@ fn union_type_sets(left: JsonTypeSet, right: JsonTypeSet) -> JsonTypeSet {
 
 /// A `String` node, collapsed to `False` when its length window is empty.
 pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schema {
-    if formats_conflict(&leaf, ctx) || patterns_conflict(&leaf) {
+    if formats_conflict(&leaf) || patterns_conflict(&leaf) {
         return Schema::falsy();
     }
     absorb_empty_exclusion(&mut leaf);
     // No barred-pattern counterpart: a format has a length window to test against, a regex has
     // none, so nothing prunes one that cannot bite.
-    prune_excluded_formats(&mut leaf, ctx);
+    prune_excluded_formats(&mut leaf);
     prune_excluded(&mut leaf, ctx);
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::falsy();
@@ -2592,14 +2591,13 @@ fn absorb_empty_exclusion(leaf: &mut StringLeaf) {
 ///         {"type": "string", "maxLength": 3},
 ///         {"not": {"format": "date"}}
 ///       ]  =>  {"type": "string", "maxLength": 3}
-fn prune_excluded_formats(leaf: &mut StringLeaf, ctx: &CanonicalizationContext) {
+fn prune_excluded_formats(leaf: &mut StringLeaf) {
     if leaf.excluded_formats.is_empty() {
         return;
     }
     let lengths = leaf.lengths.clone();
     leaf.excluded_formats.retain(|format| {
-        let Some((minimum, maximum)) = crate::keywords::format::length_window(ctx.draft(), format)
-        else {
+        let Some((minimum, maximum)) = format.length_window() else {
             return true;
         };
         !lengths
@@ -2624,7 +2622,7 @@ fn prune_excluded(leaf: &mut StringLeaf, ctx: &CanonicalizationContext) {
         .into_iter()
         .filter(|value| {
             !matches!(
-                string_leaf_admits_text(leaf, &matchers, value, UncheckableFacet::Undecided, ctx),
+                string_leaf_admits_text(leaf, &matchers, value, UncheckableFacet::Undecided),
                 Verdict::Rejects
             )
         })
@@ -3801,7 +3799,7 @@ fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdi
         // its own here: the leaf that keeps it hands it to the validator.
         SchemaKind::String(leaf) => {
             let matchers = StringMatchers::compile(leaf.get(), ctx);
-            string_leaf_admits_text(leaf.get(), &matchers, key, UncheckableFacet::Undecided, ctx)
+            string_leaf_admits_text(leaf.get(), &matchers, key, UncheckableFacet::Undecided)
         }
         SchemaKind::AnyOf(branches) => Verdict::any(
             branches
@@ -3853,9 +3851,7 @@ pub(crate) fn admits_value(
     }
     // Intersection reads a facet no checker covers the way a validator without one does, so its
     // "yes" is definite only when the schema carries none.
-    if matches!(uncheckable, UncheckableFacet::Undecided)
-        && has_uncheckable_string_facet(schema, ctx)
-    {
+    if matches!(uncheckable, UncheckableFacet::Undecided) && has_uncheckable_string_facet(schema) {
         return Verdict::Unknown;
     }
     Verdict::Admits
@@ -3944,14 +3940,14 @@ pub(crate) fn contains_reference(schema: &Schema) -> bool {
 }
 
 /// Whether `schema` demands or bars a format, media type, or encoding this draft has no checker for.
-fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) -> bool {
+fn has_uncheckable_string_facet(schema: &Schema) -> bool {
     match schema.kind() {
         SchemaKind::String(leaf) => {
             leaf.get()
                 .formats
                 .iter()
                 .chain(leaf.get().excluded_formats.iter())
-                .any(|format| crate::keywords::format::is_valid(ctx.draft(), format, "").is_none())
+                .any(|format| format.is_valid("").is_none())
                 || leaf
                     .get()
                     .content_media_types
@@ -3963,10 +3959,7 @@ fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) 
                     .iter()
                     .any(|encoding| !is_known_content_encoding(encoding))
         }
-        SchemaKind::AnyOf(branches) => branches
-            .as_slice()
-            .iter()
-            .any(|branch| has_uncheckable_string_facet(branch, ctx)),
+        SchemaKind::AnyOf(branches) => branches.as_slice().iter().any(has_uncheckable_string_facet),
         // A conjunction and a complement both carry a reference, and the only caller declines a
         // schema holding one before asking about its facets.
         SchemaKind::AllOf(_) | SchemaKind::OneOf(_) | SchemaKind::Not(_) => {
@@ -3979,17 +3972,15 @@ fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) 
                 .chain(leaf.get().properties.values())
                 .chain(leaf.get().pattern_properties.values())
                 .chain(leaf.get().additional.iter())
-                .any(|nested| has_uncheckable_string_facet(nested, ctx))
+                .any(has_uncheckable_string_facet)
                 || leaf
                     .get()
                     .violations
                     .iter()
                     .any(|violation| match violation {
-                        ObjectViolation::NameFails(schema) => {
-                            has_uncheckable_string_facet(schema, ctx)
-                        }
+                        ObjectViolation::NameFails(schema) => has_uncheckable_string_facet(schema),
                         ObjectViolation::UndeclaredValueFails { additional, .. } => {
-                            has_uncheckable_string_facet(additional, ctx)
+                            has_uncheckable_string_facet(additional)
                         }
                     })
         }
@@ -3999,7 +3990,7 @@ fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) 
             .iter()
             .chain(leaf.get().items.iter())
             .chain(leaf.get().contains.iter().map(|facet| &facet.schema))
-            .any(|nested| has_uncheckable_string_facet(nested, ctx)),
+            .any(has_uncheckable_string_facet),
 
         // A typed group's body is a value set, which carries no format or content check.
         SchemaKind::TypedGroup { .. }
@@ -4748,7 +4739,7 @@ fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf 
 ///         {"type": "string", "format": "date"},
 ///         {"type": "string", "format": "uuid"}
 ///       ]  =>  false
-fn formats_conflict(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> bool {
+fn formats_conflict(leaf: &StringLeaf) -> bool {
     if leaf
         .excluded_formats
         .iter()
@@ -4758,8 +4749,7 @@ fn formats_conflict(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> bool {
     }
     let mut window = leaf.lengths.clone();
     for format in &leaf.formats {
-        let Some((minimum, maximum)) = crate::keywords::format::length_window(ctx.draft(), format)
-        else {
+        let Some((minimum, maximum)) = format.length_window() else {
             continue;
         };
         window = window.intersect(LengthBounds {
@@ -4813,12 +4803,11 @@ fn string_leaf_admits(
     matchers: &StringMatchers,
     member: &CanonicalJson,
     uncheckable: UncheckableFacet,
-    ctx: &CanonicalizationContext,
 ) -> Verdict {
     let Value::String(text) = member.as_value() else {
         return Verdict::Rejects;
     };
-    string_leaf_admits_text(leaf, matchers, text, uncheckable, ctx)
+    string_leaf_admits_text(leaf, matchers, text, uncheckable)
 }
 
 /// Whether `text` falls within the leaf's length window, matches every required pattern and no
@@ -4828,7 +4817,6 @@ fn string_leaf_admits_text(
     matchers: &StringMatchers,
     text: &str,
     uncheckable: UncheckableFacet,
-    ctx: &CanonicalizationContext,
 ) -> Verdict {
     let length = BoundCardinality::from(bytecount::num_chars(text.as_bytes()) as u64);
     if !leaf.lengths.contains(&length)
@@ -4853,11 +4841,11 @@ fn string_leaf_admits_text(
     Verdict::all(
         leaf.formats
             .iter()
-            .map(|format| demanded(crate::keywords::format::is_valid(ctx.draft(), format, text)))
+            .map(|format| demanded(format.is_valid(text)))
             .chain(
-                leaf.excluded_formats.iter().map(|format| {
-                    barred(crate::keywords::format::is_valid(ctx.draft(), format, text))
-                }),
+                leaf.excluded_formats
+                    .iter()
+                    .map(|format| barred(format.is_valid(text))),
             )
             .chain(leaf.content_media_types.iter().map(|media_type| {
                 demanded(

@@ -187,19 +187,19 @@ fn emit_string(leaf: &StringLeaf) -> Value {
     match leaf.formats.as_slice() {
         [] => {}
         [format] => {
-            map.insert("format".into(), Value::String(format.as_ref().to_owned()));
+            map.insert("format".into(), Value::String(format.as_str().to_owned()));
         }
         formats => conjuncts.extend(
             formats
                 .iter()
-                .map(|format| keyed("format", Value::String(format.as_ref().to_owned()))),
+                .map(|format| keyed("format", Value::String(format.as_str().to_owned()))),
         ),
     }
     // Every barred facet goes into its own `allOf` branch: the main object already spells what a
     // string must satisfy, and one `not` slot cannot hold several of them.
     conjuncts.extend(leaf.excluded_formats.iter().map(|format| {
         let mut inner = Map::new();
-        inner.insert("format".into(), Value::String(format.as_ref().to_owned()));
+        inner.insert("format".into(), Value::String(format.as_str().to_owned()));
         keyed("not", Value::Object(inner))
     }));
     conjuncts.extend(leaf.excluded_patterns.iter().map(|pattern| {

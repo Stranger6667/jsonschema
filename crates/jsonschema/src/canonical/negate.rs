@@ -643,7 +643,7 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
     branches.extend(leaf.formats.iter().map(|format| {
         algebra::string_leaf(
             StringLeaf {
-                excluded_formats: vec![Arc::clone(format)],
+                excluded_formats: vec![format.clone()],
                 ..StringLeaf::default()
             },
             ctx,
@@ -652,7 +652,7 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
     branches.extend(leaf.excluded_formats.iter().map(|format| {
         algebra::string_leaf(
             StringLeaf {
-                formats: vec![Arc::clone(format)],
+                formats: vec![format.clone()],
                 ..StringLeaf::default()
             },
             ctx,

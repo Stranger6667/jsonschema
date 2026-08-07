@@ -15,7 +15,7 @@ use crate::{
             canonicalize_value_set, type_set_schema, typed_group, ArrayLeaf, BoundCardinality,
             BoundNumber, BoundRational, CanonicalJson, ContainsFacet, Distinctness, Divisors,
             ExcludedDivisors, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, PropertyMap,
-            Schema, SchemaKind, Side, StringLeaf,
+            Schema, SchemaKind, Side, StringFormat, StringLeaf,
         },
         negate, CanonicalizationError, DefinitionMap, CANONICAL_REFERENCE_PREFIX,
         ROOT_DEFINITION_KEY,
@@ -571,7 +571,7 @@ fn parse_schema_in_scope<'a>(
     let mut min_properties: Option<BoundCardinality> = None;
     let mut max_properties: Option<BoundCardinality> = None;
     let mut patterns: Vec<Arc<str>> = Vec::new();
-    let mut formats: Vec<Arc<str>> = Vec::new();
+    let mut formats: Vec<StringFormat> = Vec::new();
     let mut content_media_types: Vec<Arc<str>> = Vec::new();
     let mut content_encodings: Vec<Arc<str>> = Vec::new();
     let mut multiple_of = Divisors::default();
@@ -846,7 +846,7 @@ fn parse_schema_in_scope<'a>(
             // An annotation-only `format` constrains nothing, so it leaves no trace in the IR.
             ("format", Value::String(name)) if ctx.draft().is_known_keyword("format") => {
                 if ctx.validate_formats() {
-                    formats.push(Arc::from(name.as_str()));
+                    formats.push(StringFormat::from_name(ctx.draft(), name));
                 }
             }
             // `contentEncoding`/`contentMediaType`/`contentSchema` are annotations from 2019-09 on -
