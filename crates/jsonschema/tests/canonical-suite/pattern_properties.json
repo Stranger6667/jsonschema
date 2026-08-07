@@ -919,15 +919,15 @@
     }
   },
   {
-    "description": "raw: a prefix pattern reaches unboundedly many keys, so the additionalProperties pairing stays unmodeled",
+    "description": "ir: a prefix pattern exempts matching keys from an additionalProperties schema",
     "schema": {"type": "object", "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
-    "kind": "raw",
     "tests": [
       {"data": {"ab": 1}, "valid": true},
       {"data": {"ab": "x"}, "valid": false},
       {"data": {"b": "x"}, "valid": true}
     ],
     "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": {
         "type": "string"
       },
@@ -940,24 +940,26 @@
     }
   },
   {
-    "description": "raw: one unfoldable pattern beside a finite one still keeps the pairing unmodeled",
+    "description": "ir: patterns exempt matching keys from an additionalProperties schema",
     "schema": {"type": "object", "patternProperties": {"^a$": {"type": "integer"}, "^b": {"type": "boolean"}}, "additionalProperties": {"type": "string"}},
-    "kind": "raw",
     "tests": [
       {"data": {"a": 1}, "valid": true},
       {"data": {"bc": true}, "valid": true},
       {"data": {"c": "x"}, "valid": true}
     ],
     "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "additionalProperties": {
         "type": "string"
       },
       "patternProperties": {
-        "^a$": {
-          "type": "integer"
-        },
         "^b": {
           "type": "boolean"
+        }
+      },
+      "properties": {
+        "a": {
+          "type": "integer"
         }
       },
       "type": "object"

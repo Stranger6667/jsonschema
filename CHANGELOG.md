@@ -23,6 +23,7 @@
 - `CanonicalizeOptions::with_retriever` to fetch external resources absent from the registry.
 - `CanonicalizeOptions::with_base_uri` to resolve relative references in the root schema.
 - Canonicalization of a `oneOf` whose branches name disjoint targets, which degrades to a union.
+- Canonicalization of a vacuous `patternProperties` entry beside schema-valued `additionalProperties`, where matching keys escape its value constraint.
 
 ### Performance
 

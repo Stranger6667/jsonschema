@@ -299,5 +299,39 @@
       {"data": "x"},
       {"data": {"k0": 1}}
     ]
+  },
+  {
+    "description": "two distinct pattern maps beside additionalProperties schemas stay raw",
+    "schema": {
+      "allOf": [
+        {
+          "additionalProperties": {"type": "string"},
+          "patternProperties": {"^a": {"minLength": 2}}
+        },
+        {
+          "additionalProperties": {"type": "string"},
+          "patternProperties": {"^b": {"maxLength": 5}}
+        }
+      ]
+    },
+    "expected": {
+      "allOf": [
+        {
+          "additionalProperties": {"type": "string"},
+          "patternProperties": {"^a": {"minLength": 2}}
+        },
+        {
+          "additionalProperties": {"type": "string"},
+          "patternProperties": {"^b": {"maxLength": 5}}
+        }
+      ]
+    },
+    "kind": "raw",
+    "tests": [
+      {"data": {"a": "ab"}, "valid": true},
+      {"data": {"a": "a"}, "valid": false},
+      {"data": {"b": "value"}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
   }
 ]

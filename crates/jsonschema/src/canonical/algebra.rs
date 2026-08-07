@@ -3651,11 +3651,13 @@ fn normalize_properties(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
     });
 }
 
-/// Fold the pattern map into the facets able to hold what it says: an entry saying nothing goes,
-/// and a pattern matching a named key moves onto that key's schema.
+/// Fold the pattern map into the facets able to hold what it says: an entry saying nothing goes
+/// unless it exempts matching keys from the additional-properties shield; a pattern matching a
+/// named key moves onto that key's schema.
 fn normalize_pattern_properties(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
+    let shielded = leaf.additional.is_some();
     leaf.pattern_properties
-        .retain(|_, schema| !matches!(schema.kind(), SchemaKind::True));
+        .retain(|_, schema| shielded || !matches!(schema.kind(), SchemaKind::True));
     if leaf.pattern_properties.is_empty() {
         return;
     }
