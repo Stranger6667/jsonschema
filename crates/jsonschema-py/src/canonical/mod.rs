@@ -788,18 +788,21 @@ impl EnumView {
     }
 }
 
-/// canonicalize(schema, /, *, draft=None, validate_formats=None, pattern_options=None)
+/// canonicalize(schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None)
 ///
 /// Parse and normalize a JSON Schema to its canonical form.
 ///
 /// Returns a :class:`CanonicalSchema` that is semantically equivalent to the input.
 #[pyfunction]
-#[pyo3(signature = (schema, *, draft=None, validate_formats=None, pattern_options=None))]
+#[pyo3(signature = (schema, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None))]
 pub(crate) fn canonicalize(
     schema: &Bound<'_, PyAny>,
     draft: Option<u8>,
     validate_formats: Option<bool>,
     pattern_options: Option<&Bound<'_, PyAny>>,
+    retriever: Option<&Bound<'_, PyAny>>,
+    registry: Option<&crate::registry::Registry>,
+    base_uri: Option<String>,
 ) -> PyResult<PyCanonicalSchema> {
     let schema_value = crate::ser::to_value(schema)?;
     let mut options = jsonschema::canonical::options();
@@ -808,6 +811,22 @@ pub(crate) fn canonicalize(
     }
     if let Some(validate_formats) = validate_formats {
         options = options.should_validate_formats(validate_formats);
+    }
+    if let Some(retriever) = retriever {
+        let func = crate::retriever::into_retriever(retriever)?;
+        options = options.with_retriever(crate::retriever::Retriever { func });
+    }
+    if let Some(registry) = registry {
+        if retriever.is_none() {
+            if let Some(registry_retriever) = registry.retriever() {
+                let func = crate::retriever::into_retriever(registry_retriever.bind(schema.py()))?;
+                options = options.with_retriever(crate::retriever::Retriever { func });
+            }
+        }
+        options = options.with_registry(registry.inner.as_ref());
+    }
+    if let Some(base_uri) = base_uri {
+        options = options.with_base_uri(base_uri);
     }
     if let Some(pattern_options) = pattern_options {
         match crate::regex::extract_pattern_options(pattern_options)? {

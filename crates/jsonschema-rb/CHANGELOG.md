@@ -4,6 +4,7 @@
 
 ### Added
 
+- `retriever`, `registry`, and `base_uri` keyword arguments to `JSONSchema.canonicalize`.
 - Canonicalization of a `oneOf` whose branches name disjoint targets, which degrades to a union.
 
 ### Performance

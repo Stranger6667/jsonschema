@@ -729,3 +729,51 @@ def test_negate_resolves_a_reference():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": ["null", "boolean", "number", "array", "object"],
     }
+
+
+def test_registry_resolves_an_external_reference():
+    registry = jsonschema_rs.Registry([("https://example.com/external", {"type": "string"})])
+    result = canonicalize({"$ref": "https://example.com/external"}, registry=registry)
+
+    assert jsonschema_rs.is_valid(result.to_json_schema(), "value")
+    assert not jsonschema_rs.is_valid(result.to_json_schema(), 1)
+
+
+def test_retriever_fetches_a_reference_absent_from_the_registry():
+    def retrieve(uri):
+        assert uri == "https://example.com/remote"
+        return {"type": "string"}
+
+    result = canonicalize({"$ref": "https://example.com/remote"}, retriever=retrieve)
+
+    assert jsonschema_rs.is_valid(result.to_json_schema(), "value")
+    assert not jsonschema_rs.is_valid(result.to_json_schema(), 1)
+
+
+def test_registry_retriever_is_reused():
+    def retrieve(uri):
+        assert uri == "https://example.com/remote"
+        return {"type": "string"}
+
+    registry = jsonschema_rs.Registry([], retriever=retrieve)
+    result = canonicalize({"$ref": "https://example.com/remote"}, registry=registry)
+
+    assert jsonschema_rs.is_valid(result.to_json_schema(), "value")
+    assert not jsonschema_rs.is_valid(result.to_json_schema(), 1)
+
+
+def test_base_uri_resolves_a_relative_reference():
+    registry = jsonschema_rs.Registry([("https://example.com/external", {"type": "string"})])
+    result = canonicalize({"$ref": "external"}, registry=registry, base_uri="https://example.com/root")
+
+    assert jsonschema_rs.is_valid(result.to_json_schema(), "value")
+    assert not jsonschema_rs.is_valid(result.to_json_schema(), 1)
+
+
+def test_retriever_failure_surfaces():
+    def retrieve(uri):
+        raise KeyError(f"Schema not found: {uri}")
+
+    with pytest.raises(canonical.CanonicalizationError) as exc:
+        canonicalize({"$ref": "https://example.com/remote"}, retriever=retrieve)
+    assert "Schema not found" in str(exc.value)

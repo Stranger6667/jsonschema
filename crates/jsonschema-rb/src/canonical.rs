@@ -15,7 +15,12 @@ use magnus::{
 };
 
 use crate::{
-    options::{extract_pattern_options, parse_draft_symbol, RbPatternOptions},
+    options::{
+        extract_pattern_options, parse_draft_symbol, RbPatternOptions, KW_BASE_URI, KW_REGISTRY,
+        KW_RETRIEVER,
+    },
+    registry::Registry,
+    retriever::make_retriever,
     ser::{to_schema_value, value_to_ruby},
     static_id::define_rb_intern,
 };
@@ -24,8 +29,18 @@ define_rb_intern!(static CANONICAL_KW_DRAFT: "draft");
 define_rb_intern!(static CANONICAL_KW_VALIDATE_FORMATS: "validate_formats");
 define_rb_intern!(static CANONICAL_KW_PATTERN_OPTIONS: "pattern_options");
 
-type CanonicalKwArgs =
-    magnus::scan_args::KwArgs<(), (Option<Value>, Option<bool>, Option<Value>), ()>;
+type CanonicalKwArgs = magnus::scan_args::KwArgs<
+    (),
+    (
+        Option<Value>,
+        Option<bool>,
+        Option<Value>,
+        Option<Value>,
+        Option<Value>,
+        Option<String>,
+    ),
+    (),
+>;
 
 macro_rules! canonical_error_class {
     ($static_name:ident, $class_name:literal) => {
@@ -1274,9 +1289,13 @@ fn canonicalize(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
             *CANONICAL_KW_DRAFT,
             *CANONICAL_KW_VALIDATE_FORMATS,
             *CANONICAL_KW_PATTERN_OPTIONS,
+            *KW_RETRIEVER,
+            *KW_REGISTRY,
+            *KW_BASE_URI,
         ],
     )?;
-    let (draft_val, validate_formats, pattern_options) = base_kwargs.optional;
+    let (draft_val, validate_formats, pattern_options, retriever_val, registry_val, base_uri) =
+        base_kwargs.optional;
 
     let schema_value = to_schema_value(ruby, schema_arg)?;
     let mut options = jsonschema::canonical::options();
@@ -1291,6 +1310,34 @@ fn canonicalize(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
             RbPatternOptions::Fancy(inner) => options = options.with_pattern_options(inner),
             RbPatternOptions::Regex(inner) => options = options.with_pattern_options(inner),
         }
+    }
+    let mut has_retriever = false;
+    if let Some(val) = retriever_val {
+        if let Some(retriever) = make_retriever(ruby, val)? {
+            options = options.with_retriever(retriever);
+            has_retriever = true;
+        }
+    }
+    if let Some(val) = registry_val {
+        if !val.is_nil() {
+            let registry: &Registry = TryConvert::try_convert(val).map_err(|_| {
+                Error::new(
+                    ruby.exception_type_error(),
+                    "registry must be a JSONSchema::Registry instance",
+                )
+            })?;
+            if !has_retriever {
+                if let Some(value) = registry.retriever_value(ruby) {
+                    if let Some(retriever) = make_retriever(ruby, value)? {
+                        options = options.with_retriever(retriever);
+                    }
+                }
+            }
+            options = options.with_registry(registry.inner.as_ref());
+        }
+    }
+    if let Some(base_uri) = base_uri {
+        options = options.with_base_uri(base_uri);
     }
     options
         .canonicalize(&schema_value)

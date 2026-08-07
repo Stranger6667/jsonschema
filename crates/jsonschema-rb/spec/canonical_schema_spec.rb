@@ -597,4 +597,51 @@ RSpec.describe "JSONSchema.canonicalize" do
       expect { JSONSchema.canonicalize(large_pattern, pattern_options: 42) }.to raise_error(TypeError)
     end
   end
+
+  describe "reference resolution" do
+    it "resolves a reference through the registry" do
+      registry = JSONSchema::Registry.new([["https://example.com/external", { "type" => "string" }]])
+      result = JSONSchema.canonicalize({ "$ref" => "https://example.com/external" }, registry: registry)
+
+      expect(JSONSchema.valid?(result.to_json_schema, "value")).to be true
+      expect(JSONSchema.valid?(result.to_json_schema, 1)).to be false
+    end
+
+    it "fetches a reference absent from the registry" do
+      retriever = ->(uri) { { "type" => "string" } if uri == "https://example.com/remote" }
+      result = JSONSchema.canonicalize({ "$ref" => "https://example.com/remote" }, retriever: retriever)
+
+      expect(JSONSchema.valid?(result.to_json_schema, "value")).to be true
+      expect(JSONSchema.valid?(result.to_json_schema, 1)).to be false
+    end
+
+    it "reuses the retriever the registry carries" do
+      retriever = ->(uri) { { "type" => "string" } if uri == "https://example.com/remote" }
+      registry = JSONSchema::Registry.new([], retriever: retriever)
+      result = JSONSchema.canonicalize({ "$ref" => "https://example.com/remote" }, registry: registry)
+
+      expect(JSONSchema.valid?(result.to_json_schema, "value")).to be true
+      expect(JSONSchema.valid?(result.to_json_schema, 1)).to be false
+    end
+
+    it "resolves a relative reference against base_uri" do
+      registry = JSONSchema::Registry.new([["https://example.com/external", { "type" => "string" }]])
+      result = JSONSchema.canonicalize({ "$ref" => "external" }, registry: registry,
+                                                                 base_uri: "https://example.com/root")
+
+      expect(JSONSchema.valid?(result.to_json_schema, "value")).to be true
+      expect(JSONSchema.valid?(result.to_json_schema, 1)).to be false
+    end
+
+    it "surfaces a retriever failure" do
+      retriever = ->(uri) { raise KeyError, "Schema not found: #{uri}" }
+
+      expect { JSONSchema.canonicalize({ "$ref" => "https://example.com/remote" }, retriever: retriever) }
+        .to raise_error(JSONSchema::Canonical::CanonicalizationError, /Schema not found/)
+    end
+
+    it "rejects a non-registry value" do
+      expect { JSONSchema.canonicalize(true, registry: 42) }.to raise_error(TypeError)
+    end
+  end
 end
