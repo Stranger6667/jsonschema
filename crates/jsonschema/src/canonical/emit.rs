@@ -176,35 +176,35 @@ fn emit_string(leaf: &StringLeaf) -> Value {
     match leaf.patterns.as_slice() {
         [] => {}
         [pattern] => {
-            map.insert("pattern".into(), Value::String(pattern.to_string()));
+            map.insert("pattern".into(), Value::String(pattern.as_ref().to_owned()));
         }
         patterns => conjuncts.extend(
             patterns
                 .iter()
-                .map(|pattern| keyed("pattern", Value::String(pattern.to_string()))),
+                .map(|pattern| keyed("pattern", Value::String(pattern.as_ref().to_owned()))),
         ),
     }
     match leaf.formats.as_slice() {
         [] => {}
         [format] => {
-            map.insert("format".into(), Value::String(format.to_string()));
+            map.insert("format".into(), Value::String(format.as_ref().to_owned()));
         }
         formats => conjuncts.extend(
             formats
                 .iter()
-                .map(|format| keyed("format", Value::String(format.to_string()))),
+                .map(|format| keyed("format", Value::String(format.as_ref().to_owned()))),
         ),
     }
     // Every barred facet goes into its own `allOf` branch: the main object already spells what a
     // string must satisfy, and one `not` slot cannot hold several of them.
     conjuncts.extend(leaf.excluded_formats.iter().map(|format| {
         let mut inner = Map::new();
-        inner.insert("format".into(), Value::String(format.to_string()));
+        inner.insert("format".into(), Value::String(format.as_ref().to_owned()));
         keyed("not", Value::Object(inner))
     }));
     conjuncts.extend(leaf.excluded_patterns.iter().map(|pattern| {
         let mut inner = Map::new();
-        inner.insert("pattern".into(), Value::String(pattern.to_string()));
+        inner.insert("pattern".into(), Value::String(pattern.as_ref().to_owned()));
         keyed("not", Value::Object(inner))
     }));
     // A media type and an encoding sharing one schema object decode-then-check under the runtime
@@ -218,35 +218,37 @@ fn emit_string(leaf: &StringLeaf) -> Value {
         [media_type] if !both_content_facets_present => {
             map.insert(
                 "contentMediaType".into(),
-                Value::String(media_type.to_string()),
+                Value::String(media_type.as_ref().to_owned()),
             );
         }
-        media_types => conjuncts.extend(
-            media_types
-                .iter()
-                .map(|media_type| keyed("contentMediaType", Value::String(media_type.to_string()))),
-        ),
+        media_types => conjuncts.extend(media_types.iter().map(|media_type| {
+            keyed(
+                "contentMediaType",
+                Value::String(media_type.as_ref().to_owned()),
+            )
+        })),
     }
     match leaf.content_encodings.as_slice() {
         [] => {}
         [encoding] if !both_content_facets_present => {
             map.insert(
                 "contentEncoding".into(),
-                Value::String(encoding.to_string()),
+                Value::String(encoding.as_ref().to_owned()),
             );
         }
-        encodings => conjuncts.extend(
-            encodings
-                .iter()
-                .map(|encoding| keyed("contentEncoding", Value::String(encoding.to_string()))),
-        ),
+        encodings => conjuncts.extend(encodings.iter().map(|encoding| {
+            keyed(
+                "contentEncoding",
+                Value::String(encoding.as_ref().to_owned()),
+            )
+        })),
     }
     // `enum` in every draft, so one spelling covers Draft 4 as well.
     if !leaf.excluded.is_empty() {
         let members = Value::Array(
             leaf.excluded
                 .iter()
-                .map(|value| Value::String(value.to_string()))
+                .map(|value| Value::String(value.as_ref().to_owned()))
                 .collect(),
         );
         let mut inner = Map::new();
@@ -484,7 +486,9 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
                         Value::Object(
                             names
                                 .iter()
-                                .map(|name| (name.to_string(), emit(&SchemaKind::True, draft)))
+                                .map(|name| {
+                                    (name.as_ref().to_owned(), emit(&SchemaKind::True, draft))
+                                })
                                 .collect(),
                         ),
                     );
@@ -698,13 +702,13 @@ fn draft4_key_spelling(leaf: &ObjectLeaf) -> Option<Draft4Keys> {
 fn draft4_key_clauses(names: &Schema) -> Option<Vec<KeyClause>> {
     match names.kind() {
         SchemaKind::Const(value) => Some(vec![KeyClause {
-            keys: vec![value.as_value().as_str()?.to_string()],
+            keys: vec![value.as_value().as_str()?.to_owned()],
             patterns: Vec::new(),
         }]),
         SchemaKind::Enum(values) => {
             let mut keys = Vec::with_capacity(values.as_slice().len());
             for value in values.as_slice() {
-                keys.push(value.as_value().as_str()?.to_string());
+                keys.push(value.as_value().as_str()?.to_owned());
             }
             keys.sort_unstable();
             keys.dedup();
@@ -738,7 +742,7 @@ fn draft4_key_clauses(names: &Schema) -> Option<Vec<KeyClause>> {
                     .iter()
                     .map(|pattern| KeyClause {
                         keys: Vec::new(),
-                        patterns: vec![pattern.to_string()],
+                        patterns: vec![pattern.as_ref().to_owned()],
                     })
                     .collect(),
             )

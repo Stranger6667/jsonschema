@@ -4,6 +4,7 @@
 
 ### Performance
 
+- 2% faster emission of canonical schemas, which no longer formats copied string values.
 - 5% faster emission of canonical schemas, which no longer formats object keys while copying them.
 - Up to 12% faster canonicalization of schemas that repeatedly intersect the same branches.
 - 13% faster canonicalization of a non-dynamic OpenAPI document, which no longer scans every schema object for dynamic references.
