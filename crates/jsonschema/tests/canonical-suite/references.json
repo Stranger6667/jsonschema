@@ -1617,7 +1617,7 @@
     ]
   },
   {
-    "description": "a Draft 4 pattern coverage beside a merging keyword keeps the document raw",
+    "description": "a Draft 4 recursive closed pattern map with no finite witness admits nothing",
     "draft": "draft4",
     "schema": {
       "$ref": "#/definitions/a",
@@ -1631,18 +1631,8 @@
         }
       }
     },
-    "expected": {
-      "$ref": "#/definitions/a",
-      "definitions": {
-        "a": {
-          "type": "object",
-          "required": ["x"],
-          "patternProperties": {"^x": {"$ref": "#/definitions/a"}},
-          "additionalProperties": false,
-          "allOf": [{"type": "object"}]
-        }
-      }
-    },
+    "kind": "false",
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "not": {}},
     "tests": [
       {"data": {}, "valid": false},
       {"data": {"x": {}}, "valid": false}

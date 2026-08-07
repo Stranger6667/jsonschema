@@ -598,32 +598,32 @@
     }
   },
   {
-    "description": "raw: draft 4 cannot spell two pattern maps meeting, so the document stays raw",
+    "description": "Draft 4 spells two closed pattern maps meeting as their closed-map intersection",
     "schema": {"allOf": [
       {"type": "object", "patternProperties": {"^a": {}}, "additionalProperties": false},
       {"type": "object", "patternProperties": {"^b": {}}, "additionalProperties": false}
     ]},
     "draft": "draft4",
-    "kind": "raw",
+    "kind": "object",
     "tests": [
       {"data": {}, "valid": true},
       {"data": {"ab": 1}, "valid": false}
     ],
     "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
       "allOf": [
         {
           "additionalProperties": false,
           "patternProperties": {
             "^a": {}
-          },
-          "type": "object"
+          }
         },
         {
           "additionalProperties": false,
           "patternProperties": {
             "^b": {}
-          },
-          "type": "object"
+          }
         }
       ]
     }

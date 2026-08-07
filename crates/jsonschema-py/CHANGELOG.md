@@ -8,6 +8,7 @@
 - Canonicalization of a `oneOf` whose branches name disjoint targets, which degrades to a union.
 - Canonicalization of a vacuous `patternProperties` entry beside schema-valued `additionalProperties`, where matching keys escape its value constraint.
 - Canonicalization of a Draft 4 closed pattern map with a reference nested under a property.
+- Canonicalization of Draft 4 closed pattern maps that meet through an applicator.
 
 ### Performance
 
