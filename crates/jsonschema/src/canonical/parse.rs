@@ -2088,18 +2088,7 @@ fn ensure_definition<'a>(
 /// Retain definitions referenced by the final IR. The registry resolves source references before algebra, but cannot know which
 /// symbolic references survive canonical rewriting, so this is a linear liveness walk over already-resolved definition keys.
 pub(crate) fn prune_unreachable_definitions(root: &Schema, definitions: &mut DefinitionMap) {
-    let mut pending = Vec::new();
-    collect_live_definition_references(root, &mut pending);
-    let mut reachable = AHashSet::new();
-    while let Some(uri) = pending.pop() {
-        let Some((uri, schema)) = definitions.get_key_value(uri) else {
-            continue;
-        };
-        if reachable.insert(Arc::clone(uri)) {
-            collect_live_definition_references(schema, &mut pending);
-        }
-    }
-    drop(pending);
+    let reachable = emptiness::reachable_definition_keys(root, None, definitions);
     definitions.retain(|uri, _| reachable.contains(uri));
     #[cfg(debug_assertions)]
     {
@@ -2131,14 +2120,6 @@ pub(crate) fn prune_unreachable_definitions(root: &Schema, definitions: &mut Def
             );
         }
     }
-}
-
-fn collect_live_definition_references<'a>(schema: &'a Schema, references: &mut Vec<&'a str>) {
-    // Derived from the emptiness walker rather than repeated: the two must agree on which fields
-    // hold a schema, and a field missed here leaks a `$ref` to a pruned definition.
-    let mut found = Vec::new();
-    emptiness::collect_classified_references(schema, emptiness::Position::InPlace, &mut found);
-    references.extend(found.into_iter().map(|(uri, _)| uri.as_ref()));
 }
 
 /// The array-form dependency on `key`: holding it demands the listed keys too.

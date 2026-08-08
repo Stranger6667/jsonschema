@@ -104,6 +104,49 @@ pub(crate) fn collect_classified_references<'a>(
     }
 }
 
+/// The definition keys `node` reaches, walked over the map itself.
+///
+/// `document_root` is followed where the walk meets a pointer at the document, which is how a node
+/// below that root reaches what the root names; a walk starting at the root itself passes `None`.
+pub(crate) fn reachable_definition_keys(
+    node: &Schema,
+    document_root: Option<&Schema>,
+    definitions: &DefinitionMap,
+) -> AHashSet<Arc<str>> {
+    let mut pending = Vec::new();
+    collect_definition_references(node, &mut pending);
+    let mut reachable = AHashSet::new();
+    let mut followed_document = false;
+    while let Some(uri) = pending.pop() {
+        if uri == ROOT_DEFINITION_KEY {
+            // Following it once is enough - the root's own pointers join the same worklist.
+            if let Some(root) = document_root {
+                if !std::mem::replace(&mut followed_document, true) {
+                    collect_definition_references(root, &mut pending);
+                }
+            }
+            continue;
+        }
+        let Some((uri, schema)) = definitions.get_key_value(uri) else {
+            continue;
+        };
+        if reachable.insert(Arc::clone(uri)) {
+            collect_definition_references(schema, &mut pending);
+        }
+    }
+    reachable
+}
+
+/// Every pointer `schema` spells, position discarded.
+///
+/// Derived from the classifying walker rather than repeated: the two must agree on which fields
+/// hold a schema, and a field missed here leaks a `$ref` to a definition nothing kept.
+fn collect_definition_references<'a>(schema: &'a Schema, references: &mut Vec<&'a str>) {
+    let mut found = Vec::new();
+    collect_classified_references(schema, Position::InPlace, &mut found);
+    references.extend(found.into_iter().map(|(uri, _)| uri.as_ref()));
+}
+
 /// The reference graph: each definition key mapped to the targets it reaches and how.
 pub(crate) type ReferenceEdges = AHashMap<Arc<str>, Vec<(Arc<str>, Position)>>;
 
