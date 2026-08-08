@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Canonicalization of a `oneOf` whose branches name object targets a required constant tells apart, which degrades to a union.
+
 ## [0.49.8] - 2026-08-08
 
 ### Performance

@@ -1417,6 +1417,174 @@
     ]
   },
   {
+    "description": "object targets tagged by a required constant degrade to a union",
+    "schemas": [
+      {
+        "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}, {"$ref": "#/$defs/c"}],
+        "$defs": {
+          "a": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "a"}, "fa": {"type": "string"}}},
+          "b": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "b"}, "fb": {"type": "string"}}},
+          "c": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "c"}, "fc": {"type": "string"}}}
+        }
+      },
+      {
+        "anyOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}, {"$ref": "#/$defs/c"}],
+        "$defs": {
+          "a": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "a"}, "fa": {"type": "string"}}},
+          "b": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "b"}, "fb": {"type": "string"}}},
+          "c": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "c"}, "fc": {"type": "string"}}}
+        }
+      }
+    ],
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "a": {"properties": {"fa": {"type": "string"}, "kind": {"const": "a"}}, "required": ["kind"], "type": "object"},
+        "b": {"properties": {"fb": {"type": "string"}, "kind": {"const": "b"}}, "required": ["kind"], "type": "object"},
+        "c": {"properties": {"fc": {"type": "string"}, "kind": {"const": "c"}}, "required": ["kind"], "type": "object"}
+      },
+      "anyOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}, {"$ref": "#/$defs/c"}]
+    },
+    "tests": [
+      {"data": {"kind": "a", "fa": "x"}, "valid": true},
+      {"data": {"kind": "c"}, "valid": true},
+      {"data": {"kind": "d"}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "object targets tagged by required enums over disjoint values degrade to a union",
+    "schemas": [
+      {
+        "oneOf": [{"$ref": "#/$defs/left"}, {"$ref": "#/$defs/right"}],
+        "$defs": {
+          "left": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["l1", "l2"]}}},
+          "right": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["r1", "r2"]}}}
+        }
+      },
+      {
+        "anyOf": [{"$ref": "#/$defs/left"}, {"$ref": "#/$defs/right"}],
+        "$defs": {
+          "left": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["l1", "l2"]}}},
+          "right": {"type": "object", "required": ["kind"], "properties": {"kind": {"enum": ["r1", "r2"]}}}
+        }
+      }
+    ],
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "left": {"properties": {"kind": {"enum": ["l1", "l2"]}}, "required": ["kind"], "type": "object"},
+        "right": {"properties": {"kind": {"enum": ["r1", "r2"]}}, "required": ["kind"], "type": "object"}
+      },
+      "anyOf": [{"$ref": "#/$defs/left"}, {"$ref": "#/$defs/right"}]
+    },
+    "tests": [
+      {"data": {"kind": "l2"}, "valid": true},
+      {"data": {"kind": "r1"}, "valid": true},
+      {"data": {"kind": "x"}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "object targets whose tag is optional keep the choice, since one carrying no tag meets both",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}],
+      "$defs": {
+        "a": {"type": "object", "properties": {"kind": {"const": "a"}}},
+        "b": {"type": "object", "properties": {"kind": {"const": "b"}}}
+      }
+    },
+    "kind": "one_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "a": {"properties": {"kind": {"const": "a"}}, "type": "object"},
+        "b": {"properties": {"kind": {"const": "b"}}, "type": "object"}
+      },
+      "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}]
+    },
+    "tests": [
+      {"data": {"kind": "a"}, "valid": true},
+      {"data": {"kind": "b"}, "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "object targets repeating a tag value keep the choice",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}],
+      "$defs": {
+        "a": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "a"}, "fa": {"type": "string"}}},
+        "b": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "a"}, "fb": {"type": "string"}}}
+      }
+    },
+    "kind": "one_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "a": {"properties": {"fa": {"type": "string"}, "kind": {"const": "a"}}, "required": ["kind"], "type": "object"},
+        "b": {"properties": {"fb": {"type": "string"}, "kind": {"const": "a"}}, "required": ["kind"], "type": "object"}
+      },
+      "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}]
+    },
+    "tests": [
+      {"data": {"kind": "a", "fa": "x"}, "valid": false},
+      {"data": {"kind": "b"}, "valid": false}
+    ]
+  },
+  {
+    "description": "object targets tagged by different keys keep the choice",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}],
+      "$defs": {
+        "a": {"type": "object", "required": ["left"], "properties": {"left": {"const": "a"}}},
+        "b": {"type": "object", "required": ["right"], "properties": {"right": {"const": "b"}}}
+      }
+    },
+    "kind": "one_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "a": {"properties": {"left": {"const": "a"}}, "required": ["left"], "type": "object"},
+        "b": {"properties": {"right": {"const": "b"}}, "required": ["right"], "type": "object"}
+      },
+      "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}]
+    },
+    "tests": [
+      {"data": {"left": "a"}, "valid": true},
+      {"data": {"right": "b"}, "valid": true},
+      {"data": {"left": "a", "right": "b"}, "valid": false}
+    ]
+  },
+  {
+    "description": "one untagged target among tagged ones keeps the choice",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}, {"$ref": "#/$defs/loose"}],
+      "$defs": {
+        "a": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "a"}}},
+        "b": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "b"}}},
+        "loose": {"type": "object", "required": ["other"], "properties": {"other": {"type": "string"}}}
+      }
+    },
+    "kind": "one_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "a": {"properties": {"kind": {"const": "a"}}, "required": ["kind"], "type": "object"},
+        "b": {"properties": {"kind": {"const": "b"}}, "required": ["kind"], "type": "object"},
+        "loose": {"properties": {"other": {"type": "string"}}, "required": ["other"], "type": "object"}
+      },
+      "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}, {"$ref": "#/$defs/loose"}]
+    },
+    "tests": [
+      {"data": {"kind": "a"}, "valid": true},
+      {"data": {"other": "x"}, "valid": true},
+      {"data": {"kind": "a", "other": "x"}, "valid": false}
+    ]
+  },
+  {
     "description": "a choice whose overlapping branches outrun the conjunction budget stays symbolic",
     "schema": {
       "oneOf": [
