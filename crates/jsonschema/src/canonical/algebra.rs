@@ -1593,7 +1593,8 @@ fn collapse_object_leaves_covering_domain(
         violations: Vec::new(),
     };
     let packed = packed_leaves(leaves, ctx);
-    if !split_piece_is_covered(piece.clone(), &packed, &keys, ctx) {
+    let mut budget = SPLIT_COVERAGE_BUDGET;
+    if !split_piece_is_covered(piece.clone(), &packed, &keys, ctx, &mut budget) {
         return false;
     }
     leaves.clear();
@@ -1633,6 +1634,12 @@ fn keys_beside(leaves: &[ObjectLeaf], index: usize) -> Vec<Arc<str>> {
     keys
 }
 
+/// Nodes one coverage walk may visit before declining: the key list only bounds the *depth* of the
+/// split, and each of the two halves recurses on the same siblings, so the node count is exponential
+/// in the key count. Every call site below only acts on `true`, so declining early just leaves the
+/// leaves it would have collapsed as they were - less minimal, never wrong.
+const SPLIT_COVERAGE_BUDGET: usize = 64;
+
 /// Whether some leaf admits the whole piece, or both halves of a key-presence split do
 /// recursively. The key list shrinks with each split, which bounds the recursion.
 fn split_piece_is_covered(
@@ -1640,11 +1647,16 @@ fn split_piece_is_covered(
     leaves: &[Schema],
     keys: &[Arc<str>],
     ctx: &CanonicalizationContext,
+    budget: &mut usize,
 ) -> bool {
     debug_assert!(
         keys.windows(2).all(|pair| pair[0] < pair[1]),
         "the split keys are sorted and deduplicated"
     );
+    let Some(remaining) = budget.checked_sub(1) else {
+        return false;
+    };
+    *budget = remaining;
     let schema = object_leaf(piece.clone(), ctx);
     if matches!(schema.kind(), SchemaKind::False) {
         return true;
@@ -1675,8 +1687,8 @@ fn split_piece_is_covered(
     }
     let mut missing = piece;
     missing.properties.insert(Arc::clone(key), Schema::falsy());
-    split_piece_is_covered(holding, leaves, rest, ctx)
-        && split_piece_is_covered(missing, leaves, rest, ctx)
+    split_piece_is_covered(holding, leaves, rest, ctx, budget)
+        && split_piece_is_covered(missing, leaves, rest, ctx, budget)
 }
 
 /// Whether the piece demands every key the leaf does, both already packed by [`object_leaf`].
@@ -1741,7 +1753,8 @@ fn widen_size_window_covered_by_siblings(
             let drops_minimum = ray.minimum.is_none();
             let mut piece = leaves[index].clone();
             piece.sizes = ray;
-            if split_piece_is_covered(piece, &siblings, &keys, ctx) {
+            let mut budget = SPLIT_COVERAGE_BUDGET;
+            if split_piece_is_covered(piece, &siblings, &keys, ctx, &mut budget) {
                 if drops_minimum {
                     leaves[index].sizes.minimum = None;
                 } else {
@@ -1785,7 +1798,8 @@ fn drop_object_branch_covered_by_siblings(
             continue;
         }
         let keys = keys_beside(leaves, index);
-        if split_piece_is_covered(leaves[index].clone(), &siblings, &keys, ctx) {
+        let mut budget = SPLIT_COVERAGE_BUDGET;
+        if split_piece_is_covered(leaves[index].clone(), &siblings, &keys, ctx, &mut budget) {
             leaves.remove(index);
             return true;
         }
@@ -1814,7 +1828,8 @@ fn drop_object_branch_covered_by_siblings(
                     minimum: tighter(piece.sizes.minimum.take(), window.minimum.clone(), Ord::max),
                     maximum: tighter(piece.sizes.maximum.take(), window.maximum.clone(), Ord::min),
                 };
-                split_piece_is_covered(piece, &siblings, &keys, ctx)
+                let mut budget = SPLIT_COVERAGE_BUDGET;
+                split_piece_is_covered(piece, &siblings, &keys, ctx, &mut budget)
             });
             if all_covered {
                 leaves.remove(index);
@@ -2399,6 +2414,11 @@ fn conjuncts_held(branches: &[Schema]) -> usize {
     branches.iter().map(|branch| demands(branch).len()).sum()
 }
 
+/// Alternative-covers checks one narrowing pass may spend before an alternative stays unnarrowed
+/// rather than wrong: each check scans every other branch, and leaves, properties and alternatives
+/// all multiply together.
+const ALTERNATIVE_COVERAGE_BUDGET: usize = 64;
+
 /// Narrow a property entry spelling several alternatives down to the ones its own branch needs: the
 /// values an alternative adds are the branch restricted to it, and a sibling holding all of them
 /// makes the alternative say nothing here.
@@ -2415,8 +2435,9 @@ fn drop_property_alternatives_covered_by_sibling(
     branches: &mut [Schema],
     ctx: &CanonicalizationContext,
 ) {
+    let mut budget = ALTERNATIVE_COVERAGE_BUDGET;
     for index in 0..branches.len() {
-        let Some(narrowed) = narrow_branch_entries(branches, index, ctx) else {
+        let Some(narrowed) = narrow_branch_entries(branches, index, ctx, &mut budget) else {
             continue;
         };
         branches[index] = narrowed;
@@ -2428,6 +2449,7 @@ fn narrow_branch_entries(
     branches: &[Schema],
     index: usize,
     ctx: &CanonicalizationContext,
+    budget: &mut usize,
 ) -> Option<Schema> {
     let SchemaKind::AllOf(conjuncts) = branches[index].kind() else {
         return None;
@@ -2449,7 +2471,7 @@ fn narrow_branch_entries(
                 .as_slice()
                 .iter()
                 .filter(|alternative| {
-                    !alternative_is_covered(branches, index, slot, key, alternative, ctx)
+                    !alternative_is_covered(branches, index, slot, key, alternative, ctx, budget)
                 })
                 .cloned()
                 .collect();
@@ -2483,7 +2505,12 @@ fn alternative_is_covered(
     key: &Arc<str>,
     alternative: &Schema,
     ctx: &CanonicalizationContext,
+    budget: &mut usize,
 ) -> bool {
+    let Some(remaining) = budget.checked_sub(1) else {
+        return false;
+    };
+    *budget = remaining;
     let mut restricted = demands(&branches[index]).to_vec();
     let SchemaKind::Object(leaf) = restricted[slot].kind() else {
         return false;
