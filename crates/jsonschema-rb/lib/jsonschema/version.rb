@@ -1,5 +1,5 @@
 # frozen_string_literal: true
 
 module JSONSchema
-  VERSION = "0.49.7"
+  VERSION = "0.49.8"
 end
