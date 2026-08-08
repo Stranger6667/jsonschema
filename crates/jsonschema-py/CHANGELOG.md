@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.8] - 2026-08-08
+
 ### Performance
 
 - Up to 380x faster canonicalization of a `oneOf` whose overlapping branches carry many properties, which no longer removes shared regions the exactly-one spelling discards.
@@ -1292,7 +1294,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.7...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.8...HEAD
+[0.49.8]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.7...python-v0.49.8
 [0.49.7]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.6...python-v0.49.7
 [0.49.6]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.5...python-v0.49.6
 [0.49.5]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.4...python-v0.49.5
