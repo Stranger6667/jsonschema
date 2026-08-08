@@ -462,10 +462,10 @@ pub(crate) fn one_of(
         branches.windows(2).all(|pair| pair[0] <= pair[1]),
         "oneOf branches are sorted without deduplication"
     );
-    // Sharing no JSON type, no two branches hold a value in common, and "exactly one" is then "at
-    // least one". The types the targets admit decide that; the branches keep the references they
-    // were spelled with. Weighing the bodies themselves would mean intersecting them, which costs
-    // as much again as canonicalizing the document they came from.
+    // Sharing no value, no two branches match together, and "exactly one" is then "at least one".
+    // The types the targets admit decide that, as does a required property telling them apart; the
+    // branches keep the references they were spelled with. Weighing the bodies in full would mean
+    // intersecting them, which costs as much again as canonicalizing the document they came from.
     // ```text
     // e.g.  oneOf [{"$ref": "#/$defs/count"}, {"type": "array"}]  with  count = {"type": "integer"}
     //       =>  anyOf [{"type": "array"}, {"$ref": "#/$defs/count"}]
@@ -475,9 +475,7 @@ pub(crate) fn one_of(
     // One resolution pass feeds both tests: a lookup walks the document's whole definition map, so
     // resolving a branch twice is the expensive half of the check.
     match pointer_targets(&branches, definitions, finished, &mut awaits_body) {
-        Some(targets)
-            if types_are_disjoint(&targets) || scalar_bodies_are_disjoint(&targets, ctx) =>
-        {
+        Some(targets) if targets_are_disjoint(&branches, &targets, ctx) => {
             return Some(union(branches, ctx))
         }
         // A body the round has yet to produce leaves the choice for the caller to settle.
@@ -495,9 +493,8 @@ pub(crate) fn choice_folds(
 ) -> bool {
     let mut awaits_body = false;
     let known = DefinitionMap::new();
-    pointer_targets(branches, definitions, &known, &mut awaits_body).is_some_and(|targets| {
-        types_are_disjoint(&targets) || scalar_bodies_are_disjoint(&targets, ctx)
-    })
+    pointer_targets(branches, definitions, &known, &mut awaits_body)
+        .is_some_and(|targets| targets_are_disjoint(branches, &targets, ctx))
 }
 
 /// The body a branch stands for, following a pointer that names another.
@@ -532,6 +529,68 @@ fn pointer_target<'a>(
         current = target;
     }
     Some(current)
+}
+
+/// Whether no two targets hold a value in common, so "exactly one matches" is "at least one does".
+///
+/// A tag is weighed only where every branch is a pointer. `union` keeps those symbolic, so folding
+/// them costs one pass; inline bodies go through the leaf merge instead, which is the work keeping
+/// the choice avoids.
+fn targets_are_disjoint(
+    branches: &[Schema],
+    targets: &[&Schema],
+    ctx: &CanonicalizationContext,
+) -> bool {
+    types_are_disjoint(targets)
+        || scalar_bodies_are_disjoint(targets, ctx)
+        || (branches
+            .iter()
+            .all(|branch| matches!(branch.kind(), SchemaKind::Reference(_)))
+            && tagged_bodies_are_disjoint(targets))
+}
+
+/// Whether one required property tells the object targets apart, the way a tagged union is spelled.
+fn tagged_bodies_are_disjoint(targets: &[&Schema]) -> bool {
+    let mut leaves = Vec::with_capacity(targets.len());
+    for target in targets {
+        let SchemaKind::Object(leaf) = target.kind() else {
+            return false;
+        };
+        leaves.push(leaf.get());
+    }
+    if leaves.len() < 2 {
+        return false;
+    }
+    // A tag every target demands is among the keys the first one demands.
+    leaves[0]
+        .required
+        .iter()
+        .any(|key| tag_tells_apart(key, &leaves))
+}
+
+/// Whether every leaf demands `key` and pins it to a value set no other leaf shares. Left optional
+/// by two of them, an object carrying no such key meets both.
+fn tag_tells_apart(key: &str, leaves: &[&ObjectLeaf]) -> bool {
+    let mut taken: ahash::AHashSet<&CanonicalJson> = ahash::AHashSet::new();
+    for leaf in leaves {
+        if !leaf.required.iter().any(|required| &**required == key) {
+            return false;
+        }
+        // A demanded key the leaf does not name answers to `additionalProperties`, which pins nothing.
+        let Some(values) = leaf
+            .properties
+            .get(key)
+            .and_then(|schema| schema.kind().finite_values())
+        else {
+            return false;
+        };
+        for value in values {
+            if !taken.insert(value) {
+                return false;
+            }
+        }
+    }
+    true
 }
 
 /// Whether the nodes share no value, weighed one against another. Only scalar bodies are weighed:
