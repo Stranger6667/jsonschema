@@ -1,5 +1,5 @@
 //! Set algebra over canonical IR nodes.
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
 use referencing::Draft;
 use serde_json::Value;
@@ -1675,8 +1675,30 @@ fn split_piece_is_covered(
     }
     let mut missing = piece;
     missing.properties.insert(Arc::clone(key), Schema::falsy());
+    // A leaf demanding a barred key is unreachable for the rest of this subtree; drop it once here
+    // rather than at every descendant, and skip the clone when no leaf demanded it anyway.
+    let missing_leaves: Cow<[Schema]> = if leaves.iter().any(|leaf| leaf_requires(leaf, key)) {
+        Cow::Owned(
+            leaves
+                .iter()
+                .filter(|leaf| !leaf_requires(leaf, key))
+                .cloned()
+                .collect(),
+        )
+    } else {
+        Cow::Borrowed(leaves)
+    };
     split_piece_is_covered(holding, leaves, rest, ctx)
-        && split_piece_is_covered(missing, leaves, rest, ctx)
+        && split_piece_is_covered(missing, &missing_leaves, rest, ctx)
+}
+
+/// Whether `leaf` demands `key`, so barring `key` forever excludes it from `piece_meets_demands`.
+fn leaf_requires(leaf: &Schema, key: &Arc<str>) -> bool {
+    if let SchemaKind::Object(other) = leaf.kind() {
+        other.get().required.binary_search(key).is_ok()
+    } else {
+        false
+    }
 }
 
 /// Whether the piece demands every key the leaf does, both already packed by [`object_leaf`].
