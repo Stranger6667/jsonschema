@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.8] - 2026-08-08
+
 ### Performance
 
 - Up to 380x faster canonicalization of a `oneOf` whose overlapping branches carry many properties, which no longer removes shared regions the exactly-one spelling discards.
@@ -1571,7 +1573,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.7...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.8...HEAD
+[0.49.8]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.7...rust-v0.49.8
 [0.49.7]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.6...rust-v0.49.7
 [0.49.6]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.5...rust-v0.49.6
 [0.49.5]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.4...rust-v0.49.5
