@@ -3388,3 +3388,86 @@ fn complement_intersects_to_nothing(schema: &Value) {
     let meet = canonical.intersect(&complement).expect("intersects");
     assert!(!meet.is_satisfiable());
 }
+
+// A fanning-out $ref graph must complete quickly (bailing to Raw via the fold budget), not hang.
+#[test]
+fn unevaluated_properties_beside_a_fanout_reference_graph_does_not_blow_up() {
+    let depth = 24;
+    let mut defs = serde_json::Map::new();
+    defs.insert("d24".to_string(), json!({"type": "integer"}));
+    for level in (0..depth).rev() {
+        defs.insert(
+            format!("d{level}"),
+            json!({"allOf": [
+                {"$ref": format!("#/$defs/d{}", level + 1)},
+                {"$ref": format!("#/$defs/d{}", level + 1)}
+            ]}),
+        );
+    }
+    let schema = json!({
+        "$defs": defs,
+        "$ref": "#/$defs/d0",
+        "unevaluatedProperties": false
+    });
+    let canonical = canonicalize(&schema).expect("canonicalizes without erroring");
+    assert_eq!(canonical.kind(), CanonicalKind::Raw);
+}
+
+// Item-cover twin of the property-cover fanout test above.
+#[test]
+fn unevaluated_items_beside_a_fanout_reference_graph_does_not_blow_up() {
+    let depth = 24;
+    let mut defs = serde_json::Map::new();
+    defs.insert("d24".to_string(), json!({"type": "integer"}));
+    for level in (0..depth).rev() {
+        defs.insert(
+            format!("d{level}"),
+            json!({"allOf": [
+                {"$ref": format!("#/$defs/d{}", level + 1)},
+                {"$ref": format!("#/$defs/d{}", level + 1)}
+            ]}),
+        );
+    }
+    let schema = json!({
+        "$defs": defs,
+        "$ref": "#/$defs/d0",
+        "unevaluatedItems": false
+    });
+    let canonical = canonicalize(&schema).expect("canonicalizes without erroring");
+    assert_eq!(canonical.kind(), CanonicalKind::Raw);
+}
+
+// A $ref target the cover computation cannot fully evaluate - either it fetches raw JSON that isn't
+// a schema (only reachable via an external registry resource, which bypasses the inline metaschema
+// check `$defs` gets), or it declares a different draft - both leave the document Raw.
+#[test_case(&json!(5), "unevaluatedProperties"; "non-schema property target")]
+#[test_case(&json!(5), "unevaluatedItems"; "non-schema item target")]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-07/schema#", "type": "object"}),
+    "unevaluatedProperties";
+    "cross-draft property target"
+)]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-07/schema#", "type": "array"}),
+    "unevaluatedItems";
+    "cross-draft item target"
+)]
+fn unevaluated_cover_over_an_unresolvable_registry_target_stays_raw(target: &Value, keyword: &str) {
+    let registry = Registry::new()
+        .add("https://example.com/target", target)
+        .expect("resource URI is valid")
+        .prepare()
+        .expect("registry prepares");
+    let mut document = Map::new();
+    document.insert("$ref".to_string(), json!("https://example.com/target"));
+    document.insert(keyword.to_string(), json!(false));
+    let document = Value::Object(document);
+    let canonical = options()
+        .with_draft(Draft::Draft202012)
+        .with_registry(&registry)
+        .canonicalize(&document)
+        .expect("canonicalizes");
+
+    assert_eq!(canonical.kind(), CanonicalKind::Raw);
+    assert_eq!(canonical.to_json_schema(), document);
+}
