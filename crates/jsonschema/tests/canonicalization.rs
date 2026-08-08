@@ -1807,7 +1807,6 @@ fn emitting_a_target_naming_no_document_root_adds_nothing() {
             .to_json_schema(),
         json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",
-            "$defs": {"A": {"type": "string", "minLength": 2}},
             "type": "string",
             "minLength": 2
         })
@@ -3470,4 +3469,133 @@ fn unevaluated_cover_over_an_unresolvable_registry_target_stays_raw(target: &Val
 
     assert_eq!(canonical.kind(), CanonicalKind::Raw);
     assert_eq!(canonical.to_json_schema(), document);
+}
+
+/// The names a document emits under `$defs`, sorted.
+fn emitted_definition_names(schema: &CanonicalSchema) -> Vec<String> {
+    let document = schema.to_json_schema();
+    let mut names: Vec<String> = document
+        .get("$defs")
+        .and_then(Value::as_object)
+        .map(|entries| entries.keys().cloned().collect())
+        .unwrap_or_default();
+    names.sort();
+    names
+}
+
+#[test]
+fn a_definition_emits_only_what_it_names() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/a"}, "z": {"$ref": "#/$defs/z"}},
+        "$defs": {
+            "a": {"type": "object", "properties": {"inner": {"$ref": "#/$defs/a_inner"}}},
+            "a_inner": {"type": "string"},
+            "z": {"type": "object", "properties": {"inner": {"$ref": "#/$defs/z_inner"}}},
+            "z_inner": {"type": "integer"}
+        }
+    }))
+    .expect("canonicalizes");
+
+    assert_eq!(
+        emitted_definition_names(&canonical),
+        vec!["a", "a_inner", "z", "z_inner"],
+        "the document names every one of them"
+    );
+    let branch = canonical
+        .definition("#/$defs/a")
+        .expect("definition is here");
+    assert_eq!(emitted_definition_names(&branch), vec!["a_inner"]);
+}
+
+#[test]
+fn a_definition_emits_the_whole_chain_it_names() {
+    let canonical = canonicalize(&json!({
+        "$ref": "#/$defs/a",
+        "$defs": {
+            "a": {"type": "object", "properties": {"b": {"$ref": "#/$defs/b"}}},
+            "b": {"$ref": "#/$defs/c"},
+            "c": {"type": "string"},
+            "other": {"type": "integer"},
+            "names_other": {"$ref": "#/$defs/other"}
+        }
+    }))
+    .expect("canonicalizes");
+
+    let branch = canonical
+        .definition("#/$defs/a")
+        .expect("definition is here");
+    assert_eq!(emitted_definition_names(&branch), vec!["b", "c"]);
+}
+
+#[test]
+fn a_definition_in_a_cycle_emits_the_cycle() {
+    let canonical = canonicalize(&json!({
+        "$ref": "#/$defs/a",
+        "$defs": {
+            "a": {"type": "object", "properties": {"next": {"$ref": "#/$defs/b"}}},
+            "b": {"type": "object", "properties": {"next": {"$ref": "#/$defs/a"}}},
+            "unrelated": {"type": "integer"},
+            "names_unrelated": {"$ref": "#/$defs/unrelated"}
+        }
+    }))
+    .expect("canonicalizes");
+
+    let branch = canonical
+        .definition("#/$defs/a")
+        .expect("definition is here");
+    assert_eq!(emitted_definition_names(&branch), vec!["a", "b"]);
+}
+
+#[test]
+fn a_definition_naming_the_document_keeps_what_the_document_names() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"self": {"$ref": "#/$defs/points_at_root"}, "kept": {"$ref": "#/$defs/kept"}},
+        "$defs": {
+            "points_at_root": {"type": "object", "properties": {"up": {"$ref": "#"}}},
+            "kept": {"type": "string"},
+            "aside": {"type": "integer"},
+            "names_aside": {"$ref": "#/$defs/aside"}
+        }
+    }))
+    .expect("canonicalizes");
+
+    // Emitting this one re-homes the document as a definition of its own, and what the document
+    // names has to travel with it.
+    let branch = canonical
+        .definition("#/$defs/points_at_root")
+        .expect("definition is here");
+    let names = emitted_definition_names(&branch);
+    assert!(
+        names.contains(&"kept".to_string()) && names.contains(&"points_at_root".to_string()),
+        "the re-homed document and what it names are missing: {names:?}"
+    );
+    assert!(
+        !names.contains(&"aside".to_string()),
+        "nothing reaches `aside`: {names:?}"
+    );
+}
+
+#[test_case("#/$defs/a"; "a plain definition")]
+#[test_case("#/$defs/points_at_root"; "a definition naming the document")]
+fn an_emitted_definition_stands_on_its_own(pointer: &str) {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/a"}, "self": {"$ref": "#/$defs/points_at_root"}},
+        "$defs": {
+            "a": {"type": "object", "properties": {"inner": {"$ref": "#/$defs/a_inner"}}},
+            "a_inner": {"type": "string"},
+            "points_at_root": {"type": "object", "properties": {"up": {"$ref": "#"}}}
+        }
+    }))
+    .expect("canonicalizes");
+
+    // Every pointer the emitted document still spells has to resolve inside it.
+    let emitted = canonical
+        .definition(pointer)
+        .expect("definition is here")
+        .to_json_schema();
+    canonicalize(&emitted).expect("the emitted definition canonicalizes on its own");
+    validator_for(&emitted).expect("the emitted definition compiles on its own");
 }

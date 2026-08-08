@@ -1,10 +1,13 @@
 //! IR -> JSON Schema emit.
 
+use std::{borrow::Cow, sync::Arc};
+
 use referencing::Draft;
 use serde_json::{json, Map, Value};
 
 use crate::{
     canonical::{
+        emptiness,
         ir::{
             ArrayLeaf, BoundCardinality, BoundRational, CanonicalJson, ContainsFacet, Distinctness,
             Divisors, ExcludedDivisors, IntegerLeaf, NumberLeaf, ObjectLeaf, ObjectViolation,
@@ -24,6 +27,31 @@ fn keyed(key: &str, value: Value) -> Value {
     let mut map = Map::new();
     map.insert(key.to_owned(), value);
     Value::Object(map)
+}
+
+/// The definitions `node` can reach, out of everything the document holds.
+///
+/// Parsing already drops what the document root never names, so this narrows things only for a node
+/// below that root: a definition read on its own would otherwise carry the whole document's map.
+pub(crate) fn reachable_definitions<'a>(
+    node: &Schema,
+    document_root: &Schema,
+    definitions: &'a DefinitionMap,
+) -> Cow<'a, DefinitionMap> {
+    if definitions.is_empty() {
+        return Cow::Borrowed(definitions);
+    }
+    let reachable = emptiness::reachable_definition_keys(node, Some(document_root), definitions);
+    if reachable.len() == definitions.len() {
+        return Cow::Borrowed(definitions);
+    }
+    Cow::Owned(
+        definitions
+            .iter()
+            .filter(|(uri, _)| reachable.contains(*uri))
+            .map(|(uri, schema)| (Arc::clone(uri), schema.clone()))
+            .collect(),
+    )
 }
 
 pub(crate) fn to_json_schema(root: &Schema, draft: Draft, definitions: &DefinitionMap) -> Value {
