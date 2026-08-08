@@ -10,6 +10,8 @@
 
 - Draft detection treating the version-less `http://json-schema.org/schema` meta-schema URI as a custom dialect, where it names the current draft.
 - A `patternProperties` entry matching every key leaving `additionalProperties: false` spelled as a key constraint, where it forbids nothing.
+- `unevaluatedProperties`/`unevaluatedItems` set to `true` forcing the whole document to stay unmodeled beside an unresolved applicator, where the keyword rejects nothing regardless of the evaluated set.
+- `unevaluatedProperties`/`unevaluatedItems` beside a `$ref` forcing the whole document to stay unmodeled, where the reference's own evaluated properties or items are known once it is resolved.
 
 ## [0.49.7] - 2026-08-07
 

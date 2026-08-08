@@ -150,7 +150,7 @@ fn arbitrary_instance(tc: TestCase) -> Value {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(93)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(95)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -403,6 +403,9 @@ fn draw_leaf(tc: &TestCase) -> Value {
         93 => {
             json!({ "type": "array", "allOf": [{ "not": { "type": "array", "uniqueItems": true } }] })
         }
+        // A no-op unevaluated*: rejects nothing regardless of what else is on the object.
+        94 => json!({ "type": "object", "unevaluatedProperties": true }),
+        95 => json!({ "type": "array", "unevaluatedItems": true }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -426,11 +429,13 @@ fn draw_reference_uri(tc: &TestCase) -> &'static str {
         "#/$defs/raw_target",
         "#/$defs/alias_target",
         "#/$defs/recursive_target",
+        "#/$defs/object_target",
+        "#/$defs/array_target",
     ]))
 }
 
 fn draw_reference_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(12)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(16)) {
         0 => json!({ "$ref": draw_reference_uri(tc) }),
         1 => json!({ "not": { "$ref": draw_reference_uri(tc) } }),
         2 => json!({
@@ -461,7 +466,38 @@ fn draw_reference_leaf(tc: &TestCase) -> Value {
         10 => json!({ "type": "object", "propertyNames": { "$ref": "#/$defs/string_target" } }),
         11 => json!({ "dependentSchemas": { "a": { "$ref": draw_reference_uri(tc) } } }),
         12 => json!({ "not": { "$ref": "#/$defs/recursive_target" } }),
+        // A $ref sibling, and $ref inside allOf/oneOf, beside unevaluatedProperties.
+        13 => json!({ "$ref": "#/$defs/object_target", "unevaluatedProperties": false }),
+        14 => json!({
+            "allOf": [{ "$ref": "#/$defs/object_target" }],
+            "unevaluatedProperties": false
+        }),
+        15 => json!({
+            "oneOf": [{ "$ref": "#/$defs/object_target" }],
+            "unevaluatedProperties": false
+        }),
+        16 => json!({ "$ref": "#/$defs/array_target", "unevaluatedItems": false }),
         _ => json!({ "$ref": draw_reference_uri(tc), "type": draw_type(tc) }),
+    }
+}
+
+// An acyclic $ref beside unevaluated*: no-op `true`, bare sibling, allOf/oneOf, and an identical-
+// target diamond (not a cycle).
+fn draw_ref_unevaluated_leaf(tc: &TestCase) -> Value {
+    let target = tc.draw(gs::sampled_from(vec![
+        "#/$defs/object_target",
+        "#/$defs/array_target",
+    ]));
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(5)) {
+        0 => json!({ "unevaluatedProperties": true, "$ref": target }),
+        1 => json!({ "unevaluatedItems": true, "$ref": target }),
+        2 => json!({ "$ref": target, "unevaluatedProperties": false }),
+        3 => json!({ "allOf": [{ "$ref": target }], "unevaluatedProperties": false }),
+        4 => json!({ "oneOf": [{ "$ref": target }], "unevaluatedProperties": false }),
+        _ => json!({
+            "oneOf": [{ "$ref": target }, { "$ref": target }],
+            "unevaluatedProperties": false
+        }),
     }
 }
 
@@ -484,23 +520,27 @@ fn draw_schema_node(tc: &TestCase, depth: u32) -> Value {
     }
 }
 
+/// The `$defs` pool every generated schema in this module can reference.
+fn shared_defs() -> Value {
+    json!({
+        "null_target": { "type": "null" },
+        "integer_target": { "type": "integer", "minimum": -2 },
+        "string_target": { "type": "string", "minLength": 1 },
+        "raw_target": { "anyOf": [{}], "unevaluatedProperties": false },
+        "alias_target": { "$ref": "#/$defs/integer_target" },
+        "recursive_target": {
+            "type": "object",
+            "properties": { "a": { "$ref": "#/$defs/recursive_target" } }
+        },
+        "object_target": { "type": "object", "properties": { "z": { "type": "integer" } } },
+        "array_target": { "type": "array", "prefixItems": [{ "type": "integer" }] }
+    })
+}
+
 fn draw_schema(tc: &TestCase, depth: u32) -> Value {
     let mut schema = draw_schema_node(tc, depth);
     if let Value::Object(object) = &mut schema {
-        object.insert(
-            "$defs".into(),
-            json!({
-                "null_target": { "type": "null" },
-                "integer_target": { "type": "integer", "minimum": -2 },
-                "string_target": { "type": "string", "minLength": 1 },
-                "raw_target": { "anyOf": [{}], "unevaluatedProperties": false },
-                "alias_target": { "$ref": "#/$defs/integer_target" },
-                "recursive_target": {
-                    "type": "object",
-                    "properties": { "a": { "$ref": "#/$defs/recursive_target" } }
-                }
-            }),
-        );
+        object.insert("$defs".into(), shared_defs());
     }
     schema
 }
@@ -568,6 +608,59 @@ fn canonicalize_with_formats(
 
 fn canonicalize(schema: &Value, draft: Draft) -> Option<Value> {
     canonicalize_with_formats(schema, draft, false)
+}
+
+// An acyclic $ref beside unevaluatedProperties/unevaluatedItems must canonicalize to a modeled form.
+#[hegel::test(test_cases = 5_000)]
+fn ref_unevaluated_never_stays_raw(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let schema = attach_root_definitions(draw_ref_unevaluated_leaf(&tc), Some(shared_defs()));
+    let Ok(canonical) = jsonschema::canonical::options()
+        .with_draft(draft)
+        .canonicalize(&schema)
+    else {
+        return;
+    };
+    assert_ne!(
+        canonical.kind(),
+        jsonschema::canonical::CanonicalKind::Raw,
+        "schema = {schema}"
+    );
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let emitted = canonical.to_json_schema();
+    let (Ok(raw), Ok(modeled)) = (build(&schema), build(&emitted)) else {
+        return;
+    };
+    let instance = tc.draw(arbitrary_instance());
+    assert_eq!(
+        raw.is_valid(&instance),
+        modeled.is_valid(&instance),
+        "{schema} vs {emitted} on {instance}"
+    );
+}
+
+// A cyclic $ref beside unevaluatedProperties must still bail to Raw. Cycle runs through allOf/$ref,
+// the only things property_cover recurses into. Draft fixed at 2020-12: earlier drafts don't know
+// `unevaluatedProperties`, so this would reduce to a bare reference ring that canonicalizes to `True`.
+#[hegel::test(test_cases = 2_000)]
+fn cyclic_ref_unevaluated_stays_raw(_tc: TestCase) {
+    let draft = Draft::Draft202012;
+    let schema = json!({
+        "$defs": { "loop": { "allOf": [{ "$ref": "#/$defs/loop" }] } },
+        "$ref": "#/$defs/loop",
+        "unevaluatedProperties": false
+    });
+    let Ok(canonical) = jsonschema::canonical::options()
+        .with_draft(draft)
+        .canonicalize(&schema)
+    else {
+        return;
+    };
+    assert_eq!(
+        canonical.kind(),
+        jsonschema::canonical::CanonicalKind::Raw,
+        "schema = {schema}"
+    );
 }
 
 // Canonicalizing an already-canonical form yields the same form.

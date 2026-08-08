@@ -465,7 +465,7 @@ fn parse_schema_in_scope<'a>(
 
     // Runs before the `$ref` split below, which would hide a `$ref` from the applicator check.
     if has_unevaluated(map, ctx.draft()) {
-        let Some(degraded) = degrade_unevaluated(map, ctx.draft()) else {
+        let Some(degraded) = degrade_unevaluated(map, ctx.draft(), ctx, resolver)? else {
             return Ok(None);
         };
         return parse_schema_in_scope(&degraded, ctx, is_root, resolver, state);
@@ -1321,7 +1321,6 @@ fn has_unresolved_applicator(map: &serde_json::Map<String, Value>) -> bool {
             key.as_str(),
             "$dynamicRef"
                 | "$recursiveRef"
-                | "$ref"
                 | "dependencies"
                 | "dependentSchemas"
                 | "else"
@@ -1337,7 +1336,6 @@ fn has_instance_dependent_applicator(map: &serde_json::Map<String, Value>) -> bo
             key.as_str(),
             "$dynamicRef"
                 | "$recursiveRef"
-                | "$ref"
                 | "anyOf"
                 | "dependencies"
                 | "dependentSchemas"
@@ -1395,21 +1393,70 @@ fn hoist_cover(degraded: &mut serde_json::Map<String, Value>, cover: &PropertyCo
     }
 }
 
+/// An on-path cycle guard (push/pop around a `$ref` fold) plus a total-fold budget - a diamond-shaped
+/// `$ref` graph re-walks a shared subtree once per path reaching it, unbounded by the guard alone.
+struct ReferenceWalk {
+    visited: AHashSet<Arc<str>>,
+    budget: u32,
+}
+
+/// Folds one `unevaluated*` computation may perform before giving up and leaving the document `Raw`.
+const REFERENCE_FOLD_BUDGET: u32 = 10_000;
+
+impl ReferenceWalk {
+    fn new() -> Self {
+        Self {
+            visited: AHashSet::default(),
+            budget: REFERENCE_FOLD_BUDGET,
+        }
+    }
+}
+
 /// Accumulate what `branch` evaluates; `None` when the instance decides it.
-fn property_cover(branch: &Value, cover: &mut PropertyCover) -> Option<()> {
+fn property_cover(
+    branch: &Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    cover: &mut PropertyCover,
+) -> Result<Option<()>, CanonicalizationError> {
     let map = match branch {
         // No keywords, so nothing is annotated.
-        Value::Bool(_) => return Some(()),
+        Value::Bool(_) => return Ok(Some(())),
         Value::Object(map) => map,
-        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return None,
+        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return Ok(None),
     };
+    // A branch may carry its own `$id`, shifting the base for a `$ref` inside it - same shift
+    // `parse_schema` performs for every node it visits.
+    let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(branch))?;
+    property_cover_in_scope(map, ctx, &resolver, walk, cover)
+}
+
+/// [`property_cover`]'s body, once scope is settled - also used for a resolved `$ref` target, whose
+/// resolver `resolver.lookup` already scoped.
+fn property_cover_in_scope(
+    map: &serde_json::Map<String, Value>,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    cover: &mut PropertyCover,
+) -> Result<Option<()>, CanonicalizationError> {
     if has_instance_dependent_applicator(map) {
-        return None;
+        return Ok(None);
     }
-    // Either one reaches every key the branch does not name, leaving nothing unevaluated.
-    if map.contains_key("additionalProperties") || map.contains_key("unevaluatedProperties") {
+    // `additionalProperties` is never rewritten, so its presence is a stable "reaches everything".
+    if map.contains_key("additionalProperties") {
         cover.everything = true;
-        return Some(());
+        return Ok(Some(()));
+    }
+    if map.contains_key("unevaluatedProperties") {
+        // Not yet degraded, so crediting it outright would let a $ref cycle through this node credit
+        // itself before `walk` catches the cycle. Recurse instead - a cycle fails via `walk`.
+        let Some(_) = sibling_property_cover(map, ctx, resolver, walk)? else {
+            return Ok(None);
+        };
+        cover.everything = true;
+        return Ok(Some(()));
     }
     if let Some(Value::Object(properties)) = map.get("properties") {
         cover.keys.extend(properties.keys().cloned());
@@ -1419,10 +1466,53 @@ fn property_cover(branch: &Value, cover: &mut PropertyCover) -> Option<()> {
     }
     if let Some(Value::Array(nested)) = map.get("allOf") {
         for branch in nested {
-            property_cover(branch, cover)?;
+            let Some(()) = property_cover(branch, ctx, resolver, walk, cover)? else {
+                return Ok(None);
+            };
         }
     }
-    Some(())
+    if let Some(Value::String(reference)) = map.get("$ref") {
+        let Some(()) = fold_referenced_property_cover(reference, ctx, resolver, walk, cover)?
+        else {
+            return Ok(None);
+        };
+    }
+    Ok(Some(()))
+}
+
+/// Fold `reference`'s raw target cover in, unconditionally - a `$ref` behaves as one more `allOf`
+/// conjunct. Dispatches into [`property_cover_in_scope`] directly (not [`property_cover`], which
+/// would shift scope a second time onto a base `resolver.lookup` already moved).
+fn fold_referenced_property_cover(
+    reference: &str,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    cover: &mut PropertyCover,
+) -> Result<Option<()>, CanonicalizationError> {
+    let Some(remaining) = walk.budget.checked_sub(1) else {
+        return Ok(None);
+    };
+    walk.budget = remaining;
+    let location = resolver.resolve_uri(&resolver.base_uri().borrow(), reference)?;
+    let key: Arc<str> = Arc::from(location.as_str());
+    if !walk.visited.insert(Arc::clone(&key)) {
+        return Ok(None);
+    }
+    let result = (|| {
+        let (target, target_resolver, target_draft) = resolver.lookup(reference)?.into_inner();
+        if target_draft != ctx.draft() {
+            return Ok(None);
+        }
+        match target {
+            // No keywords, so nothing is annotated.
+            Value::Bool(_) => Ok(Some(())),
+            Value::Object(map) => property_cover_in_scope(map, ctx, &target_resolver, walk, cover),
+            Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => Ok(None),
+        }
+    })();
+    walk.visited.remove(&key);
+    result
 }
 
 /// The indexes an in-place applicator evaluates beside an `unevaluatedItems`.
@@ -1458,37 +1548,60 @@ fn pad_tuple(degraded: &mut serde_json::Map<String, Value>, prefix_items: bool, 
 }
 
 /// Accumulate the indexes `branch` evaluates; `None` when the instance decides them.
-fn item_cover(branch: &Value, draft: Draft, cover: &mut ItemCover) -> Option<()> {
+fn item_cover(
+    branch: &Value,
+    draft: Draft,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    cover: &mut ItemCover,
+) -> Result<Option<()>, CanonicalizationError> {
     let map = match branch {
         // No keywords, so nothing is annotated.
-        Value::Bool(_) => return Some(()),
+        Value::Bool(_) => return Ok(Some(())),
         Value::Object(map) => map,
-        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return None,
+        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return Ok(None),
     };
+    let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(branch))?;
+    item_cover_in_scope(map, draft, ctx, &resolver, walk, cover)
+}
+
+/// [`item_cover`]'s body - same split, same reason, as [`property_cover_in_scope`].
+fn item_cover_in_scope(
+    map: &serde_json::Map<String, Value>,
+    draft: Draft,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    cover: &mut ItemCover,
+) -> Result<Option<()>, CanonicalizationError> {
     if has_instance_dependent_applicator(map) {
-        return None;
+        return Ok(None);
     }
     // `contains` marks the indexes it matches, which no prefix length spells.
     if map.contains_key("contains") {
-        return None;
+        return Ok(None);
     }
-    // Reaches every index the branch's own tuple leaves over.
+    // Same reasoning as the property-cover twin's `unevaluatedProperties` branch.
     if map.contains_key("unevaluatedItems") {
+        let Some(_) = sibling_item_cover(map, draft, ctx, resolver, walk)? else {
+            return Ok(None);
+        };
         cover.everything = true;
-        return Some(());
+        return Ok(Some(()));
     }
     let tuple_is_prefix_items = matches!(draft, Draft::Draft202012 | Draft::Unknown);
     match map.get("items") {
         // Schema-form `items` reaches every index past the tuple.
         Some(Value::Object(_) | Value::Bool(_)) => {
             cover.everything = true;
-            return Some(());
+            return Ok(Some(()));
         }
         Some(Value::Array(items)) if !tuple_is_prefix_items => {
             cover.prefix = cover.prefix.max(items.len());
             if map.contains_key("additionalItems") {
                 cover.everything = true;
-                return Some(());
+                return Ok(Some(()));
             }
         }
         // An array `items` is not a tuple in 2020-12, where the parse loop keeps it raw.
@@ -1501,20 +1614,78 @@ fn item_cover(branch: &Value, draft: Draft, cover: &mut ItemCover) -> Option<()>
     }
     if let Some(Value::Array(nested)) = map.get("allOf") {
         for branch in nested {
-            item_cover(branch, draft, cover)?;
+            let Some(()) = item_cover(branch, draft, ctx, resolver, walk, cover)? else {
+                return Ok(None);
+            };
         }
     }
-    Some(())
+    if let Some(Value::String(reference)) = map.get("$ref") {
+        let Some(()) = fold_referenced_item_cover(reference, draft, ctx, resolver, walk, cover)?
+        else {
+            return Ok(None);
+        };
+    }
+    Ok(Some(()))
+}
+
+/// The item-cover twin of [`fold_referenced_property_cover`].
+fn fold_referenced_item_cover(
+    reference: &str,
+    draft: Draft,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    cover: &mut ItemCover,
+) -> Result<Option<()>, CanonicalizationError> {
+    let Some(remaining) = walk.budget.checked_sub(1) else {
+        return Ok(None);
+    };
+    walk.budget = remaining;
+    let location = resolver.resolve_uri(&resolver.base_uri().borrow(), reference)?;
+    let key: Arc<str> = Arc::from(location.as_str());
+    if !walk.visited.insert(Arc::clone(&key)) {
+        return Ok(None);
+    }
+    let result = (|| {
+        let (target, target_resolver, target_draft) = resolver.lookup(reference)?.into_inner();
+        if target_draft != ctx.draft() {
+            return Ok(None);
+        }
+        match target {
+            // No keywords, so nothing is annotated.
+            Value::Bool(_) => Ok(Some(())),
+            Value::Object(map) => {
+                item_cover_in_scope(map, draft, ctx, &target_resolver, walk, cover)
+            }
+            Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => Ok(None),
+        }
+    })();
+    walk.visited.remove(&key);
+    result
 }
 
 /// The keys the in-place applicators beside an `unevaluatedProperties` evaluate. Every `allOf`
-/// branch succeeds, so their covers add up; alternatives pin one only when each branch reaches the
-/// same keys, since otherwise which branch matched decides what is left over.
-fn sibling_property_cover(map: &serde_json::Map<String, Value>) -> Option<PropertyCover> {
+/// branch succeeds, so their covers add up; a bare `$ref` sibling composes the same way. Alternatives
+/// pin one only when each branch reaches the same keys, since otherwise which branch matched decides
+/// what is left over.
+fn sibling_property_cover(
+    map: &serde_json::Map<String, Value>,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+) -> Result<Option<PropertyCover>, CanonicalizationError> {
     let mut cover = PropertyCover::default();
+    if let Some(Value::String(reference)) = map.get("$ref") {
+        let Some(()) = fold_referenced_property_cover(reference, ctx, resolver, walk, &mut cover)?
+        else {
+            return Ok(None);
+        };
+    }
     if let Some(Value::Array(branches)) = map.get("allOf") {
         for branch in branches {
-            property_cover(branch, &mut cover)?;
+            let Some(()) = property_cover(branch, ctx, resolver, walk, &mut cover)? else {
+                return Ok(None);
+            };
         }
     }
     for keyword in ["anyOf", "oneOf"] {
@@ -1524,10 +1695,12 @@ fn sibling_property_cover(map: &serde_json::Map<String, Value>) -> Option<Proper
         let mut agreed: Option<PropertyCover> = None;
         for branch in branches {
             let mut reached = PropertyCover::default();
-            property_cover(branch, &mut reached)?;
+            let Some(()) = property_cover(branch, ctx, resolver, walk, &mut reached)? else {
+                return Ok(None);
+            };
             reached.normalize();
             match &agreed {
-                Some(first) if *first != reached => return None,
+                Some(first) if *first != reached => return Ok(None),
                 Some(_) => {}
                 None => agreed = Some(reached),
             }
@@ -1536,16 +1709,31 @@ fn sibling_property_cover(map: &serde_json::Map<String, Value>) -> Option<Proper
             cover.absorb(agreed);
         }
     }
-    Some(cover)
+    Ok(Some(cover))
 }
 
 /// The indexes the in-place applicators beside an `unevaluatedItems` evaluate, on the same terms as
 /// the key cover.
-fn sibling_item_cover(map: &serde_json::Map<String, Value>, draft: Draft) -> Option<ItemCover> {
+fn sibling_item_cover(
+    map: &serde_json::Map<String, Value>,
+    draft: Draft,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+) -> Result<Option<ItemCover>, CanonicalizationError> {
     let mut cover = ItemCover::default();
+    if let Some(Value::String(reference)) = map.get("$ref") {
+        let Some(()) =
+            fold_referenced_item_cover(reference, draft, ctx, resolver, walk, &mut cover)?
+        else {
+            return Ok(None);
+        };
+    }
     if let Some(Value::Array(branches)) = map.get("allOf") {
         for branch in branches {
-            item_cover(branch, draft, &mut cover)?;
+            let Some(()) = item_cover(branch, draft, ctx, resolver, walk, &mut cover)? else {
+                return Ok(None);
+            };
         }
     }
     for keyword in ["anyOf", "oneOf"] {
@@ -1555,9 +1743,11 @@ fn sibling_item_cover(map: &serde_json::Map<String, Value>, draft: Draft) -> Opt
         let mut agreed: Option<ItemCover> = None;
         for branch in branches {
             let mut reached = ItemCover::default();
-            item_cover(branch, draft, &mut reached)?;
+            let Some(()) = item_cover(branch, draft, ctx, resolver, walk, &mut reached)? else {
+                return Ok(None);
+            };
             match &agreed {
-                Some(first) if *first != reached => return None,
+                Some(first) if *first != reached => return Ok(None),
                 Some(_) => {}
                 None => agreed = Some(reached),
             }
@@ -1566,7 +1756,7 @@ fn sibling_item_cover(map: &serde_json::Map<String, Value>, draft: Draft) -> Opt
             cover.absorb(agreed);
         }
     }
-    Some(cover)
+    Ok(Some(cover))
 }
 
 /// Whether this object asserts an `unevaluated*` keyword. Both enter the vocabulary in the same
@@ -1579,9 +1769,23 @@ fn has_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
 /// Rewrite every asserted `unevaluated*` into its `additional*` twin. With no in-place applicator
 /// beside it, `unevaluated*` sees exactly the keys or indices its twin sees; a live twin already
 /// evaluates all of them, leaving it inert and dropped. `None` keeps the document raw.
-fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Option<Value> {
+fn degrade_unevaluated(
+    map: &serde_json::Map<String, Value>,
+    draft: Draft,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+) -> Result<Option<Value>, CanonicalizationError> {
+    let mut no_op_stripped = map.clone();
+    for key in ["unevaluatedProperties", "unevaluatedItems"] {
+        if matches!(no_op_stripped.get(key), Some(Value::Bool(true))) {
+            no_op_stripped.remove(key);
+        }
+    }
+    if no_op_stripped.len() != map.len() {
+        return Ok(Some(Value::Object(no_op_stripped)));
+    }
     if has_unresolved_applicator(map) {
-        return None;
+        return Ok(None);
     }
     let mut degraded = map.clone();
     // A local `additionalProperties` leaves nothing unevaluated, so the sibling is inert - and
@@ -1592,7 +1796,10 @@ fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Op
     {
         // Naming a covered key here is all `additionalProperties` needs to skip it; the branch
         // that named it still carries the constraint.
-        let cover = sibling_property_cover(map)?;
+        let mut walk = ReferenceWalk::new();
+        let Some(cover) = sibling_property_cover(map, ctx, resolver, &mut walk)? else {
+            return Ok(None);
+        };
         if !cover.everything {
             hoist_cover(&mut degraded, &cover);
             degraded.insert("additionalProperties".to_string(), value);
@@ -1614,11 +1821,14 @@ fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Op
             }
             // A `contains` that is not a schema keeps the document raw anyway.
             Some(Value::Array(_) | Value::Null | Value::Number(_) | Value::String(_)) => {
-                return None
+                return Ok(None)
             }
             None => value,
         };
-        let cover = sibling_item_cover(map, draft)?;
+        let mut walk = ReferenceWalk::new();
+        let Some(cover) = sibling_item_cover(map, draft, ctx, resolver, &mut walk)? else {
+            return Ok(None);
+        };
         if !cover.everything {
             // A tuple's tail is `additionalItems` before 2020-12 and schema-form `items` in it,
             // where the tuple itself is `prefixItems`. A schema-form `items` already reaches every
@@ -1648,7 +1858,7 @@ fn degrade_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> Op
         }
     }
     // No asserted `unevaluated*` survives, so re-parsing this map terminates.
-    Some(Value::Object(degraded))
+    Ok(Some(Value::Object(degraded)))
 }
 
 fn ref_has_assertion_siblings(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
