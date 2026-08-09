@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.49.9] - 2026-08-09
+
 ### Added
 
 - Canonicalization of a `oneOf` whose branches name object targets a required constant tells apart, which degrades to a union.
@@ -1585,7 +1587,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.8...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.9...HEAD
+[0.49.9]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.8...rust-v0.49.9
 [0.49.8]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.7...rust-v0.49.8
 [0.49.7]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.6...rust-v0.49.7
 [0.49.6]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.5...rust-v0.49.6
