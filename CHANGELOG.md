@@ -10,6 +10,10 @@
 
 - `CanonicalSchema::to_json_schema` on a definition emits only the definitions that one names, not the whole document's.
 
+### Fixed
+
+- Canonicalization running without end on a conjunction over unions; past a ceiling on the meets it takes, the document stays unmodeled.
+
 ## [0.49.8] - 2026-08-08
 
 ### Performance

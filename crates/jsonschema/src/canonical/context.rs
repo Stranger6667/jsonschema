@@ -43,7 +43,14 @@ pub(crate) struct CanonicalizationContext {
     /// A meet reached during this run that the canonical form has no exact spelling for. Nodes
     /// built around it may already be wrong, so the whole run is discarded rather than the site.
     unspellable_meet: Cell<bool>,
+    /// Meets this run may still take before giving up. A conjunction over unions multiplies them.
+    meets_left: Cell<u64>,
 }
+
+/// Meets one run may take before giving up and leaving the document `Raw`. Above what the most
+/// demanding document written in earnest needs; a row of conjunctions over unions passes it in a
+/// fraction of a second.
+const MEET_BUDGET: u64 = 1_000_000;
 
 impl CanonicalizationContext {
     pub(crate) fn new(
@@ -58,6 +65,7 @@ impl CanonicalizationContext {
             regex_cache: RefCell::new(AHashMap::new()),
             intersections: RefCell::new(AHashMap::new()),
             unspellable_meet: Cell::new(false),
+            meets_left: Cell::new(MEET_BUDGET),
         }
     }
 
@@ -71,6 +79,21 @@ impl CanonicalizationContext {
 
     pub(crate) fn saw_unspellable_meet(&self) -> bool {
         self.unspellable_meet.get()
+    }
+
+    /// Take one meet from what this run may still spend, reporting whether it had any. Once it
+    /// runs out every later meet is refused too and the walk unwinds.
+    pub(crate) fn take_meet(&self) -> bool {
+        let left = self.meets_left.get();
+        if left == 0 {
+            return false;
+        }
+        self.meets_left.set(left - 1);
+        true
+    }
+
+    pub(crate) fn outgrew_distribution(&self) -> bool {
+        self.meets_left.get() == 0
     }
 
     pub(crate) fn validate_formats(&self) -> bool {

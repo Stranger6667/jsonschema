@@ -173,8 +173,9 @@ fn parse_once<'a>(
     }
     let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
     // An in-between object meet the IR cannot spell may have produced nodes already, so discard
-    // the whole document rather than just that pairing site.
-    if ctx.saw_unspellable_meet() {
+    // the whole document rather than just that pairing site. A conjunction outgrowing what the run
+    // may spell out leaves the same partial nodes behind.
+    if ctx.saw_unspellable_meet() || ctx.outgrew_distribution() {
         return Ok(DocumentParse {
             output: None,
             needs_dynamic_scope: state.dynamic_scope.needs_tracking(),
