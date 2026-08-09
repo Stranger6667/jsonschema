@@ -22,6 +22,11 @@ use crate::{
 
 /// The schema accepting exactly the values that BOTH `left` and `right` accept (set intersection, `allOf`).
 pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
+    // A conjunction over unions meets every pair, and a row of them compounds into a count no
+    // machine finishes; the run gives up and the document stays `Raw` rather than carrying on.
+    if !ctx.take_meet() {
+        return Schema::truthy();
+    }
     // A side that decides the meet on its own hands back the node it already holds. Answering here
     // beats reaching the cache below, whose key comparison walks the other side's whole subtree.
     match (left.kind(), right.kind()) {

@@ -225,7 +225,7 @@ impl CanonicalSchema {
         let context =
             CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
         let inner = algebra::intersect(self.inner.clone(), other.inner.clone(), &context);
-        if context.saw_unspellable_meet() {
+        if context.saw_unspellable_meet() || context.outgrew_distribution() {
             return Err(CanonicalizationError::UnmodeledOperand);
         }
         // Two nodes of one document meet inside it, so `#` keeps its target there. Nodes of
