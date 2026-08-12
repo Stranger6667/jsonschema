@@ -1789,3 +1789,519 @@ fn test_canonicalize_invalid_schema_errors() {
     let stderr = String::from_utf8(output.stderr).unwrap();
     assert!(!stderr.is_empty(), "expected error on stderr");
 }
+
+const NAME_SCHEMA: &str = r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#;
+
+#[test]
+fn test_self_describing_valid_instance() {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "schema.json", NAME_SCHEMA);
+    let instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"{"$schema": "./schema.json", "name": "John Doe"}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+    assert!(String::from_utf8_lossy(&output.stdout).contains("VALID"));
+}
+
+#[test]
+fn test_self_describing_invalid_instance() {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "schema.json", NAME_SCHEMA);
+    let instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"{"$schema": "./schema.json", "name": 123}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("INVALID. Errors:"), "{stdout}");
+}
+
+#[test]
+fn test_self_describing_relative_to_instance_not_cwd() {
+    let dir = tempdir().unwrap();
+    create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "object", "properties": {"name": {"type": "number"}}}"#,
+    );
+
+    let nested = dir.path().join("nested");
+    fs::create_dir_all(&nested).unwrap();
+    fs::write(nested.join("schema.json"), NAME_SCHEMA).unwrap();
+    let instance = nested.join("instance.json");
+    fs::write(
+        &instance,
+        r#"{"$schema": "./schema.json", "name": "John Doe"}"#,
+    )
+    .unwrap();
+
+    let output = cli()
+        .current_dir(dir.path())
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "resolved against the CWD instead of the instance: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn test_self_describing_missing_schema_property() {
+    let dir = tempdir().unwrap();
+    let instance = create_temp_file(&dir, "instance.json", r#"{"name": "John Doe"}"#);
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no `$schema` property"), "{stdout}");
+    assert!(stdout.contains("jsonschema validate SCHEMA -i"), "{stdout}");
+}
+
+#[test]
+fn test_self_describing_non_object_instance() {
+    let dir = tempdir().unwrap();
+    let instance = create_temp_file(&dir, "instance.json", "[1, 2, 3]");
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("no `$schema` property"));
+}
+
+/// One unusable instance must not stop the rest of the batch.
+#[test]
+fn test_self_describing_mixed_batch() {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "schema.json", NAME_SCHEMA);
+    let good = create_temp_file(
+        &dir,
+        "good.json",
+        r#"{"$schema": "./schema.json", "name": "John Doe"}"#,
+    );
+    let bad = create_temp_file(&dir, "bad.json", r#"{"name": "John Doe"}"#);
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&bad)
+        .arg(&good)
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "a missing $schema must fail the run"
+    );
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("no `$schema` property"), "{stdout}");
+    assert!(stdout.contains(&format!("{good} - VALID")), "{stdout}");
+}
+
+#[test]
+fn test_explicit_schema_overrides_instance_schema() {
+    let dir = tempdir().unwrap();
+    let explicit = create_temp_file(&dir, "explicit.json", NAME_SCHEMA);
+    // Would reject the instance if it were ever consulted.
+    create_temp_file(
+        &dir,
+        "other.json",
+        r#"{"type": "object", "properties": {"name": {"type": "number"}}}"#,
+    );
+    let instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"{"$schema": "./other.json", "name": "John Doe"}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg(&explicit)
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "instance `$schema` must be ignored when SCHEMA is given: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn test_self_describing_metaschema_is_offline() {
+    let dir = tempdir().unwrap();
+    let valid = create_temp_file(
+        &dir,
+        "valid-schema.json",
+        r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"}"#,
+    );
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&valid)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let invalid = create_temp_file(
+        &dir,
+        "invalid-schema.json",
+        r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": 42}"#,
+    );
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&invalid)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+}
+
+/// The validator is compiled once and reused across both.
+#[test]
+fn test_self_describing_shared_schema() {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "schema.json", NAME_SCHEMA);
+    let first = create_temp_file(
+        &dir,
+        "first.json",
+        r#"{"$schema": "./schema.json", "name": "John"}"#,
+    );
+    let second = create_temp_file(
+        &dir,
+        "second.json",
+        r#"{"$schema": "./schema.json", "name": 123}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&first)
+        .arg(&second)
+        .arg("--output")
+        .arg("flag")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+
+    let records = parse_ndjson(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(records.len(), 2);
+    let by_instance: HashMap<_, _> = records
+        .iter()
+        .map(|record| {
+            (
+                record["instance"].as_str().unwrap().to_string(),
+                record["payload"]["valid"].as_bool().unwrap(),
+            )
+        })
+        .collect();
+    assert_eq!(by_instance.get(&first), Some(&true));
+    assert_eq!(by_instance.get(&second), Some(&false));
+    // Both resolved to the same schema URI.
+    assert_eq!(records[0]["schema"], records[1]["schema"]);
+    assert!(records[0]["schema"]
+        .as_str()
+        .unwrap()
+        .starts_with("file://"));
+}
+
+/// In particular `evaluationPath` must not gain a `/$ref` hop.
+#[test]
+fn test_self_describing_output_matches_explicit_schema() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", NAME_SCHEMA);
+    let instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"{"$schema": "./schema.json", "name": 123}"#,
+    );
+
+    let run = |args: Vec<&str>| {
+        let output = cli().args(args).output().unwrap();
+        let records = parse_ndjson(&String::from_utf8_lossy(&output.stdout));
+        assert_eq!(records.len(), 1);
+        records[0]["payload"].clone()
+    };
+
+    let explicit = run(vec![
+        "validate", &schema, "-i", &instance, "--output", "list",
+    ]);
+    let self_describing = run(vec!["validate", "-i", &instance, "--output", "list"]);
+
+    assert_eq!(explicit, self_describing);
+}
+
+#[test]
+fn test_self_describing_yaml_instance() {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "schema.json", NAME_SCHEMA);
+    let instance = create_temp_file(
+        &dir,
+        "instance.yaml",
+        "$schema: ./schema.json\nname: John Doe\n",
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn test_validate_without_schema_or_instance() {
+    let output = cli().arg("validate").output().unwrap();
+    assert!(!output.status.success());
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(stderr.contains("--instance"), "{stderr}");
+}
+
+/// The pointed-at subschema `$ref`s a sibling `$defs` entry, so it must still see the document.
+#[test]
+fn test_self_describing_schema_pointer_fragment() {
+    let dir = tempdir().unwrap();
+    create_temp_file(
+        &dir,
+        "defs.json",
+        r##"{"$defs": {
+            "Name": {"type": "object", "properties": {"name": {"$ref": "#/$defs/Str"}}},
+            "Str": {"type": "string"}
+        }}"##,
+    );
+    let valid = create_temp_file(
+        &dir,
+        "valid.json",
+        r#"{"$schema": "./defs.json#/$defs/Name", "name": "John"}"#,
+    );
+    let invalid = create_temp_file(
+        &dir,
+        "invalid.json",
+        r#"{"$schema": "./defs.json#/$defs/Name", "name": 123}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&valid)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&invalid)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains(r#"is not of type "string""#));
+}
+
+#[test]
+fn test_self_describing_missing_schema_structured_output() {
+    let dir = tempdir().unwrap();
+    let instance = create_temp_file(&dir, "instance.json", r#"{"name": "John Doe"}"#);
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .arg("--output")
+        .arg("flag")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+
+    let records = parse_ndjson(&String::from_utf8_lossy(&output.stdout));
+    assert_eq!(records.len(), 1);
+    assert_eq!(records[0]["output"], "flag");
+    assert_eq!(records[0]["instance"], instance);
+    assert!(
+        records[0]["error"]
+            .as_str()
+            .unwrap()
+            .contains("no `$schema` property"),
+        "{:?}",
+        records[0]
+    );
+    assert!(records[0]["payload"].is_null());
+}
+
+#[test]
+fn test_self_describing_unresolvable_schema() {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "schema.json", NAME_SCHEMA);
+    let broken = create_temp_file(
+        &dir,
+        "broken.json",
+        r#"{"$schema": "./missing.json", "name": "John"}"#,
+    );
+    let good = create_temp_file(
+        &dir,
+        "good.json",
+        r#"{"$schema": "./schema.json", "name": "John"}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&broken)
+        .arg(&good)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    assert!(stdout.contains("failed to retrieve"), "{stdout}");
+    assert!(stdout.contains(&format!("{good} - VALID")), "{stdout}");
+}
+
+#[test]
+fn test_self_describing_honors_draft_flag() {
+    let dir = tempdir().unwrap();
+    create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "propertyNames": {"pattern": "^(\\$schema|a)"}
+        }"#,
+    );
+    let instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"{"$schema": "./schema.json", "foo": 1}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(!output.status.success(), "2020-12 enforces propertyNames");
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .arg("-d")
+        .arg("4")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "Draft 4 ignores propertyNames: {}",
+        String::from_utf8_lossy(&output.stdout)
+    );
+}
+
+#[test]
+fn test_self_describing_honors_assert_format() {
+    let dir = tempdir().unwrap();
+    create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "object", "properties": {"when": {"type": "string", "format": "date"}}}"#,
+    );
+    let instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"{"$schema": "./schema.json", "when": "not-a-date"}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "`format` is an annotation by default"
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .arg("--assert-format")
+        .output()
+        .unwrap();
+    assert!(
+        !output.status.success(),
+        "--assert-format enforces `format`"
+    );
+}
+
+/// HTTP options are threaded through even when the resolved `$schema` is a local file.
+#[test]
+fn test_self_describing_with_http_options() {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "schema.json", NAME_SCHEMA);
+    let instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"{"$schema": "./schema.json", "name": 123}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .arg("--timeout")
+        .arg("30")
+        .arg("--connect-timeout")
+        .arg("5")
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert!(String::from_utf8_lossy(&output.stdout).contains("INVALID. Errors:"));
+}

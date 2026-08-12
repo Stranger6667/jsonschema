@@ -1,5 +1,6 @@
 #![allow(clippy::print_stdout, clippy::print_stderr)]
 use std::{
+    collections::HashMap,
     fs::File,
     io::BufReader,
     path::{Path, PathBuf},
@@ -8,6 +9,7 @@ use std::{
 };
 
 use clap::{ArgAction, Args, Parser, Subcommand, ValueEnum};
+use jsonschema::Retrieve;
 use percent_encoding::{percent_encode, AsciiSet, CONTROLS};
 use serde_json::json;
 
@@ -174,9 +176,10 @@ impl FormatAssertionArgs {
 
 #[derive(Args)]
 struct ValidateArgs {
-    /// The JSON Schema to validate with (i.e. schema.json).
+    /// The JSON Schema to validate with (i.e. schema.json). When omitted, each instance's own
+    /// `$schema` property names the schema to validate it against.
     #[arg(value_parser)]
-    schema: PathBuf,
+    schema: Option<PathBuf>,
 
     /// A path to a JSON instance (i.e. filename.json) to validate. May be specified multiple times or with multiple values after a single flag (e.g. `-i a.json b.json`).
     #[arg(short = 'i', long = "instance", num_args = 1..)]
@@ -509,17 +512,26 @@ fn path_to_uri(path: &std::path::Path) -> String {
     result
 }
 
-fn options_for_schema<'a>(
-    schema_path: &Path,
+fn options_for_base_uri<'a>(
+    base_uri: referencing::Uri<String>,
     http_options: Option<&jsonschema::HttpOptions>,
 ) -> Result<jsonschema::ValidationOptions<'a>, Box<dyn std::error::Error>> {
-    let base_uri = path_to_uri(schema_path);
-    let base_uri = referencing::uri::from_str(&base_uri)?;
     let mut options = jsonschema::options().with_base_uri(base_uri);
     if let Some(http_opts) = http_options {
         options = options.with_http_options(http_opts)?;
     }
     Ok(options)
+}
+
+fn file_uri(path: &Path) -> Result<referencing::Uri<String>, Box<dyn std::error::Error>> {
+    Ok(referencing::uri::from_str(&path_to_uri(path))?)
+}
+
+fn options_for_schema<'a>(
+    schema_path: &Path,
+    http_options: Option<&jsonschema::HttpOptions>,
+) -> Result<jsonschema::ValidationOptions<'a>, Box<dyn std::error::Error>> {
+    options_for_base_uri(file_uri(schema_path)?, http_options)
 }
 
 // Read `--resource URI=FILE` pairs into a prepared Registry, seeded with an HTTP retriever
@@ -620,6 +632,224 @@ fn validate_schema_meta(
     }
 }
 
+// Text mode accepts YAML instances, the structured modes do not.
+fn read_instance(
+    path: &Path,
+    output: Output,
+) -> Result<serde_json::Value, Box<dyn std::error::Error>> {
+    if matches!(output, Output::Text) {
+        Ok(read_json_or_yaml(path)??)
+    } else {
+        Ok(read_json(path)?)
+    }
+}
+
+fn report_instance(
+    validator: &jsonschema::Validator,
+    instance: &Path,
+    instance_json: &serde_json::Value,
+    schema_display: &str,
+    output: Output,
+    errors_only: bool,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let filename = instance.to_string_lossy();
+
+    if matches!(output, Output::Text) {
+        let mut errors = validator.iter_errors(instance_json);
+        if let Some(first) = errors.next() {
+            println!("{filename} - INVALID. Errors:");
+            println!("1. {first}");
+            for (i, error) in errors.enumerate() {
+                println!("{}. {error}", i + 2);
+            }
+            return Ok(false);
+        }
+        if !errors_only {
+            println!("{filename} - VALID");
+        }
+        return Ok(true);
+    }
+
+    let evaluation = validator.evaluate(instance_json);
+    let flag_output = evaluation.flag();
+    let valid = flag_output.valid;
+
+    if errors_only && valid {
+        return Ok(valid);
+    }
+
+    let payload = match output {
+        Output::Text => unreachable!("handled above"),
+        Output::Flag => serde_json::to_value(flag_output)?,
+        Output::List => serde_json::to_value(evaluation.list())?,
+        Output::Hierarchical => serde_json::to_value(evaluation.hierarchical())?,
+    };
+
+    let record = json!({
+        "output": output.as_str(),
+        "schema": schema_display,
+        "instance": filename,
+        "payload": payload,
+    });
+    println!("{}", serde_json::to_string(&record)?);
+
+    Ok(valid)
+}
+
+/// Emitted as a record in the structured modes so the ndjson stream stays parseable.
+fn report_instance_error(
+    instance: &Path,
+    message: &str,
+    output: Output,
+) -> Result<(), Box<dyn std::error::Error>> {
+    if matches!(output, Output::Text) {
+        println!("{} - ERROR: {message}", instance.to_string_lossy());
+    } else {
+        let record = json!({
+            "output": output.as_str(),
+            "instance": instance.to_string_lossy(),
+            "error": message,
+        });
+        println!("{}", serde_json::to_string(&record)?);
+    }
+    Ok(())
+}
+
+/// Not JSON Schema's `$schema`: here the instance is data and `$schema` names the schema to
+/// validate it against. Relative values resolve against the instance file, not the working directory.
+fn resolve_instance_schema_uri(
+    instance: &Path,
+    instance_json: &serde_json::Value,
+) -> Result<referencing::Uri<String>, String> {
+    let raw = instance_json
+        .get("$schema")
+        .and_then(serde_json::Value::as_str)
+        .ok_or_else(|| {
+            format!(
+                "no `$schema` property; pass a schema explicitly:\n  jsonschema validate SCHEMA -i {}",
+                instance.to_string_lossy()
+            )
+        })?;
+    let base = file_uri(instance).map_err(|error| error.to_string())?;
+    referencing::uri::resolve_against(&base.borrow(), raw)
+        .map_err(|error| format!("invalid `$schema` value `{raw}`: {error}"))
+}
+
+fn apply_schema_options(
+    mut options: jsonschema::ValidationOptions<'_>,
+    draft: Option<Draft>,
+    assert_format: Option<bool>,
+) -> jsonschema::ValidationOptions<'_> {
+    if let Some(draft) = draft {
+        options = options.with_draft(draft.into());
+    }
+    if let Some(assert_format) = assert_format {
+        options = options.should_validate_formats(assert_format);
+    }
+    options
+}
+
+fn build_validator_for_uri(
+    schema_uri: &referencing::Uri<String>,
+    instance: &Path,
+    draft: Option<Draft>,
+    assert_format: Option<bool>,
+    http_options: Option<&jsonschema::HttpOptions>,
+) -> Result<jsonschema::Validator, Box<dyn std::error::Error>> {
+    let has_fragment = schema_uri
+        .fragment()
+        .is_some_and(|fragment| !fragment.as_str().is_empty());
+    // The instance is itself a schema; resolve offline instead of fetching json-schema.org.
+    let is_meta_schema = referencing::SPECIFICATIONS.contains_resource(schema_uri.as_str());
+
+    if has_fragment || is_meta_schema {
+        // Building the pointed-at subschema alone would drop `$id` scope and sibling `$defs`, so
+        // reference it from a synthetic root. Costs a `/$ref` prefix on `evaluationPath`.
+        let mut options = apply_schema_options(
+            options_for_base_uri(file_uri(instance)?, http_options)?,
+            draft,
+            assert_format,
+        );
+        if is_meta_schema {
+            options = options.with_registry(&referencing::SPECIFICATIONS);
+        }
+        return Ok(options.build(&json!({ "$ref": schema_uri.as_str() }))?);
+    }
+
+    // Build the retrieved schema as the root so `evaluationPath` matches an explicit
+    // `validate SCHEMA -i ...` run. `HttpRetriever` covers http, https and file alike.
+    let default_http_options;
+    let http_options = if let Some(options) = http_options {
+        options
+    } else {
+        default_http_options = jsonschema::HttpOptions::new();
+        &default_http_options
+    };
+    let retriever = jsonschema::HttpRetriever::new(http_options)?;
+    let schema_json = retriever
+        .retrieve(schema_uri)
+        .map_err(|error| format!("failed to retrieve `{}`: {error}", schema_uri.as_str()))?;
+    let options = apply_schema_options(
+        options_for_base_uri(schema_uri.clone(), Some(http_options))?,
+        draft,
+        assert_format,
+    );
+    Ok(options.build(&schema_json)?)
+}
+
+fn validate_self_describing_instances(
+    instances: &[PathBuf],
+    draft: Option<Draft>,
+    assert_format: Option<bool>,
+    output: Output,
+    errors_only: bool,
+    http_options: Option<&jsonschema::HttpOptions>,
+) -> Result<bool, Box<dyn std::error::Error>> {
+    let mut success = true;
+    let mut validators: HashMap<String, jsonschema::Validator> = HashMap::new();
+
+    for instance in instances {
+        let instance_json = read_instance(instance, output)?;
+
+        let schema_uri = match resolve_instance_schema_uri(instance, &instance_json) {
+            Ok(uri) => uri,
+            Err(message) => {
+                report_instance_error(instance, &message, output)?;
+                success = false;
+                continue;
+            }
+        };
+
+        let key = schema_uri.as_str().to_string();
+        if !validators.contains_key(&key) {
+            match build_validator_for_uri(&schema_uri, instance, draft, assert_format, http_options)
+            {
+                Ok(validator) => {
+                    validators.insert(key.clone(), validator);
+                }
+                Err(error) => {
+                    report_instance_error(instance, &error.to_string(), output)?;
+                    success = false;
+                    continue;
+                }
+            }
+        }
+
+        if !report_instance(
+            &validators[&key],
+            instance,
+            &instance_json,
+            &key,
+            output,
+            errors_only,
+        )? {
+            success = false;
+        }
+    }
+
+    Ok(success)
+}
+
 fn validate_instances(
     instances: &[PathBuf],
     schema_path: &Path,
@@ -641,54 +871,18 @@ fn validate_instances(
     }
     match options.build(&schema_json) {
         Ok(validator) => {
-            if matches!(output, Output::Text) {
-                for instance in instances {
-                    let instance_json = read_json_or_yaml(instance)??;
-                    let mut errors = validator.iter_errors(&instance_json);
-                    let filename = instance.to_string_lossy();
-                    if let Some(first) = errors.next() {
-                        success = false;
-                        println!("{filename} - INVALID. Errors:");
-                        println!("1. {first}");
-                        for (i, error) in errors.enumerate() {
-                            println!("{}. {error}", i + 2);
-                        }
-                    } else if !errors_only {
-                        println!("{filename} - VALID");
-                    }
-                }
-            } else {
-                let schema_display = schema_path.to_string_lossy().to_string();
-                let output_format = output.as_str();
-                for instance in instances {
-                    let instance_json = read_json(instance)?;
-                    let evaluation = validator.evaluate(&instance_json);
-                    let flag_output = evaluation.flag();
-
-                    // Skip valid instances if errors_only is enabled
-                    if errors_only && flag_output.valid {
-                        continue;
-                    }
-
-                    let payload = match output {
-                        Output::Text => unreachable!("handled above"),
-                        Output::Flag => serde_json::to_value(flag_output)?,
-                        Output::List => serde_json::to_value(evaluation.list())?,
-                        Output::Hierarchical => serde_json::to_value(evaluation.hierarchical())?,
-                    };
-
-                    let instance_display = instance.to_string_lossy();
-                    let record = json!({
-                        "output": output_format,
-                        "schema": &schema_display,
-                        "instance": instance_display,
-                        "payload": payload,
-                    });
-                    println!("{}", serde_json::to_string(&record)?);
-
-                    if !flag_output.valid {
-                        success = false;
-                    }
+            let schema_display = schema_path.to_string_lossy().to_string();
+            for instance in instances {
+                let instance_json = read_instance(instance, output)?;
+                if !report_instance(
+                    &validator,
+                    instance,
+                    &instance_json,
+                    &schema_display,
+                    output,
+                    errors_only,
+                )? {
+                    success = false;
                 }
             }
         }
@@ -740,8 +934,8 @@ fn run_validate(args: ValidateArgs) -> ExitCode {
 
     let http_options = http.into_http_options();
 
-    if let Some(instances) = instances {
-        return validation_result_to_exit(validate_instances(
+    match (schema, instances) {
+        (Some(schema), Some(instances)) => validation_result_to_exit(validate_instances(
             &instances,
             &schema,
             draft,
@@ -749,15 +943,27 @@ fn run_validate(args: ValidateArgs) -> ExitCode {
             output,
             errors_only,
             http_options.as_ref(),
-        ));
+        )),
+        (Some(schema), None) => validation_result_to_exit(validate_schema_meta(
+            &schema,
+            output,
+            errors_only,
+            http_options.as_ref(),
+        )),
+        (None, Some(instances)) => {
+            validation_result_to_exit(validate_self_describing_instances(
+                &instances,
+                draft,
+                format.validate_formats(),
+                output,
+                errors_only,
+                http_options.as_ref(),
+            ))
+        }
+        (None, None) => fail_with_error(
+            "either a SCHEMA argument or `--instance` is required. See `jsonschema validate --help`.",
+        ),
     }
-
-    validation_result_to_exit(validate_schema_meta(
-        &schema,
-        output,
-        errors_only,
-        http_options.as_ref(),
-    ))
 }
 
 fn run_bundle(args: BundleArgs) -> ExitCode {
@@ -914,7 +1120,7 @@ fn main() -> ExitCode {
                     schema.display()
                 );
                 run_validate(ValidateArgs {
-                    schema,
+                    schema: Some(schema),
                     instances: cli.instances,
                     draft: cli.draft,
                     format: FormatAssertionArgs::from_flags(

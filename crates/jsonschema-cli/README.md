@@ -61,8 +61,11 @@ Two subcommands are available: `validate` and `bundle` (inline external refs).
 ## `jsonschema validate` — validate instances
 
 ```
-jsonschema validate [OPTIONS] <SCHEMA>
+jsonschema validate [OPTIONS] [SCHEMA]
 ```
+
+`SCHEMA` may be omitted when every instance names its own schema — see
+[Self-describing instances](#self-describing-instances) below.
 
 ### Options
 
@@ -91,6 +94,28 @@ jsonschema validate schema.json -i a.json -i b.json --output list
 {"output":"list","schema":"schema.json","instance":"a.json","payload":{"valid":true,...}}
 {"output":"list","schema":"schema.json","instance":"b.json","payload":{"valid":false,...}}
 ```
+
+### Self-describing instances
+
+Omit `SCHEMA` and each instance is validated against the schema named in its own `$schema`
+property — the convention editors follow for `tsconfig.json`, `renovate.json` and friends:
+
+```
+jsonschema validate -i tsconfig.json
+```
+
+> **Note:** this is *not* JSON Schema's `$schema`, which declares the dialect of a **schema**
+> document. Here the file is data, and `$schema` names the schema to validate it against.
+
+- Remote `$schema` URLs are fetched, like remote `$ref`s. `--timeout`, `--connect-timeout`,
+  `-k` and `--cacert` apply.
+- A relative `$schema` (`"./schema.json"`) resolves against the **instance file**, not the
+  working directory. A JSON pointer fragment (`"./schemas.json#/$defs/Config"`) is honored.
+- An instance without a usable `$schema` is reported as an error; the remaining instances are
+  still validated and the run exits `1`.
+- Passing `SCHEMA` explicitly always wins — the instance's `$schema` is then ignored.
+- In structured output modes the `schema` field holds the resolved URI, which varies per
+  instance.
 
 ---
 
