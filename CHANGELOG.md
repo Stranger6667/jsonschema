@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **cli**: `jsonschema validate -i INSTANCE` without a `SCHEMA` argument validates each instance against the schema named in its own `$schema` property. [#1470](https://github.com/Stranger6667/jsonschema/issues/1470)
+
 ## [0.49.9] - 2026-08-09
 
 ### Added
