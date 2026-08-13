@@ -12,11 +12,24 @@ pub use fluent_uri::pct_enc::encoder::Path;
 ///
 /// # Errors
 ///
-/// Returns an error if base has not schema or there is a fragment.
+/// Returns an error if `uri` is not a valid URI reference or cannot be resolved against `base`.
 pub fn resolve_against(base: &Uri<&str>, uri: &str) -> Result<Uri<String>, Error> {
     if uri.starts_with('#') && base.as_str().ends_with(uri) {
         return Ok(base.to_owned());
     }
+    // RFC 3986, 5.2.1: the base URI's fragment is undefined and takes no part in resolution.
+    // Drafts 4-7 allow `$id` to carry one, so drop it rather than reject the base.
+    let without_fragment;
+    let base = match base.fragment() {
+        Some(fragment) => {
+            let full = base.as_str();
+            let end = full.len() - fragment.len() - "#".len();
+            without_fragment =
+                Uri::parse(&full[..end]).map_err(|error| Error::uri_parsing_error(full, error))?;
+            &without_fragment
+        }
+        None => base,
+    };
     Ok(UriRef::parse(uri)
         .map_err(|error| Error::uri_reference_parsing_error(uri, error))?
         .resolve_against(base)

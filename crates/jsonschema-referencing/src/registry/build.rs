@@ -130,7 +130,6 @@ type DeferredTarget<'a> = (Arc<Uri<String>>, Draft, &'a Value);
 /// Lifetime-free traversal state passed to external-resource collection helpers.
 struct CrawlState {
     external: AHashSet<(String, Uri<String>, ReferenceKind)>,
-    uri_scratch: String,
     found_metaschema_ref: bool,
     /// Tracks schema/base/draft traversal contexts we have already processed.
     visited_schemas: AHashSet<VisitedSchemaContext>,
@@ -141,7 +140,6 @@ impl CrawlState {
     fn new() -> Self {
         Self {
             external: AHashSet::new(),
-            uri_scratch: String::new(),
             found_metaschema_ref: false,
             visited_schemas: AHashSet::new(),
             deferred_refs: Vec::new(),
@@ -1055,31 +1053,7 @@ fn record_refs<'doc>(
             }
             continue;
         }
-        let resolved = if base.has_fragment() {
-            let mut base_without_fragment = base.as_ref().clone();
-            base_without_fragment.set_fragment(None);
-
-            let (path, fragment) = match reference.split_once('#') {
-                Some((path, fragment)) => (path, Some(fragment)),
-                None => (reference, None),
-            };
-
-            let mut resolved =
-                (*resolution_cache.resolve_against(&base_without_fragment.borrow(), path)?).clone();
-            if let Some(fragment) = fragment {
-                if let Some(encoded) = uri::EncodedString::new(fragment) {
-                    resolved = resolved.with_fragment(Some(encoded));
-                } else {
-                    uri::encode_to(fragment, &mut crawl.uri_scratch);
-                    resolved = resolved
-                        .with_fragment(Some(uri::EncodedString::new_or_panic(&crawl.uri_scratch)));
-                    crawl.uri_scratch.clear();
-                }
-            }
-            resolved
-        } else {
-            (*resolution_cache.resolve_against(&base.borrow(), reference)?).clone()
-        };
+        let resolved = (*resolution_cache.resolve_against(&base.borrow(), reference)?).clone();
 
         let kind = if key == "$schema" {
             ReferenceKind::DollarSchema
@@ -1460,6 +1434,37 @@ mod tests {
         assert_eq!(
             result.unwrap_err().to_string(),
             "Resource 'http://example.com/non_existent_schema' is not present in a registry and retrieving it failed: Retrieving external resources is not supported once the registry is populated"
+        );
+    }
+
+    // Drafts 4-7 allow a fragment in `$id`, which makes the resource's base URI carry one.
+    // RFC 3986 5.2.1 leaves the base URI's fragment undefined, so it must be dropped when
+    // resolving a reference against it rather than rejected. See GH-1473.
+    #[test]
+    fn test_lookup_relative_ref_against_base_with_fragment() {
+        let root = json!({
+            "$schema": "http://json-schema.org/draft-07/schema",
+            "$id": "release-it#release-it",
+            "properties": {"git": {"$ref": "./git.json"}}
+        });
+        let registry = Registry::new()
+            .retriever(create_test_retriever(&[(
+                "https://example.com/schema/git.json",
+                json!({"$schema": "http://json-schema.org/draft-07/schema", "type": "object"}),
+            )]))
+            .add("https://example.com/schema/release-it.json", root)
+            .expect("Invalid resources")
+            .prepare()
+            .expect("Invalid resources");
+
+        let resolver = registry.resolver(
+            from_str("https://example.com/schema/release-it#release-it").expect("Invalid base URI"),
+        );
+
+        let resolved = resolver.lookup("./git.json").expect("Should resolve");
+        assert_eq!(
+            resolved.contents(),
+            &json!({"$schema": "http://json-schema.org/draft-07/schema", "type": "object"})
         );
     }
 
