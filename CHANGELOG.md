@@ -6,6 +6,10 @@
 
 - **CLI**: `jsonschema validate -i INSTANCE` without a `SCHEMA` argument validates each instance against the schema named in its own `$schema` property. [#1470](https://github.com/Stranger6667/jsonschema/issues/1470)
 
+### Fixed
+
+- Resolving a reference against a base URI that carries a fragment, which happens when a Draft 4-7 `$id` contains one. [#1473](https://github.com/Stranger6667/jsonschema/issues/1473)
+
 ### Performance
 
 - **CLI**: ~25% less CPU per run from compile-time meta-schema validators.
