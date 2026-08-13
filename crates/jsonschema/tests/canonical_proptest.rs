@@ -108,34 +108,34 @@ fn aliased_number(tc: &TestCase) -> Value {
 
 // A bounded scalar for `const`/`enum`, across the primitive types.
 #[hegel::composite]
-fn arbitrary_scalar(tc: TestCase) -> Value {
+fn arbitrary_scalar(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(5)) {
         0 => Value::Null,
         1 => Value::Bool(tc.draw(gs::booleans())),
         2 => Value::String(tc.draw(gs::text().max_size(3))),
         3 => json!(tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))),
-        4 => json!(finite_float(&tc)),
-        _ => aliased_number(&tc),
+        4 => json!(finite_float(tc)),
+        _ => aliased_number(tc),
     }
 }
 
 #[hegel::composite]
-fn arbitrary_instance(tc: TestCase) -> Value {
+fn arbitrary_instance(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(10)) {
         0 => Value::Null,
         1 => Value::Bool(tc.draw(gs::booleans())),
         2 => json!(tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))),
-        3 => json!(finite_float(&tc)),
+        3 => json!(finite_float(tc)),
         // An integer-valued float (`2.0`): Draft 4 treats it as a non-integer, later drafts as an integer.
         4 => json!(f64::from(
             tc.draw(gs::integers::<i32>().min_value(-4).max_value(4))
         )),
         5 => Value::String(tc.draw(gs::text().max_size(5))),
-        6 => wide_number(&tc),
+        6 => wide_number(tc),
         7 => json!([]),
         8 => {
             let mut object = serde_json::Map::new();
-            for key in draw_keys(&tc) {
+            for key in draw_keys(tc) {
                 object.insert(key.to_string(), tc.draw(arbitrary_scalar()));
             }
             Value::Object(object)
@@ -1309,7 +1309,7 @@ fn definition_body(link: Link, next: &str, second: &str) -> Value {
 /// an ill-founded cycle - reordering two `oneOf` branches flips its verdict with no
 /// canonicalization involved.
 #[hegel::composite]
-fn definition_graph(tc: TestCase, links: &'static [Link]) -> Value {
+fn definition_graph(tc: &TestCase, links: &'static [Link]) -> Value {
     let size = tc.draw(gs::integers::<usize>().min_value(1).max_value(5));
     let target = |tc: &TestCase| {
         let index = tc.draw(gs::integers::<usize>().min_value(0).max_value(size));
@@ -1325,9 +1325,9 @@ fn definition_graph(tc: TestCase, links: &'static [Link]) -> Value {
     };
     let mut definitions = serde_json::Map::new();
     for index in 0..size {
-        definitions.insert(format!("d{index}"), body(&tc));
+        definitions.insert(format!("d{index}"), body(tc));
     }
-    let mut root = body(&tc)
+    let mut root = body(tc)
         .as_object()
         .expect("a link body is an object")
         .clone();
