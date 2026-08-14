@@ -4,26 +4,76 @@
     "schemas": [
       {
         "anyOf": [
-          {"allOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}]},
-          {"allOf": [{"type": "object"}, {"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}]}
+          {
+            "allOf": [
+              {
+                "$ref": "#/$defs/integer"
+              },
+              {
+                "$ref": "#/$defs/string"
+              }
+            ]
+          },
+          {
+            "allOf": [
+              {
+                "type": "object"
+              },
+              {
+                "$ref": "#/$defs/integer"
+              },
+              {
+                "$ref": "#/$defs/string"
+              }
+            ]
+          }
         ],
-        "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+        "$defs": {
+          "integer": {
+            "type": "integer"
+          },
+          "string": {
+            "type": "string"
+          }
+        }
       },
       {
-        "allOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}],
-        "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+        "allOf": [
+          {
+            "$ref": "#/$defs/integer"
+          },
+          {
+            "$ref": "#/$defs/string"
+          }
+        ],
+        "$defs": {
+          "integer": {
+            "type": "integer"
+          },
+          "string": {
+            "type": "string"
+          }
+        }
       }
     ],
-    "kind": "all_of",
+    "kind": "false",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "allOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/string"}],
-      "$defs": {"integer": {"type": "integer"}, "string": {"type": "string"}}
+      "not": {}
     },
     "tests": [
-      {"data": 1, "valid": false},
-      {"data": "x", "valid": false},
-      {"data": {}, "valid": false}
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
     ]
   },
   {
@@ -31,41 +81,114 @@
     "schemas": [
       {
         "anyOf": [
-          {"type": "object", "properties": {"a": {"$ref": "#/$defs/null"}}},
-          {"allOf": [
-            {"type": "object", "properties": {"a": {"anyOf": [{"$ref": "#/$defs/integer"}, {"$ref": "#/$defs/null"}]}}},
-            {"$ref": "#/$defs/integer"}
-          ]}
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "$ref": "#/$defs/null"
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/integer"
+                      },
+                      {
+                        "$ref": "#/$defs/null"
+                      }
+                    ]
+                  }
+                }
+              },
+              {
+                "$ref": "#/$defs/integer"
+              }
+            ]
+          }
         ],
-        "$defs": {"integer": {"type": "integer"}, "null": {"type": "null"}}
+        "$defs": {
+          "integer": {
+            "type": "integer"
+          },
+          "null": {
+            "type": "null"
+          }
+        }
       },
       {
         "anyOf": [
-          {"type": "object", "properties": {"a": {"$ref": "#/$defs/null"}}},
-          {"allOf": [
-            {"type": "object", "properties": {"a": {"$ref": "#/$defs/integer"}}},
-            {"$ref": "#/$defs/integer"}
-          ]}
+          {
+            "type": "object",
+            "properties": {
+              "a": {
+                "$ref": "#/$defs/null"
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "type": "object",
+                "properties": {
+                  "a": {
+                    "$ref": "#/$defs/integer"
+                  }
+                }
+              },
+              {
+                "$ref": "#/$defs/integer"
+              }
+            ]
+          }
         ],
-        "$defs": {"integer": {"type": "integer"}, "null": {"type": "null"}}
+        "$defs": {
+          "integer": {
+            "type": "integer"
+          },
+          "null": {
+            "type": "null"
+          }
+        }
       }
     ],
-    "kind": "any_of",
+    "kind": "object",
     "expected": {
+      "$defs": {
+        "null": {
+          "type": "null"
+        }
+      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "anyOf": [
-        {"type": "object", "properties": {"a": {"$ref": "#/$defs/null"}}},
-        {"allOf": [
-          {"type": "object", "properties": {"a": {"$ref": "#/$defs/integer"}}},
-          {"$ref": "#/$defs/integer"}
-        ]}
-      ],
-      "$defs": {"integer": {"type": "integer"}, "null": {"type": "null"}}
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/null"
+        }
+      },
+      "type": "object"
     },
     "tests": [
-      {"data": {"a": null}, "valid": true},
-      {"data": {"a": "x"}, "valid": false},
-      {"data": 1, "valid": false}
+      {
+        "data": {
+          "a": null
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
     ]
   },
   {
@@ -431,32 +554,39 @@
     ]
   },
   {
-    "description": "different references intersect as an opaque conjunction",
+    "description": "different references intersect through the bodies they name",
     "schema": {
       "allOf": [
-        {"$ref": "#/$defs/left"},
-        {"$ref": "#/$defs/right"}
+        {
+          "$ref": "#/$defs/left"
+        },
+        {
+          "$ref": "#/$defs/right"
+        }
       ],
       "$defs": {
-        "left": {"type": "integer"},
-        "right": {"type": "string"}
+        "left": {
+          "type": "integer"
+        },
+        "right": {
+          "type": "string"
+        }
       }
     },
-    "kind": "all_of",
+    "kind": "false",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "allOf": [
-        {"$ref": "#/$defs/left"},
-        {"$ref": "#/$defs/right"}
-      ],
-      "$defs": {
-        "left": {"type": "integer"},
-        "right": {"type": "string"}
-      }
+      "not": {}
     },
     "tests": [
-      {"data": 1, "valid": false},
-      {"data": "x", "valid": false}
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
     ]
   },
   {
@@ -596,44 +726,57 @@
       "not": {
         "not": {
           "anyOf": [
-            {"$ref": "#/definitions/null"},
+            {
+              "$ref": "#/definitions/null"
+            },
             {
               "allOf": [
-                {"$ref": "#/definitions/integer"},
-                {"$ref": "#/definitions/string"}
+                {
+                  "$ref": "#/definitions/integer"
+                },
+                {
+                  "$ref": "#/definitions/string"
+                }
               ]
             }
           ]
         }
       },
       "definitions": {
-        "integer": {"type": "integer"},
-        "null": {"type": "null"},
-        "string": {"type": "string"}
+        "integer": {
+          "type": "integer"
+        },
+        "null": {
+          "type": "null"
+        },
+        "string": {
+          "type": "string"
+        }
       }
     },
-    "kind": "any_of",
+    "kind": "reference",
     "expected": {
+      "$ref": "#/definitions/null",
       "$schema": "http://json-schema.org/draft-04/schema#",
-      "anyOf": [
-        {
-          "allOf": [
-            {"$ref": "#/definitions/integer"},
-            {"$ref": "#/definitions/string"}
-          ]
-        },
-        {"$ref": "#/definitions/null"}
-      ],
       "definitions": {
-        "integer": {"type": "integer"},
-        "null": {"type": "null"},
-        "string": {"type": "string"}
+        "null": {
+          "type": "null"
+        }
       }
     },
     "tests": [
-      {"data": null, "valid": true},
-      {"data": 1, "valid": false},
-      {"data": "x", "valid": false}
+      {
+        "data": null,
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
     ]
   },
   {
@@ -645,51 +788,65 @@
           "anyOf": [
             {
               "allOf": [
-                {"$ref": "#/definitions/integer"},
-                {"$ref": "#/definitions/string"}
+                {
+                  "$ref": "#/definitions/integer"
+                },
+                {
+                  "$ref": "#/definitions/string"
+                }
               ]
             },
             {
               "type": "object",
               "properties": {
-                "a": {"type": "string"}
+                "a": {
+                  "type": "string"
+                }
               }
             }
           ]
         }
       },
       "definitions": {
-        "integer": {"type": "integer"},
-        "string": {"type": "string"}
+        "integer": {
+          "type": "integer"
+        },
+        "string": {
+          "type": "string"
+        }
       }
     },
-    "kind": "any_of",
+    "kind": "object",
     "expected": {
       "$schema": "http://json-schema.org/draft-04/schema#",
-      "anyOf": [
-        {
-          "type": "object",
-          "properties": {
-            "a": {"type": "string"}
-          }
-        },
-        {
-          "allOf": [
-            {"$ref": "#/definitions/integer"},
-            {"$ref": "#/definitions/string"}
-          ]
+      "properties": {
+        "a": {
+          "type": "string"
         }
-      ],
-      "definitions": {
-        "integer": {"type": "integer"},
-        "string": {"type": "string"}
-      }
+      },
+      "type": "object"
     },
     "tests": [
-      {"data": {}, "valid": true},
-      {"data": {"a": "x"}, "valid": true},
-      {"data": {"a": 1}, "valid": false},
-      {"data": 1, "valid": false}
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
     ]
   },
   {
@@ -850,30 +1007,36 @@
     ]
   },
   {
-    "description": "reference assertion siblings stay as a symbolic conjunction",
+    "description": "reference assertion siblings fold through the body the pointer names",
     "schema": {
       "$ref": "#/$defs/value",
       "type": "string",
       "minLength": 2,
       "$defs": {
-        "value": {"type": "string"}
+        "value": {
+          "type": "string"
+        }
       }
     },
-    "kind": "all_of",
+    "kind": "string",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "allOf": [
-        {"type": "string", "minLength": 2},
-        {"$ref": "#/$defs/value"}
-      ],
-      "$defs": {
-        "value": {"type": "string"}
-      }
+      "minLength": 2,
+      "type": "string"
     },
     "tests": [
-      {"data": "ab", "valid": true},
-      {"data": "a", "valid": false},
-      {"data": 1, "valid": false}
+      {
+        "data": "ab",
+        "valid": true
+      },
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
     ]
   },
   {
@@ -907,34 +1070,52 @@
     "description": "reference property does not reject a finite object member",
     "schema": {
       "allOf": [
-        {"const": {"value": 1}},
-        {"properties": {"value": {"$ref": "#/$defs/value"}}}
+        {
+          "const": {
+            "value": 1
+          }
+        },
+        {
+          "properties": {
+            "value": {
+              "$ref": "#/$defs/value"
+            }
+          }
+        }
       ],
       "$defs": {
-        "value": {"type": "integer"}
+        "value": {
+          "type": "integer"
+        }
       }
     },
     "kind": "object",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
+      "maxProperties": 1,
       "properties": {
         "value": {
-          "allOf": [
-            {"const": 1},
-            {"$ref": "#/$defs/value"}
-          ]
+          "const": 1
         }
       },
-      "required": ["value"],
-      "maxProperties": 1,
-      "$defs": {
-        "value": {"type": "integer"}
-      }
+      "required": [
+        "value"
+      ],
+      "type": "object"
     },
     "tests": [
-      {"data": {"value": 1}, "valid": true},
-      {"data": {"value": "x"}, "valid": false}
+      {
+        "data": {
+          "value": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "value": "x"
+        },
+        "valid": false
+      }
     ]
   },
   {
@@ -976,12 +1157,32 @@
     "draft": "draft4",
     "schema": {
       "allOf": [
-        {"$ref": "#/definitions/x"},
-        {"enum": [{"a": 1}, {"b": 2}]},
-        {"type": "object", "properties": {"a": {"type": "integer"}}}
+        {
+          "$ref": "#/definitions/x"
+        },
+        {
+          "enum": [
+            {
+              "a": 1
+            },
+            {
+              "b": 2
+            }
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "integer"
+            }
+          }
+        }
       ],
       "definitions": {
-        "x": {"type": "object"}
+        "x": {
+          "type": "object"
+        }
       }
     },
     "kind": "any_of",
@@ -989,32 +1190,52 @@
       "$schema": "http://json-schema.org/draft-04/schema#",
       "anyOf": [
         {
-          "allOf": [
-            {
-              "type": "object",
-              "properties": {"a": {"type": "integer", "enum": [1]}},
-              "required": ["a"],
-              "maxProperties": 1
-            },
-            {"$ref": "#/definitions/x"}
-          ]
+          "maxProperties": 1,
+          "properties": {
+            "a": {
+              "enum": [
+                1
+              ],
+              "type": "integer"
+            }
+          },
+          "required": [
+            "a"
+          ],
+          "type": "object"
         },
         {
-          "allOf": [
-            {"enum": [{"b": 2}]},
-            {"$ref": "#/definitions/x"}
+          "enum": [
+            {
+              "b": 2
+            }
           ]
         }
-      ],
-      "definitions": {
-        "x": {"type": "object"}
-      }
+      ]
     },
     "tests": [
-      {"data": {"a": 1}, "valid": true},
-      {"data": {"b": 2}, "valid": true},
-      {"data": {"a": 2}, "valid": false},
-      {"data": {}, "valid": false}
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 2
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
     ]
   },
   {
@@ -1045,7 +1266,9 @@
     "schema": {
       "$ref": "#/properties",
       "properties": {
-        "x": {"type": "string"}
+        "x": {
+          "type": "string"
+        }
       }
     },
     "kind": "any_of",
@@ -1053,26 +1276,41 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {
-          "allOf": [
-            {"type": ["null", "boolean", "number", "string", "array"]},
-            {"$ref": "#/$defs/urn:jsonschema:canonical:json-schema%253A%252F%252F%252F%2523%252Fproperties"}
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
           ]
         },
         {
-          "allOf": [
-            {"type": "object", "properties": {"x": {"type": "string"}}},
-            {"$ref": "#/$defs/urn:jsonschema:canonical:json-schema%253A%252F%252F%252F%2523%252Fproperties"}
-          ]
+          "properties": {
+            "x": {
+              "type": "string"
+            }
+          },
+          "type": "object"
         }
-      ],
-      "$defs": {
-        "urn:jsonschema:canonical:json-schema%3A%2F%2F%2F%23%2Fproperties": true
-      }
+      ]
     },
     "tests": [
-      {"data": {"x": "value"}, "valid": true},
-      {"data": {"x": 1}, "valid": false},
-      {"data": 1, "valid": true}
+      {
+        "data": {
+          "x": "value"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "x": 1
+        },
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": true
+      }
     ]
   },
   {
@@ -1178,48 +1416,83 @@
     "description": "reference prefix item does not reject a finite object member",
     "schema": {
       "allOf": [
-        {"const": {"a": [1]}},
+        {
+          "const": {
+            "a": [
+              1
+            ]
+          }
+        },
         {
           "type": "object",
           "properties": {
-            "a": {"type": "array", "prefixItems": [{"$ref": "#/$defs/x"}]}
+            "a": {
+              "type": "array",
+              "prefixItems": [
+                {
+                  "$ref": "#/$defs/x"
+                }
+              ]
+            }
           }
         }
       ],
       "$defs": {
-        "x": {"type": "integer"}
+        "x": {
+          "type": "integer"
+        }
       }
     },
     "kind": "object",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "type": "object",
+      "maxProperties": 1,
       "properties": {
         "a": {
-          "type": "array",
+          "maxItems": 1,
+          "minItems": 1,
           "prefixItems": [
             {
-              "allOf": [
-                {"const": 1},
-                {"$ref": "#/$defs/x"}
-              ]
+              "const": 1
             }
           ],
-          "minItems": 1,
-          "maxItems": 1
+          "type": "array"
         }
       },
-      "required": ["a"],
-      "maxProperties": 1,
-      "$defs": {
-        "x": {"type": "integer"}
-      }
+      "required": [
+        "a"
+      ],
+      "type": "object"
     },
     "tests": [
-      {"data": {"a": [1]}, "valid": true},
-      {"data": {"a": [2]}, "valid": false},
-      {"data": {"a": ["x"]}, "valid": false},
-      {"data": {}, "valid": false}
+      {
+        "data": {
+          "a": [
+            1
+          ]
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": [
+            2
+          ]
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "a": [
+            "x"
+          ]
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
     ]
   },
   {

@@ -2,6 +2,10 @@ from __future__ import annotations
 
 from ..jsonschema_rs import canonical as _canonical
 
+Containment = _canonical.Containment
+Satisfiability = _canonical.Satisfiability
+Distinctness = _canonical.Distinctness
+CanonicalKind = _canonical.CanonicalKind
 TrueView = _canonical.TrueView
 FalseView = _canonical.FalseView
 MultiTypeView = _canonical.MultiTypeView
@@ -72,8 +76,12 @@ class IncompatibleOperands(CanonicalizationError):
     """Operands of a set operation cannot be combined."""
 
 
-class UnmodeledOperand(CanonicalizationError):
-    """A set operation reached a schema the canonical form does not model."""
+class UnsupportedOperand(CanonicalizationError):
+    """A set operation reached an operand the canonical form does not support."""
+
+
+class UnsupportedResult(CanonicalizationError):
+    """A set operation ran, and the canonical form does not support its result."""
 
 
 __all__ = [
@@ -81,9 +89,12 @@ __all__ = [
     "AnyOfView",
     "ArrayView",
     "CanonicalViewType",
+    "CanonicalKind",
     "CanonicalizationError",
+    "Containment",
     "ConstView",
     "ContainsView",
+    "Distinctness",
     "EnumView",
     "FalseView",
     "IncompatibleOperands",
@@ -97,12 +108,14 @@ __all__ = [
     "OneOfView",
     "RawView",
     "ReferenceView",
+    "Satisfiability",
     "StringView",
     "NumberView",
     "TrueView",
     "TypedGroupView",
     "UndeclaredValueFailsView",
-    "UnmodeledOperand",
+    "UnsupportedOperand",
+    "UnsupportedResult",
     "json",
     "schema",
 ]

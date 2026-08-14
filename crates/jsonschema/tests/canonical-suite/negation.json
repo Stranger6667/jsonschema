@@ -3830,25 +3830,69 @@
   {
     "description": "a negated choice between overlapping branches holds on the values they share",
     "schema": {
-      "$defs": {"a": {"type": "string", "minLength": 3}},
-      "not": {"oneOf": [{"$ref": "#/$defs/a"}, {"type": "string", "maxLength": 5}]}
+      "$defs": {
+        "a": {
+          "type": "string",
+          "minLength": 3
+        }
+      },
+      "not": {
+        "oneOf": [
+          {
+            "$ref": "#/$defs/a"
+          },
+          {
+            "type": "string",
+            "maxLength": 5
+          }
+        ]
+      }
     },
     "kind": "any_of",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$defs": {"a": {"type": "string", "minLength": 3}},
       "anyOf": [
-        {"type": ["null", "boolean", "number", "array", "object"]},
-        {"allOf": [{"type": "string", "maxLength": 5}, {"$ref": "#/$defs/a"}]}
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "array",
+            "object"
+          ]
+        },
+        {
+          "maxLength": 5,
+          "minLength": 3,
+          "type": "string"
+        }
       ]
     },
     "tests": [
-      {"data": "abc", "valid": true},
-      {"data": "abcde", "valid": true},
-      {"data": "ab", "valid": false},
-      {"data": "abcdef", "valid": false},
-      {"data": 5, "valid": true},
-      {"data": null, "valid": true}
+      {
+        "data": "abc",
+        "valid": true
+      },
+      {
+        "data": "abcde",
+        "valid": true
+      },
+      {
+        "data": "ab",
+        "valid": false
+      },
+      {
+        "data": "abcdef",
+        "valid": false
+      },
+      {
+        "data": 5,
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": true
+      }
     ]
   },
   {

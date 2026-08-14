@@ -124,7 +124,11 @@ MEDIUM_SCHEMA = {
     "required": ["id", "user"],
 }
 
-_prop = lambda t: {"type": t}
+
+def _prop(t):
+    return {"type": t}
+
+
 LARGE_SCHEMA = {
     "type": "object",
     "properties": {

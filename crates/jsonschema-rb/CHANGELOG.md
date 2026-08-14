@@ -2,6 +2,39 @@
 
 ## [Unreleased]
 
+### Added
+
+- `CanonicalSchema#union` and `CanonicalSchema#subtract`.
+- `JSONSchema::Canonical::UnsupportedResult`, raised where the canonical form does not support a set operation's result.
+- `JSONSchema::Canonical::IncompatibleOperands` where both operands read `#` and it names a different document on each side.
+- `JSONSchema::Canonical::Containment`, `Satisfiability`, `Distinctness` and `Kind`: named constants for the symbols `covers`, `satisfiability`, `kind` and `ArrayView#distinctness` return, each with an `ALL` list.
+
+### Changed
+
+- `CanonicalSchema#satisfiable?` is now `CanonicalSchema#satisfiability`, answering `:yes`, `:no`, or `:unknown` - `:yes` wherever a value can be exhibited, not only for the forms listing their members.
+- `CanonicalSchema#covers` decides through the difference as well: `:no` where the argument keeps values the receiver rejects, `:yes` where nothing is left over.
+- `CanonicalSchema#is_subset_of` is now `CanonicalSchema#covers`, answering `:yes`, `:no`, or `:unknown` for whether the receiver admits every value the argument admits.
+- `CanonicalSchema#negate` raises where it used to return `nil`.
+- `JSONSchema::Canonical::UnmodeledOperand` is now `JSONSchema::Canonical::UnsupportedOperand`, and means only that an operand is a `Raw` pass-through.
+
+### Fixed
+
+- Combining nodes of two different documents repointing a `$ref` to `#` at the combined result instead of the document it was written in, including one named by a definition the result keeps.
+- Intersecting a `$ref` whose target is `true` or `false`, which crashed the interpreter.
+- A key constraint left un-narrowed once a run is out of intersections, which crashed the interpreter on the next read of it.
+- `CanonicalSchema#covers` answering `:unknown` for a schema against itself, where that schema is a `$ref`.
+- `CanonicalSchema#union` keeping a `$ref` beside the schema it names, where the other three operations read through it.
+- `CanonicalSchema#covers` and `CanonicalSchema#subtract` cancelling two nodes written the same way whose `#` names a different document.
+- Two results accepting the same values comparing unequal over the part of their documents neither reads.
+- `additionalProperties` reaching a key the pattern map matches when a finite key constraint closes the map, which dropped values both operands accept.
+- A recursive definition stopping every other pointer in the document from being read through.
+- One `$defs` entry read past a wider schema written out at every use, rather than kept as the pointer it was.
+- Set operations rejecting one document canonicalized twice, and a pruned result rejected against the document it came from, where the maps resolve every shared reference the same way.
+- Set operations comparing a `$ref` as a pointer instead of reading through it, so a schema written with a `$ref` did not cancel against the same schema written out.
+- `CanonicalSchema#subtract` asking for a complement where the difference is one of the operands or empty, declining on schemas it can subtract.
+- Set operations keeping `$defs` entries the result no longer references, which then showed up in the emitted schema.
+- `CanonicalSchema#union` declining over an approximated intersection, where the union itself is exact.
+
 ## [0.49.9] - 2026-08-10
 
 ### Added

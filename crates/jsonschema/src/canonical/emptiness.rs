@@ -3,7 +3,7 @@
 //! `$ref` stays symbolic, so what sits behind one is invisible to leaf normalization. Settling a
 //! target lets `parse` substitute `False` or `True` and the existing pipeline fold.
 
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 
@@ -174,6 +174,60 @@ pub(crate) fn reference_edges(root: &Schema, definitions: &DefinitionMap) -> Ref
         record(Arc::clone(uri), body);
     }
     edges
+}
+
+/// Every definition key on a reference cycle. Following one leads back to where it started and
+/// never finishes, so callers leave these unresolved.
+///
+/// Built on the same [`strongly_connected`] pass the folding proofs use: a depth-first walk would
+/// finish with a key before another on the same cycle had been reached, missing keys that are on
+/// one - and which it missed would depend on the order it visited them in.
+pub(crate) fn cyclic_definition_keys(
+    definitions: &DefinitionMap,
+    within: &BTreeSet<Arc<str>>,
+) -> BTreeSet<Arc<str>> {
+    // A target nothing reaches is on no cycle anything enters, so building the graph over what the
+    // operands reach drops whole `$defs` maps while finding the same keys.
+    if within.is_empty() {
+        return BTreeSet::new();
+    }
+    let reachable: DefinitionMap = definitions
+        .iter()
+        .filter(|(uri, _)| within.contains(*uri))
+        .map(|(uri, body)| (Arc::clone(uri), body.clone()))
+        .collect();
+    // `#` is not a key of the map, so nothing resolves through it: the graph covers the definitions
+    // alone, against a root that references nothing.
+    let edges = reference_edges(&Schema::truthy(), &reachable);
+    strongly_connected(&edges)
+        .into_iter()
+        .filter(|component| is_cyclic(component, &edges))
+        .flatten()
+        .filter(|key| key.as_ref() != ROOT_DEFINITION_KEY)
+        .collect()
+}
+
+/// Every definition key, ordered so a body comes after every body it reads. `None` where the map
+/// holds a cycle, which admits no such order.
+pub(crate) fn settling_order(definitions: &DefinitionMap) -> Option<Vec<Arc<str>>> {
+    // `#` is not a key of the map, so nothing resolves through it: the graph covers the definitions
+    // alone, against a root that references nothing.
+    let edges = reference_edges(&Schema::truthy(), definitions);
+    let mut order = Vec::with_capacity(definitions.len());
+    // Tarjan hands a component back once everything it reaches is out, so targets come first.
+    for component in strongly_connected(&edges) {
+        if is_cyclic(&component, &edges) {
+            return None;
+        }
+        // Tarjan walks targets too, so a component can name one the map does not hold - and `#`,
+        // which is the root rather than an entry.
+        order.extend(
+            component
+                .into_iter()
+                .filter(|key| definitions.contains_key(key)),
+        );
+    }
+    Some(order)
 }
 
 /// Every member of a cyclic component whose internal cycles all pass through a

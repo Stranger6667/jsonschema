@@ -1,9 +1,63 @@
 from decimal import Decimal
-from typing import Literal, TypeAlias, final
+from typing import TypeAlias, final
 
 from . import json as json
 from . import schema as schema
 from .. import CanonicalSchema, JsonValue
+
+@final
+class Containment:
+    """Whether one schema admits every value another does."""
+
+    YES: Containment
+    NO: Containment
+    UNKNOWN: Containment
+    @property
+    def value(self) -> str: ...
+
+@final
+class Satisfiability:
+    """Whether any value satisfies a schema."""
+
+    YES: Satisfiability
+    NO: Satisfiability
+    UNKNOWN: Satisfiability
+    @property
+    def value(self) -> str: ...
+
+@final
+class Distinctness:
+    """What an array requires of its elements: all distinct, some repeated, or neither."""
+
+    UNCONSTRAINED: Distinctness
+    ALL_DISTINCT: Distinctness
+    SOME_REPEATED: Distinctness
+    @property
+    def value(self) -> str: ...
+
+@final
+class CanonicalKind:
+    """Structural discriminant of a canonical node, one member per view class."""
+
+    MULTI_TYPE: CanonicalKind
+    TYPED_GROUP: CanonicalKind
+    STRING: CanonicalKind
+    INTEGER: CanonicalKind
+    NUMBER: CanonicalKind
+    ARRAY: CanonicalKind
+    OBJECT: CanonicalKind
+    CONST: CanonicalKind
+    ENUM: CanonicalKind
+    NOT: CanonicalKind
+    ALL_OF: CanonicalKind
+    ANY_OF: CanonicalKind
+    ONE_OF: CanonicalKind
+    REFERENCE: CanonicalKind
+    TRUE: CanonicalKind
+    FALSE: CanonicalKind
+    RAW: CanonicalKind
+    @property
+    def value(self) -> str: ...
 
 @final
 class TrueView:
@@ -99,7 +153,7 @@ class ArrayView:
     @property
     def max_items(self) -> int | None: ...
     @property
-    def distinctness(self) -> Literal["unconstrained", "all_distinct", "some_repeated"]: ...
+    def distinctness(self) -> Distinctness: ...
     @property
     def prefix_items(self) -> list[CanonicalSchema]: ...
     @property
@@ -109,7 +163,7 @@ class ArrayView:
 
 @final
 class ContainsView:
-    """One `contains` demand of an array. An absent minimum spells the default of one."""
+    """One `contains` requirement of an array. An absent minimum means the default of one."""
 
     __match_args__: tuple[str, ...]
     @property
@@ -219,7 +273,7 @@ class EnumView:
 
 @final
 class RawView:
-    """A schema the canonical form does not model structurally, kept verbatim."""
+    """A schema the canonical form does not support structurally, kept verbatim."""
 
     __match_args__: tuple[str, ...]
     @property
@@ -260,5 +314,8 @@ class InvalidPattern(CanonicalizationError):
 class IncompatibleOperands(CanonicalizationError):
     """Operands of a set operation cannot be combined."""
 
-class UnmodeledOperand(CanonicalizationError):
-    """A set operation reached a schema the canonical form does not model."""
+class UnsupportedOperand(CanonicalizationError):
+    """A set operation reached an operand the canonical form does not support."""
+
+class UnsupportedResult(CanonicalizationError):
+    """A set operation ran, and the canonical form does not support its result."""

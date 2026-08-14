@@ -17,11 +17,64 @@ module JSONSchema
 
     # Structural discriminant of a canonical schema, one per view class.
     type kind = :multi_type | :typed_group | :string | :integer | :number | :array
-              | :object | :const | :enum | :any_of | :true | :false | :raw
+              | :object | :const | :enum | :not | :all_of | :any_of | :one_of
+              | :reference | :true | :false | :raw
+
+    # What an array requires of its elements: all distinct, some repeated, or neither.
+    type distinctness = :unconstrained | :all_distinct | :some_repeated
+
+    # Whether one schema admits every value another does.
+    type containment = :yes | :no | :unknown
+
+    # Whether any value satisfies a schema.
+    type satisfiability = :yes | :no | :unknown
 
     type view = TrueView | FalseView | MultiTypeView | TypedGroupView | StringView
-              | IntegerView | NumberView | ArrayView | ObjectView | AnyOfView
-              | ConstView | EnumView | RawView
+              | IntegerView | NumberView | ArrayView | ObjectView | NotView
+              | AllOfView | AnyOfView | OneOfView | ReferenceView | ConstView
+              | EnumView | RawView
+
+    module Containment
+      YES: :yes
+      NO: :no
+      UNKNOWN: :unknown
+      ALL: Array[containment]
+    end
+
+    module Satisfiability
+      YES: :yes
+      NO: :no
+      UNKNOWN: :unknown
+      ALL: Array[satisfiability]
+    end
+
+    module Distinctness
+      UNCONSTRAINED: :unconstrained
+      ALL_DISTINCT: :all_distinct
+      SOME_REPEATED: :some_repeated
+      ALL: Array[distinctness]
+    end
+
+    module Kind
+      MULTI_TYPE: :multi_type
+      TYPED_GROUP: :typed_group
+      STRING: :string
+      INTEGER: :integer
+      NUMBER: :number
+      ARRAY: :array
+      OBJECT: :object
+      CONST: :const
+      ENUM: :enum
+      NOT: :not
+      ALL_OF: :all_of
+      ANY_OF: :any_of
+      ONE_OF: :one_of
+      REFERENCE: :reference
+      TRUE: :true
+      FALSE: :false
+      RAW: :raw
+      ALL: Array[kind]
+    end
 
     class CanonicalizationError < StandardError
     end
@@ -35,7 +88,10 @@ module JSONSchema
     class IncompatibleOperands < CanonicalizationError
     end
 
-    class UnmodeledOperand < CanonicalizationError
+    class UnsupportedOperand < CanonicalizationError
+    end
+
+    class UnsupportedResult < CanonicalizationError
     end
 
     # A schema reduced to canonical form: schemas accepting the same values share one form.
@@ -45,11 +101,13 @@ module JSONSchema
       def kind: () -> kind
       def view: () -> view
       def intersect: (CanonicalSchema other) -> CanonicalSchema
-      def is_subset_of: (CanonicalSchema other) -> bool?
-      def negate: () -> CanonicalSchema?
+      def union: (CanonicalSchema other) -> CanonicalSchema
+      def subtract: (CanonicalSchema other) -> CanonicalSchema
+      def covers: (CanonicalSchema other) -> containment
+      def negate: () -> CanonicalSchema
       def definition: (String uri) -> CanonicalSchema?
       def definitions: () -> Hash[String, CanonicalSchema]
-      def satisfiable?: () -> bool
+      def satisfiability: () -> satisfiability
       def inspect: () -> String
       def ==: (untyped other) -> bool
       def eql?: (untyped other) -> bool
@@ -121,7 +179,7 @@ module JSONSchema
     class ArrayView
       def min_items: () -> Integer?
       def max_items: () -> Integer?
-      def distinctness: () -> (:unconstrained | :all_distinct | :some_repeated)
+      def distinctness: () -> distinctness
       def prefix_items: () -> Array[CanonicalSchema]
       def items: () -> CanonicalSchema?
       def contains: () -> Array[ContainsView]
@@ -129,7 +187,7 @@ module JSONSchema
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
-    # One `contains` demand of an array; an absent minimum spells the default of one.
+    # One `contains` requirement of an array; an absent minimum means the default of one.
     class ContainsView
       def schema: () -> CanonicalSchema
       def min_contains: () -> Integer?
@@ -168,6 +226,34 @@ module JSONSchema
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
+    # The complement of an opaque schema.
+    class NotView
+      def schema: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # A value matches iff every branch matches.
+    class AllOfView
+      def branches: () -> Array[CanonicalSchema]
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # A value matches iff exactly one branch matches.
+    class OneOfView
+      def branches: () -> Array[CanonicalSchema]
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # The target a `$ref` names.
+    class ReferenceView
+      def uri: () -> String
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
     # A value matches iff at least one branch matches.
     class AnyOfView
       def branches: () -> Array[CanonicalSchema]
@@ -189,7 +275,7 @@ module JSONSchema
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
-    # A schema the canonical form does not model structurally, kept verbatim.
+    # A schema the canonical form does not support structurally, kept verbatim.
     class RawView
       def schema: () -> untyped
       def inspect: () -> String

@@ -4,24 +4,25 @@ import pytest
 
 import jsonschema_rs
 from jsonschema_rs import CanonicalSchema, ValidationError, canonical, canonicalize
+from jsonschema_rs.canonical import CanonicalKind, Containment, Distinctness, Satisfiability
 
 DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 # `anyOf` annotates whichever branch the instance matched, which no `additional*` twin spells,
-# so this stays raw. Each construct canonicalization learns needs a still-unmodeled stand-in here.
-UNMODELED = {"if": {}, "unevaluatedProperties": False}
+# so this stays raw. Each construct canonicalization learns needs a still-unsupported stand-in here.
+UNSUPPORTED = {"if": {}, "unevaluatedProperties": False}
 
 
 @pytest.mark.parametrize(
     "schema",
     [
-        UNMODELED,
+        UNSUPPORTED,
     ],
 )
-def test_unmodeled_round_trips_verbatim(schema):
+def test_unsupported_round_trips_verbatim(schema):
     result = canonicalize(schema)
     assert isinstance(result, CanonicalSchema)
     assert result.to_json_schema() == schema
-    assert result.kind == "raw"
+    assert result.kind == CanonicalKind.RAW
 
 
 @pytest.mark.parametrize(
@@ -152,7 +153,7 @@ def test_view_array_lengths():
         ):
             assert min_items == 1
             assert max_items == 3
-            assert distinctness == "all_distinct"
+            assert distinctness == Distinctness.ALL_DISTINCT
             assert prefix_items == []
             assert items.to_json_schema() == {"$schema": DRAFT202012, "type": "integer"}
         case other:
@@ -162,9 +163,12 @@ def test_view_array_lengths():
 @pytest.mark.parametrize(
     ("schema", "expected"),
     (
-        ({"type": "array", "minItems": 1}, "unconstrained"),
-        ({"type": "array", "uniqueItems": True}, "all_distinct"),
-        ({"type": "array", "allOf": [{"not": {"type": "array", "uniqueItems": True}}]}, "some_repeated"),
+        ({"type": "array", "minItems": 1}, Distinctness.UNCONSTRAINED),
+        ({"type": "array", "uniqueItems": True}, Distinctness.ALL_DISTINCT),
+        (
+            {"type": "array", "allOf": [{"not": {"type": "array", "uniqueItems": True}}]},
+            Distinctness.SOME_REPEATED,
+        ),
     ),
 )
 def test_view_array_distinctness(schema, expected):
@@ -378,7 +382,10 @@ def test_view_integer():
 def test_view_any_of():
     match canonicalize({"anyOf": [{"const": 5}, {"type": "string"}]}).view():
         case canonical.AnyOfView(branches=branches):
-            assert [branch.kind for branch in branches] == ["multi_type", "const"]
+            assert [branch.kind for branch in branches] == [
+                CanonicalKind.MULTI_TYPE,
+                CanonicalKind.CONST,
+            ]
             assert all(isinstance(branch, CanonicalSchema) for branch in branches)
         case other:
             pytest.fail(f"unexpected view: {other!r}")
@@ -391,7 +398,10 @@ def test_view_one_of():
     }
     match canonicalize(schema).view():
         case canonical.OneOfView(branches=branches):
-            assert [branch.kind for branch in branches] == ["reference", "reference"]
+            assert [branch.kind for branch in branches] == [
+                CanonicalKind.REFERENCE,
+                CanonicalKind.REFERENCE,
+            ]
             assert all(isinstance(branch, CanonicalSchema) for branch in branches)
         case other:
             pytest.fail(f"unexpected view: {other!r}")
@@ -405,20 +415,24 @@ def test_view_reference_and_definitions():
             assert uri == "#/$defs/value"
         case other:
             pytest.fail(f"unexpected view: {other!r}")
-    assert result.definitions()["#/$defs/value"].kind == "multi_type"
+    assert result.definitions()["#/$defs/value"].kind == CanonicalKind.MULTI_TYPE
 
 
 def test_view_all_of_with_symbolic_reference():
+    # A cycle keeps the conjunction symbolic: such a document is not folded through its targets.
     schema = {
         "allOf": [
             {"$ref": "#/$defs/value"},
             {"type": "string"},
         ],
-        "$defs": {"value": {"type": "string"}},
+        "$defs": {"value": {"type": "object", "properties": {"self": {"$ref": "#/$defs/value"}}}},
     }
     match canonicalize(schema).view():
         case canonical.AllOfView(branches=branches):
-            assert [branch.kind for branch in branches] == ["multi_type", "reference"]
+            assert [branch.kind for branch in branches] == [
+                CanonicalKind.MULTI_TYPE,
+                CanonicalKind.REFERENCE,
+            ]
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 
@@ -431,15 +445,15 @@ def test_view_not_with_symbolic_reference():
         }
     ).view():
         case canonical.NotView(schema=inner):
-            assert inner.kind == "reference"
+            assert inner.kind == CanonicalKind.REFERENCE
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 
 
 def test_view_raw():
-    match canonicalize(UNMODELED).view():
+    match canonicalize(UNSUPPORTED).view():
         case canonical.RawView(schema=payload):
-            assert payload == UNMODELED
+            assert payload == UNSUPPORTED
         case other:
             pytest.fail(f"unexpected view: {other!r}")
 
@@ -453,24 +467,24 @@ def test_contains_view_is_public():
 @pytest.mark.parametrize(
     ("schema", "kind"),
     [
-        ({"const": 5}, "const"),
-        ({"enum": [1, 2]}, "enum"),
-        ({"type": ["integer", "string"]}, "multi_type"),
-        ({"anyOf": [{"const": 5}, {"type": "string"}]}, "any_of"),
-        ({}, "true"),
-        (False, "false"),
-        ({"type": "string", "minLength": 3}, "string"),
-        ({"type": "integer", "minimum": 0}, "integer"),
-        ({"pattern": "a"}, "any_of"),
+        ({"const": 5}, CanonicalKind.CONST),
+        ({"enum": [1, 2]}, CanonicalKind.ENUM),
+        ({"type": ["integer", "string"]}, CanonicalKind.MULTI_TYPE),
+        ({"anyOf": [{"const": 5}, {"type": "string"}]}, CanonicalKind.ANY_OF),
+        ({}, CanonicalKind.TRUE),
+        (False, CanonicalKind.FALSE),
+        ({"type": "string", "minLength": 3}, CanonicalKind.STRING),
+        ({"type": "integer", "minimum": 0}, CanonicalKind.INTEGER),
+        ({"pattern": "a"}, CanonicalKind.ANY_OF),
     ],
 )
 def test_kind(schema, kind):
     assert canonicalize(schema).kind == kind
 
 
-def test_is_satisfiable():
-    assert canonicalize({"const": 5}).is_satisfiable()
-    assert not canonicalize({"type": "integer", "enum": ["x"]}).is_satisfiable()
+def test_satisfiability():
+    assert canonicalize({"const": 5}).satisfiability() != Satisfiability.NO
+    assert canonicalize({"type": "integer", "enum": ["x"]}).satisfiability() == Satisfiability.NO
 
 
 @pytest.mark.parametrize(
@@ -540,8 +554,8 @@ def test_large_pattern_is_rejected_by_default():
     ],
 )
 def test_large_pattern_with_raised_size_limit(options):
-    canonical = canonicalize(LARGE_PATTERN_SCHEMA, pattern_options=options)
-    assert canonical.kind == "string"
+    canonical_schema = canonicalize(LARGE_PATTERN_SCHEMA, pattern_options=options)
+    assert canonical_schema.kind == CanonicalKind.STRING
 
 
 def test_pattern_options_rejects_other_types():
@@ -567,24 +581,106 @@ def test_intersect(left, right, expected):
     assert result.to_json_schema() == expected
 
 
-def test_intersect_keeps_references_resolvable():
-    root = canonicalize(
-        {
-            "$defs": {"A": {"type": "string"}, "B": {"minLength": 4}},
-            "allOf": [{"$ref": "#/$defs/A"}, {"$ref": "#/$defs/B"}],
-        }
-    )
-    left, right = root.view().branches
+@pytest.mark.parametrize(
+    ("left", "right", "expected"),
+    [
+        (
+            {"type": "string"},
+            {"type": "integer"},
+            {"$schema": DRAFT202012, "type": ["integer", "string"]},
+        ),
+        (
+            {"const": "a"},
+            {"enum": ["a", "b"]},
+            {"$schema": DRAFT202012, "enum": ["a", "b"]},
+        ),
+        (
+            {"type": "string", "minLength": 4},
+            {"type": "string"},
+            {"$schema": DRAFT202012, "type": "string"},
+        ),
+    ],
+)
+def test_union(left, right, expected):
+    result = canonicalize(left).union(canonicalize(right))
+    assert isinstance(result, CanonicalSchema)
+    assert result.to_json_schema() == expected
+
+
+@pytest.mark.parametrize(
+    ("left", "right", "expected", "satisfiability"),
+    [
+        (
+            {"type": "integer", "minimum": 10},
+            {"type": "integer", "minimum": 15},
+            {"$schema": DRAFT202012, "type": "integer", "minimum": 10, "maximum": 14},
+            Satisfiability.YES,
+        ),
+        (
+            {"enum": ["a", "b"]},
+            {"enum": ["a"]},
+            {"$schema": DRAFT202012, "const": "b"},
+            Satisfiability.YES,
+        ),
+        (
+            {"type": "integer"},
+            {"type": ["integer", "string"]},
+            {"$schema": DRAFT202012, "not": {}},
+            Satisfiability.NO,
+        ),
+        # What a narrowed schema stopped accepting, which is the comparison workflow: the values
+        # `old` took and `new` turns away.
+        (
+            {"type": "string"},
+            {"type": "string", "maxLength": 50},
+            {"$schema": DRAFT202012, "type": "string", "minLength": 51},
+            Satisfiability.YES,
+        ),
+        # Empty the other way round, since `new` only narrowed - which is what proves nothing was
+        # lost.
+        (
+            {"type": "string", "maxLength": 50},
+            {"type": "string"},
+            {"$schema": DRAFT202012, "not": {}},
+            Satisfiability.NO,
+        ),
+    ],
+)
+def test_subtract(left, right, expected, satisfiability):
+    result = canonicalize(left).subtract(canonicalize(right))
+    assert isinstance(result, CanonicalSchema)
+    assert result.to_json_schema() == expected
+    assert result.satisfiability() == satisfiability
+
+
+@pytest.mark.parametrize("operation", ["union", "subtract"])
+def test_set_operations_reject_uncombinable_operands(operation):
+    modeled = canonicalize({"type": "string"})
+    with pytest.raises(canonical.UnsupportedOperand):
+        getattr(modeled, operation)(canonicalize(UNSUPPORTED))
+    with pytest.raises(canonical.IncompatibleOperands):
+        getattr(canonicalize({"type": "string"}, draft=7), operation)(canonicalize({"type": "string"}, draft=20))
+
+
+def test_result_carries_exactly_the_targets_it_still_names():
+    left = canonicalize({"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A"})
+    right = canonicalize({"$defs": {"B": {"minLength": 4}}, "$ref": "#/$defs/B"})
+    # Both pointers are read through and the meet folds into one leaf, naming neither.
     result = left.intersect(right)
-    assert result.definitions().keys() == root.definitions().keys()
+    assert result.definitions() == {}
+    assert result.to_json_schema() == {
+        "$schema": DRAFT202012,
+        "type": "string",
+        "minLength": 4,
+    }
 
 
 @pytest.mark.parametrize("swap", [False, True])
-def test_intersect_rejects_unmodeled_operand(swap):
-    raw = canonicalize(UNMODELED)
+def test_intersect_rejects_unsupported_operand(swap):
+    raw = canonicalize(UNSUPPORTED)
     modeled = canonicalize({"type": "string"})
     left, right = (modeled, raw) if swap else (raw, modeled)
-    with pytest.raises(canonical.UnmodeledOperand):
+    with pytest.raises(canonical.UnsupportedOperand):
         left.intersect(right)
 
 
@@ -600,41 +696,105 @@ def test_intersect_rejects_draft_mismatch(left, right):
         canonicalize(left, draft=7).intersect(canonicalize(right, draft=20))
 
 
-def test_intersect_rejects_distinct_definition_maps():
+def test_intersect_renames_a_definition_the_two_documents_bind_differently():
+    # A `$defs` name is private to its document, so two documents binding it to different bodies
+    # rename apart rather than refusing to combine.
     left = canonicalize({"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A"})
-    right = canonicalize({"$defs": {"B": {"minLength": 4}}, "$ref": "#/$defs/B"})
+    right = canonicalize({"$defs": {"A": {"minLength": 4}}, "$ref": "#/$defs/A"})
+    assert left.intersect(right).to_json_schema() == {
+        "$schema": DRAFT202012,
+        "type": "string",
+        "minLength": 4,
+    }
+
+
+def test_intersect_rejects_documents_binding_the_root_differently():
+    # `#` names the document itself, so unlike a private key it cannot be renamed apart.
+    left = canonicalize({"type": "object", "properties": {"next": {"$ref": "#"}}})
+    right = canonicalize({"type": "object", "properties": {"next": {"$ref": "#"}}, "minProperties": 1})
     with pytest.raises(canonical.IncompatibleOperands):
         left.intersect(right)
 
 
 @pytest.mark.parametrize(
-    ("left", "right", "expected"),
+    ("outer", "inner", "expected"),
     [
-        ({"type": "integer"}, {"type": "integer"}, True),
-        ({"const": 1}, {"type": "integer"}, True),
-        ({"enum": [1, 2]}, {"type": "integer"}, True),
-        ({"const": "x"}, {"type": "integer"}, False),
-        ({"enum": [1, "x"]}, {"type": "integer"}, False),
-        ({"type": "string"}, {"type": "integer"}, None),
-        ({"type": "integer"}, {"type": "integer", "minimum": 5}, None),
+        ({"type": "integer"}, {"type": "integer"}, Containment.YES),
+        ({"type": "integer"}, {"const": 1}, Containment.YES),
+        ({"type": "integer"}, {"enum": [1, 2]}, Containment.YES),
+        ({"type": "integer"}, {"const": "x"}, Containment.NO),
+        ({"type": "integer"}, {"enum": [1, "x"]}, Containment.NO),
+        ({"type": "integer"}, {"type": "string"}, Containment.NO),
+        ({"type": "integer", "minimum": 5}, {"type": "integer"}, Containment.NO),
+        ({"type": "string", "pattern": "^a"}, {"type": "string"}, Containment.NO),
     ],
 )
-def test_is_subset_of(left, right, expected):
-    assert canonicalize(left).is_subset_of(canonicalize(right)) is expected
+def test_covers(outer, inner, expected):
+    assert canonicalize(outer).covers(canonicalize(inner)) == expected
 
 
 @pytest.mark.parametrize("swap", [False, True])
-def test_is_subset_of_rejects_unmodeled_operand(swap):
-    raw = canonicalize(UNMODELED)
+def test_covers_rejects_unsupported_operand(swap):
+    raw = canonicalize(UNSUPPORTED)
     modeled = canonicalize({"type": "string"})
     left, right = (modeled, raw) if swap else (raw, modeled)
-    with pytest.raises(canonical.UnmodeledOperand):
-        left.is_subset_of(right)
+    with pytest.raises(canonical.UnsupportedOperand):
+        left.covers(right)
 
 
-def test_is_subset_of_rejects_draft_mismatch():
+def test_covers_rejects_draft_mismatch():
     with pytest.raises(canonical.IncompatibleOperands):
-        canonicalize({"type": "string"}, draft=7).is_subset_of(canonicalize({"type": "string"}, draft=20))
+        canonicalize({"type": "string"}, draft=7).covers(canonicalize({"type": "string"}, draft=20))
+
+
+LABEL_MEMBERS = [
+    (Containment.YES, "yes"),
+    (Containment.NO, "no"),
+    (Containment.UNKNOWN, "unknown"),
+    (Satisfiability.YES, "yes"),
+    (Satisfiability.NO, "no"),
+    (Satisfiability.UNKNOWN, "unknown"),
+    (Distinctness.UNCONSTRAINED, "unconstrained"),
+    (Distinctness.ALL_DISTINCT, "all_distinct"),
+    (Distinctness.SOME_REPEATED, "some_repeated"),
+    (CanonicalKind.MULTI_TYPE, "multi_type"),
+    (CanonicalKind.TYPED_GROUP, "typed_group"),
+    (CanonicalKind.STRING, "string"),
+    (CanonicalKind.INTEGER, "integer"),
+    (CanonicalKind.NUMBER, "number"),
+    (CanonicalKind.ARRAY, "array"),
+    (CanonicalKind.OBJECT, "object"),
+    (CanonicalKind.CONST, "const"),
+    (CanonicalKind.ENUM, "enum"),
+    (CanonicalKind.NOT, "not"),
+    (CanonicalKind.ALL_OF, "all_of"),
+    (CanonicalKind.ANY_OF, "any_of"),
+    (CanonicalKind.ONE_OF, "one_of"),
+    (CanonicalKind.REFERENCE, "reference"),
+    (CanonicalKind.TRUE, "true"),
+    (CanonicalKind.FALSE, "false"),
+    (CanonicalKind.RAW, "raw"),
+]
+
+
+@pytest.mark.parametrize(("member", "label"), LABEL_MEMBERS)
+def test_label_members_are_their_own_values(member, label):
+    assert member not in (0, 1, True, False, label)
+
+
+@pytest.mark.parametrize(("member", "label"), LABEL_MEMBERS)
+def test_label_members_carry_their_label(member, label):
+    assert member.value == label
+
+
+@pytest.mark.parametrize(("member", "label"), LABEL_MEMBERS)
+def test_label_members_are_hashable(member, label):
+    assert {member: "kept"}[member] == "kept"
+
+
+def test_label_members_hash_apart():
+    assert len({Containment.YES, Containment.NO, Containment.UNKNOWN}) == 3
+    assert len({CanonicalKind.RAW, CanonicalKind.OBJECT}) == 2
 
 
 def test_definition():
@@ -675,10 +835,64 @@ def test_negate(schema, expected):
     assert result.to_json_schema() == expected
 
 
-# The decline set is contract: a caller sizes its fallback on it.
-@pytest.mark.parametrize("schema", [UNMODELED])
-def test_negate_declines(schema):
-    assert canonicalize(schema).negate() is None
+# A `Raw` operand raises `UnsupportedOperand`, not `UnsupportedResult`.
+def test_negate_rejects_an_unsupported_schema():
+    with pytest.raises(canonical.UnsupportedOperand):
+        canonicalize(UNSUPPORTED).negate()
+
+
+# The two declines are different answers, so each needs its own reachable case.
+@pytest.mark.parametrize(
+    "schema",
+    [
+        {"type": "object", "patternProperties": {"^a": {"type": "string"}}},
+        {"type": "array", "contains": {"type": "string"}, "minContains": 2},
+    ],
+)
+def test_negate_raises_unsupported_result(schema):
+    with pytest.raises(canonical.UnsupportedResult) as exc:
+        canonicalize(schema).negate()
+    assert str(exc.value) == "result is not supported in canonical form"
+
+
+def test_subtract_raises_unsupported_result():
+    plain = canonicalize({"type": "object"})
+    hard = canonicalize({"type": "object", "patternProperties": {"^a": {"type": "string"}}})
+    with pytest.raises(canonical.UnsupportedResult):
+        plain.subtract(hard)
+
+
+def test_subtracting_a_schema_from_itself_needs_no_complement():
+    schema = {"type": "object", "patternProperties": {"^a": {"type": "string"}}}
+    # Negating this schema declines, so the self-difference must not go through a complement.
+    with pytest.raises(canonical.UnsupportedResult):
+        canonicalize(schema).negate()
+    assert canonicalize(schema).subtract(canonicalize(schema)).satisfiability() == Satisfiability.NO
+
+
+def test_one_document_canonicalized_twice_combines():
+    source = {"$defs": {"Id": {"type": "string"}}, "type": "object", "properties": {"id": {"$ref": "#/$defs/Id"}}}
+    left = canonicalize(source)
+    right = canonicalize(source)
+    assert left == right
+    assert left.intersect(right) == left
+    assert left.covers(right) == Containment.YES
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        (True, Satisfiability.YES),
+        ({"const": 5}, Satisfiability.YES),
+        ({"enum": [1, 2]}, Satisfiability.YES),
+        (False, Satisfiability.NO),
+        ({"type": "string"}, Satisfiability.YES),
+        ({"type": "string", "minLength": 2}, Satisfiability.YES),
+        ({"type": "string", "pattern": "^a"}, Satisfiability.UNKNOWN),
+    ],
+)
+def test_satisfiability_answers(schema, expected):
+    assert canonicalize(schema).satisfiability() == expected
 
 
 def test_negate_draft4_integer_type():

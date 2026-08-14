@@ -5,7 +5,7 @@ use std::{
 };
 
 use serde_json::{Number, Value};
-use strum::{EnumDiscriminants, IntoStaticStr};
+use strum::{EnumDiscriminants, IntoStaticStr, VariantArray};
 
 use crate::{
     keywords::format::{builtin_format, BuiltinFormat},
@@ -250,7 +250,7 @@ impl Schema {
 #[strum_discriminants(
     name(CanonicalKind),
     vis(pub),
-    derive(Hash, IntoStaticStr),
+    derive(Hash, IntoStaticStr, VariantArray),
     strum(serialize_all = "snake_case"),
     doc = "Structural discriminant of a [`CanonicalSchema`](crate::CanonicalSchema), one variant per IR arm."
 )]
@@ -356,14 +356,16 @@ impl MaybeEmpty for IntegerLeaf {
     }
 }
 
-/// What an array leaf says about elements coinciding.
+/// What an array leaf requires of its elements: all distinct, some repeated, or neither.
 ///
 /// Exhaustive on purpose: a new state must break every consumer that reads it, the bindings
 /// included, rather than reaching a runtime fallback.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, IntoStaticStr)]
+#[derive(
+    Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Default, IntoStaticStr, VariantArray,
+)]
 #[strum(serialize_all = "snake_case")]
 pub enum Distinctness {
-    /// Elements may coincide or not.
+    /// Elements may repeat or not.
     #[default]
     Unconstrained,
     /// No two elements are the same value.
@@ -516,6 +518,11 @@ impl MaybeEmpty for ObjectLeaf {
         let Some(ceiling) = self.effective_sizes().maximum else {
             return false;
         };
+        // A demand needs a key present to break its rule, just as a required key needs one to be,
+        // and a ceiling of zero leaves no slot for either.
+        if ceiling.is_zero() && !self.violations.is_empty() {
+            return true;
+        }
         ceiling < self.required_count()
             || self
                 .sizes

@@ -1,6 +1,7 @@
 //! Set algebra over canonical IR nodes.
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
+use ahash::AHashSet;
 use referencing::Draft;
 use serde_json::Value;
 
@@ -22,28 +23,106 @@ use crate::{
 
 /// The schema accepting exactly the values that BOTH `left` and `right` accept (set intersection, `allOf`).
 pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
-    // A conjunction over unions meets every pair, and a row of them compounds into a count no
+    // A conjunction over unions intersects every pair, and a row of them compounds into a count no
     // machine finishes; the run gives up and the document stays `Raw` rather than carrying on.
-    if !ctx.take_meet() {
+    if !ctx.take_intersection() {
+        // `true` is wider than the real intersection: an approximation like any other.
+        ctx.record_inexact_intersection();
         return Schema::truthy();
     }
-    // A side that decides the meet on its own hands back the node it already holds. Answering here
-    // beats reaching the cache below, whose key comparison walks the other side's whole subtree.
+    // A `$ref` and the schema it references accept the same values, so intersect the targets rather
+    // than the pointers. Two equal sides need no target: their intersection is the side itself, and a
+    // pair holding no pointer has nothing to resolve - which is the whole parse walk.
+    let left_names = matches!(left.kind(), SchemaKind::Reference(_));
+    let right_names = matches!(right.kind(), SchemaKind::Reference(_));
+    let (left, right, pointers) = if (!left_names && !right_names) || left == right {
+        (left, right, Pointers::default())
+    } else {
+        let left_target = resolved(left.clone(), ctx);
+        let right_target = resolved(right.clone(), ctx);
+        let pointers = Pointers {
+            left: left_names.then(|| (left, left_target.clone())),
+            right: right_names.then(|| (right, right_target.clone())),
+        };
+        (left_target, right_target, pointers)
+    };
+    // A side that decides the result on its own returns the node it already holds. Answering here
+    // beats reaching the cache below, whose key comparison walks the other side's whole subtree. A
+    // pointer is resolved first, or the target deciding the pair would reach the dispatch below.
     match (left.kind(), right.kind()) {
-        (SchemaKind::False, _) | (_, SchemaKind::True) => return left,
-        (SchemaKind::True, _) | (_, SchemaKind::False) => return right,
+        (SchemaKind::False, _) | (_, SchemaKind::True) => return pointers.reshare(left),
+        (SchemaKind::True, _) | (_, SchemaKind::False) => return pointers.reshare(right),
         _ => {}
     }
     // A node reached from two places is a node the product will reach again, and answering from the
     // first visit stops the whole subtree below it from being walked a second time. A node held
     // nowhere else cannot come back, so remembering it would only cost the room.
     if let Some(remembered) = ctx.recall_intersection(&left, &right) {
-        return remembered;
+        return pointers.reshare(remembered);
     }
     let key = (left.clone(), right.clone());
-    let result = intersect_pair(left, right, ctx);
-    ctx.remember_intersection(key.0, key.1, &result);
-    result
+    // Whether this pair approximated travels with it: a later walk reading the remembered result
+    // reads the same approximation, and deciding on it needs to know that.
+    let (result, inexact) = ctx.probe(|| intersect_pair(left, right, ctx));
+    if inexact {
+        ctx.record_inexact_intersection();
+    }
+    ctx.remember_intersection(key.0, key.1, &result, inexact);
+    // Every exit reshares, or one value set gets two forms depending on the exit reached.
+    pointers.reshare(result)
+}
+
+/// The pointers an intersection was asked about, beside the bodies they name. A side the other one
+/// leaves whole is returned as the pointer, keeping the target shared.
+#[derive(Default)]
+struct Pointers {
+    left: Option<(Schema, Schema)>,
+    right: Option<(Schema, Schema)>,
+}
+
+impl Pointers {
+    fn reshare(&self, result: Schema) -> Schema {
+        // `true`/`false` is returned directly: behind a `$ref` it would read as undecided.
+        if matches!(result.kind(), SchemaKind::True | SchemaKind::False) {
+            return result;
+        }
+        // The smallest, not the first: operand order must not decide which pointer comes back.
+        [&self.left, &self.right]
+            .into_iter()
+            .flatten()
+            .filter(|(_, target)| result == *target)
+            .map(|(pointer, _)| pointer)
+            .min()
+            .cloned()
+            .unwrap_or(result)
+    }
+}
+
+/// The schema a `$ref` points to, following a chain to the end. Returns `schema` unchanged where
+/// the run resolves no references, or the target is unknown. No visited set is needed: the context
+/// declines a target on a cycle, which ends the walk.
+pub(crate) fn resolved(schema: Schema, ctx: &CanonicalizationContext) -> Schema {
+    let mut current = schema;
+    while let SchemaKind::Reference(uri) = current.kind() {
+        let Some(target) = ctx.definition(uri) else {
+            return current;
+        };
+        current = target.clone();
+    }
+    current
+}
+
+/// Whether a check holds on intersections the form expresses exactly. An approximated one proves
+/// nothing, nor does an exhausted intersection budget, where `intersect` returns `true`.
+fn holds_exactly(ctx: &CanonicalizationContext, check: impl FnOnce() -> bool) -> bool {
+    computed_exactly(ctx, check).unwrap_or(false)
+}
+
+/// The result of a computation that rests on intersections, or `None` where the run could only
+/// approximate one of them and the result proves nothing.
+fn computed_exactly<T>(ctx: &CanonicalizationContext, compute: impl FnOnce() -> T) -> Option<T> {
+    let (computed, inexact) = ctx.probe(compute);
+    (!inexact && !ctx.outgrew_distribution()).then_some(computed)
 }
 
 fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
@@ -81,7 +160,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         | (SchemaKind::Object(_), SchemaKind::Array(_)) => {
             Schema::falsy()
         }
-        // `intersect` hands back the other side before dispatching here.
+        // `intersect` returns the other side before dispatching here.
         (SchemaKind::True, _) | (_, SchemaKind::True) => {
             unreachable!("a `True` side is answered before the pair is dispatched")
         }
@@ -89,6 +168,25 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         // exact symbolic conjunction rather than claiming facts about an unresolved target.
         (SchemaKind::Reference(left), SchemaKind::Reference(right)) if left == right => {
             Schema::new(SchemaKind::Reference(left))
+        }
+        // Both sides are unions: every pair goes into one union, not into a union per branch of
+        // whichever side came first. An inner union normalizes what it holds, and a leaf folded
+        // away there cannot meet the sibling that would have completed it, so nesting would let
+        // the operand order pick the form.
+        // e.g.  anyOf [{"type": "number"}, {"type": "integer", "minimum": -2}]
+        //         and anyOf [{"type": "integer", "maximum": -3}, {"type": "number", "minimum": -2}]
+        //       =>  nested, `integer >= -2` folds into `number >= -2` before it can join
+        //           `integer <= -3` into the whole `integer` line; flat, the two windows meet.
+        (SchemaKind::AnyOf(left_branches), SchemaKind::AnyOf(right_branches)) => {
+            let left_branches = left_branches.as_slice();
+            let right_branches = right_branches.as_slice();
+            let mut out = Vec::with_capacity(left_branches.len() * right_branches.len());
+            for left in left_branches {
+                for right in right_branches {
+                    out.push(intersect(left.clone(), right.clone(), ctx));
+                }
+            }
+            union(out, ctx)
         }
         // One side is an `AnyOf` (matches if any branch matches). Push the intersection inside the union:
         // (A or B) and C = (A and C) or (B and C). This happens before opaque ref handling so an `AllOf`
@@ -279,7 +377,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
             let within = integer_within(&numbers.into_inner(), ctx);
             intersect(Schema::new(SchemaKind::Integer(integers)), within, ctx)
         }
-        // `Raw` is an unmodeled schema kept verbatim. It only ever appears as the whole document (parse keeps
+        // `Raw` is an unsupported schema kept verbatim. It only ever appears as the whole document (parse keeps
         // the entire document `Raw` when it cannot model it), never nested in a combinator, so intersect never sees it.
         (SchemaKind::Raw(_), _) | (_, SchemaKind::Raw(_)) => {
             unreachable!("`Raw` is whole-document; combinators never contain it")
@@ -383,10 +481,6 @@ fn opaque_conjunction(branches: Vec<Schema>) -> Schema {
         }
         Err(mut lone) => lone.pop().unwrap_or_else(Schema::truthy),
     };
-    debug_assert!(
-        contains_reference(&schema),
-        "opaque intersection is constructed only across a symbolic reference"
-    );
     schema
 }
 
@@ -512,7 +606,7 @@ fn pointer_target<'a>(
     let mut current = branch;
     let mut walked: Vec<&Arc<str>> = Vec::new();
     while let SchemaKind::Reference(uri) = current.kind() {
-        // A pointer reached twice on one path names a body that never arrives.
+        // A pointer reached twice on one path is a cycle: it never resolves to a schema.
         if walked.contains(&uri) {
             return None;
         }
@@ -619,8 +713,8 @@ fn scalar_bodies_are_disjoint(targets: &[&Schema], ctx: &CanonicalizationContext
     pairwise_overlaps(&scalars, ctx).is_empty()
 }
 
-/// What each branch stands for, with a pointer replaced by the body it names, or `None` where one
-/// leads outside the document or back into itself.
+/// What each branch stands for, with a pointer replaced by the schema it references, or `None`
+/// where one leads outside the document or back into itself.
 fn pointer_targets<'a>(
     branches: &'a [Schema],
     definitions: &'a DefinitionMap,
@@ -701,7 +795,7 @@ fn value_types(values: &[CanonicalJson]) -> JsonTypeSet {
 /// [`one_of`] over branches none of which holds a reference: some branch matches and no two-branch
 /// overlap does, so only the overlaps need complements — a branch overlapping nothing is never
 /// negated. `None` when an overlap's complement is inexpressible.
-fn concrete_one_of(
+pub(crate) fn concrete_one_of(
     branches: Vec<Schema>,
     definitions: &DefinitionMap,
     ctx: &CanonicalizationContext,
@@ -790,6 +884,10 @@ fn pairwise_overlaps(branches: &[Schema], ctx: &CanonicalizationContext) -> Vec<
 }
 
 /// The schema accepting every value that ANY of the `branches` accepts (set union, `anyOf`), in normal form.
+///
+/// A branch that is a pointer stays one. A meet of two pointers is a body no name denotes, so
+/// `intersect` writes it out - a join keeps every branch exactly a named body, and reading them
+/// through would give the union one form here and a different one inside a document.
 pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Schema {
     // Every branch is sorted into one of these: the JSON types any branch allows, loose values, the
     // values each `TypedGroup` allows for its type, and the string/integer branches kept as windows.
@@ -1290,6 +1388,10 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         );
         out.push(object_leaf(leaf, ctx));
     }
+    // Two of these can cover each other and the pass below drops whichever comes first, so sort:
+    // the caller's operand order must not decide which survives.
+    symbolic_branches.sort_unstable();
+    symbolic_branches.dedup();
     out.extend(symbolic_branches);
     // The loose value set becomes a branch, unless it collapsed to empty.
     if !matches!(value_set.kind(), SchemaKind::False) {
@@ -1332,6 +1434,16 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     });
     drop_covered_conjunctions(&mut out, ctx);
     drop_property_alternatives_covered_by_sibling(&mut out, ctx);
+
+    // A leaf can fold to nothing as it is built, which contributes nothing to the union. None folds
+    // to everything: only the type set could, and a set grown to every type returned above - the
+    // widening that grows it reruns the fold, which returns there.
+    debug_assert!(
+        !out.iter()
+            .any(|branch| matches!(branch.kind(), SchemaKind::True)),
+        "a branch accepting everything is answered before the branches are assembled"
+    );
+    out.retain(|branch| !matches!(branch.kind(), SchemaKind::False));
 
     // Zero branches accept nothing, so the union is `False`; one branch needs no `anyOf` wrapper.
     match AtLeastTwo::new(out) {
@@ -1657,7 +1769,9 @@ fn collapse_object_leaves_covering_domain(
         violations: Vec::new(),
     };
     let packed = packed_leaves(leaves, ctx);
-    if !split_piece_is_covered(piece.clone(), &packed, &keys, ctx) {
+    if !holds_exactly(ctx, || {
+        split_piece_is_covered(piece.clone(), &packed, &keys, ctx)
+    }) {
         return false;
     }
     leaves.clear();
@@ -1719,7 +1833,7 @@ fn split_piece_is_covered(
             continue;
         }
         any_within_reach = true;
-        if oracle::covers(&schema, leaf, ctx) == Verdict::Admits {
+        if oracle::covers(leaf, &schema, ctx) == Verdict::Admits {
             return true;
         }
     }
@@ -1805,7 +1919,7 @@ fn widen_size_window_covered_by_siblings(
             let drops_minimum = ray.minimum.is_none();
             let mut piece = leaves[index].clone();
             piece.sizes = ray;
-            if split_piece_is_covered(piece, &siblings, &keys, ctx) {
+            if holds_exactly(ctx, || split_piece_is_covered(piece, &siblings, &keys, ctx)) {
                 if drops_minimum {
                     leaves[index].sizes.minimum = None;
                 } else {
@@ -1840,16 +1954,20 @@ fn drop_object_branch_covered_by_siblings(
         let siblings = siblings_of(&packed, index);
         // Siblings sharing no value with the branch cover no part of it, and every piece the walks
         // below cut out is part of it.
-        if siblings.iter().all(|sibling| {
-            matches!(
-                intersect(packed[index].clone(), sibling.clone(), ctx).kind(),
-                SchemaKind::False
-            )
+        if holds_exactly(ctx, || {
+            siblings.iter().all(|sibling| {
+                matches!(
+                    intersect(packed[index].clone(), sibling.clone(), ctx).kind(),
+                    SchemaKind::False
+                )
+            })
         }) {
             continue;
         }
         let keys = keys_beside(leaves, index);
-        if split_piece_is_covered(leaves[index].clone(), &siblings, &keys, ctx) {
+        if holds_exactly(ctx, || {
+            split_piece_is_covered(leaves[index].clone(), &siblings, &keys, ctx)
+        }) {
             leaves.remove(index);
             return true;
         }
@@ -1872,13 +1990,23 @@ fn drop_object_branch_covered_by_siblings(
                 continue;
             }
             windows.push(leaves[divider].sizes.clone());
-            let all_covered = windows.iter().all(|window| {
-                let mut piece = leaves[index].clone();
-                piece.sizes = LengthBounds {
-                    minimum: tighter(piece.sizes.minimum.take(), window.minimum.clone(), Ord::max),
-                    maximum: tighter(piece.sizes.maximum.take(), window.maximum.clone(), Ord::min),
-                };
-                split_piece_is_covered(piece, &siblings, &keys, ctx)
+            let all_covered = holds_exactly(ctx, || {
+                windows.iter().all(|window| {
+                    let mut piece = leaves[index].clone();
+                    piece.sizes = LengthBounds {
+                        minimum: tighter(
+                            piece.sizes.minimum.take(),
+                            window.minimum.clone(),
+                            Ord::max,
+                        ),
+                        maximum: tighter(
+                            piece.sizes.maximum.take(),
+                            window.maximum.clone(),
+                            Ord::min,
+                        ),
+                    };
+                    split_piece_is_covered(piece, &siblings, &keys, ctx)
+                })
             });
             if all_covered {
                 leaves.remove(index);
@@ -1945,15 +2073,20 @@ fn drop_required_covered_by_sibling(
                 if matches!(gained.kind(), SchemaKind::False) {
                     continue;
                 }
+                // Probed one sibling at a time: a sibling whose intersection this run could only
+                // approximate says nothing, and wrapping the whole search in one probe would let
+                // it bury a later sibling that covers exactly.
                 let covered =
                     (0..leaves.len())
                         .filter(|&sibling| sibling != index)
                         .any(|sibling| {
-                            intersect(
-                                gained.clone(),
-                                object_leaf(leaves[sibling].clone(), ctx),
-                                ctx,
-                            ) == gained
+                            holds_exactly(ctx, || {
+                                intersect(
+                                    gained.clone(),
+                                    object_leaf(leaves[sibling].clone(), ctx),
+                                    ctx,
+                                ) == gained
+                            })
                         });
                 if covered {
                     leaves[index] = weakened;
@@ -1983,17 +2116,25 @@ fn drop_size_bound_covered_by_sibling(
 ) -> bool {
     for index in 0..leaves.len() {
         let slice_covered = |slice: ObjectLeaf, leaves: &[ObjectLeaf]| {
-            let slice = object_leaf(slice, ctx);
-            !matches!(slice.kind(), SchemaKind::False)
-                && (0..leaves.len())
-                    .filter(|&sibling| sibling != index)
-                    .any(|sibling| {
+            let Some(slice) = computed_exactly(ctx, || object_leaf(slice, ctx))
+                .filter(|slice| !matches!(slice.kind(), SchemaKind::False))
+            else {
+                return false;
+            };
+            // Probed one sibling at a time: a sibling whose intersection this run could only
+            // approximate says nothing, and wrapping the whole search in one probe would let it
+            // bury a later sibling that covers exactly.
+            (0..leaves.len())
+                .filter(|&sibling| sibling != index)
+                .any(|sibling| {
+                    holds_exactly(ctx, || {
                         intersect(
                             slice.clone(),
                             object_leaf(leaves[sibling].clone(), ctx),
                             ctx,
                         ) == slice
                     })
+                })
         };
         if let Some(below_ceiling) = leaves[index]
             .sizes
@@ -2044,11 +2185,13 @@ fn drop_size_bound_covered_by_sibling(
                 slice.sizes.minimum = Some(above_floor.clone());
                 let slice = object_leaf(slice, ctx);
                 let held = matches!(slice.kind(), SchemaKind::False)
-                    || intersect(
-                        slice.clone(),
-                        object_leaf(leaves[sibling].clone(), ctx),
-                        ctx,
-                    ) == slice;
+                    || holds_exactly(ctx, || {
+                        intersect(
+                            slice.clone(),
+                            object_leaf(leaves[sibling].clone(), ctx),
+                            ctx,
+                        ) == slice
+                    });
                 if held {
                     leaves[index] = enriched;
                     return true;
@@ -2127,12 +2270,14 @@ fn widen_entry_covered_by_sibling(
                     gained.required.insert(position, Arc::clone(&key));
                 }
                 let gained = object_leaf(gained, ctx);
-                let covered = matches!(gained.kind(), SchemaKind::False)
-                    || intersect(
-                        gained.clone(),
-                        object_leaf(leaves[sibling].clone(), ctx),
-                        ctx,
-                    ) == gained;
+                let covered = holds_exactly(ctx, || {
+                    matches!(gained.kind(), SchemaKind::False)
+                        || intersect(
+                            gained.clone(),
+                            object_leaf(leaves[sibling].clone(), ctx),
+                            ctx,
+                        ) == gained
+                });
                 if covered {
                     leaves[index] = widened;
                     return true;
@@ -2558,11 +2703,13 @@ fn alternative_is_covered(
         .insert(Arc::clone(key), alternative.clone());
     restricted[slot] = object_leaf(pinned, ctx);
     let piece = conjoin(restricted, ctx);
-    branches
-        .iter()
-        .enumerate()
-        .filter(|(sibling, _)| *sibling != index)
-        .any(|(_, sibling)| intersect(piece.clone(), sibling.clone(), ctx) == piece)
+    holds_exactly(ctx, || {
+        branches
+            .iter()
+            .enumerate()
+            .filter(|(sibling, _)| *sibling != index)
+            .any(|(_, sibling)| intersect(piece.clone(), sibling.clone(), ctx) == piece)
+    })
 }
 
 /// Drop every conjunction a sibling branch already covers: each demand the sibling makes is met by
@@ -2629,9 +2776,14 @@ fn conjunction_is_covered(
         .filter(|(sibling, _)| *sibling != index)
         .any(|(_, sibling)| {
             demands(sibling).iter().all(|wanted| {
-                covered
-                    .iter()
-                    .any(|held| intersect(held.clone(), wanted.clone(), ctx) == *held)
+                covered.iter().any(|held| {
+                    // Each candidate on its own: one that does not cover `wanted` may have
+                    // approximated on the way, which says nothing about the one that does.
+                    *held == *wanted
+                        || holds_exactly(ctx, || {
+                            intersect(held.clone(), wanted.clone(), ctx) == *held
+                        })
+                })
             })
         })
 }
@@ -2699,7 +2851,7 @@ fn prune_excluded(leaf: &mut StringLeaf, ctx: &CanonicalizationContext) {
 
 /// Tighten two integer leaves to the values both admit: the narrower interval and a divisor every
 /// value of each must share. `None` when the least common multiple leaves the representable range,
-/// which keeps the document unmodeled rather than guessing.
+/// which keeps the document unsupported rather than guessing.
 fn intersect_integer_leaves(first: IntegerLeaf, second: IntegerLeaf) -> IntegerLeaf {
     IntegerLeaf {
         bounds: first.bounds.intersect(second.bounds),
@@ -3391,7 +3543,9 @@ fn restrict_array_member(
                 if matches!(entry.kind(), SchemaKind::False) {
                     return MemberRestriction::Empty;
                 }
-                if entry != pin {
+                // Compared through what a pointer names, or the pin handed back as the pointer
+                // that names it would read as a narrowing that never happened.
+                if resolved(entry.clone(), ctx) != pin {
                     full = false;
                 }
                 entry
@@ -3519,17 +3673,20 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
     {
         return Schema::falsy();
     }
-    expand_additional_over_admitted_keys(&mut leaf);
+    drop_shield_no_key_can_reach(&mut leaf, ctx);
+    expand_additional_over_admitted_keys(&mut leaf, ctx);
     // A leaf no facet survives on admits every object, which the bare type set already spells;
     // keeping the leaf shape would give one value set two IR forms.
     if leaf.spans_domain() {
         return type_set_schema(JsonTypeSet::from(JsonType::Object));
     }
-    // A stored key constraint says something about the keys: one admitting every string or none at
-    // all was folded into the facets above, and leaving it here would spell those two another way.
+    // A stored key constraint says something about the keys, in the domain keys live in: one
+    // admitting every string or none at all was folded into the facets above, and one narrowing
+    // never reached was dropped there rather than left for a reader that cannot read it.
     debug_assert!(
         !leaf.property_names.as_ref().is_some_and(|names| {
-            matches!(names.kind(), SchemaKind::False)
+            !is_string_domain(names.kind())
+                || matches!(names.kind(), SchemaKind::False)
                 || matches!(names.kind(), SchemaKind::MultiType(set) if *set == JsonTypeSet::from(JsonType::String))
         }),
         "a key constraint survived normalization without constraining keys"
@@ -3607,9 +3764,8 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         return Schema::falsy();
     };
     // A ceiling of zero present keys accepts the empty object and nothing else, whether spelled as
-    // `maxProperties: 0` or as a finite key set whose every key is forbidden; a required key would
-    // have emptied the leaf above, and a demand would have collapsed against the slot check, which
-    // reads the same ceiling and passes vacuously without required keys.
+    // `maxProperties: 0` or as a finite key set whose every key is forbidden; a required key or a
+    // demand would have emptied the leaf above, both needing a key the ceiling leaves no slot for.
     // e.g.  {"type": "object", "maxProperties": 0}  =>  {"const": {}}
     // e.g.  {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": false}}
     //       =>  {"const": {}}
@@ -3620,10 +3776,6 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         .as_ref()
         .is_some_and(BoundCardinality::is_zero)
     {
-        debug_assert!(
-            leaf.get().violations.is_empty(),
-            "a demand survived a zero ceiling past the slot check"
-        );
         return Schema::new(SchemaKind::Const(CanonicalJson::from_value(
             &Value::Object(serde_json::Map::new()),
         )));
@@ -3660,6 +3812,18 @@ fn normalize_property_names(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext
         });
         return;
     }
+    // Narrowing gives up once the run is out of intersections, leaving a constraint that says
+    // nothing about keys. Keeping it would leave a leaf whose readers cannot read it; the run is
+    // discarded whole, so dropping it here only has to leave the leaf readable.
+    if !is_string_domain(names.kind()) {
+        debug_assert!(
+            ctx.outgrew_distribution(),
+            "a key constraint outside the string domain survived a narrowing that could run"
+        );
+        // Dropping it widens the leaf, which `holds_exactly` would otherwise read as exact.
+        ctx.record_inexact_intersection();
+        return;
+    }
     leaf.property_names = Some(names);
 }
 
@@ -3672,18 +3836,31 @@ fn normalize_additional(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
     if matches!(shield.kind(), SchemaKind::True) {
         return;
     }
+    // A barring shield closes the map to the declared keys - including every key a pattern entry
+    // matches, or those would be barred too.
     if matches!(shield.kind(), SchemaKind::False) {
-        let allowed = union(
-            leaf.properties
-                .keys()
-                .map(|key| {
-                    Schema::new(SchemaKind::Const(CanonicalJson::from_value(
-                        &Value::String(key.to_string()),
-                    )))
-                })
-                .collect(),
-            ctx,
-        );
+        let named = leaf.properties.keys().map(|key| {
+            Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+                &Value::String(key.to_string()),
+            )))
+        });
+        let matched = leaf.pattern_properties.keys().map(|pattern| {
+            // Parse drops an empty pattern rather than write it out, so one kept here would not
+            // read back.
+            let patterns = if pattern.is_empty() {
+                Vec::new()
+            } else {
+                vec![Arc::clone(pattern)]
+            };
+            string_leaf(
+                StringLeaf {
+                    patterns,
+                    ..StringLeaf::default()
+                },
+                ctx,
+            )
+        });
+        let allowed = union(named.chain(matched).collect(), ctx);
         leaf.property_names = Some(match leaf.property_names.take() {
             Some(names) => intersect(names, allowed, ctx),
             None => allowed,
@@ -3693,11 +3870,58 @@ fn normalize_additional(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
     leaf.additional = Some(shield);
 }
 
+/// Drop a shield no key can reach: where the pattern map already matches every key the constraint
+/// admits, the shield governs nothing, and keeping it lets it decide intersections.
+/// e.g.  {"type": "object", "propertyNames": {"pattern": "^a"},
+///        "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}
+///       =>  the same leaf without `additionalProperties`
+fn drop_shield_no_key_can_reach(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
+    if leaf.additional.is_none() || leaf.pattern_properties.is_empty() {
+        return;
+    }
+    // An empty pattern matches every key, so none reaches the shield. Patterns matching everything
+    // the long way round (`^`, `.*`) are left alone for the reason the arm below gives.
+    if leaf
+        .pattern_properties
+        .keys()
+        .any(|pattern| pattern.is_empty())
+    {
+        leaf.additional = None;
+        return;
+    }
+    let Some(names) = leaf.property_names.as_ref() else {
+        return;
+    };
+    // A finite key set is checked key by key; otherwise a constraint requiring a pattern the map
+    // also lists matches every key it admits.
+    let unreachable = match names.kind().finite_values() {
+        Some(values) => values.iter().all(|value| {
+            matches!(value.as_value(), Value::String(key)
+                if leaf
+                    .pattern_properties
+                    .keys()
+                    .any(|pattern| matches_key(pattern, key, ctx)))
+        }),
+        // An infinite key set is decided on the pattern alone. Two patterns matching the same
+        // strings but written differently are left alone: deciding that needs regex equivalence,
+        // and being wrong here would drop a shield that does govern a key.
+        None => matches!(names.kind(), SchemaKind::String(names)
+            if names
+                .get()
+                .patterns
+                .iter()
+                .any(|demanded| leaf.pattern_properties.contains_key(demanded))),
+    };
+    if unreachable {
+        leaf.additional = None;
+    }
+}
+
 /// A finite key constraint leaves no room for unnamed keys beyond its members, so the shield
 /// becomes their entries and goes; the two spellings would otherwise name one value set twice.
 /// e.g.  {"type": "object", "propertyNames": {"const": "a"}, "additionalProperties": {"type": "integer"}}
 ///       =>  {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": {"type": "integer"}}}
-fn expand_additional_over_admitted_keys(leaf: &mut ObjectLeaf) {
+fn expand_additional_over_admitted_keys(leaf: &mut ObjectLeaf, ctx: &CanonicalizationContext) {
     if leaf.additional.is_none() {
         return;
     }
@@ -3709,6 +3933,14 @@ fn expand_additional_over_admitted_keys(leaf: &mut ObjectLeaf) {
         .take()
         .expect("the early return proved a shield present");
     for key in keys {
+        // A shield never reaches a key the pattern map matches, which keeps that entry instead.
+        if leaf
+            .pattern_properties
+            .keys()
+            .any(|pattern| matches_key(pattern, &key, ctx))
+        {
+            continue;
+        }
         leaf.properties.or_insert_with(key, || shield.clone());
     }
 }
@@ -3825,7 +4057,7 @@ fn key_schema(leaf: &ObjectLeaf, key: &str, ctx: &CanonicalizationContext) -> Sc
 }
 
 /// Whether the pattern reaches `key`; a pattern matches anywhere in it, as `pattern` does.
-fn matches_key(pattern: &Arc<str>, key: &str, ctx: &CanonicalizationContext) -> bool {
+pub(crate) fn matches_key(pattern: &Arc<str>, key: &str, ctx: &CanonicalizationContext) -> bool {
     ctx.compile_regex(pattern)
         .expect("pattern validated during parsing")
         .is_match(key)
@@ -3884,7 +4116,7 @@ fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdi
                 .any(|value| matches!(value.as_value(), Value::String(text) if text == key)),
         ),
         // A key constraint survives on an object leaf, so an undecided facet needs no reading of
-        // its own here: the leaf that keeps it hands it to the validator.
+        // its own here: the leaf that keeps it passes it to the validator.
         SchemaKind::String(leaf) => {
             let matchers = StringMatchers::compile(leaf.get(), ctx);
             string_leaf_admits_text(leaf.get(), &matchers, key, UncheckableFacet::Undecided)
@@ -3920,6 +4152,22 @@ fn admits_key(names: &Schema, key: &str, ctx: &CanonicalizationContext) -> Verdi
     }
 }
 
+/// Whether `schema` admits no value of `value`'s equality class, which refutes `value` itself. The
+/// only question a refutation may rest on: [`admits_value`] says `Rejects` for a schema taking `1`
+/// but not `1.0`, where `1` is admitted all the same.
+pub(crate) fn rejects_value(schema: &Schema, value: &Value, ctx: &CanonicalizationContext) -> bool {
+    // An unresolvable pointer says nothing about the value; a resolvable one is handled by the
+    // intersection below like any other node.
+    if holds_unreadable_reference(schema, ctx) {
+        return false;
+    }
+    let member = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
+    matches!(
+        intersect(schema.clone(), member, ctx).kind(),
+        SchemaKind::False
+    )
+}
+
 /// Whether `schema` admits every value in `value`'s equality class.
 pub(crate) fn admits_value(
     schema: &Schema,
@@ -3927,22 +4175,103 @@ pub(crate) fn admits_value(
     uncheckable: UncheckableFacet,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
-    if contains_reference(schema) {
+    // An unresolvable pointer says nothing about the value; a resolvable one is handled by the
+    // intersection below like any other node.
+    if holds_unreadable_reference(schema, ctx) {
         return Verdict::Unknown;
     }
     let member = Schema::new(SchemaKind::Const(CanonicalJson::from_value(value)));
     // Non-`False` is not enough: under Draft 4 the intersection can pin a nested whole number to
     // its integer spelling (a typed group), a strict subset of the member's equality class - the
     // member `1` also matches `1.0`, which an integer-typed property schema rejects.
-    if intersect(schema.clone(), member.clone(), ctx) != member {
+    // Both sides are compared through what their pointers name, or a pointer handed back in place
+    // of the schema it references would read as a strictly narrower set than the member.
+    // Out of intersections the meet is `true`, which is wider than the member rather than narrower
+    // - no refutation at all. Recorded again so the caller reads the approximation too.
+    let (met, inexact) = ctx.probe(|| intersect(schema.clone(), member.clone(), ctx));
+    if inexact {
+        ctx.record_inexact_intersection();
+        return Verdict::Unknown;
+    }
+    if resolved(met, ctx) != member {
         return Verdict::Rejects;
     }
     // Intersection reads a facet no checker covers the way a validator without one does, so its
     // "yes" is definite only when the schema carries none.
-    if matches!(uncheckable, UncheckableFacet::Undecided) && has_uncheckable_string_facet(schema) {
+    if matches!(uncheckable, UncheckableFacet::Undecided)
+        && has_uncheckable_string_facet(schema, ctx)
+    {
         return Verdict::Unknown;
     }
     Verdict::Admits
+}
+
+/// Whether `schema` contains a `$ref` this run cannot resolve: one whose target is not in the map.
+///
+/// A name on a cycle is one of those: the context declines it, so the walk sees no target for it.
+fn holds_unreadable_reference(schema: &Schema, ctx: &CanonicalizationContext) -> bool {
+    unreadable_reference(schema, ctx, &mut AHashSet::new())
+}
+
+/// `walked` holds the targets already read. An unreadable one ends the whole walk at the first
+/// name that reaches it, so a second visit only ever repeats a "readable" answer.
+fn unreadable_reference(
+    schema: &Schema,
+    ctx: &CanonicalizationContext,
+    walked: &mut AHashSet<Arc<str>>,
+) -> bool {
+    match schema.kind() {
+        SchemaKind::Reference(uri) => {
+            if walked.contains(uri) {
+                return false;
+            }
+            let Some(target) = ctx.definition(uri) else {
+                return true;
+            };
+            walked.insert(Arc::clone(uri));
+            unreadable_reference(target, ctx, walked)
+        }
+        SchemaKind::Not(inner) | SchemaKind::TypedGroup { body: inner, .. } => {
+            unreadable_reference(inner, ctx, walked)
+        }
+        SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => branches
+            .as_slice()
+            .iter()
+            .any(|branch| unreadable_reference(branch, ctx, walked)),
+        SchemaKind::OneOf(branches) => branches
+            .iter()
+            .any(|branch| unreadable_reference(branch, ctx, walked)),
+        SchemaKind::Array(leaf) => {
+            let leaf = leaf.get();
+            leaf.prefix
+                .iter()
+                .chain(&leaf.items)
+                .chain(leaf.contains.iter().map(|facet| &facet.schema))
+                .any(|schema| unreadable_reference(schema, ctx, walked))
+        }
+        SchemaKind::Object(leaf) => {
+            let leaf = leaf.get();
+            leaf.property_names
+                .iter()
+                .chain(leaf.properties.values())
+                .chain(leaf.pattern_properties.values())
+                .chain(&leaf.additional)
+                .chain(leaf.violations.iter().map(|violation| match violation {
+                    ObjectViolation::NameFails(schema) => schema,
+                    ObjectViolation::UndeclaredValueFails { additional, .. } => additional,
+                }))
+                .any(|schema| unreadable_reference(schema, ctx, walked))
+        }
+        SchemaKind::MultiType(_)
+        | SchemaKind::String(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Const(_)
+        | SchemaKind::Enum(_)
+        | SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::Raw(_) => false,
+    }
 }
 
 pub(crate) fn contains_reference(schema: &Schema) -> bool {
@@ -4027,58 +4356,108 @@ pub(crate) fn contains_reference(schema: &Schema) -> bool {
     }
 }
 
-/// Whether `schema` demands or bars a format, media type, or encoding this draft has no checker for.
-fn has_uncheckable_string_facet(schema: &Schema) -> bool {
+/// Every format, media type, or encoding `schema` demands or bars that this draft cannot check.
+///
+/// Pointers are read through: a facet behind a `$ref` counts the same as one written inline.
+pub(crate) fn uncheckable_string_facets(
+    schema: &Schema,
+    ctx: &CanonicalizationContext,
+) -> BTreeSet<Arc<str>> {
+    let mut found = BTreeSet::new();
+    collect_uncheckable_string_facets(schema, ctx, &mut AHashSet::new(), &mut found);
+    found
+}
+
+/// Whether `schema` demands or bars any facet this draft cannot check.
+pub(crate) fn has_uncheckable_string_facet(schema: &Schema, ctx: &CanonicalizationContext) -> bool {
+    !uncheckable_string_facets(schema, ctx).is_empty()
+}
+
+/// `walked` holds the targets already scanned, so a name reached twice is scanned once.
+fn collect_uncheckable_string_facets(
+    schema: &Schema,
+    ctx: &CanonicalizationContext,
+    walked: &mut AHashSet<Arc<str>>,
+    found: &mut BTreeSet<Arc<str>>,
+) {
+    let walk = |schema: &Schema, walked: &mut AHashSet<Arc<str>>, found: &mut BTreeSet<_>| {
+        collect_uncheckable_string_facets(schema, ctx, walked, found);
+    };
     match schema.kind() {
+        SchemaKind::Reference(uri) => {
+            if walked.contains(uri) {
+                return;
+            }
+            let Some(target) = ctx.definition(uri) else {
+                return;
+            };
+            walked.insert(Arc::clone(uri));
+            walk(target, walked, found);
+        }
         SchemaKind::String(leaf) => {
-            leaf.get()
-                .formats
-                .iter()
-                .chain(leaf.get().excluded_formats.iter())
-                .any(|format| format.is_valid("").is_none())
-                || leaf
-                    .get()
-                    .content_media_types
+            let leaf = leaf.get();
+            found.extend(
+                leaf.formats
                     .iter()
-                    .any(|media_type| !is_known_content_media_type(media_type))
-                || leaf
-                    .get()
-                    .content_encodings
+                    .chain(leaf.excluded_formats.iter())
+                    .filter(|format| format.is_valid("").is_none())
+                    .map(|format| Arc::from(format.as_str())),
+            );
+            found.extend(
+                leaf.content_media_types
                     .iter()
-                    .any(|encoding| !is_known_content_encoding(encoding))
+                    .filter(|media_type| !is_known_content_media_type(media_type))
+                    .cloned(),
+            );
+            found.extend(
+                leaf.content_encodings
+                    .iter()
+                    .filter(|encoding| !is_known_content_encoding(encoding))
+                    .cloned(),
+            );
         }
-        SchemaKind::AnyOf(branches) => branches.as_slice().iter().any(has_uncheckable_string_facet),
-        // A conjunction and a complement both carry a reference, and the only caller declines a
-        // schema holding one before asking about its facets.
-        SchemaKind::AllOf(_) | SchemaKind::OneOf(_) | SchemaKind::Not(_) => {
-            unreachable!("a symbolic branch never reaches the facet scan")
+        SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => {
+            for branch in branches.as_slice() {
+                walk(branch, walked, found);
+            }
         }
+        SchemaKind::OneOf(branches) => {
+            for branch in branches {
+                walk(branch, walked, found);
+            }
+        }
+        SchemaKind::Not(inner) => walk(inner, walked, found),
         SchemaKind::Object(leaf) => {
-            leaf.get()
+            let leaf = leaf.get();
+            for schema in leaf
                 .property_names
                 .iter()
-                .chain(leaf.get().properties.values())
-                .chain(leaf.get().pattern_properties.values())
-                .chain(leaf.get().additional.iter())
-                .any(has_uncheckable_string_facet)
-                || leaf
-                    .get()
-                    .violations
-                    .iter()
-                    .any(|violation| match violation {
-                        ObjectViolation::NameFails(schema) => has_uncheckable_string_facet(schema),
-                        ObjectViolation::UndeclaredValueFails { additional, .. } => {
-                            has_uncheckable_string_facet(additional)
-                        }
-                    })
+                .chain(leaf.properties.values())
+                .chain(leaf.pattern_properties.values())
+                .chain(leaf.additional.iter())
+            {
+                walk(schema, walked, found);
+            }
+            for violation in &leaf.violations {
+                match violation {
+                    ObjectViolation::NameFails(schema) => walk(schema, walked, found),
+                    ObjectViolation::UndeclaredValueFails { additional, .. } => {
+                        walk(additional, walked, found);
+                    }
+                }
+            }
         }
-        SchemaKind::Array(leaf) => leaf
-            .get()
-            .prefix
-            .iter()
-            .chain(leaf.get().items.iter())
-            .chain(leaf.get().contains.iter().map(|facet| &facet.schema))
-            .any(has_uncheckable_string_facet),
+        SchemaKind::Array(leaf) => {
+            let leaf = leaf.get();
+            for schema in leaf
+                .prefix
+                .iter()
+                .chain(leaf.items.iter())
+                .chain(leaf.contains.iter().map(|facet| &facet.schema))
+            {
+                walk(schema, walked, found);
+            }
+        }
 
         // A typed group's body is a value set, which carries no format or content check.
         SchemaKind::TypedGroup { .. }
@@ -4087,10 +4466,9 @@ fn has_uncheckable_string_facet(schema: &Schema) -> bool {
         | SchemaKind::Number(_)
         | SchemaKind::Const(_)
         | SchemaKind::Enum(_)
-        | SchemaKind::Reference(_)
         | SchemaKind::True
         | SchemaKind::False
-        | SchemaKind::Raw(_) => false,
+        | SchemaKind::Raw(_) => {}
     }
 }
 
@@ -4111,7 +4489,7 @@ fn intersect_object_leaves(
     let properties = intersect_property_entries(&first, &second, ctx);
     let pattern_properties = intersect_pattern_entries(&first, &second, ctx);
     if !spells_shielded_meet(&first, &second, &properties, ctx) {
-        ctx.record_unspellable_meet();
+        ctx.record_inexact_intersection();
     }
     let mut required = first.required;
     required.extend(second.required);
@@ -4269,7 +4647,7 @@ fn shield_spares_named_keys(
             .any(|pattern| matches_key(pattern, key, ctx))
             || properties
                 .get(key)
-                .is_some_and(|entry| oracle::covers(entry, shield, ctx) == Verdict::Admits)
+                .is_some_and(|entry| oracle::covers(shield, entry, ctx) == Verdict::Admits)
     })
 }
 
@@ -4343,13 +4721,18 @@ fn restrict_object_member(
                     {
                         continue;
                     }
-                    match admits_value(additional, value, UncheckableFacet::Undecided, ctx) {
-                        Verdict::Rejects => {
-                            satisfied = Verdict::Admits;
-                            break;
-                        }
-                        Verdict::Unknown => satisfied = Verdict::Unknown,
-                        Verdict::Admits => {}
+                    // The demand needs this value to fail `additional`, but `admits_value` asks
+                    // about its whole equality class: under Draft 4 `1` shares one with `1.0`,
+                    // which an integer schema turns away while `1` passes. Only a schema sharing
+                    // nothing with the class fails the value; less than that leaves it undecided.
+                    if rejects_value(additional, value, ctx) {
+                        satisfied = Verdict::Admits;
+                        break;
+                    }
+                    if admits_value(additional, value, UncheckableFacet::Undecided, ctx)
+                        != Verdict::Admits
+                    {
+                        satisfied = Verdict::Unknown;
                     }
                 }
                 match satisfied {
@@ -4378,7 +4761,9 @@ fn restrict_object_member(
             if matches!(entry.kind(), SchemaKind::False) {
                 return MemberRestriction::Empty;
             }
-            if entry != pin {
+            // Compared through what a pointer names, or the pin handed back as the pointer that
+            // names it would read as a narrowing that never happened.
+            if resolved(entry.clone(), ctx) != pin {
                 full = false;
             }
             entry

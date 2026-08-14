@@ -1109,35 +1109,13 @@
       }
     },
     "expected": {
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
       "$defs": {
         "a": {
           "type": "string"
         }
       },
-      "anyOf": [
-        {
-          "allOf": [
-            {
-              "type": ["null", "boolean", "string", "array", "object"]
-            },
-            {
-              "$ref": "#/$defs/a"
-            }
-          ]
-        },
-        {
-          "allOf": [
-            {
-              "type": "number",
-              "not": {"multipleOf": 1}
-            },
-            {
-              "$ref": "#/$defs/a"
-            }
-          ]
-        }
-      ]
+      "$ref": "#/$defs/a",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
     },
     "tests": [
       {
@@ -1617,6 +1595,777 @@
       {"data": {"kind": "K0", "f0": "x"}, "valid": true},
       {"data": {"kind": "K3"}, "valid": true},
       {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "a choice whose branches a fold all empties accepts nothing",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "$defs": {
+        "a": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "b": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/a"
+        },
+        {
+          "$ref": "#/$defs/b"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a choice a fold leaves overlapping keeps its branches",
+    "expected": {
+      "$defs": {
+        "a": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "b": {
+          "maximum": 10,
+          "type": "integer"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/a"
+        },
+        {
+          "$ref": "#/$defs/b"
+        }
+      ]
+    },
+    "schema": {
+      "$defs": {
+        "a": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "minimum": 0
+            }
+          ]
+        },
+        "b": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "maximum": 10
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/a"
+        },
+        {
+          "$ref": "#/$defs/b"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": -1,
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": false
+      },
+      {
+        "data": 11,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "a choice drops the branch a fold empties",
+    "expected": {
+      "$defs": {
+        "a": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "b": {
+          "maximum": 10,
+          "type": "integer"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/a"
+        },
+        {
+          "$ref": "#/$defs/b"
+        }
+      ]
+    },
+    "schema": {
+      "$defs": {
+        "a": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "minimum": 0
+            }
+          ]
+        },
+        "b": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "maximum": 10
+            }
+          ]
+        },
+        "dead": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/dead"
+        },
+        {
+          "$ref": "#/$defs/a"
+        },
+        {
+          "$ref": "#/$defs/b"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": -1,
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": false
+      },
+      {
+        "data": 11,
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "a choice a fold leaves with one branch is that branch",
+    "expected": {
+      "$defs": {
+        "c": {
+          "type": "string"
+        }
+      },
+      "$ref": "#/$defs/c",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    },
+    "schema": {
+      "$defs": {
+        "a": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "b": {
+          "allOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "c": {
+          "type": "string"
+        }
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/a"
+        },
+        {
+          "$ref": "#/$defs/b"
+        },
+        {
+          "$ref": "#/$defs/c"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a choice already settled beside a fold is left as it is",
+    "expected": {
+      "$defs": {
+        "a": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "b": {
+          "maximum": 10,
+          "type": "integer"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minProperties": 1,
+      "properties": {
+        "p": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/a"
+            },
+            {
+              "$ref": "#/$defs/b"
+            }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "schema": {
+      "$defs": {
+        "a": {
+          "minimum": 0,
+          "type": "integer"
+        },
+        "b": {
+          "maximum": 10,
+          "type": "integer"
+        },
+        "hop": {
+          "allOf": [
+            {
+              "type": "object"
+            },
+            {
+              "minProperties": 1
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/hop"
+        }
+      ],
+      "properties": {
+        "p": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/a"
+            },
+            {
+              "$ref": "#/$defs/b"
+            }
+          ]
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "p": -1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "p": 5
+        },
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a choice naming no body expands beside a fold",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [
+        "a",
+        "b"
+      ]
+    },
+    "schema": {
+      "$defs": {
+        "x": {
+          "type": "string"
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/x"
+        },
+        {
+          "minLength": 1
+        }
+      ],
+      "oneOf": [
+        {
+          "const": "a"
+        },
+        {
+          "const": "b"
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": "c",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a choice whose settled branches still name a body keeps them",
+    "expected": {
+      "$defs": {
+        "inner": {
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "maxProperties": 3,
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/inner"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "minProperties": 1,
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/inner"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "schema": {
+      "$defs": {
+        "inner": {
+          "type": "string"
+        },
+        "obj": {
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/inner"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "minProperties": 1
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "maxProperties": 3
+            }
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "p": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "p": "x",
+          "q": 1,
+          "r": 2,
+          "s": 3
+        },
+        "valid": true
+      }
+    ]
+  },
+  {
+    "description": "a choice drops the branch a fold empties and keeps the rest",
+    "expected": {
+      "$defs": {
+        "inner": {
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "maxProperties": 3,
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/inner"
+            }
+          },
+          "type": "object"
+        },
+        {
+          "minProperties": 1,
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/inner"
+            }
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "schema": {
+      "$defs": {
+        "inner": {
+          "type": "string"
+        },
+        "obj": {
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/inner"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "minProperties": 1
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "maxProperties": 3
+            }
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "p": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a choice a fold leaves one branch of is that branch",
+    "expected": {
+      "$defs": {
+        "inner": {
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minProperties": 1,
+      "properties": {
+        "p": {
+          "$ref": "#/$defs/inner"
+        }
+      },
+      "type": "object"
+    },
+    "schema": {
+      "$defs": {
+        "inner": {
+          "type": "string"
+        },
+        "obj": {
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/inner"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "minProperties": 1
+            }
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "p": "x"
+        },
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a choice a fold empties every branch of accepts nothing",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "schema": {
+      "$defs": {
+        "inner": {
+          "type": "string"
+        },
+        "obj": {
+          "properties": {
+            "p": {
+              "$ref": "#/$defs/inner"
+            }
+          },
+          "type": "object"
+        }
+      },
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/obj"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": {
+          "p": "x"
+        },
+        "valid": false
+      },
+      {
+        "data": "x",
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a choice whose settled branches name no body expands",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "maximum": -1,
+          "type": "integer"
+        },
+        {
+          "minimum": 11,
+          "type": "integer"
+        }
+      ]
+    },
+    "schema": {
+      "$defs": {
+        "n": {
+          "type": "integer"
+        }
+      },
+      "oneOf": [
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/n"
+            },
+            {
+              "minimum": 0
+            }
+          ]
+        },
+        {
+          "allOf": [
+            {
+              "$ref": "#/$defs/n"
+            },
+            {
+              "maximum": 10
+            }
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": -1,
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": false
+      },
+      {
+        "data": 11,
+        "valid": true
+      }
     ]
   }
 ]

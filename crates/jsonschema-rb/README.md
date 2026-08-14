@@ -50,6 +50,7 @@ end
 - 🔧 Custom keywords and format validators
 - ✨ Meta-schema validation for schema documents
 - 📦 Schema bundling into Compound Schema Documents
+- 🧮 Experimental schema canonicalization
 - ♦️ Supports Ruby 3.2, 3.4 and 4.0
 
 ### Supported drafts
@@ -290,6 +291,83 @@ dump_a == dump_b # => true
 ```
 
 Main use case: deduplicating equivalent JSON Schemas.
+
+## Schema Canonicalization
+
+> **Experimental**: the canonicalization API may change in minor releases.
+
+`JSONSchema.canonicalize` reduces a schema to a normal form without changing the values it accepts. Schemas that accept the same values reduce to equal `CanonicalSchema` objects, and contradictions reduce to `false`:
+
+```ruby
+canonical = JSONSchema.canonicalize(
+  { "allOf" => [{ "type" => "integer", "minimum" => 0 }, { "minimum" => 10, "maximum" => 100 }] }
+)
+canonical.to_json_schema
+# => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
+#     "type"=>"integer", "minimum"=>10, "maximum"=>100}
+
+# However they were written, equivalent schemas compare equal
+canonical == JSONSchema.canonicalize({ "type" => "integer", "maximum" => 100, "minimum" => 10 })
+# => true
+
+# A schema no value can satisfy collapses
+JSONSchema.canonicalize({ "type" => "integer", "minimum" => 10, "maximum" => 5 }).satisfiability
+# => :no, which is JSONSchema::Canonical::Satisfiability::NO
+```
+
+A canonical schema *is* the set of values it accepts, so canonical schemas combine as sets. Every emitted schema carries `$schema`, left out of the comments below:
+
+```ruby
+positive = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 0 })
+bounded  = JSONSchema.canonicalize({ "type" => "integer", "maximum" => 100 })
+
+# Every value both admit
+positive.intersect(bounded).to_json_schema
+# => {"type"=>"integer", "minimum"=>0, "maximum"=>100}
+
+# Every value either admits
+positive.union(bounded).to_json_schema
+# => {"type"=>"integer"}
+
+# Every value `positive` admits and `bounded` rejects
+positive.subtract(bounded).to_json_schema
+# => {"type"=>"integer", "minimum"=>101}
+
+# Every value `positive` rejects, across the types it never admitted
+positive.negate.to_json_schema
+# => {"anyOf"=>[{"type"=>["null", "boolean", "string", "array", "object"]},
+#               {"type"=>"integer", "maximum"=>-1},
+#               {"type"=>"number", "not"=>{"multipleOf"=>1}}]}
+
+positive.covers(bounded)        # => :no - `bounded` takes negative integers, `positive` does not
+positive.satisfiability         # => :yes
+```
+
+### Comparing two versions of a schema
+
+The difference answers what editing a schema did to the values it takes: it accepts exactly what the old schema took and the new one turns away, and is unsatisfiable exactly when nothing was lost.
+
+```ruby
+old = JSONSchema.canonicalize({ "type" => "string" })
+new = JSONSchema.canonicalize({ "type" => "string", "maxLength" => 50 })
+
+# What `new` stopped accepting, as a schema
+old.subtract(new).to_json_schema
+# => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
+#     "type"=>"string", "minLength"=>51}
+
+# Nothing is accepted that was not accepted before, so the change only narrows
+new.subtract(old).satisfiability
+# => :no
+```
+
+Compare a request schema new-against-old and a response schema old-against-new: narrowing a request turns away payloads a caller used to send, widening a response returns values a caller never agreed to read.
+
+`:no` on the difference proves nothing was lost. `:unknown` proves nothing either way.
+
+`JSONSchema::Canonical::Containment`, `Satisfiability`, `Distinctness` and `Kind` hold these symbols as constants, each with an `ALL` list.
+
+Both operands must share one setup - the same draft, format policy, regular-expression engine and definitions - or `IncompatibleOperands` is raised. `UnsupportedOperand` means an operand is a `Raw` pass-through, and `UnsupportedResult` that the canonical form does not support the result. All three live under `JSONSchema::Canonical`.
 
 ## Schema Bundling
 

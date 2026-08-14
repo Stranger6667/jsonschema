@@ -1,7 +1,9 @@
 #![allow(clippy::needless_pass_by_value)]
 
 use jsonschema::{
-    canonical::{self, CanonicalSchema, CanonicalizationError, CanonicalizeOptions},
+    canonical::{
+        self, CanonicalSchema, CanonicalizationError, CanonicalizeOptions, Satisfiability,
+    },
     Draft, Validator,
 };
 use serde::Deserialize;
@@ -81,7 +83,17 @@ fn run_case(case: CanonicalCase) {
     let form = form.expect("at least one input");
     let canonical = canonical.expect("at least one input");
 
-    let satisfiable = canonical.is_satisfiable();
+    // `satisfiable` asks only whether the schema was proven empty; `satisfiability` pins the whole
+    // answer, witness included.
+    let satisfiable = canonical.satisfiability() != Satisfiability::No;
+    if let Some(expected) = &case.satisfiability {
+        assert_eq!(
+            canonical.satisfiability().as_str(),
+            expected,
+            "case `{}`: satisfiability mismatch\n  form = {form}",
+            case.description
+        );
+    }
     if let Some(expected) = &case.kind {
         assert_eq!(
             canonical.kind().as_str(),
@@ -93,14 +105,15 @@ fn run_case(case: CanonicalCase) {
     if let Some(expected) = case.satisfiable {
         assert_eq!(
             satisfiable, expected,
-            "case `{}`: is_satisfiable() = {satisfiable}, expected {expected}\n  form = {form}",
-            case.description
+            "case `{}`: satisfiability() = {:?}, expected satisfiable = {expected}\n  form = {form}",
+            case.description,
+            canonical.satisfiability(),
         );
     }
     if case.tests.iter().any(|test| test.valid == Some(true)) {
         assert!(
             satisfiable,
-            "case `{}`: admits a valid value but is_satisfiable() is false\n  form = {form}",
+            "case `{}`: admits a valid value but satisfiability() is No\n  form = {form}",
             case.description
         );
     }
@@ -163,9 +176,11 @@ struct CanonicalCase {
     expected_arbitrary_precision: Option<Value>,
     #[serde(default)]
     tests: Vec<SchemaTest>,
-    /// Pins `CanonicalSchema::is_satisfiable()`; a `valid: true` test already implies satisfiable.
     #[serde(default)]
     satisfiable: Option<bool>,
+    /// Pins the exact three-valued answer, where `satisfiable` only asks whether it is `no`.
+    #[serde(default)]
+    satisfiability: Option<String>,
     /// Pins the public structural kind label.
     #[serde(default)]
     kind: Option<String>,

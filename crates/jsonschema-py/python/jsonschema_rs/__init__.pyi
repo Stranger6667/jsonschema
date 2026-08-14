@@ -605,8 +605,8 @@ class CanonicalSchema:
         ...
 
     @property
-    def kind(self) -> str:
-        """Structural kind label of this node."""
+    def kind(self) -> canonical.CanonicalKind:
+        """Structural kind of this node."""
         ...
 
     def view(self) -> canonical.CanonicalViewType:
@@ -617,12 +617,28 @@ class CanonicalSchema:
         """Every value both schemas admit."""
         ...
 
-    def is_subset_of(self, other: CanonicalSchema) -> bool | None:
-        """Whether ``other`` admits every value this schema admits; ``None`` means undecided."""
+    def union(self, other: CanonicalSchema) -> CanonicalSchema:
+        """Every value either schema admits."""
         ...
 
-    def negate(self) -> CanonicalSchema | None:
-        """Every value this schema rejects, or ``None`` where it cannot be spelled exactly."""
+    def subtract(self, other: CanonicalSchema) -> CanonicalSchema:
+        """Every value this schema admits and ``other`` rejects.
+
+        ``old.subtract(new)`` admits exactly the values ``old`` took and ``new`` turns away, and is
+        unsatisfiable iff ``new`` still takes everything ``old`` did.
+        """
+        ...
+
+    def covers(self, other: CanonicalSchema) -> canonical.Containment:
+        """Whether this schema admits every value ``other`` admits."""
+        ...
+
+    def negate(self) -> CanonicalSchema:
+        """Every value this schema rejects.
+
+        Raises ``UnsupportedOperand`` when this schema is a ``Raw`` pass-through, and
+        ``UnsupportedResult`` when the canonical form does not support the complement.
+        """
         ...
 
     def definition(self, uri: str) -> CanonicalSchema | None:
@@ -645,8 +661,8 @@ class CanonicalSchema:
         """
         ...
 
-    def is_satisfiable(self) -> bool:
-        """Return ``False`` when this schema provably admits no instances."""
+    def satisfiability(self) -> canonical.Satisfiability:
+        """Whether any value satisfies this schema."""
         ...
 
     def __hash__(self) -> int: ...

@@ -815,7 +815,7 @@ pub struct PatternOptions<E> {
     _marker: PhantomData<E>,
 }
 
-#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, Hash, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum PatternEngineOptions {
     FancyRegex {
         backtrack_limit: Option<usize>,

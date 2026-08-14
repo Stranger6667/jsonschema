@@ -624,14 +624,14 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
         };
         map.extend(wrapper);
     } else if !violated.is_empty() {
-        // A demand rides on a keyword bringing two object leaves together, which is what makes a
-        // Draft 4 key constraint keep only the keys it names, and one closed map names those; the
-        // split spelling and its `allOf` therefore never appear beside a demand.
-        debug_assert!(
-            !map.contains_key("allOf"),
-            "violations beside a Draft 4 key spelling"
-        );
-        map.insert("allOf".into(), Value::Array(violated));
+        // A demand can ride beside the split spelling of a Draft 4 key constraint, which carries an
+        // `allOf` of its own. Both are conjuncts of one leaf, so they join rather than replace.
+        let conjuncts = match map.remove("allOf") {
+            Some(Value::Array(spelled)) => spelled.into_iter().chain(violated).collect(),
+            Some(_) => unreachable!("every `allOf` this module writes is an array"),
+            None => violated,
+        };
+        map.insert("allOf".into(), Value::Array(conjuncts));
     }
     Value::Object(map)
 }

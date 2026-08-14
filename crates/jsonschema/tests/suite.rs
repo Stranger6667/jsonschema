@@ -92,7 +92,7 @@ mod tests {
             if test.is_optional {
                 canonicalize_options = canonicalize_options.should_validate_formats(true);
             }
-            // Unmodeled constructs come back as `Raw`, never as an error, so any error is a regression.
+            // Unsupported constructs come back as `Raw`, never as an error, so any error is a regression.
             let canonical = canonicalize_options
                 .canonicalize(&test.schema)
                 .unwrap_or_else(|error| {
