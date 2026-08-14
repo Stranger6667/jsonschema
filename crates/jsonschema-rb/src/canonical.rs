@@ -1,10 +1,13 @@
 use jsonschema::{
     canonical::{
-        CanonicalSchema, CanonicalView, CanonicalizationError, ContainsView as CoreContainsView,
-        ObjectViolationView as CoreObjectViolationView,
+        CanonicalKind, CanonicalSchema, CanonicalView, CanonicalizationError, Containment,
+        ContainsView as CoreContainsView, Distinctness,
+        ObjectViolationView as CoreObjectViolationView, Satisfiability,
     },
     JsonType,
 };
+use strum::VariantArray;
+
 use magnus::{
     function, method,
     prelude::*,
@@ -64,7 +67,8 @@ canonical_error_class!(CANONICALIZATION_ERROR_CLASS, "CanonicalizationError");
 canonical_error_class!(INVALID_SCHEMA_TYPE_CLASS, "InvalidSchemaType");
 canonical_error_class!(INVALID_PATTERN_CLASS, "InvalidPattern");
 canonical_error_class!(INCOMPATIBLE_OPERANDS_CLASS, "IncompatibleOperands");
-canonical_error_class!(UNMODELED_OPERAND_CLASS, "UnmodeledOperand");
+canonical_error_class!(UNSUPPORTED_OPERAND_CLASS, "UnsupportedOperand");
+canonical_error_class!(UNSUPPORTED_RESULT_CLASS, "UnsupportedResult");
 
 fn canonicalization_error(ruby: &Ruby, error: CanonicalizationError) -> Error {
     if let CanonicalizationError::ValidationError(validation_error) = error {
@@ -81,8 +85,11 @@ fn canonicalization_error(ruby: &Ruby, error: CanonicalizationError) -> Error {
         CanonicalizationError::IncompatibleOperands(_) => {
             Error::new(ruby.get_inner(&INCOMPATIBLE_OPERANDS_CLASS), message)
         }
-        CanonicalizationError::UnmodeledOperand => {
-            Error::new(ruby.get_inner(&UNMODELED_OPERAND_CLASS), message)
+        CanonicalizationError::UnsupportedOperand => {
+            Error::new(ruby.get_inner(&UNSUPPORTED_OPERAND_CLASS), message)
+        }
+        CanonicalizationError::UnsupportedResult => {
+            Error::new(ruby.get_inner(&UNSUPPORTED_RESULT_CLASS), message)
         }
         // `ValidationError` returns above; future variants fall back to the base canonical error.
         _ => Error::new(ruby.get_inner(&CANONICALIZATION_ERROR_CLASS), message),
@@ -121,8 +128,9 @@ impl RbCanonicalSchema {
         ruby.sym_new(rb_self.inner.kind().as_str()).as_value()
     }
 
-    fn satisfiable(rb_self: &Self) -> bool {
-        rb_self.inner.is_satisfiable()
+    fn satisfiability(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.sym_new(rb_self.inner.satisfiability().as_str())
+            .as_value()
     }
 
     fn inspect(ruby: &Ruby, rb_self: &Self) -> String {
@@ -230,18 +238,36 @@ impl RbCanonicalSchema {
             .map_err(|error| canonicalization_error(ruby, error))
     }
 
-    fn is_subset_of(ruby: &Ruby, rb_self: &Self, other: &Self) -> Result<Option<bool>, Error> {
+    fn union(ruby: &Ruby, rb_self: &Self, other: &Self) -> Result<Value, Error> {
         rb_self
             .inner
-            .is_subset_of(&other.inner)
+            .union(&other.inner)
+            .map(|inner| ruby.obj_wrap(RbCanonicalSchema { inner }).as_value())
             .map_err(|error| canonicalization_error(ruby, error))
     }
 
-    fn negate(ruby: &Ruby, rb_self: &Self) -> Option<Value> {
+    fn subtract(ruby: &Ruby, rb_self: &Self, other: &Self) -> Result<Value, Error> {
+        rb_self
+            .inner
+            .subtract(&other.inner)
+            .map(|inner| ruby.obj_wrap(RbCanonicalSchema { inner }).as_value())
+            .map_err(|error| canonicalization_error(ruby, error))
+    }
+
+    fn covers(ruby: &Ruby, rb_self: &Self, other: &Self) -> Result<Value, Error> {
+        rb_self
+            .inner
+            .covers(&other.inner)
+            .map(|containment| ruby.sym_new(containment.as_str()).as_value())
+            .map_err(|error| canonicalization_error(ruby, error))
+    }
+
+    fn negate(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
         rb_self
             .inner
             .negate()
             .map(|inner| ruby.obj_wrap(RbCanonicalSchema { inner }).as_value())
+            .map_err(|error| canonicalization_error(ruby, error))
     }
 
     #[allow(clippy::needless_pass_by_value)]
@@ -262,7 +288,7 @@ impl RbCanonicalSchema {
     }
 }
 
-/// A schema the canonical form does not model structurally, kept verbatim.
+/// A schema the canonical form does not support structurally, kept verbatim.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::RawView", free_immediately)]
 pub struct RawView {
@@ -741,7 +767,7 @@ impl ArrayView {
     }
 }
 
-/// One `contains` demand of an array. An absent minimum spells the default of one.
+/// One `contains` requirement of an array. An absent minimum means the default of one.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::ContainsView", free_immediately)]
 pub struct ContainsView {
@@ -1345,6 +1371,25 @@ fn canonicalize(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
         .map_err(|error| canonicalization_error(ruby, error))
 }
 
+fn define_labels<Label: Copy + Into<&'static str>>(
+    ruby: &Ruby,
+    canonical_module: &RModule,
+    name: &str,
+    labels: &[Label],
+) -> Result<(), Error> {
+    let module = canonical_module.define_module(name)?;
+    let all = ruby.ary_new_capa(labels.len());
+    for label in labels {
+        let label: &'static str = (*label).into();
+        let symbol = ruby.sym_new(label).as_value();
+        module.const_set(label.to_uppercase().as_str(), symbol)?;
+        all.push(symbol)?;
+    }
+    all.freeze();
+    module.const_set("ALL", all)?;
+    Ok(())
+}
+
 pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error> {
     let canonical_module = module.define_module("Canonical")?;
 
@@ -1353,7 +1398,28 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     canonical_module.define_error("InvalidSchemaType", base_error)?;
     canonical_module.define_error("InvalidPattern", base_error)?;
     canonical_module.define_error("IncompatibleOperands", base_error)?;
-    canonical_module.define_error("UnmodeledOperand", base_error)?;
+    canonical_module.define_error("UnsupportedOperand", base_error)?;
+    canonical_module.define_error("UnsupportedResult", base_error)?;
+
+    define_labels(
+        ruby,
+        &canonical_module,
+        "Containment",
+        Containment::VARIANTS,
+    )?;
+    define_labels(
+        ruby,
+        &canonical_module,
+        "Satisfiability",
+        Satisfiability::VARIANTS,
+    )?;
+    define_labels(
+        ruby,
+        &canonical_module,
+        "Distinctness",
+        Distinctness::VARIANTS,
+    )?;
+    define_labels(ruby, &canonical_module, "Kind", CanonicalKind::VARIANTS)?;
 
     let canonical_schema = canonical_module.define_class("CanonicalSchema", ruby.class_object())?;
     canonical_schema.define_method(
@@ -1374,11 +1440,16 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     )?;
     canonical_schema.define_method("view", method!(RbCanonicalSchema::view, 0))?;
     canonical_schema.define_method("intersect", method!(RbCanonicalSchema::intersect, 1))?;
-    canonical_schema.define_method("is_subset_of", method!(RbCanonicalSchema::is_subset_of, 1))?;
+    canonical_schema.define_method("union", method!(RbCanonicalSchema::union, 1))?;
+    canonical_schema.define_method("subtract", method!(RbCanonicalSchema::subtract, 1))?;
+    canonical_schema.define_method("covers", method!(RbCanonicalSchema::covers, 1))?;
     canonical_schema.define_method("negate", method!(RbCanonicalSchema::negate, 0))?;
     canonical_schema.define_method("definition", method!(RbCanonicalSchema::definition, 1))?;
     canonical_schema.define_method("definitions", method!(RbCanonicalSchema::definitions, 0))?;
-    canonical_schema.define_method("satisfiable?", method!(RbCanonicalSchema::satisfiable, 0))?;
+    canonical_schema.define_method(
+        "satisfiability",
+        method!(RbCanonicalSchema::satisfiability, 0),
+    )?;
 
     let true_view = canonical_module.define_class("TrueView", ruby.class_object())?;
     true_view.define_method("inspect", method!(TrueView::inspect, 0))?;

@@ -116,17 +116,17 @@ pub struct NumberView {
 pub struct ArrayView {
     pub min_items: Option<Number>,
     pub max_items: Option<Number>,
-    /// What the array says about elements coinciding.
+    /// What the array requires of its elements: all distinct, some repeated, or neither.
     pub distinctness: Distinctness,
     /// Per-index schemas: the element at position `i` satisfies `prefix_items[i]`.
     pub prefix_items: Vec<CanonicalSchema>,
     /// The schema every element from `prefix_items.len()` onward satisfies.
     pub items: Option<CanonicalSchema>,
-    /// Existential demands: the number of elements matching each entry's schema sits in its window.
+    /// How many elements must match each `contains` schema.
     pub contains: Vec<ContainsView>,
 }
 
-/// One `contains` demand of an array. An absent minimum spells the default of one.
+/// One `contains` requirement of an array. An absent minimum means the default of one.
 #[derive(Debug, Clone, PartialEq)]
 pub struct ContainsView {
     pub schema: CanonicalSchema,

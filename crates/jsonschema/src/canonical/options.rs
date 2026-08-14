@@ -1,6 +1,6 @@
 //! Configuration and entry points for canonicalization.
 
-use std::sync::Arc;
+use std::{collections::BTreeSet, sync::Arc};
 
 use referencing::{Draft, Registry, Retrieve};
 use serde_json::Value;
@@ -10,7 +10,7 @@ use crate::{
         context::CanonicalizationContext,
         emptiness,
         ir::{RawJson, Schema, SchemaKind},
-        parse,
+        parse, refold,
         schema::CanonicalSchema,
         CanonicalizationError, DefinitionMap,
     },
@@ -117,6 +117,7 @@ fn build(
             pattern_options,
             options.validate_formats.unwrap_or(false),
             Arc::new(DefinitionMap::new()),
+            Arc::new(BTreeSet::new()),
         ));
     }
     let validate_formats = options
@@ -136,14 +137,21 @@ fn build(
     let base_uri = normalize_base_uri(&registry, &base_uri);
     let resolver = registry.resolver(base_uri);
     let context = CanonicalizationContext::new(draft, pattern_options, validate_formats);
-    let (inner, definitions) = match parse::parse(value, &context, &resolver)? {
+    let (inner, definitions, local) = match parse::parse(value, &context, &resolver)? {
         Some(parsed) => {
             let parsed = emptiness::fold_definitions(parsed, value, &context, &resolver)?;
-            (parsed.root, Arc::new(parsed.definitions))
+            // Folded now every body is known, so this entry point and the set operations agree.
+            let parsed = refold::through_targets(parsed, &context);
+            (
+                parsed.root,
+                Arc::new(parsed.definitions),
+                Arc::new(parsed.local_definitions),
+            )
         }
         None => (
             Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
             Arc::new(DefinitionMap::new()),
+            Arc::new(BTreeSet::new()),
         ),
     };
     Ok(CanonicalSchema::new(
@@ -152,6 +160,7 @@ fn build(
         pattern_options,
         validate_formats,
         definitions,
+        local,
     ))
 }
 

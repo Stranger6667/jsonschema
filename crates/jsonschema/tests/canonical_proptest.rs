@@ -1,7 +1,7 @@
 #![cfg(not(target_arch = "wasm32"))]
 use hegel::{extras::serde_json as json_gs, generators as gs, TestCase};
 use jsonschema::{
-    canonical::{CanonicalSchema, CanonicalView},
+    canonical::{CanonicalSchema, CanonicalView, Containment, Satisfiability},
     Draft, JsonType,
 };
 use serde_json::{json, Value};
@@ -24,6 +24,20 @@ fn draw_type(tc: &TestCase) -> &'static str {
 
 fn small_length(tc: &TestCase) -> u8 {
     tc.draw(gs::integers::<u8>().min_value(0).max_value(4))
+}
+
+/// A count keyword's value: small enough to reason about, or one of the ends a machine has to hold
+/// without building an instance that long.
+fn drawn_length(tc: &TestCase) -> u64 {
+    if tc.draw(gs::integers::<u8>().min_value(0).max_value(15)) == 0 {
+        return tc.draw(gs::sampled_from(vec![
+            u64::from(u32::MAX),
+            u64::MAX - 1,
+            u64::MAX,
+            1_000_000_000_000,
+        ]));
+    }
+    u64::from(small_length(tc))
 }
 
 fn small_int(tc: &TestCase) -> i32 {
@@ -149,8 +163,14 @@ fn arbitrary_instance(tc: &TestCase) -> Value {
 }
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
+// Key patterns that overlap each other and the drawn key pool, so a shield and a name constraint
+// can each hold what the other turns away.
+fn draw_key_pattern(tc: &TestCase) -> &'static str {
+    tc.draw(gs::sampled_from(vec!["^a", "b$", "^x", "^[ab]$", "^a.*"]))
+}
+
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(95)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(99)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -161,8 +181,8 @@ fn draw_leaf(tc: &TestCase) -> Value {
             let values: Vec<Value> = (0..count).map(|_| tc.draw(arbitrary_scalar())).collect();
             json!({ "enum": values })
         }
-        6 => json!({ "type": "string", "minLength": small_length(tc) }),
-        7 => json!({ "type": "string", "maxLength": small_length(tc) }),
+        6 => json!({ "type": "string", "minLength": drawn_length(tc) }),
+        7 => json!({ "type": "string", "maxLength": drawn_length(tc) }),
         8 => {
             let (min, max) = ordered(small_length(tc), small_length(tc));
             json!({ "type": "string", "minLength": min, "maxLength": max })
@@ -171,7 +191,7 @@ fn draw_leaf(tc: &TestCase) -> Value {
             let pattern = tc.draw(gs::sampled_from(vec!["^a", "b$", "[0-9]+", "x"]));
             json!({ "type": "string", "pattern": pattern })
         }
-        10 => json!({ "type": "string", "minLength": small_length(tc), "pattern": "^a" }),
+        10 => json!({ "type": "string", "minLength": drawn_length(tc), "pattern": "^a" }),
         11 => json!({ "type": "integer", "minimum": small_int(tc) }),
         12 => json!({ "type": "integer", "maximum": small_int(tc) }),
         13 => {
@@ -194,7 +214,7 @@ fn draw_leaf(tc: &TestCase) -> Value {
             let (min, max) = ordered(small_length(tc), small_length(tc));
             json!({ "type": "object", "minProperties": min, "maxProperties": max })
         }
-        21 => json!({ "type": "array", "minItems": small_length(tc) }),
+        21 => json!({ "type": "array", "minItems": drawn_length(tc) }),
         22 => json!({ "type": "array", "maxItems": small_length(tc) }),
         23 => {
             let (min, max) = ordered(small_length(tc), small_length(tc));
@@ -406,6 +426,28 @@ fn draw_leaf(tc: &TestCase) -> Value {
         // A no-op unevaluated*: rejects nothing regardless of what else is on the object.
         94 => json!({ "type": "object", "unevaluatedProperties": true }),
         95 => json!({ "type": "array", "unevaluatedItems": true }),
+        96 => json!({
+            "type": "object",
+            "patternProperties": { draw_key_pattern(tc): { "type": draw_type(tc) } },
+            "additionalProperties": false
+        }),
+        97 => json!({ "type": "object", "propertyNames": { "pattern": draw_key_pattern(tc) } }),
+        98 => json!({
+            "not": {
+                "type": "object",
+                "propertyNames": { "pattern": draw_key_pattern(tc) },
+                "required": draw_keys(tc)
+            }
+        }),
+        99 => json!({
+            "type": "object",
+            "additionalProperties": false,
+            "maxProperties": small_length(tc),
+            "patternProperties": {
+                draw_key_pattern(tc): { "propertyNames": { "pattern": draw_key_pattern(tc) } }
+            },
+            "properties": { "a": { "maxProperties": small_length(tc) } }
+        }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -423,6 +465,10 @@ fn draw_keys(tc: &TestCase) -> Vec<&'static str> {
 
 fn draw_reference_uri(tc: &TestCase) -> &'static str {
     tc.draw(gs::sampled_from(vec![
+        // The document root binds to the document a node was read against rather than to a key of
+        // the map, so it is the one name two operands cannot merge by renaming. Without it here no
+        // generated schema reads `#` while also carrying `$defs`.
+        "#",
         "#/$defs/null_target",
         "#/$defs/integer_target",
         "#/$defs/string_target",
@@ -545,6 +591,21 @@ fn draw_schema(tc: &TestCase, depth: u32) -> Value {
     schema
 }
 
+/// Whether `schema` names the document root anywhere inside it.
+///
+/// A body that reads `#` cannot be moved out of the root position: wrapped in anything, `#` names
+/// the wrapper rather than the body, so the rewrite no longer accepts the values it started with.
+fn names_document_root(schema: &Value) -> bool {
+    match schema {
+        Value::Object(map) => {
+            map.get("$ref").and_then(Value::as_str) == Some("#")
+                || map.values().any(names_document_root)
+        }
+        Value::Array(items) => items.iter().any(names_document_root),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => false,
+    }
+}
+
 fn split_root_definitions(schema: &Value) -> (Value, Option<Value>) {
     let mut schema = schema.clone();
     let definitions = schema
@@ -564,7 +625,7 @@ fn attach_root_definitions(mut schema: Value, definitions: Option<Value>) -> Val
 }
 
 // Meta-valid keywords the canonicaliser does not model; a document carrying one stays `Raw`.
-fn draw_unmodeled_leaf(tc: &TestCase) -> Value {
+fn draw_unsupported_leaf(tc: &TestCase) -> Value {
     match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
         0 => json!({ "anyOf": [{}], "unevaluatedProperties": { "type": "integer" } }),
         1 => json!({ "not": { "pattern": "^a" } }),
@@ -579,7 +640,7 @@ fn draw_broad_schema(tc: &TestCase, depth: u32) -> Value {
         return if tc.draw(gs::booleans()) {
             draw_leaf(tc)
         } else {
-            draw_unmodeled_leaf(tc)
+            draw_unsupported_leaf(tc)
         };
     }
     let count = tc.draw(gs::integers::<usize>().min_value(1).max_value(2));
@@ -672,7 +733,7 @@ fn canonicalize_is_idempotent(tc: TestCase) {
     if let Some(once) = canonicalize_with_formats(&schema, draft, validate_formats) {
         let twice = canonicalize_with_formats(&once, draft, validate_formats)
             .expect("a canonical form re-canonicalizes");
-        assert_eq!(once, twice);
+        assert_eq!(once, twice, "schema = {schema}");
     }
 }
 
@@ -718,10 +779,10 @@ fn negating_a_complement_restores_the_accepted_values(tc: TestCase) {
     else {
         return;
     };
-    let Some(complement) = canonical.negate() else {
+    let Ok(complement) = canonical.negate() else {
         return;
     };
-    let Some(restored) = complement.negate() else {
+    let Ok(restored) = complement.negate() else {
         return;
     };
     let build = |value: &Value| {
@@ -741,6 +802,374 @@ fn negating_a_complement_restores_the_accepted_values(tc: TestCase) {
     );
 }
 
+// Every set operation answers about the values its operands accept, so a validator built from the
+// result agrees with the two it was combined from - on the union, the difference, and the coverage
+// each of them decides.
+#[hegel::test(test_cases = 5_000)]
+fn set_operations_answer_about_the_values_their_operands_accept(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let validate_formats = tc.draw(gs::booleans());
+    let left_source = draw_schema(&tc, 2);
+    let right_source = draw_schema(&tc, 2);
+    let instance = tc.draw(arbitrary_instance());
+    let canonicalize = |value: &Value| {
+        jsonschema::canonical::options()
+            .with_draft(draft)
+            .should_validate_formats(validate_formats)
+            .canonicalize(value)
+    };
+    let build = |value: &Value| {
+        jsonschema::options()
+            .with_draft(draft)
+            .should_validate_formats(validate_formats)
+            .build(value)
+    };
+    let (Ok(left), Ok(right)) = (canonicalize(&left_source), canonicalize(&right_source)) else {
+        return;
+    };
+    let (Ok(left_validator), Ok(right_validator)) = (build(&left_source), build(&right_source))
+    else {
+        return;
+    };
+    let in_left = left_validator.is_valid(&instance);
+    let in_right = right_validator.is_valid(&instance);
+    for (name, result, expected) in [
+        ("union", left.union(&right), in_left || in_right),
+        ("intersection", left.intersect(&right), in_left && in_right),
+        ("difference", left.subtract(&right), in_left && !in_right),
+    ] {
+        let Ok(result) = result else {
+            continue;
+        };
+        let emitted = result.to_json_schema();
+        let context =
+            || format!("\n  left = {left_source}\n  right = {right_source}\n  {name} = {emitted}");
+        // Reading a result back must settle: set operations resolve references where parsing keeps
+        // them symbolic, so one more round can fold further, but no round after that may.
+        if let Ok(once) = canonicalize(&emitted) {
+            let once = once.to_json_schema();
+            if let Ok(twice) = canonicalize(&once) {
+                assert_eq!(
+                    twice.to_json_schema(),
+                    once,
+                    "reading the {name} back does not settle{}",
+                    context()
+                );
+            }
+            if let Ok(validator) = build(&once) {
+                assert_eq!(
+                    expected,
+                    validator.is_valid(&instance),
+                    "the {name} read back disagrees{}\n  read back = {once}\n  instance = {instance}",
+                    context()
+                );
+            }
+        }
+        // The engine may decline to answer, but never gets the answer wrong.
+        if result.satisfiability() == Satisfiability::No {
+            assert!(
+                !expected,
+                "the {name} folded to nothing over an instance it accepts{}\n  instance = {instance}",
+                context()
+            );
+        }
+        if let Ok(validator) = build(&emitted) {
+            assert_eq!(
+                expected,
+                validator.is_valid(&instance),
+                "the {name} disagrees{}\n  instance = {instance}",
+                context()
+            );
+        }
+    }
+    // One value set has one form, whichever way round the commutative operations are asked.
+    for (name, forward, backward) in [
+        ("union", left.union(&right), right.union(&left)),
+        (
+            "intersection",
+            left.intersect(&right),
+            right.intersect(&left),
+        ),
+    ] {
+        if let (Ok(forward), Ok(backward)) = (forward, backward) {
+            assert_eq!(
+                forward.to_json_schema(),
+                backward.to_json_schema(),
+                "{name} is not commutative\n  left = {left_source}\n  right = {right_source}"
+            );
+        }
+    }
+    assert_set_algebra_laws(&[(&left, &left_source), (&right, &right_source)], draft);
+    // A coverage the engine decides must hold on every instance: `Yes` leaves no value of the
+    // argument outside the receiver, `No` leaves at least one - which the difference exhibits.
+    match left.covers(&right) {
+        Ok(Containment::Yes) => assert!(
+            !in_right || in_left,
+            "covers said yes\n  left = {left_source}\n  right = {right_source}\n  instance = {instance}"
+        ),
+        Ok(Containment::No) => {
+            let Ok(difference) = right.subtract(&left) else {
+                return;
+            };
+            assert_ne!(
+                difference.satisfiability(),
+                Satisfiability::No,
+                "covers said no over an empty difference\n  left = {left_source}\n  right = {right_source}"
+            );
+        }
+        Ok(Containment::Unknown) | Err(_) => {}
+    }
+}
+
+/// The laws every operand obeys with itself and with the two constants, checked on the form each
+/// operation hands back: these are exact whatever the operands are spelled like, so a spelling the
+/// engine reads through must not change the answer.
+fn assert_set_algebra_laws(operands: &[(&CanonicalSchema, &Value)], draft: Draft) {
+    let constant = |value: Value| {
+        jsonschema::canonical::options()
+            .with_draft(draft)
+            .canonicalize(&value)
+            .expect("a boolean schema canonicalizes")
+    };
+    let nothing = constant(json!(false));
+    let everything = constant(json!(true));
+    for (side, source) in operands {
+        for (law, result, expected) in [
+            ("a | a", side.union(side), *side),
+            ("a & a", side.intersect(side), *side),
+            ("a | nothing", side.union(&nothing), *side),
+            ("a & everything", side.intersect(&everything), *side),
+            ("a | everything", side.union(&everything), &everything),
+            ("a & nothing", side.intersect(&nothing), &nothing),
+            ("a \\ a", side.subtract(side), &nothing),
+            ("a \\ nothing", side.subtract(&nothing), *side),
+            ("nothing \\ a", nothing.subtract(side), &nothing),
+        ] {
+            let Ok(result) = result else {
+                continue;
+            };
+            assert_eq!(
+                result.to_json_schema(),
+                expected.to_json_schema(),
+                "`{law}` does not hold\n  a = {source}"
+            );
+        }
+        // A schema covers itself, whatever it is written like. A `Raw` operand is refused before
+        // any of that, which says nothing about coverage.
+        if let Ok(containment) = side.covers(side) {
+            assert_eq!(
+                containment,
+                Containment::Yes,
+                "a schema does not cover itself\n  a = {source}"
+            );
+        }
+        // The same laws against the same values spelled as a pointer. Asked against the node
+        // itself, the wrapper's identity shortcuts answer before the algebra runs.
+        // From what the operand emits: it can be a handle on one target of the document `source`
+        // spells, and the twin has to hold the operand's values.
+        let Some(twin) = pointer_twin(&side.to_json_schema()) else {
+            continue;
+        };
+        let Ok(twin) = jsonschema::canonical::options()
+            .with_draft(draft)
+            .canonicalize(&twin)
+        else {
+            continue;
+        };
+        // The difference need not fold to `false` - proving an `allOf` empty is more than the form
+        // promises - but it must accept nothing.
+        for (law, difference) in [
+            ("a \\ &a", side.subtract(&twin)),
+            ("&a \\ a", twin.subtract(side)),
+        ] {
+            let Ok(difference) = difference else {
+                continue;
+            };
+            assert_ne!(
+                difference.satisfiability(),
+                Satisfiability::Yes,
+                "`{law}` claims a value\n  a = {source}\n  difference = {}",
+                difference.to_json_schema()
+            );
+            let Ok(validator) = jsonschema::options()
+                .with_draft(draft)
+                .build(&difference.to_json_schema())
+            else {
+                continue;
+            };
+            for instance in instance_pool() {
+                assert!(
+                    !validator.is_valid(&instance),
+                    "`{law}` accepts {instance}\n  a = {source}\n  difference = {}",
+                    difference.to_json_schema()
+                );
+            }
+        }
+        // Coverage may go undecided through a pointer, but never the wrong way round.
+        for (law, containment) in [
+            ("a covers &a", side.covers(&twin)),
+            ("&a covers a", twin.covers(side)),
+        ] {
+            if let Ok(containment) = containment {
+                assert_ne!(
+                    containment,
+                    Containment::No,
+                    "`{law}` was refused\n  a = {source}"
+                );
+            }
+        }
+    }
+}
+
+/// The same document reached through a pointer: the same values under a form the algebra must read
+/// through rather than recognise. `None` where the body names the root, which the wrapper rebinds.
+fn pointer_twin(source: &Value) -> Option<Value> {
+    const TWIN: &str = "canonical_twin";
+    let object = source.as_object()?;
+    if names_document_root(source) {
+        return None;
+    }
+    let mut definitions = object
+        .get("$defs")
+        .and_then(Value::as_object)
+        .cloned()
+        .unwrap_or_default();
+    let mut body = object.clone();
+    body.remove("$defs");
+    definitions.insert(TWIN.to_string(), Value::Object(body));
+    Some(json!({"$defs": definitions, "$ref": format!("#/$defs/{TWIN}")}))
+}
+
+/// The shared pool with one entry replaced, which is what editing a schema looks like.
+fn edited_defs(tc: &TestCase, replacement: Value) -> Value {
+    let key = tc.draw(gs::sampled_from(vec![
+        "null_target",
+        "integer_target",
+        "string_target",
+        "object_target",
+        "array_target",
+    ]));
+    let mut defs = shared_defs();
+    defs.as_object_mut()
+        .expect("the pool is an object")
+        .insert(key.to_string(), replacement);
+    defs
+}
+
+/// A handle on the document, or on one of the targets it carries: an operand reached through
+/// `definition` spells a pointer of its own and reads the rest of its document through it, which is
+/// what makes two versions of one document tell each other apart.
+fn draw_operand(
+    tc: &TestCase,
+    schema: &jsonschema::canonical::CanonicalSchema,
+) -> jsonschema::canonical::CanonicalSchema {
+    let targets: Vec<String> = schema.definitions().map(|(uri, _)| uri).collect();
+    if targets.is_empty() || tc.draw(gs::booleans()) {
+        return schema.clone();
+    }
+    let uri = tc.draw(gs::sampled_from(targets));
+    schema.definition(&uri).expect("a listed target resolves")
+}
+
+// Two versions of one document resolve their pointers through one map, so an entry they disagree on
+// leaves them incomparable - and every operation must say so rather than answer about whichever
+// body it happened to keep. Whatever an operation does answer holds on every instance.
+#[hegel::test(test_cases = 5_000)]
+fn set_operations_over_two_versions_of_one_document_answer_or_decline(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    // A boolean schema carries no `$defs`, so the body is wrapped where it is not an object.
+    let body = match draw_schema_node(&tc, 2) {
+        object @ Value::Object(_) => object,
+        other => json!({ "allOf": [other] }),
+    };
+    // Half the documents read `#` as well, so the pair exercises the one name a merge cannot rename
+    // apart: two versions binding the root to different bodies must decline rather than answer
+    // about whichever root the operation happened to keep.
+    let body = if tc.draw(gs::booleans()) {
+        json!({"type": "object", "allOf": [body], "properties": {"self": {"$ref": "#"}}})
+    } else {
+        body
+    };
+    let document = |defs: Value| {
+        let mut schema = body.clone();
+        schema
+            .as_object_mut()
+            .expect("the body was wrapped into an object")
+            .insert("$defs".into(), defs);
+        schema
+    };
+    let old_source = document(shared_defs());
+    let new_source = document(edited_defs(&tc, draw_leaf(&tc)));
+    let canonicalize = |value: &Value| {
+        jsonschema::canonical::options()
+            .with_draft(draft)
+            .canonicalize(value)
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let (Ok(old), Ok(new)) = (canonicalize(&old_source), canonicalize(&new_source)) else {
+        return;
+    };
+    let (left, right) = (draw_operand(&tc, &old), draw_operand(&tc, &new));
+    // A handle on a target answers about that target, so the validators are built from what it
+    // emits rather than from the document it came out of.
+    let (Ok(left_validator), Ok(right_validator)) = (
+        build(&left.to_json_schema()),
+        build(&right.to_json_schema()),
+    ) else {
+        return;
+    };
+    let instance = tc.draw(arbitrary_instance());
+    let in_left = left_validator.is_valid(&instance);
+    let in_right = right_validator.is_valid(&instance);
+
+    for (name, result, expected) in [
+        ("union", left.union(&right), in_left || in_right),
+        ("intersection", left.intersect(&right), in_left && in_right),
+        ("difference", left.subtract(&right), in_left && !in_right),
+    ] {
+        let Ok(result) = result else {
+            continue;
+        };
+        let emitted = result.to_json_schema();
+        let Ok(validator) = build(&emitted) else {
+            continue;
+        };
+        assert_eq!(
+            expected,
+            validator.is_valid(&instance),
+            "{name} disagrees\n  old = {old_source}\n  new = {new_source}\n  left = {}\n  right = {}\n  result = {emitted}\n  instance = {instance}",
+            left.to_json_schema(),
+            right.to_json_schema()
+        );
+    }
+    // One value set has one answer, whichever way round the commutative operations are asked.
+    for (name, forward, backward) in [
+        ("union", left.union(&right), right.union(&left)),
+        (
+            "intersection",
+            left.intersect(&right),
+            right.intersect(&left),
+        ),
+    ] {
+        if let (Ok(forward), Ok(backward)) = (forward, backward) {
+            assert_eq!(
+                forward.to_json_schema(),
+                backward.to_json_schema(),
+                "{name} is not commutative\n  old = {old_source}\n  new = {new_source}\n  left = {}\n  right = {}",
+                left.to_json_schema(),
+                right.to_json_schema()
+            );
+        }
+    }
+    assert_set_algebra_laws(&[(&left, &old_source), (&right, &new_source)], draft);
+    if let Ok(Containment::Yes) = left.covers(&right) {
+        assert!(
+            !in_right || in_left,
+            "covers said yes\n  old = {old_source}\n  new = {new_source}\n  instance = {instance}"
+        );
+    }
+}
+
 // A pool in normal form keeps no leaf a sibling of its own kind already holds: an intersection that
 // leaves the leaf untouched proves every value it admits lies in the sibling, so the fold that
 // drops it was left undone. Leaves of different kinds sit in different pools, which the union
@@ -750,6 +1179,9 @@ fn a_union_keeps_no_leaf_a_sibling_of_its_kind_already_holds(tc: TestCase) {
     let draft = draw_draft(&tc);
     let validate_formats = tc.draw(gs::booleans());
     let seed = draw_schema(&tc, 2);
+    if names_document_root(&seed) {
+        return;
+    }
     let (body, definitions) = split_root_definitions(&seed);
     // A branch beside a narrowing of itself: the narrowing adds nothing, so the union must shed it.
     let mut branches = vec![body.clone(), json!({ "allOf": [body, draw_leaf(&tc)] })];
@@ -784,8 +1216,11 @@ fn a_union_keeps_no_leaf_a_sibling_of_its_kind_already_holds(tc: TestCase) {
                 if divisors(branch) != divisors(sibling) {
                     continue;
                 }
+                // Minimization drops what a sibling absorbs, which is what intersecting the two
+                // back into the branch says. Coverage the difference decides - the empty string
+                // failing a media type, say - is a wider question than the facets a pool weighs.
                 assert!(
-                    !matches!(branch.is_subset_of(sibling), Ok(Some(true))),
+                    !matches!(sibling.intersect(branch), Ok(shared) if &shared == branch),
                     "schema = {schema}\n  branch = {}\n  sibling = {}",
                     branch.to_json_schema(),
                     sibling.to_json_schema()
@@ -990,7 +1425,7 @@ fn divisor_algebra_preserves_validation(tc: TestCase) {
 }
 
 // The order divisors arrive in is not part of the schema's meaning, so it cannot change the form.
-// An unmodeled document is kept as written, so only modeled ones carry the claim.
+// An unsupported document is kept as written, so only modeled ones carry the claim.
 #[hegel::test(test_cases = 5_000)]
 fn divisor_order_does_not_change_the_form(tc: TestCase) {
     let draft = draw_draft(&tc);
@@ -1102,7 +1537,7 @@ fn equality_preserving_rewrites_converge(tc: TestCase) {
     let schema = draw_schema(&tc, 2);
     // Draft 4's metaschema rejects boolean subschemas, so a wrap of a boolean root is not a
     // meta-valid document there.
-    if !schema.is_object() {
+    if !schema.is_object() || names_document_root(&schema) {
         return;
     }
     let rewritten = rewrite_schema(&tc, &schema);
@@ -1133,6 +1568,9 @@ fn negation_complements_the_validator_verdict(tc: TestCase) {
     let draft = draw_draft(&tc);
     let validate_formats = tc.draw(gs::booleans());
     let schema = draw_schema(&tc, 2);
+    if names_document_root(&schema) {
+        return;
+    }
     let (schema_body, definitions) = split_root_definitions(&schema);
     let negated = attach_root_definitions(json!({ "not": schema_body }), definitions);
     let Some(emitted) = canonicalize_with_formats(&negated, draft, validate_formats) else {
@@ -1382,7 +1820,7 @@ fn unsatisfiable_recursive_reference_rejects_every_candidate(tc: TestCase) {
         .with_draft(Draft::Draft202012)
         .canonicalize(&schema)
         .unwrap_or_else(|error| panic!("a definition ring canonicalizes: {error}\n  {schema}"));
-    if canonical.is_satisfiable() {
+    if canonical.satisfiability() != Satisfiability::No {
         return;
     }
     let validator = jsonschema::options()
@@ -1408,8 +1846,9 @@ fn a_demanding_reference_ring_admits_nothing(tc: TestCase) {
         .with_draft(Draft::Draft202012)
         .canonicalize(&schema)
         .unwrap_or_else(|error| panic!("a definition ring canonicalizes: {error}\n  {schema}"));
-    assert!(
-        !canonical.is_satisfiable(),
+    assert_eq!(
+        canonical.satisfiability(),
+        Satisfiability::No,
         "a ring of demanded sub-values admits nothing, but the canonical form is {}\n  schema = {schema}",
         canonical.to_json_schema()
     );
@@ -1439,4 +1878,356 @@ fn recursive_reference_form_is_idempotent(tc: TestCase) {
     let twice = canonicalize(&once, Draft::Draft202012)
         .unwrap_or_else(|| panic!("a canonical form re-canonicalizes: {once}"));
     assert_eq!(once, twice, "schema = {schema}");
+}
+
+// Composed expressions answer about the values their operands accept, whatever the grouping: an
+// intermediate result re-enters the algebra as an operand, where a dispatch written per ordered
+// pair must not let the association or the spelling decide the answer.
+#[hegel::test(test_cases = 5_000)]
+fn composed_set_operations_answer_about_the_values_their_operands_accept(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let sources = [
+        draw_schema(&tc, 2),
+        draw_schema(&tc, 2),
+        draw_schema(&tc, 2),
+    ];
+    let instance = tc.draw(arbitrary_instance());
+    let canonicalize = |value: &Value| {
+        jsonschema::canonical::options()
+            .with_draft(draft)
+            .canonicalize(value)
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let mut operands = Vec::new();
+    let mut admitted = Vec::new();
+    for source in &sources {
+        let (Ok(operand), Ok(validator)) = (canonicalize(source), build(source)) else {
+            return;
+        };
+        admitted.push(validator.is_valid(&instance));
+        operands.push(operand);
+    }
+    let (a, b, c) = (&operands[0], &operands[1], &operands[2]);
+    let (in_a, in_b, in_c) = (admitted[0], admitted[1], admitted[2]);
+    let pair = |left: Result<CanonicalSchema, _>,
+                op: fn(
+        &CanonicalSchema,
+        &CanonicalSchema,
+    )
+        -> Result<CanonicalSchema, jsonschema::canonical::CanonicalizationError>,
+                right: &CanonicalSchema| { left.and_then(|left| op(&left, right)) };
+    let expressions = [
+        (
+            "(a & b) & c",
+            pair(a.intersect(b), CanonicalSchema::intersect, c),
+            in_a && in_b && in_c,
+        ),
+        (
+            "a & (b & c)",
+            pair(b.intersect(c), CanonicalSchema::intersect, a),
+            in_a && in_b && in_c,
+        ),
+        (
+            "(a | b) | c",
+            pair(a.union(b), CanonicalSchema::union, c),
+            in_a || in_b || in_c,
+        ),
+        (
+            "a | (b | c)",
+            pair(b.union(c), CanonicalSchema::union, a),
+            in_a || in_b || in_c,
+        ),
+        (
+            "a & (b | c)",
+            pair(b.union(c), CanonicalSchema::intersect, a),
+            in_a && (in_b || in_c),
+        ),
+        (
+            "(a | b) \\ c",
+            pair(a.union(b), CanonicalSchema::subtract, c),
+            (in_a || in_b) && !in_c,
+        ),
+        (
+            "(a \\ b) \\ c",
+            pair(a.subtract(b), CanonicalSchema::subtract, c),
+            in_a && !in_b && !in_c,
+        ),
+        (
+            "a & !b",
+            pair(b.negate(), CanonicalSchema::intersect, a),
+            in_a && !in_b,
+        ),
+        (
+            "a | (a & b)",
+            pair(a.intersect(b), CanonicalSchema::union, a),
+            in_a,
+        ),
+    ];
+    for (law, result, expected) in expressions {
+        let Ok(result) = result else {
+            continue;
+        };
+        let emitted = result.to_json_schema();
+        let context = || {
+            format!(
+                "\n  a = {}\n  b = {}\n  c = {}\n  {law} = {emitted}\n  instance = {instance}",
+                sources[0], sources[1], sources[2]
+            )
+        };
+        if result.satisfiability() == Satisfiability::No {
+            assert!(
+                !expected,
+                "`{law}` folded to nothing over an instance it accepts{}",
+                context()
+            );
+        }
+        let Ok(validator) = build(&emitted) else {
+            continue;
+        };
+        assert_eq!(
+            expected,
+            validator.is_valid(&instance),
+            "`{law}` disagrees{}",
+            context()
+        );
+    }
+}
+
+fn instance_pool() -> Vec<Value> {
+    vec![
+        json!(null),
+        json!(true),
+        json!(false),
+        json!(0),
+        json!(1),
+        json!(-2),
+        json!(1.5),
+        json!(2.0),
+        json!(""),
+        json!("a"),
+        json!("ab"),
+        json!("b"),
+        json!("xb"),
+        json!("aab"),
+        json!([]),
+        json!([1]),
+        json!([1, 1]),
+        json!([1, "a"]),
+        json!([[1]]),
+        json!({}),
+        json!({"a": 1}),
+        json!({"ab": 1}),
+        json!({"b": 1}),
+        json!({"x": 1}),
+        json!({"xb": 1}),
+        json!({"a": "a"}),
+        json!({"a": {}}),
+        json!({"a": {"b": 1}}),
+        json!({"a": 1, "b": 1}),
+        json!({"a": 1, "ab": 1, "b": 1, "x": 1}),
+        json!({"xb": {"a": 1}}),
+        json!({"x": {"ab": 1}}),
+    ]
+}
+
+// The same laws as the drawn-instance property, but read over a fixed pool: one drawn instance
+// separates two forms only where it happens to fall between them.
+#[hegel::test(test_cases = 5_000)]
+fn set_operations_agree_with_their_operands_over_a_pool(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let left_source = draw_schema(&tc, 2);
+    let right_source = draw_schema(&tc, 2);
+    let canonicalize = |value: &Value| {
+        jsonschema::canonical::options()
+            .with_draft(draft)
+            .canonicalize(value)
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let (Ok(left), Ok(right)) = (canonicalize(&left_source), canonicalize(&right_source)) else {
+        return;
+    };
+    let (Ok(left_validator), Ok(right_validator)) = (build(&left_source), build(&right_source))
+    else {
+        return;
+    };
+    let pool = instance_pool();
+    let verdicts: Vec<(bool, bool)> = pool
+        .iter()
+        .map(|instance| {
+            (
+                left_validator.is_valid(instance),
+                right_validator.is_valid(instance),
+            )
+        })
+        .collect();
+    for (name, result, expected) in [
+        (
+            "union",
+            left.union(&right),
+            (|a: bool, b: bool| a || b) as fn(bool, bool) -> bool,
+        ),
+        ("intersection", left.intersect(&right), |a, b| a && b),
+        ("difference", left.subtract(&right), |a, b| a && !b),
+    ] {
+        let Ok(result) = result else {
+            continue;
+        };
+        let emitted = result.to_json_schema();
+        let empty = result.satisfiability() == Satisfiability::No;
+        let Ok(validator) = build(&emitted) else {
+            continue;
+        };
+        for (instance, (in_left, in_right)) in pool.iter().zip(&verdicts) {
+            let want = expected(*in_left, *in_right);
+            assert_eq!(
+                want,
+                validator.is_valid(instance),
+                "the {name} disagrees\n  left = {left_source}\n  right = {right_source}\n  {name} = {emitted}\n  instance = {instance}"
+            );
+            assert!(
+                !(empty && want),
+                "the {name} folded to nothing over an instance it accepts\n  left = {left_source}\n  right = {right_source}\n  instance = {instance}"
+            );
+        }
+    }
+    if let Ok(negated) = left.negate() {
+        let emitted = negated.to_json_schema();
+        if let Ok(validator) = build(&emitted) {
+            for (instance, (in_left, _)) in pool.iter().zip(&verdicts) {
+                assert_eq!(
+                    !*in_left,
+                    validator.is_valid(instance),
+                    "the complement disagrees\n  left = {left_source}\n  complement = {emitted}\n  instance = {instance}"
+                );
+            }
+        }
+    }
+    if let Ok(Containment::Yes) = left.covers(&right) {
+        for (instance, (in_left, in_right)) in pool.iter().zip(&verdicts) {
+            assert!(
+                !in_right || *in_left,
+                "covers said yes\n  left = {left_source}\n  right = {right_source}\n  instance = {instance}"
+            );
+        }
+    }
+}
+
+/// One chained expression: how it is written, what the algebra answered, and the values it takes.
+type Chain = (
+    &'static str,
+    Result<CanonicalSchema, jsonschema::canonical::CanonicalizationError>,
+    fn(bool, bool, bool) -> bool,
+);
+
+// Chaining across three versions of one document renames a second time, over keys an earlier round
+// already renamed and roots an earlier round already redirected. Whatever a chain answers holds on
+// every value.
+#[hegel::test(test_cases = 5_000)]
+fn chained_set_operations_over_disagreeing_documents_answer_or_decline(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let body = match draw_schema_node(&tc, 2) {
+        object @ Value::Object(_) => object,
+        other => json!({ "allOf": [other] }),
+    };
+    let body = if tc.draw(gs::booleans()) {
+        json!({"type": "object", "allOf": [body], "properties": {"self": {"$ref": "#"}}})
+    } else {
+        body
+    };
+    let document = |defs: Value| {
+        let mut schema = body.clone();
+        schema
+            .as_object_mut()
+            .expect("the body was wrapped into an object")
+            .insert("$defs".into(), defs);
+        schema
+    };
+    let sources = [
+        document(shared_defs()),
+        document(edited_defs(&tc, draw_leaf(&tc))),
+        document(edited_defs(&tc, draw_leaf(&tc))),
+    ];
+    let canonicalize = |value: &Value| {
+        jsonschema::canonical::options()
+            .with_draft(draft)
+            .canonicalize(value)
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let mut operands = Vec::new();
+    for source in &sources {
+        let Ok(document) = canonicalize(source) else {
+            return;
+        };
+        operands.push(draw_operand(&tc, &document));
+    }
+    let pool = instance_pool();
+    let mut verdicts = Vec::new();
+    for operand in &operands {
+        // A handle on a target answers about that target, so the validator is built from what it
+        // emits rather than from the document it came out of.
+        let Ok(validator) = build(&operand.to_json_schema()) else {
+            return;
+        };
+        verdicts.push(
+            pool.iter()
+                .map(|instance| validator.is_valid(instance))
+                .collect::<Vec<bool>>(),
+        );
+    }
+    let (a, b, c) = (&operands[0], &operands[1], &operands[2]);
+    let chains: [Chain; 5] = [
+        (
+            "(a | b) & c",
+            a.union(b).and_then(|left| left.intersect(c)),
+            |a, b, c| (a || b) && c,
+        ),
+        (
+            "(a & b) | c",
+            a.intersect(b).and_then(|left| left.union(c)),
+            |a, b, c| (a && b) || c,
+        ),
+        (
+            "(a \\ b) \\ c",
+            a.subtract(b).and_then(|left| left.subtract(c)),
+            |a, b, c| a && !b && !c,
+        ),
+        (
+            "a & (b | c)",
+            b.union(c).and_then(|left| left.intersect(a)),
+            |a, b, c| a && (b || c),
+        ),
+        (
+            "(a | b) \\ c",
+            a.union(b).and_then(|left| left.subtract(c)),
+            |a, b, c| (a || b) && !c,
+        ),
+    ];
+    for (chain, result, expected) in chains {
+        let Ok(result) = result else {
+            continue;
+        };
+        let emitted = result.to_json_schema();
+        let empty = result.satisfiability() == Satisfiability::No;
+        let Ok(validator) = build(&emitted) else {
+            continue;
+        };
+        for (index, instance) in pool.iter().enumerate() {
+            let want = expected(verdicts[0][index], verdicts[1][index], verdicts[2][index]);
+            assert_eq!(
+                want,
+                validator.is_valid(instance),
+                "`{chain}` disagrees\n  a = {}\n  b = {}\n  c = {}\n  {chain} = {emitted}\n  instance = {instance}",
+                a.to_json_schema(),
+                b.to_json_schema(),
+                c.to_json_schema()
+            );
+            assert!(
+                !(empty && want),
+                "`{chain}` folded to nothing over an instance it accepts\n  a = {}\n  b = {}\n  c = {}\n  instance = {instance}",
+                a.to_json_schema(),
+                b.to_json_schema(),
+                c.to_json_schema()
+            );
+        }
+    }
 }

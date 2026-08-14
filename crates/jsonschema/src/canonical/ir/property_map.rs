@@ -89,7 +89,7 @@ impl PropertyMap {
         self.as_mut_slice().iter_mut().map(|entry| &mut entry.1)
     }
 
-    /// Adds the schema `missing` yields when the key is absent, and hands back the schema at the key.
+    /// Adds the schema `missing` yields when the key is absent, and returns the schema at the key.
     pub(crate) fn or_insert_with(
         &mut self,
         key: Arc<str>,

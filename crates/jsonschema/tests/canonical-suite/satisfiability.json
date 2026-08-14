@@ -2634,7 +2634,18 @@
     "description": "two rigid formats that share no value collapse under assertions - date and uuid",
     "draft": "draft2020-12",
     "validate_formats": true,
-    "schema": {"allOf": [{"type": "string", "format": "date"}, {"type": "string", "format": "uuid"}]},
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "string",
+          "format": "uuid"
+        }
+      ]
+    },
     "satisfiable": false,
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2645,11 +2656,939 @@
     "description": "the same rigid formats stay satisfiable when formats are annotations only",
     "draft": "draft2020-12",
     "validate_formats": false,
-    "schema": {"allOf": [{"type": "string", "format": "date"}, {"type": "string", "format": "uuid"}]},
+    "schema": {
+      "allOf": [
+        {
+          "type": "string",
+          "format": "date"
+        },
+        {
+          "type": "string",
+          "format": "uuid"
+        }
+      ]
+    },
     "satisfiable": true,
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "type": "string"
+    }
+  },
+  {
+    "description": "a witness is built for an object as wide as it must be",
+    "schema": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minProperties": 1,
+      "type": "object"
+    }
+  },
+  {
+    "description": "a witness is built for an object several keys wide",
+    "schema": {
+      "type": "object",
+      "minProperties": 3
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minProperties": 3,
+      "type": "object"
+    }
+  },
+  {
+    "description": "a witness is built for an array holding what it demands",
+    "schema": {
+      "type": "array",
+      "contains": {
+        "type": "integer"
+      }
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "contains": {
+        "type": "integer"
+      },
+      "type": "array"
+    }
+  },
+  {
+    "description": "a witness is built for a required key whose schema is named",
+    "schema": {
+      "$defs": {
+        "s": {
+          "type": "string",
+          "minLength": 2
+        }
+      },
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/s"
+        }
+      }
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$defs": {
+        "s": {
+          "minLength": 2,
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/s"
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "a witness is built for a required key a shield leaves unconstrained",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": true
+      },
+      "additionalProperties": {
+        "type": "string"
+      },
+      "minProperties": 1
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": {
+        "type": "string"
+      },
+      "properties": {
+        "a": true
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "a witness is built through a key barring a named schema",
+    "schema": {
+      "$defs": {
+        "s": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "not": {
+            "$ref": "#/$defs/s"
+          }
+        }
+      }
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "array",
+            "object"
+          ]
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "a witness is built through a key whose branches carry a format",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "anyOf": [
+            {
+              "type": "string",
+              "format": "email"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      }
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "type": [
+            "integer",
+            "string"
+          ]
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "a key choosing between a named schema and another names a value",
+    "schema": {
+      "$defs": {
+        "s": {
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/s"
+            },
+            {
+              "type": "integer"
+            }
+          ]
+        }
+      }
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$defs": {
+        "s": {
+          "type": "string"
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "$ref": "#/$defs/s"
+            }
+          ]
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "a count bound past what a witness costs is left undecided - string",
+    "schema": {
+      "type": "string",
+      "minLength": 18446744073709551615,
+      "pattern": "^a"
+    },
+    "satisfiability": "unknown",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minLength": 18446744073709551615,
+      "pattern": "^a",
+      "type": "string"
+    }
+  },
+  {
+    "description": "a count bound past what a witness costs is left undecided - array",
+    "schema": {
+      "type": "array",
+      "minItems": 1000000000000
+    },
+    "satisfiability": "unknown",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minItems": 1000000000000,
+      "type": "array"
+    }
+  },
+  {
+    "description": "a count bound past what a witness costs is left undecided - object",
+    "schema": {
+      "type": "object",
+      "minProperties": 18446744073709551615
+    },
+    "satisfiability": "unknown",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minProperties": 18446744073709551615,
+      "type": "object"
+    }
+  },
+  {
+    "description": "a witness is not walked for past the depth it costs",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "type": "object",
+          "required": [
+            "a"
+          ],
+          "properties": {
+            "a": {
+              "type": "object",
+              "required": [
+                "a"
+              ],
+              "properties": {
+                "a": {
+                  "type": "object",
+                  "required": [
+                    "a"
+                  ],
+                  "properties": {
+                    "a": {
+                      "type": "object",
+                      "required": [
+                        "a"
+                      ],
+                      "properties": {
+                        "a": {
+                          "type": "object",
+                          "required": [
+                            "a"
+                          ],
+                          "properties": {
+                            "a": {
+                              "type": "object",
+                              "required": [
+                                "a"
+                              ],
+                              "properties": {
+                                "a": {
+                                  "type": "object",
+                                  "required": [
+                                    "a"
+                                  ],
+                                  "properties": {
+                                    "a": {
+                                      "type": "object",
+                                      "required": [
+                                        "a"
+                                      ],
+                                      "properties": {
+                                        "a": {
+                                          "type": "integer",
+                                          "multipleOf": 3
+                                        }
+                                      }
+                                    }
+                                  }
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "satisfiability": "unknown",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "properties": {
+            "a": {
+              "properties": {
+                "a": {
+                  "properties": {
+                    "a": {
+                      "properties": {
+                        "a": {
+                          "properties": {
+                            "a": {
+                              "properties": {
+                                "a": {
+                                  "properties": {
+                                    "a": {
+                                      "properties": {
+                                        "a": {
+                                          "multipleOf": 3,
+                                          "type": "integer"
+                                        }
+                                      },
+                                      "required": [
+                                        "a"
+                                      ],
+                                      "type": "object"
+                                    }
+                                  },
+                                  "required": [
+                                    "a"
+                                  ],
+                                  "type": "object"
+                                }
+                              },
+                              "required": [
+                                "a"
+                              ],
+                              "type": "object"
+                            }
+                          },
+                          "required": [
+                            "a"
+                          ],
+                          "type": "object"
+                        }
+                      },
+                      "required": [
+                        "a"
+                      ],
+                      "type": "object"
+                    }
+                  },
+                  "required": [
+                    "a"
+                  ],
+                  "type": "object"
+                }
+              },
+              "required": [
+                "a"
+              ],
+              "type": "object"
+            }
+          },
+          "required": [
+            "a"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "a witness within that depth is built",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "type": "object",
+          "required": [
+            "b"
+          ],
+          "properties": {
+            "b": {
+              "type": "integer",
+              "multipleOf": 3
+            }
+          }
+        }
+      }
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "properties": {
+            "b": {
+              "multipleOf": 3,
+              "type": "integer"
+            }
+          },
+          "required": [
+            "b"
+          ],
+          "type": "object"
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "a demand under a zero ceiling admits nothing",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object",
+          "propertyNames": {
+            "const": "a"
+          },
+          "properties": {
+            "a": false
+          }
+        },
+        {
+          "not": {
+            "type": "object",
+            "propertyNames": {
+              "maxLength": 0
+            }
+          }
+        }
+      ]
+    },
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "an open interval narrower than the gap between two floats holds no value",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": 1,
+      "exclusiveMaximum": 1.0000000000000002
+    },
+    "satisfiability": "unknown",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "exclusiveMaximum": 1.0000000000000002,
+      "exclusiveMinimum": 1,
+      "type": "number"
+    }
+  },
+  {
+    "description": "an open interval with room between its ends admits a value",
+    "schema": {
+      "type": "number",
+      "exclusiveMinimum": 5,
+      "exclusiveMaximum": 10
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": 7.5,
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "exclusiveMaximum": 10,
+      "exclusiveMinimum": 5,
+      "type": "number"
+    }
+  },
+  {
+    "description": "a required key whose window excludes zero admits a value",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "type": "integer",
+          "minimum": 5
+        }
+      }
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": {
+          "a": 5
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "minimum": 5,
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "an element window excluding zero admits a value",
+    "schema": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "integer",
+        "minimum": 5
+      }
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": [
+          5
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "minimum": 5,
+        "type": "integer"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  {
+    "description": "a contains demand over a window excluding zero admits a value",
+    "schema": {
+      "type": "array",
+      "contains": {
+        "type": "integer",
+        "minimum": 3
+      }
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": [
+          3
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "contains": {
+        "minimum": 3,
+        "type": "integer"
+      },
+      "type": "array"
+    }
+  },
+  {
+    "description": "a filler key answers to the pattern entry that governs it",
+    "schema": {
+      "type": "object",
+      "minProperties": 1,
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      }
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": {
+          "a0": 0
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a0": "x"
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minProperties": 1,
+      "patternProperties": {
+        "^a": {
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "a filler key is drawn from what the key constraint admits",
+    "schema": {
+      "type": "object",
+      "minProperties": 2,
+      "patternProperties": {
+        "^z": {
+          "type": "integer"
+        }
+      },
+      "additionalProperties": false
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": {
+          "z0": 0,
+          "z1": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a0": 0,
+          "a1": 1
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minProperties": 2,
+      "patternProperties": {
+        "^z": {
+          "type": "integer"
+        }
+      },
+      "propertyNames": {
+        "pattern": "^z",
+        "type": "string"
+      },
+      "type": "object"
+    }
+  },
+  {
+    "description": "a required key spelled like a filler key does not take its place",
+    "schema": {
+      "type": "object",
+      "minProperties": 3,
+      "required": [
+        "a0"
+      ],
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": {
+          "a0": 0,
+          "a1": 1,
+          "a2": 2
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a0": 0
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "additionalProperties": {
+        "type": "integer"
+      },
+      "minProperties": 3,
+      "required": [
+        "a0"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "a demanded element sits past the indices the prefix governs",
+    "schema": {
+      "type": "array",
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "string"
+        }
+      ],
+      "items": {
+        "type": "integer"
+      },
+      "contains": {
+        "type": "integer",
+        "minimum": 3
+      }
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": [
+          "x",
+          3
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          3,
+          3
+        ],
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "contains": {
+        "minimum": 3,
+        "type": "integer"
+      },
+      "items": {
+        "type": "integer"
+      },
+      "minItems": 2,
+      "prefixItems": [
+        {
+          "type": "string"
+        }
+      ],
+      "type": "array"
+    }
+  },
+  {
+    "description": "a demanded element sits inside a window that excludes its own end",
+    "schema": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "number",
+        "exclusiveMinimum": 0
+      }
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": [
+          0.5
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          0
+        ],
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "exclusiveMinimum": 0,
+        "type": "number"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  {
+    "description": "a demanded key holds a window that excludes its own end",
+    "schema": {
+      "type": "object",
+      "required": [
+        "a"
+      ],
+      "properties": {
+        "a": {
+          "type": "number",
+          "exclusiveMinimum": 0
+        }
+      }
+    },
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": {
+          "a": 0.5
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 0
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "exclusiveMinimum": 0,
+          "type": "number"
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
     }
   }
 ]

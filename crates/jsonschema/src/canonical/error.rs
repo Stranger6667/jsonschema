@@ -17,8 +17,12 @@ pub enum OperandMismatch {
     FormatAssertions,
     /// The operands were canonicalized with different pattern engines.
     PatternEngine,
-    /// The operands resolve references through different definition maps.
+    /// The operands resolve one external resource to different schemas. A `$defs` entry is a name
+    /// private to its document and is renamed apart instead; a resource is named by its URI, so
+    /// two documents disagreeing about one disagree about the resource itself.
     Definitions,
+    /// Both operands read `#`, which names a different document on each side.
+    DocumentRoots,
 }
 
 impl std::fmt::Display for OperandMismatch {
@@ -31,7 +35,10 @@ impl std::fmt::Display for OperandMismatch {
             Self::PatternEngine => {
                 f.write_str("operands canonicalized with different pattern engines")
             }
-            Self::Definitions => f.write_str("operands carry different definition maps"),
+            Self::Definitions => {
+                f.write_str("operands resolve one external resource to different schemas")
+            }
+            Self::DocumentRoots => f.write_str("operands read `#` in different documents"),
         }
     }
 }
@@ -53,8 +60,11 @@ pub enum CanonicalizationError {
     },
     /// Operands of a set operation cannot be combined.
     IncompatibleOperands(OperandMismatch),
-    /// A set operation reached a schema the canonical form does not model.
-    UnmodeledOperand,
+    /// A set operation reached an operand the canonical form does not support, kept verbatim as
+    /// [`CanonicalKind::Raw`](crate::canonical::CanonicalKind).
+    UnsupportedOperand,
+    /// The canonical form does not model a set operation's result.
+    UnsupportedResult,
 }
 
 impl std::fmt::Display for CanonicalizationError {
@@ -69,7 +79,8 @@ impl std::fmt::Display for CanonicalizationError {
                 write!(f, "invalid regular expression: {pattern:?}")
             }
             Self::IncompatibleOperands(mismatch) => mismatch.fmt(f),
-            Self::UnmodeledOperand => f.write_str("operand is not modeled in canonical form"),
+            Self::UnsupportedOperand => f.write_str("operand is not supported in canonical form"),
+            Self::UnsupportedResult => f.write_str("result is not supported in canonical form"),
         }
     }
 }
@@ -82,7 +93,8 @@ impl std::error::Error for CanonicalizationError {
             Self::InvalidSchemaType(_)
             | Self::InvalidPattern { .. }
             | Self::IncompatibleOperands(_)
-            | Self::UnmodeledOperand => None,
+            | Self::UnsupportedOperand
+            | Self::UnsupportedResult => None,
         }
     }
 }

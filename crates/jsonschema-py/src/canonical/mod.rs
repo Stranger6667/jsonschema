@@ -2,9 +2,113 @@ pub(crate) mod json;
 
 use std::hash::{Hash, Hasher};
 
-use jsonschema::canonical::{CanonicalSchema, CanonicalView, ObjectViolationView};
+use jsonschema::canonical::{
+    CanonicalKind, CanonicalSchema, CanonicalView, Containment, Distinctness, ObjectViolationView,
+    Satisfiability,
+};
 
 use pyo3::prelude::*;
+
+/// A Python enum mirroring a core one: the same variants, converting both ways, exposing the
+/// core's `snake_case` label as `.value`.
+macro_rules! label_enum {
+    (
+        $(#[$attr:meta])*
+        $py:ident => $core:ident as $name:literal {
+            $($variant:ident = $member:literal),+ $(,)?
+        }
+    ) => {
+        $(#[$attr])*
+        #[pyclass(
+            eq,
+            hash,
+            frozen,
+            skip_from_py_object,
+            module = "jsonschema_rs.canonical",
+            name = $name
+        )]
+        #[derive(Clone, Copy, PartialEq, Eq, Hash)]
+        pub(crate) enum $py {
+            $(#[pyo3(name = $member)] $variant),+
+        }
+
+        impl From<$py> for $core {
+            fn from(value: $py) -> Self {
+                match value {
+                    $($py::$variant => Self::$variant),+
+                }
+            }
+        }
+
+        impl From<$core> for $py {
+            fn from(value: $core) -> Self {
+                match value {
+                    $($core::$variant => Self::$variant),+
+                }
+            }
+        }
+
+        #[pymethods]
+        impl $py {
+            /// Stable `snake_case` label of this member (e.g. `"yes"`, `"multi_type"`).
+            #[getter]
+            #[allow(clippy::trivially_copy_pass_by_ref)]
+            fn value(&self) -> &'static str {
+                $core::from(*self).as_str()
+            }
+        }
+    };
+}
+
+label_enum! {
+    /// Whether one schema admits every value another admits.
+    PyContainment => Containment as "Containment" {
+        Yes = "YES",
+        No = "NO",
+        Unknown = "UNKNOWN",
+    }
+}
+
+label_enum! {
+    /// Whether any value satisfies a schema.
+    PySatisfiability => Satisfiability as "Satisfiability" {
+        Yes = "YES",
+        No = "NO",
+        Unknown = "UNKNOWN",
+    }
+}
+
+label_enum! {
+    /// What an array requires of its elements: all distinct, some repeated, or neither.
+    PyDistinctness => Distinctness as "Distinctness" {
+        Unconstrained = "UNCONSTRAINED",
+        AllDistinct = "ALL_DISTINCT",
+        SomeRepeated = "SOME_REPEATED",
+    }
+}
+
+label_enum! {
+    /// Structural discriminant of a canonical node, one member per view class.
+    PyCanonicalKind => CanonicalKind as "CanonicalKind" {
+        MultiType = "MULTI_TYPE",
+        TypedGroup = "TYPED_GROUP",
+        String = "STRING",
+        Integer = "INTEGER",
+        Number = "NUMBER",
+        Array = "ARRAY",
+        Object = "OBJECT",
+        Const = "CONST",
+        Enum = "ENUM",
+        Not = "NOT",
+        AllOf = "ALL_OF",
+        AnyOf = "ANY_OF",
+        OneOf = "ONE_OF",
+        Reference = "REFERENCE",
+        True = "TRUE",
+        False = "FALSE",
+        Raw = "RAW",
+    }
+}
 
 #[pyclass(frozen, name = "CanonicalSchema")]
 pub(crate) struct PyCanonicalSchema {
@@ -32,10 +136,10 @@ impl PyCanonicalSchema {
         }
     }
 
-    /// Structural kind label of this node.
+    /// Structural kind of this node.
     #[getter]
-    fn kind(&self) -> &'static str {
-        self.inner.kind().as_str()
+    fn kind(&self) -> PyCanonicalKind {
+        self.inner.kind().into()
     }
 
     /// Return the single view object for this node.
@@ -200,7 +304,7 @@ impl PyCanonicalSchema {
                             crate::value_to_python(py, &serde_json::Value::Number(number))
                         })
                         .transpose()?,
-                    distinctness: view.distinctness.as_str(),
+                    distinctness: view.distinctness.into(),
                     prefix_items: view
                         .prefix_items
                         .into_iter()
@@ -314,16 +418,36 @@ impl PyCanonicalSchema {
             .map_err(|error| canonicalization_error(py, error))
     }
 
-    /// Whether `other` admits every value this schema admits, or `None` when undecided.
-    fn is_subset_of(&self, py: Python<'_>, other: &Self) -> PyResult<Option<bool>> {
+    /// Every value either schema admits.
+    fn union(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
-            .is_subset_of(&other.inner)
+            .union(&other.inner)
+            .map(|inner| Self { inner })
             .map_err(|error| canonicalization_error(py, error))
     }
 
-    /// Every value this schema rejects, or `None` where the canonical form cannot spell it exactly.
-    fn negate(&self) -> Option<Self> {
-        self.inner.negate().map(|inner| Self { inner })
+    /// Every value this schema admits and `other` rejects.
+    fn subtract(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
+        self.inner
+            .subtract(&other.inner)
+            .map(|inner| Self { inner })
+            .map_err(|error| canonicalization_error(py, error))
+    }
+
+    /// Whether this schema admits every value `other` admits.
+    fn covers(&self, py: Python<'_>, other: &Self) -> PyResult<PyContainment> {
+        self.inner
+            .covers(&other.inner)
+            .map(PyContainment::from)
+            .map_err(|error| canonicalization_error(py, error))
+    }
+
+    /// Every value this schema rejects.
+    fn negate(&self, py: Python<'_>) -> PyResult<Self> {
+        self.inner
+            .negate()
+            .map(|inner| Self { inner })
+            .map_err(|error| canonicalization_error(py, error))
     }
 
     /// The reference target registered under `uri`, or the document itself under `#`.
@@ -349,9 +473,9 @@ impl PyCanonicalSchema {
         hasher.finish()
     }
 
-    /// Return `False` when this schema provably admits no instances.
-    fn is_satisfiable(&self) -> bool {
-        self.inner.is_satisfiable()
+    /// Whether any value satisfies this schema.
+    fn satisfiability(&self) -> PySatisfiability {
+        self.inner.satisfiability().into()
     }
 
     fn __eq__(&self, other: &Bound<'_, PyAny>) -> bool {
@@ -371,7 +495,7 @@ impl PyCanonicalSchema {
     }
 }
 
-/// A schema the canonical form does not model structurally, kept verbatim.
+/// A schema the canonical form does not support structurally, kept verbatim.
 #[pyclass(frozen, name = "RawView", module = "jsonschema_rs.canonical")]
 pub(crate) struct RawView {
     #[pyo3(get)]
@@ -487,7 +611,7 @@ pub(crate) struct ArrayView {
     #[pyo3(get)]
     max_items: Option<Py<PyAny>>,
     #[pyo3(get)]
-    distinctness: &'static str,
+    distinctness: PyDistinctness,
     #[pyo3(get)]
     prefix_items: Vec<Py<PyCanonicalSchema>>,
     #[pyo3(get)]
@@ -518,7 +642,7 @@ impl ArrayView {
     }
 }
 
-/// One `contains` demand of an array. An absent minimum spells the default of one.
+/// One `contains` requirement of an array. An absent minimum means the default of one.
 #[pyclass(frozen, name = "ContainsView", module = "jsonschema_rs.canonical")]
 pub(crate) struct ContainsView {
     #[pyo3(get)]
@@ -863,7 +987,8 @@ fn canonicalization_error(
         CanonicalizationError::InvalidSchemaType(_) => "InvalidSchemaType",
         CanonicalizationError::InvalidPattern { .. } => "InvalidPattern",
         CanonicalizationError::IncompatibleOperands(_) => "IncompatibleOperands",
-        CanonicalizationError::UnmodeledOperand => "UnmodeledOperand",
+        CanonicalizationError::UnsupportedOperand => "UnsupportedOperand",
+        CanonicalizationError::UnsupportedResult => "UnsupportedResult",
         _ => "CanonicalizationError",
     };
     let built = py.import("jsonschema_rs").and_then(|module| {
@@ -901,6 +1026,10 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<ConstView>()?;
     canonical_module.add_class::<EnumView>()?;
     canonical_module.add_class::<RawView>()?;
+    canonical_module.add_class::<PyContainment>()?;
+    canonical_module.add_class::<PySatisfiability>()?;
+    canonical_module.add_class::<PyDistinctness>()?;
+    canonical_module.add_class::<PyCanonicalKind>()?;
 
     let canonical_json_module = PyModule::new(py, "json")?;
     canonical_json_module.add_function(pyo3::wrap_pyfunction!(

@@ -135,7 +135,9 @@
   {
     "description": "ir: an empty not converges with the false schema",
     "schemas": [
-      {"not": {}},
+      {
+        "not": {}
+      },
       false
     ],
     "expected": {
@@ -144,13 +146,21 @@
     },
     "satisfiable": false,
     "tests": [
-      {"data": 1, "valid": false},
-      {"data": {}, "valid": false}
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
     ]
   },
   {
     "description": "ir: an empty not is the false schema under draft 4",
-    "schema": {"not": {}},
+    "schema": {
+      "not": {}
+    },
     "draft": "draft4",
     "expected": {
       "$schema": "http://json-schema.org/draft-04/schema#",
@@ -158,7 +168,77 @@
     },
     "satisfiable": false,
     "tests": [
-      {"data": 1, "valid": false}
+      {
+        "data": 1,
+        "valid": false
+      }
     ]
+  },
+  {
+    "description": "a type set holds values of its own",
+    "schema": {
+      "type": "string"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    },
+    "satisfiability": "yes"
+  },
+  {
+    "description": "a length window holds strings",
+    "schema": {
+      "type": "string",
+      "minLength": 2
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 2
+    },
+    "satisfiability": "yes"
+  },
+  {
+    "description": "an object window holds the empty object",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a": false
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": false
+      }
+    },
+    "satisfiability": "yes"
+  },
+  {
+    "description": "a pattern leaves the values undecided",
+    "schema": {
+      "type": "string",
+      "pattern": "^a"
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "pattern": "^a"
+    },
+    "satisfiability": "unknown"
+  },
+  {
+    "description": "a contradiction folds to nothing",
+    "schema": {
+      "type": "integer",
+      "minimum": 10,
+      "maximum": 5
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiability": "no"
   }
 ]

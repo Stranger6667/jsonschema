@@ -4,10 +4,37 @@
 
 ### Added
 
+- `CanonicalSchema::union` and `CanonicalSchema::subtract`.
+- `CanonicalizationError::UnsupportedResult`, reported where the canonical form does not support a set operation's result.
+- `OperandMismatch::DocumentRoots`, reported where both operands read `#` and it names a different document on each side.
 - **CLI**: `jsonschema validate -i INSTANCE` without a `SCHEMA` argument validates each instance against the schema named in its own `$schema` property. [#1470](https://github.com/Stranger6667/jsonschema/issues/1470)
+
+### Changed
+
+- `CanonicalSchema::is_satisfiable` is now `CanonicalSchema::satisfiability`, answering `Yes`, `No`, or `Unknown` - `Yes` wherever a value can be exhibited, not only for the forms listing their members.
+- `CanonicalSchema::covers` decides through the difference as well: `No` where the argument keeps values the receiver rejects, `Yes` where nothing is left over.
+- `CanonicalSchema::is_subset_of` is now `CanonicalSchema::covers`, answering `Yes`, `No`, or `Unknown` for whether the receiver admits every value the argument admits.
+- `CanonicalSchema::negate` returns `Result` rather than `Option`.
+- `CanonicalizationError::UnmodeledOperand` is now `CanonicalizationError::UnsupportedOperand`, and means only that an operand is a `Raw` pass-through.
+- A conjunction over a `$ref` folds through the body it names, so canonicalizing a document and combining its parts with the set operations reach one form; a document holding a reference cycle keeps the form it had.
 
 ### Fixed
 
+- Combining nodes of two different documents repointing a `$ref` to `#` at the combined result instead of the document it was written in, including one named by a definition the result keeps.
+- Intersecting a `$ref` whose target is `true` or `false`, which panicked.
+- A key constraint left un-narrowed once a run is out of intersections, which panicked on the next read of it.
+- `CanonicalSchema::covers` answering `Unknown` for a schema against itself, where that schema is a `$ref`.
+- `CanonicalSchema::union` keeping a `$ref` beside the schema it names, where the other three operations read through it.
+- `CanonicalSchema::covers` and `CanonicalSchema::subtract` cancelling two nodes written the same way whose `#` names a different document.
+- Two results accepting the same values comparing unequal over the part of their documents neither reads.
+- `additionalProperties` reaching a key the pattern map matches when a finite key constraint closes the map, which dropped values both operands accept.
+- A recursive definition stopping every other pointer in the document from being read through.
+- One `$defs` entry read past a wider schema written out at every use, rather than kept as the pointer it was.
+- Set operations rejecting one document canonicalized twice, and a pruned result rejected against the document it came from, where the maps resolve every shared reference the same way.
+- Set operations comparing a `$ref` as a pointer instead of reading through it, so a schema written with a `$ref` did not cancel against the same schema written out.
+- `CanonicalSchema::subtract` asking for a complement where the difference is one of the operands or empty, declining on schemas it can subtract.
+- Set operations keeping `$defs` entries the result no longer references, which then showed up in the emitted schema.
+- `CanonicalSchema::union` declining over an approximated intersection, where the union itself is exact.
 - Resolving a reference against a base URI that carries a fragment, which happens when a Draft 4-7 `$id` contains one. [#1473](https://github.com/Stranger6667/jsonschema/issues/1473)
 - `unevaluatedProperties` and `unevaluatedItems` ignoring an `$id` on a subschema they walk through, so a relative `$ref` inside it resolved against the enclosing resource.
 

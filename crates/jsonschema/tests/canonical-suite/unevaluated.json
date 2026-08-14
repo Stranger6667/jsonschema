@@ -717,47 +717,50 @@
   },
   {
     "description": "ir: a $ref sibling contributes its own properties to the evaluated set",
-    "schema": {"$defs": {"named": {"properties": {"a": {}}}}, "$ref": "#/$defs/named", "unevaluatedProperties": false},
-    "expected": {
+    "schema": {
       "$defs": {
-        "named": true
+        "named": {
+          "properties": {
+            "a": {}
+          }
+        }
       },
+      "$ref": "#/$defs/named",
+      "unevaluatedProperties": false
+    },
+    "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {
-          "allOf": [
-            {
-              "type": [
-                "null",
-                "boolean",
-                "number",
-                "string",
-                "array"
-              ]
-            },
-            {
-              "$ref": "#/$defs/named"
-            }
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
           ]
         },
         {
-          "allOf": [
-            {
-              "propertyNames": {
-                "const": "a"
-              },
-              "type": "object"
-            },
-            {
-              "$ref": "#/$defs/named"
-            }
-          ]
+          "propertyNames": {
+            "const": "a"
+          },
+          "type": "object"
         }
       ]
     },
     "tests": [
-      {"data": {"a": 1}, "valid": true},
-      {"data": {"b": 1}, "valid": false}
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      }
     ]
   },
   {
@@ -1445,50 +1448,53 @@
   {
     "description": "ir: unevaluatedProperties beside allOf[$ref] sums the reference's properties",
     "schema": {
-      "$defs": {"named": {"properties": {"a": {}}}},
-      "allOf": [{"$ref": "#/$defs/named"}],
+      "$defs": {
+        "named": {
+          "properties": {
+            "a": {}
+          }
+        }
+      },
+      "allOf": [
+        {
+          "$ref": "#/$defs/named"
+        }
+      ],
       "unevaluatedProperties": false
     },
     "expected": {
-      "$defs": {
-        "named": true
-      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {
-          "allOf": [
-            {
-              "type": [
-                "null",
-                "boolean",
-                "number",
-                "string",
-                "array"
-              ]
-            },
-            {
-              "$ref": "#/$defs/named"
-            }
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
           ]
         },
         {
-          "allOf": [
-            {
-              "propertyNames": {
-                "const": "a"
-              },
-              "type": "object"
-            },
-            {
-              "$ref": "#/$defs/named"
-            }
-          ]
+          "propertyNames": {
+            "const": "a"
+          },
+          "type": "object"
         }
       ]
     },
     "tests": [
-      {"data": {"a": 1}, "valid": true},
-      {"data": {"b": 1}, "valid": false}
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      }
     ]
   },
   {
@@ -1602,148 +1608,68 @@
   {
     "description": "ir: unevaluatedProperties beside oneOf branches referencing the identical target is not a false cycle",
     "schema": {
-      "$defs": {"named": {"properties": {"a": {}}}},
+      "$defs": {
+        "named": {
+          "properties": {
+            "a": {}
+          }
+        }
+      },
       "oneOf": [
-        {"$ref": "#/$defs/named", "required": ["a"]},
-        {"$ref": "#/$defs/named", "not": {"required": ["a"]}}
+        {
+          "$ref": "#/$defs/named",
+          "required": [
+            "a"
+          ]
+        },
+        {
+          "$ref": "#/$defs/named",
+          "not": {
+            "required": [
+              "a"
+            ]
+          }
+        }
       ],
       "unevaluatedProperties": false
     },
     "expected": {
-      "$defs": {
-        "named": true
-      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {
-          "allOf": [
-            {
-              "type": [
-                "null",
-                "boolean",
-                "number",
-                "string",
-                "array"
-              ]
-            },
-            {
-              "oneOf": [
-                {
-                  "allOf": [
-                    {
-                      "properties": {
-                        "a": false
-                      },
-                      "type": "object"
-                    },
-                    {
-                      "$ref": "#/$defs/named"
-                    }
-                  ]
-                },
-                {
-                  "anyOf": [
-                    {
-                      "allOf": [
-                        {
-                          "type": [
-                            "null",
-                            "boolean",
-                            "number",
-                            "string",
-                            "array"
-                          ]
-                        },
-                        {
-                          "$ref": "#/$defs/named"
-                        }
-                      ]
-                    },
-                    {
-                      "allOf": [
-                        {
-                          "required": [
-                            "a"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "$ref": "#/$defs/named"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
           ]
         },
         {
-          "allOf": [
-            {
-              "propertyNames": {
-                "const": "a"
-              },
-              "type": "object"
-            },
-            {
-              "oneOf": [
-                {
-                  "allOf": [
-                    {
-                      "properties": {
-                        "a": false
-                      },
-                      "type": "object"
-                    },
-                    {
-                      "$ref": "#/$defs/named"
-                    }
-                  ]
-                },
-                {
-                  "anyOf": [
-                    {
-                      "allOf": [
-                        {
-                          "type": [
-                            "null",
-                            "boolean",
-                            "number",
-                            "string",
-                            "array"
-                          ]
-                        },
-                        {
-                          "$ref": "#/$defs/named"
-                        }
-                      ]
-                    },
-                    {
-                      "allOf": [
-                        {
-                          "required": [
-                            "a"
-                          ],
-                          "type": "object"
-                        },
-                        {
-                          "$ref": "#/$defs/named"
-                        }
-                      ]
-                    }
-                  ]
-                }
-              ]
-            }
-          ]
+          "propertyNames": {
+            "const": "a"
+          },
+          "type": "object"
         }
       ]
     },
     "tests": [
-      {"data": {"a": 1}, "valid": true},
-      {"data": {}, "valid": true},
-      {"data": {"b": 1}, "valid": false}
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      }
     ]
   },
   {
@@ -1776,60 +1702,41 @@
         "right": {
           "$id": "https://example.com/nested/target.json",
           "type": "object",
-          "properties": {"a": {"type": "string"}}
-        },
-        "wrong": {
-          "$id": "https://example.com/target.json",
-          "type": "object",
-          "properties": {"b": {"type": "integer"}}
-        }
-      },
-      "allOf": [{"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}],
-      "unevaluatedProperties": false
-    },
-    "expected": {
-      "$defs": {
-        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fnested%2Ftarget.json": {
           "properties": {
             "a": {
               "type": "string"
             }
-          },
-          "type": "object"
+          }
+        },
+        "wrong": {
+          "$id": "https://example.com/target.json",
+          "type": "object",
+          "properties": {
+            "b": {
+              "type": "integer"
+            }
+          }
         }
       },
-      "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "anyOf": [
+      "allOf": [
         {
-          "allOf": [
-            {
-              "type": [
-                "null",
-                "boolean",
-                "number",
-                "string",
-                "array"
-              ]
-            },
-            {
-              "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fnested%252Ftarget.json"
-            }
-          ]
-        },
-        {
-          "allOf": [
-            {
-              "propertyNames": {
-                "const": "a"
-              },
-              "type": "object"
-            },
-            {
-              "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fnested%252Ftarget.json"
-            }
-          ]
+          "$id": "https://example.com/nested/branch.json",
+          "$ref": "target.json"
         }
-      ]
+      ],
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "propertyNames": {
+        "const": "a"
+      },
+      "type": "object"
     }
   },
   {
@@ -1837,53 +1744,55 @@
     "schema": {
       "$id": "https://example.com/root.json",
       "$defs": {
-        "outer": {"$id": "nested/outer.json", "allOf": [{"$ref": "leaf.json"}]},
-        "leaf": {"$id": "https://example.com/nested/leaf.json", "properties": {"a": {}}}
+        "outer": {
+          "$id": "nested/outer.json",
+          "allOf": [
+            {
+              "$ref": "leaf.json"
+            }
+          ]
+        },
+        "leaf": {
+          "$id": "https://example.com/nested/leaf.json",
+          "properties": {
+            "a": {}
+          }
+        }
       },
       "$ref": "#/$defs/outer",
       "unevaluatedProperties": false
     },
     "tests": [
-      {"data": {"a": 1}, "valid": true},
-      {"data": {"b": 1}, "valid": false}
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "b": 1
+        },
+        "valid": false
+      }
     ],
     "expected": {
-      "$defs": {
-        "outer": {
-          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fnested%252Fleaf.json"
-        },
-        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fnested%2Fleaf.json": true
-      },
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {
-          "allOf": [
-            {
-              "type": [
-                "null",
-                "boolean",
-                "number",
-                "string",
-                "array"
-              ]
-            },
-            {
-              "$ref": "#/$defs/outer"
-            }
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
           ]
         },
         {
-          "allOf": [
-            {
-              "propertyNames": {
-                "const": "a"
-              },
-              "type": "object"
-            },
-            {
-              "$ref": "#/$defs/outer"
-            }
-          ]
+          "propertyNames": {
+            "const": "a"
+          },
+          "type": "object"
         }
       ]
     }
@@ -1989,40 +1898,78 @@
   {
     "description": "ir: a $ref target resolving to true contributes nothing to the properties cover",
     "schema": {
-      "$defs": {"t": true},
+      "$defs": {
+        "t": true
+      },
       "$ref": "#/$defs/t",
       "unevaluatedProperties": false
     },
     "tests": [
-      {"data": {}, "valid": true},
-      {"data": {"a": 1}, "valid": false}
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": false
+      }
     ],
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$defs": {"t": true},
       "anyOf": [
-        {"allOf": [{"type": ["null", "boolean", "number", "string", "array"]}, {"$ref": "#/$defs/t"}]},
-        {"allOf": [{"const": {}}, {"$ref": "#/$defs/t"}]}
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "array"
+          ]
+        },
+        {
+          "const": {}
+        }
       ]
     }
   },
   {
     "description": "ir: a $ref target resolving to true contributes nothing to the items cover",
     "schema": {
-      "$defs": {"t": true},
+      "$defs": {
+        "t": true
+      },
       "$ref": "#/$defs/t",
       "unevaluatedItems": false
     },
     "tests": [
-      {"data": [], "valid": true},
-      {"data": [1], "valid": false}
+      {
+        "data": [],
+        "valid": true
+      },
+      {
+        "data": [
+          1
+        ],
+        "valid": false
+      }
     ],
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$defs": {"t": true},
       "anyOf": [
-        {"allOf": [{"type": ["null", "boolean", "number", "string", "object"]}, {"$ref": "#/$defs/t"}]},
-        {"allOf": [{"const": []}, {"$ref": "#/$defs/t"}]}
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "const": []
+        }
       ]
     }
   }

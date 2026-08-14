@@ -1,5 +1,5 @@
 //! Parsing schema documents into structural IR; anything not modeled stays `Raw`.
-use std::{borrow::Cow, sync::Arc};
+use std::{borrow::Cow, collections::BTreeSet, sync::Arc};
 
 use ahash::{AHashMap, AHashSet};
 
@@ -33,6 +33,10 @@ pub(crate) struct ParseOutput {
     pub(crate) has_references: bool,
     /// The choices between pointers left undecided for want of a body still being parsed.
     pub(crate) pending_choices: Vec<Vec<Schema>>,
+    /// The keys naming a body written inside this document rather than a resource retrieved from
+    /// outside it. Only these may be renamed apart when two documents are merged: two documents
+    /// binding one *external* resource to different bodies disagree about the resource itself.
+    pub(crate) local_definitions: BTreeSet<Arc<str>>,
 }
 
 /// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
@@ -172,10 +176,10 @@ fn parse_once<'a>(
         };
     }
     let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
-    // An in-between object meet the IR cannot spell may have produced nodes already, so discard
+    // An in-between object meet the IR cannot express may have produced nodes already, so discard
     // the whole document rather than just that pairing site. A conjunction outgrowing what the run
     // may spell out leaves the same partial nodes behind.
-    if ctx.saw_unspellable_meet() || ctx.outgrew_distribution() {
+    if ctx.saw_inexact_intersection() || ctx.outgrew_distribution() {
         return Ok(DocumentParse {
             output: None,
             needs_dynamic_scope: state.dynamic_scope.needs_tracking(),
@@ -194,6 +198,7 @@ fn parse_once<'a>(
     Ok(DocumentParse {
         output: Some(ParseOutput {
             root,
+            local_definitions: local_definitions(&state),
             definitions: state.definitions,
             has_references: state.facts.has_references,
             pending_choices: state.facts.pending_choices,
@@ -986,7 +991,7 @@ fn parse_schema_in_scope<'a>(
                     None => return Ok(None),
                 }
             }
-            // The complement of the negated schema, when the IR can spell it; an unmodeled child or
+            // The complement of the negated schema, when the IR can express it; an unsupported child or
             // an inexpressible complement keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
                 if matches!(ctx.draft(), Draft::Draft4) && is_closed_pattern_map(value) {
@@ -2037,6 +2042,28 @@ fn canonical_reference_uri(reference: &str, location: &str, root_base_uri: &str)
     Arc::from(uri.as_str())
 }
 
+/// The keys whose body was written inside the document, found by walking it once and asking which
+/// targets it holds. A nested `$id` puts a body under a minted URI rather than a `#/$defs/` name,
+/// so the name alone cannot tell a private body from a retrieved one.
+fn local_definitions(state: &ParseState<'_>) -> BTreeSet<Arc<str>> {
+    let mut held = AHashSet::new();
+    let mut stack = vec![state.root];
+    while let Some(value) = stack.pop() {
+        held.insert(std::ptr::from_ref(value));
+        match value {
+            Value::Object(map) => stack.extend(map.values()),
+            Value::Array(items) => stack.extend(items),
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+    }
+    state
+        .sources
+        .iter()
+        .filter(|(_, target)| held.contains(&std::ptr::from_ref(**target)))
+        .map(|(key, _)| Arc::clone(key))
+        .collect()
+}
+
 fn resource_uri(uri: &str) -> &str {
     uri.split_once('#').map_or(uri, |(resource, _)| resource)
 }
@@ -2295,7 +2322,7 @@ fn string_facet_schema(leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schem
     algebra::union(vec![non_string, algebra::string_leaf(leaf, ctx)], ctx)
 }
 
-/// Parse a tuple's per-index schemas; `Ok(None)` when any element is unmodeled, keeping the document raw.
+/// Parse a tuple's per-index schemas; `Ok(None)` when any element is unsupported, keeping the document raw.
 fn parse_prefix<'a>(
     schemas: &[Value],
     ctx: &CanonicalizationContext,

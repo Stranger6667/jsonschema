@@ -14,22 +14,22 @@ use crate::{
             IntegerBounds, IntegerLeaf, LengthBounds, NumberLeaf, ObjectLeaf, ObjectViolation,
             PropertyMap, Schema, SchemaKind, StringLeaf,
         },
-        DefinitionMap, ROOT_DEFINITION_KEY,
+        schema, DefinitionMap,
     },
     JsonType, JsonTypeSet,
 };
 
 /// Resolutions one walk may spend before declining: a complement growing past this many inlined
-/// targets costs more to spell than the caller can put to use, and the recursion it would take
+/// targets costs more to express than the caller can put to use, and the recursion it would take
 /// runs ahead of the stack.
 const RESOLUTION_BUDGET: usize = 1024;
 
-/// Shared regions one choice's complement may spell: their number grows with the square of the
+/// Shared regions one choice's complement may produce: their number grows with the square of the
 /// branch count, and a complement past this many costs more to assemble than the caller can put to
 /// use.
 const OVERLAP_BUDGET: usize = 64;
 
-/// Branches the conjunction of a union's branch complements may spell. Intersecting complements
+/// Branches the conjunction of a union's branch complements may produce. Intersecting complements
 /// multiplies their branch counts, so a union of branches that each rule out a value in several
 /// independent ways has a union form exponential in the branch count. Past this many the symbolic
 /// complement is both exact and smaller.
@@ -56,7 +56,7 @@ enum Unspellable {
 }
 
 /// The complement of a node, taking that node's place inside the document being canonicalized, or
-/// `None` when the IR cannot spell it and the caller keeps the document `Raw`. Negation has no safe
+/// `None` when the IR cannot express it and the caller keeps the document `Raw`. Negation has no safe
 /// default direction, so every arm is exact or declines.
 ///
 /// A walk reaching every target it needs through `definitions` inlines their complements; one that
@@ -73,7 +73,14 @@ pub(crate) fn negate_in_place(
         budget: RESOLUTION_BUDGET,
         unspellable: Unspellable::Decline,
     };
-    if let Some(complement) = negate_within(schema, &mut walk, ctx) {
+    // `probe` leaves the flag as it found it, so what the abandoned walk approximated does not
+    // travel into the re-walk below.
+    let (first, inexact) = ctx.probe(|| negate_within(schema, &mut walk, ctx));
+    if let Some(complement) = first {
+        // This walk produced a result, so what it reached counts again.
+        if inexact {
+            ctx.record_inexact_intersection();
+        }
         return Some(complement);
     }
     let detached = DefinitionMap::new();
@@ -101,28 +108,21 @@ pub(crate) fn negate_with_definitions(
         unspellable: Unspellable::Bar,
     };
     let complement = negate_within(schema, &mut walk, ctx)?;
-    let mut references = Vec::new();
-    emptiness::collect_classified_references(
-        &complement,
-        emptiness::Position::InPlace,
-        &mut references,
-    );
-    if references
-        .iter()
-        .any(|(uri, _)| uri.as_ref() == ROOT_DEFINITION_KEY)
-    {
+    // Reached through a target as well as written directly: a complement referring to `#/$defs/x`
+    // whose body is `{"$ref": "#"}` refers to the root just the same.
+    if schema::reads_document_root(&complement, definitions) {
         return None;
     }
     Some(complement)
 }
 
-/// The node's own complement, left symbolic. A conjunction too wide to spell as a union is not a
+/// The node's own complement, left symbolic. A conjunction too wide to express as a union is not a
 /// gap in what the IR can express, so it holds whether or not the walk resolves references.
 fn keep_symbolic(schema: &Schema) -> Option<Schema> {
     Some(Schema::new(SchemaKind::Not(schema.clone())))
 }
 
-/// How many branches a node spells as a union.
+/// How many branches a node expands to as a union.
 pub(crate) fn union_width(schema: &Schema) -> usize {
     if let SchemaKind::AnyOf(branches) = schema.kind() {
         branches.as_slice().len()
@@ -156,7 +156,7 @@ fn negate_within(
         SchemaKind::Array(leaf) => negate_array_leaf(leaf.get(), walk, ctx),
         SchemaKind::Object(leaf) => negate_object_leaf(leaf.get(), walk, ctx),
         SchemaKind::Not(inner) => {
-            // A target spelling its own complement leaves nothing consistent to return.
+            // A target whose complement is itself leaves nothing consistent to return.
             if let SchemaKind::Reference(uri) = inner.kind() {
                 if walk.active.iter().any(|name| name == uri) {
                     return None;
@@ -212,6 +212,27 @@ fn negate_one_of(
     walk: &mut NegationWalk<'_>,
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
+    // A branch naming a target already being negated is the node itself, read again. What such a
+    // cycle accepts is left to the validator, so the choice is barred whole rather than taken
+    // apart, the way an unresolvable pointer is.
+    // e.g.  {"$defs": {"x": {"oneOf": [{"$ref": "#/$defs/x"},
+    //                                  {"type": "object", "required": ["a"]}]}}, "$ref": "#/$defs/x"}
+    if !walk.active.is_empty() {
+        for branch in branches {
+            let mut found = Vec::new();
+            emptiness::collect_classified_references(
+                branch,
+                emptiness::Position::InPlace,
+                &mut found,
+            );
+            if found.iter().any(|(uri, position)| {
+                *position == emptiness::Position::InPlace
+                    && walk.active.iter().any(|name| name == *uri)
+            }) {
+                return bar(schema, walk);
+            }
+        }
+    }
     let mut regions = Vec::new();
     for (index, left) in branches.iter().enumerate() {
         for right in &branches[index + 1..] {
@@ -277,8 +298,10 @@ fn negate_reference(
     let finished = walk.active.pop();
     debug_assert_eq!(finished.as_ref(), Some(uri), "unbalanced negation path");
     let complement = complement?;
+    // A complement that is the target barred whole is written against the pointer, which names the
+    // same body. A walk that may not bar declines as before.
     if matches!(complement.kind(), SchemaKind::Not(inner) if inner == target) {
-        return None;
+        return bar(schema, walk);
     }
     Some(complement)
 }
@@ -334,7 +357,7 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
                 strings.push(Arc::from(text.as_str()));
             }
             // An empty container is the only one of its size, so the sizes above it are the rest of
-            // its type. Any other one needs a value to differ somewhere, which no facet spells.
+            // its type. Any other one needs a value to differ somewhere, which no facet can express.
             Value::Array(items) if items.is_empty() => {
                 remaining = remaining.remove(JsonType::Array);
                 empty_array = true;
@@ -395,7 +418,7 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
 
 /// The number-line complement of a finite set of numbers: the outer rays and the open gaps
 /// between neighbours. Empty input adds nothing - the whole `number` type then stays remaining.
-/// A gap the integers cannot spell declines the whole complement; dropping that one branch would
+/// A gap the integers cannot express declines the whole complement; dropping that one branch would
 /// narrow the union.
 fn number_gaps(numbers: &[Number], ctx: &CanonicalizationContext) -> Option<Vec<Schema>> {
     if numbers.is_empty() {
@@ -438,7 +461,7 @@ fn number_window(
 /// Complement of a number window: the values of every other type plus the outer rays, each
 /// endpoint's inclusivity flipped. A value escapes a run of divisors as soon as it misses one, and
 /// a run of exclusions as soon as it lands on one, so each divisor flips into its dual on its own
-/// branch. `None` where a flipped end leaves a ray the canonical form cannot spell.
+/// branch. `None` where a flipped end leaves a ray the canonical form cannot express.
 /// ```text
 /// e.g.  {"not": {"type": "number", "minimum": 5}}
 ///       =>  anyOf: [<non-number types>, {"type": "number", "exclusiveMaximum": 5}]
@@ -482,7 +505,7 @@ fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Optio
 }
 
 /// Complement of an integer window: every other type, the non-integer numbers, and one branch per
-/// facet violation, or `None` where the canonical form cannot spell it exactly.
+/// facet violation, or `None` where the canonical form cannot express it exactly.
 /// ```text
 /// e.g.  {"not": {"type": "integer", "minimum": 0}}
 ///       =>  anyOf: [<non-number types>,
@@ -496,7 +519,7 @@ fn negate_integer_leaf(leaf: &IntegerLeaf, ctx: &CanonicalizationContext) -> Opt
             .remove(JsonType::Integer),
     )];
     branches.push(non_integer_number(ctx));
-    // An end at the edge of this build's integer range leaves the ray beyond it unspellable.
+    // An end at the edge of this build's integer range leaves the ray beyond it inexpressible.
     if let Some(minimum) = &leaf.bounds.minimum {
         let below = minimum.clone().checked_decrement()?;
         branches.push(integer_window(None, Some(below), ctx));

@@ -23,6 +23,11 @@ impl BoundCardinality {
         }
     }
 
+    /// This count as a length, or `None` past what a machine can hold.
+    pub(crate) fn to_usize(&self) -> Option<usize> {
+        usize::try_from(self.to_number().as_u64()?).ok()
+    }
+
     /// A non-negative integer count from a JSON number; `None` past `u64` in the default build.
     pub(crate) fn from_number(number: &serde_json::Number) -> Option<Self> {
         #[cfg(not(feature = "arbitrary-precision"))]

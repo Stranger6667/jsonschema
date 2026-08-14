@@ -135,53 +135,182 @@
   },
   {
     "description": "union_min empty string window and the empty const denote one value set",
-    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    },
     "schemas": [
-      {"anyOf": [{"type": "string", "minLength": 1}, {"type": "string", "maxLength": 0}]},
-      {"anyOf": [{"type": "string", "minLength": 1}, {"const": ""}]},
-      {"type": "string"}
+      {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "type": "string",
+            "maxLength": 0
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 1
+          },
+          {
+            "const": ""
+          }
+        ]
+      },
+      {
+        "type": "string"
+      }
     ]
   },
   {
     "description": "union_min a single integer beside a window is part of the window",
-    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer", "minimum": 5},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer",
+      "minimum": 5
+    },
     "schemas": [
-      {"anyOf": [{"type": "integer", "minimum": 6}, {"type": "integer", "minimum": 5, "maximum": 5}]},
-      {"anyOf": [{"type": "integer", "minimum": 6}, {"const": 5}]},
-      {"type": "integer", "minimum": 5}
+      {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 6
+          },
+          {
+            "type": "integer",
+            "minimum": 5,
+            "maximum": 5
+          }
+        ]
+      },
+      {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 6
+          },
+          {
+            "const": 5
+          }
+        ]
+      },
+      {
+        "type": "integer",
+        "minimum": 5
+      }
     ]
   },
   {
     "description": "union_min a single integer filling the only gap covers every integer",
-    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer"},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "integer"
+    },
     "schemas": [
-      {"anyOf": [{"type": "integer", "maximum": 0}, {"type": "integer", "minimum": 2}, {"const": 1}]},
-      {"type": "integer"}
+      {
+        "anyOf": [
+          {
+            "type": "integer",
+            "maximum": 0
+          },
+          {
+            "type": "integer",
+            "minimum": 2
+          },
+          {
+            "const": 1
+          }
+        ]
+      },
+      {
+        "type": "integer"
+      }
     ]
   },
   {
     "description": "union_min draft 4 absorbs a guarded value set into a covering interval",
-    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "minimum": 2},
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "integer",
+      "minimum": 2
+    },
     "draft": "draft4",
     "schemas": [
-      {"anyOf": [{"type": "integer", "minimum": 2}, {"type": "integer", "enum": [7]}]},
-      {"type": "integer", "minimum": 2}
+      {
+        "anyOf": [
+          {
+            "type": "integer",
+            "minimum": 2
+          },
+          {
+            "type": "integer",
+            "enum": [
+              7
+            ]
+          }
+        ]
+      },
+      {
+        "type": "integer",
+        "minimum": 2
+      }
     ]
   },
   {
     "description": "union_min a string leaf absorbs a strictly narrower one",
-    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "minLength": 2},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string",
+      "minLength": 2
+    },
     "schemas": [
-      {"anyOf": [{"type": "string", "minLength": 2}, {"type": "string", "minLength": 2, "pattern": "^a"}]},
-      {"type": "string", "minLength": 2}
+      {
+        "anyOf": [
+          {
+            "type": "string",
+            "minLength": 2
+          },
+          {
+            "type": "string",
+            "minLength": 2,
+            "pattern": "^a"
+          }
+        ]
+      },
+      {
+        "type": "string",
+        "minLength": 2
+      }
     ]
   },
   {
     "description": "union_min a vacuous pattern constrains nothing",
-    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    },
     "schemas": [
-      {"anyOf": [{"type": "string", "pattern": ""}, {"type": "string", "minLength": 5}]},
-      {"type": "string"}
+      {
+        "anyOf": [
+          {
+            "type": "string",
+            "pattern": ""
+          },
+          {
+            "type": "string",
+            "minLength": 5
+          }
+        ]
+      },
+      {
+        "type": "string"
+      }
     ]
   },
   {
@@ -190,10 +319,16 @@
       {
         "allOf": [
           {
-            "enum": [1, 2]
+            "enum": [
+              1,
+              2
+            ]
           },
           {
-            "enum": [2, 3]
+            "enum": [
+              2,
+              3
+            ]
           }
         ]
       },
@@ -230,19 +365,29 @@
             "type": "integer"
           },
           {
-            "enum": [1, 2, "a"]
+            "enum": [
+              1,
+              2,
+              "a"
+            ]
           }
         ]
       },
       {
         "type": "integer",
-        "enum": [1, 2]
+        "enum": [
+          1,
+          2
+        ]
       }
     ],
     "expected": {
       "$schema": "http://json-schema.org/draft-04/schema#",
       "type": "integer",
-      "enum": [1, 2]
+      "enum": [
+        1,
+        2
+      ]
     },
     "tests": [
       {
@@ -1677,5 +1822,609 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "a document past the intersection budget keeps its key constraint readable",
+    "schema": {
+      "properties": {
+        "metadata": {
+          "properties": {
+            "observable_names": {
+              "uniqueItems": true
+            },
+            "parameters": {
+              "type": "array"
+            },
+            "basis": {
+              "additionalProperties": false
+            },
+            "polynomial_names": {
+              "items": {
+                "minLength": 1
+              }
+            },
+            "scale": {
+              "oneOf": [
+                {
+                  "minItems": 1
+                }
+              ]
+            },
+            "polynomial_degree": {
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            },
+            "reproducibility": {
+              "type": "array"
+            },
+            "misc": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "observable_names",
+            "basis",
+            "parameters",
+            "scale"
+          ]
+        },
+        "data": {
+          "properties": {
+            "polynomial_central": {},
+            "observable_central": {
+              "additionalProperties": {
+                "items": {
+                  "type": "number"
+                }
+              }
+            },
+            "observable_uncertainties": {}
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "$schema"
+      ],
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "properties": {
+                    "data": {
+                      "required": [
+                        "polynomial_central"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "required": [
+                      "polynomial_names"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema2"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "metadata": {
+                        "type": "object",
+                        "properties": {
+                          "polynomial_degree": {
+                            "const": 2
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema5"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema7"
+                            },
+                            "^observable_uncertainties$": {
+                              "type": "object"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 3
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema9"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 4
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema11"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 5
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "$defs": {
+        "schema2": {},
+        "schema5": {},
+        "schema7": {},
+        "schema9": {},
+        "schema11": {}
+      }
+    },
+    "kind": "raw",
+    "expected": {
+      "properties": {
+        "metadata": {
+          "properties": {
+            "observable_names": {
+              "uniqueItems": true
+            },
+            "parameters": {
+              "type": "array"
+            },
+            "basis": {
+              "additionalProperties": false
+            },
+            "polynomial_names": {
+              "items": {
+                "minLength": 1
+              }
+            },
+            "scale": {
+              "oneOf": [
+                {
+                  "minItems": 1
+                }
+              ]
+            },
+            "polynomial_degree": {
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5
+              ]
+            },
+            "reproducibility": {
+              "type": "array"
+            },
+            "misc": {
+              "type": "object"
+            }
+          },
+          "required": [
+            "observable_names",
+            "basis",
+            "parameters",
+            "scale"
+          ]
+        },
+        "data": {
+          "properties": {
+            "polynomial_central": {},
+            "observable_central": {
+              "additionalProperties": {
+                "items": {
+                  "type": "number"
+                }
+              }
+            },
+            "observable_uncertainties": {}
+          },
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "$schema"
+      ],
+      "allOf": [
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "properties": {
+                    "data": {
+                      "required": [
+                        "polynomial_central"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "required": [
+                      "polynomial_names"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema2"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "metadata": {
+                        "type": "object",
+                        "properties": {
+                          "polynomial_degree": {
+                            "const": 2
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema5"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema7"
+                            },
+                            "^observable_uncertainties$": {
+                              "type": "object"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 3
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema9"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 4
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema11"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 5
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        }
+      ],
+      "$defs": {
+        "schema2": {},
+        "schema5": {},
+        "schema7": {},
+        "schema9": {},
+        "schema11": {}
+      }
+    }
   }
 ]

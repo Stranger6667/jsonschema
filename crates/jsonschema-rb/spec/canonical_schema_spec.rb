@@ -4,14 +4,14 @@ require "spec_helper"
 
 DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 # `anyOf` annotates whichever branch the instance matched, which no `additional*` twin spells,
-# so this stays raw. Each construct canonicalization learns needs a still-unmodeled stand-in here.
-UNMODELED = { "if" => {}, "unevaluatedProperties" => false }.freeze
+# so this stays raw. Each construct canonicalization learns needs a still-unsupported stand-in here.
+UNSUPPORTED = { "if" => {}, "unevaluatedProperties" => false }.freeze
 
 RSpec.describe "JSONSchema.canonicalize" do
   [
-    UNMODELED
+    UNSUPPORTED
   ].each do |schema|
-    it "round-trips unmodeled #{schema.inspect} verbatim" do
+    it "round-trips unsupported #{schema.inspect} verbatim" do
       result = JSONSchema.canonicalize(schema)
       expect(result).to be_a(JSONSchema::Canonical::CanonicalSchema)
       expect(result.to_json_schema).to eq(schema)
@@ -302,9 +302,10 @@ RSpec.describe "JSONSchema.canonicalize" do
   end
 
   it "view returns AllOfView with a symbolic reference" do
+    # A cycle keeps the conjunction symbolic: such a document is not folded through its targets.
     schema = {
       "allOf" => [{ "$ref" => "#/$defs/value" }, { "type" => "string" }],
-      "$defs" => { "value" => { "type" => "string" } }
+      "$defs" => { "value" => { "type" => "object", "properties" => { "self" => { "$ref" => "#/$defs/value" } } } }
     }
     case JSONSchema.canonicalize(schema).view
     in JSONSchema::Canonical::AllOfView[branches:]
@@ -352,7 +353,7 @@ RSpec.describe "JSONSchema.canonicalize" do
                      %i[min_properties max_properties required property_names properties pattern_properties]],
     "ConstView" => [{ "const" => nil }, %i[value]],
     "EnumView" => [{ "enum" => [1, 2] }, %i[values]],
-    "RawView" => [UNMODELED, %i[schema]]
+    "RawView" => [UNSUPPORTED, %i[schema]]
   }.each do |name, (schema, readers)|
     it "inspect renders #{name} readers" do
       draft = name == "TypedGroupView" ? :draft4 : :draft202012
@@ -371,9 +372,9 @@ RSpec.describe "JSONSchema.canonicalize" do
   end
 
   it "view returns RawView with the document payload" do
-    case JSONSchema.canonicalize(UNMODELED).view
+    case JSONSchema.canonicalize(UNSUPPORTED).view
     in JSONSchema::Canonical::RawView[schema:]
-      expect(schema).to eq(UNMODELED)
+      expect(schema).to eq(UNSUPPORTED)
     end
   end
 
@@ -392,9 +393,9 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
-  it "satisfiable? reflects provable emptiness" do
-    expect(JSONSchema.canonicalize({ "const" => 5 }).satisfiable?).to be(true)
-    expect(JSONSchema.canonicalize({ "type" => "integer", "enum" => ["x"] }).satisfiable?).to be(false)
+  it "satisfiability reflects provable emptiness" do
+    expect(JSONSchema.canonicalize({ "const" => 5 }).satisfiability).not_to be(:no)
+    expect(JSONSchema.canonicalize({ "type" => "integer", "enum" => ["x"] }).satisfiability).to be(:no)
   end
 
   it "equality is value identity" do
@@ -434,21 +435,75 @@ RSpec.describe "JSONSchema.canonicalize" do
     end
   end
 
-  it "intersect keeps references resolvable" do
-    root = JSONSchema.canonicalize(
-      { "$defs" => { "a" => { "type" => "string" }, "b" => { "minLength" => 4 } },
-        "allOf" => [{ "$ref" => "#/$defs/a" }, { "$ref" => "#/$defs/b" }] }
+  [
+    [{ "type" => "string" }, { "type" => "integer" },
+     { "$schema" => DRAFT202012, "type" => %w[integer string] }],
+    [{ "const" => "a" }, { "enum" => %w[a b] }, { "$schema" => DRAFT202012, "enum" => %w[a b] }],
+    [{ "type" => "string", "minLength" => 4 }, { "type" => "string" },
+     { "$schema" => DRAFT202012, "type" => "string" }]
+  ].each do |left, right, expected|
+    it "unions #{left.inspect} with #{right.inspect}" do
+      result = JSONSchema.canonicalize(left).union(JSONSchema.canonicalize(right))
+      expect(result).to be_a(JSONSchema::Canonical::CanonicalSchema)
+      expect(result.to_json_schema).to eq(expected)
+    end
+  end
+
+  [
+    [{ "type" => "integer", "minimum" => 10 }, { "type" => "integer", "minimum" => 15 },
+     { "$schema" => DRAFT202012, "type" => "integer", "minimum" => 10, "maximum" => 14 }, :yes],
+    [{ "enum" => %w[a b] }, { "enum" => ["a"] }, { "$schema" => DRAFT202012, "const" => "b" }, :yes],
+    [{ "type" => "integer" }, { "type" => %w[integer string] },
+     { "$schema" => DRAFT202012, "not" => {} }, :no],
+    # What a narrowed schema stopped accepting, which is the comparison workflow: the values the
+    # old schema took and the new one turns away.
+    [{ "type" => "string" }, { "type" => "string", "maxLength" => 50 },
+     { "$schema" => DRAFT202012, "type" => "string", "minLength" => 51 }, :yes],
+    # Empty the other way round, since the new schema only narrowed - which is what proves nothing
+    # was lost.
+    [{ "type" => "string", "maxLength" => 50 }, { "type" => "string" },
+     { "$schema" => DRAFT202012, "not" => {} }, :no]
+  ].each do |left, right, expected, satisfiability|
+    it "subtracts #{right.inspect} from #{left.inspect}" do
+      result = JSONSchema.canonicalize(left).subtract(JSONSchema.canonicalize(right))
+      expect(result).to be_a(JSONSchema::Canonical::CanonicalSchema)
+      expect(result.to_json_schema).to eq(expected)
+      expect(result.satisfiability).to be(satisfiability)
+    end
+  end
+
+  %w[union subtract].each do |operation|
+    it "#{operation} rejects an unsupported operand" do
+      modeled = JSONSchema.canonicalize({ "type" => "string" })
+      expect { modeled.public_send(operation, JSONSchema.canonicalize(UNSUPPORTED)) }
+        .to raise_error(JSONSchema::Canonical::UnsupportedOperand)
+    end
+
+    it "#{operation} rejects a draft mismatch" do
+      left = JSONSchema.canonicalize({ "type" => "string" }, draft: :draft7)
+      right = JSONSchema.canonicalize({ "type" => "string" }, draft: :draft202012)
+      expect { left.public_send(operation, right) }
+        .to raise_error(JSONSchema::Canonical::IncompatibleOperands)
+    end
+  end
+
+  it "carries exactly the targets the result still names" do
+    left = JSONSchema.canonicalize({ "$defs" => { "a" => { "type" => "string" } }, "$ref" => "#/$defs/a" })
+    right = JSONSchema.canonicalize({ "$defs" => { "b" => { "minLength" => 4 } }, "$ref" => "#/$defs/b" })
+    # Both pointers are read through and the meet folds into one leaf, naming neither.
+    result = left.intersect(right)
+    expect(result.definitions).to be_empty
+    expect(result.to_json_schema).to eq(
+      { "$schema" => DRAFT202012, "type" => "string", "minLength" => 4 }
     )
-    left, right = root.view.branches
-    expect(left.intersect(right).definitions.keys).to eq(root.definitions.keys)
   end
 
   { "on the left" => false, "on the right" => true }.each do |side, swap|
-    it "intersect rejects an unmodeled operand #{side}" do
-      raw = JSONSchema.canonicalize(UNMODELED)
+    it "intersect rejects an unsupported operand #{side}" do
+      raw = JSONSchema.canonicalize(UNSUPPORTED)
       modeled = JSONSchema.canonicalize({ "type" => "string" })
       left, right = swap ? [modeled, raw] : [raw, modeled]
-      expect { left.intersect(right) }.to raise_error(JSONSchema::Canonical::UnmodeledOperand)
+      expect { left.intersect(right) }.to raise_error(JSONSchema::Canonical::UnsupportedOperand)
     end
   end
 
@@ -458,40 +513,54 @@ RSpec.describe "JSONSchema.canonicalize" do
     expect { left.intersect(right) }.to raise_error(JSONSchema::Canonical::IncompatibleOperands)
   end
 
-  it "intersect rejects distinct definition maps" do
+  # A `$defs` name is private to its document, so two documents binding it to different bodies
+  # rename apart rather than refusing to combine.
+  it "intersect renames a definition the two documents bind differently" do
     left = JSONSchema.canonicalize({ "$defs" => { "a" => { "type" => "string" } }, "$ref" => "#/$defs/a" })
-    right = JSONSchema.canonicalize({ "$defs" => { "b" => { "minLength" => 4 } }, "$ref" => "#/$defs/b" })
+    right = JSONSchema.canonicalize({ "$defs" => { "a" => { "minLength" => 4 } }, "$ref" => "#/$defs/a" })
+    expect(left.intersect(right).to_json_schema).to eq(
+      "$schema" => DRAFT202012, "type" => "string", "minLength" => 4
+    )
+  end
+
+  # `#` names the document itself, so unlike a private key it cannot be renamed apart.
+  it "intersect rejects documents binding the root differently" do
+    left = JSONSchema.canonicalize({ "type" => "object", "properties" => { "next" => { "$ref" => "#" } } })
+    right = JSONSchema.canonicalize(
+      { "type" => "object", "properties" => { "next" => { "$ref" => "#" } }, "minProperties" => 1 }
+    )
     expect { left.intersect(right) }.to raise_error(JSONSchema::Canonical::IncompatibleOperands)
   end
 
   [
-    [{ "type" => "integer" }, { "type" => "integer" }, true],
-    [{ "const" => 1 }, { "type" => "integer" }, true],
-    [{ "enum" => [1, 2] }, { "type" => "integer" }, true],
-    [{ "const" => "x" }, { "type" => "integer" }, false],
-    [{ "enum" => [1, "x"] }, { "type" => "integer" }, false],
-    [{ "type" => "string" }, { "type" => "integer" }, nil],
-    [{ "type" => "integer" }, { "type" => "integer", "minimum" => 5 }, nil]
-  ].each do |left, right, expected|
-    it "decides whether #{left.inspect} is a subset of #{right.inspect}" do
-      result = JSONSchema.canonicalize(left).is_subset_of(JSONSchema.canonicalize(right))
+    [{ "type" => "integer" }, { "type" => "integer" }, :yes],
+    [{ "type" => "integer" }, { "const" => 1 }, :yes],
+    [{ "type" => "integer" }, { "enum" => [1, 2] }, :yes],
+    [{ "type" => "integer" }, { "const" => "x" }, :no],
+    [{ "type" => "integer" }, { "enum" => [1, "x"] }, :no],
+    [{ "type" => "integer" }, { "type" => "string" }, :no],
+    [{ "type" => "integer", "minimum" => 5 }, { "type" => "integer" }, :no],
+    [{ "type" => "string", "pattern" => "^a" }, { "type" => "string" }, :no]
+  ].each do |outer, inner, expected|
+    it "decides whether #{outer.inspect} covers #{inner.inspect}" do
+      result = JSONSchema.canonicalize(outer).covers(JSONSchema.canonicalize(inner))
       expect(result).to eq(expected)
     end
   end
 
   { "on the left" => false, "on the right" => true }.each do |side, swap|
-    it "is_subset_of rejects an unmodeled operand #{side}" do
-      raw = JSONSchema.canonicalize(UNMODELED)
+    it "covers rejects an unsupported operand #{side}" do
+      raw = JSONSchema.canonicalize(UNSUPPORTED)
       modeled = JSONSchema.canonicalize({ "type" => "string" })
       left, right = swap ? [modeled, raw] : [raw, modeled]
-      expect { left.is_subset_of(right) }.to raise_error(JSONSchema::Canonical::UnmodeledOperand)
+      expect { left.covers(right) }.to raise_error(JSONSchema::Canonical::UnsupportedOperand)
     end
   end
 
-  it "is_subset_of rejects a draft mismatch" do
+  it "covers rejects a draft mismatch" do
     left = JSONSchema.canonicalize({ "type" => "string" }, draft: :draft7)
     right = JSONSchema.canonicalize({ "type" => "string" }, draft: :draft202012)
-    expect { left.is_subset_of(right) }.to raise_error(JSONSchema::Canonical::IncompatibleOperands)
+    expect { left.covers(right) }.to raise_error(JSONSchema::Canonical::IncompatibleOperands)
   end
 
   it "definition looks up one reference target" do
@@ -546,12 +615,78 @@ RSpec.describe "JSONSchema.canonicalize" do
     )
   end
 
-  # The decline set is contract: a caller sizes its fallback on it.
+  # A `Raw` operand raises `UnsupportedOperand`, not `UnsupportedResult`.
+  it "rejects negating an unsupported schema" do
+    expect { JSONSchema.canonicalize(UNSUPPORTED).negate }
+      .to raise_error(JSONSchema::Canonical::UnsupportedOperand)
+  end
+
   [
-    UNMODELED
+    { "type" => "object", "patternProperties" => { "^a" => { "type" => "string" } } },
+    { "type" => "array", "contains" => { "type" => "string" }, "minContains" => 2 }
   ].each do |schema|
-    it "declines to negate #{schema.inspect}" do
-      expect(JSONSchema.canonicalize(schema).negate).to be_nil
+    it "raises UnsupportedResult negating #{schema.inspect}" do
+      expect { JSONSchema.canonicalize(schema).negate }
+        .to raise_error(JSONSchema::Canonical::UnsupportedResult, "result is not supported in canonical form")
+    end
+  end
+
+  it "raises UnsupportedResult subtracting a schema whose complement is not supported" do
+    plain = JSONSchema.canonicalize({ "type" => "object" })
+    hard = JSONSchema.canonicalize({ "type" => "object", "patternProperties" => { "^a" => { "type" => "string" } } })
+    expect { plain.subtract(hard) }.to raise_error(JSONSchema::Canonical::UnsupportedResult)
+  end
+
+  it "subtracts a schema from itself without asking for a complement" do
+    schema = { "type" => "object", "patternProperties" => { "^a" => { "type" => "string" } } }
+    expect { JSONSchema.canonicalize(schema).negate }
+      .to raise_error(JSONSchema::Canonical::UnsupportedResult)
+    expect(JSONSchema.canonicalize(schema).subtract(JSONSchema.canonicalize(schema)).satisfiability)
+      .to be(:no)
+  end
+
+  it "lists the members of each label" do
+    expect(JSONSchema::Canonical::Containment::ALL).to eq(%i[yes no unknown])
+    expect(JSONSchema::Canonical::Satisfiability::ALL).to eq(%i[yes no unknown])
+    expect(JSONSchema::Canonical::Distinctness::ALL).to eq(%i[unconstrained all_distinct some_repeated])
+    expect(JSONSchema::Canonical::Kind::ALL).to eq(
+      %i[multi_type typed_group string integer number array object const enum not all_of any_of one_of
+         reference true false raw]
+    )
+  end
+
+  it "answers coverage and satisfiability with those constants" do
+    integer = JSONSchema.canonicalize({ "type" => "integer" })
+    expect(integer.covers(integer)).to be(JSONSchema::Canonical::Containment::YES)
+    expect(JSONSchema.canonicalize(false).satisfiability)
+      .to be(JSONSchema::Canonical::Satisfiability::NO)
+    expect(JSONSchema.canonicalize({ "const" => 5 }).satisfiability)
+      .to be(JSONSchema::Canonical::Satisfiability::YES)
+    expect(JSONSchema.canonicalize({ "type" => "array", "uniqueItems" => true }).view.distinctness)
+      .to be(JSONSchema::Canonical::Distinctness::ALL_DISTINCT)
+    expect(JSONSchema.canonicalize(UNSUPPORTED).kind).to be(JSONSchema::Canonical::Kind::RAW)
+  end
+
+  it "combines one document canonicalized twice" do
+    source = { "$defs" => { "Id" => { "type" => "string" } }, "type" => "object",
+               "properties" => { "id" => { "$ref" => "#/$defs/Id" } } }
+    left = JSONSchema.canonicalize(source)
+    right = JSONSchema.canonicalize(source)
+    expect(left).to eq(right)
+    expect(left.intersect(right)).to eq(left)
+    expect(left.covers(right)).to be(:yes)
+  end
+
+  {
+    true => :yes,
+    { "const" => 5 } => :yes,
+    { "enum" => [1, 2] } => :yes,
+    false => :no,
+    { "type" => "string" } => :yes,
+    { "type" => "string", "pattern" => "^a" } => :unknown
+  }.each do |schema, expected|
+    it "answers satisfiability #{expected} for #{schema.inspect}" do
+      expect(JSONSchema.canonicalize(schema).satisfiability).to be(expected)
     end
   end
 

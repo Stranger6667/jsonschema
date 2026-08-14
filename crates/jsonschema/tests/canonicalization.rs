@@ -6,8 +6,8 @@ use std::{
 
 use jsonschema::{
     canonical::{
-        options, CanonicalKind, CanonicalSchema, CanonicalView, Distinctness, ObjectViolationView,
-        OperandMismatch,
+        options, CanonicalKind, CanonicalSchema, CanonicalView, Containment, Distinctness,
+        ObjectViolationView, OperandMismatch, Satisfiability,
     },
     canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
     Retrieve, Uri,
@@ -16,7 +16,7 @@ use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
 
 #[test_case(&json!({"if": {}, "unevaluatedProperties": false}); "unevaluated properties beside an applicator")]
-fn unmodeled_document_round_trips_verbatim(schema: &Value) {
+fn unsupported_document_round_trips_verbatim(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(&canonical.to_json_schema(), schema);
     assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
@@ -529,8 +529,9 @@ fn a_definition_name_spelling_a_canonical_uri_does_not_alias_a_registry_resource
         .canonicalize(&schema)
         .expect("canonicalizes");
     assert_eq!(canonical.kind(), CanonicalKind::Raw);
-    assert!(
-        canonical.is_satisfiable(),
+    assert_ne!(
+        canonical.satisfiability(),
+        Satisfiability::No,
         "the string branch admits a value, so the document is not empty"
     );
 
@@ -555,14 +556,15 @@ fn unsupported_reference_target_keeps_the_whole_document_raw() {
 
 #[test]
 fn symbolic_reference_operations_have_distinct_views() {
+    // A cycle keeps the conjunction symbolic: such a document is not folded through its targets.
     let intersection = canonicalize(&json!({
         "allOf": [
             {"$ref": "#/$defs/left"},
             {"$ref": "#/$defs/right"}
         ],
         "$defs": {
-            "left": {"type": "integer"},
-            "right": {"type": "string"}
+            "left": {"type": "object", "properties": {"next": {"$ref": "#/$defs/left"}}},
+            "right": {"minProperties": 1}
         }
     }))
     .expect("canonicalizes");
@@ -834,10 +836,10 @@ fn uncheckable_format_scan_walks_a_typed_group() {
     assert!(build(&canonical.to_json_schema()).is_valid(&instance));
 }
 
-// An unmodeled document keeps document identity, where `1` and `1.0` are distinct - unlike JSON
+// An unsupported document keeps document identity, where `1` and `1.0` are distinct - unlike JSON
 // value equality, which reads them as the same number.
 #[test]
-fn unmodeled_documents_hash_by_document_identity() {
+fn unsupported_documents_hash_by_document_identity() {
     let canonical = |text: &str| {
         canonicalize(&serde_json::from_str::<Value>(text).expect("valid schema JSON"))
             .expect("canonicalizes")
@@ -995,6 +997,18 @@ fn error_display(schema: &Value, message: &str) {
     assert_eq!(canonicalize(schema).unwrap_err().to_string(), message);
 }
 
+#[test]
+fn unsupported_result_display() {
+    let plain = canonicalize(&json!({"type": "object"})).expect("canonicalizes");
+    let patterned =
+        canonicalize(&json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}}))
+            .expect("canonicalizes");
+    assert_eq!(
+        plain.subtract(&patterned).unwrap_err().to_string(),
+        "result is not supported in canonical form"
+    );
+}
+
 #[test_case(&json!({"type": "string"}), CanonicalKind::MultiType, "multi_type"; "multi_type")]
 #[test_case(&json!({"const": 1}), CanonicalKind::Const, "const"; "const_value")]
 #[test_case(&json!({"enum": [1, 2, 3]}), CanonicalKind::Enum, "enum"; "enum_values")]
@@ -1116,7 +1130,7 @@ fn validation_error_display_and_source() {
     assert!(std::error::Error::source(&error).is_some());
 }
 
-// `unevaluatedProperties` beside an instance-dependent applicator is unmodeled, so the document
+// `unevaluatedProperties` beside an instance-dependent applicator is unsupported, so the document
 // goes raw at the root without descending into the nesting.
 #[test]
 fn deeply_nested_document_round_trips() {
@@ -1876,34 +1890,34 @@ fn intersect_is_commutative_and_idempotent() {
     }
 }
 
-// A pattern the canonical form does not model keeps the whole document raw.
-fn unmodeled() -> Value {
+// A pattern the canonical form does not support keeps the whole document raw.
+fn unsupported() -> Value {
     json!({"if": {}, "unevaluatedProperties": false})
 }
 
 #[test]
 fn intersect_rejects_a_raw_root() {
-    let raw = canonicalize(&unmodeled()).expect("canonicalizes");
+    let raw = canonicalize(&unsupported()).expect("canonicalizes");
     let modeled = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
     let error = raw.intersect(&modeled).expect_err("the left side is raw");
-    assert!(matches!(error, CanonicalizationError::UnmodeledOperand));
+    assert!(matches!(error, CanonicalizationError::UnsupportedOperand));
     assert_eq!(
         error.to_string(),
-        "operand is not modeled in canonical form"
+        "operand is not supported in canonical form"
     );
     assert!(matches!(
         modeled.intersect(&raw),
-        Err(CanonicalizationError::UnmodeledOperand)
+        Err(CanonicalizationError::UnsupportedOperand)
     ));
 }
 
-// An unmodeled `$ref` target takes the whole document raw rather than leaving a raw entry beside a
+// An unsupported `$ref` target takes the whole document raw rather than leaving a raw entry beside a
 // modeled root, so the handle a consumer resolves from carries no definitions at all.
 #[test]
 fn intersect_rejects_a_raw_reference_target() {
     let document = json!({
         "properties": {"a": {"$ref": "#/$defs/A"}},
-        "$defs": {"A": unmodeled()}
+        "$defs": {"A": unsupported()}
     });
     let raw = canonicalize(&document).expect("canonicalizes");
     assert_eq!(raw.kind(), CanonicalKind::Raw);
@@ -1911,13 +1925,14 @@ fn intersect_rejects_a_raw_reference_target() {
     let modeled = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
     assert!(matches!(
         raw.intersect(&modeled),
-        Err(CanonicalizationError::UnmodeledOperand)
+        Err(CanonicalizationError::UnsupportedOperand)
     ));
 }
 
-// Two children of one root share the map, so both references resolve through the result.
+// A result carries the targets it still names and no others, whether or not the operands shared a
+// document: `definitions()` answers about the same schema `to_json_schema()` emits.
 #[test]
-fn intersect_keeps_references_resolvable_within_one_document() {
+fn a_result_carries_exactly_the_targets_it_still_names() {
     let root = canonicalize(&json!({
         "type": "object",
         "$defs": {"A": {"type": "string"}, "B": {"minLength": 2}},
@@ -1929,9 +1944,14 @@ fn intersect_keeps_references_resolvable_within_one_document() {
     };
     let left = view.properties.get("a").expect("property a").clone();
     let right = view.properties.get("b").expect("property b").clone();
+
+    // Both pointers are read through and the meet folds into one leaf, naming neither.
     let merged = left.intersect(&right).expect("intersects");
-    assert!(merged.definition("#/$defs/A").is_some());
-    assert!(merged.definition("#/$defs/B").is_some());
+    assert_eq!(merged.definitions().len(), 0);
+    assert_eq!(merged.definition("#/$defs/A"), None);
+    let emitted = merged.to_json_schema();
+    assert!(emitted.get("$defs").is_none(), "emitted {emitted}");
+    validator_for(&emitted).expect("the result resolves its own pointers");
 }
 
 #[test]
@@ -1997,10 +2017,12 @@ fn intersect_rejects_operands_with_different_pattern_engines() {
     );
 }
 
-// A side with no definitions of its own adopts the other's map, whichever side it is.
+// A side with no definitions of its own combines against the other's targets, whichever side it is.
+// The intersection reads through the pointer, so the target lands in the result and its entry, now
+// named by nothing, is dropped.
 #[test_case(false; "empty map on the right")]
 #[test_case(true; "empty map on the left")]
-fn intersect_adopts_the_only_definition_map(swap: bool) {
+fn intersect_reads_through_the_only_definition_map(swap: bool) {
     let referencing = canonicalize(&json!({
         "$defs": {"A": {"type": "string"}},
         "$ref": "#/$defs/A"
@@ -2013,29 +2035,1507 @@ fn intersect_adopts_the_only_definition_map(swap: bool) {
         referencing.intersect(&plain)
     }
     .expect("intersects");
-    assert!(merged.definition("#/$defs/A").is_some());
+    assert_eq!(
+        merged.to_json_schema(),
+        latest(
+            json!({"type": "string", "minLength": 4})
+                .as_object()
+                .expect("object")
+                .clone()
+        )
+    );
+    assert_eq!(merged.definitions().count(), 0);
+}
+
+// A pointer and the schema it names accept the same values, so one written each way cancels.
+#[test]
+fn a_pointer_and_its_target_are_the_same_schema_to_the_algebra() {
+    let referencing = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes");
+    let inline = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    assert_eq!(
+        referencing.covers(&inline).expect("compares"),
+        Containment::Yes
+    );
+    assert_eq!(
+        referencing
+            .subtract(&inline)
+            .expect("subtracts")
+            .satisfiability(),
+        Satisfiability::No
+    );
+    assert_eq!(
+        inline
+            .subtract(&referencing)
+            .expect("subtracts")
+            .satisfiability(),
+        Satisfiability::No
+    );
+}
+
+// A pointer nested under a property is read through as well, which is where a document that names
+// a shared component meets the same component written out.
+#[test]
+fn a_nested_pointer_is_read_through() {
+    let referencing = canonicalize(&json!({
+        "$defs": {"User": {"type": "object", "properties": {"id": {"type": "integer"}}}},
+        "type": "object",
+        "properties": {"user": {"$ref": "#/$defs/User"}}
+    }))
+    .expect("canonicalizes");
+    let inline = canonicalize(&json!({
+        "type": "object",
+        "properties": {"user": {"type": "object", "properties": {"id": {"type": "integer"}}}}
+    }))
+    .expect("canonicalizes");
+    assert_eq!(
+        referencing.covers(&inline).expect("compares"),
+        Containment::Yes
+    );
+    assert_eq!(
+        inline.covers(&referencing).expect("compares"),
+        Containment::Yes
+    );
+    assert_eq!(
+        referencing
+            .subtract(&inline)
+            .expect("subtracts")
+            .satisfiability(),
+        Satisfiability::No
+    );
+    assert_eq!(
+        inline
+            .subtract(&referencing)
+            .expect("subtracts")
+            .satisfiability(),
+        Satisfiability::No
+    );
+}
+
+// An intersection the form could only approximate stays approximated wherever it is read again, so
+// a check that discards it cannot leave the run believing the pair was exact.
+#[test]
+fn an_approximated_intersection_read_twice_keeps_the_document_unsupported() {
+    let schema = json!({
+        "anyOf": [
+            {
+                "type": "object",
+                "patternProperties": {"^b": {"type": "number"}},
+                "additionalProperties": {"type": "integer"}
+            },
+            {
+                "type": "object",
+                "patternProperties": {"^a": {"type": "string"}, "^b": {"type": "integer"}},
+                "additionalProperties": {"type": "integer"}
+            }
+        ]
+    });
+    assert_validation_parity(
+        &schema,
+        &[
+            json!({"a": "s"}),
+            json!({"a": "s", "b": 1}),
+            json!({"b": 1}),
+            json!({"b": 1.5}),
+            json!({}),
+        ],
+    );
+}
+
+// A shield leaves the keys a pattern map matches to it, so closing a map around such a key keeps
+// the pattern's demand rather than the shield's.
+#[test]
+fn a_closed_map_keeps_the_pattern_demand_of_an_admitted_key() {
+    let closed = json!({"type": "object", "additionalProperties": false, "properties": {"a": {}}});
+    let patterned = json!({
+        "type": "object",
+        "additionalProperties": {"type": "integer"},
+        "patternProperties": {"^a": {"type": "string"}}
+    });
+    let merged = canonicalize(&closed)
+        .expect("canonicalizes")
+        .intersect(&canonicalize(&patterned).expect("canonicalizes"))
+        .expect("intersects");
+    let closed_validator = validator_for(&closed).expect("builds");
+    let patterned_validator = validator_for(&patterned).expect("builds");
+    let merged_validator = validator_for(&merged.to_json_schema()).expect("builds");
+    for instance in [
+        json!({}),
+        json!({"a": "x"}),
+        json!({"a": 1}),
+        json!({"b": 1}),
+    ] {
+        assert_eq!(
+            closed_validator.is_valid(&instance) && patterned_validator.is_valid(&instance),
+            merged_validator.is_valid(&instance),
+            "the intersection disagrees on {instance}\n  merged = {}",
+            merged.to_json_schema()
+        );
+    }
+}
+
+// A meet of two pointers is a body no name denotes, so `intersect` writes it out; a join leaves
+// every branch exactly a named body, so `union` keeps the names. Reading them through here would
+// spell the union one way and the document holding that same union another.
+#[test]
+fn a_union_keeps_the_names_its_branches_arrived_under() {
+    let referencing = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}},
+        "$ref": "#/$defs/A"
+    }))
+    .expect("canonicalizes");
+    let inline = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+
+    let united = referencing.union(&inline).expect("unions");
+    assert_eq!(united.kind(), CanonicalKind::AnyOf);
+    assert_eq!(united, inline.union(&referencing).expect("unions"));
+    // The document holding that union reaches the same form.
+    assert_eq!(
+        united,
+        canonicalize(&json!({
+            "$defs": {"A": {"type": "string"}},
+            "anyOf": [{"$ref": "#/$defs/A"}, {"type": "string"}]
+        }))
+        .expect("canonicalizes")
+    );
+    let validator = validator_for(&united.to_json_schema()).expect("builds");
+    assert!(validator.is_valid(&json!("x")));
+    assert!(!validator.is_valid(&json!(1)));
+}
+
+// The names travel with the branches, and the identities are answered on the operands the caller
+// holds, so `a | a` is still `a`.
+#[test]
+fn a_union_of_pointers_is_one_form_whichever_way_round() {
+    let pointer = |name: &str| {
+        canonicalize(&json!({
+            "$defs": {name: {"type": "string"}},
+            "$ref": format!("#/$defs/{name}")
+        }))
+        .expect("canonicalizes")
+    };
+    let first = pointer("A");
+    let second = pointer("B");
+
+    assert_eq!(first.union(&first).expect("unions"), first);
+    let united = first.union(&second).expect("unions");
+    assert_eq!(united, second.union(&first).expect("unions"));
+    // Both names survive, so neither operand's map is the one that gave way.
+    assert_eq!(united.definitions().count(), 2);
+    let validator = validator_for(&united.to_json_schema()).expect("builds");
+    assert!(validator.is_valid(&json!("x")));
+    assert!(!validator.is_valid(&json!(1)));
+}
+
+// A boolean target decides the pair, so the pointer standing for it must be read through before
+// either side is dispatched.
+#[test_case(&json!(true), &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"}); "a permissive target leaves the other side")]
+#[test_case(&json!(false), &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}}); "a rejecting target empties the pair")]
+fn intersect_reads_through_a_pointer_to_a_boolean(target: &Value, expected: &Value) {
+    let referencing =
+        canonicalize(&json!({"$defs": {"A": target}, "$ref": "#/$defs/A"})).expect("canonicalizes");
+    let string = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    assert_eq!(
+        referencing
+            .intersect(&string)
+            .expect("intersects")
+            .to_json_schema(),
+        *expected
+    );
+}
+
+// Two definitions naming one target, which the walk over the map reaches through each of them.
+#[test]
+fn a_target_two_definitions_share_is_read_through() {
+    let sharing = canonicalize(&json!({
+        "$defs": {
+            "A": {"type": "object", "properties": {"x": {"$ref": "#/$defs/C"}}},
+            "B": {"type": "object", "properties": {"y": {"$ref": "#/$defs/C"}}},
+            "C": {"type": "string"}
+        },
+        "anyOf": [{"$ref": "#/$defs/A"}, {"$ref": "#/$defs/B"}]
+    }))
+    .expect("canonicalizes");
+    let object = canonicalize(&json!({"type": "object"})).expect("canonicalizes");
+    let merged = sharing.intersect(&object).expect("intersects");
+    let sharing_validator = validator_for(&sharing.to_json_schema()).expect("builds");
+    let merged_validator = validator_for(&merged.to_json_schema()).expect("builds");
+    for instance in [
+        json!({"x": "a"}),
+        json!({"y": "a"}),
+        json!({"x": 1}),
+        json!({}),
+        json!("x"),
+    ] {
+        assert_eq!(
+            sharing_validator.is_valid(&instance) && instance.is_object(),
+            merged_validator.is_valid(&instance),
+            "{instance}"
+        );
+    }
+}
+
+// A `#` inside a definition body names the document root, which is no entry of the map, so the walk
+// finds no body to read through there.
+#[test]
+fn a_definition_naming_the_document_root_is_read_through() {
+    let rooted = canonicalize(&json!({
+        "$defs": {"A": {"type": "object", "properties": {"self": {"$ref": "#"}}}},
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/A"}}
+    }))
+    .expect("canonicalizes");
+    let object = canonicalize(&json!({"type": "object"})).expect("canonicalizes");
+    let merged = rooted.intersect(&object).expect("intersects");
+    assert_eq!(merged.covers(&rooted).expect("compares"), Containment::Yes);
+    let validator = validator_for(&merged.to_json_schema()).expect("builds");
+    assert!(validator.is_valid(&json!({"a": {"self": {"a": {}}}})));
+    assert!(!validator.is_valid(&json!("x")));
+}
+
+// A cycle stops the pointers on it, and no others: a recursive definition beside a plain one leaves
+// the plain one read through.
+#[test]
+fn a_recursive_definition_leaves_the_other_pointers_readable() {
+    let root = canonicalize(&json!({
+        "$defs": {
+            "Node": {"type": "object", "properties": {"next": {"$ref": "#/$defs/Node"}}},
+            "Id": {"type": "string"}
+        },
+        "type": "object",
+        "properties": {"id": {"$ref": "#/$defs/Id"}, "node": {"$ref": "#/$defs/Node"}}
+    }))
+    .expect("canonicalizes");
+    let CanonicalView::Object(view) = root.view() else {
+        panic!("expected an Object view");
+    };
+    let named = view.properties.get("id").expect("property id").clone();
+    let inline = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    assert_eq!(named.covers(&inline).expect("compares"), Containment::Yes);
+    assert_eq!(
+        named.subtract(&inline).expect("subtracts").satisfiability(),
+        Satisfiability::No
+    );
+}
+
+// A pointer that leads back to a body already on the path never settles, so a cyclic map is left
+// unread and the operands are combined as pointers.
+#[test]
+fn a_cyclic_map_is_not_read_through() {
+    let recursive = canonicalize(&json!({
+        "$defs": {"Node": {"type": "object", "properties": {"next": {"$ref": "#/$defs/Node"}}}},
+        "$ref": "#/$defs/Node"
+    }))
+    .expect("canonicalizes");
+    let object = canonicalize(&json!({"type": "object"})).expect("canonicalizes");
+    let merged = recursive.intersect(&object).expect("intersects");
+    assert!(merged.definition("#/$defs/Node").is_some());
+    let emitted = merged.to_json_schema();
+    let validator = validator_for(&emitted).expect("builds");
+    assert!(validator.is_valid(&json!({"next": {}})));
+    assert!(!validator.is_valid(&json!("x")));
 }
 
 #[test]
-fn intersect_rejects_operands_with_distinct_definition_maps() {
+fn intersect_reads_through_two_definitions_of_one_name() {
     let left = canonicalize(&json!({
         "$defs": {"A": {"type": "string"}},
         "$ref": "#/$defs/A"
     }))
     .expect("canonicalizes");
     let right = canonicalize(&json!({
-        "$defs": {"B": {"minLength": 4}},
-        "$ref": "#/$defs/B"
+        "$defs": {"A": {"type": "string", "minLength": 4}},
+        "$ref": "#/$defs/A"
     }))
     .expect("canonicalizes");
-    let error = left.intersect(&right).expect_err("the maps differ");
-    assert!(matches!(
-        error,
-        CanonicalizationError::IncompatibleOperands(OperandMismatch::Definitions)
-    ));
+    // The two `A`s are renamed apart, so the meet is the narrower of the two - kept as the pointer
+    // naming it, under the fresh name the merge gave it.
     assert_eq!(
-        error.to_string(),
-        "operands carry different definition maps"
+        left.intersect(&right).expect("intersects").to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {"A-2": {"type": "string", "minLength": 4}},
+            "$ref": "#/$defs/A-2"
+        })
+    );
+}
+
+// The side that gives way renames its `$defs` keys, and the root it reads through `#` names those
+// too - one left behind reads the other document's bodies under the old names.
+#[test]
+fn a_renamed_side_carries_its_own_document_root() {
+    let recursive = canonicalize(&json!({
+        "type": "object",
+        "properties": {"k": {"$ref": "#/$defs/K"}, "self": {"$ref": "#"}},
+        "$defs": {"K": {"type": "string"}}
+    }))
+    .expect("canonicalizes");
+    let plain = canonicalize(&json!({
+        "type": "object",
+        "properties": {"k": {"$ref": "#/$defs/K"}},
+        "$defs": {"K": {"type": "integer"}}
+    }))
+    .expect("canonicalizes");
+    let meet = recursive.intersect(&plain).expect("intersects");
+    assert_eq!(
+        meet.to_json_schema(),
+        plain
+            .intersect(&recursive)
+            .expect("intersects")
+            .to_json_schema()
+    );
+    let validator = validator_for(&meet.to_json_schema()).expect("builds");
+    // `self` is read against the recursive document, whose `K` is the string one.
+    assert!(validator.is_valid(&json!({"self": {"k": "x"}})));
+    assert!(!validator.is_valid(&json!({"self": {"k": 1}})));
+}
+
+// Renaming rebuilds the nodes that hold the renamed pointer, and a choice orders its branches by
+// their bodies - a fresh name reorders them. Left unsorted the result no longer reads back as
+// itself.
+#[test]
+fn a_renamed_choice_keeps_its_branches_sorted() {
+    let document = |body: Value| {
+        json!({
+            "$defs": {"a": body, "a-1": {"type": "object", "required": ["y"]}},
+            "type": "object",
+            "properties": {"c": {"oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/a-1"}]}}
+        })
+    };
+    let left = canonicalize(&document(json!({"type": "object", "required": ["x"]})))
+        .expect("canonicalizes");
+    let right = canonicalize(&document(json!({"type": "object", "required": ["zzz"]})))
+        .expect("canonicalizes");
+    for (name, result) in [
+        ("union", left.union(&right)),
+        ("intersect", left.intersect(&right)),
+    ] {
+        let Ok(result) = result else { continue };
+        let emitted = result.to_json_schema();
+        assert_eq!(
+            canonicalize(&emitted).expect("re-canonicalizes"),
+            result,
+            "{name} does not read back as itself: {emitted}"
+        );
+    }
+}
+
+// Two documents whose `#` reads a different body cannot merge: the entry they disagree on renames
+// apart, but that renaming is exactly what leaves their roots naming different bodies. Left with
+// the receiver's root un-renamed the two compare equal, the guard passes, and the operation answers
+// with one document's pointers over the other's bodies - accepting a value both operands reject.
+#[test]
+fn two_recursive_documents_disagreeing_on_an_entry_decline() {
+    let document = |body: Value| {
+        json!({
+            "$defs": {"K": body},
+            "type": "object",
+            "properties": {"k": {"$ref": "#/$defs/K"}, "up": {"$ref": "#"}}
+        })
+    };
+    let left = document(json!({"type": "object", "additionalProperties": {"type": "integer"}}));
+    let right = document(json!({"type": "integer", "minimum": 0}));
+    let instance = json!({"k": {"k": 1}, "up": {"k": 1}});
+    assert!(!validator_for(&left).expect("builds").is_valid(&instance));
+    assert!(!validator_for(&right).expect("builds").is_valid(&instance));
+    let left = canonicalize(&left).expect("canonicalizes");
+    let right = canonicalize(&right).expect("canonicalizes");
+    for answer in [
+        left.union(&right),
+        left.subtract(&right),
+        left.intersect(&right),
+    ] {
+        assert!(matches!(
+            answer,
+            Err(CanonicalizationError::IncompatibleOperands(
+                OperandMismatch::DocumentRoots
+            ))
+        ));
+    }
+}
+
+// `#` names the document a node was read against, so the argument's root has to travel with it.
+// Read against the receiver's document instead, a node naming `#` reads a body it never named.
+#[test]
+fn covers_reads_the_argument_against_its_own_document() {
+    let target = canonicalize(&json!({
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/x"}},
+        "$defs": {"x": {"$ref": "#"}}
+    }))
+    .expect("canonicalizes")
+    .definition("#/$defs/x")
+    .expect("names a definition");
+    assert_eq!(target.satisfiability(), Satisfiability::Yes);
+    // `false` admits no value at all, so it covers nothing that admits one.
+    assert_ne!(
+        canonicalize(&json!(false))
+            .expect("canonicalizes")
+            .covers(&target)
+            .expect("answers"),
+        Containment::Yes
+    );
+}
+
+// A `$defs` entry under a nested `$id` is keyed by a minted URI rather than by a `#/$defs/` name,
+// and is private to the document all the same: two versions of it rename apart like any other.
+#[test]
+fn a_definition_under_a_nested_id_is_private_to_its_document() {
+    let document = |body: Value| {
+        json!({
+            "$id": "https://example.com/root",
+            "$defs": {"sub": {
+                "$id": "https://example.com/sub",
+                "$defs": {"User": body},
+                "$ref": "#/$defs/User"
+            }},
+            "$ref": "#/$defs/sub"
+        })
+    };
+    let old = canonicalize(&document(json!({"type": "object"}))).expect("canonicalizes");
+    let new = canonicalize(&document(json!({"type": "object", "minProperties": 1})))
+        .expect("canonicalizes");
+    // The empty object is what the edit took away.
+    assert_eq!(
+        old.subtract(&new).expect("subtracts").to_json_schema(),
+        latest(json!({"const": {}}).as_object().expect("an object").clone())
+    );
+}
+
+// The documented `DocumentRoots` mismatch has to be the answer the documented pair actually gets.
+#[test]
+fn two_documents_binding_the_root_differently_decline() {
+    let plain = canonicalize(&json!({
+        "type": "object", "properties": {"next": {"$ref": "#"}}
+    }))
+    .expect("canonicalizes");
+    let bounded = canonicalize(&json!({
+        "type": "object", "properties": {"next": {"$ref": "#"}}, "minProperties": 1
+    }))
+    .expect("canonicalizes");
+    assert!(matches!(
+        plain.union(&bounded),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::DocumentRoots
+        ))
+    ));
+}
+
+// A pointer stands for the schema it references, so a member that schema admits is admitted - comparing the
+// pointer itself against the member instead reads as a rejection that never happened.
+#[test]
+fn a_member_admitted_through_a_pointer_survives_the_meet() {
+    let left = canonicalize(&json!({
+        "$defs": {"E": {"const": "x"}},
+        "type": "array",
+        "contains": {"$ref": "#/$defs/E"}
+    }))
+    .expect("canonicalizes");
+    let right = canonicalize(&json!({"enum": [["x"], ["y"]]})).expect("canonicalizes");
+    let meet = left.intersect(&right).expect("intersects").to_json_schema();
+    // Both operands take `["x"]`, so their meet takes it too.
+    assert!(validator_for(&meet)
+        .expect("builds")
+        .is_valid(&json!(["x"])));
+}
+
+// A schema wide at every level multiplies width by depth, so the walk that looks for a witness has
+// to give up rather than build the number of values the keywords ask for.
+#[test]
+fn a_deep_and_wide_schema_gives_up_rather_than_building_every_witness() {
+    let mut schema = json!({"type": "string"});
+    for _ in 0..6 {
+        schema = json!({"type": "array", "minItems": 64, "items": schema});
+    }
+    assert_eq!(
+        canonicalize(&schema)
+            .expect("canonicalizes")
+            .satisfiability(),
+        Satisfiability::Unknown
+    );
+}
+
+// A choice between pointers naming targets that are not disjoint stays a choice: weighing the
+// bodies would cost as much as canonicalizing them. A key renamed elsewhere in the document leaves
+// its branches as they were, and the walk hands the node back untouched.
+#[test]
+fn intersect_renames_around_a_choice_it_leaves_alone() {
+    // Held by a property entry, where a pointer stands rather than folding into the node.
+    let document = |bound: Value| {
+        json!({
+            "$defs": {
+                "K": bound,
+                "P": {"type": "string"},
+                "T": {"type": "string", "minLength": 1}
+            },
+            "type": "object",
+            "properties": {
+                "k": {"$ref": "#/$defs/K"},
+                "choice": {"oneOf": [{"$ref": "#/$defs/P"}, {"$ref": "#/$defs/T"}]}
+            }
+        })
+    };
+    let left =
+        canonicalize(&document(json!({"type": "integer", "minimum": 0}))).expect("canonicalizes");
+    let right =
+        canonicalize(&document(json!({"type": "integer", "minimum": 1}))).expect("canonicalizes");
+    let meet = left.intersect(&right).expect("intersects");
+    let emitted = meet.to_json_schema();
+    // The disagreeing key is renamed apart; the choice keeps the two names it was spelled with.
+    assert!(meet.definition("#/$defs/K-2").is_some());
+    assert_eq!(
+        emitted["properties"]["choice"],
+        json!({"oneOf": [{"$ref": "#/$defs/P"}, {"$ref": "#/$defs/T"}]})
+    );
+    // Exactly one branch may match, so only the empty string is left for `choice`.
+    let validator = validator_for(&emitted).expect("builds");
+    assert!(validator.is_valid(&json!({"k": 1, "choice": ""})));
+    for rejected in [
+        json!({"k": 0, "choice": ""}),
+        json!({"k": 1, "choice": "a"}),
+        json!({"k": "x", "choice": ""}),
+    ] {
+        assert!(!validator.is_valid(&rejected), "accepted {rejected}");
+    }
+}
+
+// Refuting a value scans the receiver for pointers this run cannot read, and a choice holds its
+// branches where no other node does.
+#[test]
+fn covers_reads_a_choice_before_refuting_a_value() {
+    let choice = canonicalize(&json!({
+        "$defs": {"P": {"type": "string"}, "T": {"type": "string", "minLength": 1}},
+        "oneOf": [{"$ref": "#/$defs/P"}, {"$ref": "#/$defs/T"}]
+    }))
+    .expect("canonicalizes");
+    let member = canonicalize(&json!({"const": "a"})).expect("canonicalizes");
+    // `"a"` matches both branches, so the choice turns it away.
+    assert_eq!(choice.covers(&member).expect("compares"), Containment::No);
+    let validator = validator_for(&choice.to_json_schema()).expect("builds");
+    assert!(!validator.is_valid(&json!("a")));
+    assert!(validator.is_valid(&json!("")));
+}
+
+// Draft 4 cannot tell `1` from `1.0` by value equality, so an integer value set keeps a type guard
+// around it. A rename walks every body and hands the guard back as it found it: it names nothing.
+#[test]
+fn intersect_renames_past_a_draft4_type_guard() {
+    let document = |bound: Value| {
+        json!({
+            "$defs": {
+                "K": bound,
+                "G": {"allOf": [{"type": "integer"}, {"enum": [1, 2]}]}
+            },
+            "type": "object",
+            "properties": {"k": {"$ref": "#/$defs/K"}, "g": {"$ref": "#/$defs/G"}}
+        })
+    };
+    let canonical = |schema: &Value| {
+        options()
+            .with_draft(Draft::Draft4)
+            .canonicalize(schema)
+            .expect("canonicalizes")
+    };
+    let left = canonical(&document(json!({"type": "integer", "minimum": 0})));
+    let right = canonical(&document(json!({"type": "integer", "minimum": 2})));
+    let meet = left.intersect(&right).expect("intersects");
+    let emitted = meet.to_json_schema();
+    assert!(meet.definition("#/$defs/K-2").is_some());
+    assert_eq!(
+        emitted["$defs"]["G"],
+        json!({"type": "integer", "enum": [1, 2]})
+    );
+    let validator = validator_for(&emitted).expect("builds");
+    assert!(validator.is_valid(&json!({"k": 2, "g": 1})));
+    for rejected in [
+        json!({"k": 1, "g": 1}),
+        json!({"k": 2, "g": 3}),
+        json!({"k": 2, "g": 1.0}),
+    ] {
+        assert!(!validator.is_valid(&rejected), "accepted {rejected}");
+    }
+}
+
+// A format no checker covers is read as met by the meet, so nothing definite may rest on it.
+#[test]
+fn an_unchecked_format_decides_neither_coverage_nor_difference() {
+    let canonical = |schema: &Value| {
+        options()
+            .should_validate_formats(true)
+            .canonicalize(schema)
+            .expect("canonicalizes")
+    };
+    let formatted = canonical(&json!({"type": "string", "format": "x-custom"}));
+    let members = canonical(&json!({"enum": ["a", "b"]}));
+    assert_ne!(
+        formatted.covers(&members).expect("compares"),
+        Containment::Yes
+    );
+    // Declining is sound; answering that the members are all kept is not.
+    assert!(
+        members
+            .subtract(&formatted)
+            .is_ok_and(|difference| difference.satisfiability() != Satisfiability::No)
+            || members.subtract(&formatted).is_err()
+    );
+}
+
+// The same unchecked facet on both sides: every value either side admits carries it already, so
+// the fold rests on nothing undecided.
+#[test]
+fn one_unchecked_facet_on_both_sides_does_not_block_the_meet() {
+    let shielded = canonicalize(&json!({
+        "type": "object",
+        "properties": {"a": {"type": "string", "minLength": 5, "contentMediaType": "application/x-nope"}},
+        "additionalProperties": {"type": "string", "contentMediaType": "application/x-nope"}
+    }))
+    .expect("canonicalizes");
+    let patterned = canonicalize(&json!({
+        "type": "object",
+        "patternProperties": {"^a": {"type": "string"}}
+    }))
+    .expect("canonicalizes");
+    shielded.intersect(&patterned).expect("intersects");
+    assert_eq!(
+        canonicalize(&json!({"allOf": [
+            {"type": "object", "properties": {"a": {"type": "string", "minLength": 5, "contentMediaType": "application/x-nope"}}, "additionalProperties": {"type": "string", "contentMediaType": "application/x-nope"}},
+            {"type": "object", "patternProperties": {"^a": {"type": "string"}}}
+        ]}))
+        .expect("canonicalizes")
+        .kind(),
+        CanonicalKind::Object
+    );
+}
+
+// An empty pattern matches every key, which parse spells by dropping it: one kept in a key
+// constraint would not read back, and the shield behind it governs nothing.
+#[test]
+fn an_empty_pattern_leaves_neither_a_key_constraint_nor_a_shield() {
+    let emitted = canonicalize(&json!({"allOf": [
+        {"type": "object", "patternProperties": {"": {"type": "integer"}}, "additionalProperties": {"type": "array"}},
+        {"type": "object", "additionalProperties": {"type": "string"}}
+    ]}))
+    .expect("canonicalizes")
+    .to_json_schema();
+    assert_eq!(
+        canonicalize(&emitted)
+            .expect("re-canonicalizes")
+            .to_json_schema(),
+        emitted
+    );
+    let shielded = canonicalize(&json!({
+        "type": "object", "patternProperties": {"": {"type": "integer"}}, "additionalProperties": {"type": "string"}
+    }))
+    .expect("canonicalizes");
+    let bare = canonicalize(&json!({
+        "type": "object", "patternProperties": {"": {"type": "integer"}}
+    }))
+    .expect("canonicalizes");
+    assert_eq!(shielded.to_json_schema(), bare.to_json_schema());
+    assert_eq!(shielded.covers(&bare).expect("compares"), Containment::Yes);
+    assert_eq!(bare.covers(&shielded).expect("compares"), Containment::Yes);
+}
+
+// One value set has one canonical form, whichever entry point builds it: without the fold a
+// conjunction over a pointer would stay symbolic here while an operation folds it.
+#[test]
+fn a_document_and_an_operation_over_its_parts_reach_the_same_form() {
+    // A result of an operation reads back as itself.
+    let patterned = canonicalize(&json!({
+        "$defs": {"k": {"enum": ["a", "b"]}},
+        "type": "object",
+        "patternProperties": {"^": {"$ref": "#/$defs/k"}}
+    }))
+    .expect("canonicalizes");
+    let named = canonicalize(&json!({"type": "object", "properties": {"a": {"const": "a"}}}))
+        .expect("canonicalizes");
+    let meet = patterned.intersect(&named).expect("intersects");
+    assert_eq!(
+        canonicalize(&meet.to_json_schema()).expect("re-canonicalizes"),
+        meet
+    );
+
+    // And a document folds the way an operation over the same values does.
+    let together = canonicalize(&json!({
+        "$defs": {"x": {"type": "string"}},
+        "allOf": [{"$ref": "#/$defs/x"}, {"type": "string", "minLength": 4}]
+    }))
+    .expect("canonicalizes");
+    let apart = canonicalize(&json!({"$defs": {"x": {"type": "string"}}, "$ref": "#/$defs/x"}))
+        .expect("canonicalizes")
+        .intersect(
+            &canonicalize(&json!({"type": "string", "minLength": 4})).expect("canonicalizes"),
+        )
+        .expect("intersects");
+    assert_eq!(together, apart);
+    assert_eq!(
+        together.to_json_schema(),
+        latest(
+            json!({"type": "string", "minLength": 4})
+                .as_object()
+                .expect("object")
+                .clone()
+        )
+    );
+
+    // The join keeps its branches named where the meet writes its result out, and a document
+    // holding the same union reaches that named form too.
+    let joined = canonicalize(&json!({
+        "$defs": {"x": {"type": "integer", "minimum": 5}},
+        "anyOf": [{"$ref": "#/$defs/x"}, {"type": "string"}]
+    }))
+    .expect("canonicalizes");
+    assert_eq!(
+        joined,
+        canonicalize(
+            &json!({"$defs": {"x": {"type": "integer", "minimum": 5}}, "$ref": "#/$defs/x"})
+        )
+        .expect("canonicalizes")
+        .union(&canonicalize(&json!({"type": "string"})).expect("canonicalizes"))
+        .expect("unions")
+    );
+    assert_eq!(joined.definitions().count(), 1);
+
+    // A conjunction the bodies contradict is empty, rather than an opaque `allOf`.
+    let contradiction = canonicalize(&json!({
+        "$defs": {"left": {"type": "integer"}, "right": {"type": "string"}},
+        "allOf": [{"$ref": "#/$defs/left"}, {"$ref": "#/$defs/right"}]
+    }))
+    .expect("canonicalizes");
+    assert_eq!(contradiction.satisfiability(), Satisfiability::No);
+}
+
+fn latest(mut schema: Map<String, Value>) -> Value {
+    schema.insert(
+        "$schema".into(),
+        json!("https://json-schema.org/draft/2020-12/schema"),
+    );
+    Value::Object(schema)
+}
+
+#[test_case(&json!({"type": "string"}), &json!({"type": "integer"}), &json!({"type": ["integer", "string"]}); "disjoint types join into one type set")]
+#[test_case(&json!({"const": "a"}), &json!({"enum": ["a", "b"]}), &json!({"enum": ["a", "b"]}); "a value the other branch already holds adds nothing")]
+#[test_case(&json!({"type": "string", "minLength": 4}), &json!({"type": "string"}), &json!({"type": "string"}); "a narrower branch is absorbed by the wider one")]
+fn union_folds(left: &Value, right: &Value, expected: &Value) {
+    let left = canonicalize(left).expect("canonicalizes");
+    let right = canonicalize(right).expect("canonicalizes");
+    assert_eq!(
+        left.union(&right).expect("unions").to_json_schema(),
+        latest(expected.as_object().expect("object").clone())
+    );
+}
+
+#[test_case(&json!({"type": "integer", "minimum": 10}), &json!({"type": "integer", "minimum": 15}), &json!({"type": "integer", "minimum": 10, "maximum": 14}); "a tightened bound leaves the values it turned away")]
+#[test_case(&json!({"enum": ["a", "b"]}), &json!({"enum": ["a"]}), &json!({"const": "b"}); "a shrunken value set leaves the value it dropped")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"type": "string"}}}), &json!({"type": "object", "required": ["a"], "properties": {"a": {"type": "string"}}}), &json!({"type": "object", "properties": {"a": false}}); "a new requirement leaves the objects that omit the key")]
+#[test_case(&json!({"type": "integer"}), &json!({"type": ["integer", "string"]}), &json!({"not": {}}); "a widened type leaves nothing behind")]
+fn subtract_folds(left: &Value, right: &Value, expected: &Value) {
+    let left = canonicalize(left).expect("canonicalizes");
+    let right = canonicalize(right).expect("canonicalizes");
+    assert_eq!(
+        left.subtract(&right).expect("subtracts").to_json_schema(),
+        latest(expected.as_object().expect("object").clone())
+    );
+}
+
+// The emitted result must accept exactly the values set arithmetic says it does. Each case carries
+// the instances that tell its own three regions apart - left-only, right-only, and shared - since a
+// list none of them reach passes whatever the operations return.
+#[test_case(&json!({"type": "integer", "minimum": 10}), &json!({"type": "integer", "minimum": 15}), &[json!(12), json!(20), json!(5)]; "overlapping numeric windows")]
+#[test_case(&json!({"type": "string"}), &json!({"type": "string", "maxLength": 2}), &[json!("abc"), json!("ab"), json!(7)]; "a length ceiling over an open string")]
+#[test_case(&json!({"enum": ["a", "b", 1]}), &json!({"enum": ["a", 2]}), &[json!("b"), json!(1), json!(2), json!("a"), json!("z")]; "partly overlapping value sets")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"type": "string"}}}), &json!({"type": "object", "required": ["a"]}), &[json!({}), json!({"a": "x"}), json!({"b": 1}), json!("x")]; "an object gaining a requirement")]
+#[test_case(&json!({"type": ["integer", "string"]}), &json!({"type": "boolean"}), &[json!(1), json!("a"), json!(true), json!(null)]; "disjoint type sets")]
+fn union_and_difference_keep_validation_parity(
+    left: &Value,
+    right: &Value,
+    discriminating: &[Value],
+) {
+    let mut instances = vec![
+        json!(9),
+        json!(10),
+        json!(14),
+        json!(15),
+        json!("a"),
+        json!("abc"),
+        json!(true),
+        json!(null),
+        json!({}),
+        json!({"a": "x"}),
+        json!({"a": 1}),
+        json!([]),
+    ];
+    instances.extend(discriminating.iter().cloned());
+    let canonical_left = canonicalize(left).expect("canonicalizes");
+    let canonical_right = canonicalize(right).expect("canonicalizes");
+    let united = canonical_left.union(&canonical_right).expect("unions");
+    let difference = canonical_left
+        .subtract(&canonical_right)
+        .expect("subtracts");
+    let left_validator = validator_for(left).expect("builds");
+    let right_validator = validator_for(right).expect("builds");
+    let united_validator = validator_for(&united.to_json_schema()).expect("builds");
+    let difference_validator = validator_for(&difference.to_json_schema()).expect("builds");
+    let regions = |predicate: fn(bool, bool) -> bool| {
+        instances.iter().any(|instance| {
+            predicate(
+                left_validator.is_valid(instance),
+                right_validator.is_valid(instance),
+            )
+        })
+    };
+    assert!(
+        // One value in the difference, so it is not vacuously empty; one `right` admits, so the
+        // union and the difference part ways; one neither admits, so the union is not vacuously
+        // true. A nested pair has no right-only region, which is why `right` alone is the second
+        // requirement.
+        regions(|left, right| left && !right)
+            && regions(|_, right| right)
+            && regions(|left, right| !left && !right),
+        "case has no instance separating the difference, the union and the outside\n  left = {left}\n  right = {right}"
+    );
+    for instance in &instances {
+        let in_left = left_validator.is_valid(instance);
+        let in_right = right_validator.is_valid(instance);
+        assert_eq!(
+            in_left || in_right,
+            united_validator.is_valid(instance),
+            "union disagrees on {instance}\n  left = {left}\n  right = {right}\n  union = {}",
+            united.to_json_schema()
+        );
+        assert_eq!(
+            in_left && !in_right,
+            difference_validator.is_valid(instance),
+            "difference disagrees on {instance}\n  left = {left}\n  right = {right}\n  difference = {}",
+            difference.to_json_schema()
+        );
+    }
+}
+
+#[test]
+fn union_is_commutative_and_idempotent() {
+    let schemas = [
+        json!({"type": "string", "minLength": 2}),
+        json!({"anyOf": [{"type": "string"}, {"type": "integer"}]}),
+        json!({"const": "a"}),
+        json!({"type": "object", "properties": {"id": {"type": "integer"}}}),
+        json!({"$ref": "#/$defs/x", "$defs": {"x": {"type": "string"}}}),
+        // A second pointer at the same value set: arrival order must not decide which stands in.
+        json!({"$ref": "#/$defs/y", "$defs": {"y": {"type": "string"}}}),
+    ]
+    .map(|schema| canonicalize(&schema).expect("canonicalizes"));
+    for left in &schemas {
+        assert_eq!(left.union(left).expect("unions"), *left);
+        for right in &schemas {
+            assert_eq!(
+                left.union(right).expect("unions"),
+                right.union(left).expect("unions")
+            );
+        }
+    }
+}
+
+// Nothing is left over once a schema is taken away from itself, and taking away nothing changes it.
+#[test_case(&json!({"type": "string", "minLength": 2}); "a string window")]
+#[test_case(&json!({"anyOf": [{"type": "string"}, {"type": "integer"}]}); "a union of types")]
+#[test_case(&json!({"type": "object", "properties": {"id": {"type": "integer"}}}); "an object")]
+fn subtract_is_empty_against_itself(schema: &Value) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    let empty = canonicalize(&json!(false)).expect("canonicalizes");
+    assert_eq!(
+        canonical
+            .subtract(&canonical)
+            .expect("subtracts")
+            .satisfiability(),
+        Satisfiability::No
+    );
+    assert_eq!(canonical.subtract(&empty).expect("subtracts"), canonical);
+}
+
+// Both operations run the same operand frame as `intersect`, and reject what it rejects.
+#[test]
+fn union_and_difference_reject_uncombinable_operands() {
+    let raw = canonicalize(&unsupported()).expect("canonicalizes");
+    let modeled = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    assert!(matches!(
+        modeled.union(&raw),
+        Err(CanonicalizationError::UnsupportedOperand)
+    ));
+    assert!(matches!(
+        modeled.subtract(&raw),
+        Err(CanonicalizationError::UnsupportedOperand)
+    ));
+
+    let draft7 = options()
+        .with_draft(Draft::Draft7)
+        .canonicalize(&json!({"type": "string"}))
+        .expect("canonicalizes");
+    assert!(matches!(
+        modeled.union(&draft7),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::Drafts { .. }
+        ))
+    ));
+    assert!(matches!(
+        modeled.subtract(&draft7),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::Drafts { .. }
+        ))
+    ));
+}
+
+// Pruning leaves the result naming fewer targets than its source, and the two still resolve every
+// shared pointer the same way, so they stay combinable.
+#[test]
+fn a_pruned_result_still_combines_with_its_source() {
+    let source = canonicalize(&json!({
+        "$defs": {"A": {"type": "string"}, "B": {"type": "integer"}},
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/A"}, "b": {"$ref": "#/$defs/B"}}
+    }))
+    .expect("canonicalizes");
+    let narrowing = canonicalize(&json!({"type": "object", "properties": {"b": false}}))
+        .expect("canonicalizes");
+    let narrowed = source.intersect(&narrowing).expect("intersects");
+    assert_eq!(narrowed.definitions().count(), 1);
+    assert_eq!(
+        narrowed.intersect(&source).expect("intersects"),
+        narrowed.intersect(&narrowed).expect("intersects")
+    );
+}
+
+// The result reads both maps, so a target only one operand named still resolves in it.
+#[test_case(false; "the root reader on the left")]
+#[test_case(true; "the root reader on the right")]
+fn a_combination_keeps_the_targets_both_operands_named(swap: bool) {
+    let rooted = canonicalize(&json!({"type": "object", "properties": {"a": {"$ref": "#"}}}))
+        .expect("canonicalizes");
+    let referencing = canonicalize(&json!({
+        "type": "object",
+        "properties": {"b": {"$ref": "#/$defs/Y"}},
+        "$defs": {"Y": {"type": "string"}}
+    }))
+    .expect("canonicalizes");
+    let merged = if swap {
+        referencing.intersect(&rooted)
+    } else {
+        rooted.intersect(&referencing)
+    }
+    .expect("intersects");
+    assert!(merged.definition("#/$defs/Y").is_some());
+    let validator = validator_for(&merged.to_json_schema()).expect("builds");
+    assert!(validator.is_valid(&json!({"b": "x"})));
+    assert!(!validator.is_valid(&json!({"b": 1})));
+}
+
+// The root a result keeps reads targets of its own, which stay with it even where the result no
+// longer names them itself.
+#[test]
+fn a_combination_keeps_the_targets_its_root_names() {
+    let rooted = canonicalize(&json!({
+        "$defs": {"Z": {"type": "integer"}},
+        "type": "object",
+        "properties": {"a": {"$ref": "#"}, "z": {"$ref": "#/$defs/Z"}}
+    }))
+    .expect("canonicalizes");
+    let narrowing = canonicalize(&json!({"type": "object", "properties": {"z": false}}))
+        .expect("canonicalizes");
+    let merged = rooted.intersect(&narrowing).expect("intersects");
+    let validator = validator_for(&merged.to_json_schema()).expect("builds");
+    assert!(validator.is_valid(&json!({"a": {"z": 1}})));
+    assert!(!validator.is_valid(&json!({"z": 1})));
+}
+
+// A `#` inside a definition the result keeps names the document that definition was written in,
+// which the combination is not.
+#[test]
+fn a_combination_keeps_the_root_a_kept_definition_names() {
+    let referencing = canonicalize(&json!({
+        "type": "object",
+        "properties": {"child": {"$ref": "#/$defs/node"}},
+        "$defs": {"node": {"type": "object", "properties": {"parent": {"$ref": "#"}}}}
+    }))
+    .expect("canonicalizes");
+    let required =
+        canonicalize(&json!({"type": "object", "required": ["z"]})).expect("canonicalizes");
+    let merged = referencing.intersect(&required).expect("intersects");
+    let validator = validator_for(&merged.to_json_schema()).expect("builds");
+    let referencing_validator = validator_for(&referencing.to_json_schema()).expect("builds");
+    let instance = json!({"z": 1, "child": {"parent": {}}});
+    assert!(referencing_validator.is_valid(&instance));
+    assert!(
+        validator.is_valid(&instance),
+        "the kept definition's `#` was rebound\n  merged = {}",
+        merged.to_json_schema()
+    );
+}
+
+// `#` names the document a node was read against, so two nodes written the same way in different
+// documents are not the same set.
+#[test]
+fn operands_naming_different_roots_do_not_cancel() {
+    let outer = canonicalize(&json!({
+        "type": "object",
+        "properties": {"a": {"type": "object", "properties": {"self": {"$ref": "#"}}}}
+    }))
+    .expect("canonicalizes");
+    let CanonicalView::Object(view) = outer.view() else {
+        panic!("expected an Object view");
+    };
+    let nested = view.properties.get("a").expect("property a").clone();
+    let standalone = canonicalize(&json!({
+        "type": "object",
+        "properties": {"self": {"$ref": "#"}}
+    }))
+    .expect("canonicalizes");
+    assert!(matches!(
+        nested.subtract(&standalone),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::DocumentRoots
+        ))
+    ));
+    assert!(matches!(
+        nested.covers(&standalone),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::DocumentRoots
+        ))
+    ));
+}
+
+// The pattern engine decides what a schema accepts, so two read under different engines are two
+// schemas - the same answer the operations give when they refuse to combine them.
+#[test]
+fn schemas_read_under_different_pattern_engines_are_not_equal() {
+    let schema = json!({"type": "string", "pattern": "^a"});
+    let fancy = options()
+        .with_pattern_options(PatternOptions::fancy_regex())
+        .canonicalize(&schema)
+        .expect("canonicalizes");
+    let standard = options()
+        .with_pattern_options(PatternOptions::regex())
+        .canonicalize(&schema)
+        .expect("canonicalizes");
+    assert_ne!(fancy, standard);
+    assert!(matches!(
+        fancy.intersect(&standard),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::PatternEngine
+        ))
+    ));
+}
+
+// A node naming `#` reads whatever the root reads, so two of them written the same way in
+// documents whose roots read different targets are different schemas.
+#[test]
+fn nodes_naming_roots_that_read_different_targets_are_not_equal() {
+    let document = |target: Value| {
+        canonicalize(&json!({
+            "$defs": {"Y": target},
+            "type": "object",
+            "properties": {"self": {"$ref": "#"}, "y": {"$ref": "#/$defs/Y"}}
+        }))
+        .expect("canonicalizes")
+    };
+    let child = |root: &CanonicalSchema| {
+        let CanonicalView::Object(view) = root.view() else {
+            panic!("expected an Object view");
+        };
+        view.properties.get("self").expect("property self").clone()
+    };
+    let strings = document(json!({"type": "string"}));
+    let integers = document(json!({"type": "integer"}));
+    assert_ne!(child(&strings), child(&integers));
+    let mut seen = HashSet::new();
+    seen.insert(child(&strings));
+    seen.insert(child(&integers));
+    assert_eq!(seen.len(), 2);
+}
+
+// A result naming no root is the same schema whichever document it was combined in.
+#[test]
+fn a_result_naming_no_root_ignores_the_document_it_came_from() {
+    let root = canonicalize(&json!({
+        "type": "object",
+        "properties": {"a": {"type": "string"}, "b": {"type": "string", "maxLength": 4}}
+    }))
+    .expect("canonicalizes");
+    let CanonicalView::Object(view) = root.view() else {
+        panic!("expected an Object view");
+    };
+    let narrow = view.properties.get("b").expect("property b").clone();
+    let wide = view.properties.get("a").expect("property a").clone();
+    let difference = narrow.subtract(&wide).expect("subtracts");
+    assert_eq!(
+        difference,
+        canonicalize(&json!(false)).expect("canonicalizes")
+    );
+}
+
+// A complement leaves `#` naming the document it was written in, never the complement itself.
+#[test]
+fn a_complement_keeps_the_root_its_pointer_names() {
+    let recursive = canonicalize(&json!({
+        "type": "object",
+        "properties": {"a": {"$ref": "#"}}
+    }))
+    .expect("canonicalizes");
+    // A complement reaching `#` would name the wrong document once it took the root's place, so it
+    // is declined rather than spelled - which is the behaviour this pins.
+    assert!(matches!(
+        recursive.negate(),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
+
+    // The pointer still resolves through every operation that does answer, and the result keeps the
+    // root it names rather than repointing `#` at itself.
+    let objects = canonicalize(&json!({"type": "object"})).expect("canonicalizes");
+    let met = recursive.intersect(&objects).expect("intersects");
+    let complement_validator = validator_for(&met.to_json_schema()).expect("builds");
+    let recursive_validator = validator_for(&recursive.to_json_schema()).expect("builds");
+    for instance in [json!({"a": {}}), json!({"a": 1}), json!("x"), json!({})] {
+        assert_eq!(
+            recursive_validator.is_valid(&instance),
+            complement_validator.is_valid(&instance),
+            "the result disagrees on {instance}\n  result = {}",
+            met.to_json_schema()
+        );
+    }
+}
+
+// Two children of one root keep that root's map, so the references in the result still resolve -
+// checked through the emitted document, where a pointer the map lost would fail to compile.
+#[test]
+fn union_and_difference_keep_references_resolvable_within_one_document() {
+    let root = canonicalize(&json!({
+        "type": "object",
+        "$defs": {"A": {"type": "string"}, "B": {"minLength": 2}},
+        "properties": {"a": {"$ref": "#/$defs/A"}, "b": {"$ref": "#/$defs/B"}}
+    }))
+    .expect("canonicalizes");
+    let CanonicalView::Object(view) = root.view() else {
+        panic!("expected an Object view");
+    };
+    let left = view.properties.get("a").expect("property a").clone();
+    let right = view.properties.get("b").expect("property b").clone();
+    let left_validator = validator_for(&left.to_json_schema()).expect("builds");
+    let right_validator = validator_for(&right.to_json_schema()).expect("builds");
+    for (combined, admits) in [
+        (
+            left.union(&right).expect("unions"),
+            (|left: bool, right: bool| left || right) as fn(bool, bool) -> bool,
+        ),
+        (
+            left.subtract(&right).expect("subtracts"),
+            (|left, right| left && !right) as fn(bool, bool) -> bool,
+        ),
+    ] {
+        let emitted = combined.to_json_schema();
+        let validator = validator_for(&emitted).expect("the emitted references resolve");
+        for instance in [json!("a"), json!("abc"), json!(1), json!(null)] {
+            assert_eq!(
+                admits(
+                    left_validator.is_valid(&instance),
+                    right_validator.is_valid(&instance)
+                ),
+                validator.is_valid(&instance),
+                "disagrees on {instance}\n  combined = {emitted}"
+            );
+        }
+    }
+}
+
+// `#` names the document a node was read against. A combination of nodes from two documents becomes
+// a root of its own, which is neither, so a result still naming a root would rebind the pointer to
+// itself and admit values neither operand does. Either it declines, or the pointer is gone.
+#[test_case(&json!({"type": "object", "properties": {"a": {"$ref": "#"}}}), &json!({"type": "string"}); "a root self-reference")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"$ref": "#"}}}), &json!({"type": "object", "minProperties": 1}); "a root self-reference beside an object")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"$ref": "#"}}}), &json!({"type": "object", "required": ["a"]}); "a root self-reference beside a requirement")]
+fn combining_across_documents_never_rebinds_a_root_reference(left: &Value, right: &Value) {
+    // One operation: its name, what it returned, and the verdict it owes on an instance.
+    struct Combination {
+        name: &'static str,
+        result: Result<CanonicalSchema, CanonicalizationError>,
+        admits: fn(bool, bool) -> bool,
+    }
+    let instances = [
+        json!({"a": "x"}),
+        json!({"a": {"a": "x"}}),
+        json!({"a": {}}),
+        json!({"next": {"a": "x"}}),
+        json!({}),
+        json!("x"),
+    ];
+    let left_validator = validator_for(left).expect("builds");
+    let right_validator = validator_for(right).expect("builds");
+    let canonical_left = canonicalize(left).expect("canonicalizes");
+    let canonical_right = canonicalize(right).expect("canonicalizes");
+    let combinations = [
+        Combination {
+            name: "union",
+            result: canonical_left.union(&canonical_right),
+            admits: |left, right| left || right,
+        },
+        Combination {
+            name: "intersect",
+            result: canonical_left.intersect(&canonical_right),
+            admits: |left, right| left && right,
+        },
+        Combination {
+            name: "subtract",
+            result: canonical_left.subtract(&canonical_right),
+            admits: |left, right| left && !right,
+        },
+    ];
+    for Combination {
+        name,
+        result,
+        admits,
+    } in combinations
+    {
+        let combined = match result {
+            Ok(combined) => combined,
+            // Declining is the other sound answer.
+            Err(error) => {
+                assert!(matches!(error, CanonicalizationError::UnsupportedResult));
+                continue;
+            }
+        };
+        let emitted = combined.to_json_schema();
+        let validator = validator_for(&emitted).expect("builds");
+        for instance in &instances {
+            assert_eq!(
+                admits(
+                    left_validator.is_valid(instance),
+                    right_validator.is_valid(instance)
+                ),
+                validator.is_valid(instance),
+                "{name} disagrees on {instance}\n  left = {left}\n  right = {right}\n  combined = {emitted}"
+            );
+        }
+    }
+}
+
+// Canonicalizing one document twice builds two maps that resolve every pointer the same way, so the
+// handles stay combinable - `==` already reports them equal.
+#[test]
+fn operands_from_one_document_canonicalized_twice_combine() {
+    let source = json!({
+        "$defs": {"Id": {"type": "string"}},
+        "type": "object",
+        "properties": {"id": {"$ref": "#/$defs/Id"}}
+    });
+    let left = canonicalize(&source).expect("canonicalizes");
+    let right = canonicalize(&source).expect("canonicalizes");
+    assert_eq!(left, right);
+    assert_eq!(left.intersect(&right).expect("intersects"), left);
+    assert_eq!(left.union(&right).expect("unions"), left);
+    assert_eq!(
+        left.subtract(&right).expect("subtracts").satisfiability(),
+        Satisfiability::No
+    );
+    assert_eq!(left.covers(&right).expect("compares"), Containment::Yes);
+}
+
+// A degenerate difference is one of the operands or empty, so it needs no complement - and these
+// are schemas whose complement is not modeled, where asking for one would decline.
+#[test_case(&json!({"type": "array", "contains": {"type": "string"}, "minContains": 2}); "a counted contains")]
+#[test_case(&json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}}); "pattern properties")]
+#[test_case(&json!({"type": "object", "properties": {"a": {"$ref": "#"}}}); "root self-reference")]
+fn subtracting_a_schema_from_itself_needs_no_complement(schema: &Value) {
+    let left = canonicalize(schema).expect("canonicalizes");
+    let right = canonicalize(schema).expect("canonicalizes");
+    assert!(
+        left.negate().is_err(),
+        "the complement must be the part that declines"
+    );
+    assert_eq!(
+        left.subtract(&right).expect("subtracts").satisfiability(),
+        Satisfiability::No
+    );
+}
+
+// What `subtract` declines is not what `negate` declines: it skips the degenerate cases, so a
+// caller cannot predict one from the other.
+#[test_case(&json!({"type": "object"}), &json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}}); "a pattern map complement")]
+fn subtract_declines_an_unsupported_complement(left: &Value, right: &Value) {
+    let left = canonicalize(left).expect("canonicalizes");
+    let right = canonicalize(right).expect("canonicalizes");
+    assert!(matches!(
+        left.subtract(&right),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
+}
+
+#[test]
+fn subtracting_the_trivial_bounds_needs_no_complement() {
+    let hard =
+        canonicalize(&json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}}))
+            .expect("canonicalizes");
+    let empty = canonicalize(&json!(false)).expect("canonicalizes");
+    let everything = canonicalize(&json!(true)).expect("canonicalizes");
+    let string = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    assert_eq!(
+        empty.subtract(&hard).expect("subtracts").satisfiability(),
+        Satisfiability::No
+    );
+    assert_eq!(
+        string
+            .subtract(&everything)
+            .expect("subtracts")
+            .satisfiability(),
+        Satisfiability::No
+    );
+    assert_eq!(string.subtract(&empty).expect("subtracts"), string);
+}
+
+// A combination can narrow a target out of the result. Carrying the dead entry would emit an
+// unreferenced definition and leave the result uncombinable with a third document.
+#[test]
+fn combining_prunes_definitions_the_result_no_longer_names() {
+    let plain = canonicalize(&json!({"type": "object"})).expect("canonicalizes");
+    let referencing = canonicalize(&json!({
+        "$defs": {"s": {"type": "string"}},
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/s"}}
+    }))
+    .expect("canonicalizes");
+    let third =
+        canonicalize(&json!({"type": "object", "maxProperties": 9})).expect("canonicalizes");
+    for combined in [
+        plain.subtract(&referencing).expect("subtracts"),
+        plain.union(&referencing).expect("unions"),
+    ] {
+        let emitted = combined.to_json_schema();
+        assert!(
+            emitted.get("$defs").is_none(),
+            "the complement inlined the target, so its entry is dead: {emitted}"
+        );
+        assert!(
+            combined.intersect(&third).is_ok(),
+            "chaining must stay open"
+        );
+    }
+}
+
+// A union keeps both branches unless one is proven redundant, and a check that had to approximate
+// proves nothing - so the union stays exact even where the intersection of the same operands is not
+// modeled.
+#[test]
+fn a_union_survives_an_unsupported_intersection() {
+    let left = canonicalize(&json!({
+        "type": "object",
+        "properties": {"ab": {"minLength": 1}},
+        "additionalProperties": {"type": "string"}
+    }))
+    .expect("canonicalizes");
+    let right = canonicalize(&json!({
+        "type": "object",
+        "patternProperties": {"^a": {"maxLength": 9}}
+    }))
+    .expect("canonicalizes");
+    assert!(matches!(
+        left.intersect(&right),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
+    let united = left.union(&right).expect("`anyOf` expresses the union");
+    let validator = validator_for(&united.to_json_schema()).expect("builds");
+    let left_validator = validator_for(&left.to_json_schema()).expect("builds");
+    let right_validator = validator_for(&right.to_json_schema()).expect("builds");
+    for instance in [
+        json!({"ab": "x"}),
+        json!({"a": "y"}),
+        json!({"b": 1}),
+        json!("x"),
+    ] {
+        assert_eq!(
+            left_validator.is_valid(&instance) || right_validator.is_valid(&instance),
+            validator.is_valid(&instance),
+            "the union disagrees on {instance}"
+        );
+    }
+}
+
+// The bindings expose these labels verbatim.
+#[test]
+fn three_valued_answers_carry_stable_labels() {
+    assert_eq!(
+        [
+            Containment::Yes.as_str(),
+            Containment::No.as_str(),
+            Containment::Unknown.as_str()
+        ],
+        ["yes", "no", "unknown"]
+    );
+    assert_eq!(
+        [
+            Satisfiability::Yes.as_str(),
+            Satisfiability::No.as_str(),
+            Satisfiability::Unknown.as_str()
+        ],
+        ["yes", "no", "unknown"]
+    );
+}
+
+// Every mismatch says which part of a schema's identity the operands disagreed on.
+#[test_case(
+    OperandMismatch::FormatAssertions,
+    "operands disagree on whether `format` asserts"
+)]
+#[test_case(
+    OperandMismatch::PatternEngine,
+    "operands canonicalized with different pattern engines"
+)]
+#[test_case(
+    OperandMismatch::Definitions,
+    "operands resolve one external resource to different schemas"
+)]
+#[test_case(
+    OperandMismatch::DocumentRoots,
+    "operands read `#` in different documents"
+)]
+fn an_operand_mismatch_says_what_disagreed(mismatch: OperandMismatch, expected: &str) {
+    assert_eq!(mismatch.to_string(), expected);
+}
+
+#[test_case(&json!(true), Satisfiability::Yes; "everything names its own members")]
+#[test_case(&json!({"const": 5}), Satisfiability::Yes; "a constant carries the value that proves it")]
+#[test_case(&json!({"enum": [1, 2]}), Satisfiability::Yes; "a value set names its members")]
+#[test_case(&json!(false), Satisfiability::No; "nothing admits no value")]
+#[test_case(&json!({"type": "string"}), Satisfiability::Yes; "a type has values of its own")]
+#[test_case(&json!({"type": ["integer", "object"]}), Satisfiability::Yes; "a type list has values of its own")]
+#[test_case(
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": "integer", "enum": [1, 2]}),
+    Satisfiability::Yes;
+    "a typed group holds a value of its type"
+)]
+#[test_case(&json!({"type": "integer", "minimum": 0}), Satisfiability::Yes; "an integer window holds integers")]
+#[test_case(&json!({"type": "number", "exclusiveMaximum": 5}), Satisfiability::Yes; "a number interval holds numbers")]
+#[test_case(&json!({"type": "string", "minLength": 2}), Satisfiability::Yes; "a length window holds strings")]
+#[test_case(&json!({"type": "array", "items": {"type": "string"}}), Satisfiability::Yes; "an array window holds the empty array")]
+#[test_case(&json!({"type": "object", "properties": {"a": false}}), Satisfiability::Yes; "an object window holds the empty object")]
+#[test_case(&json!({"type": "string", "pattern": "^a"}), Satisfiability::Unknown; "a pattern is left undecided")]
+#[test_case(&json!({"type": "integer", "multipleOf": 3}), Satisfiability::Yes; "zero is a multiple of every divisor")]
+#[test_case(&json!({"type": "object", "required": ["a"]}), Satisfiability::Yes; "an object carrying the key it requires")]
+#[test_case(&json!({"type": "array", "minItems": 2, "items": {"type": "integer"}}), Satisfiability::Yes; "an array as long as it must be")]
+#[test_case(
+    &json!({"type": "object", "required": ["a"], "properties": {"a": {"type": ["boolean", "array"]}}}),
+    Satisfiability::Yes;
+    "a required key over a type list"
+)]
+#[test_case(
+    &json!({"type": "integer", "multipleOf": 2, "minimum": 3, "maximum": 3}),
+    Satisfiability::No;
+    "a window narrower than its own step"
+)]
+fn satisfiability_answers(schema: &Value, expected: Satisfiability) {
+    assert_eq!(
+        canonicalize(schema)
+            .expect("canonicalizes")
+            .satisfiability(),
+        expected
     );
 }
 
@@ -2152,7 +3652,7 @@ fn intersect_declines_pattern_maps_on_both_sides_of_a_shield() {
 
     assert!(matches!(
         left.intersect(&right),
-        Err(CanonicalizationError::UnmodeledOperand)
+        Err(CanonicalizationError::UnsupportedResult)
     ));
 }
 
@@ -2169,14 +3669,14 @@ fn intersect_declines_a_shield_naming_a_key_its_own_entry_leaves_the_pattern() {
 
     assert!(matches!(
         patterns.intersect(&shield),
-        Err(CanonicalizationError::UnmodeledOperand)
+        Err(CanonicalizationError::UnsupportedResult)
     ));
 }
 
-// Containment is proved by meeting the two sides, so a meet `intersect` will not hand out cannot
-// carry a verdict either: it stands in for the real one and may be wider than it.
+// Containment is proved by intersecting the two sides, so an intersection `intersect` itself
+// declines cannot carry a verdict either: it may be wider than the real one.
 #[test]
-fn is_subset_of_declines_what_only_an_unspellable_meet_would_prove() {
+fn covers_declines_what_only_an_unsupported_intersection_would_prove() {
     let shield =
         canonicalize(&json!({"additionalProperties": {"type": "string"}})).expect("canonicalizes");
     let wide = canonicalize(
@@ -2192,9 +3692,12 @@ fn is_subset_of_declines_what_only_an_unspellable_meet_would_prove() {
 
     assert!(matches!(
         wide.intersect(&narrow),
-        Err(CanonicalizationError::UnmodeledOperand)
+        Err(CanonicalizationError::UnsupportedResult)
     ));
-    assert_eq!(wide.is_subset_of(&narrow).expect("compares"), None);
+    assert_eq!(
+        wide.covers(&narrow).expect("compares"),
+        Containment::Unknown
+    );
 }
 
 // Matching pattern maps leave no key one side matches and the other does not, so neither shield
@@ -2402,18 +3905,21 @@ fn intersect_draft4_object_leaves_keeps_validation_parity(left: &Value, right: &
     }
 }
 
-#[test_case(&json!({"type": "integer"}), &json!({"type": "integer"}), Some(true); "identical forms")]
-#[test_case(&json!({"const": 1}), &json!({"type": "integer"}), Some(true); "constant inside a type")]
-#[test_case(&json!({"enum": [1, 2]}), &json!({"type": "integer"}), Some(true); "enum inside a type")]
-#[test_case(&json!({"type": "integer", "minimum": 5}), &json!({"type": "integer"}), Some(true); "bounded inside unbounded")]
-#[test_case(&json!({"const": "x"}), &json!({"type": "integer"}), Some(false); "a constant outside the type refutes")]
-#[test_case(&json!({"enum": [1, "x"]}), &json!({"type": "integer"}), Some(false); "an enum member outside the type refutes")]
-#[test_case(&json!({"type": "string"}), &json!({"type": "integer"}), None; "disjoint types without a decisive counterexample")]
-#[test_case(&json!({"type": "integer"}), &json!({"type": "integer", "minimum": 5}), None; "unbounded against bounded")]
-fn is_subset_of_decides(left: &Value, right: &Value, expected: Option<bool>) {
-    let left = canonicalize(left).expect("canonicalizes");
-    let right = canonicalize(right).expect("canonicalizes");
-    assert_eq!(left.is_subset_of(&right).expect("compares"), expected);
+#[test_case(&json!({"type": "integer"}), &json!({"type": "integer"}), Containment::Yes; "identical forms")]
+#[test_case(&json!({"type": "integer"}), &json!({"const": 1}), Containment::Yes; "a type over a constant")]
+#[test_case(&json!({"type": "integer"}), &json!({"enum": [1, 2]}), Containment::Yes; "a type over an enum")]
+#[test_case(&json!({"type": "integer"}), &json!({"type": "integer", "minimum": 5}), Containment::Yes; "unbounded over bounded")]
+#[test_case(&json!({"type": "integer"}), &json!({"const": "x"}), Containment::No; "a constant outside the type refutes")]
+#[test_case(&json!({"type": "integer"}), &json!({"enum": [1, "x"]}), Containment::No; "an enum member outside the type refutes")]
+#[test_case(&json!({"type": "integer"}), &json!({"type": "string"}), Containment::No; "a disjoint type leaves values behind")]
+#[test_case(&json!({"type": "integer", "minimum": 5}), &json!({"type": "integer"}), Containment::No; "the values below the bound refute it")]
+#[test_case(&json!({"type": "integer", "minimum": 0}), &json!({"type": "integer", "maximum": 100}), Containment::No; "the values outside the window refute it")]
+// A string the pattern turns away is a value the argument admits and the receiver rejects.
+#[test_case(&json!({"type": "string", "pattern": "^a"}), &json!({"type": "string"}), Containment::No; "a pattern the argument does not carry refutes")]
+fn covers_decides(outer: &Value, inner: &Value, expected: Containment) {
+    let outer = canonicalize(outer).expect("canonicalizes");
+    let inner = canonicalize(inner).expect("canonicalizes");
+    assert_eq!(outer.covers(&inner).expect("compares"), expected);
 }
 
 #[test_case(&json!({
@@ -2449,6 +3955,7 @@ fn is_subset_of_decides(left: &Value, right: &Value, expected: Option<bool>) {
 }); "array union of two contains branches")]
 #[test_case(&json!({"type": "array", "contains": {"type": "null"}}); "single array leaf with contains")]
 #[test_case(&json!({"type": "array", "items": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}); "array items behind a reference")]
+#[test_case(&json!({"$ref": "#/$defs/a", "$defs": {"a": {"type": "integer", "minimum": 0}}}); "a pointer standing for the whole schema")]
 #[test_case(&json!({"type": "array", "prefixItems": [{"type": "integer"}], "items": {"type": "string"}}); "array with a prefix and a tail")]
 #[test_case(&json!({
     "anyOf": [
@@ -2466,17 +3973,18 @@ fn is_subset_of_decides(left: &Value, right: &Value, expected: Option<bool>) {
 #[test_case(&json!({"anyOf": [{"type": "string", "minLength": 2}, {"type": "string", "pattern": "^a"}]}); "string union of a length branch and a pattern branch")]
 #[test_case(&json!({"anyOf": [{"type": "string", "format": "date"}, {"type": "string", "maxLength": 4}]}); "string union of a format branch and a length branch")]
 #[test_case(&json!({"anyOf": [{"type": "array", "contains": {"type": "null"}}, {"type": "string", "pattern": "^a"}, {"type": "integer", "minimum": 3}]}); "union across three types")]
-fn is_subset_of_proves_a_schema_a_subset_of_itself(schema: &Value) {
+fn covers_proves_a_schema_covers_itself(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(
-        canonical.is_subset_of(&canonical).expect("compares"),
-        Some(true)
+        canonical.covers(&canonical).expect("compares"),
+        Containment::Yes
     );
 }
 
-// Two symbolic references are not compared through their targets.
+// Two pointers are compared through the bodies they name, so which of them is written as a pointer
+// decides nothing.
 #[test]
-fn is_subset_of_declines_distinct_references() {
+fn covers_reads_distinct_references_through_their_targets() {
     let root = canonicalize(&json!({
         "type": "object",
         "$defs": {"A": {"type": "string"}, "B": {"type": "string"}},
@@ -2488,13 +3996,28 @@ fn is_subset_of_declines_distinct_references() {
     };
     let left = view.properties.get("a").expect("property a").clone();
     let right = view.properties.get("b").expect("property b").clone();
-    assert_eq!(left.is_subset_of(&right).expect("compares"), None);
+    assert_eq!(left.covers(&right).expect("compares"), Containment::Yes);
+}
+
+// A cyclic map leaves the pointer unread, so no value the argument names decides the question.
+#[test]
+fn covers_declines_over_an_unread_pointer() {
+    let recursive = canonicalize(&json!({
+        "$defs": {"Node": {"type": "object", "properties": {"next": {"$ref": "#/$defs/Node"}}}},
+        "$ref": "#/$defs/Node"
+    }))
+    .expect("canonicalizes");
+    let value = canonicalize(&json!({"const": {"next": {}}})).expect("canonicalizes");
+    assert_eq!(
+        recursive.covers(&value).expect("compares"),
+        Containment::Unknown
+    );
 }
 
 #[test_case(false; "raw on the left")]
 #[test_case(true; "raw on the right")]
-fn is_subset_of_rejects_a_raw_operand(swap: bool) {
-    let raw = canonicalize(&unmodeled()).expect("canonicalizes");
+fn covers_rejects_a_raw_operand(swap: bool) {
+    let raw = canonicalize(&unsupported()).expect("canonicalizes");
     let modeled = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
     let (left, right) = if swap {
         (&modeled, &raw)
@@ -2502,20 +4025,20 @@ fn is_subset_of_rejects_a_raw_operand(swap: bool) {
         (&raw, &modeled)
     };
     assert!(matches!(
-        left.is_subset_of(right),
-        Err(CanonicalizationError::UnmodeledOperand)
+        left.covers(right),
+        Err(CanonicalizationError::UnsupportedOperand)
     ));
 }
 
 #[test]
-fn is_subset_of_rejects_operands_from_different_drafts() {
+fn covers_rejects_operands_from_different_drafts() {
     let draft7 = options()
         .with_draft(Draft::Draft7)
         .canonicalize(&json!({"type": "string"}))
         .expect("canonicalizes");
     let latest = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
     assert!(matches!(
-        draft7.is_subset_of(&latest),
+        draft7.covers(&latest),
         Err(CanonicalizationError::IncompatibleOperands(
             OperandMismatch::Drafts {
                 left: Draft::Draft7,
@@ -2525,24 +4048,23 @@ fn is_subset_of_rejects_operands_from_different_drafts() {
     ));
 }
 
+// Two documents binding one `$defs` key differently are compared all the same: `A` on the right is
+// every string of length four or more, which the strings on the left cover.
 #[test]
-fn is_subset_of_rejects_operands_with_distinct_definition_maps() {
+fn covers_reads_through_two_definitions_of_one_name() {
     let left = canonicalize(&json!({
         "$defs": {"A": {"type": "string"}},
         "$ref": "#/$defs/A"
     }))
     .expect("canonicalizes");
     let right = canonicalize(&json!({
-        "$defs": {"B": {"minLength": 4}},
-        "$ref": "#/$defs/B"
+        "$defs": {"A": {"type": "string", "minLength": 4}},
+        "$ref": "#/$defs/A"
     }))
     .expect("canonicalizes");
-    assert!(matches!(
-        left.is_subset_of(&right),
-        Err(CanonicalizationError::IncompatibleOperands(
-            OperandMismatch::Definitions
-        ))
-    ));
+
+    assert_eq!(left.covers(&right).expect("covers"), Containment::Yes);
+    assert_eq!(right.covers(&left).expect("covers"), Containment::No);
 }
 
 #[test_case(
@@ -2584,11 +4106,12 @@ fn is_subset_of_rejects_operands_with_distinct_definition_maps() {
         "$defs": {"a": {"type": "string", "minLength": 3}},
         "oneOf": [{"$ref": "#/$defs/a"}, {"type": "string", "maxLength": 5}]
     }),
+    // Exactly one of "at least 3" and "at most 5" holds for no string, so the complement is every
+    // non-string beside the strings both take - folded into one window, leaving the definition dead.
     &json!({
-        "$defs": {"a": {"type": "string", "minLength": 3}},
         "anyOf": [
             {"type": ["null", "boolean", "number", "array", "object"]},
-            {"allOf": [{"type": "string", "maxLength": 5}, {"$ref": "#/$defs/a"}]}
+            {"type": "string", "minLength": 3, "maxLength": 5}
         ]
     });
     "choice between overlapping branches"
@@ -2967,11 +4490,22 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     }
 }
 
-// The decline set is contract: a caller sizes its fallback on it, so widening it is a visible change.
-#[test_case(&json!({"if": {}, "unevaluatedProperties": false}); "raw document")]
+// A `Raw` operand raises `UnsupportedOperand`, not `UnsupportedResult`.
+#[test]
+fn negate_rejects_an_unsupported_schema() {
+    assert!(matches!(
+        canonicalize(&unsupported())
+            .expect("canonicalizes")
+            .negate(),
+        Err(CanonicalizationError::UnsupportedOperand)
+    ));
+}
+
+// What `negate` declines is contract: a caller sizes its fallback on it, so widening it is a
+// visible change.
 #[test_case(
     &json!({"type": "array", "contains": {"type": "string"}, "minContains": 2});
-    "counted array existential demand"
+    "a counted contains"
 )]
 #[test_case(
     &json!({"type": "object", "properties": {"a": {"$ref": "#"}}});
@@ -3001,7 +4535,10 @@ fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
     "array tuple over an array value"
 )]
 fn negate_declines(schema: &Value) {
-    assert_eq!(canonicalize(schema).expect("canonicalizes").negate(), None);
+    assert!(matches!(
+        canonicalize(schema).expect("canonicalizes").negate(),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
 }
 
 // Each definition resolves twice per level, so the complement's size doubles with depth; the walk
@@ -3020,7 +4557,10 @@ fn negate_declines_past_the_resolution_budget() {
         );
     }
     let schema = json!({"$defs": definitions, "$ref": "#/$defs/d12"});
-    assert_eq!(canonicalize(&schema).expect("canonicalizes").negate(), None);
+    assert!(matches!(
+        canonicalize(&schema).expect("canonicalizes").negate(),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
 }
 
 fn choice_over_pointers(count: usize) -> Value {
@@ -3043,13 +4583,13 @@ fn negate_declines_past_the_overlap_budget() {
     assert!(canonicalize(&choice_over_pointers(11))
         .expect("canonicalizes")
         .negate()
-        .is_some());
-    assert_eq!(
+        .is_ok());
+    assert!(matches!(
         canonicalize(&choice_over_pointers(12))
             .expect("canonicalizes")
             .negate(),
-        None
-    );
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
 }
 
 // A fully resolved complement names no definitions, so it carries none - and a handle with an
@@ -3116,7 +4656,10 @@ fn a_barred_pointer_reaching_a_cycle_stays_symbolic() {
         panic!("the barred pointer stays symbolic, got {:?}", named.kind());
     };
     assert_eq!(barred.kind(), CanonicalKind::Reference);
-    assert_eq!(barred.negate(), None);
+    assert!(matches!(
+        barred.negate(),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
 }
 
 // The corpus spelling puts the barred pointer inside a property, so the fold runs wherever `not`
@@ -3279,21 +4822,22 @@ fn required_key_violation_stays_when_it_can_satisfy_property_names() {
     &json!({"type": "object", "maxProperties": 1, "minProperties": 1, "required": ["a"],
             "properties": {"a": {"type": "string"}},
             "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}),
-    false;
+    Satisfiability::No;
     "no room for the name-fails demand beyond the required key"
 )]
 #[test_case(
     &json!({"type": "object", "maxProperties": 2, "minProperties": 1, "required": ["a"],
             "properties": {"a": {"type": "string"}},
             "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}),
-    true;
+    Satisfiability::Unknown;
     "a second slot admits the violating key"
 )]
 #[test_case(
+    // `{"c": null}`: one property, the required key present, and outside `{a, b}` as demanded.
     &json!({"type": "object", "maxProperties": 1, "minProperties": 1, "required": ["c"],
             "properties": {"a": {"type": "string"}},
             "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}),
-    true;
+    Satisfiability::Yes;
     "the required key itself already carries the violation"
 )]
 #[test_case(
@@ -3301,12 +4845,15 @@ fn required_key_violation_stays_when_it_can_satisfy_property_names() {
             "properties": {"a": {"type": "integer"}},
             "not": {"type": "object", "properties": {"a": {"type": "integer"}},
                     "additionalProperties": {"type": "string"}}}),
-    false;
+    Satisfiability::No;
     "no room for the undeclared-value-fails demand beyond the required key"
 )]
-fn a_required_key_the_demand_admits_needs_room_for_another(schema: &Value, satisfiable: bool) {
+fn a_required_key_the_demand_admits_needs_room_for_another(
+    schema: &Value,
+    expected: Satisfiability,
+) {
     let canonical = canonicalize(schema).expect("canonicalizes");
-    assert_eq!(canonical.is_satisfiable(), satisfiable);
+    assert_eq!(canonical.satisfiability(), expected);
 }
 
 // The extra slot in the second case above is not just theoretical: an object using it validates.
@@ -3344,7 +4891,7 @@ fn a_required_key_left_undecided_keeps_the_demand_from_folding() {
         .should_validate_formats(true)
         .canonicalize(&schema)
         .expect("canonicalizes");
-    assert!(canonical.is_satisfiable());
+    assert_ne!(canonical.satisfiability(), Satisfiability::No);
     let validator = ::jsonschema::options()
         .with_format("custom-uncheckable", |text: &str| text != "z")
         .should_validate_formats(true)
@@ -3362,7 +4909,7 @@ fn a_required_key_outside_the_demand_names_keeps_it_from_folding() {
         "not": {"type": "object", "properties": {"a": {}},
                 "additionalProperties": {"type": "string"}}});
     let canonical = canonicalize(&schema).expect("canonicalizes");
-    assert!(canonical.is_satisfiable());
+    assert_ne!(canonical.satisfiability(), Satisfiability::No);
     let validator = validator_for(&schema).expect("builds");
     assert!(validator.is_valid(&json!({"a": 1, "z": 5})));
 }
@@ -3385,7 +4932,7 @@ fn complement_intersects_to_nothing(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     let complement = canonical.negate().expect("negates");
     let meet = canonical.intersect(&complement).expect("intersects");
-    assert!(!meet.is_satisfiable());
+    assert_eq!(meet.satisfiability(), Satisfiability::No);
 }
 
 // A fanning-out $ref graph must complete quickly (bailing to Raw via the fold budget), not hang.
@@ -3598,4 +5145,1208 @@ fn an_emitted_definition_stands_on_its_own(pointer: &str) {
         .to_json_schema();
     canonicalize(&emitted).expect("the emitted definition canonicalizes on its own");
     validator_for(&emitted).expect("the emitted definition compiles on its own");
+}
+
+// A member the receiver leaves out of its own equality class is no refutation: under Draft 4 the
+// intersection pins a whole number to its integer spelling, which the member outlives by matching
+// the decimal one too - and the member itself is admitted all the same.
+#[test_case(&json!({"not": {"type": "integer", "minimum": -2}}), &json!({"enum": [-3]}), Containment::Yes; "a member below a negated floor")]
+#[test_case(&json!({"not": {"type": "integer", "maximum": 2}}), &json!({"enum": [5]}), Containment::Yes; "a member above a negated ceiling")]
+#[test_case(&json!({"not": {"type": "integer", "minimum": 3}}), &json!({"enum": [5]}), Containment::No; "a member the receiver turns away")]
+fn draft_4_covers_a_member_of_a_negated_integer_window(
+    left: &Value,
+    right: &Value,
+    expected: Containment,
+) {
+    let canonicalize = |schema: &Value| {
+        options()
+            .with_draft(Draft::Draft4)
+            .canonicalize(schema)
+            .expect("canonicalizes")
+    };
+    let left = canonicalize(left);
+    let right = canonicalize(right);
+    assert_eq!(left.covers(&right).expect("covers"), expected);
+}
+
+// The root a result keeps names the targets that root reads, so pruning against the result alone
+// would leave it pointing at a definition the document no longer holds.
+#[test]
+fn a_kept_root_keeps_the_definitions_it_names() {
+    let left = canonicalize(&json!({
+        "$defs": {"D": {"type": "string"}},
+        "type": "object",
+        "properties": {"q": {"$ref": "#/$defs/D"}, "r": {"$ref": "#"}}
+    }))
+    .expect("canonicalizes");
+    let right = canonicalize(&json!({"type": "integer"})).expect("canonicalizes");
+
+    let result = left.intersect(&right).expect("intersects");
+    let root = result.definition("#").expect("the root is a definition");
+    validator_for(&root.to_json_schema()).expect("the emitted root resolves its own pointers");
+}
+
+// `#` names a root, not a whole document: two handles sharing one root bind it to the same node
+// however their maps differ, which is what chaining a set operation with its own operand does.
+#[test]
+fn a_result_combines_with_its_own_operand() {
+    let recursive = json!({
+        "type": "object",
+        "properties": {"r": {"$ref": "#"}, "a": {"$ref": "#/$defs/A"}},
+        "$defs": {"A": {"type": "string"}}
+    });
+    let left = canonicalize(&recursive).expect("canonicalizes");
+    let right = canonicalize(&recursive).expect("canonicalizes");
+
+    let united = left.union(&right).expect("unions");
+    assert_eq!(united.union(&left).expect("unions"), united);
+    assert_eq!(united.covers(&left).expect("covers"), Containment::Yes);
+}
+
+// Two documents binding `#` to different roots stay incomparable: the pointer cannot name both.
+#[test]
+fn operands_reading_different_document_roots_are_refused() {
+    let left = canonicalize(&json!({
+        "type": "object", "properties": {"r": {"$ref": "#"}}, "maxProperties": 1
+    }))
+    .expect("canonicalizes");
+    let right = canonicalize(&json!({
+        "type": "object", "properties": {"r": {"$ref": "#"}}, "minProperties": 1
+    }))
+    .expect("canonicalizes");
+
+    assert!(matches!(
+        left.union(&right),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::DocumentRoots
+        ))
+    ));
+}
+
+// Parsing drops what a document never names, so an entry neither version keeps cannot collide.
+#[test]
+fn a_definition_the_document_never_names_is_not_carried() {
+    let with_spare = |spare: Value| {
+        canonicalize(&json!({
+            "$defs": {"Used": {"type": "string"}, "Spare": spare},
+            "$ref": "#/$defs/Used"
+        }))
+        .expect("canonicalizes")
+    };
+    let old = with_spare(json!({"type": "integer"}));
+    let new = with_spare(json!({"type": "boolean"}));
+    assert_eq!(old.definitions().len(), 1, "the spare entry is unreachable");
+
+    assert_eq!(
+        old.subtract(&new).expect("subtracts").satisfiability(),
+        Satisfiability::No
+    );
+}
+
+// A key renamed apart takes every key that refers to it along, or those would collide in turn -
+// here neither node names the edited entry, and both reach it through the root.
+#[test]
+fn a_rename_carries_the_keys_that_refer_to_it() {
+    let version = |ty: &str| {
+        canonicalize(&json!({
+            "$defs": {"alias": {"$ref": "#/$defs/x"}, "x": {"type": ty}},
+            "$ref": "#/$defs/alias"
+        }))
+        .expect("canonicalizes")
+    };
+    let old = version("integer");
+    let new = version("string");
+
+    // The two entries accept different objects, so neither covers the other.
+    assert_eq!(old.covers(&new).expect("covers"), Containment::No);
+    assert_eq!(new.covers(&old).expect("covers"), Containment::No);
+    let difference = old.subtract(&new).expect("subtracts");
+    let (taken, removed, left_over) = (
+        validator_for(&old.to_json_schema()).expect("builds"),
+        validator_for(&new.to_json_schema()).expect("builds"),
+        validator_for(&difference.to_json_schema()).expect("builds"),
+    );
+    for instance in [json!(1), json!("a"), json!(null), json!({})] {
+        assert_eq!(
+            taken.is_valid(&instance) && !removed.is_valid(&instance),
+            left_over.is_valid(&instance),
+            "the difference disagrees on {instance}"
+        );
+    }
+}
+
+// A `$defs` key is a name private to its document, so two versions may bind it differently: the
+// clashing key is renamed apart and the operation answers, which is what editing a shared component
+// looks like.
+#[test]
+fn an_edited_definition_both_versions_carry_is_renamed_apart() {
+    let old = json!({"$defs": {"Name": {"type": "string"}}, "$ref": "#/$defs/Name"});
+    let new = json!({
+        "$defs": {"Name": {"type": "string", "maxLength": 50}}, "$ref": "#/$defs/Name"
+    });
+    let (before, after) = (
+        canonicalize(&old).expect("canonicalizes"),
+        canonicalize(&new).expect("canonicalizes"),
+    );
+
+    // The strings the edit turned away, and nothing gained the other way round.
+    assert_eq!(
+        before.subtract(&after).expect("subtracts").to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "minLength": 51
+        })
+    );
+    assert_eq!(
+        after.subtract(&before).expect("subtracts").satisfiability(),
+        Satisfiability::No
+    );
+    assert_eq!(before.covers(&after).expect("covers"), Containment::Yes);
+    assert_eq!(after.covers(&before).expect("covers"), Containment::No);
+    // Renaming is decided by the two bodies, so neither operand's position changes the answer.
+    assert_eq!(
+        before.union(&after).expect("unions"),
+        after.union(&before).expect("unions")
+    );
+}
+
+// Operands sharing no value, and operands one of which holds the other, have a difference the form
+// spells outright - whatever asking for the other side's complement would have cost.
+#[test_case(
+    &json!({"type": "boolean"}),
+    &json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}}),
+    &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "boolean"});
+    "operands sharing no value"
+)]
+#[test_case(
+    &json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}}),
+    &json!({"type": "object"}),
+    &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}});
+    "an operand the other one holds"
+)]
+fn a_difference_needing_no_complement_is_spelled_outright(
+    left: &Value,
+    right: &Value,
+    expected: &Value,
+) {
+    let left = canonicalize(left).expect("canonicalizes");
+    let right = canonicalize(right).expect("canonicalizes");
+    assert_eq!(
+        &left.subtract(&right).expect("subtracts").to_json_schema(),
+        expected
+    );
+}
+
+// A pointer and the schema it references accept the same values, so both give the same answer.
+#[test]
+fn satisfiability_reads_through_a_reference() {
+    let pointer = canonicalize(&json!({
+        "$defs": {"s": {"type": "string"}}, "$ref": "#/$defs/s"
+    }))
+    .expect("canonicalizes");
+    assert_eq!(pointer.satisfiability(), Satisfiability::Yes);
+
+    // A target on a cycle is never read through: the walk would not terminate.
+    let recursive = canonicalize(&json!({
+        "$defs": {"r": {"anyOf": [{"$ref": "#/$defs/r"}, {"type": "string"}]}},
+        "$ref": "#/$defs/r"
+    }))
+    .expect("canonicalizes");
+    assert_eq!(recursive.satisfiability(), Satisfiability::Unknown);
+}
+
+// A `true`/`false` answer is returned directly: hiding it behind a `$ref`
+// reads as undecided to every emptiness check above it.
+#[test]
+fn an_intersection_a_pointer_decides_keeps_its_answer_readable() {
+    let everything = canonicalize(&json!(true)).expect("canonicalizes");
+    let pointer =
+        canonicalize(&json!({"$defs": {"X": true}, "$ref": "#/$defs/X"})).expect("canonicalizes");
+
+    // `true and A` is `A`, so the pointer is returned unchanged - and reads as decided all the
+    // same, since every query reads through the schema it names.
+    let met = everything.intersect(&pointer).expect("intersects");
+    assert_eq!(met.kind(), CanonicalKind::Reference);
+    assert_eq!(met.satisfiability(), Satisfiability::Yes);
+    assert_eq!(met, pointer.intersect(&everything).expect("intersects"));
+}
+
+// Cycle membership is a property of the graph, so renaming the keys cannot change which targets a
+// walk reads through - and with it, what the canonical form of the document is.
+#[test]
+fn a_cycle_carrying_a_chord_is_found_whatever_its_keys_are_called() {
+    let document = |a: &str, b: &str, c: &str| {
+        json!({
+            "$defs": {
+                a: {"anyOf": [{"$ref": format!("#/$defs/{b}")}, {"$ref": format!("#/$defs/{c}")}]},
+                b: {"type": "object", "properties": {"p": {"$ref": format!("#/$defs/{c}")}}},
+                c: {"type": "object", "properties": {"q": {"$ref": format!("#/$defs/{a}")}}}
+            },
+            "$ref": format!("#/$defs/{b}")
+        })
+    };
+    let objects = canonicalize(&json!({"type": "object"})).expect("canonicalizes");
+    let named = canonicalize(&document("a", "b", "c")).expect("canonicalizes");
+    let renamed = canonicalize(&document("m", "n", "l")).expect("canonicalizes");
+
+    assert_eq!(
+        objects.covers(&named).expect("covers"),
+        objects.covers(&renamed).expect("covers")
+    );
+}
+
+// A walk that could only approximate an intersection carries no verdict: `covers` reads each of its
+// three answers only where that answer's own walk finished exactly.
+#[test]
+fn coverage_over_an_intersection_the_form_cannot_spell_rests_on_a_value_or_declines() {
+    let shielded = canonicalize(&json!({
+        "type": "object",
+        "properties": {"ab": {"minLength": 1}},
+        "additionalProperties": {"type": "string"}
+    }))
+    .expect("canonicalizes");
+    let patterns = canonicalize(&json!({
+        "type": "object",
+        "patternProperties": {"^a": {"maxLength": 9}}
+    }))
+    .expect("canonicalizes");
+
+    // Their meet is what the form cannot spell.
+    assert!(matches!(
+        shielded.intersect(&patterns),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
+    // Refused on a value the argument takes and the receiver does not: `{"b": 1}`, which the shield
+    // turns away for not being a string. The other way round rests on the meet, which is what the
+    // form cannot spell, so it stays undecided.
+    assert_eq!(shielded.covers(&patterns).expect("covers"), Containment::No);
+    assert_eq!(
+        patterns.covers(&shielded).expect("covers"),
+        Containment::Unknown
+    );
+    // The complement is built on a context of its own, and one that approximated is no complement
+    // to subtract with.
+    assert!(matches!(
+        shielded.subtract(&patterns),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
+    assert!(matches!(
+        patterns.negate(),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
+}
+
+// `#` names the document root, which is no entry of the map: reading through the pointer is reading
+// the root itself.
+#[test]
+fn satisfiability_reads_through_a_pointer_at_the_document_root() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"p": {"$ref": "#/$defs/x"}},
+        "$defs": {"x": {"$ref": "#"}}
+    }))
+    .expect("canonicalizes");
+
+    let alias = canonical
+        .definition("#/$defs/x")
+        .expect("the alias is a definition");
+    assert_eq!(alias.kind(), CanonicalKind::Reference);
+    assert_eq!(alias.satisfiability(), Satisfiability::Yes);
+}
+
+// De Morgan leaves `#` naming the document the complement was written in, so it stays there rather
+// than binding the pointer to itself.
+#[test]
+fn a_complement_reading_the_document_root_stays_in_its_document() {
+    let canonical = canonicalize(&json!({
+        "type": "object",
+        "properties": {"p": {"$ref": "#"}},
+        "required": ["p"],
+        "maxProperties": 1
+    }))
+    .expect("canonicalizes");
+
+    let complement = canonical.negate().expect("negates");
+    let emitted = complement.to_json_schema();
+    validator_for(&emitted).expect("the complement resolves its own pointers");
+    assert_eq!(
+        complement.negate().expect("negates back"),
+        canonical,
+        "double negation restores the schema"
+    );
+}
+
+// Two nodes written the same way and reading the same bodies are one schema whichever documents
+// they came out of - and two reading different bodies are not.
+#[test]
+fn nodes_are_ordered_by_the_part_of_their_document_they_read() {
+    let pointer = |target: Value| {
+        canonicalize(&json!({"$ref": "#/$defs/x", "$defs": {"x": target}})).expect("canonicalizes")
+    };
+    let strings = pointer(json!({"type": "string"}));
+    let integers = pointer(json!({"type": "integer"}));
+
+    assert_eq!(strings.cmp(&strings.clone()), Ordering::Equal);
+    assert_ne!(strings.cmp(&integers), Ordering::Equal);
+    assert_ne!(strings, integers);
+}
+
+// Everything is the whole union, whatever it is united with.
+#[test]
+fn a_branch_admitting_everything_is_the_whole_union() {
+    let everything = canonicalize(&json!(true)).expect("canonicalizes");
+    let strings = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+    assert_eq!(everything.union(&strings).expect("unions"), everything);
+}
+
+// A shield governs only the keys nothing else declares: where the key constraint admits nothing the
+// pattern map does not match, no key is left for it.
+#[test]
+fn a_shield_no_key_can_reach_says_nothing() {
+    let patterned = json!({
+        "type": "object",
+        "propertyNames": {"pattern": "^a"},
+        "patternProperties": {"^a": {"type": "integer"}},
+        "additionalProperties": {"type": "string"},
+        "maxProperties": 1
+    });
+    let canonical = canonicalize(&patterned).expect("canonicalizes");
+    assert!(
+        canonical
+            .to_json_schema()
+            .get("additionalProperties")
+            .is_none(),
+        "the shield is dropped: {}",
+        canonical.to_json_schema()
+    );
+
+    // A pattern map missing some admitted key leaves the shield something to govern, so it stays.
+    let partly_patterned = canonicalize(&json!({
+        "type": "object",
+        "propertyNames": {"pattern": "^a"},
+        "patternProperties": {"^ab": {"type": "integer"}},
+        "additionalProperties": {"type": "string"}
+    }))
+    .expect("canonicalizes");
+    assert!(
+        partly_patterned
+            .to_json_schema()
+            .get("additionalProperties")
+            .is_some(),
+        "the shield still governs a key: {}",
+        partly_patterned.to_json_schema()
+    );
+
+    // The meet with a shield of its own answers about the values both sides take.
+    let integers = canonicalize(&json!({
+        "type": "object", "additionalProperties": {"type": "integer"}, "minProperties": 1
+    }))
+    .expect("canonicalizes");
+    let met = integers.intersect(&canonical).expect("intersects");
+    let (left, right, both) = (
+        validator_for(&patterned).expect("builds"),
+        validator_for(&integers.to_json_schema()).expect("builds"),
+        validator_for(&met.to_json_schema()).expect("builds"),
+    );
+    for instance in [
+        json!({"a": 1}),
+        json!({"ab": 2}),
+        json!({"a": "s"}),
+        json!({}),
+        json!({"b": 1}),
+    ] {
+        assert_eq!(
+            left.is_valid(&instance) && right.is_valid(&instance),
+            both.is_valid(&instance),
+            "the meet disagrees on {instance}\n  meet = {}",
+            met.to_json_schema()
+        );
+    }
+}
+
+// What a purely in-place reference cycle accepts is left to the validator, not the algebra, so
+// the choice is barred whole rather than taken apart - the way its `anyOf` and `allOf` siblings are.
+#[test]
+fn a_choice_reading_its_own_target_is_barred_whole() {
+    let ill_founded = canonicalize(&json!({
+        "$defs": {"x": {"oneOf": [{"$ref": "#/$defs/x"}, {"type": "object", "required": ["a"]}]}},
+        "$ref": "#/$defs/x"
+    }))
+    .expect("canonicalizes");
+    let barred = ill_founded.negate().expect("negates");
+    let (whole, complement) = (
+        validator_for(&ill_founded.to_json_schema()).expect("builds"),
+        validator_for(&barred.to_json_schema()).expect("builds"),
+    );
+    for instance in [
+        json!({"a": 1}),
+        json!({"b": 2}),
+        json!("x"),
+        json!(5),
+        json!(null),
+    ] {
+        assert_eq!(
+            !whole.is_valid(&instance),
+            complement.is_valid(&instance),
+            "the complement disagrees on {instance}\n  complement = {}",
+            barred.to_json_schema()
+        );
+    }
+    // A difference does not replace the root, so its complement may stay symbolic under `not` -
+    // which is exact, and leaves what the cycle accepts to the validator that walks it.
+    let anything = canonicalize(&json!(true)).expect("canonicalizes");
+    let difference = anything.subtract(&ill_founded).expect("subtracts");
+    let (source, complement) = (
+        validator_for(&ill_founded.to_json_schema()).expect("builds"),
+        validator_for(&difference.to_json_schema()).expect("builds"),
+    );
+    for instance in [
+        json!({"a": 1}),
+        json!({"b": 2}),
+        json!("x"),
+        json!(5),
+        json!(null),
+    ] {
+        assert_eq!(
+            !source.is_valid(&instance),
+            complement.is_valid(&instance),
+            "the difference disagrees on {instance}"
+        );
+    }
+
+    // A choice naming a target off the negation path still has one.
+    let guarded = canonicalize(&json!({
+        "$defs": {"t": {"type": "string"}},
+        "oneOf": [{"$ref": "#/$defs/t"}, {"type": "integer"}]
+    }))
+    .expect("canonicalizes");
+    guarded.negate().expect("negates");
+}
+
+// A side the other leaves whole is returned as the pointer, whichever exit reached it.
+#[test]
+fn an_intersection_hands_a_pointer_back_from_every_exit() {
+    let document = json!({
+        "$defs": {"s": {"type": "string", "minLength": 2}},
+        "type": "object",
+        "properties": {"a": {"$ref": "#/$defs/s"}, "b": {"$ref": "#/$defs/s"}}
+    });
+    let canonical = canonicalize(&document).expect("canonicalizes");
+    let CanonicalView::Object(view) = canonical.view() else {
+        panic!("expected an Object view");
+    };
+    let pointer = view.properties.get("a").expect("property a").clone();
+    let strings = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
+
+    // The pointer decides the pair against a wider schema, and the target stays shared.
+    let met = strings.intersect(&pointer).expect("intersects");
+    assert_eq!(met.kind(), CanonicalKind::Reference);
+    assert_eq!(met, pointer.intersect(&strings).expect("intersects"));
+}
+
+// `#` names a root, so two nodes written the same way in documents that bind it differently are not
+// the same schema.
+#[test]
+fn nodes_binding_different_roots_are_told_apart() {
+    let version = |extra: Value| {
+        let mut root = json!({
+            "$defs": {"e": {"$ref": "#"}},
+            "type": "object",
+            "properties": {"e": {"$ref": "#/$defs/e"}}
+        });
+        root.as_object_mut()
+            .expect("object")
+            .extend(extra.as_object().expect("object").clone());
+        canonicalize(&root)
+            .expect("canonicalizes")
+            .definition("#/$defs/e")
+            .expect("the entry is a definition")
+    };
+    let narrow = version(json!({"maxProperties": 1}));
+    let wide = version(json!({"minProperties": 1}));
+
+    assert_eq!(narrow.kind(), CanonicalKind::Reference);
+    assert_ne!(narrow, wide);
+    assert_ne!(narrow.cmp(&wide), Ordering::Equal);
+    assert_eq!(narrow, narrow.clone());
+}
+
+// Extracting a repeated subschema into `$defs` changes no value, and the comparison says so - which
+// is what makes the difference usable as a review of the refactoring.
+#[test_case(
+    &json!({
+        "$defs": {"User": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}},
+        "type": "object",
+        "properties": {"user": {"$ref": "#/$defs/User"}, "admin": {"$ref": "#/$defs/User"}}
+    });
+    "both sites extracted"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"User": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}},
+        "type": "object",
+        "properties": {
+            "user": {"$ref": "#/$defs/User"},
+            "admin": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}
+        }
+    });
+    "one site extracted"
+)]
+#[test_case(
+    &json!({
+        "$defs": {
+            "User": {"$ref": "#/$defs/Base"},
+            "Base": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}
+        },
+        "type": "object",
+        "properties": {"user": {"$ref": "#/$defs/User"}, "admin": {"$ref": "#/$defs/User"}}
+    });
+    "extracted behind a pointer chain"
+)]
+fn extracting_a_subschema_changes_no_value(extracted: &Value) {
+    let inline = canonicalize(&json!({
+        "type": "object",
+        "properties": {
+            "user": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]},
+            "admin": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}
+        }
+    }))
+    .expect("canonicalizes");
+    let extracted = canonicalize(extracted).expect("canonicalizes");
+
+    assert_eq!(
+        inline.covers(&extracted).expect("compares"),
+        Containment::Yes
+    );
+    assert_eq!(
+        extracted.covers(&inline).expect("compares"),
+        Containment::Yes
+    );
+    for (name, difference) in [
+        ("lost", inline.subtract(&extracted)),
+        ("gained", extracted.subtract(&inline)),
+    ] {
+        assert_eq!(
+            difference.expect("subtracts").satisfiability(),
+            Satisfiability::No,
+            "the refactoring {name} values"
+        );
+    }
+}
+
+// An extraction that quietly edited the schema on the way is never reported as no change. The
+// engine may decline to decide - a complement it cannot spell leaves the difference `Unknown` - but
+// it must not answer that nothing moved.
+#[test_case(
+    &json!({"type": "object", "properties": {"id": {"type": "integer"}}}),
+    &[json!({"user": {}, "admin": {}})];
+    "the required key was dropped"
+)]
+#[test_case(
+    &json!({"type": "object", "properties": {"id": {"type": "string"}}, "required": ["id"]}),
+    &[json!({"user": {"id": 1}, "admin": {"id": 1}}), json!({"user": {"id": "a"}, "admin": {"id": "a"}})];
+    "the property type was changed"
+)]
+fn an_extraction_that_edited_the_schema_is_never_reported_as_no_change(
+    body: &Value,
+    moved: &[Value],
+) {
+    let source = json!({
+        "type": "object",
+        "properties": {
+            "user": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]},
+            "admin": {"type": "object", "properties": {"id": {"type": "integer"}}, "required": ["id"]}
+        }
+    });
+    let edited = json!({
+        "$defs": {"User": body},
+        "type": "object",
+        "properties": {"user": {"$ref": "#/$defs/User"}, "admin": {"$ref": "#/$defs/User"}}
+    });
+    // The instances prove the two really do accept different values.
+    let (before, after) = (
+        validator_for(&source).expect("builds"),
+        validator_for(&edited).expect("builds"),
+    );
+    assert!(
+        moved
+            .iter()
+            .any(|instance| before.is_valid(instance) != after.is_valid(instance)),
+        "the case moves no value"
+    );
+
+    let inline = canonicalize(&source).expect("canonicalizes");
+    let extracted = canonicalize(&edited).expect("canonicalizes");
+    // Undecided is allowed here; agreeing that nothing moved is not.
+    assert_ne!(
+        (
+            inline.covers(&extracted).expect("compares"),
+            extracted.covers(&inline).expect("compares")
+        ),
+        (Containment::Yes, Containment::Yes)
+    );
+    // An empty difference is a claim that the change turned nothing away, so every moved value has
+    // to be one the difference itself keeps.
+    for difference in [inline.subtract(&extracted), extracted.subtract(&inline)]
+        .into_iter()
+        .flatten()
+        .filter(|difference| difference.satisfiability() == Satisfiability::No)
+    {
+        let empty = validator_for(&difference.to_json_schema()).expect("builds");
+        for instance in moved {
+            assert!(
+                !before.is_valid(instance) || after.is_valid(instance) || empty.is_valid(instance),
+                "a value the change turns away fell out of the difference: {instance}"
+            );
+        }
+    }
+}
+
+// The same bound reached through a difference the caller never wrote out.
+#[test]
+fn a_bound_a_difference_computed_decides_nothing() {
+    let wide =
+        canonicalize(&json!({"type": "string", "maxLength": 18_446_744_073_709_551_614_u64}))
+            .expect("canonicalizes");
+    let patterned =
+        canonicalize(&json!({"type": "string", "pattern": "^a"})).expect("canonicalizes");
+    assert_eq!(
+        wide.covers(&patterned).expect("covers"),
+        Containment::Unknown
+    );
+}
+
+// `A op A` is `A` whatever `A` is spelled like, and the constants leave their operand alone. The
+// identities are answered on the operands the caller holds, so reading a pointer through cannot
+// fold the answer further than the node handed in.
+#[test_case(
+    &json!({"type": "object", "properties": {"q": {"anyOf": [{"type": "object", "required": ["a"]},
+                                                             {"$ref": "#/$defs/t"}]}},
+            "$defs": {"t": {"type": "integer", "multipleOf": 2}}});
+    "a pointer under a union under a property"
+)]
+#[test_case(
+    &json!({"$defs": {"x": {"anyOf": [{"type": "string"}, {"type": "integer"}]}}, "$ref": "#/$defs/x"});
+    "a pointer at a union"
+)]
+#[test_case(&json!({"type": "string", "minLength": 2}); "a plain leaf")]
+fn the_set_identities_keep_the_form_the_caller_holds(schema: &Value) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    let nothing = canonicalize(&json!(false)).expect("canonicalizes");
+    let everything = canonicalize(&json!(true)).expect("canonicalizes");
+
+    for (law, result) in [
+        ("a | a", canonical.union(&canonical)),
+        ("a & a", canonical.intersect(&canonical)),
+        ("a | nothing", canonical.union(&nothing)),
+        ("a & everything", canonical.intersect(&everything)),
+        ("a \\ nothing", canonical.subtract(&nothing)),
+    ] {
+        assert_eq!(result.expect("holds"), canonical, "`{law}` does not hold");
+    }
+    assert_eq!(
+        canonical
+            .subtract(&canonical)
+            .expect("subtracts")
+            .satisfiability(),
+        Satisfiability::No
+    );
+    // The definitions travel with the form, so an identity never sheds the targets it still names.
+    assert_eq!(
+        canonical
+            .intersect(&canonical)
+            .expect("holds")
+            .definitions()
+            .len(),
+        canonical.definitions().len()
+    );
+}
+
+// Two pointers at one body are one value set, so the difference answers the same way round either
+// way - the meet keeps whichever spelling is canonical, which need not be the operand's own.
+#[test]
+fn a_difference_between_two_names_for_one_body_is_empty_either_way() {
+    let named = |uri: &str| {
+        canonicalize(&json!({
+            "$defs": {"a": {"type": "string", "minLength": 2}, "b": {"type": "string", "minLength": 2}},
+            "$ref": uri
+        }))
+        .expect("canonicalizes")
+    };
+    let (first, second) = (named("#/$defs/a"), named("#/$defs/b"));
+
+    for difference in [first.subtract(&second), second.subtract(&first)] {
+        assert_eq!(
+            difference.expect("subtracts").satisfiability(),
+            Satisfiability::No
+        );
+    }
+}
+
+// A pattern entry declares the keys it matches, so a barring shield does not close the map down to
+// the named keys alone - those matches would be excluded with it.
+#[test]
+fn a_barring_shield_beside_a_pattern_map_keeps_the_keys_the_patterns_match() {
+    let shielded = json!({"type": "object", "additionalProperties": {"type": "integer"}});
+    let patterned = json!({
+        "type": "object",
+        "additionalProperties": {"type": "string"},
+        "patternProperties": {"^a": {"type": "integer"}}
+    });
+    let met = canonicalize(&shielded)
+        .expect("canonicalizes")
+        .intersect(&canonicalize(&patterned).expect("canonicalizes"))
+        .expect("intersects");
+
+    let (left, right, both) = (
+        validator_for(&shielded).expect("builds"),
+        validator_for(&patterned).expect("builds"),
+        validator_for(&met.to_json_schema()).expect("builds"),
+    );
+    for instance in [
+        json!({"a": 2}),
+        json!({"b": 2}),
+        json!({"a": "s"}),
+        json!({}),
+    ] {
+        assert_eq!(
+            left.is_valid(&instance) && right.is_valid(&instance),
+            both.is_valid(&instance),
+            "the meet disagrees on {instance}\n  meet = {}",
+            met.to_json_schema()
+        );
+    }
+}
+
+// A demand needs a key present to break its rule, and a leaf whose every admitted key is barred
+// leaves no slot for one - so it admits nothing rather than the empty object. The two only meet
+// where the ceiling drops below what the slot check saw when it read it, which is what this pair
+// reaches: the difference carries a demand from the complement onto a leaf a pattern entry closed.
+#[test]
+fn a_difference_carrying_a_demand_onto_a_closed_leaf_agrees_with_the_validators() {
+    let named_b = json!({"type": "object", "propertyNames": {"enum": ["b"]}});
+    let closed = json!({
+        "anyOf": [
+            {"type": "object", "properties": {"a": {"type": "null"}}, "required": ["a"],
+             "additionalProperties": false},
+            {"type": "object", "patternProperties": {"^a": false}}
+        ]
+    });
+    let difference = canonicalize(&closed)
+        .expect("canonicalizes")
+        .subtract(&canonicalize(&named_b).expect("canonicalizes"))
+        .expect("subtracts");
+
+    let (taken, removed, left_over) = (
+        validator_for(&closed).expect("builds"),
+        validator_for(&named_b).expect("builds"),
+        validator_for(&difference.to_json_schema()).expect("builds"),
+    );
+    for instance in [
+        json!({"a": null}),
+        json!({"a": 1}),
+        json!({"b": 1}),
+        json!({"b": null}),
+        json!({"c": 1}),
+        json!({}),
+    ] {
+        assert_eq!(
+            taken.is_valid(&instance) && !removed.is_valid(&instance),
+            left_over.is_valid(&instance),
+            "the difference disagrees on {instance}\n  difference = {}",
+            difference.to_json_schema()
+        );
+    }
+}
+
+// Under Draft 4 a member shares its equality class with a spelling the `integer` type turns away:
+// `{"a": 1}` and `{"a": 1.0}` are one member, and a schema requiring an integer takes only the
+// first. A demand that the value fail such a schema is met by half the class, so the member is
+// admitted in part - reading it as met outright would hand back a difference holding a value both
+// operands accept.
+#[test]
+fn a_draft_4_member_half_a_demand_admits_is_not_admitted_whole() {
+    let taken = json!({"$defs": {"t": {"minimum": -2, "type": "integer"}}, "enum": [{"a": 1}]});
+    let removed = json!({
+        "$defs": {"t": {"minimum": -2, "type": "integer"}},
+        "type": "object",
+        "additionalProperties": {"$ref": "#/$defs/t"}
+    });
+    let canonicalize = |schema: &Value| {
+        options()
+            .with_draft(Draft::Draft4)
+            .canonicalize(schema)
+            .expect("canonicalizes")
+    };
+    let build = |schema: &Value| {
+        jsonschema::options()
+            .with_draft(Draft::Draft4)
+            .build(schema)
+            .expect("builds")
+    };
+    let difference = canonicalize(&taken)
+        .subtract(&canonicalize(&removed))
+        .expect("subtracts");
+
+    let (taken, removed, left_over) = (
+        build(&taken),
+        build(&removed),
+        build(&difference.to_json_schema()),
+    );
+    for instance in [
+        json!({"a": 1}),
+        json!({"a": 1.0}),
+        json!({"a": "x"}),
+        json!({}),
+    ] {
+        assert_eq!(
+            taken.is_valid(&instance) && !removed.is_valid(&instance),
+            left_over.is_valid(&instance),
+            "the difference disagrees on {instance}\n  difference = {}",
+            difference.to_json_schema()
+        );
+    }
+}
+
+// Renaming rewrites whatever holds the reference, so the answer is the same wherever in a document
+// the edited entry is reached from.
+#[test_case(
+    &json!({"$defs": {"held": {"not": {"$ref": "#/$defs/x"}}, "x": {"type": "TYPE"}},
+            "$ref": "#/$defs/held"});
+    "reached through a complement"
+)]
+#[test_case(
+    &json!({"$defs": {"held": {"type": "object", "properties": {"p": {"$ref": "#/$defs/x"}}},
+                      "x": {"type": "TYPE"}},
+            "$ref": "#/$defs/held"});
+    "reached through a property"
+)]
+#[test_case(
+    &json!({"$defs": {"held": {"type": "object", "additionalProperties": {"$ref": "#/$defs/x"}},
+                      "x": {"type": "TYPE"}},
+            "$ref": "#/$defs/held"});
+    "reached through a shield"
+)]
+#[test_case(
+    &json!({"$defs": {"held": {"not": {"type": "object",
+                                       "additionalProperties": {"$ref": "#/$defs/x"}}},
+                      "x": {"type": "TYPE"}},
+            "$ref": "#/$defs/held"});
+    "reached through a demand a complement left"
+)]
+#[test_case(
+    &json!({"$defs": {"held": {"type": "array", "contains": {"$ref": "#/$defs/x"}},
+                      "x": {"type": "TYPE"}},
+            "$ref": "#/$defs/held"});
+    "reached through an array demand"
+)]
+#[test_case(
+    &json!({"$defs": {"held": {"anyOf": [{"$ref": "#/$defs/x"}, {"type": "null"}]},
+                      "x": {"type": "TYPE"}},
+            "$ref": "#/$defs/held"});
+    "reached through a union branch"
+)]
+fn an_edited_entry_is_renamed_apart_wherever_it_is_reached_from(shape: &Value) {
+    let version = |ty: &str| {
+        let source: Value =
+            serde_json::from_str(&shape.to_string().replace("TYPE", ty)).expect("a schema");
+        (
+            canonicalize(&source).expect("canonicalizes"),
+            validator_for(&source).expect("builds"),
+        )
+    };
+    let (old, taken) = version("integer");
+    let (new, removed) = version("string");
+
+    // Both maps bind `#/$defs/x`, and `#/$defs/held` reaches it: renaming one carries the other.
+    let difference = old.subtract(&new).expect("subtracts");
+    let left_over = validator_for(&difference.to_json_schema()).expect("builds");
+    for instance in [
+        json!(1),
+        json!("a"),
+        json!(null),
+        json!({"p": 1}),
+        json!([1]),
+        json!({}),
+    ] {
+        assert_eq!(
+            taken.is_valid(&instance) && !removed.is_valid(&instance),
+            left_over.is_valid(&instance),
+            "the difference disagrees on {instance}\n  difference = {}",
+            difference.to_json_schema()
+        );
+    }
+    // Which side gives way is read off the two bodies, so operand order changes nothing.
+    assert_eq!(
+        old.union(&new).expect("unions"),
+        new.union(&old).expect("unions")
+    );
+}
+
+// A resource is named by its URI rather than by a key private to one document, so two documents
+// resolving one to different schemas disagree about the resource itself and cannot be combined.
+#[test]
+fn operands_resolving_one_resource_two_ways_are_refused() {
+    fn shared(ty: &str) -> Value {
+        json!({"$id": "https://example.com/shared", "$anchor": "v", "type": ty})
+    }
+    fn prepared(source: &Value) -> Registry<'_> {
+        Registry::new()
+            .add("https://example.com/shared", source)
+            .expect("the resource URI is valid")
+            .prepare()
+            .expect("the registry prepares")
+    }
+
+    let (first, second) = (shared("string"), shared("integer"));
+    let (left_registry, right_registry) = (prepared(&first), prepared(&second));
+    let canonicalize = |registry: &Registry<'_>| {
+        options()
+            .with_registry(registry)
+            .canonicalize(&json!({"$ref": "https://example.com/shared#v"}))
+            .expect("canonicalizes")
+    };
+    let left = canonicalize(&left_registry);
+    let right = canonicalize(&right_registry);
+
+    for outcome in [
+        left.intersect(&right).map(|_| ()),
+        left.union(&right).map(|_| ()),
+        left.subtract(&right).map(|_| ()),
+        left.covers(&right).map(|_| ()),
+    ] {
+        assert!(matches!(
+            outcome,
+            Err(CanonicalizationError::IncompatibleOperands(
+                OperandMismatch::Definitions
+            ))
+        ));
+    }
+}
+
+// A private name marks a body the document wrote itself, which is what makes renaming it apart
+// safe. Pruning drops the body; a marker left behind would let the next operation adopt a
+// retrieved resource under that name, and two documents reading that resource differently would
+// then rename apart instead of refusing.
+#[test]
+fn a_pruned_private_name_does_not_launder_a_retrieved_resource() {
+    fn shared(ty: &str) -> Value {
+        json!({"$id": "https://example.com/shared", "type": "object",
+               "properties": {"self": {"$ref": "https://example.com/shared"}, "v": {"type": ty}}})
+    }
+    fn retrieved(source: &Value) -> CanonicalSchema {
+        let registry = Registry::new()
+            .add("https://example.com/shared", source)
+            .expect("the resource URI is valid")
+            .prepare()
+            .expect("the registry prepares");
+        options()
+            .with_registry(&registry)
+            .canonicalize(&json!({"$ref": "https://example.com/shared"}))
+            .expect("canonicalizes")
+    }
+
+    let (first, second) = (shared("string"), shared("integer"));
+    assert!(matches!(
+        retrieved(&first).union(&retrieved(&second)),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::Definitions
+        ))
+    ));
+
+    // A document writing that URI itself, met down to a form naming it no longer.
+    let written = canonicalize(&json!({
+        "$defs": {"x": {"$id": "https://example.com/shared", "type": "boolean"}},
+        "anyOf": [{"$ref": "https://example.com/shared"}, {"type": "integer"}]
+    }))
+    .expect("canonicalizes");
+    let pruned = written
+        .intersect(&canonicalize(&json!({"type": "integer"})).expect("canonicalizes"))
+        .expect("intersects");
+    assert_eq!(pruned.definitions().count(), 0);
+
+    let adopted = |source: &Value| pruned.union(&retrieved(source)).expect("unions");
+    assert!(matches!(
+        adopted(&first).union(&adopted(&second)),
+        Err(CanonicalizationError::IncompatibleOperands(
+            OperandMismatch::Definitions
+        ))
+    ));
+}
+
+// The rename follows the references back, so a key reached from two places is renamed once, and a
+// node holding no renamed reference is handed back as it was.
+#[test]
+fn a_rename_reaches_every_holder_once() {
+    let version = |ty: &str| {
+        let source = json!({
+            "$defs": {
+                "x": {"type": ty},
+                "left": {"type": "object", "properties": {"p": {"$ref": "#/$defs/x"}}},
+                "right": {"type": "array", "items": {"$ref": "#/$defs/x"}},
+                "both": {"anyOf": [{"$ref": "#/$defs/left"}, {"$ref": "#/$defs/right"}]},
+                // Reached from nothing that is renamed, so it is left exactly as it was.
+                "apart": {"not": {"type": "null"}}
+            },
+            "anyOf": [{"$ref": "#/$defs/both"}, {"$ref": "#/$defs/apart"}]
+        });
+        (
+            canonicalize(&source).expect("canonicalizes"),
+            validator_for(&source).expect("builds"),
+        )
+    };
+    let (old, taken) = version("integer");
+    let (new, removed) = version("string");
+
+    let difference = old.subtract(&new).expect("subtracts");
+    let left_over = validator_for(&difference.to_json_schema()).expect("builds");
+    for instance in [
+        json!({"p": 1}),
+        json!({"p": "a"}),
+        json!([1]),
+        json!(["a"]),
+        json!(1),
+        json!(null),
+    ] {
+        assert_eq!(
+            taken.is_valid(&instance) && !removed.is_valid(&instance),
+            left_over.is_valid(&instance),
+            "the difference disagrees on {instance}\n  difference = {}",
+            difference.to_json_schema()
+        );
+    }
+}
+
+// A demand a complement leaves behind carries a reference of its own, which the rename rewrites
+// like any other.
+#[test]
+fn a_rename_rewrites_the_demands_a_complement_left() {
+    let version = |ty: &str| {
+        let source = json!({
+            "$defs": {"keys": {"type": "string", "pattern": ty},
+                      "held": {"not": {"type": "object", "propertyNames": {"$ref": "#/$defs/keys"}}}},
+            "$ref": "#/$defs/held"
+        });
+        (
+            canonicalize(&source).expect("canonicalizes"),
+            validator_for(&source).expect("builds"),
+        )
+    };
+    let (old, taken) = version("^a");
+    let (new, removed) = version("^b");
+
+    let difference = old.subtract(&new).expect("subtracts");
+    let left_over = validator_for(&difference.to_json_schema()).expect("builds");
+    for instance in [json!({"a": 1}), json!({"b": 1}), json!({}), json!(1)] {
+        assert_eq!(
+            taken.is_valid(&instance) && !removed.is_valid(&instance),
+            left_over.is_valid(&instance),
+            "the difference disagrees on {instance}\n  difference = {}",
+            difference.to_json_schema()
+        );
+    }
+}
+
+// A node holding no renamed reference comes back exactly as it was, whatever shape holds it.
+#[test]
+fn a_rename_leaves_the_entries_it_does_not_reach_alone() {
+    let version = |ty: &str| {
+        let source = json!({
+            "$defs": {
+                "x": {"type": ty},
+                "held": {"type": "object", "properties": {"p": {"$ref": "#/$defs/x"}}},
+                "other": {"type": "object", "required": ["z"]},
+                // Neither reaches `x`, so neither is renamed - one symbolic, one a choice.
+                "barred": {"not": {"$ref": "#/$defs/other"}},
+                "chosen": {"oneOf": [{"$ref": "#/$defs/other"}, {"type": "integer"}]}
+            },
+            "anyOf": [{"$ref": "#/$defs/held"}, {"$ref": "#/$defs/barred"}, {"$ref": "#/$defs/chosen"}]
+        });
+        (
+            canonicalize(&source).expect("canonicalizes"),
+            validator_for(&source).expect("builds"),
+        )
+    };
+    let (old, taken) = version("integer");
+    let (new, removed) = version("string");
+
+    let difference = old.subtract(&new).expect("subtracts");
+    let left_over = validator_for(&difference.to_json_schema()).expect("builds");
+    for instance in [
+        json!({"p": 1}),
+        json!({"p": "a"}),
+        json!({"z": 1}),
+        json!(1),
+        json!(null),
+    ] {
+        assert_eq!(
+            taken.is_valid(&instance) && !removed.is_valid(&instance),
+            left_over.is_valid(&instance),
+            "the difference disagrees on {instance}\n  difference = {}",
+            difference.to_json_schema()
+        );
+    }
+}
+
+// A node holding no `$ref` sees nothing of its document, so two written the same way are one schema
+// whichever documents they came out of - and comparing them walks neither document.
+#[test]
+fn nodes_holding_no_reference_compare_across_documents() {
+    let entry = |uri: &str, extra: Value| {
+        let mut source = json!({"$defs": {uri: {"type": "string", "minLength": 2}}});
+        source
+            .as_object_mut()
+            .expect("object")
+            .extend(extra.as_object().expect("object").clone());
+        canonicalize(&source)
+            .expect("canonicalizes")
+            .definition(&format!("#/$defs/{uri}"))
+            .expect("the entry is a definition")
+    };
+    let here = entry("a", json!({"$ref": "#/$defs/a"}));
+    let there = entry("b", json!({"$ref": "#/$defs/b"}));
+
+    assert_eq!(here, there);
+    assert_eq!(here.cmp(&there), Ordering::Equal);
+}
+
+// A complement the form keeps symbolic still holds a reference of its own, which the rename
+// rewrites along with everything else the edited entry is reached from.
+#[test]
+fn a_rename_rewrites_a_symbolic_complement() {
+    let version = |ty: &str| {
+        let source = json!({
+            "$defs": {
+                "r": {"type": "object", "properties": {"a": {"$ref": "#/$defs/r"}}},
+                "x": {"type": "object", "patternProperties": {"^a": {"type": ty}}},
+                // One complement over an entry the rename leaves alone, one over the edited entry.
+                "held": {"allOf": [{"not": {"$ref": "#/$defs/r"}}, {"not": {"$ref": "#/$defs/x"}}]}
+            },
+            "$ref": "#/$defs/held"
+        });
+        (
+            canonicalize(&source).expect("canonicalizes"),
+            validator_for(&source).expect("builds"),
+        )
+    };
+    let (old, taken) = version("integer");
+    let (new, removed) = version("string");
+
+    let difference = old.subtract(&new).expect("subtracts");
+    let left_over = validator_for(&difference.to_json_schema()).expect("builds");
+    for instance in [
+        json!({"a": 1}),
+        json!({"a": "s"}),
+        json!({"b": 1}),
+        json!(1),
+        json!(null),
+    ] {
+        assert_eq!(
+            taken.is_valid(&instance) && !removed.is_valid(&instance),
+            left_over.is_valid(&instance),
+            "the difference disagrees on {instance}\n  difference = {}",
+            difference.to_json_schema()
+        );
+    }
 }
