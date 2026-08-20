@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.50.0] - 2026-08-20
+
 ### Added
 
 - `CanonicalSchema#union` and `CanonicalSchema#subtract`.
@@ -420,7 +422,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.9...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.50.0...HEAD
+[0.50.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.9...ruby-v0.50.0
 [0.49.9]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.8...ruby-v0.49.9
 [0.49.8]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.7...ruby-v0.49.8
 [0.49.7]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.6...ruby-v0.49.7
