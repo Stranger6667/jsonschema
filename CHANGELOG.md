@@ -9,6 +9,7 @@
 ### Fixed
 
 - Resolving a reference against a base URI that carries a fragment, which happens when a Draft 4-7 `$id` contains one. [#1473](https://github.com/Stranger6667/jsonschema/issues/1473)
+- `unevaluatedProperties` and `unevaluatedItems` ignoring an `$id` on a subschema they walk through, so a relative `$ref` inside it resolved against the enclosing resource.
 
 ### Performance
 

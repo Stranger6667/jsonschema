@@ -437,15 +437,23 @@ fn compile_ref<'a, F: Json>(
     ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<RefValidator<F>>, ValidationError<'a>> {
-    if let Some(Value::String(reference)) = parent.get("$ref") {
-        let resolved = ctx.lookup(reference)?;
-        if let Value::Object(subschema) = resolved.contents() {
-            let validators =
-                compile_items_validators(ctx, subschema).map_err(ValidationError::to_owned)?;
-            return Ok(Some(RefValidator(Box::new(validators))));
-        }
+    let Some(Value::String(reference)) = parent.get("$ref") else {
+        return Ok(None);
+    };
+
+    let resolved = ctx.lookup(reference).map_err(ValidationError::from)?;
+
+    let (contents, resolver, draft) = resolved.into_inner();
+    if let Value::Object(subschema) = &contents {
+        let vocabularies = resolver.find_vocabularies(draft, contents);
+        let ref_ctx =
+            ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
+        let validators =
+            compile_items_validators(&ref_ctx, subschema).map_err(ValidationError::to_owned)?;
+        Ok(Some(RefValidator(Box::new(validators))))
+    } else {
+        Ok(None)
     }
-    Ok(None)
 }
 
 fn compile_dynamic_ref<'a, F: Json>(
@@ -563,6 +571,28 @@ fn compile_prefix_items<'a, F: Json>(
     }
 }
 
+/// Compile the item validators for a `then`/`else` branch, entering its subresource so a nested
+/// `$id` shifts the base URI for anything resolved inside it.
+fn compile_branch<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
+    parent: &'a Map<String, Value>,
+    keyword: &'static str,
+) -> Result<Option<ItemsValidators<F>>, ValidationError<'a>> {
+    let Some(value) = parent.get(keyword) else {
+        return Ok(None);
+    };
+    let Value::Object(schema) = value else {
+        return Ok(None);
+    };
+    let branch_ctx = ctx.new_at_location(keyword);
+    let inner_ctx = branch_ctx
+        .in_subresource(branch_ctx.as_resource_ref(value))
+        .map_err(ValidationError::from)?;
+    Ok(Some(
+        compile_items_validators(&inner_ctx, schema).map_err(ValidationError::to_owned)?,
+    ))
+}
+
 fn compile_conditional<'a, F: Json>(
     ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
@@ -570,32 +600,20 @@ fn compile_conditional<'a, F: Json>(
     if let Some(subschema) = parent.get("if") {
         if let Value::Object(if_parent) = subschema {
             let if_ctx = ctx.new_at_location("if");
-
-            let mut then_ = None;
-            if let Some(Value::Object(subschema)) = parent.get("then") {
-                let then_ctx = ctx.new_at_location("then");
-                then_ = Some(
-                    compile_items_validators(&then_ctx, subschema)
-                        .map_err(ValidationError::to_owned)?,
-                );
-            }
-
-            let mut else_ = None;
-            if let Some(Value::Object(subschema)) = parent.get("else") {
-                let else_ctx = ctx.new_at_location("else");
-                else_ = Some(
-                    compile_items_validators(&else_ctx, subschema)
-                        .map_err(ValidationError::to_owned)?,
-                );
-            }
+            let if_resource = if_ctx.as_resource_ref(subschema);
+            let condition =
+                compiler::compile(&if_ctx, if_resource).map_err(ValidationError::to_owned)?;
+            let if_inner_ctx = if_ctx
+                .in_subresource(if_resource)
+                .map_err(ValidationError::from)?;
+            let if_ = compile_items_validators(&if_inner_ctx, if_parent)
+                .map_err(ValidationError::to_owned)?;
 
             return Ok(Some(Box::new(ConditionalValidators {
-                condition: compiler::compile(&if_ctx, if_ctx.as_resource_ref(subschema))
-                    .map_err(ValidationError::to_owned)?,
-                if_: compile_items_validators(&if_ctx, if_parent)
-                    .map_err(ValidationError::to_owned)?,
-                then_,
-                else_,
+                condition,
+                if_,
+                then_: compile_branch(ctx, parent, "then")?,
+                else_: compile_branch(ctx, parent, "else")?,
             })));
         }
     }
@@ -615,10 +633,15 @@ fn compile_all_of<'a, F: Json>(
         for (idx, subschema) in subschemas.iter().enumerate() {
             if let Value::Object(parent) = subschema {
                 let subschema_ctx = all_of_ctx.new_at_location(idx);
+                let resource = subschema_ctx.as_resource_ref(subschema);
+                let node = compiler::compile(&subschema_ctx, resource)
+                    .map_err(ValidationError::to_owned)?;
+                let inner_ctx = subschema_ctx
+                    .in_subresource(resource)
+                    .map_err(ValidationError::from)?;
                 result.push((
-                    compiler::compile(&subschema_ctx, subschema_ctx.as_resource_ref(subschema))
-                        .map_err(ValidationError::to_owned)?,
-                    compile_items_validators(&subschema_ctx, parent)
+                    node,
+                    compile_items_validators(&inner_ctx, parent)
                         .map_err(ValidationError::to_owned)?,
                 ));
             }
@@ -641,10 +664,15 @@ fn compile_any_of<'a, F: Json>(
         for (idx, subschema) in subschemas.iter().enumerate() {
             if let Value::Object(parent) = subschema {
                 let subschema_ctx = any_of_ctx.new_at_location(idx);
+                let resource = subschema_ctx.as_resource_ref(subschema);
+                let node = compiler::compile(&subschema_ctx, resource)
+                    .map_err(ValidationError::to_owned)?;
+                let inner_ctx = subschema_ctx
+                    .in_subresource(resource)
+                    .map_err(ValidationError::from)?;
                 result.push((
-                    compiler::compile(&subschema_ctx, subschema_ctx.as_resource_ref(subschema))
-                        .map_err(ValidationError::to_owned)?,
-                    compile_items_validators(&subschema_ctx, parent)
+                    node,
+                    compile_items_validators(&inner_ctx, parent)
                         .map_err(ValidationError::to_owned)?,
                 ));
             }
@@ -667,10 +695,15 @@ fn compile_one_of<'a, F: Json>(
         for (idx, subschema) in subschemas.iter().enumerate() {
             if let Value::Object(parent) = subschema {
                 let subschema_ctx = one_of_ctx.new_at_location(idx);
+                let resource = subschema_ctx.as_resource_ref(subschema);
+                let node = compiler::compile(&subschema_ctx, resource)
+                    .map_err(ValidationError::to_owned)?;
+                let inner_ctx = subschema_ctx
+                    .in_subresource(resource)
+                    .map_err(ValidationError::from)?;
                 result.push((
-                    compiler::compile(&subschema_ctx, subschema_ctx.as_resource_ref(subschema))
-                        .map_err(ValidationError::to_owned)?,
-                    compile_items_validators(&subschema_ctx, parent)
+                    node,
+                    compile_items_validators(&inner_ctx, parent)
                         .map_err(ValidationError::to_owned)?,
                 ));
             }
@@ -998,5 +1031,93 @@ mod tests {
 
         assert!(validator.is_valid(&valid_instance));
         assert!(validator.validate(&valid_instance).is_ok());
+    }
+
+    #[test_case(&json!({"allOf": [{"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}]}); "allOf")]
+    #[test_case(&json!({"anyOf": [{"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}]}); "anyOf")]
+    #[test_case(&json!({"oneOf": [{"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}]}); "oneOf")]
+    #[test_case(&json!({"if": {"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}}); "if branch")]
+    #[test_case(&json!({"if": {}, "then": {"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}}); "then branch")]
+    #[test_case(&json!({"if": {"not": {}}, "else": {"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}}); "else branch")]
+    fn subresource_id_resolves_relative_reference_against_its_own_base(applicator: &Value) {
+        let mut schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root.json",
+            "$defs": {
+                "reachable_through_the_branch_id": {
+                    "$id": "https://example.com/nested/target.json",
+                    "prefixItems": [{"type": "string"}]
+                },
+                "reachable_through_the_root_id": {
+                    "$id": "https://example.com/target.json",
+                    "prefixItems": [{"type": "string"}, {"type": "string"}]
+                }
+            },
+            "unevaluatedItems": false
+        });
+        schema
+            .as_object_mut()
+            .expect("object schema")
+            .extend(applicator.as_object().expect("object applicator").clone());
+
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+
+        assert!(validator.is_valid(&json!(["x"])));
+        assert!(!validator.is_valid(&json!(["x", "y"])));
+    }
+
+    #[test_case(&json!({"allOf": [{"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}]}); "allOf")]
+    #[test_case(&json!({"anyOf": [{"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}]}); "anyOf")]
+    #[test_case(&json!({"oneOf": [{"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}]}); "oneOf")]
+    #[test_case(&json!({"if": {"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}}); "if branch")]
+    #[test_case(&json!({"if": {}, "then": {"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}}); "then branch")]
+    #[test_case(&json!({"if": {"not": {}}, "else": {"$id": "https://example.com/nested/branch.json", "$ref": "target.json"}}); "else branch")]
+    fn subresource_id_keeps_the_schema_compilable(applicator: &Value) {
+        let mut schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root.json",
+            "$defs": {
+                "target": {
+                    "$id": "https://example.com/nested/target.json",
+                    "prefixItems": [{"type": "string"}]
+                }
+            },
+            "unevaluatedItems": false
+        });
+        schema
+            .as_object_mut()
+            .expect("object schema")
+            .extend(applicator.as_object().expect("object applicator").clone());
+
+        crate::validator_for(&schema).expect("schema compiles");
+    }
+
+    #[test]
+    fn reference_target_resolves_its_own_relative_reference() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root.json",
+            "$defs": {
+                "outer": {
+                    "$id": "https://example.com/nested/outer.json",
+                    "$ref": "inner.json"
+                },
+                "reachable_through_the_outer_id": {
+                    "$id": "https://example.com/nested/inner.json",
+                    "prefixItems": [{"type": "string"}]
+                },
+                "reachable_through_the_root_id": {
+                    "$id": "https://example.com/inner.json",
+                    "prefixItems": [{"type": "string"}, {"type": "string"}]
+                }
+            },
+            "$ref": "https://example.com/nested/outer.json",
+            "unevaluatedItems": false
+        });
+
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+
+        assert!(validator.is_valid(&json!(["x"])));
+        assert!(!validator.is_valid(&json!(["x", "y"])));
     }
 }
