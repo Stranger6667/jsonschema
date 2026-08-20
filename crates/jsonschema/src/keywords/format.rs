@@ -8,6 +8,7 @@ use std::{
 
 use email_address::{EmailAddress, Options as EmailAddressOptions};
 use serde_json::{Map, Value};
+use strum::VariantArray;
 use unicode_general_category::{get_general_category, GeneralCategory};
 use uuid_simd::{parse_hyphenated, Out};
 
@@ -1397,7 +1398,7 @@ where
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, VariantArray)]
 pub(crate) enum BuiltinFormat {
     Date,
     DateTime,
@@ -1487,6 +1488,27 @@ impl BuiltinFormat {
             // `0.0.0.0` through `255.255.255.255`.
             Self::Ipv4 => Some((7, 15)),
             _ => None,
+        }
+    }
+
+    /// A string this format accepts. The test below checks every one against `is_valid`.
+    #[must_use]
+    pub(crate) const fn witness(self) -> &'static str {
+        match self {
+            Self::Date => "2020-01-01",
+            Self::DateTime => "2020-01-01T00:00:00Z",
+            Self::Duration => "P1D",
+            Self::Email | Self::IdnEmail => "a@b.co",
+            Self::Hostname | Self::HostnameDraft4 | Self::IdnHostname => "example.com",
+            Self::Ipv4 => "127.0.0.1",
+            Self::Ipv6 => "::1",
+            Self::Iri | Self::IriReference | Self::Uri | Self::UriReference => "http://example.com",
+            Self::JsonPointer => "/a",
+            Self::Regex => "a",
+            Self::RelativeJsonPointer => "0",
+            Self::Time => "00:00:00Z",
+            Self::UriTemplate => "http://example.com/{id}",
+            Self::Uuid => "00000000-0000-4000-8000-000000000000",
         }
     }
 
@@ -2296,6 +2318,26 @@ mod tests {
                     is_valid_regex(pattern),
                     jsonschema_regex::to_rust_regex(pattern).is_ok(),
                     "pattern {pattern}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn every_builtin_format_witness_satisfies_its_own_format() {
+        for format in BuiltinFormat::VARIANTS {
+            assert!(
+                format.is_valid(format.witness()),
+                "{format:?} witness `{}` does not satisfy `{}`",
+                format.witness(),
+                format.as_str()
+            );
+            if let Some((minimum, maximum)) = format.length_window() {
+                let length = format.witness().chars().count() as u64;
+                assert!(
+                    (minimum..=maximum).contains(&length),
+                    "{format:?} witness `{}` falls outside its declared length window",
+                    format.witness()
                 );
             }
         }

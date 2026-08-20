@@ -17,8 +17,8 @@ use crate::{
         emit, emptiness,
         error::OperandMismatch,
         ir::{
-            BoundCardinality, BoundInteger, BoundNumber, Distinctness, ObjectLeaf, Schema,
-            SchemaKind, UncheckableFacet, Verdict,
+            BoundCardinality, BoundInteger, BoundNumber, Distinctness, LengthBounds, ObjectLeaf,
+            Schema, SchemaKind, StringFormat, StringLeaf, UncheckableFacet, Verdict,
         },
         negate, oracle, parse, rename, CanonicalizationError, ROOT_DEFINITION_KEY,
     },
@@ -155,12 +155,7 @@ fn candidate_instances(
         SchemaKind::TypedGroup { body, .. } => {
             candidate_instances(body, document, depth - 1, budget, ctx)
         }
-        SchemaKind::String(leaf) => {
-            let Some(length) = demanded_length(leaf.get().lengths.minimum.as_ref()) else {
-                return Vec::new();
-            };
-            vec![Value::String("a".repeat(length))]
-        }
+        SchemaKind::String(leaf) => string_candidates(leaf.get()),
         SchemaKind::Integer(leaf) => {
             // An integer bound is stored as the first integer it admits.
             let bounds = &leaf.get().bounds;
@@ -318,6 +313,64 @@ fn candidate_keys(leaf: &ObjectLeaf, size: usize, ctx: &CanonicalizationContext)
         }
     }
     keys
+}
+
+/// Strings to try against a string leaf: one per pattern, one per format, and their concatenation,
+/// which is the only one that can match a pattern anchored at the start and one anchored at the end.
+fn string_candidates(leaf: &StringLeaf) -> Vec<Value> {
+    let mut proposals: Vec<String> = Vec::new();
+    let per_pattern: Vec<String> = leaf
+        .patterns
+        .iter()
+        .filter_map(|pattern| jsonschema_regex::pattern_witness(pattern))
+        .collect();
+    // Skip the concatenation when a pattern produced no string of its own: it would not be
+    // checked against that pattern.
+    if per_pattern.len() > 1 && per_pattern.len() == leaf.patterns.len() {
+        proposals.push(per_pattern.concat());
+    }
+    proposals.extend(per_pattern);
+    proposals.extend(
+        leaf.formats
+            .iter()
+            .filter_map(StringFormat::witness)
+            .map(ToOwned::to_owned),
+    );
+    // The shortest string the window allows, for a leaf constrained only by length.
+    if let Some(length) = demanded_length(leaf.lengths.minimum.as_ref()) {
+        proposals.push("a".repeat(length));
+    }
+    proposals
+        .into_iter()
+        .filter_map(|text| fit_to_window(text, &leaf.lengths))
+        .map(Value::String)
+        .collect()
+}
+
+/// A string moved into the length window: padded when too short, dropped when too long or when the
+/// window asks for more characters than a candidate is built with.
+fn fit_to_window(mut text: String, window: &LengthBounds) -> Option<String> {
+    let length = text.chars().count();
+    if window
+        .maximum
+        .as_ref()
+        .and_then(BoundCardinality::to_usize)
+        .is_some_and(|maximum| length > maximum)
+    {
+        return None;
+    }
+    let minimum = window
+        .minimum
+        .as_ref()
+        .and_then(BoundCardinality::to_usize)
+        .unwrap_or(0);
+    if minimum > length {
+        if minimum as u64 > CANDIDATE_LENGTH {
+            return None;
+        }
+        text.push_str(&"a".repeat(minimum - length));
+    }
+    Some(text)
 }
 
 /// The literal head of a key pattern, which every key an anchored one matches carries. Empty where

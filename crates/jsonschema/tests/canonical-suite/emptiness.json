@@ -216,7 +216,7 @@
     "satisfiability": "yes"
   },
   {
-    "description": "a pattern leaves the values undecided",
+    "description": "a value is built from a pattern anchored at the start",
     "schema": {
       "type": "string",
       "pattern": "^a"
@@ -226,7 +226,7 @@
       "type": "string",
       "pattern": "^a"
     },
-    "satisfiability": "unknown"
+    "satisfiability": "yes"
   },
   {
     "description": "a contradiction folds to nothing",

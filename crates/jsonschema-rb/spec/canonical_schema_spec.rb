@@ -683,7 +683,8 @@ RSpec.describe "JSONSchema.canonicalize" do
     { "enum" => [1, 2] } => :yes,
     false => :no,
     { "type" => "string" } => :yes,
-    { "type" => "string", "pattern" => "^a" } => :unknown
+    { "type" => "string", "pattern" => "^a" } => :yes,
+    { "type" => "string", "pattern" => "a{100}" } => :unknown
   }.each do |schema, expected|
     it "answers satisfiability #{expected} for #{schema.inspect}" do
       expect(JSONSchema.canonicalize(schema).satisfiability).to be(expected)

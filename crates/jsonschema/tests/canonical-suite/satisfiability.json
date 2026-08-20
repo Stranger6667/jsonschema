@@ -3590,5 +3590,182 @@
       ],
       "type": "object"
     }
+  },
+  {
+    "description": "a witness is built for a string pattern that is a plain literal",
+    "schema": {
+      "pattern": "=",
+      "type": "string"
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "pattern": "=",
+      "type": "string"
+    }
+  },
+  {
+    "description": "a witness is built for a string pattern anchored at the start",
+    "schema": {
+      "pattern": "^abc",
+      "type": "string"
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "pattern": "^abc",
+      "type": "string"
+    }
+  },
+  {
+    "description": "a witness is built from the alternatives a string pattern lists",
+    "schema": {
+      "pattern": "^(red|green)$",
+      "type": "string"
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "pattern": "^(red|green)$",
+      "type": "string"
+    }
+  },
+  {
+    "description": "a witness matches a pattern anchored at the start and one anchored at the end",
+    "schema": {
+      "allOf": [
+        {
+          "pattern": "^a"
+        },
+        {
+          "pattern": "b$"
+        }
+      ],
+      "type": "string"
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "allOf": [
+        {
+          "pattern": "^a"
+        },
+        {
+          "pattern": "b$"
+        }
+      ],
+      "type": "string"
+    }
+  },
+  {
+    "description": "a pattern witness is padded up to minLength",
+    "schema": {
+      "minLength": 10,
+      "pattern": "^abc",
+      "type": "string"
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "minLength": 10,
+      "pattern": "^abc",
+      "type": "string"
+    }
+  },
+  {
+    "description": "a witness is built for an asserted string format",
+    "schema": {
+      "format": "email",
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "email",
+      "type": "string"
+    }
+  },
+  {
+    "description": "a witness is built for an asserted uuid",
+    "schema": {
+      "format": "uuid",
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "uuid",
+      "type": "string"
+    }
+  },
+  {
+    "description": "a format whose witness does not fit minLength and maxLength is left undecided",
+    "schema": {
+      "format": "email",
+      "maxLength": 5,
+      "minLength": 5,
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "unknown",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "email",
+      "maxLength": 5,
+      "minLength": 5,
+      "type": "string"
+    }
+  },
+  {
+    "description": "a witness is built for a key whose value is patterned",
+    "schema": {
+      "properties": {
+        "a": {
+          "pattern": "=",
+          "type": "string"
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": {
+        "a": {
+          "pattern": "=",
+          "type": "string"
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
+  },
+  {
+    "description": "a witness is built for an array of patterned strings",
+    "schema": {
+      "items": {
+        "pattern": "=",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    },
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "items": {
+        "pattern": "=",
+        "type": "string"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
   }
 ]

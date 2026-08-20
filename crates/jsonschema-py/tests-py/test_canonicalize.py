@@ -888,7 +888,8 @@ def test_one_document_canonicalized_twice_combines():
         (False, Satisfiability.NO),
         ({"type": "string"}, Satisfiability.YES),
         ({"type": "string", "minLength": 2}, Satisfiability.YES),
-        ({"type": "string", "pattern": "^a"}, Satisfiability.UNKNOWN),
+        ({"type": "string", "pattern": "^a"}, Satisfiability.YES),
+        ({"type": "string", "pattern": "a{100}"}, Satisfiability.UNKNOWN),
     ],
 )
 def test_satisfiability_answers(schema, expected):

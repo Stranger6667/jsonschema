@@ -72,6 +72,15 @@ impl StringFormat {
         }
     }
 
+    /// A string this format accepts, or `None` when the format is not one of the built-ins.
+    #[must_use]
+    pub(crate) fn witness(&self) -> Option<&'static str> {
+        match self {
+            Self::Builtin(format) => Some(format.witness()),
+            Self::Unknown(_) => None,
+        }
+    }
+
     #[must_use]
     pub(crate) fn is_valid(&self, text: &str) -> Option<bool> {
         match self {

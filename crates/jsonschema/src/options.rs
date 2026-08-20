@@ -762,7 +762,7 @@ impl<'i, F: Json> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> 
             representation: PhantomData,
         }
     }
-    #[allow(clippy::unused_async)]
+    #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
     pub(crate) async fn draft_for(&self, contents: &Value) -> Result<Draft, referencing::Error> {
         // Preference:
         //  - Explicitly set
