@@ -1,8 +1,11 @@
 use std::borrow::Cow;
 
-use regex_syntax::ast::{
-    self, parse::Parser, Ast, ClassPerl, ClassPerlKind, ClassSetItem, ErrorKind, Literal,
-    LiteralKind, Span, SpecialLiteralKind, Visitor,
+use regex_syntax::{
+    ast::{
+        self, parse::Parser, Ast, ClassPerl, ClassPerlKind, ClassSetItem, ErrorKind, Literal,
+        LiteralKind, Span, SpecialLiteralKind, Visitor,
+    },
+    hir::{Class, Hir, HirKind},
 };
 
 /// Convert ECMA Script 262 regex to Rust regex on the best effort basis.
@@ -301,6 +304,83 @@ pub fn analyze_pattern(pattern: &str) -> Option<PatternAnalysis<'_>> {
     Some(PatternAnalysis::Prefix(Cow::Owned(result)))
 }
 
+/// A string `pattern` matches, or `None` where the syntax alone is not enough to build one.
+///
+/// A `pattern` is an unanchored search, so a look-around contributes nothing to the string built
+/// here, and the caller checks the result against the pattern anyway.
+#[must_use]
+pub fn pattern_witness(pattern: &str) -> Option<String> {
+    let hir = regex_syntax::parse(&to_rust_regex(pattern).ok()?).ok()?;
+    let mut witness = String::new();
+    write_witness(&hir, &mut witness).then_some(witness)
+}
+
+/// The most repetitions of one sub-expression written out.
+const WITNESS_REPETITIONS: u32 = 64;
+
+/// The longest witness built. Without a cap, nested repetitions multiply the length.
+const WITNESS_LENGTH: usize = 256;
+
+/// Appends a string matching `hir`, reporting whether one was found. On failure `witness` keeps a
+/// partial string, so a caller trying another branch truncates back to its own length first.
+fn write_witness(hir: &Hir, witness: &mut String) -> bool {
+    if witness.len() > WITNESS_LENGTH {
+        return false;
+    }
+    match hir.kind() {
+        HirKind::Empty | HirKind::Look(_) => true,
+        HirKind::Literal(literal) => match std::str::from_utf8(&literal.0) {
+            Ok(text) => {
+                witness.push_str(text);
+                true
+            }
+            Err(_) => false,
+        },
+        HirKind::Class(class) => {
+            let character = match class {
+                Class::Unicode(class) => pick(class.ranges().iter().map(|r| (r.start(), r.end()))),
+                Class::Bytes(class) => pick(
+                    class
+                        .ranges()
+                        .iter()
+                        .map(|r| (char::from(r.start()), char::from(r.end()))),
+                ),
+            };
+            character.is_some_and(|character| {
+                witness.push(character);
+                true
+            })
+        }
+        HirKind::Repetition(repetition) => {
+            if repetition.min > WITNESS_REPETITIONS {
+                return false;
+            }
+            (0..repetition.min).all(|_| write_witness(&repetition.sub, witness))
+        }
+        HirKind::Capture(capture) => write_witness(&capture.sub, witness),
+        HirKind::Concat(parts) => parts.iter().all(|part| write_witness(part, witness)),
+        HirKind::Alternation(branches) => {
+            let start = witness.len();
+            branches.iter().any(|branch| {
+                witness.truncate(start);
+                write_witness(branch, witness)
+            })
+        }
+    }
+}
+
+/// A character from a class, preferring `a` over whatever the class starts with.
+fn pick(ranges: impl Iterator<Item = (char, char)>) -> Option<char> {
+    let mut first = None;
+    for (start, end) in ranges {
+        if (start..=end).contains(&'a') {
+            return Some('a');
+        }
+        first.get_or_insert(start);
+    }
+    first
+}
+
 /// Try to extract a simple prefix from a pattern like `^prefix`.
 /// Only matches patterns with alphanumeric characters, hyphens, underscores, and forward slashes.
 /// The escaped form `\/` is also accepted and normalised to `/`.
@@ -437,5 +517,33 @@ mod tests {
     #[test_case("^a\\-$b" ; "escaped then dollar not at end")]
     fn test_analyze_pattern_none(pattern: &str) {
         assert_eq!(analyze_pattern(pattern), None);
+    }
+
+    #[test_case("=", "="; "bare literal")]
+    #[test_case("b$", "b"; "tail anchored literal")]
+    #[test_case("^abc", "abc"; "prefix")]
+    #[test_case("^abc$", "abc"; "exact")]
+    #[test_case("^(red|green)$", "red"; "alternation")]
+    #[test_case(r"^\S*$", ""; "star repetition")]
+    #[test_case("", ""; "empty pattern")]
+    #[test_case("a.b", "aab"; "wildcard")]
+    #[test_case("a+", "a"; "plus repetition")]
+    #[test_case(r"\d{3}", "000"; "counted character class")]
+    #[test_case("^[a-z]+-[0-9]+$", "a-0"; "classes around a literal")]
+    fn test_pattern_witness(pattern: &str, expected: &str) {
+        let witness = pattern_witness(pattern).expect("has a witness");
+        assert_eq!(witness, expected);
+        let regex = regex::Regex::new(&to_rust_regex(pattern).expect("translates")).expect("valid");
+        assert!(
+            regex.is_match(&witness),
+            "`{witness}` does not match `{pattern}`"
+        );
+    }
+
+    #[test_case(r"(?=a)b"; "look ahead the translation rejects")]
+    #[test_case("a{100}"; "more repetitions than are written out")]
+    #[test_case("((a{64}){64}){64}"; "nested repetitions multiplying past the length cap")]
+    fn test_pattern_without_a_witness(pattern: &str) {
+        assert_eq!(pattern_witness(pattern), None);
     }
 }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- `CanonicalSchema#satisfiability` answers `:yes` for a string whose `pattern` or `format` a matching value can be built from.
+
 ## [0.50.0] - 2026-08-20
 
 ### Added
