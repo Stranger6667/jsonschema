@@ -2538,25 +2538,28 @@ pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -
     let Some(leaf) = NonEmpty::new(leaf) else {
         return Schema::falsy();
     };
-    // `maxLength: 0` accepts the empty string and nothing else. A leaf this narrow is spelled as
-    // the constant before anything can exclude from it, so exclusions cannot reach here. Nothing
-    // prunes a barred pattern against the window, so the collapse gives way to one.
+    // `maxLength: 0` leaves the empty string as the only string left, so the rest of the leaf is
+    // checked against it: the leaf is that one value or nothing at all. A `format`, media type, or
+    // encoding the validator does not check rejects nothing.
     // e.g.  {"type": "string", "maxLength": 0}  =>  {"const": ""}
-    if leaf.get().patterns.is_empty()
-        && leaf.get().excluded_patterns.is_empty()
-        && leaf.get().formats.is_empty()
-        && leaf.get().content_media_types.is_empty()
-        && leaf.get().content_encodings.is_empty()
-        && leaf
-            .get()
-            .lengths
-            .maximum
-            .as_ref()
-            .is_some_and(BoundCardinality::is_zero)
+    // e.g.  {"type": "string", "maxLength": 0, "pattern": "^a"}  =>  false
+    if leaf
+        .get()
+        .lengths
+        .maximum
+        .as_ref()
+        .is_some_and(BoundCardinality::is_zero)
     {
-        return Schema::new(SchemaKind::Const(CanonicalJson::from_value(
-            &Value::String(String::new()),
-        )));
+        let matchers = StringMatchers::compile(leaf.get(), ctx);
+        match string_leaf_admits_text(leaf.get(), &matchers, "", UncheckableFacet::Skipped) {
+            Verdict::Admits => {
+                return Schema::new(SchemaKind::Const(CanonicalJson::from_value(
+                    &Value::String(String::new()),
+                )))
+            }
+            Verdict::Rejects => return Schema::falsy(),
+            Verdict::Unknown => {}
+        }
     }
     Schema::new(SchemaKind::String(leaf))
 }
