@@ -788,6 +788,12 @@ def test_label_members_carry_their_label(member, label):
 
 
 @pytest.mark.parametrize(("member", "label"), LABEL_MEMBERS)
+def test_label_members_read_as_their_label(member, label):
+    assert str(member) == label
+    assert f"{member}" == label
+
+
+@pytest.mark.parametrize(("member", "label"), LABEL_MEMBERS)
 def test_label_members_are_hashable(member, label):
     assert {member: "kept"}[member] == "kept"
 

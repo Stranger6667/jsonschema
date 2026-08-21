@@ -14,6 +14,7 @@ class Containment:
     UNKNOWN: Containment
     @property
     def value(self) -> str: ...
+    def __str__(self) -> str: ...
 
 @final
 class Satisfiability:
@@ -24,6 +25,7 @@ class Satisfiability:
     UNKNOWN: Satisfiability
     @property
     def value(self) -> str: ...
+    def __str__(self) -> str: ...
 
 @final
 class Distinctness:
@@ -34,6 +36,7 @@ class Distinctness:
     SOME_REPEATED: Distinctness
     @property
     def value(self) -> str: ...
+    def __str__(self) -> str: ...
 
 @final
 class CanonicalKind:
@@ -58,6 +61,7 @@ class CanonicalKind:
     RAW: CanonicalKind
     @property
     def value(self) -> str: ...
+    def __str__(self) -> str: ...
 
 @final
 class TrueView:

@@ -630,7 +630,10 @@ class CanonicalSchema:
         ...
 
     def covers(self, other: CanonicalSchema) -> canonical.Containment:
-        """Whether this schema admits every value ``other`` admits."""
+        """Whether this schema admits every value ``other`` admits.
+
+        Only ``YES`` proves containment. Test for ``YES``, and treat ``UNKNOWN`` like ``NO``.
+        """
         ...
 
     def negate(self) -> CanonicalSchema:
@@ -662,7 +665,11 @@ class CanonicalSchema:
         ...
 
     def satisfiability(self) -> canonical.Satisfiability:
-        """Whether any value satisfies this schema."""
+        """Whether any value satisfies this schema.
+
+        Only ``NO`` proves the schema admits nothing. Test for ``NO``, and treat ``UNKNOWN``
+        like ``YES``.
+        """
         ...
 
     def __hash__(self) -> int: ...

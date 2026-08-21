@@ -1478,16 +1478,43 @@ impl BuiltinFormat {
         }
     }
 
+    /// The lengths this format admits, or `None` where it takes any length.
+    ///
+    /// A window narrower than the strings `is_valid` accepts folds a satisfiable schema to `false`,
+    /// so every bound below comes from a length check in the matching `is_valid_*`. Those count
+    /// bytes, which equals the character length a window is read against only for an ASCII-only
+    /// format - so a format taking non-ASCII has no window.
     #[must_use]
     pub(crate) const fn length_window(self) -> Option<(u64, u64)> {
         match self {
             // `YYYY-MM-DD`.
             Self::Date => Some((10, 10)),
+            // A shortest date, `T`, and a shortest time.
+            Self::DateTime => Some((20, u64::MAX)),
+            // `HH:MM:SSZ`, with no ceiling on fractional seconds.
+            Self::Time => Some((9, u64::MAX)),
+            // `P` and one component, as in `P1D`; two characters never parse.
+            Self::Duration => Some((3, u64::MAX)),
+            // The empty name and anything over 253 are turned down.
+            Self::Hostname | Self::HostnameDraft4 => Some((1, 253)),
             // Eight-four-four-four-twelve hex digits plus four hyphens.
             Self::Uuid => Some((36, 36)),
             // `0.0.0.0` through `255.255.255.255`.
             Self::Ipv4 => Some((7, 15)),
-            _ => None,
+            // `::` up to `0000:0000:0000:0000:0000:0000:255.255.255.255`.
+            Self::Ipv6 => Some((2, 45)),
+            // The first three take non-ASCII; the rest take any length, empty included.
+            Self::Email
+            | Self::IdnEmail
+            | Self::IdnHostname
+            | Self::Iri
+            | Self::IriReference
+            | Self::JsonPointer
+            | Self::Regex
+            | Self::RelativeJsonPointer
+            | Self::Uri
+            | Self::UriReference
+            | Self::UriTemplate => None,
         }
     }
 
@@ -2341,5 +2368,36 @@ mod tests {
                 );
             }
         }
+    }
+
+    /// The hostname ceiling, too long to spell out as a case above.
+    #[test]
+    fn the_longest_hostname_is_accepted() {
+        let label = "a".repeat(63);
+        let hostname = format!("{label}.{label}.{label}.{}", "a".repeat(61));
+        assert_eq!(hostname.len(), 253);
+        assert!(is_valid_hostname(&hostname));
+        assert_eq!(BuiltinFormat::Hostname.length_window(), Some((1, 253)));
+    }
+
+    /// The exact window ends, which no corpus is guaranteed to carry.
+    #[test_case("00:00:00Z", BuiltinFormat::Time; "shortest time")]
+    #[test_case("0000-01-01T00:00:00Z", BuiltinFormat::DateTime; "shortest date-time")]
+    #[test_case("P1D", BuiltinFormat::Duration; "shortest duration")]
+    #[test_case("::", BuiltinFormat::Ipv6; "shortest ipv6")]
+    #[test_case(
+        "0000:0000:0000:0000:0000:0000:255.255.255.255",
+        BuiltinFormat::Ipv6;
+        "longest ipv6"
+    )]
+    #[test_case("a", BuiltinFormat::Hostname; "shortest hostname")]
+    fn test_window_end_is_accepted(text: &str, format: BuiltinFormat) {
+        assert!(format.is_valid(text), "`{text}` is not a valid {format:?}");
+        let (minimum, maximum) = format.length_window().expect("has a window");
+        let length = text.chars().count() as u64;
+        assert!(
+            length == minimum || length == maximum,
+            "`{text}` sits inside the window rather than at an end"
+        );
     }
 }

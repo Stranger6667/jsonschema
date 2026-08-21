@@ -23,10 +23,12 @@ module JSONSchema
     # What an array requires of its elements: all distinct, some repeated, or neither.
     type distinctness = :unconstrained | :all_distinct | :some_repeated
 
-    # Whether one schema admits every value another does.
+    # Whether one schema admits every value another does. Only `:yes` proves containment: test
+    # for `:yes`, and treat `:unknown` like `:no`.
     type containment = :yes | :no | :unknown
 
-    # Whether any value satisfies a schema.
+    # Whether any value satisfies a schema. Only `:no` proves it admits nothing: test for `:no`,
+    # and treat `:unknown` like `:yes`.
     type satisfiability = :yes | :no | :unknown
 
     type view = TrueView | FalseView | MultiTypeView | TypedGroupView | StringView

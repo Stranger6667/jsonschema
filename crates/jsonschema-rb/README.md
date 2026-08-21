@@ -365,6 +365,8 @@ Compare a request schema new-against-old and a response schema old-against-new: 
 
 `:no` on the difference proves nothing was lost. `:unknown` proves nothing either way.
 
+`:unknown` is undecided, not negative, so the two questions have opposite safe tests: only `satisfiability == :no` proves a schema admits nothing, and only `covers == :yes` proves containment.
+
 `JSONSchema::Canonical::Containment`, `Satisfiability`, `Distinctness` and `Kind` hold these symbols as constants, each with an `ALL` list.
 
 Both operands must share one setup - the same draft, format policy, regular-expression engine and definitions - or `IncompatibleOperands` is raised. `UnsupportedOperand` means an operand is a `Raw` pass-through, and `UnsupportedResult` that the canonical form does not support the result. All three live under `JSONSchema::Canonical`.

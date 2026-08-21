@@ -488,6 +488,8 @@ Compare a request schema new-against-old and a response schema old-against-new: 
 
 `Satisfiability.NO` on the difference proves nothing was lost. `UNKNOWN` proves nothing either way.
 
+`UNKNOWN` is undecided, not negative, so the two questions have opposite safe tests: only `satisfiability() == Satisfiability.NO` proves a schema admits nothing, and only `covers() == Containment.YES` proves containment.
+
 `Containment`, `Satisfiability`, `Distinctness` and `CanonicalKind` live in `jsonschema_rs.canonical`.
 
 Both operands must share one setup - the same draft, format policy, regular-expression engine and definitions - or `IncompatibleOperands` is raised. `UnsupportedOperand` means an operand is a `Raw` pass-through, and `UnsupportedResult` that the canonical form does not support the result.
