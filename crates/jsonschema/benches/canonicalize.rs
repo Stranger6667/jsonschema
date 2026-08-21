@@ -124,6 +124,19 @@ mod bench {
             }))
             .collect::<Vec<_>>()});
 
+        // `not` over an object turns each property into its own branch, and the union then reads
+        // every branch against every other.
+        let negated_wide_object = {
+            let mut props = Map::with_capacity(128);
+            for i in 0..128_usize {
+                props.insert(
+                    format!("p{i}"),
+                    json!({"type": "string", "minLength": i % 3}),
+                );
+            }
+            json!({"not": {"type": "object", "properties": props}})
+        };
+
         let open_api = read_json(OPEN_API);
         let swagger = read_json(SWAGGER);
         let geojson = read_json(GEOJSON);
@@ -139,6 +152,7 @@ mod bench {
                 &many_small_allofs_inside_object,
             ),
             ("negated_branches_in_allof", &negated_branches_in_allof),
+            ("negated_wide_object", &negated_wide_object),
             ("wide_numeric_grid", &wide_numeric_grid),
             ("object_with_properties", &object_with_properties),
             ("chained_refs", &chained_refs),

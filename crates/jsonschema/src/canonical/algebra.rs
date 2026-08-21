@@ -1751,6 +1751,11 @@ fn collapse_object_leaves_covering_domain(
     if leaves.len() < 2 {
         return false;
     }
+    // The split ends on the piece that rejects every key, which requires none of them and
+    // accepts `{}`. A leaf with a `required` key accepts neither.
+    if leaves.iter().all(|leaf| !leaf.required.is_empty()) {
+        return false;
+    }
     let mut keys: Vec<Arc<str>> = leaves
         .iter()
         .flat_map(|leaf| leaf.required.iter().chain(leaf.properties.keys()).cloned())
@@ -1874,6 +1879,13 @@ fn piece_meets_demands(piece: &Schema, leaf: &Schema) -> bool {
         .required
         .iter()
         .all(|key| demanded.binary_search(key).is_ok())
+}
+
+/// [`piece_meets_demands`] for the routines holding leaves rather than packed nodes.
+fn demands_every_key_of(piece: &ObjectLeaf, leaf: &ObjectLeaf) -> bool {
+    leaf.required
+        .iter()
+        .all(|key| piece.required.binary_search(key).is_ok())
 }
 
 /// Whether barring any of these keys leaves the piece saying the same thing about its required
@@ -2076,18 +2088,18 @@ fn drop_required_covered_by_sibling(
                 // Probed one sibling at a time: a sibling whose intersection this run could only
                 // approximate says nothing, and wrapping the whole search in one probe would let
                 // it bury a later sibling that covers exactly.
-                let covered =
-                    (0..leaves.len())
-                        .filter(|&sibling| sibling != index)
-                        .any(|sibling| {
-                            holds_exactly(ctx, || {
-                                intersect(
-                                    gained.clone(),
-                                    object_leaf(leaves[sibling].clone(), ctx),
-                                    ctx,
-                                ) == gained
-                            })
-                        });
+                let covered = (0..leaves.len())
+                    .filter(|&sibling| sibling != index)
+                    .filter(|&sibling| demands_every_key_of(&weakened, &leaves[sibling]))
+                    .any(|sibling| {
+                        holds_exactly(ctx, || {
+                            intersect(
+                                gained.clone(),
+                                object_leaf(leaves[sibling].clone(), ctx),
+                                ctx,
+                            ) == gained
+                        })
+                    });
                 if covered {
                     leaves[index] = weakened;
                     return true;
@@ -2229,6 +2241,13 @@ fn widen_entry_covered_by_sibling(
         for key in keys {
             for sibling in (0..leaves.len()).filter(|&sibling| sibling != index) {
                 if leaves[sibling].additional.is_some() {
+                    continue;
+                }
+                // The gained leaf requires this leaf's keys and the one being widened; a
+                // sibling requiring any other key accepts nothing it accepts.
+                if !leaves[sibling].required.iter().all(|demanded| {
+                    *demanded == key || leaves[index].required.binary_search(demanded).is_ok()
+                }) {
                     continue;
                 }
                 let entry = leaves[index]
