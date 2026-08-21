@@ -162,15 +162,29 @@ fn arbitrary_instance(tc: &TestCase) -> Value {
     }
 }
 
-// A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
+// `^$` matches only the empty string, the one value `maxLength: 0` leaves.
+fn draw_pattern(tc: &TestCase) -> &'static str {
+    tc.draw(gs::sampled_from(vec!["^a", "b$", "[0-9]+", "x", "^$"]))
+}
+
+fn draw_format(tc: &TestCase) -> &'static str {
+    tc.draw(gs::sampled_from(vec![
+        "email",
+        "date",
+        "uuid",
+        "unknown-fmt",
+    ]))
+}
+
 // Key patterns that overlap each other and the drawn key pool, so a shield and a name constraint
 // can each hold what the other turns away.
 fn draw_key_pattern(tc: &TestCase) -> &'static str {
     tc.draw(gs::sampled_from(vec!["^a", "b$", "^x", "^[ab]$", "^a.*"]))
 }
 
+// A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(99)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(103)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -187,10 +201,7 @@ fn draw_leaf(tc: &TestCase) -> Value {
             let (min, max) = ordered(small_length(tc), small_length(tc));
             json!({ "type": "string", "minLength": min, "maxLength": max })
         }
-        9 => {
-            let pattern = tc.draw(gs::sampled_from(vec!["^a", "b$", "[0-9]+", "x"]));
-            json!({ "type": "string", "pattern": pattern })
-        }
+        9 => json!({ "type": "string", "pattern": draw_pattern(tc) }),
         10 => json!({ "type": "string", "minLength": drawn_length(tc), "pattern": "^a" }),
         11 => json!({ "type": "integer", "minimum": small_int(tc) }),
         12 => json!({ "type": "integer", "maximum": small_int(tc) }),
@@ -447,6 +458,25 @@ fn draw_leaf(tc: &TestCase) -> Value {
                 draw_key_pattern(tc): { "propertyNames": { "pattern": draw_key_pattern(tc) } }
             },
             "properties": { "a": { "maxProperties": small_length(tc) } }
+        }),
+        // A length limit beside a keyword no length can answer: `maxLength: 0` leaves the empty
+        // string alone, which the `pattern` or `format` beside it either accepts or rejects.
+        100 => json!({
+            "type": "string",
+            "maxLength": small_length(tc),
+            "pattern": draw_pattern(tc)
+        }),
+        101 => {
+            json!({ "type": "string", "maxLength": small_length(tc), "format": draw_format(tc) })
+        }
+        102 => {
+            let (min, max) = ordered(small_length(tc), small_length(tc));
+            json!({ "type": "string", "minLength": min, "maxLength": max, "pattern": draw_pattern(tc) })
+        }
+        103 => json!({
+            "type": "string",
+            "maxLength": small_length(tc),
+            "contentEncoding": "base64"
         }),
         _ => json!({ "type": ["string", "integer"] }),
     }
@@ -1482,7 +1512,7 @@ fn a_redundant_divisor_does_not_change_the_form(tc: TestCase) {
 // canonical forms must be IR-equal.
 fn rewrite_schema(tc: &TestCase, schema: &Value) -> Value {
     let (schema, definitions) = split_root_definitions(schema);
-    let rewritten = match tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) {
+    let rewritten = match tc.draw(gs::integers::<u8>().min_value(0).max_value(5)) {
         0 => json!({ "allOf": [schema] }),
         // The empty conjunct says nothing; unlike `true` it is meta-valid in every draft.
         1 => json!({ "allOf": [schema, {}] }),
@@ -1514,6 +1544,7 @@ fn rewrite_schema(tc: &TestCase, schema: &Value) -> Value {
             }
             _ => json!({ "anyOf": [schema] }),
         },
+        5 => split_keywords(&schema).unwrap_or_else(|| json!({ "allOf": [schema] })),
         // A lone `type: [a, b]` admits the same values as the union of its single-type spellings.
         _ => match (
             schema.as_object(),
@@ -1525,10 +1556,34 @@ fn rewrite_schema(tc: &TestCase, schema: &Value) -> Value {
                     .map(|name| json!({ "type": name }))
                     .collect::<Vec<_>>()
             }),
-            _ => json!({ "allOf": [schema] }),
+            _ => split_keywords(&schema).unwrap_or_else(|| json!({ "allOf": [schema] })),
         },
     };
     attach_root_definitions(rewritten, definitions)
+}
+
+// Keywords that constrain on their own, so moving one into its own `allOf` branch accepts the same
+// values. A pair that works together - `contentEncoding` with `contentMediaType`, `properties` with
+// `additionalProperties` - does not belong here.
+const SEPARABLE_KEYWORDS: [&str; 5] = ["type", "minLength", "maxLength", "pattern", "format"];
+
+/// The same keywords, one per `allOf` branch, or `None` where the object holds one that reads its
+/// neighbours.
+fn split_keywords(schema: &Value) -> Option<Value> {
+    let object = schema.as_object()?;
+    if object.len() < 2
+        || !object
+            .keys()
+            .all(|key| SEPARABLE_KEYWORDS.contains(&key.as_str()))
+    {
+        return None;
+    }
+    Some(json!({
+        "allOf": object
+            .iter()
+            .map(|(key, value)| json!({ key.clone(): value }))
+            .collect::<Vec<_>>()
+    }))
 }
 
 #[hegel::test(test_cases = 5_000)]

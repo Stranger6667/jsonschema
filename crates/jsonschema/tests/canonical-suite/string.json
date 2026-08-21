@@ -461,5 +461,69 @@
       {"data": 1, "valid": true},
       {"data": null, "valid": true}
     ]
+  },
+  {
+    "description": "maxLength 0 leaves the empty string, which the pattern beside it rejects",
+    "schemas": [
+      {"type": "string", "maxLength": 0, "pattern": "^a"},
+      {"allOf": [{"type": "string", "maxLength": 0}, {"pattern": "^a"}]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": "", "valid": false},
+      {"data": "a", "valid": false}
+    ]
+  },
+  {
+    "description": "maxLength 0 beside a pattern the empty string matches accepts that one string",
+    "schemas": [
+      {"type": "string", "maxLength": 0, "pattern": "^$"},
+      {"const": ""}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": ""
+    },
+    "tests": [
+      {"data": "", "valid": true},
+      {"data": "a", "valid": false},
+      {"data": null, "valid": false}
+    ]
+  },
+  {
+    "description": "maxLength 0 beside a format the empty string does not satisfy",
+    "schema": {"type": "string", "maxLength": 0, "format": "email"},
+    "validate_formats": true,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "satisfiable": false,
+    "tests": [
+      {"data": "", "valid": false},
+      {"data": "a@b.com", "valid": false}
+    ]
+  },
+  {
+    "description": "a branch accepting only the empty string joins the enum beside it",
+    "schema": {
+      "anyOf": [
+        {"type": "string", "maxLength": 0, "pattern": "^[ab]+$"},
+        {"enum": ["", null]}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "enum": [null, ""]
+    },
+    "tests": [
+      {"data": "", "valid": true},
+      {"data": null, "valid": true},
+      {"data": "a", "valid": false}
+    ]
   }
 ]

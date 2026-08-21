@@ -11,6 +11,10 @@
 - `CanonicalSchema.satisfiability()` answers `YES` for a string whose `pattern` or `format` a matching value can be built from.
 - `CanonicalSchema.satisfiability()` answers `NO` where a `format` takes no string of the length the schema asks for.
 
+### Fixed
+
+- A string schema whose `maxLength` is `0` keeping a `pattern`, `format`, or content facet unread, so the same constraints written in one object and written as an `allOf` reached different canonical forms.
+
 ## [0.50.0] - 2026-08-20
 
 ### Added
