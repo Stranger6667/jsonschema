@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+### Added
+
+- `str()` on `Containment`, `Satisfiability`, `Distinctness` and `CanonicalKind` members reads as the label.
+
 ### Changed
 
 - `CanonicalSchema.satisfiability()` answers `YES` for a string whose `pattern` or `format` a matching value can be built from.
+- `CanonicalSchema.satisfiability()` answers `NO` where a `format` takes no string of the length the schema asks for.
 
 ## [0.50.0] - 2026-08-20
 

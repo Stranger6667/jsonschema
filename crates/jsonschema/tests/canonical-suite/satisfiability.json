@@ -3767,5 +3767,128 @@
       "minItems": 1,
       "type": "array"
     }
+  },
+  {
+    "description": "a date-time shorter than its own minimum admits nothing",
+    "schema": {
+      "format": "date-time",
+      "maxLength": 10,
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "a time shorter than its own minimum admits nothing",
+    "schema": {
+      "format": "time",
+      "maxLength": 8,
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "a duration shorter than its own minimum admits nothing",
+    "schema": {
+      "format": "duration",
+      "maxLength": 2,
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "an ipv6 longer than its own maximum admits nothing",
+    "schema": {
+      "format": "ipv6",
+      "minLength": 46,
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "a hostname longer than its own maximum admits nothing",
+    "schema": {
+      "format": "hostname",
+      "minLength": 254,
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
+  },
+  {
+    "description": "a date-time at its own minimum stays satisfiable",
+    "schema": {
+      "format": "date-time",
+      "maxLength": 20,
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "yes",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "date-time",
+      "maxLength": 20,
+      "type": "string"
+    }
+  },
+  {
+    "description": "a hostname at its own maximum stays satisfiable",
+    "schema": {
+      "format": "hostname",
+      "minLength": 253,
+      "type": "string"
+    },
+    "validate_formats": true,
+    "satisfiability": "unknown",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "format": "hostname",
+      "minLength": 253,
+      "type": "string"
+    }
+  },
+  {
+    "description": "a date-time and a date together admit nothing",
+    "schema": {
+      "allOf": [
+        {
+          "format": "date-time",
+          "type": "string"
+        },
+        {
+          "format": "date",
+          "type": "string"
+        }
+      ]
+    },
+    "validate_formats": true,
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    }
   }
 ]

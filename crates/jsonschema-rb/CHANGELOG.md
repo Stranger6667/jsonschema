@@ -5,6 +5,7 @@
 ### Changed
 
 - `CanonicalSchema#satisfiability` answers `:yes` for a string whose `pattern` or `format` a matching value can be built from.
+- `CanonicalSchema#satisfiability` answers `:no` where a `format` takes no string of the length the schema asks for.
 
 ## [0.50.0] - 2026-08-20
 

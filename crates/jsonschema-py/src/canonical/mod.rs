@@ -56,6 +56,12 @@ macro_rules! label_enum {
             fn value(&self) -> &'static str {
                 $core::from(*self).as_str()
             }
+
+            /// The label, so a member reads as itself in text.
+            #[allow(clippy::trivially_copy_pass_by_ref)]
+            fn __str__(&self) -> &'static str {
+                $core::from(*self).as_str()
+            }
         }
     };
 }
@@ -435,6 +441,9 @@ impl PyCanonicalSchema {
     }
 
     /// Whether this schema admits every value `other` admits.
+    ///
+    /// Only `YES` proves containment; `UNKNOWN` means undecided, not disproved. Test for `YES`,
+    /// and treat `UNKNOWN` like `NO`.
     fn covers(&self, py: Python<'_>, other: &Self) -> PyResult<PyContainment> {
         self.inner
             .covers(&other.inner)
@@ -474,6 +483,9 @@ impl PyCanonicalSchema {
     }
 
     /// Whether any value satisfies this schema.
+    ///
+    /// Only `NO` proves the schema admits nothing; `UNKNOWN` means undecided, not empty. Test for
+    /// `NO`, and treat `UNKNOWN` like `YES`.
     fn satisfiability(&self) -> PySatisfiability {
         self.inner.satisfiability().into()
     }

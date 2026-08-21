@@ -148,6 +148,16 @@
 //!   [`subtract`](CanonicalSchema::subtract), and [`negate`](CanonicalSchema::negate) combine two
 //!   results as sets of values, while [`covers`](CanonicalSchema::covers) and
 //!   [`satisfiability`](CanonicalSchema::satisfiability) ask about them.
+//!
+//! # Reading the two questions
+//!
+//! `Unknown` means undecided, not negative, and the two have opposite safe readings:
+//!
+//! - [`satisfiability`](CanonicalSchema::satisfiability) - test for `No`, treat `Unknown` like `Yes`.
+//! - [`covers`](CanonicalSchema::covers) - test for `Yes`, treat `Unknown` like `No`.
+//!
+//! Reading either the other way around is silent: nothing raises, and the caller acts on a
+//! conclusion the canonical form never reached.
 
 #![deny(clippy::wildcard_enum_match_arm)]
 

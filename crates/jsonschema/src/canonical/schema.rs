@@ -638,6 +638,9 @@ impl CanonicalSchema {
     }
 
     /// Whether any instance satisfies this schema.
+    ///
+    /// Only `No` proves the schema admits nothing; `Unknown` means undecided, not empty. Test for
+    /// `No`, and treat `Unknown` like `Yes`.
     #[must_use]
     pub fn satisfiability(&self) -> Satisfiability {
         // A pointer and the schema it names accept the same values, so the answer is the target's.
@@ -988,6 +991,9 @@ impl CanonicalSchema {
     }
 
     /// Whether this schema admits every value `other` admits.
+    ///
+    /// Only `Yes` proves containment; `Unknown` means undecided, not disproved. Test for `Yes`,
+    /// and treat `Unknown` like `No`.
     ///
     /// # Errors
     ///
