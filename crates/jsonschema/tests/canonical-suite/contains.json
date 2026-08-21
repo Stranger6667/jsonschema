@@ -640,5 +640,29 @@
       {"data": [1], "valid": true},
       {"data": [2], "valid": false}
     ]
+  },
+  {
+    "description": "draft 4 keeps the whole number a contains demand takes and drops its float twin",
+    "schema": {
+      "allOf": [
+        {"enum": [[1]]},
+        {"not": {"items": {"not": {"type": "integer"}}}}
+      ]
+    },
+    "draft": "draft4",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": [{"enum": [1]}],
+      "maxItems": 1,
+      "not": {"items": {"not": {"type": "integer"}}}
+    },
+    "satisfiable": true,
+    "tests": [
+      {"data": [1], "valid": true},
+      {"data": [1.0], "valid": false},
+      {"data": [2], "valid": false},
+      {"data": [], "valid": false}
+    ]
   }
 ]

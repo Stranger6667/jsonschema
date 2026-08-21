@@ -184,7 +184,7 @@ fn draw_key_pattern(tc: &TestCase) -> &'static str {
 
 // A modeled leaf: value sets, type sets, string facets, integer interval bounds, and container sizes.
 fn draw_leaf(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(103)) {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(105)) {
         0 => json!({}),
         1 => json!(true),
         2 => json!(false),
@@ -478,6 +478,16 @@ fn draw_leaf(tc: &TestCase) -> Value {
             "maxLength": small_length(tc),
             "contentEncoding": "base64"
         }),
+        // An element schema written as a complement: under Draft 4 its negation takes a whole number
+        // that its own `type: integer` reading of the same value refuses.
+        104 => json!({ "type": "array", "items": { "not": { "type": draw_type(tc) } } }),
+        // A one-element array member beside a demand on that element, which negating the element
+        // schema is the only way to write before Draft 6. Draft 4 reads `1` and `1.0` as one member
+        // and `type: integer` takes only the first, so the demand splits the member.
+        105 => json!({ "allOf": [
+            { "enum": [[small_int(tc)]] },
+            { "not": { "items": { "not": { "type": "integer" } } } }
+        ] }),
         _ => json!({ "type": ["string", "integer"] }),
     }
 }
@@ -786,11 +796,40 @@ fn canonical_form_preserves_validation(tc: TestCase) {
     let (Ok(raw), Ok(canonical)) = (build(&schema), build(&emitted)) else {
         return;
     };
-    assert_eq!(
-        raw.is_valid(&instance),
-        canonical.is_valid(&instance),
-        "{schema} vs {emitted} on {instance}"
-    );
+    // A drawn instance almost never lands on a value the schema names, and those are where a value
+    // set that lost or gained a member shows.
+    let mut named = Vec::new();
+    named_values(&schema, &mut named);
+    for instance in named.iter().chain(std::iter::once(&instance)) {
+        assert_eq!(
+            raw.is_valid(instance),
+            canonical.is_valid(instance),
+            "{schema} vs {emitted} on {instance}"
+        );
+    }
+}
+
+// Every value the schema names through `const` or `enum`.
+fn named_values(schema: &Value, into: &mut Vec<Value>) {
+    match schema {
+        Value::Object(map) => {
+            if let Some(value) = map.get("const") {
+                into.push(value.clone());
+            }
+            if let Some(Value::Array(values)) = map.get("enum") {
+                into.extend(values.iter().cloned());
+            }
+            for value in map.values() {
+                named_values(value, into);
+            }
+        }
+        Value::Array(items) => {
+            for item in items {
+                named_values(item, into);
+            }
+        }
+        _ => {}
+    }
 }
 
 // The complement of a complement accepts what the schema accepts. Taking it through the algebra

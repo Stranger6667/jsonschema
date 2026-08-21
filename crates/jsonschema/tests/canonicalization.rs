@@ -1101,6 +1101,37 @@ fn draft4_integer_values_are_a_typed_group(schema: &Value) {
     assert_eq!(group.body.kind(), CanonicalKind::Enum);
 }
 
+// Draft 4 gives `1` and `1.0` different types, so an element demand taking only the first leaves
+// the part of the member it takes rather than the whole member or nothing.
+#[test]
+fn draft4_an_element_demand_keeps_the_member_spelling_it_takes() {
+    let draft4 = || options().with_draft(Draft::Draft4);
+    let member = draft4()
+        .canonicalize(&json!({"enum": [[1]]}))
+        .expect("canonicalizes");
+    let elements = draft4()
+        .canonicalize(&json!({
+            "type": "array",
+            "items": {"type": "number", "not": {"type": "integer"}}
+        }))
+        .expect("canonicalizes");
+    let difference = member
+        .subtract(&elements)
+        .expect("subtracts")
+        .to_json_schema();
+    let validator = jsonschema::options()
+        .with_draft(Draft::Draft4)
+        .build(&difference)
+        .expect("compiles");
+    assert!(validator.is_valid(&json!([1])));
+    assert!(!validator.is_valid(&json!([1.0])));
+    // Only `Yes` claims containment, and the member holds a value the element demand refuses.
+    assert_ne!(
+        elements.covers(&member).expect("compares"),
+        Containment::Yes
+    );
+}
+
 // An `anyOf` whose branches stay disjoint surfaces as an AnyOf view exposing each branch.
 #[test]
 fn view_exposes_anyof_branches() {

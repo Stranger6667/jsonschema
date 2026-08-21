@@ -3468,7 +3468,17 @@ fn contains_verdict(
                     possible += 1;
                 }
                 Verdict::Unknown => possible += 1,
-                Verdict::Rejects => {}
+                // Draft 4 reads `1` and `1.0` as one value but gives them different types, so a
+                // demand for `integer` takes the first and refuses the second. The element then
+                // meets the demand on part of what it stands for, which counts toward the ceiling
+                // but not toward the floor.
+                Verdict::Rejects => {
+                    if matches!(ctx.draft(), Draft::Draft4)
+                        && !rejects_value(&facet.schema, element, ctx)
+                    {
+                        possible += 1;
+                    }
+                }
             }
         }
         let definite = BoundCardinality::from(definite);
@@ -3530,11 +3540,12 @@ fn restrict_array_member(
         };
     debug_assert!(
         contains.is_empty()
+            || matches!(ctx.draft(), Draft::Draft4)
             || leaf
                 .contains
                 .iter()
                 .any(|facet| contains_reference(&facet.schema)),
-        "only reference-bearing contains facets survive an undecidable finite member"
+        "outside Draft 4 only reference-bearing contains facets survive an undecidable finite member"
     );
     let mut restricted = Vec::with_capacity(elements.len());
     for (index, element) in elements.iter().enumerate() {
