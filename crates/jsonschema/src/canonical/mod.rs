@@ -177,6 +177,7 @@ pub(crate) mod refold;
 pub(crate) mod rename;
 pub(crate) mod schema;
 pub(crate) mod view;
+mod witness;
 
 pub use error::{CanonicalizationError, OperandMismatch};
 pub use options::{options, CanonicalizeOptions};

@@ -20,6 +20,7 @@
 ### Performance
 
 - `not` over an object schema is linear in its property count, not quadratic.
+- `not` over an object schema with `additionalProperties: false` no longer costs cubic time in its property count.
 
 ## [0.50.0] - 2026-08-20
 
