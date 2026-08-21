@@ -1,5 +1,5 @@
 //! Set algebra over canonical IR nodes.
-use std::{collections::BTreeSet, sync::Arc};
+use std::{cell::Cell, collections::BTreeSet, sync::Arc};
 
 use ahash::AHashSet;
 use referencing::Draft;
@@ -16,7 +16,7 @@ use crate::{
             NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, ObjectViolation, PropertyMap,
             Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves, UncheckableFacet, Verdict,
         },
-        negate, oracle, parse, DefinitionMap,
+        negate, oracle, parse, witness, DefinitionMap,
     },
     JsonType, JsonTypeSet,
 };
@@ -1784,6 +1784,36 @@ fn collapse_object_leaves_covering_domain(
     true
 }
 
+/// Branches a pool needs before a value scan pays for itself.
+const VALUE_SCAN_FLOOR: usize = 8;
+
+/// Whether the branch takes a value none of its siblings do. A leaf holding a `$ref` this run
+/// cannot read builds no candidate, which answers `false` and leaves the walks to decide.
+fn holds_a_value_the_siblings_miss(
+    packed: &Schema,
+    leaves: &[ObjectLeaf],
+    index: usize,
+    ctx: &CanonicalizationContext,
+) -> bool {
+    witness::candidate_instances(
+        packed,
+        &|uri| ctx.definition(uri),
+        witness::CANDIDATE_DEPTH,
+        &Cell::new(witness::CANDIDATE_NODES),
+        ctx,
+    )
+    .iter()
+    .any(|candidate| {
+        let Value::Object(map) = candidate else {
+            return false;
+        };
+        object_leaf_admits(&leaves[index], map, ctx) == Verdict::Admits
+            && leaves.iter().enumerate().all(|(sibling, leaf)| {
+                sibling == index || object_leaf_admits(leaf, map, ctx) == Verdict::Rejects
+            })
+    })
+}
+
 /// Pack every leaf into a node once. The coverage walk below tests one node against the same set of
 /// leaves at every step of a split, and packing carries a full copy of the property map.
 fn packed_leaves(leaves: &[ObjectLeaf], ctx: &CanonicalizationContext) -> Vec<Schema> {
@@ -1974,6 +2004,14 @@ fn drop_object_branch_covered_by_siblings(
                 )
             })
         }) {
+            continue;
+        }
+        // A value this branch takes and no sibling takes settles every question below: the piece
+        // holding it is part of the branch, and no split cuts it out. Worth looking for only
+        // where the splits outcost the search, which is a pool of more than a few branches.
+        if leaves.len() >= VALUE_SCAN_FLOOR
+            && holds_a_value_the_siblings_miss(&packed[index], leaves, index, ctx)
+        {
             continue;
         }
         let keys = keys_beside(leaves, index);

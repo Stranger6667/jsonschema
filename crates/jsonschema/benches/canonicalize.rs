@@ -137,6 +137,19 @@ mod bench {
             json!({"not": {"type": "object", "properties": props}})
         };
 
+        // A closed map under `not`: every branch it turns into is read against every other.
+        let negated_closed_object = {
+            let mut props = Map::with_capacity(64);
+            for i in 0..64_usize {
+                props.insert(format!("p{i}"), json!({"type": "string"}));
+            }
+            json!({"not": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": props,
+            }})
+        };
+
         let open_api = read_json(OPEN_API);
         let swagger = read_json(SWAGGER);
         let geojson = read_json(GEOJSON);
@@ -153,6 +166,7 @@ mod bench {
             ),
             ("negated_branches_in_allof", &negated_branches_in_allof),
             ("negated_wide_object", &negated_wide_object),
+            ("negated_closed_object", &negated_closed_object),
             ("wide_numeric_grid", &wide_numeric_grid),
             ("object_with_properties", &object_with_properties),
             ("chained_refs", &chained_refs),
