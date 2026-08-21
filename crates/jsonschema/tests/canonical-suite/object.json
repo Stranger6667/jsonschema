@@ -1125,5 +1125,26 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "branches that together accept every object collapse to type object",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "properties": {"a": false}},
+        {"type": "object", "properties": {"b": {"type": "null"}}},
+        {"type": "object", "minProperties": 2}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object"
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1, "b": 1}, "valid": true},
+      {"data": 1, "valid": false}
+    ]
   }
 ]

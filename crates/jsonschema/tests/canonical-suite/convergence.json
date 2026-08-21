@@ -2115,6 +2115,230 @@
               }
             }
           ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "properties": {
+                    "data": {
+                      "required": [
+                        "polynomial_central"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "required": [
+                      "polynomial_names"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema2"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "metadata": {
+                        "type": "object",
+                        "properties": {
+                          "polynomial_degree": {
+                            "const": 2
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema5"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema7"
+                            },
+                            "^observable_uncertainties$": {
+                              "type": "object"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 3
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema9"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 4
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema11"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 5
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
         }
       ],
       "$defs": {
@@ -2193,6 +2417,230 @@
         "$schema"
       ],
       "allOf": [
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "properties": {
+                    "data": {
+                      "required": [
+                        "polynomial_central"
+                      ]
+                    }
+                  }
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "required": [
+                      "polynomial_names"
+                    ]
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema2"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "oneOf": [
+                  {
+                    "properties": {
+                      "metadata": {
+                        "type": "object",
+                        "properties": {
+                          "polynomial_degree": {
+                            "const": 2
+                          }
+                        }
+                      }
+                    }
+                  }
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema5"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 1
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema7"
+                            },
+                            "^observable_uncertainties$": {
+                              "type": "object"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 3
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema9"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "type": "object",
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 4
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "allOf": [
+                {
+                  "allOf": [
+                    {
+                      "properties": {
+                        "data": {
+                          "type": "object",
+                          "patternProperties": {
+                            "^(observable_central|polynomial_central)$": {
+                              "$ref": "#/$defs/schema11"
+                            }
+                          }
+                        }
+                      }
+                    }
+                  ]
+                }
+              ]
+            },
+            {
+              "not": {
+                "properties": {
+                  "metadata": {
+                    "properties": {
+                      "polynomial_degree": {
+                        "const": 5
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          ]
+        },
         {
           "anyOf": [
             {

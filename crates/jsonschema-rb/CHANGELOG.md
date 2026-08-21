@@ -13,6 +13,10 @@
 - `CanonicalSchema#covers` answering `Yes` where a Draft 4 element demand refuses a member.
 - A string schema whose `maxLength` is `0` keeping a `pattern`, `format`, or content facet unread, so the same constraints written in one object and written as an `allOf` reached different canonical forms.
 
+### Performance
+
+- `not` over an object schema is linear in its property count, not quadratic.
+
 ## [0.50.0] - 2026-08-20
 
 ### Added
