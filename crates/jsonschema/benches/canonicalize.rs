@@ -150,6 +150,32 @@ mod bench {
             }})
         };
 
+        // A closed map whose entries are unions, the shape a linter configuration takes: `not`
+        // over it crosses two wide unions before the pool is minimized.
+        let negated_closed_object_of_unions = {
+            let mut rules = Map::with_capacity(50);
+            for i in 0..50_usize {
+                rules.insert(
+                    format!("R{i}"),
+                    json!({"anyOf": [
+                        {"enum": ["off", "warning"]},
+                        {"type": "object", "additionalProperties": false, "properties": {
+                            "severity": {"type": "string"},
+                        }},
+                    ]}),
+                );
+            }
+            json!({"not": {
+                "type": "object",
+                "additionalProperties": false,
+                "properties": {"rules": {
+                    "type": "object",
+                    "additionalProperties": false,
+                    "properties": rules,
+                }},
+            }})
+        };
+
         let open_api = read_json(OPEN_API);
         let swagger = read_json(SWAGGER);
         let geojson = read_json(GEOJSON);
@@ -167,6 +193,10 @@ mod bench {
             ("negated_branches_in_allof", &negated_branches_in_allof),
             ("negated_wide_object", &negated_wide_object),
             ("negated_closed_object", &negated_closed_object),
+            (
+                "negated_closed_object_of_unions",
+                &negated_closed_object_of_unions,
+            ),
             ("wide_numeric_grid", &wide_numeric_grid),
             ("object_with_properties", &object_with_properties),
             ("chained_refs", &chained_refs),
