@@ -146,6 +146,7 @@ def is_valid(
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
     keywords: dict[str, type[KeywordValidator]] | None = None,
+    vocabularies: list[str] | None = None,
 ) -> bool:
     """Check if a JSON instance is valid against a schema.
 
@@ -168,6 +169,7 @@ def validate(
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
     keywords: dict[str, type[KeywordValidator]] | None = None,
+    vocabularies: list[str] | None = None,
 ) -> None:
     """Validate a JSON instance against a schema.
 
@@ -190,6 +192,7 @@ def iter_errors(
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
     keywords: dict[str, type[KeywordValidator]] | None = None,
+    vocabularies: list[str] | None = None,
 ) -> Iterator[ValidationError]:
     """Iterate over all validation errors.
 
@@ -211,6 +214,7 @@ def evaluate(
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
     keywords: dict[str, type[KeywordValidator]] | None = None,
+    vocabularies: list[str] | None = None,
 ) -> Evaluation:
     """Evaluate an instance and return structured output.
 
@@ -366,6 +370,7 @@ class Draft4Validator:
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
         keywords: dict[str, type[KeywordValidator]] | None = None,
+        vocabularies: list[str] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -388,6 +393,7 @@ class Draft6Validator:
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
         keywords: dict[str, type[KeywordValidator]] | None = None,
+        vocabularies: list[str] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -410,6 +416,7 @@ class Draft7Validator:
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
         keywords: dict[str, type[KeywordValidator]] | None = None,
+        vocabularies: list[str] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -432,6 +439,7 @@ class Draft201909Validator:
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
         keywords: dict[str, type[KeywordValidator]] | None = None,
+        vocabularies: list[str] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -454,6 +462,7 @@ class Draft202012Validator:
         email_options: EmailOptions | None = None,
         http_options: HttpOptions | None = None,
         keywords: dict[str, type[KeywordValidator]] | None = None,
+        vocabularies: list[str] | None = None,
     ) -> None: ...
     def is_valid(self, instance: Any) -> bool: ...
     def validate(self, instance: Any) -> None: ...
@@ -476,6 +485,7 @@ def validator_for(
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
     keywords: dict[str, type[KeywordValidator]] | None = None,
+    vocabularies: list[str] | None = None,
 ) -> Validator:
     """Create a validator for the given schema.
 
@@ -516,6 +526,7 @@ def validator_map_for(
     email_options: EmailOptions | None = None,
     http_options: HttpOptions | None = None,
     keywords: dict[str, type[KeywordValidator]] | None = None,
+    vocabularies: list[str] | None = None,
 ) -> ValidatorMap:
     """Compile all subschemas in *schema* into a map keyed by URI-fragment JSON pointer.
 

@@ -117,6 +117,7 @@
 //! - `draft = Draft202012` (or another variant) -> [`ValidationOptions::with_draft`]
 //! - `base_uri = "..."` -> [`ValidationOptions::with_base_uri`]
 //! - `resources = { "<uri>" => { schema = r#"..."# } | { path = "..." } }`
+//! - `vocabularies = ["<uri>"]` -> [`ValidationOptions::with_vocabulary`]
 //! - `validate_formats = true|false` -> [`ValidationOptions::should_validate_formats`]
 //! - `ignore_unknown_formats = true|false` -> [`ValidationOptions::should_ignore_unknown_formats`]
 //! - `formats = { "name" => crate::path::to::fn }` -> [`ValidationOptions::with_format`]
@@ -4268,7 +4269,7 @@ mod tests {
     use crate::{validator_for, Registry, SerdeJson, ValidationError};
 
     use super::Draft;
-    use serde_json::json;
+    use serde_json::{json, Value};
     use test_case::test_case;
 
     #[test_case(crate::is_valid ; "autodetect")]
@@ -4953,6 +4954,231 @@ mod tests {
 
         assert!(validator.is_valid(&json!({"foo": "bar"})));
         assert!(!validator.is_valid(&json!({"foo": "bar", "extra": "value"})));
+    }
+
+    fn dialect_registry(vocabularies: &Value) -> Registry<'static> {
+        Registry::new()
+            .add(
+                "https://example.com/dialect",
+                json!({
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "$id": "https://example.com/dialect",
+                    "$vocabulary": vocabularies,
+                }),
+            )
+            .expect("Should accept meta-schema")
+            .prepare()
+            .expect("Should create registry")
+    }
+
+    fn format_assertion_dialect(required: bool) -> Value {
+        json!({
+            "https://json-schema.org/draft/2020-12/vocab/core": true,
+            "https://json-schema.org/draft/2020-12/vocab/validation": true,
+            "https://json-schema.org/draft/2020-12/vocab/format-assertion": required,
+        })
+    }
+
+    // The boolean only steers implementations that do not know the vocabulary.
+    #[test_case(true)]
+    #[test_case(false)]
+    fn format_assertion_vocabulary_asserts_without_opt_in(required: bool) {
+        let registry = dialect_registry(&format_assertion_dialect(required));
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&json!({
+                "$schema": "https://example.com/dialect",
+                "type": "string",
+                "format": "date-time"
+            }))
+            .expect("Should build validator");
+
+        assert!(validator.is_valid(&json!("2026-08-22T12:00:00Z")));
+        assert!(!validator.is_valid(&json!("not-a-date")));
+    }
+
+    #[test_case(false)]
+    #[test_case(true)]
+    fn format_assertion_vocabulary_rejects_unknown_format(ignore_unknown_formats: bool) {
+        let registry = dialect_registry(&format_assertion_dialect(true));
+        let error = crate::options()
+            .with_registry(&registry)
+            .should_ignore_unknown_formats(ignore_unknown_formats)
+            .build(&json!({
+                "$schema": "https://example.com/dialect",
+                "format": "totally-made-up"
+            }))
+            .expect_err("Should reject unknown format");
+
+        assert_eq!(
+            error.to_string(),
+            "Unknown format: 'totally-made-up'. The meta-schema asserts formats, so unrecognized ones cannot be ignored. Register a check for it or disable format validation"
+        );
+    }
+
+    #[test]
+    fn format_assertion_vocabulary_honors_explicit_opt_out() {
+        let registry = dialect_registry(&format_assertion_dialect(true));
+        let validator = crate::options()
+            .with_registry(&registry)
+            .should_validate_formats(false)
+            .build(&json!({
+                "$schema": "https://example.com/dialect",
+                "format": "date-time"
+            }))
+            .expect("Should build validator");
+
+        assert!(validator.is_valid(&json!("not-a-date")));
+    }
+
+    #[test_case(true, false ; "required")]
+    #[test_case(false, true ; "optional")]
+    fn draft201909_format_vocabulary_asserts_when_required(required: bool, expected: bool) {
+        let registry = Registry::new()
+            .add(
+                "https://example.com/dialect",
+                json!({
+                    "$schema": "https://json-schema.org/draft/2019-09/schema",
+                    "$id": "https://example.com/dialect",
+                    "$vocabulary": {
+                        "https://json-schema.org/draft/2019-09/vocab/core": true,
+                        "https://json-schema.org/draft/2019-09/vocab/validation": true,
+                        "https://json-schema.org/draft/2019-09/vocab/format": required,
+                    },
+                }),
+            )
+            .expect("Should accept meta-schema")
+            .prepare()
+            .expect("Should create registry");
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&json!({
+                "$schema": "https://example.com/dialect",
+                "format": "ipv4"
+            }))
+            .expect("Should build validator");
+
+        assert_eq!(validator.is_valid(&json!("not-an-ipv4")), expected);
+    }
+
+    #[test]
+    fn dialect_without_id_declares_vocabularies() {
+        let registry = Registry::new()
+            .add(
+                "https://example.com/dialect",
+                json!({
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "$vocabulary": format_assertion_dialect(true),
+                }),
+            )
+            .expect("Should accept meta-schema")
+            .prepare()
+            .expect("Should create registry");
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&json!({
+                "$schema": "https://example.com/dialect",
+                "format": "ipv4"
+            }))
+            .expect("Should build validator");
+
+        assert!(!validator.is_valid(&json!("not-an-ipv4")));
+    }
+
+    #[test_case("https://json-schema.org/draft/2020-12/meta/format-assertion" ; "2020-12 format-assertion")]
+    #[test_case("https://json-schema.org/draft/2019-09/meta/format" ; "2019-09 format")]
+    fn bundled_format_meta_schema_asserts(meta_schema: &str) {
+        let validator = crate::options()
+            .build(&json!({
+                "$schema": meta_schema,
+                "format": "ipv4"
+            }))
+            .expect("Should build validator");
+
+        assert!(validator.is_valid(&json!("127.0.0.1")));
+        assert!(!validator.is_valid(&json!("not-an-ipv4")));
+    }
+
+    #[test]
+    fn format_annotation_vocabulary_does_not_assert() {
+        let registry = dialect_registry(&json!({
+            "https://json-schema.org/draft/2020-12/vocab/core": true,
+            "https://json-schema.org/draft/2020-12/vocab/format-annotation": true,
+        }));
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&json!({
+                "$schema": "https://example.com/dialect",
+                "format": "date-time"
+            }))
+            .expect("Should build validator");
+
+        assert!(validator.is_valid(&json!("not-a-date")));
+    }
+
+    const UNKNOWN_VOCABULARY_ERROR: &str = "Unknown vocabulary: 'https://example.com/vocab/made-up' is required by the meta-schema. Adjust configuration to declare support for it";
+
+    #[test_case("https://example.com/vocab/made-up", true, false, Some(UNKNOWN_VOCABULARY_ERROR) ; "required undeclared")]
+    #[test_case("https://example.com/vocab/made-up", false, false, None ; "optional undeclared")]
+    #[test_case("https://example.com/vocab/made-up", true, true, None ; "required declared")]
+    #[test_case("https://Example.COM/vocab/made-up", true, true, None ; "declared uppercase host")]
+    #[test_case("https://example.com/vocab/./made-up", true, true, None ; "declared dot segment")]
+    #[test_case("https://example.com/vocab/made%2Dup", true, true, None ; "declared percent-encoded unreserved")]
+    fn unknown_vocabulary(uri: &str, required: bool, declared: bool, expected: Option<&str>) {
+        let registry = dialect_registry(&json!({
+            "https://json-schema.org/draft/2020-12/vocab/core": true,
+            uri: required,
+        }));
+        let mut options = crate::options().with_registry(&registry);
+        if declared {
+            options = options.with_vocabulary(uri);
+        }
+
+        // `Clone` keeps the declarations.
+        let error = options
+            .clone()
+            .build(&json!({"$schema": "https://example.com/dialect"}))
+            .err()
+            .map(|error| error.to_string());
+
+        assert_eq!(error.as_deref(), expected);
+    }
+
+    #[test_case("$ref", "https://example.com/inner" ; "ref to resource")]
+    #[test_case("$ref", "https://example.com/inner#/$defs/leaf" ; "ref into resource")]
+    #[test_case("$dynamicRef", "https://example.com/inner" ; "dynamic ref to resource")]
+    fn required_unknown_vocabulary_is_rejected_behind_reference(keyword: &str, target: &str) {
+        let registry = Registry::new()
+            .add(
+                "https://example.com/dialect",
+                json!({
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "$id": "https://example.com/dialect",
+                    "$vocabulary": {
+                        "https://json-schema.org/draft/2020-12/vocab/core": true,
+                        "https://example.com/vocab/made-up": true,
+                    },
+                }),
+            )
+            .expect("Should accept meta-schema")
+            .add(
+                "https://example.com/inner",
+                json!({
+                    "$schema": "https://example.com/dialect",
+                    "$id": "https://example.com/inner",
+                    "type": "string",
+                    "$defs": {"leaf": {"type": "string"}},
+                }),
+            )
+            .expect("Should accept inner schema")
+            .prepare()
+            .expect("Should create registry");
+        let error = crate::options()
+            .with_registry(&registry)
+            .build(&json!({keyword: target}))
+            .expect_err("Should reject required unknown vocabulary");
+
+        assert_eq!(error.to_string(), UNKNOWN_VOCABULARY_ERROR);
     }
 
     #[test]

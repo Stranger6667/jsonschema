@@ -447,7 +447,7 @@ fn compile_ref<'a, F: Json>(
     if let Value::Object(subschema) = &contents {
         let vocabularies = resolver.find_vocabularies(draft, contents);
         let ref_ctx =
-            ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
+            ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone())?;
         let validators =
             compile_items_validators(&ref_ctx, subschema).map_err(ValidationError::to_owned)?;
         Ok(Some(RefValidator(Box::new(validators))))
@@ -470,7 +470,7 @@ fn compile_dynamic_ref<'a, F: Json>(
     if let Value::Object(subschema) = &contents {
         let vocabularies = resolver.find_vocabularies(draft, contents);
         let ref_ctx =
-            ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
+            ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone())?;
 
         // Circular reference: the target is already being compiled - return its pending node.
         if let Some(pending) = ref_ctx.get_pending_items_validators_for_schema(subschema) {
@@ -505,7 +505,7 @@ fn compile_recursive_ref<'a, F: Json>(
     if let Value::Object(subschema) = &contents {
         let vocabularies = resolver.find_vocabularies(draft, contents);
         let ref_ctx =
-            ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone());
+            ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone())?;
 
         // Check if we're already compiling this schema (circular reference)
         if let Some(pending) = ref_ctx.get_pending_items_validators_for_schema(subschema) {

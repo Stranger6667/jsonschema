@@ -8,6 +8,7 @@ use quote::{format_ident, quote, ToTokens};
 use serde_json::Value;
 use syn::{
     parse::{Parse, ParseStream},
+    punctuated::Punctuated,
     Ident, ItemStruct, LitBool, LitInt, LitStr, Token,
 };
 
@@ -66,6 +67,7 @@ pub mod bench {
             registry,
             base_uri,
             draft,
+            vocabularies: Vec::new(),
             runtime_crate_alias: None,
             validate_formats: None,
             custom_formats: HashMap::new(),
@@ -86,6 +88,7 @@ pub mod bench {
             &format_ident!("Validator"),
             &format_ident!("__validator_impl"),
         )
+        .unwrap_or_else(|error| error.to_compile_error())
     }
 }
 
@@ -94,6 +97,7 @@ struct Config {
     draft: Option<syn::Expr>,
     base_uri: Option<LitStr>,
     resources: Vec<ResourceEntry>,
+    vocabularies: Vec<String>,
     validate_formats: Option<bool>,
     formats: Vec<FormatEntry>,
     keywords: Vec<FormatEntry>,
@@ -469,6 +473,7 @@ impl Parse for Config {
         let mut draft = None;
         let mut base_uri = None;
         let mut resources: Vec<ResourceEntry> = Vec::new();
+        let mut vocabularies: Vec<String> = Vec::new();
         let mut validate_formats = None;
         let mut formats: Vec<FormatEntry> = Vec::new();
         let mut keywords: Vec<FormatEntry> = Vec::new();
@@ -571,6 +576,22 @@ impl Parse for Config {
                     }
                     resources = local_resources;
                 }
+                "vocabularies" => {
+                    input.parse::<Token![=]>()?;
+                    let content;
+                    syn::bracketed!(content in input);
+                    let uris: Punctuated<LitStr, Token![,]> =
+                        Punctuated::parse_terminated(&content)?;
+                    // Meta-schemas report their vocabularies normalized; an unparsable URI can
+                    // never match one.
+                    vocabularies = uris
+                        .iter()
+                        .map(|uri| {
+                            let uri = uri.value();
+                            referencing::uri::from_str(&uri).map_or(uri, |uri| uri.to_string())
+                        })
+                        .collect();
+                }
                 "validate_formats" => {
                     input.parse::<Token![=]>()?;
                     let value: LitBool = input.parse()?;
@@ -621,7 +642,7 @@ impl Parse for Config {
                 _ => {
                     return Err(syn::Error::new_spanned(
                         ident,
-                        "Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute",
+                        "Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute",
                     ));
                 }
             }
@@ -643,6 +664,7 @@ impl Parse for Config {
             draft,
             base_uri,
             resources,
+            vocabularies,
             validate_formats,
             formats,
             keywords,
@@ -766,6 +788,7 @@ so the generated methods cannot depend on type parameters",
         registry,
         base_uri: Arc::new(base_uri_uri),
         draft,
+        vocabularies: attr.vocabularies.clone(),
         runtime_crate_alias: Some(runtime_crate_alias),
         validate_formats: attr.validate_formats,
         custom_formats: attr
@@ -820,7 +843,7 @@ so the generated methods cannot depend on type parameters",
         #(#recompile_triggers)*
     };
     let tokens =
-        crate::codegen::generate_from_config(&config, &recompile_trigger, name, &impl_mod_name);
+        crate::codegen::generate_from_config(&config, &recompile_trigger, name, &impl_mod_name)?;
 
     Ok(quote! {
         #input

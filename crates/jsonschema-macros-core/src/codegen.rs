@@ -34,12 +34,17 @@ pub(crate) use expr::CompiledExpr;
 pub(crate) use helpers::DynamicAnchorBinding;
 
 /// Entry point: generate validator impl methods from a `CodegenConfig`.
+///
+/// # Errors
+///
+/// A meta-schema of the schema or of a referenced resource requires a vocabulary this crate does
+/// not implement and the caller did not declare support for.
 pub(crate) fn generate_from_config(
     config: &CodegenConfig,
     recompile_trigger: &TokenStream,
     name: &Ident,
     impl_mod_name: &Ident,
-) -> TokenStream {
+) -> syn::Result<TokenStream> {
     let mut ctx = CompileContext::new(config);
     let validation_expr = compile_schema(&mut ctx, &config.schema);
     let recursive_stack_needed = ctx.uses_recursive_ref;
@@ -79,7 +84,13 @@ pub(crate) fn generate_from_config(
     } else {
         Vec::new()
     };
-    emit_root_module(
+    if let Some(uri) = &ctx.undeclared_vocabulary {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            format!("Unknown vocabulary: '{uri}' is required by the meta-schema. Adjust configuration to declare support for it"),
+        ));
+    }
+    Ok(emit_root_module(
         &ctx,
         config.runtime_crate_alias.as_ref(),
         recompile_trigger,
@@ -92,7 +103,7 @@ pub(crate) fn generate_from_config(
         root_key_eval_ident.as_ref(),
         root_item_eval_ident.as_ref(),
         &root_dynamic_bindings,
-    )
+    ))
 }
 
 // Draft 4 does not treat integer-valued floats like `-2.0` as integers.

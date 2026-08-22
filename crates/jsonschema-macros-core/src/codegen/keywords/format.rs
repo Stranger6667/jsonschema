@@ -8,8 +8,20 @@ use super::super::{
 };
 use crate::context::UriFormatCache;
 
-pub(crate) fn validates_formats_by_default(draft: Draft) -> bool {
+fn validates_formats_by_default(draft: Draft) -> bool {
     matches!(draft, Draft::Draft4 | Draft::Draft6 | Draft::Draft7)
+}
+
+impl CompileContext<'_> {
+    fn validates_formats(&self) -> bool {
+        self.config.validate_formats.unwrap_or_else(|| {
+            self.asserts_formats_by_dialect() || validates_formats_by_default(self.draft)
+        })
+    }
+
+    fn are_unknown_formats_ignored(&self) -> bool {
+        !self.asserts_formats_by_dialect() && self.config.ignore_unknown_formats
+    }
 }
 
 fn format_check(schema_path: &str, format_name: &str, check: TokenStream) -> CompiledExpr {
@@ -121,11 +133,7 @@ pub(crate) fn format_emits_assertion(ctx: &CompileContext<'_>, value: &Value) ->
         return true;
     };
 
-    let should_validate = ctx
-        .config
-        .validate_formats
-        .unwrap_or_else(|| validates_formats_by_default(ctx.draft));
-    if !should_validate {
+    if !ctx.validates_formats() {
         return false;
     }
 
@@ -135,7 +143,7 @@ pub(crate) fn format_emits_assertion(ctx: &CompileContext<'_>, value: &Value) ->
     if compile_builtin_format_check(ctx, format_name).is_some() {
         return true;
     }
-    !ctx.config.ignore_unknown_formats
+    !ctx.are_unknown_formats_ignored()
 }
 
 /// Compile the "format" keyword.
@@ -144,11 +152,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
         return Some(invalid_schema_type_expression(value, &["string"]));
     };
 
-    let should_validate = ctx
-        .config
-        .validate_formats
-        .unwrap_or_else(|| validates_formats_by_default(ctx.draft));
-    if !should_validate {
+    if !ctx.validates_formats() {
         return None;
     }
 
@@ -175,12 +179,18 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
         return Some(format_check(&schema_path, format_name, validation_call));
     }
 
-    if ctx.config.ignore_unknown_formats {
+    if ctx.are_unknown_formats_ignored() {
         None
     } else {
-        let message = format!(
-            "Unknown format: '{format_name}'. Adjust configuration to ignore unrecognized formats"
-        );
+        let message = if ctx.asserts_formats_by_dialect() {
+            format!(
+                "Unknown format: '{format_name}'. The meta-schema asserts formats, so unrecognized ones cannot be ignored. Register a check for it or disable format validation"
+            )
+        } else {
+            format!(
+                "Unknown format: '{format_name}'. Adjust configuration to ignore unrecognized formats"
+            )
+        };
         Some(CompiledExpr::from(quote! {{
             compile_error!(#message);
             false

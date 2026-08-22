@@ -3,6 +3,7 @@ use insta::assert_snapshot;
 use serde_json::Value;
 use std::{collections::HashMap, fs};
 use tempfile::tempdir;
+use test_case::test_case;
 
 fn cli() -> Command {
     cargo_bin_cmd!("jsonschema-cli")
@@ -2304,4 +2305,66 @@ fn test_self_describing_with_http_options() {
         .unwrap();
     assert!(!output.status.success());
     assert!(String::from_utf8_lossy(&output.stdout).contains("INVALID. Errors:"));
+}
+
+const MADE_UP_VOCABULARY_DIALECT: &str = r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$vocabulary": {"https://json-schema.org/draft/2020-12/vocab/core": true, "https://json-schema.org/draft/2020-12/vocab/validation": true, "https://example.com/vocab/made-up": true}}"#;
+
+// Tempdir paths carry no characters that need percent-encoding.
+fn file_uri(path: &str) -> String {
+    let path = path.replace('\\', "/");
+    if path.starts_with('/') {
+        format!("file://{path}")
+    } else {
+        format!("file:///{path}")
+    }
+}
+
+// `{schema}` and `{instance}` are substituted with the temp file paths.
+#[test_case(&["{schema}", "-i", "{instance}"], "vocabulary_undeclared_with_instance" ; "schema with instance")]
+#[test_case(&["{schema}"], "vocabulary_undeclared_schema_only" ; "schema only")]
+#[test_case(&["-i", "{instance}"], "vocabulary_undeclared_self_describing" ; "self-describing instance")]
+fn test_vocabulary_flag_declares_support(args: &[&str], snapshot: &str) {
+    let dir = tempdir().unwrap();
+    let dialect = create_temp_file(&dir, "dialect.json", MADE_UP_VOCABULARY_DIALECT);
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        &format!(
+            r#"{{"$schema": "{}", "type": "object"}}"#,
+            file_uri(&dialect)
+        ),
+    );
+    let instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"{"$schema": "./schema.json", "name": "text"}"#,
+    );
+    let args: Vec<String> = args
+        .iter()
+        .map(|arg| {
+            arg.replace("{schema}", &schema)
+                .replace("{instance}", &instance)
+        })
+        .collect();
+
+    let output = cli().arg("validate").args(&args).output().unwrap();
+    assert!(!output.status.success());
+    let out = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&schema, &instance],
+    );
+    assert_snapshot!(snapshot, out);
+
+    let output = cli()
+        .arg("validate")
+        .args(&args)
+        .arg("--vocabulary")
+        .arg("https://example.com/vocab/made-up")
+        .output()
+        .unwrap();
+    assert!(
+        output.status.success(),
+        "{}",
+        String::from_utf8_lossy(&output.stdout)
+    );
 }

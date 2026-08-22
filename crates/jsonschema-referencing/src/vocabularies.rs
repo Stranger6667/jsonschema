@@ -9,6 +9,7 @@ use serde_json::Value;
 /// A JSON Schema vocabulary identifier, representing standard vocabularies (Core, Applicator, etc.)
 /// or custom ones via URI.
 #[derive(Debug, PartialEq, Eq, Clone)]
+#[non_exhaustive]
 pub enum Vocabulary {
     Core,
     Applicator,
@@ -17,6 +18,7 @@ pub enum Vocabulary {
     Metadata,
     Format,
     FormatAnnotation,
+    FormatAssertion,
     Content,
     Custom(Uri<String>),
 }
@@ -46,6 +48,9 @@ impl FromStr for Vocabulary {
             "https://json-schema.org/draft/2020-12/vocab/format-annotation" => {
                 Ok(Vocabulary::FormatAnnotation)
             }
+            "https://json-schema.org/draft/2020-12/vocab/format-assertion" => {
+                Ok(Vocabulary::FormatAssertion)
+            }
             "https://json-schema.org/draft/2020-12/vocab/content"
             | "https://json-schema.org/draft/2019-09/vocab/content" => Ok(Vocabulary::Content),
             _ => Ok(Vocabulary::Custom(uri::from_str(s)?)),
@@ -56,7 +61,7 @@ impl FromStr for Vocabulary {
 /// A set of enabled JSON Schema vocabularies.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct VocabularySet {
-    known: u8,
+    known: u16,
     custom: AHashSet<Uri<String>>,
 }
 
@@ -89,6 +94,9 @@ impl fmt::Debug for VocabularySet {
         if self.known & (1 << 7) != 0 {
             debug_list.entry(&"content");
         }
+        if self.known & (1 << 8) != 0 {
+            debug_list.entry(&"format-assertion");
+        }
 
         // Add custom vocabularies
         if !self.custom.is_empty() {
@@ -107,7 +115,7 @@ impl VocabularySet {
         Self::default()
     }
 
-    pub(crate) fn from_known(known: u8) -> Self {
+    pub(crate) fn from_known(known: u16) -> Self {
         Self {
             known,
             custom: AHashSet::new(),
@@ -124,11 +132,17 @@ impl VocabularySet {
             Vocabulary::Format => self.known |= 1 << 5,
             Vocabulary::FormatAnnotation => self.known |= 1 << 6,
             Vocabulary::Content => self.known |= 1 << 7,
+            Vocabulary::FormatAssertion => self.known |= 1 << 8,
             Vocabulary::Custom(uri) => {
                 self.custom.insert(uri);
             }
         }
     }
+    /// Vocabularies that were required by the meta-schema but are not implemented here.
+    pub fn custom(&self) -> impl Iterator<Item = &str> {
+        self.custom.iter().map(Uri::as_str)
+    }
+
     #[must_use]
     pub fn contains(&self, vocabulary: &Vocabulary) -> bool {
         match vocabulary {
@@ -140,46 +154,45 @@ impl VocabularySet {
             Vocabulary::Format => self.known & (1 << 5) != 0,
             Vocabulary::FormatAnnotation => self.known & (1 << 6) != 0,
             Vocabulary::Content => self.known & (1 << 7) != 0,
+            Vocabulary::FormatAssertion => self.known & (1 << 8) != 0,
             Vocabulary::Custom(uri) => self.custom.contains(uri),
         }
     }
 }
 
-pub(crate) const DRAFT_2020_12_VOCABULARIES: u8 = 0b1111_1111;
-pub(crate) const DRAFT_2019_09_VOCABULARIES: u8 = 0b1001_1011;
+// Core, Applicator, Unevaluated, Validation, Metadata, FormatAnnotation, Content
+pub(crate) const DRAFT_2020_12_VOCABULARIES: u16 = 0b1101_1111;
+pub(crate) const DRAFT_2019_09_VOCABULARIES: u16 = 0b1001_1011;
 
 pub(crate) fn find(document: &Value) -> Result<Option<VocabularySet>, Error> {
-    if let Some(schema) = document.get("$id").and_then(|s| s.as_str()) {
-        match schema {
-            "https://json-schema.org/schema" | "https://json-schema.org/draft/2020-12/schema" => {
-                // All known vocabularies
-                Ok(Some(VocabularySet::from_known(DRAFT_2020_12_VOCABULARIES)))
-            }
-            "https://json-schema.org/draft/2019-09/schema" => {
-                // Core, Applicator, Validation, Metadata, Content
-                Ok(Some(VocabularySet::from_known(DRAFT_2019_09_VOCABULARIES)))
-            }
+    match document.get("$id").and_then(Value::as_str) {
+        Some("https://json-schema.org/schema" | "https://json-schema.org/draft/2020-12/schema") => {
+            return Ok(Some(VocabularySet::from_known(DRAFT_2020_12_VOCABULARIES)));
+        }
+        Some("https://json-schema.org/draft/2019-09/schema") => {
+            return Ok(Some(VocabularySet::from_known(DRAFT_2019_09_VOCABULARIES)));
+        }
+        Some(
             "https://json-schema.org/draft-07/schema"
             | "https://json-schema.org/draft-06/schema"
-            | "https://json-schema.org/draft-04/schema" => Ok(None),
-            _ => {
-                // For unknown schemas, parse the $vocabulary object
-                if let Some(vocab_obj) = document.get("$vocabulary").and_then(|v| v.as_object()) {
-                    let mut set = VocabularySet::new();
-                    for (uri, enabled) in vocab_obj {
-                        if enabled.as_bool().unwrap_or(false) {
-                            set.add(Vocabulary::from_str(uri)?);
-                        }
-                    }
-                    Ok(Some(set))
-                } else {
-                    Ok(None)
-                }
-            }
-        }
-    } else {
-        Ok(None)
+            | "https://json-schema.org/draft-04/schema",
+        ) => return Ok(None),
+        _ => {}
     }
+    // A meta-schema is identified by the URI it was retrieved under, so `$id` is optional here.
+    let Some(vocab_obj) = document.get("$vocabulary").and_then(Value::as_object) else {
+        return Ok(None);
+    };
+    let mut set = VocabularySet::new();
+    for (uri, enabled) in vocab_obj {
+        let vocabulary = Vocabulary::from_str(uri)?;
+        // The Format-Assertion vocabulary asserts whenever it is declared; its boolean only
+        // steers implementations that do not know it.
+        if enabled.as_bool().unwrap_or(false) || vocabulary == Vocabulary::FormatAssertion {
+            set.add(vocabulary);
+        }
+    }
+    Ok(Some(set))
 }
 
 #[cfg(test)]
@@ -203,7 +216,9 @@ mod tests {
     #[test_case(&Vocabulary::Format, 0b1101_1111, false)]
     #[test_case(&Vocabulary::FormatAnnotation, 0b1011_1111, false)]
     #[test_case(&Vocabulary::Content, 0b0111_1111, false)]
-    fn test_vocabulary_set(vocabulary: &Vocabulary, known: u8, expected: bool) {
+    #[test_case(&Vocabulary::FormatAssertion, 0b1_0000_0000, true)]
+    #[test_case(&Vocabulary::FormatAssertion, 0b0_1111_1111, false)]
+    fn test_vocabulary_set(vocabulary: &Vocabulary, known: u16, expected: bool) {
         let set = VocabularySet::from_known(known);
         assert_eq!(set.contains(vocabulary), expected);
     }
@@ -264,7 +279,7 @@ mod tests {
 
     #[test_case(
         &serde_json::json!({"$id": "https://json-schema.org/draft/2020-12/schema"}),
-        "Some([\"core\", \"applicator\", \"unevaluated\", \"validation\", \"meta-data\", \"format\", \"format-annotation\", \"content\"])"
+        "Some([\"core\", \"applicator\", \"unevaluated\", \"validation\", \"meta-data\", \"format-annotation\", \"content\"])"
         ; "2020-12 draft"
     )]
     #[test_case(
@@ -279,6 +294,28 @@ mod tests {
     )]
     #[test_case(
         &serde_json::json!({
+            "$id": "https://example.com/format-assertion-dialect",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/format-assertion": true,
+            }
+        }),
+        "Some([\"core\", \"format-assertion\"])"
+        ; "format-assertion dialect"
+    )]
+    #[test_case(
+        &serde_json::json!({
+            "$id": "https://example.com/format-assertion-dialect",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/format-assertion": false,
+            }
+        }),
+        "Some([\"core\", \"format-assertion\"])"
+        ; "optional format-assertion dialect"
+    )]
+    #[test_case(
+        &serde_json::json!({
             "$id": "https://example.com/custom-schema",
             "$vocabulary": {
                 "https://example.com/custom-vocab1": true,
@@ -288,6 +325,16 @@ mod tests {
         }),
         "Some([\"https://example.com/custom-vocab1\", \"https://example.com/custom-vocab2\"])"
         ; "custom schema"
+    )]
+    #[test_case(
+        &serde_json::json!({
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/format-assertion": true,
+            }
+        }),
+        "Some([\"core\", \"format-assertion\"])"
+        ; "no $id keyword with vocabularies"
     )]
     #[test_case(
         &serde_json::json!({}),

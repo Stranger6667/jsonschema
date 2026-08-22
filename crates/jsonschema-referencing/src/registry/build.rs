@@ -16,7 +16,7 @@ use serde_json::Value;
 
 use crate::{
     cache::UriCache,
-    meta::metas_for_draft,
+    meta::{metas_for_draft, META_SCHEMAS_ALL},
     path::JsonPointerSegment,
     pointer::{pointer, ParsedPointer, ParsedPointerSegment},
     uri, Draft, Error, JsonPointerNode, Retrieve,
@@ -1179,11 +1179,19 @@ fn inject_metaschemas<'a>(
     draft_version: Draft,
     state: &mut BuildState<'a>,
 ) -> Result<(), Error> {
-    if !found_metaschema_ref {
+    // A `$schema` naming one of the bundled vocabulary meta-schemas is never retrieved, so the
+    // bundle has to supply it, whatever draft it belongs to.
+    let names_bundled_meta_schema = state
+        .custom_metaschemas
+        .iter()
+        .any(|uri| uri.starts_with("https://json-schema.org/draft/"));
+    let schemas: &[(&str, &Value)] = if names_bundled_meta_schema {
+        META_SCHEMAS_ALL.as_slice()
+    } else if found_metaschema_ref {
+        metas_for_draft(draft_version)
+    } else {
         return Ok(());
-    }
-
-    let schemas = metas_for_draft(draft_version);
+    };
     for (uri, schema) in schemas {
         let key = Arc::new(uri::from_str(uri.trim_end_matches('#'))?);
         if documents.contains_key(&key) {
@@ -1389,6 +1397,7 @@ mod tests {
     use ahash::AHashMap;
     use fluent_uri::Uri;
     use serde_json::{json, Value};
+    use test_case::test_case;
 
     use crate::{
         registry::SPECIFICATIONS, uri::from_str, Anchor, Draft, Registry, Resource, Retrieve,
@@ -1771,6 +1780,22 @@ mod tests {
             error_msg,
             "Unknown meta-schema: 'http://example.com/meta/custom'. Custom meta-schemas must be registered in the registry before use"
         );
+    }
+
+    #[test_case("https://json-schema.org/draft/2020-12/meta/format-assertion")]
+    #[test_case("https://json-schema.org/draft/2019-09/meta/format")]
+    fn test_prepare_accepts_bundled_meta_schema(meta_schema: &str) {
+        let registry = Registry::new()
+            .add(
+                "http://example.com/root",
+                Resource::from_contents(json!({"$schema": meta_schema, "format": "ipv4"})),
+            )
+            .expect("Schema should be accepted")
+            .prepare()
+            .expect("Bundled meta-schemas need no registration");
+
+        let meta_uri = from_str(meta_schema).expect("Valid URI");
+        assert!(registry.resource_by_uri(&meta_uri).is_some());
     }
 
     #[test]

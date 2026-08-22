@@ -5,16 +5,19 @@ use serde::Deserialize;
 #[serde(rename_all = "camelCase", default)]
 pub(crate) struct Options {
     pub(crate) draft: Option<String>,
-    pub(crate) format_assertions: bool,
+    /// Absent: the draft or the meta-schema decides.
+    pub(crate) format_assertions: Option<bool>,
     pub(crate) ignore_unknown_formats: bool,
+    pub(crate) vocabularies: Vec<String>,
 }
 
 impl Default for Options {
     fn default() -> Self {
         Self {
             draft: None,
-            format_assertions: false,
+            format_assertions: None,
             ignore_unknown_formats: true,
+            vocabularies: Vec::new(),
         }
     }
 }
@@ -57,18 +60,20 @@ mod tests {
     #[test]
     fn options_default_ignores_unknown_formats() {
         let options: Options = serde_json::from_str("{}").unwrap();
-        assert!(!options.format_assertions);
+        assert_eq!(options.format_assertions, None);
         assert!(options.ignore_unknown_formats);
+        assert!(options.vocabularies.is_empty());
     }
 
     #[test]
     fn options_parse_camel_case() {
         let options: Options = serde_json::from_str(
-            r#"{"draft":"draft7","formatAssertions":true,"ignoreUnknownFormats":false}"#,
+            r#"{"draft":"draft7","formatAssertions":true,"ignoreUnknownFormats":false,"vocabularies":["https://example.com/vocab/data"]}"#,
         )
         .unwrap();
         assert_eq!(options.draft.as_deref(), Some("draft7"));
-        assert!(options.format_assertions);
+        assert_eq!(options.format_assertions, Some(true));
         assert!(!options.ignore_unknown_formats);
+        assert_eq!(options.vocabularies, ["https://example.com/vocab/data"]);
     }
 }

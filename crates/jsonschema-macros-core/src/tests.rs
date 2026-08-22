@@ -90,6 +90,7 @@ pub(crate) fn test_config_with_draft(schema: Value, draft: Draft) -> CodegenConf
         registry,
         base_uri,
         draft,
+        vocabularies: Vec::new(),
         runtime_crate_alias: None,
         validate_formats: None,
         custom_formats: HashMap::new(),
@@ -125,7 +126,8 @@ fn render_config(config: &CodegenConfig) -> String {
     let name = format_ident!("Validator");
     let impl_mod_name = format_ident!("__validator_impl");
     let recompile_trigger: TokenStream = quote! {};
-    let tokens = generate_from_config(config, &recompile_trigger, &name, &impl_mod_name);
+    let tokens = generate_from_config(config, &recompile_trigger, &name, &impl_mod_name)
+        .expect("schema should generate");
 
     // Wrap in a struct declaration so syn can parse as a complete file
     let wrapped: TokenStream = quote! {
@@ -230,6 +232,18 @@ fn uri_format_emits_per_call_cache(schema: Value, snap_name: &str) {
     insta::with_settings!({ description => &description }, {
         insta::assert_snapshot!(snap_name, code);
     });
+}
+
+#[test]
+fn config_rejects_unknown_attribute() {
+    let error = syn::parse_str::<crate::Config>(r#"schema = "{}", nonsense = true"#)
+        .err()
+        .expect("an unknown attribute should not parse");
+
+    assert_eq!(
+        error.to_string(),
+        "Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute"
+    );
 }
 
 #[test]
@@ -340,6 +354,87 @@ fn invalid_multiple_of_scientific_zero_matches_dynamic() {
     insta::with_settings!({ description => &description }, {
         insta::assert_snapshot!("multiple_of_scientific_zero_error", schema_to_code(schema));
     });
+}
+
+#[test_case(
+    &quote! { schema = r#"{"format":"made-up"}"#, validate_formats = true, ignore_unknown_formats = false, },
+    "unknown_format_strict"
+    ; "strict"
+)]
+#[test_case(
+    &quote! {
+        schema = r#"{"$schema":"json-schema:///meta/format-assertion","format":"made-up"}"#,
+        draft = referencing::Draft::Draft202012,
+        ignore_unknown_formats = true,
+        resources = {
+            "json-schema:///meta/format-assertion" => { schema = r#"{"$id":"json-schema:///meta/format-assertion","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/format-assertion":true}}"# },
+        }
+    },
+    "unknown_format_under_assertion_vocabulary"
+    ; "under assertion vocabulary"
+)]
+fn unknown_format_compile_error(attr: &TokenStream, snapshot: &str) {
+    let config: crate::Config = syn::parse2(attr.clone()).expect("Config should parse");
+    let item: syn::ItemStruct = syn::parse2(quote! {
+        struct Validator;
+    })
+    .expect("Item should parse");
+    let tokens = crate::validator_impl(&config, &item).expect("schema should generate");
+    let file: syn::File = syn::parse2(tokens).expect("valid token stream");
+
+    insta::assert_snapshot!(snapshot, prettyplease::unparse(&file));
+}
+
+const UNKNOWN_VOCABULARY_ERROR: &str = "Unknown vocabulary: 'https://example.com/vocab/made-up' is required by the meta-schema. Adjust configuration to declare support for it";
+
+#[test_case(
+    r#"{"$schema":"json-schema:///meta/custom","type":"string"}"#,
+    &quote! {},
+    Some(UNKNOWN_VOCABULARY_ERROR)
+    ; "undeclared"
+)]
+#[test_case(
+    r#"{"$ref":"json-schema:///inner"}"#,
+    &quote! {},
+    Some(UNKNOWN_VOCABULARY_ERROR)
+    ; "undeclared behind ref"
+)]
+#[test_case(
+    r#"{"$schema":"json-schema:///meta/custom","type":"string"}"#,
+    &quote! { vocabularies = ["https://example.com/vocab/made-up"], },
+    None
+    ; "declared"
+)]
+#[test_case(
+    r#"{"$schema":"json-schema:///meta/custom","type":"string"}"#,
+    &quote! { vocabularies = ["https://Example.COM/vocab/./made-up"], },
+    None
+    ; "declared unnormalized"
+)]
+fn required_unknown_vocabulary(schema: &str, declaration: &TokenStream, expected: Option<&str>) {
+    let meta = r#"{"$id":"json-schema:///meta/custom","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://example.com/vocab/made-up":true}}"#;
+    let inner =
+        r#"{"$id":"json-schema:///inner","$schema":"json-schema:///meta/custom","type":"string"}"#;
+    let config: crate::Config = syn::parse2(quote! {
+        schema = #schema,
+        draft = referencing::Draft::Draft202012,
+        #declaration
+        resources = {
+            "json-schema:///meta/custom" => { schema = #meta },
+            "json-schema:///inner" => { schema = #inner },
+        }
+    })
+    .expect("Config should parse");
+    let item: syn::ItemStruct = syn::parse2(quote! {
+        struct CustomVocabularyValidator;
+    })
+    .expect("Item should parse");
+
+    let error = crate::validator_impl(&config, &item)
+        .err()
+        .map(|error| error.to_string());
+
+    assert_eq!(error.as_deref(), expected);
 }
 
 #[test]

@@ -1,0 +1,5 @@
+---
+source: crates/jsonschema-cli/tests/cli.rs
+expression: out
+---
+Schema is invalid. Error: Unknown vocabulary: 'https://example.com/vocab/made-up' is required by the meta-schema. Adjust configuration to declare support for it

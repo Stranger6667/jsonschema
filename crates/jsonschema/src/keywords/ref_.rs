@@ -205,12 +205,15 @@ fn compile_reference_validator<'a, F: Json>(
     let (contents, resolver, draft) = resolved.into_inner();
     let vocabularies = resolver.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
-    let inner_ctx = ctx.with_resolver_and_draft(
+    let inner_ctx = match ctx.with_resolver_and_draft(
         resolver,
         resource_ref.draft(),
         vocabularies,
         ref_target_base.clone(),
-    );
+    ) {
+        Ok(inner_ctx) => inner_ctx,
+        Err(error) => return Some(Err(error)),
+    };
     Some(
         compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
             .map(|node| {
@@ -256,12 +259,9 @@ fn compile_recursive_validator<'a, F: Json>(
     let (contents, resolver, draft) = resolved.into_inner();
     let vocabularies = resolver.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
-    let inner_ctx = ctx.with_resolver_and_draft(
-        resolver,
-        resource_ref.draft(),
-        vocabularies,
-        ref_target_base.clone(),
-    );
+    let target_base = ref_target_base.clone();
+    let inner_ctx =
+        ctx.with_resolver_and_draft(resolver, resource_ref.draft(), vocabularies, target_base)?;
     compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
         .map(|node| {
             let inner: BoxedValidator<F> = Box::new(node);
