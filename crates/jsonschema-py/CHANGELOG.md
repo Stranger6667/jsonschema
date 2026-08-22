@@ -19,6 +19,7 @@
 
 ### Performance
 
+- `not` over a wide object schema costs its branch count instead of its square.
 - `not` over an object schema is linear in its property count, not quadratic.
 - `not` over an object schema with `additionalProperties: false` no longer costs cubic time in its property count.
 

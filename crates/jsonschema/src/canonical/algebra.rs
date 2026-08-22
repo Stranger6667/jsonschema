@@ -883,6 +883,10 @@ fn pairwise_overlaps(branches: &[Schema], ctx: &CanonicalizationContext) -> Vec<
     overlaps
 }
 
+/// Object branches a union minimizes. Each pass reads every branch against the others, so a wider
+/// pool costs more than the smaller form it would reach is worth.
+const OBJECT_POOL_LIMIT: usize = 256;
+
 /// The schema accepting every value that ANY of the `branches` accepts (set union, `anyOf`), in normal form.
 ///
 /// A branch that is a pointer stays one. A meet of two pointers is a body no name denotes, so
@@ -1076,9 +1080,10 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     // Folding object leaves can produce a leaf spanning the whole domain even though its inputs
     // did not, so the folds run before the widening below picks such leaves up. Merging and
     // narrowing feed each other; each pass shrinks the leaf count or the requirement count, which
-    // bounds the loop.
+    // bounds the loop. Past `OBJECT_POOL_LIMIT` branches none of it runs, here or on a later pass
+    // that widens the pool: the branches stand as they are, accepting the same values.
     let mut objects: Vec<ObjectLeaf> = objects.into_iter().collect();
-    loop {
+    while objects.len() <= OBJECT_POOL_LIMIT {
         merge_sole_differing_keys(&mut objects, ctx);
         if drop_object_branch_covered_by_siblings(&mut objects, ctx) {
             continue;
@@ -1751,9 +1756,14 @@ fn collapse_object_leaves_covering_domain(
     if leaves.len() < 2 {
         return false;
     }
-    // The split ends on the piece that rejects every key, which requires none of them and
-    // accepts `{}`. A leaf with a `required` key accepts neither.
-    if leaves.iter().all(|leaf| !leaf.required.is_empty()) {
+    // The split ends on the piece that rejects every key, which is the empty object: a leaf takes
+    // it when it demands none, its size window reaches zero, and no violation asks for one. A pool
+    // whose leaves all turn it away covers no domain.
+    if !leaves.iter().any(|leaf| {
+        leaf.required.is_empty()
+            && leaf.violations.is_empty()
+            && leaf.sizes.contains(&BoundCardinality::from(0))
+    }) {
         return false;
     }
     let mut keys: Vec<Arc<str>> = leaves
