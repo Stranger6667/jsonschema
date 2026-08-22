@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.50.1] - 2026-08-22
+
 ### Added
 
 - `str()` on `Containment`, `Satisfiability`, `Distinctness` and `CanonicalKind` members reads as the label.
@@ -1366,7 +1368,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.50.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.50.1...HEAD
+[0.50.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.50.0...python-v0.50.1
 [0.50.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.9...python-v0.50.0
 [0.49.9]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.8...python-v0.49.9
 [0.49.8]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.7...python-v0.49.8
