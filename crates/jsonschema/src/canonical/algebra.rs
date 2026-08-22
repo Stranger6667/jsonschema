@@ -3025,8 +3025,7 @@ pub(crate) fn array_leaf(mut leaf: ArrayLeaf, ctx: &CanonicalizationContext) -> 
             // e.g.  {"type": "array", "contains": {"type": "boolean"}, "minContains": 3, "uniqueItems": true}
             //       =>  false
             if leaf.contains.iter().any(|facet| {
-                facet
-                    .schema
+                resolved(facet.schema.clone(), ctx)
                     .kind()
                     .finite_domain_size()
                     .is_some_and(|domain| {
@@ -3249,16 +3248,19 @@ fn implied_length_floor(
 
 /// The longest array `uniqueItems` admits when the tail draws from a finite domain: every element
 /// past the prefix comes out of that domain, and a prefix position whose own schema stays inside it
-/// competes for the same values instead of contributing one of its own.
+/// competes for the same values instead of contributing one of its own. A tail written as a pointer
+/// draws from the body it names, read where the run resolves pointers.
 /// ```text
 /// e.g.  {"prefixItems": [{"const": true}], "items": {"type": "boolean"}, "uniqueItems": true}
 ///       =>  ceiling 2, not 3
+///       {"items": {"$ref": "#/$defs/bit"}, "uniqueItems": true, "$defs": {"bit": {"type": "boolean"}}}
+///       =>  ceiling 2, once the pointer is read
 /// ```
 fn distinct_length_ceiling(
     leaf: &ArrayLeaf,
     ctx: &CanonicalizationContext,
 ) -> Option<BoundCardinality> {
-    let tail = leaf.items.as_ref()?;
+    let tail = resolved(leaf.items.clone()?, ctx);
     let domain = tail.kind().finite_domain_size()?;
     let independent = leaf
         .prefix

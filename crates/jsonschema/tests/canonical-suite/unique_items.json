@@ -16,6 +16,152 @@
     ]
   },
   {
+    "description": "distinct elements drawn through a pointer cannot outnumber the values its target holds",
+    "schema": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/bit"},
+      "uniqueItems": true,
+      "$defs": {"bit": {"type": "boolean"}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"$ref": "#/$defs/bit"},
+      "uniqueItems": true,
+      "maxItems": 2,
+      "$defs": {"bit": {"type": "boolean"}}
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [true, false], "valid": true},
+      {"data": [true, false, true], "valid": false}
+    ]
+  },
+  {
+    "description": "a pointer to a single value leaves uniqueness nothing to constrain past one element",
+    "schemas": [
+      {
+        "type": "array",
+        "items": {"$ref": "#/$defs/nil"},
+        "uniqueItems": true,
+        "$defs": {"nil": {"type": "null"}}
+      },
+      {
+        "type": "array",
+        "items": {"$ref": "#/$defs/nil"},
+        "maxItems": 1,
+        "$defs": {"nil": {"type": "null"}}
+      }
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"$ref": "#/$defs/nil"},
+      "maxItems": 1,
+      "$defs": {"nil": {"type": "null"}}
+    },
+    "tests": [
+      {"data": [null], "valid": true},
+      {"data": [null, null], "valid": false}
+    ]
+  },
+  {
+    "description": "a uniqueness floor past the values a pointer's target holds is unsatisfiable",
+    "schema": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/nil"},
+      "minItems": 2,
+      "uniqueItems": true,
+      "$defs": {"nil": {"type": "null"}}
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": [null], "valid": false},
+      {"data": [null, null], "valid": false}
+    ]
+  },
+  {
+    "description": "the ceiling follows a chain of pointers to the values at its end",
+    "schema": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/bit"},
+      "uniqueItems": true,
+      "$defs": {"bit": {"$ref": "#/$defs/nil"}, "nil": {"type": "null"}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"$ref": "#/$defs/bit"},
+      "maxItems": 1,
+      "$defs": {"bit": {"$ref": "#/$defs/nil"}, "nil": {"type": "null"}}
+    },
+    "tests": [
+      {"data": [null], "valid": true},
+      {"data": [null, null], "valid": false}
+    ]
+  },
+  {
+    "description": "a pointer on a cycle holds no countable values, so it sets no ceiling",
+    "schema": {
+      "type": "array",
+      "items": {"$ref": "#/$defs/list"},
+      "uniqueItems": true,
+      "$defs": {"list": {"type": "array", "items": {"$ref": "#/$defs/list"}, "uniqueItems": true}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "items": {"$ref": "#/$defs/list"},
+      "uniqueItems": true,
+      "$defs": {"list": {"type": "array", "items": {"$ref": "#/$defs/list"}, "uniqueItems": true}}
+    },
+    "tests": [
+      {"data": [[], [[]]], "valid": true},
+      {"data": [[], []], "valid": false}
+    ]
+  },
+  {
+    "description": "a demand for more distinct matches than a pointer's target holds is unsatisfiable",
+    "schema": {
+      "type": "array",
+      "contains": {"$ref": "#/$defs/nil"},
+      "minContains": 2,
+      "uniqueItems": true,
+      "$defs": {"nil": {"type": "null"}}
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": [null, null], "valid": false},
+      {"data": [null, 1], "valid": false}
+    ]
+  },
+  {
+    "description": "the ceiling reads a draft 4 pointer into definitions",
+    "draft": "draft4",
+    "schema": {
+      "type": "array",
+      "items": {"$ref": "#/definitions/bit"},
+      "uniqueItems": true,
+      "definitions": {"bit": {"type": "boolean"}}
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "array",
+      "items": {"$ref": "#/definitions/bit"},
+      "uniqueItems": true,
+      "maxItems": 2,
+      "definitions": {"bit": {"type": "boolean"}}
+    },
+    "tests": [
+      {"data": [true, false], "valid": true},
+      {"data": [true, false, true], "valid": false}
+    ]
+  },
+  {
     "description": "ir: uniqueItems false constrains nothing",
     "schemas": [
       {"type": "array", "uniqueItems": false},

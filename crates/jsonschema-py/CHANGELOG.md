@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The `uniqueItems` length ceiling not reading an `items` or `contains` schema written as a `$ref`.
+
 ## [0.50.1] - 2026-08-22
 
 ### Added
