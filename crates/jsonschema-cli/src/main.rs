@@ -197,6 +197,14 @@ struct ValidateArgs {
     #[command(flatten)]
     format: FormatAssertionArgs,
 
+    /// Declare support for a vocabulary this tool does not implement (may be repeated).
+    #[arg(
+        long = "vocabulary",
+        value_name = "URI",
+        help = "Declare support for a vocabulary required by the meta-schema (may be repeated)"
+    )]
+    vocabularies: Vec<String>,
+
     /// Select the output format (text, flag, list, hierarchical). All modes emit newline-delimited JSON records.
     #[arg(
         long = "output",
@@ -556,6 +564,7 @@ fn build_resource_registry(
 fn output_schema_validation(
     schema_path: &Path,
     schema_json: &serde_json::Value,
+    schema_options: SchemaOptions<'_>,
     output: Output,
     errors_only: bool,
     http_options: Option<&jsonschema::HttpOptions>,
@@ -569,7 +578,7 @@ fn output_schema_validation(
     // to check that all referenced schemas are valid
     if flag_output.valid {
         // Just try to build - if it fails, the error propagates naturally
-        let options = options_for_schema(schema_path, http_options)?;
+        let options = schema_options.apply(options_for_schema(schema_path, http_options)?);
         options.build(schema_json)?;
     }
 
@@ -598,6 +607,7 @@ fn output_schema_validation(
 
 fn validate_schema_meta(
     schema_path: &Path,
+    schema_options: SchemaOptions<'_>,
     output: Output,
     errors_only: bool,
     http_options: Option<&jsonschema::HttpOptions>,
@@ -613,7 +623,7 @@ fn validate_schema_meta(
         }
 
         // Then try to build a validator to check that all referenced schemas are also valid
-        let options = options_for_schema(schema_path, http_options)?;
+        let options = schema_options.apply(options_for_schema(schema_path, http_options)?);
         match options.build(&schema_json) {
             Ok(_) => {
                 if !errors_only {
@@ -628,7 +638,14 @@ fn validate_schema_meta(
         }
     } else {
         // Structured output modes using evaluate API
-        output_schema_validation(schema_path, &schema_json, output, errors_only, http_options)
+        output_schema_validation(
+            schema_path,
+            &schema_json,
+            schema_options,
+            output,
+            errors_only,
+            http_options,
+        )
     }
 }
 
@@ -735,25 +752,36 @@ fn resolve_instance_schema_uri(
         .map_err(|error| format!("invalid `$schema` value `{raw}`: {error}"))
 }
 
-fn apply_schema_options(
-    mut options: jsonschema::ValidationOptions<'_>,
+/// The `validate` flags every validator build honors.
+#[derive(Clone, Copy)]
+struct SchemaOptions<'a> {
     draft: Option<Draft>,
     assert_format: Option<bool>,
-) -> jsonschema::ValidationOptions<'_> {
-    if let Some(draft) = draft {
-        options = options.with_draft(draft.into());
+    vocabularies: &'a [String],
+}
+
+impl SchemaOptions<'_> {
+    fn apply(
+        self,
+        mut options: jsonschema::ValidationOptions<'_>,
+    ) -> jsonschema::ValidationOptions<'_> {
+        if let Some(draft) = self.draft {
+            options = options.with_draft(draft.into());
+        }
+        if let Some(assert_format) = self.assert_format {
+            options = options.should_validate_formats(assert_format);
+        }
+        for vocabulary in self.vocabularies {
+            options = options.with_vocabulary(vocabulary.clone());
+        }
+        options
     }
-    if let Some(assert_format) = assert_format {
-        options = options.should_validate_formats(assert_format);
-    }
-    options
 }
 
 fn build_validator_for_uri(
     schema_uri: &referencing::Uri<String>,
     instance: &Path,
-    draft: Option<Draft>,
-    assert_format: Option<bool>,
+    schema_options: SchemaOptions<'_>,
     http_options: Option<&jsonschema::HttpOptions>,
 ) -> Result<jsonschema::Validator, Box<dyn std::error::Error>> {
     let has_fragment = schema_uri
@@ -765,11 +793,8 @@ fn build_validator_for_uri(
     if has_fragment || is_meta_schema {
         // Building the pointed-at subschema alone would drop `$id` scope and sibling `$defs`, so
         // reference it from a synthetic root. Costs a `/$ref` prefix on `evaluationPath`.
-        let mut options = apply_schema_options(
-            options_for_base_uri(file_uri(instance)?, http_options)?,
-            draft,
-            assert_format,
-        );
+        let mut options =
+            schema_options.apply(options_for_base_uri(file_uri(instance)?, http_options)?);
         if is_meta_schema {
             options = options.with_registry(&referencing::SPECIFICATIONS);
         }
@@ -789,18 +814,13 @@ fn build_validator_for_uri(
     let schema_json = retriever
         .retrieve(schema_uri)
         .map_err(|error| format!("failed to retrieve `{}`: {error}", schema_uri.as_str()))?;
-    let options = apply_schema_options(
-        options_for_base_uri(schema_uri.clone(), Some(http_options))?,
-        draft,
-        assert_format,
-    );
-    Ok(options.build(&schema_json)?)
+    let options = options_for_base_uri(schema_uri.clone(), Some(http_options))?;
+    Ok(schema_options.apply(options).build(&schema_json)?)
 }
 
 fn validate_self_describing_instances(
     instances: &[PathBuf],
-    draft: Option<Draft>,
-    assert_format: Option<bool>,
+    schema_options: SchemaOptions<'_>,
     output: Output,
     errors_only: bool,
     http_options: Option<&jsonschema::HttpOptions>,
@@ -822,8 +842,7 @@ fn validate_self_describing_instances(
 
         let key = schema_uri.as_str().to_string();
         if !validators.contains_key(&key) {
-            match build_validator_for_uri(&schema_uri, instance, draft, assert_format, http_options)
-            {
+            match build_validator_for_uri(&schema_uri, instance, schema_options, http_options) {
                 Ok(validator) => {
                     validators.insert(key.clone(), validator);
                 }
@@ -853,8 +872,7 @@ fn validate_self_describing_instances(
 fn validate_instances(
     instances: &[PathBuf],
     schema_path: &Path,
-    draft: Option<Draft>,
-    assert_format: Option<bool>,
+    schema_options: SchemaOptions<'_>,
     output: Output,
     errors_only: bool,
     http_options: Option<&jsonschema::HttpOptions>,
@@ -862,13 +880,7 @@ fn validate_instances(
     let mut success = true;
 
     let schema_json = read_json(schema_path)?;
-    let mut options = options_for_schema(schema_path, http_options)?;
-    if let Some(draft) = draft {
-        options = options.with_draft(draft.into());
-    }
-    if let Some(assert_format) = assert_format {
-        options = options.should_validate_formats(assert_format);
-    }
+    let options = schema_options.apply(options_for_schema(schema_path, http_options)?);
     match options.build(&schema_json) {
         Ok(validator) => {
             let schema_display = schema_path.to_string_lossy().to_string();
@@ -894,6 +906,7 @@ fn validate_instances(
                 output_schema_validation(
                     schema_path,
                     &schema_json,
+                    schema_options,
                     output,
                     errors_only,
                     http_options,
@@ -927,25 +940,31 @@ fn run_validate(args: ValidateArgs) -> ExitCode {
         instances,
         draft,
         format,
+        vocabularies,
         output,
         errors_only,
         http,
     } = args;
 
     let http_options = http.into_http_options();
+    let schema_options = SchemaOptions {
+        draft,
+        assert_format: format.validate_formats(),
+        vocabularies: &vocabularies,
+    };
 
     match (schema, instances) {
         (Some(schema), Some(instances)) => validation_result_to_exit(validate_instances(
             &instances,
             &schema,
-            draft,
-            format.validate_formats(),
+            schema_options,
             output,
             errors_only,
             http_options.as_ref(),
         )),
         (Some(schema), None) => validation_result_to_exit(validate_schema_meta(
             &schema,
+            schema_options,
             output,
             errors_only,
             http_options.as_ref(),
@@ -953,8 +972,7 @@ fn run_validate(args: ValidateArgs) -> ExitCode {
         (None, Some(instances)) => {
             validation_result_to_exit(validate_self_describing_instances(
                 &instances,
-                draft,
-                format.validate_formats(),
+                schema_options,
                 output,
                 errors_only,
                 http_options.as_ref(),
@@ -1127,6 +1145,7 @@ fn main() -> ExitCode {
                         cli.assert_format,
                         cli.no_assert_format,
                     ),
+                    vocabularies: Vec::new(),
                     output: cli.output,
                     errors_only: cli.errors_only,
                     http: HttpArgs {

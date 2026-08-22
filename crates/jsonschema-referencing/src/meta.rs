@@ -78,7 +78,7 @@ schema!(
     pub DRAFT202012_CONTENT,
     "../metaschemas/draft2020-12/meta/content.json"
 );
-pub(crate) static META_SCHEMAS_ALL: LazyLock<[(&'static str, &'static Value); 18]> =
+pub(crate) static META_SCHEMAS_ALL: LazyLock<[(&'static str, &'static Value); 19]> =
     LazyLock::new(|| {
         [
             ("http://json-schema.org/draft-04/schema#", &*DRAFT4),
@@ -141,6 +141,10 @@ pub(crate) static META_SCHEMAS_ALL: LazyLock<[(&'static str, &'static Value); 18
                 &*DRAFT202012_FORMAT_ANNOTATION,
             ),
             (
+                "https://json-schema.org/draft/2020-12/meta/format-assertion",
+                &*DRAFT202012_FORMAT_ASSERTION,
+            ),
+            (
                 "https://json-schema.org/draft/2020-12/meta/content",
                 &*DRAFT202012_CONTENT,
             ),
@@ -190,7 +194,7 @@ pub(crate) static META_SCHEMAS_DRAFT2019: LazyLock<[(&'static str, &'static Valu
         ]
     });
 
-pub(crate) static META_SCHEMAS_DRAFT2020: LazyLock<[(&'static str, &'static Value); 8]> =
+pub(crate) static META_SCHEMAS_DRAFT2020: LazyLock<[(&'static str, &'static Value); 9]> =
     LazyLock::new(|| {
         [
             (
@@ -220,6 +224,10 @@ pub(crate) static META_SCHEMAS_DRAFT2020: LazyLock<[(&'static str, &'static Valu
             (
                 "https://json-schema.org/draft/2020-12/meta/format-annotation",
                 &*DRAFT202012_FORMAT_ANNOTATION,
+            ),
+            (
+                "https://json-schema.org/draft/2020-12/meta/format-assertion",
+                &*DRAFT202012_FORMAT_ASSERTION,
             ),
             (
                 "https://json-schema.org/draft/2020-12/meta/content",

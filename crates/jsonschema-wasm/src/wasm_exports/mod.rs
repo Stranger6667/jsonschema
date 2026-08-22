@@ -75,8 +75,13 @@ fn build_options(
         let draft = draft_from_id(id).ok_or_else(|| to_js_err(format!("unknown draft `{id}`")))?;
         builder = builder.with_draft(draft);
     }
+    for vocabulary in &options.vocabularies {
+        builder = builder.with_vocabulary(vocabulary.clone());
+    }
+    if let Some(format_assertions) = options.format_assertions {
+        builder = builder.should_validate_formats(format_assertions);
+    }
     Ok(builder
-        .should_validate_formats(options.format_assertions)
         .should_ignore_unknown_formats(options.ignore_unknown_formats)
         .with_retriever(retriever::FetchRetriever))
 }
@@ -218,6 +223,7 @@ export interface Options {
   draft?: string;
   formatAssertions?: boolean;
   ignoreUnknownFormats?: boolean;
+  vocabularies?: string[];
 }
 
 export interface ValidationError {

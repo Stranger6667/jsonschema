@@ -193,6 +193,8 @@ pub(crate) struct CodegenConfig {
     pub(crate) registry: Registry<'static>,
     pub(crate) base_uri: Arc<Uri<String>>,
     pub(crate) draft: Draft,
+    /// Vocabularies the caller declares support for, normalized.
+    pub(crate) vocabularies: Vec<String>,
     pub(crate) runtime_crate_alias: Option<TokenStream>,
     pub(crate) validate_formats: Option<bool>,
     pub(crate) custom_formats: HashMap<String, TokenStream>,
@@ -209,6 +211,8 @@ pub(crate) struct CompileContext<'cfg> {
     pub(crate) config: &'cfg CodegenConfig,
     pub(crate) draft: Draft,
     pub(crate) vocabularies: VocabularySet,
+    /// The first vocabulary an entered meta-schema requires that is neither implemented nor declared.
+    pub(crate) undeclared_vocabulary: Option<String>,
     pub(crate) current_base_uri: Arc<Uri<String>>,
     /// Per-subschema validity checks: `fn(&Value) -> bool` (plus a `validate` variant).
     pub(crate) is_valid_fns: FnTable,
@@ -241,14 +245,29 @@ pub(crate) struct CompileContext<'cfg> {
     pub(crate) schema_path: String,
 }
 
+/// The dialect of `schema`, and the first vocabulary it requires that nobody implements.
+fn find_vocabularies(
+    config: &CodegenConfig,
+    draft: Draft,
+    schema: &serde_json::Value,
+) -> (VocabularySet, Option<String>) {
+    let vocabularies = config.registry.find_vocabularies(draft, schema);
+    let undeclared = vocabularies
+        .custom()
+        .find(|uri| !config.vocabularies.iter().any(|declared| declared == uri))
+        .map(str::to_owned);
+    (vocabularies, undeclared)
+}
+
 impl<'cfg> CompileContext<'cfg> {
     pub(crate) fn new(config: &'cfg CodegenConfig) -> Self {
+        let (vocabularies, undeclared_vocabulary) =
+            find_vocabularies(config, config.draft, &config.schema);
         Self {
             current_base_uri: config.base_uri.clone(),
             draft: config.draft,
-            vocabularies: config
-                .registry
-                .find_vocabularies(config.draft, &config.schema),
+            vocabularies,
+            undeclared_vocabulary,
             config,
             is_valid_fns: FnTable::new("validate_ref"),
             key_eval_fns: FnTable::new("eval_ref"),
@@ -353,7 +372,12 @@ impl<'cfg> CompileContext<'cfg> {
                 .draft
                 .detect(&serde_json::json!({ "$schema": schema_uri }));
         }
-        self.vocabularies = self.config.registry.find_vocabularies(self.draft, schema);
+        let (vocabularies, undeclared_vocabulary) =
+            find_vocabularies(self.config, self.draft, schema);
+        self.vocabularies = vocabularies;
+        if self.undeclared_vocabulary.is_none() {
+            self.undeclared_vocabulary = undeclared_vocabulary;
+        }
 
         let mut scope = SchemaEnvGuard {
             ctx: self,

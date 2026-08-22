@@ -1609,15 +1609,22 @@ pub(crate) fn compile<'a, F: Json>(
                     if ctx.are_unknown_formats_ignored() {
                         None
                     } else {
+                        let message = if ctx.asserts_formats_by_dialect() {
+                            format!(
+                                "Unknown format: '{format}'. The meta-schema asserts formats, so unrecognized ones cannot be ignored. Register a check for it or disable format validation"
+                            )
+                        } else {
+                            format!(
+                                "Unknown format: '{format}'. Adjust configuration to ignore unrecognized formats"
+                            )
+                        };
                         let location = ctx.location().join("format");
                         Some(Err(ValidationError::compile_error(
                             location.clone(),
                             location,
                             Location::new(),
                             Cow::Borrowed(schema),
-                            format!(
-                                "Unknown format: '{format}'. Adjust configuration to ignore unrecognized formats"
-                            ),
+                            message,
                         )))
                     }
                 }

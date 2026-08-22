@@ -1553,6 +1553,43 @@ struct NoApplicatorArrayVocabularyValidator;
 )]
 struct NoUnevaluatedArrayVocabularyValidator;
 
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/format-assertion","type":"string","format":"date-time"}"#,
+    draft = referencing::Draft::Draft202012,
+    resources = {
+        "json-schema:///meta/format-assertion" => { schema = r#"{"$id":"json-schema:///meta/format-assertion","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/validation":true,"https://json-schema.org/draft/2020-12/vocab/format-assertion":true}}"# },
+    }
+)]
+struct FormatAssertionVocabularyValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/optional-format-assertion","type":"string","format":"date-time"}"#,
+    draft = referencing::Draft::Draft202012,
+    resources = {
+        "json-schema:///meta/optional-format-assertion" => { schema = r#"{"$id":"json-schema:///meta/optional-format-assertion","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/validation":true,"https://json-schema.org/draft/2020-12/vocab/format-assertion":false}}"# },
+    }
+)]
+struct OptionalFormatAssertionVocabularyValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/draft2019-format","type":"string","format":"date-time"}"#,
+    draft = referencing::Draft::Draft201909,
+    resources = {
+        "json-schema:///meta/draft2019-format" => { schema = r#"{"$id":"json-schema:///meta/draft2019-format","$schema":"https://json-schema.org/draft/2019-09/schema","$vocabulary":{"https://json-schema.org/draft/2019-09/vocab/core":true,"https://json-schema.org/draft/2019-09/vocab/validation":true,"https://json-schema.org/draft/2019-09/vocab/format":true}}"# },
+    }
+)]
+struct Draft201909FormatVocabularyValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/custom-vocab","type":"string"}"#,
+    draft = referencing::Draft::Draft202012,
+    vocabularies = ["https://example.com/vocab/made-up"],
+    resources = {
+        "json-schema:///meta/custom-vocab" => { schema = r#"{"$id":"json-schema:///meta/custom-vocab","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/validation":true,"https://example.com/vocab/made-up":true}}"# },
+    }
+)]
+struct DeclaredVocabularyValidator;
+
 #[test]
 fn test_external_resources() {
     assert!(AddressValidator::is_valid(
@@ -2964,6 +3001,96 @@ fn test_validation_vocabulary_gating_parity(instance: serde_json::Value, expecte
         NoValidationVocabularyValidator::is_valid(&instance),
         runtime.is_valid(&instance)
     );
+}
+
+#[test_case(serde_json::json!("2026-08-22T12:00:00Z"), true ; "well_formed_date_time")]
+#[test_case(serde_json::json!("not-a-date"), false ; "malformed_date_time_rejected_by_assertion_vocab")]
+fn test_format_assertion_vocabulary_parity(instance: serde_json::Value, expected: bool) {
+    let schema = serde_json::json!({
+        "$schema": "json-schema:///meta/format-assertion",
+        "type": "string",
+        "format": "date-time"
+    });
+    let runtime = build_runtime_with_resources(
+        schema,
+        [(
+            "json-schema:///meta/format-assertion",
+            serde_json::json!({
+                "$id": "json-schema:///meta/format-assertion",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$vocabulary": {
+                    "https://json-schema.org/draft/2020-12/vocab/core": true,
+                    "https://json-schema.org/draft/2020-12/vocab/validation": true,
+                    "https://json-schema.org/draft/2020-12/vocab/format-assertion": true
+                }
+            }),
+        )],
+    );
+
+    assert_eq!(runtime.is_valid(&instance), expected);
+    assert_eq!(
+        FormatAssertionVocabularyValidator::is_valid(&instance),
+        expected
+    );
+}
+
+#[test_case(
+    OptionalFormatAssertionVocabularyValidator::is_valid,
+    "json-schema:///meta/optional-format-assertion",
+    serde_json::json!({
+        "$id": "json-schema:///meta/optional-format-assertion",
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$vocabulary": {
+            "https://json-schema.org/draft/2020-12/vocab/core": true,
+            "https://json-schema.org/draft/2020-12/vocab/validation": true,
+            "https://json-schema.org/draft/2020-12/vocab/format-assertion": false
+        }
+    })
+    ; "optional_format_assertion_vocab"
+)]
+#[test_case(
+    Draft201909FormatVocabularyValidator::is_valid,
+    "json-schema:///meta/draft2019-format",
+    serde_json::json!({
+        "$id": "json-schema:///meta/draft2019-format",
+        "$schema": "https://json-schema.org/draft/2019-09/schema",
+        "$vocabulary": {
+            "https://json-schema.org/draft/2019-09/vocab/core": true,
+            "https://json-schema.org/draft/2019-09/vocab/validation": true,
+            "https://json-schema.org/draft/2019-09/vocab/format": true
+        }
+    })
+    ; "draft2019_format_vocab_required"
+)]
+fn test_dialect_asserts_formats_parity(
+    is_valid: fn(&serde_json::Value) -> bool,
+    meta_uri: &'static str,
+    meta: serde_json::Value,
+) {
+    let schema = serde_json::json!({
+        "$schema": meta_uri,
+        "type": "string",
+        "format": "date-time"
+    });
+    let runtime = build_runtime_with_resources(schema, [(meta_uri, meta)]);
+
+    for (instance, expected) in [
+        (serde_json::json!("2026-08-22T12:00:00Z"), true),
+        (serde_json::json!("not-a-date"), false),
+    ] {
+        assert_eq!(runtime.is_valid(&instance), expected);
+        assert_eq!(is_valid(&instance), expected);
+    }
+}
+
+#[test]
+fn test_declared_vocabulary_compiles() {
+    assert!(DeclaredVocabularyValidator::is_valid(&serde_json::json!(
+        "text"
+    )));
+    assert!(!DeclaredVocabularyValidator::is_valid(&serde_json::json!(
+        1
+    )));
 }
 
 #[test_case(

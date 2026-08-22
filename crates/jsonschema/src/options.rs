@@ -10,7 +10,7 @@ use crate::{
     retriever::DefaultRetriever,
     Json, Keyword, SerdeJson, ValidationError, Validator,
 };
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use email_address::Options as EmailAddressOptions;
 use referencing::{Draft, Retrieve};
 use serde_json::Value;
@@ -33,6 +33,7 @@ pub struct ValidationOptions<'i, R = Arc<dyn Retrieve>, F: Json = SerdeJson> {
     pub(crate) validate_schema: bool,
     ignore_unknown_formats: bool,
     keywords: AHashMap<String, Arc<dyn KeywordFactory<F>>>,
+    vocabularies: AHashSet<String>,
     pattern_options: PatternEngineOptions,
     email_options: Option<EmailAddressOptions>,
     representation: PhantomData<F>,
@@ -55,6 +56,7 @@ impl<R: Clone, F: Json> Clone for ValidationOptions<'_, R, F> {
             validate_schema: self.validate_schema,
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords.clone(),
+            vocabularies: self.vocabularies.clone(),
             pattern_options: self.pattern_options,
             email_options: self.email_options,
             representation: PhantomData,
@@ -76,6 +78,7 @@ impl<F: Json> Default for ValidationOptions<'_, Arc<dyn Retrieve>, F> {
             validate_schema: true,
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
+            vocabularies: AHashSet::default(),
             pattern_options: PatternEngineOptions::default(),
             email_options: None,
             representation: PhantomData,
@@ -98,6 +101,7 @@ impl<F: Json> Default for ValidationOptions<'_, Arc<dyn referencing::AsyncRetrie
             validate_schema: true,
             ignore_unknown_formats: true,
             keywords: AHashMap::default(),
+            vocabularies: AHashSet::default(),
             pattern_options: PatternEngineOptions::default(),
             email_options: None,
             representation: PhantomData,
@@ -386,10 +390,34 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     ///
     /// By default, unknown formats are silently ignored. Set to `false` to report
     /// unrecognized formats as validation errors.
+    ///
+    /// A meta-schema that asserts formats rejects unrecognized ones regardless of this setting.
     #[must_use]
     pub fn should_ignore_unknown_formats(mut self, yes: bool) -> Self {
         self.ignore_unknown_formats = yes;
         self
+    }
+
+    /// Declare support for a vocabulary this crate does not implement itself.
+    ///
+    /// A meta-schema that requires an unknown vocabulary is rejected. Use this together with
+    /// [`ValidationOptions::with_keyword`] to declare that the vocabulary's keywords are covered.
+    ///
+    /// ```rust
+    /// let options = jsonschema::options()
+    ///     .with_vocabulary("https://example.com/vocab/data");
+    /// ```
+    #[must_use]
+    pub fn with_vocabulary(mut self, uri: impl Into<String>) -> Self {
+        let uri = uri.into();
+        // Meta-schemas report their vocabularies normalized; an unparsable URI can never match one.
+        let normalized = referencing::uri::from_str(&uri).map_or(uri, |uri| uri.to_string());
+        self.vocabularies.insert(normalized);
+        self
+    }
+
+    pub(crate) fn declares_vocabulary(&self, uri: &str) -> bool {
+        self.vocabularies.contains(uri)
     }
 
     pub(crate) const fn are_unknown_formats_ignored(&self) -> bool {
@@ -757,6 +785,7 @@ impl<'i, F: Json> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> 
             validate_schema: self.validate_schema,
             ignore_unknown_formats: self.ignore_unknown_formats,
             keywords: self.keywords,
+            vocabularies: self.vocabularies,
             pattern_options: self.pattern_options,
             email_options: self.email_options,
             representation: PhantomData,

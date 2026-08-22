@@ -2334,3 +2334,51 @@ RSpec.describe "Instance mutation between validations" do
     expect(validator.valid?([inner, inner])).to be false
   end
 end
+
+RSpec.describe "Vocabularies" do
+  let(:format_assertion_meta) do
+    {
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "$id" => "https://example.com/dialect",
+      "$vocabulary" => {
+        "https://json-schema.org/draft/2020-12/vocab/core" => true,
+        "https://json-schema.org/draft/2020-12/vocab/validation" => true,
+        "https://json-schema.org/draft/2020-12/vocab/format-assertion" => true
+      }
+    }
+  end
+
+  let(:unknown_vocabulary_meta) do
+    {
+      "$schema" => "https://json-schema.org/draft/2020-12/schema",
+      "$id" => "https://example.com/dialect",
+      "$vocabulary" => {
+        "https://json-schema.org/draft/2020-12/vocab/core" => true,
+        "https://example.com/vocab/made-up" => true
+      }
+    }
+  end
+
+  it "asserts formats when the meta-schema requires format-assertion" do
+    registry = JSONSchema::Registry.new([["https://example.com/dialect", format_assertion_meta]])
+    schema = { "$schema" => "https://example.com/dialect", "type" => "string", "format" => "date-time" }
+    validator = JSONSchema.validator_for(schema, registry: registry)
+    expect(validator.valid?("2026-08-22T12:00:00Z")).to be true
+    expect(validator.valid?("not-a-date")).to be false
+  end
+
+  it "rejects a meta-schema requiring an unknown vocabulary" do
+    registry = JSONSchema::Registry.new([["https://example.com/dialect", unknown_vocabulary_meta]])
+    schema = { "$schema" => "https://example.com/dialect" }
+    expect { JSONSchema.validator_for(schema, registry: registry) }
+      .to raise_error(ArgumentError, %r{Unknown vocabulary: 'https://example\.com/vocab/made-up'})
+  end
+
+  it "accepts a declared unknown vocabulary" do
+    registry = JSONSchema::Registry.new([["https://example.com/dialect", unknown_vocabulary_meta]])
+    schema = { "$schema" => "https://example.com/dialect" }
+    validator = JSONSchema.validator_for(schema, registry: registry,
+                                                 vocabularies: ["https://example.com/vocab/made-up"])
+    expect(validator.valid?(1)).to be true
+  end
+end

@@ -1,0 +1,12 @@
+error: Unknown vocabulary: 'https://example.com/vocab/made-up' is required by the meta-schema. Adjust configuration to declare support for it
+ --> tests/ui/unknown_vocabulary.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"$schema":"json-schema:///meta/custom","type":"string"}"#,
+3 | |     draft = referencing::Draft::Draft202012,
+4 | |     resources = {
+... |
+7 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

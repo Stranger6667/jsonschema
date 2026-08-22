@@ -2,6 +2,21 @@
 
 ## [Unreleased]
 
+### Added
+
+- `vocabularies` option, declaring support for a vocabulary this library does not implement.
+
+### Fixed
+
+- The `uniqueItems` length ceiling not reading an `items` or `contains` schema written as a `$ref`.
+- The Draft 2020-12 Format-Assertion vocabulary read as an annotation, so a meta-schema requiring it accepted values its `format` rejects.
+- An unrecognized `format` accepted under a meta-schema requiring the Format-Assertion vocabulary (it should be rejected).
+- A meta-schema requiring a vocabulary this library does not implement accepted (it should be rejected).
+- The Draft 2019-09 Format vocabulary declared `true` read as an annotation, so a meta-schema requiring it accepted values its `format` rejects.
+- The bundled `https://json-schema.org/draft/2020-12/meta/format-assertion` meta-schema not declaring its vocabulary, so a schema written against it annotated `format` instead of asserting it.
+- A meta-schema without `$id` keeping its `$vocabulary` unread, so a schema written against it got every Draft 2020-12 vocabulary.
+- A schema naming a bundled vocabulary meta-schema as its `$schema` rejected as an unknown meta-schema (it should build).
+
 ## [0.50.1] - 2026-08-22
 
 ### Changed

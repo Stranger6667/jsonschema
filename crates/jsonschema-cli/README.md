@@ -74,6 +74,7 @@ jsonschema validate [OPTIONS] [SCHEMA]
 | `-i, --instance <FILE>` | Instance(s) to validate (repeatable) |
 | `-d, --draft <DRAFT>` | Enforce a specific draft (`4`, `6`, `7`, `2019`, `2020`) |
 | `--assert-format` / `--no-assert-format` | Enable/disable `format` keyword validation |
+| `--vocabulary <URI>` | Declare support for a vocabulary the meta-schema requires (repeatable) |
 | `--output <text\|flag\|list\|hierarchical>` | Output style (default: `text`) |
 | `--errors-only` | Suppress successful validations |
 | `--connect-timeout <SECONDS>` | Connection timeout for remote `$ref` retrieval |

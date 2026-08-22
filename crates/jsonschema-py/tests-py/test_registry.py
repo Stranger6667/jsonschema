@@ -201,3 +201,50 @@ def test_registry_error_on_retrieval():
             [("https://example.com/inner.json", {"$ref": "https://example.com/dynamic.json"})],
             retriever=retrieve,
         )
+
+
+FORMAT_ASSERTION_META = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://example.com/dialect",
+    "$vocabulary": {
+        "https://json-schema.org/draft/2020-12/vocab/core": True,
+        "https://json-schema.org/draft/2020-12/vocab/validation": True,
+        "https://json-schema.org/draft/2020-12/vocab/format-assertion": True,
+    },
+}
+
+
+def test_format_assertion_vocabulary_asserts_without_opt_in():
+    registry = Registry([("https://example.com/dialect", FORMAT_ASSERTION_META)])
+    validator = validator_for(
+        {"$schema": "https://example.com/dialect", "type": "string", "format": "date-time"},
+        registry=registry,
+    )
+    assert validator.is_valid("2026-08-22T12:00:00Z")
+    assert not validator.is_valid("not-a-date")
+
+
+MADE_UP_VOCABULARY_META = {
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$id": "https://example.com/dialect",
+    "$vocabulary": {
+        "https://json-schema.org/draft/2020-12/vocab/core": True,
+        "https://example.com/vocab/made-up": True,
+    },
+}
+
+
+def test_required_unknown_vocabulary_is_rejected():
+    registry = Registry([("https://example.com/dialect", MADE_UP_VOCABULARY_META)])
+    with pytest.raises(ValidationError, match="Unknown vocabulary: 'https://example.com/vocab/made-up'"):
+        validator_for({"$schema": "https://example.com/dialect"}, registry=registry)
+
+
+def test_declared_unknown_vocabulary_is_accepted():
+    registry = Registry([("https://example.com/dialect", MADE_UP_VOCABULARY_META)])
+    validator = validator_for(
+        {"$schema": "https://example.com/dialect"},
+        registry=registry,
+        vocabularies=["https://example.com/vocab/made-up"],
+    )
+    assert validator.is_valid(1)
