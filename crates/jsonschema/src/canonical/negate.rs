@@ -1,6 +1,8 @@
 //! Structural complement of a canonical node.
 use std::sync::Arc;
 
+use ahash::AHashSet;
+
 use serde_json::{Number, Value};
 
 use crate::{
@@ -38,6 +40,8 @@ pub(crate) const CONJUNCTION_BUDGET: usize = 16;
 /// State of one resolving negation walk.
 struct NegationWalk<'a> {
     definitions: &'a DefinitionMap,
+    /// Targets on a cycle whose every edge is in place.
+    in_place_cycles: AHashSet<Arc<str>>,
     /// References being negated on the current path.
     active: Vec<Arc<str>>,
     /// Resolutions left before the walk declines.
@@ -69,6 +73,7 @@ pub(crate) fn negate_in_place(
 ) -> Option<Schema> {
     let mut walk = NegationWalk {
         definitions,
+        in_place_cycles: emptiness::in_place_cycle_keys(schema, definitions),
         active: Vec::new(),
         budget: RESOLUTION_BUDGET,
         unspellable: Unspellable::Decline,
@@ -86,6 +91,7 @@ pub(crate) fn negate_in_place(
     let detached = DefinitionMap::new();
     let mut walk = NegationWalk {
         definitions: &detached,
+        in_place_cycles: AHashSet::new(),
         active: Vec::new(),
         budget: RESOLUTION_BUDGET,
         unspellable: Unspellable::Bar,
@@ -103,6 +109,7 @@ pub(crate) fn negate_with_definitions(
 ) -> Option<Schema> {
     let mut walk = NegationWalk {
         definitions,
+        in_place_cycles: emptiness::in_place_cycle_keys(schema, definitions),
         active: Vec::new(),
         budget: RESOLUTION_BUDGET,
         unspellable: Unspellable::Bar,
@@ -139,6 +146,19 @@ fn bar(schema: &Schema, walk: &NegationWalk<'_>) -> Option<Schema> {
     }
 }
 
+/// Whether the node reads a target that reads itself back on the same instance. What such a target
+/// accepts is the validator's answer, so negating the node's parts does not negate the node.
+fn reads_an_in_place_cycle(schema: &Schema, walk: &NegationWalk<'_>) -> bool {
+    if walk.in_place_cycles.is_empty() {
+        return false;
+    }
+    let mut found = Vec::new();
+    emptiness::collect_classified_references(schema, emptiness::Position::InPlace, &mut found);
+    found
+        .iter()
+        .any(|(uri, _)| walk.in_place_cycles.contains(*uri))
+}
+
 fn negate_within(
     schema: &Schema,
     walk: &mut NegationWalk<'_>,
@@ -165,7 +185,9 @@ fn negate_within(
             Some(inner.clone())
         }
         // De Morgan: the complement of a union is the intersection of the branch complements, so
-        // one inexpressible branch declines the whole node.
+        // one inexpressible branch declines the whole node. A union reading a target that reads
+        // itself back stays symbolic instead, as a choice does.
+        SchemaKind::AnyOf(_) if reads_an_in_place_cycle(schema, walk) => bar(schema, walk),
         SchemaKind::AnyOf(branches) => {
             let mut result = Schema::truthy();
             for branch in branches.as_slice() {
