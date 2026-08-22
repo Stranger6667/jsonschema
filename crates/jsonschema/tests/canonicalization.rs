@@ -4574,6 +4574,34 @@ fn negate_declines(schema: &Value) {
     ));
 }
 
+// A definition whose `if` reads it back is the validator's answer, not the algebra's, so negation
+// bars the pointer whole - as it does for a choice reading its own target.
+#[test]
+fn a_condition_reading_its_own_definition_is_barred_whole() {
+    let ill_founded = canonicalize(&json!({
+        "$defs": {"t": {
+            "if": {"$ref": "#/$defs/t"},
+            "then": {"type": "array"},
+            "else": {"type": "null"}
+        }},
+        "$ref": "#/$defs/t"
+    }))
+    .expect("canonicalizes");
+    let barred = ill_founded.negate().expect("negates");
+    let (whole, complement) = (
+        validator_for(&ill_founded.to_json_schema()).expect("builds"),
+        validator_for(&barred.to_json_schema()).expect("builds"),
+    );
+    for instance in [json!(null), json!([1]), json!({}), json!("x"), json!(1)] {
+        assert_eq!(
+            !whole.is_valid(&instance),
+            complement.is_valid(&instance),
+            "the complement disagrees on {instance}\n  complement = {}",
+            barred.to_json_schema()
+        );
+    }
+}
+
 // Each definition resolves twice per level, so the complement's size doubles with depth; the walk
 // declines rather than spelling a complement exponentially larger than the source.
 #[test]

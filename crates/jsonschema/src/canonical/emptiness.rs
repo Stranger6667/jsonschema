@@ -270,6 +270,22 @@ fn in_place_cycle_members(component: &[Arc<str>], internal: &ReferenceEdges) -> 
         .collect()
 }
 
+/// Definition keys on a cycle whose every edge is in place.
+pub(crate) fn in_place_cycle_keys(
+    root: &Schema,
+    definitions: &DefinitionMap,
+) -> AHashSet<Arc<str>> {
+    let edges = reference_edges(root, definitions);
+    strongly_connected(&edges)
+        .into_iter()
+        .filter(|component| is_cyclic(component, &edges))
+        .flat_map(|component| {
+            let internal = restrict(&component, &edges, Edges::All);
+            in_place_cycle_members(&component, &internal)
+        })
+        .collect()
+}
+
 /// Which edges a restricted subgraph keeps.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Edges {
