@@ -8,6 +8,7 @@ use quote::{format_ident, quote, ToTokens};
 use serde_json::Value;
 use syn::{
     parse::{Parse, ParseStream},
+    punctuated::Punctuated,
     Ident, ItemStruct, LitBool, LitInt, LitStr, Token,
 };
 
@@ -94,6 +95,7 @@ struct Config {
     draft: Option<syn::Expr>,
     base_uri: Option<LitStr>,
     resources: Vec<ResourceEntry>,
+    vocabularies: Vec<String>,
     validate_formats: Option<bool>,
     formats: Vec<FormatEntry>,
     keywords: Vec<FormatEntry>,
@@ -469,6 +471,7 @@ impl Parse for Config {
         let mut draft = None;
         let mut base_uri = None;
         let mut resources: Vec<ResourceEntry> = Vec::new();
+        let mut vocabularies: Vec<String> = Vec::new();
         let mut validate_formats = None;
         let mut formats: Vec<FormatEntry> = Vec::new();
         let mut keywords: Vec<FormatEntry> = Vec::new();
@@ -571,6 +574,14 @@ impl Parse for Config {
                     }
                     resources = local_resources;
                 }
+                "vocabularies" => {
+                    input.parse::<Token![=]>()?;
+                    let content;
+                    syn::bracketed!(content in input);
+                    let uris: Punctuated<LitStr, Token![,]> =
+                        Punctuated::parse_terminated(&content)?;
+                    vocabularies = uris.iter().map(LitStr::value).collect();
+                }
                 "validate_formats" => {
                     input.parse::<Token![=]>()?;
                     let value: LitBool = input.parse()?;
@@ -621,7 +632,7 @@ impl Parse for Config {
                 _ => {
                     return Err(syn::Error::new_spanned(
                         ident,
-                        "Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute",
+                        "Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute",
                     ));
                 }
             }
@@ -643,6 +654,7 @@ impl Parse for Config {
             draft,
             base_uri,
             resources,
+            vocabularies,
             validate_formats,
             formats,
             keywords,
@@ -760,6 +772,15 @@ so the generated methods cannot depend on type parameters",
                 format!("Registry error: {err}"),
             )
         })?;
+
+    for vocabulary in registry.find_vocabularies(draft, &schema).custom() {
+        if !attr.vocabularies.iter().any(|uri| uri == vocabulary) {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("Unknown vocabulary: '{vocabulary}' is required by the meta-schema. Adjust configuration to declare support for it"),
+            ));
+        }
+    }
 
     let config = context::CodegenConfig {
         schema,

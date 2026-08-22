@@ -644,6 +644,7 @@ JSONSchema.valid?(schema, instance,
   formats: { "name" => proc },     # Custom format validators
   keywords: { "name" => Klass },   # Custom keyword validators
   registry: registry,              # Pre-registered schemas
+  vocabularies: ["https://..."],   # Vocabularies implemented by custom keywords
   pattern_options: opts,           # RegexOptions or FancyRegexOptions
   email_options: opts,             # EmailOptions
   http_options: opts               # HttpOptions

@@ -133,6 +133,13 @@ impl CompileContext<'_> {
         }
     }
 
+    /// The meta-schema requires the Format-Assertion vocabulary.
+    #[inline]
+    pub(crate) fn asserts_formats_by_dialect(&self) -> bool {
+        // Not `has_vocabulary`: that reports every vocabulary as present below Draft 2019-09.
+        self.vocabularies.contains(&Vocabulary::FormatAssertion)
+    }
+
     #[inline]
     pub(crate) fn supports_validation_vocabulary(&self) -> bool {
         self.has_vocabulary(&Vocabulary::Validation)
