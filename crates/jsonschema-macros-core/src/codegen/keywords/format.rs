@@ -121,10 +121,9 @@ pub(crate) fn format_emits_assertion(ctx: &CompileContext<'_>, value: &Value) ->
         return true;
     };
 
-    let should_validate = ctx
-        .config
-        .validate_formats
-        .unwrap_or_else(|| validates_formats_by_default(ctx.draft));
+    let should_validate = ctx.config.validate_formats.unwrap_or_else(|| {
+        ctx.asserts_formats_by_dialect() || validates_formats_by_default(ctx.draft)
+    });
     if !should_validate {
         return false;
     }
@@ -135,7 +134,11 @@ pub(crate) fn format_emits_assertion(ctx: &CompileContext<'_>, value: &Value) ->
     if compile_builtin_format_check(ctx, format_name).is_some() {
         return true;
     }
-    !ctx.config.ignore_unknown_formats
+    !ignores_unknown_formats(ctx)
+}
+
+fn ignores_unknown_formats(ctx: &CompileContext<'_>) -> bool {
+    !ctx.asserts_formats_by_dialect() && ctx.config.ignore_unknown_formats
 }
 
 /// Compile the "format" keyword.
@@ -144,10 +147,9 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
         return Some(invalid_schema_type_expression(value, &["string"]));
     };
 
-    let should_validate = ctx
-        .config
-        .validate_formats
-        .unwrap_or_else(|| validates_formats_by_default(ctx.draft));
+    let should_validate = ctx.config.validate_formats.unwrap_or_else(|| {
+        ctx.asserts_formats_by_dialect() || validates_formats_by_default(ctx.draft)
+    });
     if !should_validate {
         return None;
     }
@@ -175,7 +177,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
         return Some(format_check(&schema_path, format_name, validation_call));
     }
 
-    if ctx.config.ignore_unknown_formats {
+    if ignores_unknown_formats(ctx) {
         None
     } else {
         let message = format!(

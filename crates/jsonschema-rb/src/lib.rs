@@ -200,6 +200,7 @@ fn build_parsed_options(
         formats,
         keywords,
         registry,
+        kw.vocabularies,
         kw.pattern_options,
         kw.email_options,
         kw.http_options,

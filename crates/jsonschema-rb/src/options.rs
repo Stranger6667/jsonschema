@@ -36,6 +36,7 @@ define_rb_intern!(static KW_FORMATS: "formats");
 define_rb_intern!(static KW_KEYWORDS: "keywords");
 define_rb_intern!(pub(crate) static KW_REGISTRY: "registry");
 // Extra kwarg names (extracted before get_kwargs)
+define_rb_intern!(static KW_VOCABULARIES: "vocabularies");
 define_rb_intern!(static KW_PATTERN_OPTIONS: "pattern_options");
 define_rb_intern!(static KW_EMAIL_OPTIONS: "email_options");
 define_rb_intern!(static KW_HTTP_OPTIONS: "http_options");
@@ -224,12 +225,14 @@ pub fn parse_draft_symbol(ruby: &Ruby, val: Value) -> Result<jsonschema::Draft, 
 
 pub struct ExtractedKwargs {
     pub base: BaseKwargs,
+    pub vocabularies: Option<Vec<String>>,
     pub pattern_options: Option<Value>,
     pub email_options: Option<Value>,
     pub http_options: Option<Value>,
 }
 
 pub fn extract_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error> {
+    let vocabularies = extract_vocabularies(&kw)?;
     let pattern_options = extract_and_delete(&kw, *KW_PATTERN_OPTIONS)?;
     let email_options = extract_and_delete(&kw, *KW_EMAIL_OPTIONS)?;
     let http_options = extract_and_delete(&kw, *KW_HTTP_OPTIONS)?;
@@ -239,6 +242,7 @@ pub fn extract_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error>
 
     Ok(ExtractedKwargs {
         base: base_kw.optional,
+        vocabularies,
         pattern_options,
         email_options,
         http_options,
@@ -246,6 +250,7 @@ pub fn extract_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error>
 }
 
 pub fn extract_evaluate_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error> {
+    let vocabularies = extract_vocabularies(&kw)?;
     let pattern_options = extract_and_delete(&kw, *KW_PATTERN_OPTIONS)?;
     let email_options = extract_and_delete(&kw, *KW_EMAIL_OPTIONS)?;
     let http_options = extract_and_delete(&kw, *KW_HTTP_OPTIONS)?;
@@ -275,6 +280,7 @@ pub fn extract_evaluate_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwarg
             keywords,
             registry,
         ),
+        vocabularies,
         pattern_options,
         email_options,
         http_options,
@@ -282,6 +288,7 @@ pub fn extract_evaluate_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwarg
 }
 
 pub fn extract_kwargs_no_draft(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error> {
+    let vocabularies = extract_vocabularies(&kw)?;
     let pattern_options = extract_and_delete(&kw, *KW_PATTERN_OPTIONS)?;
     let email_options = extract_and_delete(&kw, *KW_EMAIL_OPTIONS)?;
     let http_options = extract_and_delete(&kw, *KW_HTTP_OPTIONS)?;
@@ -311,10 +318,17 @@ pub fn extract_kwargs_no_draft(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwarg
             keywords,
             registry,
         ),
+        vocabularies,
         pattern_options,
         email_options,
         http_options,
     })
+}
+
+fn extract_vocabularies(kw: &RHash) -> Result<Option<Vec<String>>, Error> {
+    extract_and_delete(kw, *KW_VOCABULARIES)?
+        .map(TryConvert::try_convert)
+        .transpose()
 }
 
 /// Extract a key from a Ruby Hash and remove it, returning None if not present or nil.
@@ -482,6 +496,7 @@ pub fn make_options_from_kwargs(
     formats: Option<RHash>,
     keywords: Option<RHash>,
     registry_val: Option<Value>,
+    vocabularies: Option<Vec<String>>,
     pattern_options_val: Option<Value>,
     email_options_val: Option<Value>,
     http_options_val: Option<Value>,
@@ -504,6 +519,10 @@ pub fn make_options_from_kwargs(
 
     if let Some(ignore) = ignore_unknown_formats {
         opts = opts.should_ignore_unknown_formats(ignore);
+    }
+
+    for vocabulary in vocabularies.into_iter().flatten() {
+        opts = opts.with_vocabulary(vocabulary);
     }
 
     if let Some(uri) = base_uri {

@@ -38,6 +38,7 @@ type SharedSet<T> = Rc<RefCell<AHashSet<T>>>;
 
 pub(crate) trait CompilationOptions<F: Json> {
     fn validate_formats(&self) -> Option<bool>;
+    fn declares_vocabulary(&self, uri: &str) -> bool;
     fn are_unknown_formats_ignored(&self) -> bool;
     fn get_content_media_type_check(&self, media_type: &str) -> Option<ContentMediaTypeCheckType>;
     fn content_encoding_check(&self, content_encoding: &str) -> Option<ContentEncodingCheckType>;
@@ -54,6 +55,10 @@ pub(crate) trait CompilationOptions<F: Json> {
 impl<R, F: Json> CompilationOptions<F> for ValidationOptions<'_, R, F> {
     fn validate_formats(&self) -> Option<bool> {
         ValidationOptions::validate_formats(self)
+    }
+
+    fn declares_vocabulary(&self, uri: &str) -> bool {
+        ValidationOptions::declares_vocabulary(self, uri)
     }
 
     fn are_unknown_formats_ignored(&self) -> bool {
@@ -363,12 +368,17 @@ impl<'a, F: Json> Context<'a, F> {
         !matches!(self.draft, Draft::Draft4)
     }
     pub(crate) fn validates_formats_by_default(&self) -> bool {
-        self.config
-            .validate_formats()
-            .unwrap_or_else(|| formats_are_assertions_by_default(self.draft))
+        self.config.validate_formats().unwrap_or_else(|| {
+            self.asserts_formats_by_dialect() || formats_are_assertions_by_default(self.draft)
+        })
     }
     pub(crate) fn are_unknown_formats_ignored(&self) -> bool {
-        self.config.are_unknown_formats_ignored()
+        !self.asserts_formats_by_dialect() && self.config.are_unknown_formats_ignored()
+    }
+    /// The meta-schema requires the Format-Assertion vocabulary.
+    fn asserts_formats_by_dialect(&self) -> bool {
+        // Not `has_vocabulary`: that reports every vocabulary as present below Draft 2019-09.
+        self.vocabularies.contains(&Vocabulary::FormatAssertion)
     }
     pub(crate) fn with_resolver_and_draft(
         &'a self,
@@ -876,6 +886,26 @@ fn estimate_subschema_count(schema: &Value) -> usize {
     }
 }
 
+/// A meta-schema that requires a vocabulary this crate does not implement cannot be honored,
+/// so the schemas written against it are refused.
+fn ensure_vocabularies_supported<F: Json>(
+    config: &dyn CompilationOptions<F>,
+    vocabularies: &VocabularySet,
+) -> Result<(), ValidationError<'static>> {
+    for uri in vocabularies.custom() {
+        if !config.declares_vocabulary(uri) {
+            return Err(ValidationError::compile_error(
+                Location::new(),
+                Location::new(),
+                Location::new(),
+                Cow::Owned(Value::Null),
+                format!("Unknown vocabulary: '{uri}' is required by the meta-schema. Adjust configuration to declare support for it"),
+            ));
+        }
+    }
+    Ok(())
+}
+
 fn compile_root_with_registry<R, F: Json>(
     config: &ValidationOptions<'_, R, F>,
     schema: &Value,
@@ -886,6 +916,7 @@ fn compile_root_with_registry<R, F: Json>(
     let requested_base_uri = resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
     let base_uri = normalize_base_uri(registry, &requested_base_uri);
     let vocabularies = registry.find_vocabularies(draft, schema);
+    ensure_vocabularies_supported(config, &vocabularies)?;
     let resolver = registry.resolver(base_uri);
     let capacity = estimate_subschema_count(schema);
     let ctx: Context<'_, F> = Context::new(
@@ -1184,6 +1215,7 @@ fn build_validator_map_with_registry<R, F: Json>(
     let requested_base_uri = resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
     let base_uri = normalize_base_uri(registry, &requested_base_uri);
     let vocabularies = registry.find_vocabularies(draft, schema);
+    ensure_vocabularies_supported(config, &vocabularies)?;
     let resolver = registry.resolver(base_uri);
     let validators = collect_validators::<F>(config, &resolver, &vocabularies, schema, draft);
     Ok(ValidatorMap { validators })

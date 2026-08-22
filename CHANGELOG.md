@@ -2,6 +2,16 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ValidationOptions::with_vocabulary` and the `vocabularies` attribute on `jsonschema::validator`, declaring support for a vocabulary this crate does not implement.
+
+### Fixed
+
+- The Draft 2020-12 Format-Assertion vocabulary read as an annotation, so a meta-schema requiring it accepted values its `format` rejects.
+- An unrecognized `format` accepted under a meta-schema requiring the Format-Assertion vocabulary (it should be rejected).
+- A meta-schema requiring a vocabulary this crate does not implement accepted (it should be rejected).
+
 ## [0.50.1] - 2026-08-22
 
 ### Changed

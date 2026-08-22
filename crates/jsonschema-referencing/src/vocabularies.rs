@@ -17,6 +17,7 @@ pub enum Vocabulary {
     Metadata,
     Format,
     FormatAnnotation,
+    FormatAssertion,
     Content,
     Custom(Uri<String>),
 }
@@ -46,6 +47,9 @@ impl FromStr for Vocabulary {
             "https://json-schema.org/draft/2020-12/vocab/format-annotation" => {
                 Ok(Vocabulary::FormatAnnotation)
             }
+            "https://json-schema.org/draft/2020-12/vocab/format-assertion" => {
+                Ok(Vocabulary::FormatAssertion)
+            }
             "https://json-schema.org/draft/2020-12/vocab/content"
             | "https://json-schema.org/draft/2019-09/vocab/content" => Ok(Vocabulary::Content),
             _ => Ok(Vocabulary::Custom(uri::from_str(s)?)),
@@ -56,7 +60,7 @@ impl FromStr for Vocabulary {
 /// A set of enabled JSON Schema vocabularies.
 #[derive(Clone, Default, PartialEq, Eq)]
 pub struct VocabularySet {
-    known: u8,
+    known: u16,
     custom: AHashSet<Uri<String>>,
 }
 
@@ -89,6 +93,9 @@ impl fmt::Debug for VocabularySet {
         if self.known & (1 << 7) != 0 {
             debug_list.entry(&"content");
         }
+        if self.known & (1 << 8) != 0 {
+            debug_list.entry(&"format-assertion");
+        }
 
         // Add custom vocabularies
         if !self.custom.is_empty() {
@@ -107,7 +114,7 @@ impl VocabularySet {
         Self::default()
     }
 
-    pub(crate) fn from_known(known: u8) -> Self {
+    pub(crate) fn from_known(known: u16) -> Self {
         Self {
             known,
             custom: AHashSet::new(),
@@ -124,11 +131,17 @@ impl VocabularySet {
             Vocabulary::Format => self.known |= 1 << 5,
             Vocabulary::FormatAnnotation => self.known |= 1 << 6,
             Vocabulary::Content => self.known |= 1 << 7,
+            Vocabulary::FormatAssertion => self.known |= 1 << 8,
             Vocabulary::Custom(uri) => {
                 self.custom.insert(uri);
             }
         }
     }
+    /// Vocabularies that were required by the meta-schema but are not implemented here.
+    pub fn custom(&self) -> impl Iterator<Item = &str> {
+        self.custom.iter().map(Uri::as_str)
+    }
+
     #[must_use]
     pub fn contains(&self, vocabulary: &Vocabulary) -> bool {
         match vocabulary {
@@ -140,13 +153,14 @@ impl VocabularySet {
             Vocabulary::Format => self.known & (1 << 5) != 0,
             Vocabulary::FormatAnnotation => self.known & (1 << 6) != 0,
             Vocabulary::Content => self.known & (1 << 7) != 0,
+            Vocabulary::FormatAssertion => self.known & (1 << 8) != 0,
             Vocabulary::Custom(uri) => self.custom.contains(uri),
         }
     }
 }
 
-pub(crate) const DRAFT_2020_12_VOCABULARIES: u8 = 0b1111_1111;
-pub(crate) const DRAFT_2019_09_VOCABULARIES: u8 = 0b1001_1011;
+pub(crate) const DRAFT_2020_12_VOCABULARIES: u16 = 0b1111_1111;
+pub(crate) const DRAFT_2019_09_VOCABULARIES: u16 = 0b1001_1011;
 
 pub(crate) fn find(document: &Value) -> Result<Option<VocabularySet>, Error> {
     if let Some(schema) = document.get("$id").and_then(|s| s.as_str()) {
@@ -203,7 +217,9 @@ mod tests {
     #[test_case(&Vocabulary::Format, 0b1101_1111, false)]
     #[test_case(&Vocabulary::FormatAnnotation, 0b1011_1111, false)]
     #[test_case(&Vocabulary::Content, 0b0111_1111, false)]
-    fn test_vocabulary_set(vocabulary: &Vocabulary, known: u8, expected: bool) {
+    #[test_case(&Vocabulary::FormatAssertion, 0b1_0000_0000, true)]
+    #[test_case(&Vocabulary::FormatAssertion, 0b0_1111_1111, false)]
+    fn test_vocabulary_set(vocabulary: &Vocabulary, known: u16, expected: bool) {
         let set = VocabularySet::from_known(known);
         assert_eq!(set.contains(vocabulary), expected);
     }
