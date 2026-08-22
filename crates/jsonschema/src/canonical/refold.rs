@@ -229,7 +229,17 @@ fn folded(
                     })
                     .collect(),
             };
-            if items == *leaf {
+            // A pointer in the tail or in a demand bounds the length through its target, which only
+            // the resolving run can read.
+            let reads_a_body = leaf
+                .items
+                .as_ref()
+                .is_some_and(|tail| names_a_body(tail, ctx))
+                || leaf
+                    .contains
+                    .iter()
+                    .any(|facet| names_a_body(&facet.schema, ctx));
+            if items == *leaf && !reads_a_body {
                 return schema.clone();
             }
             algebra::array_leaf(items, ctx)
