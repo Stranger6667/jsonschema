@@ -27,6 +27,10 @@ jobs:
           supported-ruby-platforms: |
             exclude:
               - arm-linux
+              # `magnus` initializes `libc::timespec` without the padding field that
+              # 32-bit musl targets carry with 64-bit `time_t`, so the extension does
+              # not compile for this platform.
+              - arm-linux-musl
               - x64-mingw32
               - aarch64-mingw-ucrt
           stable-ruby-versions: |
