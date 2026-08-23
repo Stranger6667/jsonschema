@@ -191,7 +191,7 @@ impl ValidationContext {
                 return result;
             }
         }
-        let result = jsonschema_regex::to_rust_regex(pattern).is_ok();
+        let result = jsonschema_regex::is_valid_ecma_regex(pattern);
         self.ecma_regex_cache
             .get_or_insert_with(AHashMap::new)
             .insert(pattern.to_owned(), result);

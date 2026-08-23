@@ -1,3 +1,5 @@
+mod syntax;
+
 use std::borrow::Cow;
 
 use regex_syntax::{
@@ -7,6 +9,8 @@ use regex_syntax::{
     },
     hir::{Class, Hir, HirKind},
 };
+
+pub use syntax::is_valid_ecma_regex;
 
 /// Convert ECMA Script 262 regex to Rust regex on the best effort basis.
 ///
