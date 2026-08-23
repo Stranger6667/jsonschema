@@ -12,6 +12,22 @@ SUITE_PATH = os.path.join(
     "../../jsonschema/tests/suite/annotations/tests",
 )
 
+# Cases run under the newest dialect the library implements; `9999` marks a future release.
+LATEST_DIALECT = 2020
+
+
+def runs_under_latest_dialect(compatibility):
+    for constraint in compatibility.split(","):
+        if constraint.startswith("<="):
+            allowed = int(constraint[2:]) >= LATEST_DIALECT
+        elif constraint.startswith("="):
+            allowed = int(constraint[1:]) == LATEST_DIALECT
+        else:
+            allowed = int(constraint) <= LATEST_DIALECT
+        if not allowed:
+            return False
+    return True
+
 
 def load_test_cases():
     cases = []
@@ -22,6 +38,9 @@ def load_test_cases():
         with open(filepath, encoding="utf-8") as f:
             data = json.load(f)
         for suite_case in data.get("suite", []):
+            compatibility = suite_case.get("compatibility")
+            if compatibility is not None and not runs_under_latest_dialect(compatibility):
+                continue
             schema = suite_case["schema"]
             description = suite_case.get("description", filename)
             tests = suite_case.get("tests", [])

@@ -21,6 +21,9 @@
 - The bundled `https://json-schema.org/draft/2020-12/meta/format-assertion` meta-schema not declaring its vocabulary, so a schema written against it annotated `format` instead of asserting it.
 - A meta-schema without `$id` keeping its `$vocabulary` unread, so a schema written against it got every Draft 2020-12 vocabulary.
 - A schema naming a bundled vocabulary meta-schema as its `$schema` rejected as an unknown meta-schema (it should build).
+- The `regex` format reading the Rust regex dialect (it should read the ECMA-262 dialect in Unicode mode).
+- The `uri-template` format rejecting an apostrophe in a literal (it should accept it, per RFC 6570 errata 6937).
+- The `duration` format accepting weeks combined with a time part, such as `P1WT1H` (it should reject it).
 
 ## [0.50.1] - 2026-08-22
 

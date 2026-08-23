@@ -13,8 +13,28 @@ struct AnnotationTestFile {
 #[derive(Debug, Deserialize)]
 struct SuiteCase {
     description: String,
+    compatibility: Option<String>,
     schema: Value,
     tests: Vec<TestCase>,
+}
+
+// Cases run under the newest dialect this crate implements; `9999` marks a future release.
+const LATEST_DIALECT: u32 = 2020;
+
+fn runs_under_latest_dialect(compatibility: &str) -> bool {
+    compatibility.split(',').all(|constraint| {
+        if let Some(release) = constraint.strip_prefix("<=") {
+            LATEST_DIALECT <= parse_release(release)
+        } else if let Some(release) = constraint.strip_prefix('=') {
+            LATEST_DIALECT == parse_release(release)
+        } else {
+            LATEST_DIALECT >= parse_release(constraint)
+        }
+    })
+}
+
+fn parse_release(release: &str) -> u32 {
+    release.parse().expect("a dialect release number")
 }
 
 #[derive(Debug, Deserialize)]
@@ -103,6 +123,13 @@ fn test_annotation_suite() {
             .unwrap_or_else(|err| panic!("Failed to parse {}: {err}", filepath.display()));
 
         for suite_case in &test_file.suite {
+            if suite_case
+                .compatibility
+                .as_deref()
+                .is_some_and(|compatibility| !runs_under_latest_dialect(compatibility))
+            {
+                continue;
+            }
             let description = &suite_case.description;
             let schema = &suite_case.schema;
 

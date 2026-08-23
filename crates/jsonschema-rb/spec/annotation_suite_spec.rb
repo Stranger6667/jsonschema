@@ -7,6 +7,22 @@ require "pathname"
 module AnnotationHelpers
   ANNOTATION_SUITE_PATH = Pathname.new(__dir__).join("../../jsonschema/tests/suite/annotations/tests")
   SCHEMA_VALUED_KEYWORDS = ["contentSchema"].freeze
+  # Cases run under the newest dialect the library implements; `9999` marks a future release.
+  LATEST_DIALECT = 2020
+
+  def self.runs_under_latest_dialect?(compatibility)
+    return true if compatibility.nil?
+
+    compatibility.split(",").all? do |constraint|
+      if constraint.start_with?("<=")
+        constraint[2..].to_i >= LATEST_DIALECT
+      elsif constraint.start_with?("=")
+        constraint[1..].to_i == LATEST_DIALECT
+      else
+        constraint.to_i <= LATEST_DIALECT
+      end
+    end
+  end
 
   def self.collect_annotations(evaluation)
     evaluation.annotations.each_with_object(default_annotation_map) do |entry, result|
@@ -56,6 +72,8 @@ RSpec.describe "Annotation Test Suite" do
       file_data = JSON.parse(test_file.read)
 
       file_data["suite"].each do |suite_case|
+        next unless AnnotationHelpers.runs_under_latest_dialect?(suite_case["compatibility"])
+
         description = suite_case["description"]
         schema = suite_case["schema"]
 

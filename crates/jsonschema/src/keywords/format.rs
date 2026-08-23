@@ -229,25 +229,14 @@ fn parse_literal(bytes: &[u8], i: &mut usize) -> bool {
     }
 }
 
-/// Check if byte is a valid literal character per RFC 6570.
-/// Excludes: CTL (0x00-0x1F, 0x7F), space (0x20), and: `" ' < > % \ ^ { | }`
+/// Check if byte is a valid literal character per RFC 6570 (with errata 6937, which
+/// admits the apostrophe).
+/// Excludes: CTL (0x00-0x1F, 0x7F), space (0x20), and: `" < > % \ ^ { | }`
 #[inline]
 fn is_literal_char(b: u8) -> bool {
     !matches!(
         b,
-        0x00..=0x20
-            | b'"'
-            | b'\''
-            | b'<'
-            | b'>'
-            | b'%'
-            | b'\\'
-            | b'^'
-            | b'`'
-            | b'{'
-            | b'|'
-            | b'}'
-            | 0x7F
+        0x00..=0x20 | b'"' | b'<' | b'>' | b'%' | b'\\' | b'^' | b'`' | b'{' | b'|' | b'}' | 0x7F
     )
 }
 
@@ -876,7 +865,8 @@ pub fn is_valid_duration(duration: &str) -> bool {
 
     while i < len {
         if bytes[i] == b'T' {
-            if has_time {
+            // RFC 3339 Appendix A: `dur-week` stands alone, it never takes a time part.
+            if has_time || has_weeks {
                 return false;
             }
             has_time = true;
@@ -1003,7 +993,7 @@ pub fn is_valid_regex(pattern: &str) -> bool {
         if let Some((_, valid)) = entries.iter().find(|(candidate, _)| candidate == pattern) {
             return *valid;
         }
-        let valid = jsonschema_regex::to_rust_regex(pattern).is_ok();
+        let valid = jsonschema_regex::is_valid_ecma_regex(pattern);
         if entries.len() < CACHE_SIZE {
             entries.push((pattern.to_owned(), valid));
         } else {
@@ -1754,6 +1744,7 @@ mod tests {
 
     #[test_case("P1Y1Y")]
     #[test_case("PT1H1H")]
+    #[test_case("P1WT1H")]
     fn test_invalid_duration(input: &str) {
         assert!(!is_valid_duration(input));
     }
@@ -2262,6 +2253,8 @@ mod tests {
     // Percent-encoded in literals
     #[test_case("http://example.com/%20space"; "percent-encoded in URL")]
     #[test_case("hello%20world"; "percent-encoded space")]
+    // RFC 6570 errata 6937: `'{var}'` from the RFC's own examples is a valid template
+    #[test_case("a'b"; "apostrophe in literal")]
     fn test_valid_uri_template(template: &str) {
         assert!(is_valid_uri_template(template));
     }
