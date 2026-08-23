@@ -36,7 +36,8 @@ pub(crate) struct ItemsValidators<F: Json = SerdeJson> {
     /// Validator from "contains" keyword
     contains: Option<SchemaNode<F>>,
     /// Reference validators from "$ref" keyword
-    ref_: Option<RefValidator<F>>,
+    /// Uses pending pattern to handle circular references
+    ref_: Option<PendingItemsValidators<F>>,
     /// Reference validators from "$dynamicRef" keyword (Draft 2020-12+)
     /// Uses pending pattern to handle circular references
     dynamic_ref: Option<PendingItemsValidators<F>>,
@@ -83,21 +84,6 @@ impl<F: Json> Clone for ItemsValidators<F> {
 impl<F: Json> fmt::Debug for ItemsValidators<F> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.debug_struct("ItemsValidators").finish_non_exhaustive()
-    }
-}
-
-/// Reference validator - wraps `ItemsValidators`
-struct RefValidator<F: Json = SerdeJson>(Box<ItemsValidators<F>>);
-
-impl<F: Json> Clone for RefValidator<F> {
-    fn clone(&self) -> Self {
-        RefValidator(self.0.clone())
-    }
-}
-
-impl<F: Json> fmt::Debug for RefValidator<F> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_tuple("RefValidator").finish()
     }
 }
 
@@ -172,21 +158,17 @@ impl<F: Json> ItemsValidators<F> {
 
         // Handle $ref first
         if let Some(ref_) = &self.ref_ {
-            ref_.0.mark_evaluated_indexes(instance, indexes, ctx);
+            initialized(ref_).mark_evaluated_indexes(instance, indexes, ctx);
         }
 
         // Handle $recursiveRef (Draft 2019-09 only)
         if let Some(recursive_ref) = &self.recursive_ref {
-            if let Some(validators) = recursive_ref.get() {
-                validators.mark_evaluated_indexes(instance, indexes, ctx);
-            }
+            initialized(recursive_ref).mark_evaluated_indexes(instance, indexes, ctx);
         }
 
         // Handle $dynamicRef (Draft 2020-12+)
         if let Some(dynamic_ref) = &self.dynamic_ref {
-            if let Some(validators) = dynamic_ref.get() {
-                validators.mark_evaluated_indexes(instance, indexes, ctx);
-            }
+            initialized(dynamic_ref).mark_evaluated_indexes(instance, indexes, ctx);
         }
 
         // Mark items based on items/prefixItems keywords
@@ -330,6 +312,21 @@ fn compile_items_validators<'a, F: Json>(
     ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
 ) -> Result<ItemsValidators<F>, ValidationError<'a>> {
+    let pending = compile_pending_items_validators(ctx, parent)?;
+    // Only a reference cycle through this node keeps another handle to the cell
+    Ok(match Arc::try_unwrap(pending) {
+        Ok(cell) => cell
+            .into_inner()
+            .expect("pending node is initialized before it is returned"),
+        Err(shared) => initialized(&shared).clone(),
+    })
+}
+
+/// The same compilation, handing back the cell cyclic references share.
+fn compile_pending_items_validators<'a, F: Json>(
+    ctx: &compiler::Context<'_, F>,
+    parent: &'a Map<String, Value>,
+) -> Result<PendingItemsValidators<F>, ValidationError<'a>> {
     // Create a pending node and cache it before compiling to handle circular refs
     let cache_key = ctx.location_cache_key();
     let pending = Arc::new(OnceLock::new());
@@ -396,11 +393,20 @@ fn compile_items_validators<'a, F: Json>(
         one_of,
     };
 
-    let _ = pending.set(validators.clone());
+    pending
+        .set(validators)
+        .expect("pending node should not be initialized yet");
     ctx.remove_pending_items_validators(&cache_key);
     ctx.remove_pending_items_validators_for_schema(parent);
 
-    Ok(validators)
+    Ok(pending)
+}
+
+/// Every cell is initialized before compilation returns, so validation never sees an empty one.
+fn initialized<F: Json>(pending: &PendingItemsValidators<F>) -> &ItemsValidators<F> {
+    pending
+        .get()
+        .expect("pending node is initialized before validation")
 }
 
 fn compile_unevaluated<'a, F: Json>(
@@ -436,7 +442,7 @@ fn compile_contains<'a, F: Json>(
 fn compile_ref<'a, F: Json>(
     ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Option<RefValidator<F>>, ValidationError<'a>> {
+) -> Result<Option<PendingItemsValidators<F>>, ValidationError<'a>> {
     let Some(Value::String(reference)) = parent.get("$ref") else {
         return Ok(None);
     };
@@ -448,9 +454,16 @@ fn compile_ref<'a, F: Json>(
         let vocabularies = resolver.find_vocabularies(draft, contents);
         let ref_ctx =
             ctx.with_resolver_and_draft(resolver, draft, vocabularies, ctx.location().clone())?;
-        let validators =
-            compile_items_validators(&ref_ctx, subschema).map_err(ValidationError::to_owned)?;
-        Ok(Some(RefValidator(Box::new(validators))))
+
+        // Circular reference: the target is already being compiled - return its pending node.
+        if let Some(pending) = ref_ctx.get_pending_items_validators_for_schema(subschema) {
+            return Ok(Some(pending));
+        }
+
+        Ok(Some(
+            compile_pending_items_validators(&ref_ctx, subschema)
+                .map_err(ValidationError::to_owned)?,
+        ))
     } else {
         Ok(None)
     }
@@ -477,11 +490,10 @@ fn compile_dynamic_ref<'a, F: Json>(
             return Ok(Some(pending));
         }
 
-        let validators =
-            compile_items_validators(&ref_ctx, subschema).map_err(ValidationError::to_owned)?;
-        let pending = Arc::new(OnceLock::new());
-        let _ = pending.set(validators);
-        Ok(Some(pending))
+        Ok(Some(
+            compile_pending_items_validators(&ref_ctx, subschema)
+                .map_err(ValidationError::to_owned)?,
+        ))
     } else {
         Ok(None)
     }
@@ -519,11 +531,10 @@ fn compile_recursive_ref<'a, F: Json>(
         }
 
         // Not circular, compile normally
-        let validators =
-            compile_items_validators(&ref_ctx, subschema).map_err(ValidationError::to_owned)?;
-        let pending = Arc::new(OnceLock::new());
-        let _ = pending.set(validators);
-        Ok(Some(pending))
+        Ok(Some(
+            compile_pending_items_validators(&ref_ctx, subschema)
+                .map_err(ValidationError::to_owned)?,
+        ))
     } else {
         Ok(None)
     }
@@ -910,6 +921,51 @@ mod tests {
         let validator = crate::options().build(&schema).expect("schema compiles");
 
         assert!(validator.is_valid(&json!([])));
+    }
+
+    // A `$ref` cycle back to the node evaluates exactly what the node evaluates
+    #[test_case(&json!({"$ref": "#"}); "self reference")]
+    #[test_case(&json!({"$id": "https://example.com/root.json", "$ref": "https://example.com/root.json"}); "self through id")]
+    #[test_case(&json!({"allOf": [{"$ref": "#"}]}); "self through allOf")]
+    #[test_case(&json!({"if": {"$ref": "#"}}); "self through if")]
+    #[test_case(&json!({"$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}}, "$ref": "#/$defs/a"}); "mutually recursive definitions")]
+    #[test_case(&json!({"$defs": {"a": {"$ref": "#/$defs/a"}}, "$ref": "#/$defs/a"}); "self recursive definition")]
+    fn ref_cycle_evaluates_what_the_node_evaluates(applicator: &Value) {
+        let mut schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "prefixItems": [true],
+            "unevaluatedItems": false
+        });
+        schema
+            .as_object_mut()
+            .expect("object schema")
+            .extend(applicator.as_object().expect("object applicator").clone());
+
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+
+        assert!(validator.is_valid(&json!([1])));
+        assert!(!validator.is_valid(&json!([1, 2])));
+    }
+
+    // The keyword inside a recursive definition sees the definition's own prefix
+    #[test]
+    fn ref_cycle_inside_definition_evaluates_the_definition() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "node": {
+                    "prefixItems": [{"$ref": "#/$defs/node"}],
+                    "allOf": [{"$ref": "#/$defs/node"}],
+                    "unevaluatedItems": false
+                }
+            },
+            "$ref": "#/$defs/node"
+        });
+
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+
+        assert!(validator.is_valid(&json!([[[]]])));
+        assert!(!validator.is_valid(&json!([[[], 1]])));
     }
 
     #[test]

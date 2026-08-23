@@ -19,6 +19,11 @@
 - The `regex` format reading the Rust regex dialect (it should read the ECMA-262 dialect in Unicode mode).
 - The `uri-template` format rejecting an apostrophe in a literal (it should accept it, per RFC 6570 errata 6937).
 - The `duration` format accepting weeks combined with a time part, such as `P1WT1H` (it should reject it).
+- Stack overflow compiling `unevaluatedProperties` or `unevaluatedItems` beside a `$ref` that cycles back to the node, written as `#`, through its `$id`, or through a chain of definitions.
+
+### Performance
+
+- Building `unevaluatedProperties` or `unevaluatedItems` over a deep `allOf` or `$ref` chain costs its depth instead of its square.
 
 ## [0.50.1] - 2026-08-22
 
