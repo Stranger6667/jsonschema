@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.51.0] - 2026-08-23
+
 ### Added
 
 - `ValidationOptions::with_vocabulary` and the `vocabularies` attribute on `jsonschema::validator`, declaring support for a vocabulary this crate does not implement.
@@ -1677,7 +1679,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.50.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.51.0...HEAD
+[0.51.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.50.1...rust-v0.51.0
 [0.50.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.50.0...rust-v0.50.1
 [0.50.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.9...rust-v0.50.0
 [0.49.9]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.49.8...rust-v0.49.9
