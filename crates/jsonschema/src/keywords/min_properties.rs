@@ -6,6 +6,7 @@ use crate::{
         CompilationResult,
     },
     paths::{LazyLocation, Location, RefTracker},
+    types::JsonType,
     validator::{Validate, ValidationContext},
     Json, Node, Object,
 };
@@ -59,6 +60,13 @@ impl<F: Json> Validate<F> for MinPropertiesValidator {
             }
         }
         Ok(())
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
     }
 }
 

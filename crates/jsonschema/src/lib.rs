@@ -1258,6 +1258,7 @@ pub mod json {
     #[cfg(feature = "pyo3")]
     pub use jsonschema_value::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
 }
+pub mod formats;
 mod http;
 mod keywords;
 #[cfg(all(feature = "macros", not(target_family = "wasm")))]
@@ -1269,6 +1270,7 @@ pub mod paths;
 pub(crate) mod properties;
 pub(crate) mod regex;
 mod retriever;
+mod tracing;
 pub mod types {
     pub use jsonschema_value::types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
 }
@@ -1292,6 +1294,7 @@ pub use referencing::{
 };
 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
 pub use retriever::{HttpRetriever, HttpRetrieverError};
+pub use tracing::{NodeEvaluationResult, TracingCallback, TracingContext};
 pub use types::{JsonType, JsonTypeSet, JsonTypeSetIterator};
 pub use validator::{ValidationContext, Validator, ValidatorMap};
 
@@ -4271,6 +4274,24 @@ pub(crate) mod tests_util {
     pub(crate) fn assert_schema_location(schema: &Value, instance: &Value, expected: &str) {
         let error = validate(schema, instance);
         assert_eq!(error.schema_path().as_str(), expected);
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_trace(
+        schema: &Value,
+        instance: &Value,
+        expected: &[(&str, crate::NodeEvaluationResult)],
+    ) {
+        let validator = crate::validator_for(schema).expect("schema compiles");
+        let mut actual = Vec::new();
+        let _ = validator.trace(instance, &mut |ctx| {
+            actual.push((ctx.schema_location.as_str().to_string(), ctx.result));
+        });
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(location, result)| ((*location).to_string(), *result))
+            .collect();
+        assert_eq!(actual, expected);
     }
 
     #[track_caller]

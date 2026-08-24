@@ -20,10 +20,12 @@ use std::sync::Arc;
 
 pub(crate) struct SmallPropertiesValidator<F: Json = SerdeJson> {
     pub(crate) properties: Vec<(PropertyName, F::PreparedKey, SchemaNode<F>)>,
+    location: Location,
 }
 
 pub(crate) struct BigPropertiesValidator<F: Json = SerdeJson> {
     pub(crate) properties: AHashMap<String, SchemaNode<F>>,
+    location: Location,
 }
 
 /// Fused validator for `properties` + `required: [2 items]` (no `additionalProperties: false`).
@@ -36,6 +38,7 @@ pub(crate) struct SmallPropertiesWithRequired2Validator<F: Json = SerdeJson> {
     second_key: F::PreparedKey,
     required_location: Location,
     required_absolute_location: Option<Arc<Uri<String>>>,
+    location: Location,
 }
 
 impl SmallPropertiesValidator {
@@ -54,7 +57,10 @@ impl SmallPropertiesValidator {
                 compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
             ));
         }
-        Ok(Box::new(SmallPropertiesValidator { properties }))
+        Ok(Box::new(SmallPropertiesValidator {
+            properties,
+            location: ctx.location().clone(),
+        }))
     }
 }
 
@@ -73,7 +79,10 @@ impl BigPropertiesValidator {
                 compiler::compile(&pctx, pctx.as_resource_ref(subschema))?,
             );
         }
-        Ok(Box::new(BigPropertiesValidator { properties }))
+        Ok(Box::new(BigPropertiesValidator {
+            properties,
+            location: ctx.location().clone(),
+        }))
     }
 }
 
@@ -105,11 +114,59 @@ impl SmallPropertiesWithRequired2Validator {
             second: PropertyName::new(second),
             required_location,
             required_absolute_location,
+            location: pctx.location().clone(),
         }))
     }
 }
 
 impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(object) = instance.as_object() {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (name, key, node) in &self.properties {
+                let path = instance_path.push(name.as_str());
+                let schema_path = node.schema_path();
+                if let Some(item) = object.get(key) {
+                    at_least_one = true;
+                    let schema_is_valid = node.trace(&item, &path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        schema_path,
+                        schema_is_valid,
+                    )
+                    .call(callback);
+                    is_valid &= schema_is_valid;
+                } else {
+                    crate::tracing::TracingContext::new(instance_path, schema_path, None)
+                        .call(callback);
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let Some(object) = instance.as_object() else {
             return true;
@@ -245,6 +302,93 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
 }
 
 impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(object) = instance.as_object() {
+            let mut properties_valid = true;
+            let mut at_least_one = false;
+            for (name, key, node) in &self.properties {
+                let path = instance_path.push(name.as_str());
+                let schema_path = node.schema_path();
+                if let Some(item) = object.get(key) {
+                    at_least_one = true;
+                    let schema_is_valid = node.trace(&item, &path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        schema_path,
+                        schema_is_valid,
+                    )
+                    .call(callback);
+                    properties_valid &= schema_is_valid;
+                } else {
+                    crate::tracing::TracingContext::new(instance_path, schema_path, None)
+                        .call(callback);
+                }
+            }
+            let first_present = object.get(&self.first_key).is_some();
+            let second_present = object.get(&self.second_key).is_some();
+            let required_valid = first_present && second_present;
+            let is_valid = properties_valid && required_valid;
+            let rv = if at_least_one {
+                Some(properties_valid)
+            } else {
+                None
+            };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location.join(0usize),
+                first_present,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location.join(1usize),
+                second_present,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location,
+                required_valid,
+            )
+            .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location.join(0usize),
+                None,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.required_location.join(1usize),
+                None,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &self.required_location, None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let Some(object) = instance.as_object() else {
             return true;
@@ -476,6 +620,57 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
 }
 
 impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(object) = instance.as_object() {
+            let members: AHashMap<Cow<'_, str>, _> = object
+                .members()
+                .map(|(name, value)| (name.into(), value))
+                .collect();
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (name, node) in &self.properties {
+                let path = instance_path.push(name.as_str());
+                let schema_path = node.schema_path();
+                if let Some(item) = members.get(name.as_str()) {
+                    at_least_one = true;
+                    let schema_is_valid = node.trace(item, &path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        schema_path,
+                        schema_is_valid,
+                    )
+                    .call(callback);
+                    is_valid &= schema_is_valid;
+                } else {
+                    crate::tracing::TracingContext::new(instance_path, schema_path, None)
+                        .call(callback);
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             // Iterate over instance properties and look up in schema's HashMap

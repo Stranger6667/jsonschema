@@ -8,6 +8,7 @@ use crate::{
     evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    tracing::{TracingCallback, TracingContext},
     Draft, Json, NodeIdentity, SerdeJson, ValidationError, ValidationOptions,
 };
 use ahash::AHashMap;
@@ -308,6 +309,39 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
     fn canonical_location(&self) -> Option<&Location> {
         None
     }
+
+    /// Returns the schema path for this validator. This is used by tracing to identify
+    /// which part of the schema is being evaluated.
+    fn schema_path(&self) -> &Location;
+
+    /// Returns whether this validator applies to the given instance based on type matching.
+    /// Returns `true` by default, but validators that only apply to specific types should
+    /// override this to return `false` for non-matching types.
+    fn matches_type(&self, _instance: &F::Node<'_>) -> bool {
+        true
+    }
+
+    /// Trace the validation of this validator against an instance, calling the provided
+    /// callback for each validation step in the tree. This walks through all sub-schemas
+    /// without short-circuiting, even if validation fails.
+    ///
+    /// Returns `true` if validation succeeds, `false` otherwise.
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let result = self.is_valid(instance, ctx);
+        let evaluation_result = if self.matches_type(instance) {
+            Some(result)
+        } else {
+            None
+        };
+        TracingContext::new(location, self.schema_path(), evaluation_result).call(callback);
+        result
+    }
 }
 
 /// The result of evaluating a validator against an instance. This is a "partial" result because it does not include information about
@@ -549,6 +583,48 @@ impl<F: Json> Validator<F> {
             .evaluate_instance(&instance, &LazyLocation::new(), None, &mut ctx);
         Evaluation::new(root)
     }
+
+    /// Trace the validation process, calling the provided callback for each validation step.
+    ///
+    /// This method walks through the entire validation tree without short-circuiting,
+    /// providing visibility into every validation step. The callback receives a
+    /// [`TracingContext`] for each node in the validation tree, containing:
+    /// - The instance location being validated
+    /// - The schema location performing the validation
+    /// - The evaluation result ([`NodeEvaluationResult`])
+    ///
+    /// # Returns
+    ///
+    /// Returns `true` if validation succeeds, `false` otherwise.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use serde_json::json;
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}});
+    /// let validator = jsonschema::validator_for(&schema)?;
+    /// let instance = json!({"name": "Alice"});
+    ///
+    /// let is_valid = validator.trace(&instance, &mut |ctx| {
+    ///     println!("Validating at instance location: {:?}", ctx.instance_location);
+    ///     println!("Using schema at: {:?}", ctx.schema_location);
+    ///     println!("Result: {:?}", ctx.result);
+    /// });
+    ///
+    /// assert!(is_valid);
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn trace(&self, instance: F::Node<'_>, callback: TracingCallback<'_>) -> bool {
+        let location = LazyLocation::new();
+        let mut ctx = ValidationContext::new();
+        let is_valid = self.root.trace(&instance, &location, callback, &mut ctx);
+        TracingContext::new(&location, &Location::default(), is_valid).call(callback);
+        is_valid
+    }
+
     /// The [`Draft`] which was used to build this validator.
     #[must_use]
     pub fn draft(&self) -> Draft {
@@ -622,7 +698,8 @@ impl<F: Json> std::ops::Index<&str> for ValidatorMap<F> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        error::ValidationError, keywords::custom::Keyword, paths::Location, Validator, ValidatorMap,
+        error::ValidationError, keywords::custom::Keyword, paths::Location,
+        tracing::NodeEvaluationResult, Validator, ValidatorMap,
     };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
@@ -1410,5 +1487,60 @@ mod tests {
         assert!(!map["#/$defs/User"].is_valid(&json!({})));
         assert!(map["#/$defs/Role"].is_valid(&json!("admin")));
         assert!(!map["#/$defs/Role"].is_valid(&json!("superuser")));
+    }
+
+    #[test]
+    fn trace_with_empty_callback() {
+        let schema = json!({"type": "object", "properties": {"name": {"type": "string"}}});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = json!({"name": "Alice"});
+
+        // Empty callback - just count invocations
+        let mut count = 0;
+        let is_valid = validator.trace(&instance, &mut |_ctx| {
+            count += 1;
+        });
+
+        assert!(is_valid);
+        assert!(count > 0, "Callback should have been called");
+    }
+
+    #[test]
+    fn trace_with_invalid_instance() {
+        let schema = json!({"type": "string"});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = json!(42);
+
+        let mut results = Vec::new();
+        let is_valid = validator.trace(&instance, &mut |ctx| {
+            results.push(ctx.result);
+        });
+
+        assert!(!is_valid);
+        assert!(results.contains(&NodeEvaluationResult::Invalid));
+    }
+
+    #[test]
+    fn trace_with_circular_ref_schema() {
+        // Schema with circular $ref: a -> b -> a
+        let schema = json!({
+            "$defs": {
+                "a": {"$ref": "#/$defs/b"},
+                "b": {"$ref": "#/$defs/a"}
+            },
+            "$ref": "#/$defs/a"
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = json!({});
+
+        // Should not stack overflow due to ValidationContext cycle detection
+        let mut count = 0;
+        let is_valid = validator.trace(&instance, &mut |_ctx| {
+            count += 1;
+        });
+
+        // Validation should complete without stack overflow
+        assert!(is_valid);
+        assert!(count > 0);
     }
 }

@@ -6,6 +6,7 @@ use crate::{
     error::ValidationError,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    tracing::{TracingCallback, TracingContext},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, SerdeJson,
@@ -162,6 +163,29 @@ impl<F: Json> Validate<F> for AnyOfValidator<F> {
             EvaluationResult::from_children(valid_results)
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let mut is_valid = false;
+        for node in &self.schemas {
+            let schema_is_valid = node.trace(instance, instance_path, callback, ctx);
+            TracingContext::new(instance_path, node.schema_path(), Some(schema_is_valid))
+                .call(callback);
+            is_valid |= schema_is_valid;
+        }
+        TracingContext::new(instance_path, self.schema_path(), Some(is_valid)).call(callback);
+        is_valid
+    }
 }
 
 /// Optimized validator for `anyOf` with a single subschema.
@@ -264,6 +288,23 @@ impl<F: Json> Validate<F> for SingleAnyOfValidator<F> {
             tracker,
             ctx,
         ))
+    }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let is_valid = self.node.trace(instance, instance_path, callback, ctx);
+        TracingContext::new(instance_path, self.schema_path(), Some(is_valid)).call(callback);
+        is_valid
     }
 }
 

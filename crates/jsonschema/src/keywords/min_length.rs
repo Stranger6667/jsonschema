@@ -6,6 +6,7 @@ use crate::{
         CompilationResult,
     },
     paths::{LazyLocation, Location, RefTracker},
+    tracing::{TracingCallback, TracingContext},
     validator::{Validate, ValidationContext},
     Json, Node,
 };
@@ -45,6 +46,12 @@ impl<F: Json> Validate<F> for MinLengthValidator {
             }
         }
         Ok(())
+    }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -90,6 +97,30 @@ impl LengthRangeValidator {
 }
 
 impl<F: Json> Validate<F> for LengthRangeValidator {
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.min_location
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let (min_ok, max_ok) = match instance.string_length() {
+            Some(length) => (Some(length >= self.minimum), Some(length <= self.maximum)),
+            None => (None, None),
+        };
+        TracingContext::new(location, &self.min_location, min_ok).call(callback);
+        TracingContext::new(location, &self.max_location, max_ok).call(callback);
+        min_ok.unwrap_or(true) && max_ok.unwrap_or(true)
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(length) = instance.string_length() {
             if length < self.minimum || length > self.maximum {
@@ -165,12 +196,25 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::tests_util;
-    use serde_json::json;
+    use crate::{
+        tests_util,
+        NodeEvaluationResult::{self, Ignored, Invalid, Valid},
+    };
+    use serde_json::{json, Value};
+    use test_case::test_case;
 
     #[test]
     fn location() {
         tests_util::assert_schema_location(&json!({"minLength": 1}), &json!(""), "/minLength");
+    }
+
+    // The fused validator reports both keywords, each with its own verdict
+    #[test_case(&json!("abc"), &[("/minLength", Valid), ("/maxLength", Valid), ("", Valid)]; "within range")]
+    #[test_case(&json!("a"), &[("/minLength", Invalid), ("/maxLength", Valid), ("", Invalid)]; "too short")]
+    #[test_case(&json!("abcde"), &[("/minLength", Valid), ("/maxLength", Invalid), ("", Invalid)]; "too long")]
+    #[test_case(&json!(1), &[("/minLength", Ignored), ("/maxLength", Ignored), ("", Valid)]; "non-string")]
+    fn fused_trace(instance: &Value, expected: &[(&str, NodeEvaluationResult)]) {
+        tests_util::assert_trace(&json!({"minLength": 2, "maxLength": 4}), instance, expected);
     }
 
     #[test]

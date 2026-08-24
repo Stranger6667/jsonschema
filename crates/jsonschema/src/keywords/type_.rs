@@ -94,6 +94,12 @@ impl<F: Json> Validate<F> for MultipleTypesValidator {
             EvaluationResult::invalid_empty(vec![ErrorDescription::new("type", message)])
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct NullTypeValidator {
@@ -146,6 +152,12 @@ impl<F: Json> Validate<F> for NullTypeValidator {
             )])
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct BooleanTypeValidator {
@@ -197,6 +209,12 @@ impl<F: Json> Validate<F> for BooleanTypeValidator {
                 format!(r#"{} is not of type "boolean""#, instance.to_value()),
             )])
         }
+    }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -251,6 +269,12 @@ impl<F: Json> Validate<F> for StringTypeValidator {
             )])
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct ArrayTypeValidator {
@@ -304,6 +328,12 @@ impl<F: Json> Validate<F> for ArrayTypeValidator {
             )])
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct ObjectTypeValidator {
@@ -356,6 +386,12 @@ impl<F: Json> Validate<F> for ObjectTypeValidator {
             )])
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct NumberTypeValidator {
@@ -407,6 +443,12 @@ impl<F: Json> Validate<F> for NumberTypeValidator {
                 format!(r#"{} is not of type "number""#, instance.to_value()),
             )])
         }
+    }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -463,6 +505,12 @@ impl<F: Json> Validate<F> for IntegerTypeValidator {
                 format!(r#"{} is not of type "integer""#, instance.to_value()),
             )])
         }
+    }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

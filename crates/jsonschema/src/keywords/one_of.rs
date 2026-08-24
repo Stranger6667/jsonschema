@@ -159,6 +159,25 @@ impl<F: Json> Validate<F> for SingleOneOfValidator<F> {
             ctx,
         ))
     }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let is_valid = self.node.trace(instance, instance_path, callback, ctx);
+        crate::tracing::TracingContext::new(instance_path, self.node.schema_path(), is_valid)
+            .call(callback);
+        crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+            .call(callback);
+        is_valid
+    }
 }
 
 impl<F: Json> Validate<F> for OneOfValidator<F> {
@@ -282,6 +301,34 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
             EvaluationResult::from(child)
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let mut valid_count = 0;
+        for node in &self.schemas {
+            let schema_is_valid = node.trace(instance, instance_path, callback, ctx);
+            crate::tracing::TracingContext::new(instance_path, node.schema_path(), schema_is_valid)
+                .call(callback);
+            if schema_is_valid {
+                valid_count += 1;
+            }
+        }
+        // oneOf is valid if exactly one branch matches
+        let is_valid = valid_count == 1;
+        crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+            .call(callback);
+        is_valid
+    }
 }
 
 #[inline]
@@ -301,13 +348,64 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::tests_util;
-    use serde_json::{json, Value};
+    use crate::{
+        paths::Location,
+        tests_util,
+        tracing::NodeEvaluationResult::{self, Invalid, Valid},
+        Keyword, ValidationError,
+    };
+    use serde_json::{json, Map, Value};
     use test_case::test_case;
 
     #[test_case(&json!({"oneOf": [{"type": "string"}]}), &json!(0), "/oneOf")]
     #[test_case(&json!({"oneOf": [{"type": "string"}, {"maxLength": 3}]}), &json!(""), "/oneOf")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
+    }
+
+    // A single branch is traced like the branches of a longer `oneOf`.
+    #[test_case(&json!({"oneOf": [{"type": "integer"}, {"type": "string"}]}), &json!(1), &[("/oneOf/0/type", Valid), ("/oneOf/0", Valid), ("/oneOf/1/type", Invalid), ("/oneOf/1", Invalid), ("/oneOf", Valid), ("", Valid)]; "two branches")]
+    #[test_case(&json!({"oneOf": [{"type": "integer"}]}), &json!(1), &[("/oneOf/0/type", Valid), ("/oneOf/0", Valid), ("/oneOf", Valid), ("", Valid)]; "one branch")]
+    #[test_case(&json!({"oneOf": [{"type": "integer"}]}), &json!("a"), &[("/oneOf/0/type", Invalid), ("/oneOf/0", Invalid), ("/oneOf", Invalid), ("", Invalid)]; "one branch rejecting")]
+    fn trace(schema: &Value, instance: &Value, expected: &[(&str, NodeEvaluationResult)]) {
+        tests_util::assert_trace(schema, instance, expected);
+    }
+
+    struct Informational;
+
+    impl Keyword<'_> for Informational {
+        fn validate(&self, _: &Value) -> Result<(), ValidationError<'static>> {
+            Err(ValidationError::custom("informational"))
+        }
+
+        fn is_valid(&self, _: &Value) -> bool {
+            false
+        }
+
+        fn is_informational(&self) -> bool {
+            true
+        }
+    }
+
+    #[allow(clippy::unnecessary_wraps, clippy::result_large_err)]
+    fn informational<'a>(
+        _: &'a Map<String, Value>,
+        _: &'a Value,
+        _: Location,
+    ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
+        Ok(Box::new(Informational))
+    }
+
+    // An informational keyword decides neither validity nor a trace, under one branch as under
+    // several.
+    #[test_case(&json!({"oneOf": [{"type": "integer", "note": 1}]}); "one branch")]
+    #[test_case(&json!({"oneOf": [{"type": "integer", "note": 1}, {"type": "string"}]}); "two branches")]
+    fn informational_keywords_do_not_decide_a_trace(schema: &Value) {
+        let validator = crate::options()
+            .with_keyword("note", informational)
+            .build(schema)
+            .expect("builds");
+        assert!(validator.is_valid(&json!(1)));
+        assert!(validator.trace(&json!(1), &mut |_| {}));
     }
 }

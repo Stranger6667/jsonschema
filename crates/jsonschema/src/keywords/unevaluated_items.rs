@@ -18,6 +18,7 @@ use crate::{
     evaluation::ErrorDescription,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     Array, Json, Node, SerdeJson, ValidationError,
 };
@@ -748,6 +749,14 @@ impl UnevaluatedItemsValidator {
 }
 
 impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             let mut indexes = vec![false; array.len()];
@@ -870,6 +879,43 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
             }
         } else {
             EvaluationResult::valid_empty()
+        }
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(array) = instance.as_array() {
+            // Get indexes that are evaluated by OTHER keywords (not unevaluatedItems itself)
+            let mut indexes = vec![false; array.len()];
+            self.validators
+                .mark_evaluated_indexes_by_other_keywords(instance, &mut indexes, ctx);
+
+            let mut is_valid = true;
+            for (idx, (item, is_evaluated)) in array.elements().zip(indexes.iter()).enumerate() {
+                if *is_evaluated {
+                    continue;
+                }
+                // This item is unevaluated - trace it against unevaluatedItems schema
+                if let Some(validator) = &self.validators.unevaluated {
+                    let path = instance_path.push(idx);
+                    let item_valid = validator.trace(&item, &path, callback, ctx);
+                    is_valid &= item_valid;
+                } else {
+                    // unevaluatedItems: false and item not evaluated
+                    is_valid = false;
+                }
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
         }
     }
 }

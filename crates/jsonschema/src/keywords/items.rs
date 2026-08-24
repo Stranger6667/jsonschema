@@ -14,6 +14,7 @@ use std::sync::Arc;
 
 pub(crate) struct ItemsArrayValidator<F: Json = SerdeJson> {
     items: Vec<SchemaNode<F>>,
+    location: Location,
 }
 impl ItemsArrayValidator {
     #[inline]
@@ -28,10 +29,50 @@ impl ItemsArrayValidator {
             let validators = compiler::compile(&ictx, ictx.as_resource_ref(item))?;
             items.push(validators);
         }
-        Ok(Box::new(ItemsArrayValidator { items }))
+        Ok(Box::new(ItemsArrayValidator {
+            items,
+            location: kctx.location().clone(),
+        }))
     }
 }
 impl<F: Json> Validate<F> for ItemsArrayValidator<F> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(items) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, (item, node)) in items.elements().zip(self.items.iter()).enumerate() {
+                let schema_is_valid = node.trace(&item, &instance_path.push(idx), callback, ctx);
+                crate::tracing::TracingContext::new(
+                    instance_path,
+                    node.schema_path(),
+                    schema_is_valid,
+                )
+                .call(callback);
+                is_valid &= schema_is_valid;
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             for (item, node) in array.elements().zip(self.items.iter()) {
@@ -116,6 +157,38 @@ impl ItemsObjectValidator {
     }
 }
 impl<F: Json> Validate<F> for ItemsObjectValidator<F> {
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(items) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, item) in items.elements().enumerate() {
+                is_valid &= self
+                    .node
+                    .trace(&item, &instance_path.push(idx), callback, ctx);
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             array.elements().all(|item| self.node.is_valid(&item, ctx))
@@ -206,6 +279,41 @@ impl ItemsObjectSkipPrefixValidator {
 }
 
 impl<F: Json> Validate<F> for ItemsObjectSkipPrefixValidator<F> {
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(items) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, item) in items.elements().skip(self.skip_prefix).enumerate() {
+                is_valid &= self.node.trace(
+                    &item,
+                    &instance_path.push(idx + self.skip_prefix),
+                    callback,
+                    ctx,
+                );
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             array
@@ -287,16 +395,61 @@ impl<F: Json> Validate<F> for ItemsObjectSkipPrefixValidator<F> {
 
 pub(crate) struct ItemsNumberTypeValidator {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsNumberTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
-        Ok(Box::new(ItemsNumberTypeValidator { location }))
+    pub(crate) fn compile<'a, F: Json>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a, F> {
+        Ok(Box::new(ItemsNumberTypeValidator {
+            location,
+            items_location,
+        }))
     }
 }
 
 impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = &self.location;
+        let items_location = &self.items_location;
+        if let Some(array) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, item) in array.elements().enumerate() {
+                let item_valid = item.is_number();
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
@@ -395,16 +548,61 @@ impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
 
 pub(crate) struct ItemsStringTypeValidator {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsStringTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
-        Ok(Box::new(ItemsStringTypeValidator { location }))
+    pub(crate) fn compile<'a, F: Json>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a, F> {
+        Ok(Box::new(ItemsStringTypeValidator {
+            location,
+            items_location,
+        }))
     }
 }
 
 impl<F: Json> Validate<F> for ItemsStringTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = &self.location;
+        let items_location = &self.items_location;
+        if let Some(array) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, item) in array.elements().enumerate() {
+                let item_valid = item.is_string();
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
@@ -503,16 +701,63 @@ impl<F: Json> Validate<F> for ItemsStringTypeValidator {
 
 pub(crate) struct ItemsIntegerTypeValidator {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsIntegerTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
-        Ok(Box::new(ItemsIntegerTypeValidator { location }))
+    pub(crate) fn compile<'a, F: Json>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a, F> {
+        Ok(Box::new(ItemsIntegerTypeValidator {
+            location,
+            items_location,
+        }))
     }
 }
 
 impl<F: Json> Validate<F> for ItemsIntegerTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = &self.location;
+        let items_location = &self.items_location;
+        if let Some(array) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, item) in array.elements().enumerate() {
+                let item_valid = item
+                    .as_number()
+                    .is_some_and(|number| super::type_::is_integer(&number));
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
@@ -626,16 +871,63 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidator {
 // Draft 4 has stricter integer semantics: numbers with decimal points are NOT integers
 pub(crate) struct ItemsIntegerTypeValidatorDraft4 {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsIntegerTypeValidatorDraft4 {
     #[inline]
-    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
-        Ok(Box::new(ItemsIntegerTypeValidatorDraft4 { location }))
+    pub(crate) fn compile<'a, F: Json>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a, F> {
+        Ok(Box::new(ItemsIntegerTypeValidatorDraft4 {
+            location,
+            items_location,
+        }))
     }
 }
 
 impl<F: Json> Validate<F> for ItemsIntegerTypeValidatorDraft4 {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = &self.location;
+        let items_location = &self.items_location;
+        if let Some(array) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, item) in array.elements().enumerate() {
+                let item_valid = item
+                    .as_number()
+                    .is_some_and(|number| super::legacy::type_draft_4::is_integer(&number));
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
@@ -748,16 +1040,61 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidatorDraft4 {
 
 pub(crate) struct ItemsBooleanTypeValidator {
     location: Location,
+    items_location: Location,
 }
 
 impl ItemsBooleanTypeValidator {
     #[inline]
-    pub(crate) fn compile<'a, F: Json>(location: Location) -> CompilationResult<'a, F> {
-        Ok(Box::new(ItemsBooleanTypeValidator { location }))
+    pub(crate) fn compile<'a, F: Json>(
+        location: Location,
+        items_location: Location,
+    ) -> CompilationResult<'a, F> {
+        Ok(Box::new(ItemsBooleanTypeValidator {
+            location,
+            items_location,
+        }))
     }
 }
 
 impl<F: Json> Validate<F> for ItemsBooleanTypeValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let type_location = &self.location;
+        let items_location = &self.items_location;
+        if let Some(array) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, item) in array.elements().enumerate() {
+                let item_valid = item.as_boolean().is_some();
+                if !item_valid {
+                    is_valid = false;
+                }
+                let item_path = instance_path.push(idx);
+                crate::tracing::TracingContext::new(&item_path, type_location, item_valid)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, items_location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, items_location, None).call(callback);
+            crate::tracing::TracingContext::new(instance_path, type_location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
@@ -877,30 +1214,38 @@ impl<F: Json> FusedItems<F> {
         items: &'a Value,
     ) -> Result<Self, ValidationError<'a>> {
         if let Some(type_name) = get_simple_type_schema(items) {
-            let location = ctx.location().join("items").join("type");
+            let items_location = ctx.location().join("items");
+            let location = items_location.join("type");
             match type_name {
                 "number" => {
                     return Ok(FusedItems::Number(ItemsNumberTypeValidator::compile(
                         location,
+                        items_location,
                     )?))
                 }
                 "string" => {
                     return Ok(FusedItems::String(ItemsStringTypeValidator::compile(
                         location,
+                        items_location,
                     )?))
                 }
                 "boolean" => {
                     return Ok(FusedItems::Boolean(ItemsBooleanTypeValidator::compile(
                         location,
+                        items_location,
                     )?))
                 }
                 "integer" => {
                     return Ok(if ctx.draft() == Draft::Draft4 {
                         FusedItems::IntegerDraft4(ItemsIntegerTypeValidatorDraft4::compile(
                             location,
+                            items_location,
                         )?)
                     } else {
-                        FusedItems::IntegerDraft7(ItemsIntegerTypeValidator::compile(location)?)
+                        FusedItems::IntegerDraft7(ItemsIntegerTypeValidator::compile(
+                            location,
+                            items_location,
+                        )?)
                     });
                 }
                 _ => {}
@@ -1023,6 +1368,79 @@ fn absorbed_error_node(
 }
 
 impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
+    fn schema_path(&self) -> &Location {
+        &self.type_location
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let Some(array) = instance.as_array() else {
+            crate::tracing::TracingContext::new(location, &self.type_location, Some(false))
+                .call(callback);
+            for constraint in [self.min_items.as_ref(), self.max_items.as_ref()]
+                .into_iter()
+                .flatten()
+            {
+                crate::tracing::TracingContext::new(location, &constraint.location, None)
+                    .call(callback);
+            }
+            match &self.items {
+                FusedItems::Generic(node) => {
+                    crate::tracing::TracingContext::new(location, node.location(), None)
+                        .call(callback);
+                }
+                FusedItems::Number(cold)
+                | FusedItems::String(cold)
+                | FusedItems::Boolean(cold)
+                | FusedItems::IntegerDraft4(cold)
+                | FusedItems::IntegerDraft7(cold) => {
+                    cold.trace(instance, location, callback, ctx);
+                }
+            }
+            return false;
+        };
+        crate::tracing::TracingContext::new(location, &self.type_location, Some(true))
+            .call(callback);
+        let count = array.len() as u64;
+        let mut is_valid = true;
+        if let Some(constraint) = &self.min_items {
+            let within = count >= constraint.limit;
+            is_valid &= within;
+            crate::tracing::TracingContext::new(location, &constraint.location, Some(within))
+                .call(callback);
+        }
+        if let Some(constraint) = &self.max_items {
+            let within = count <= constraint.limit;
+            is_valid &= within;
+            crate::tracing::TracingContext::new(location, &constraint.location, Some(within))
+                .call(callback);
+        }
+        match &self.items {
+            FusedItems::Generic(node) => {
+                let mut items_valid = true;
+                for (idx, item) in array.elements().enumerate() {
+                    items_valid &= node.trace(&item, &location.push(idx), callback, ctx);
+                }
+                is_valid &= items_valid;
+                crate::tracing::TracingContext::new(location, node.location(), items_valid)
+                    .call(callback);
+            }
+            FusedItems::Number(cold)
+            | FusedItems::String(cold)
+            | FusedItems::Boolean(cold)
+            | FusedItems::IntegerDraft4(cold)
+            | FusedItems::IntegerDraft7(cold) => {
+                is_valid &= cold.trace(instance, location, callback, ctx);
+            }
+        }
+        is_valid
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let Some(array) = instance.as_array() else {
             return false;
@@ -1324,19 +1742,38 @@ pub(crate) fn compile<'a, F: Json>(
             // the validation vocabulary that defines `type` is in effect.
             if ctx.has_vocabulary(&Vocabulary::Validation) {
                 if let Some(type_name) = get_simple_type_schema(schema) {
-                    let location = ctx.location().join("items").join("type");
+                    let items_location = ctx.location().join("items");
+                    let location = items_location.join("type");
                     match type_name {
-                        "number" => return Some(ItemsNumberTypeValidator::compile(location)),
-                        "string" => return Some(ItemsStringTypeValidator::compile(location)),
+                        "number" => {
+                            return Some(ItemsNumberTypeValidator::compile(
+                                location,
+                                items_location,
+                            ));
+                        }
+                        "string" => {
+                            return Some(ItemsStringTypeValidator::compile(
+                                location,
+                                items_location,
+                            ));
+                        }
                         "integer" => {
                             // Draft 4 has stricter integer semantics
                             return if ctx.draft() == Draft::Draft4 {
-                                Some(ItemsIntegerTypeValidatorDraft4::compile(location))
+                                Some(ItemsIntegerTypeValidatorDraft4::compile(
+                                    location,
+                                    items_location,
+                                ))
                             } else {
-                                Some(ItemsIntegerTypeValidator::compile(location))
+                                Some(ItemsIntegerTypeValidator::compile(location, items_location))
                             };
                         }
-                        "boolean" => return Some(ItemsBooleanTypeValidator::compile(location)),
+                        "boolean" => {
+                            return Some(ItemsBooleanTypeValidator::compile(
+                                location,
+                                items_location,
+                            ));
+                        }
                         _ => {}
                     }
                 }
@@ -1349,7 +1786,10 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::tests_util;
+    use crate::{
+        tests_util,
+        NodeEvaluationResult::{self, Ignored, Invalid, Valid},
+    };
     use referencing::Draft;
     use serde_json::{json, Value};
     use test_case::test_case;
@@ -1438,6 +1878,51 @@ mod tests {
     #[test_case(&json!({"type": "array", "items": {"type": "number"}}), &json!([1, "x"]), "/items/type"; "element location")]
     fn array_shape_schema_location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
+    }
+
+    // Absorbed keywords keep their own tracing events too.
+    #[test_case(
+        &json!({"type": "array", "items": {"type": "number", "minimum": 1}}),
+        &json!([1]),
+        &[("/type", Valid), ("/items/type", Valid), ("/items/minimum", Valid), ("/items", Valid), ("", Valid)];
+        "generic items valid"
+    )]
+    #[test_case(
+        &json!({"type": "array", "items": {"type": "number", "minimum": 1}}),
+        &json!([0]),
+        &[("/type", Valid), ("/items/type", Valid), ("/items/minimum", Invalid), ("/items", Invalid), ("", Invalid)];
+        "generic items invalid element"
+    )]
+    #[test_case(
+        &json!({"type": "array", "items": {"type": "number", "minimum": 1}}),
+        &json!("nope"),
+        &[("/type", Invalid), ("/items", Ignored), ("", Invalid)];
+        "generic items non-array"
+    )]
+    #[test_case(
+        &json!({"type": "array", "minItems": 1, "maxItems": 3, "items": {"type": "number", "minimum": 1}}),
+        &json!("nope"),
+        &[("/type", Invalid), ("/minItems", Ignored), ("/maxItems", Ignored), ("/items", Ignored), ("", Invalid)];
+        "generic items non-array with length keywords"
+    )]
+    #[test_case(
+        &json!({"type": "array", "items": {"type": "number"}}),
+        &json!([1]),
+        &[("/type", Valid), ("/items/type", Valid), ("/items", Valid), ("", Valid)];
+        "simple type items valid"
+    )]
+    #[test_case(
+        &json!({"type": "array", "items": {"type": "number"}}),
+        &json!("nope"),
+        &[("/type", Invalid), ("/items", Ignored), ("/items/type", Ignored), ("", Invalid)];
+        "simple type items non-array"
+    )]
+    fn array_shape_trace(
+        schema: &Value,
+        instance: &Value,
+        expected: &[(&str, NodeEvaluationResult)],
+    ) {
+        tests_util::assert_trace(schema, instance, expected);
     }
 
     // A non-integer length keyword blocks fusion so the standalone validator still reports it.
