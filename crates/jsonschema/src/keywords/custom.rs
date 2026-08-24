@@ -1,6 +1,7 @@
 use crate::{
     error::ErrorIterator,
     paths::{LazyLocation, Location, RefTracker},
+    tracing::{TracingCallback, TracingContext},
     validator::{Validate, ValidationContext},
     Json, Node, SerdeJson, ValidationError,
 };
@@ -65,6 +66,34 @@ impl<F: Json> Validate<F> for CustomKeyword<F> {
             })
             .collect();
         ErrorIterator::from_iterator(errors.into_iter())
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        let result = self.inner.is_valid(instance.clone());
+        let rv = if self.matches_type(instance) {
+            Some(result)
+        } else {
+            None
+        };
+        TracingContext::new(location, self.schema_path(), rv).call(callback);
+        if self.inner.is_informational() {
+            // Keyword does not affect validation results
+            true
+        } else {
+            result
+        }
     }
 }
 
@@ -148,6 +177,10 @@ pub trait Keyword<'i, F: Json = SerdeJson>: Send + Sync {
         instance: F::Node<'i>,
     ) -> Box<dyn Iterator<Item = ValidationError<'i>> + 'i> {
         Box::new(self.validate(instance).err().into_iter())
+    }
+
+    fn is_informational(&self) -> bool {
+        false
     }
 }
 

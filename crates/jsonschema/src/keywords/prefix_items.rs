@@ -15,6 +15,7 @@ use super::CompilationResult;
 
 pub(crate) struct PrefixItemsValidator<F: Json = SerdeJson> {
     schemas: Vec<SchemaNode<F>>,
+    location: Location,
 }
 
 impl PrefixItemsValidator {
@@ -30,11 +31,22 @@ impl PrefixItemsValidator {
             let validators = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
             schemas.push(validators);
         }
-        Ok(Box::new(PrefixItemsValidator { schemas }))
+        Ok(Box::new(PrefixItemsValidator {
+            schemas,
+            location: ctx.location().clone(),
+        }))
     }
 }
 
 impl<F: Json> Validate<F> for PrefixItemsValidator<F> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             for (schema, item) in self.schemas.iter().zip(array.elements()) {
@@ -114,6 +126,35 @@ impl<F: Json> Validate<F> for PrefixItemsValidator<F> {
             }
         }
         EvaluationResult::valid_empty()
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(items) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, (schema, item)) in self.schemas.iter().zip(items.elements()).enumerate() {
+                let schema_is_valid = schema.trace(&item, &instance_path.push(idx), callback, ctx);
+                crate::tracing::TracingContext::new(
+                    instance_path,
+                    schema.schema_path(),
+                    schema_is_valid,
+                )
+                .call(callback);
+                is_valid &= schema_is_valid;
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
     }
 }
 

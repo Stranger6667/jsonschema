@@ -60,6 +60,12 @@ impl<F: Json> Validate<F> for MinLengthValidator {
         }
         Ok(())
     }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[inline]

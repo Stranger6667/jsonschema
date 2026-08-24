@@ -6,23 +6,31 @@ use crate::{
     keywords::{BoxedValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    tracing::{TracingCallback, TracingContext},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, ValidationError,
 };
 use serde_json::{Map, Value};
 
-/// Tracks `$ref` traversals for recursive references where the target is behind `BoxedValidator<F>`
-/// (either a `PendingSchemaNode` or a cached node returned by `lookup_maybe_recursive`).
+/// Wrapper validator for `$ref` used for recursive references where the target is behind
+/// `BoxedValidator<F>` (a `PendingSchemaNode` or a cached node returned by
+/// `lookup_maybe_recursive`). Also:
+/// - tracks `$ref` traversals for the `evaluation_path` tracker (JSON Schema 2020-12 Core 12.4.2),
+/// - ensures the `$ref` keyword is reported during tracing.
 struct RefValidator<F: Json> {
     inner: BoxedValidator<F>,
     /// Path of this `$ref` keyword relative to its resource base.
     /// E.g., `/properties/foo/$ref` (not the full canonical path).
-    /// Used for building the `tracker` prefix.
+    /// Used as the tracker prefix.
     ref_suffix: Location,
+    /// Absolute path of this `$ref` keyword from the spec root.
+    /// E.g., `/components/schemas/Foo/properties/bar/$ref`.
+    /// Used as `schema_path` for tracing — consumers key their coverage maps on this form.
+    ref_keyword_location: Location,
     /// The resource base of the `$ref` target.
     /// E.g., `/$defs/Item` when `$ref` points to `#/$defs/Item`.
-    /// Used for computing validator suffixes at runtime.
+    /// Used as the canonical location (schemaLocation per spec) and for runtime suffixes.
     ref_target_base: Location,
 }
 
@@ -74,6 +82,29 @@ impl<F: Json> Validate<F> for RefValidator<F> {
     fn canonical_location(&self) -> Option<&Location> {
         Some(&self.ref_target_base)
     }
+
+    fn schema_path(&self) -> &Location {
+        &self.ref_keyword_location
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let is_valid = self.inner.trace(instance, location, callback, ctx);
+        // Emit at the `$ref` keyword location, then at the target's canonical
+        // location so consumers can track target coverage without resolving
+        // `$ref` chains. Skip the target emit when the alias has no
+        // JSON-Pointer fragment (e.g. `$ref` to a bare schema URI).
+        TracingContext::new(location, self.schema_path(), Some(is_valid)).call(callback);
+        if !self.ref_target_base.as_str().is_empty() {
+            TracingContext::new(location, &self.ref_target_base, Some(is_valid)).call(callback);
+        }
+        is_valid
+    }
 }
 
 /// Like `RefValidator` but holds a concrete `SchemaNode<F>` instead of `BoxedValidator<F>`,
@@ -82,10 +113,45 @@ impl<F: Json> Validate<F> for RefValidator<F> {
 struct DirectRefValidator<F: Json> {
     inner: SchemaNode<F>,
     ref_suffix: Location,
+    /// Absolute path of this `$ref` keyword from the spec root.
+    /// E.g., `/components/schemas/Foo/properties/bar/$ref`.
+    /// Used as `schema_path` for tracing — consumers key their coverage maps on this form.
+    ref_keyword_location: Location,
     ref_target_base: Location,
 }
 
 impl<F: Json> Validate<F> for DirectRefValidator<F> {
+    /// Returns `ref_target_base` for `schema_path` output.
+    ///
+    /// Per JSON Schema 2020-12 Core Section 12.4.2, `schema_path` "MUST NOT include
+    /// by-reference applicators such as `$ref` or `$dynamicRef`".
+    fn canonical_location(&self) -> Option<&Location> {
+        Some(&self.ref_target_base)
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.ref_keyword_location
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let is_valid = self.inner.trace(instance, location, callback, ctx);
+        // Emit at the `$ref` keyword location, then at the target's canonical
+        // location so consumers can track target coverage without resolving
+        // `$ref` chains. Skip the target emit when the alias has no
+        // JSON-Pointer fragment (e.g. `$ref` to a bare schema URI).
+        TracingContext::new(location, self.schema_path(), Some(is_valid)).call(callback);
+        if !self.ref_target_base.as_str().is_empty() {
+            TracingContext::new(location, &self.ref_target_base, Some(is_valid)).call(callback);
+        }
+        is_valid
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         self.inner.is_valid(instance, ctx)
     }
@@ -125,16 +191,17 @@ impl<F: Json> Validate<F> for DirectRefValidator<F> {
         self.inner
             .evaluate(instance, location, Some(&child_tracker), ctx)
     }
-
-    fn canonical_location(&self) -> Option<&Location> {
-        Some(&self.ref_target_base)
-    }
 }
 
 /// Extract `ref_target_base` from a resolved URI fragment.
 ///
 /// JSON Pointer fragments (starting with `/`) become the location path.
 /// Anchor fragments (plain names like `#node`) resolve to root.
+///
+/// The URI fragment is percent-encoded per RFC 3986 (e.g. `%20` for space),
+/// while `Location::from_escaped` expects JSON-Pointer escaping (`~0`/`~1`).
+/// Percent-decode first so the resulting `Location` matches the JSON Pointer
+/// form used elsewhere.
 fn extract_ref_target_base(alias: &referencing::Uri<String>) -> Location {
     if let Some(fragment) = alias.fragment() {
         let fragment = fragment.as_str();
@@ -167,6 +234,7 @@ fn compile_reference_validator<'a, F: Json>(
     };
 
     let ref_suffix = ctx.suffix().join(keyword);
+    let ref_keyword_location = ctx.location().join(keyword);
     let ref_target_base = extract_ref_target_base(&alias);
 
     let resolved = match ctx.lookup(reference) {
@@ -191,6 +259,7 @@ fn compile_reference_validator<'a, F: Json>(
             return Some(Ok(Box::new(RefValidator {
                 inner: validator,
                 ref_suffix,
+                ref_keyword_location,
                 ref_target_base,
             })));
         }
@@ -220,6 +289,7 @@ fn compile_reference_validator<'a, F: Json>(
                 Box::new(DirectRefValidator {
                     inner: node,
                     ref_suffix,
+                    ref_keyword_location,
                     ref_target_base,
                 }) as Box<dyn Validate<F>>
             })
@@ -232,6 +302,7 @@ fn compile_recursive_validator<'a, F: Json>(
     reference: &str,
 ) -> CompilationResult<'a, F> {
     let ref_suffix = ctx.suffix().join("$recursiveRef");
+    let ref_keyword_location = ctx.location().join("$recursiveRef");
     let alias = ctx
         .resolve_reference_uri(reference)
         .map_err(ValidationError::from)?;
@@ -242,6 +313,7 @@ fn compile_recursive_validator<'a, F: Json>(
             return Ok(Box::new(RefValidator {
                 inner: validator,
                 ref_suffix,
+                ref_keyword_location,
                 ref_target_base,
             }));
         }
@@ -268,6 +340,7 @@ fn compile_recursive_validator<'a, F: Json>(
             Box::new(RefValidator {
                 inner,
                 ref_suffix,
+                ref_keyword_location,
                 ref_target_base,
             }) as Box<dyn Validate<F>>
         })

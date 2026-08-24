@@ -73,6 +73,12 @@ impl<F: Json> Validate<F> for EnumValidator {
             false
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[derive(Debug)]
@@ -121,6 +127,12 @@ impl<F: Json> Validate<F> for SingleValueEnumValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.equals_value(&self.value)
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[derive(Debug)]
@@ -150,6 +162,10 @@ impl SmallStringEnumValidator {
 }
 
 impl<F: Json> Validate<F> for SmallStringEnumValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
     fn validate<'i>(
         &self,
         instance: &F::Node<'i>,
@@ -206,6 +222,10 @@ impl BigStringEnumValidator {
 }
 
 impl<F: Json> Validate<F> for BigStringEnumValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
     fn validate<'i>(
         &self,
         instance: &F::Node<'i>,

@@ -3,7 +3,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::{LazyLocation, RefTracker},
+    paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
     Json, Node, SerdeJson,
 };
@@ -52,6 +52,30 @@ impl<F: Json> Validate<F> for NotValidator<F> {
                 self.original.clone(),
             ))
         }
+    }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        // Trace the inner schema
+        let inner_is_valid = self.node.trace(instance, instance_path, callback, ctx);
+        crate::tracing::TracingContext::new(instance_path, self.node.location(), inner_is_valid)
+            .call(callback);
+        // not is valid when inner schema is invalid
+        let is_valid = !inner_is_valid;
+        crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+            .call(callback);
+        is_valid
     }
 }
 

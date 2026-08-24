@@ -24,6 +24,14 @@ pub(crate) struct PrefixPatternValidator {
 }
 
 impl<F: Json> Validate<F> for PrefixPatternValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
             item.starts_with(&self.prefix)
@@ -62,6 +70,14 @@ pub(crate) struct ExactPatternValidator {
 }
 
 impl<F: Json> Validate<F> for ExactPatternValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
             item.as_ref() == self.exact
@@ -100,6 +116,14 @@ pub(crate) struct AlternationPatternValidator {
 }
 
 impl<F: Json> Validate<F> for AlternationPatternValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
             self.alternatives
@@ -143,6 +167,14 @@ pub(crate) struct NoWhitespacePatternValidator {
 }
 
 impl<F: Json> Validate<F> for NoWhitespacePatternValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
             !item.chars().any(is_ecma_whitespace)
@@ -232,6 +264,12 @@ impl<R: RegexEngine, F: Json> Validate<F> for PatternValidator<R> {
             return self.regex.is_match(&item).unwrap_or(false);
         }
         true
+    }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

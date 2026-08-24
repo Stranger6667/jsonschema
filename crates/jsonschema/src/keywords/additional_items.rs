@@ -30,6 +30,14 @@ impl AdditionalItemsObjectValidator {
     }
 }
 impl<F: Json> Validate<F> for AdditionalItemsObjectValidator<F> {
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             array
@@ -77,6 +85,30 @@ impl<F: Json> Validate<F> for AdditionalItemsObjectValidator<F> {
             no_error()
         }
     }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(items) = instance.as_array() {
+            let mut is_valid = true;
+            for (idx, item) in items.elements().enumerate().skip(self.items_count) {
+                let path = instance_path.push(idx);
+                let item_valid = self.node.trace(&item, &path, callback, ctx);
+                is_valid &= item_valid;
+            }
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct AdditionalItemsBooleanValidator {
@@ -96,6 +128,14 @@ impl AdditionalItemsBooleanValidator {
     }
 }
 impl<F: Json> Validate<F> for AdditionalItemsBooleanValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             if array.len() > self.items_count {

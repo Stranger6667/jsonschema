@@ -5,6 +5,7 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     Array, Draft, Json, Node, SerdeJson,
 };
@@ -36,6 +37,14 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
         } else {
             true
         }
+    }
+
+    fn schema_path(&self) -> &crate::paths::Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
     }
 
     fn validate<'i>(
@@ -106,6 +115,32 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
             result
         }
     }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(items) = instance.as_array() {
+            let mut match_count = 0u64;
+            for (idx, item) in items.elements().enumerate() {
+                let path = instance_path.push(idx);
+                if self.node.trace(&item, &path, callback, ctx) {
+                    match_count += 1;
+                }
+            }
+            let is_valid = match_count >= 1;
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 /// `minContains` validation. Used only if there is no `maxContains` present.
@@ -114,6 +149,7 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
 pub(crate) struct MinContainsValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
     min_contains: u64,
+    min_contains_location: crate::paths::Location,
 }
 
 impl MinContainsValidator {
@@ -123,15 +159,25 @@ impl MinContainsValidator {
         schema: &'a Value,
         min_contains: u64,
     ) -> CompilationResult<'a, F> {
-        let ctx = ctx.new_at_location("minContains");
+        let min_contains_location = ctx.new_at_location("minContains").location().clone();
+        let ctx = ctx.new_at_location("contains");
         Ok(Box::new(MinContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
             min_contains,
+            min_contains_location,
         }))
     }
 }
 
 impl<F: Json> Validate<F> for MinContainsValidator<F> {
+    fn schema_path(&self) -> &crate::paths::Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             let mut matches = 0;
@@ -189,6 +235,43 @@ impl<F: Json> Validate<F> for MinContainsValidator<F> {
             Ok(())
         }
     }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(items) = instance.as_array() {
+            let mut match_count = 0u64;
+            for (idx, item) in items.elements().enumerate() {
+                let path = instance_path.push(idx);
+                if self.node.trace(&item, &path, callback, ctx) {
+                    match_count += 1;
+                }
+            }
+            // Trace contains schema result
+            let contains_valid = match_count >= 1;
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), contains_valid)
+                .call(callback);
+            // Trace minContains constraint
+            let min_valid = match_count >= self.min_contains;
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.min_contains_location,
+                min_valid,
+            )
+            .call(callback);
+            min_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &self.min_contains_location, None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 /// `maxContains` validation. Used only if there is no `minContains` present.
@@ -197,6 +280,7 @@ impl<F: Json> Validate<F> for MinContainsValidator<F> {
 pub(crate) struct MaxContainsValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
     max_contains: u64,
+    max_contains_location: crate::paths::Location,
 }
 
 impl MaxContainsValidator {
@@ -206,15 +290,25 @@ impl MaxContainsValidator {
         schema: &'a Value,
         max_contains: u64,
     ) -> CompilationResult<'a, F> {
-        let ctx = ctx.new_at_location("maxContains");
+        let max_contains_location = ctx.new_at_location("maxContains").location().clone();
+        let ctx = ctx.new_at_location("contains");
         Ok(Box::new(MaxContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
             max_contains,
+            max_contains_location,
         }))
     }
 }
 
 impl<F: Json> Validate<F> for MaxContainsValidator<F> {
+    fn schema_path(&self) -> &crate::paths::Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             let mut matches = 0;
@@ -277,6 +371,43 @@ impl<F: Json> Validate<F> for MaxContainsValidator<F> {
             Ok(())
         }
     }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(items) = instance.as_array() {
+            let mut match_count = 0u64;
+            for (idx, item) in items.elements().enumerate() {
+                let path = instance_path.push(idx);
+                if self.node.trace(&item, &path, callback, ctx) {
+                    match_count += 1;
+                }
+            }
+            // Trace contains schema result
+            let contains_valid = match_count >= 1;
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), contains_valid)
+                .call(callback);
+            // Trace maxContains constraint
+            let max_valid = match_count <= self.max_contains;
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.max_contains_location,
+                max_valid,
+            )
+            .call(callback);
+            contains_valid && max_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &self.max_contains_location, None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 /// `maxContains` & `minContains` validation combined.
@@ -315,6 +446,14 @@ impl MinMaxContainsValidator {
 }
 
 impl<F: Json> Validate<F> for MinMaxContainsValidator<F> {
+    fn schema_path(&self) -> &crate::paths::Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             let mut matches = 0;
@@ -377,6 +516,45 @@ impl<F: Json> Validate<F> for MinMaxContainsValidator<F> {
             }
         } else {
             Ok(())
+        }
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(items) = instance.as_array() {
+            let mut match_count = 0u64;
+            for (idx, item) in items.elements().enumerate() {
+                let path = instance_path.push(idx);
+                if self.node.trace(&item, &path, callback, ctx) {
+                    match_count += 1;
+                }
+            }
+            // Trace contains schema result
+            let contains_valid = match_count >= 1;
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), contains_valid)
+                .call(callback);
+            // Trace minContains constraint
+            let min_valid = match_count >= self.min_contains;
+            crate::tracing::TracingContext::new(instance_path, &self.min_location, min_valid)
+                .call(callback);
+            // Trace maxContains constraint
+            let max_valid = match_count <= self.max_contains;
+            crate::tracing::TracingContext::new(instance_path, &self.max_location, max_valid)
+                .call(callback);
+            min_valid && max_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &self.min_location, None)
+                .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &self.max_location, None)
+                .call(callback);
+            true
         }
     }
 }

@@ -1081,6 +1081,14 @@ macro_rules! format_validators {
                 }
 
                 impl_format_evaluate!();
+
+                fn schema_path(&self) -> &Location {
+                    &self.location
+                }
+
+                fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+                    instance.is_string()
+                }
             }
         )+
     };
@@ -1139,6 +1147,14 @@ impl RegexValidator {
 }
 
 impl<F: Json> Validate<F> for RegexValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
             ctx.is_valid_ecma_regex(&item)
@@ -1218,6 +1234,10 @@ impl<F: Json> Validate<F> for EmailValidator {
     }
 
     impl_format_evaluate!();
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 // Custom IdnEmailValidator that supports email options
@@ -1269,6 +1289,10 @@ impl<F: Json> Validate<F> for IdnEmailValidator {
     }
 
     impl_format_evaluate!();
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 struct CustomFormatValidator {
@@ -1316,14 +1340,18 @@ impl<F: Json> Validate<F> for CustomFormatValidator {
     }
 
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
-        if let Some(item) = instance.as_string() {
-            self.check.is_valid(&item)
-        } else {
-            true
-        }
+        self.check.is_valid(&instance.to_value())
     }
 
     impl_format_evaluate!();
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        self.check.matches_type(&instance.to_value())
+    }
 }
 
 /// Format annotation-only validator used when format assertion is disabled.
@@ -1331,9 +1359,18 @@ impl<F: Json> Validate<F> for CustomFormatValidator {
 /// Always validates successfully but emits the required annotation per spec §7.2.1.
 struct AnnotationOnlyFormatValidator {
     annotation: Arc<Value>,
+    location: Location,
 }
 
 impl<F: Json> Validate<F> for AnnotationOnlyFormatValidator {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_string()
+    }
+
     fn is_valid(&self, _instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         true
     }
@@ -1375,16 +1412,41 @@ impl<F: Json> Validate<F> for AnnotationOnlyFormatValidator {
 }
 
 pub(crate) trait Format: Send + Sync + 'static {
-    fn is_valid(&self, value: &str) -> bool;
+    fn is_valid(&self, value: &Value) -> bool;
+    fn matches_type(&self, instance: &Value) -> bool;
 }
 
-impl<F> Format for F
+pub(crate) struct StringFormat<F>(pub F);
+
+impl<F> Format for StringFormat<F>
 where
     F: Fn(&str) -> bool + Send + Sync + 'static,
 {
     #[inline]
-    fn is_valid(&self, value: &str) -> bool {
-        self(value)
+    fn is_valid(&self, value: &Value) -> bool {
+        if let Some(s) = value.as_str() {
+            (self.0)(s)
+        } else {
+            true
+        }
+    }
+    fn matches_type(&self, instance: &Value) -> bool {
+        matches!(instance, Value::String(_))
+    }
+}
+
+pub(crate) struct ValueFormat<F>(pub F);
+
+impl<F> Format for ValueFormat<F>
+where
+    F: Fn(&Value) -> bool + Send + Sync + 'static,
+{
+    #[inline]
+    fn is_valid(&self, value: &Value) -> bool {
+        (self.0)(value)
+    }
+    fn matches_type(&self, _instance: &Value) -> bool {
+        true
     }
 }
 
@@ -1623,6 +1685,7 @@ pub(crate) fn compile<'a, F: Json>(
             // Format validation disabled: annotation-only per spec §7.2.1
             Some(Ok(Box::new(AnnotationOnlyFormatValidator {
                 annotation: Arc::new(Value::String(format.clone())),
+                location: ctx.location().join("format"),
             })))
         }
     } else {

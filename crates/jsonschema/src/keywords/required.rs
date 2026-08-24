@@ -107,6 +107,40 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
         }
         no_error()
     }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(object) = instance.as_object() {
+            let mut is_valid = true;
+            for (idx, (_, key)) in self.required.iter().enumerate() {
+                let present = object.get(key).is_some();
+                if !present {
+                    is_valid = false;
+                }
+                // Trace at index-based path: /required/0, /required/1, etc.
+                let item_path = self.location.join(idx);
+                crate::tracing::TracingContext::new(instance_path, &item_path, present)
+                    .call(callback);
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct SingleItemRequiredValidator<F: Json = SerdeJson> {
@@ -156,6 +190,34 @@ impl<F: Json> Validate<F> for SingleItemRequiredValidator<F> {
             true
         }
     }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(object) = instance.as_object() {
+            let present = object.get(&self.key).is_some();
+            // Trace at index 0: /required/0 (or /dependencies/email/0)
+            let item_path = self.location.join(0usize);
+            crate::tracing::TracingContext::new(instance_path, &item_path, present).call(callback);
+            // Trace container
+            crate::tracing::TracingContext::new(instance_path, &self.location, present)
+                .call(callback);
+            present
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
+    }
 }
 
 /// Specialized validator for exactly 2 required properties.
@@ -186,6 +248,40 @@ impl Required2Validator {
 }
 
 impl<F: Json> Validate<F> for Required2Validator<F> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(object) = instance.as_object() {
+            let first_present = object.get(&self.first_key).is_some();
+            let second_present = object.get(&self.second_key).is_some();
+            let item_path0 = self.location.join(0usize);
+            let item_path1 = self.location.join(1usize);
+            crate::tracing::TracingContext::new(instance_path, &item_path0, first_present)
+                .call(callback);
+            crate::tracing::TracingContext::new(instance_path, &item_path1, second_present)
+                .call(callback);
+            let is_valid = first_present && second_present;
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
@@ -296,6 +392,53 @@ impl Required3Validator {
 }
 
 impl<F: Json> Validate<F> for Required3Validator<F> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        _ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(object) = instance.as_object() {
+            let first_present = object.get(&self.first_key).is_some();
+            let second_present = object.get(&self.second_key).is_some();
+            let third_present = object.get(&self.third_key).is_some();
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.location.join(0usize),
+                first_present,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.location.join(1usize),
+                second_present,
+            )
+            .call(callback);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                &self.location.join(2usize),
+                third_present,
+            )
+            .call(callback);
+            let is_valid = first_present && second_present && third_present;
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
+        }
+    }
+
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {

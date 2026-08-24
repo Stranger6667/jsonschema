@@ -21,6 +21,7 @@ use crate::{
     evaluation::ErrorDescription,
     node::SchemaNode,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
+    types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson, ValidationError,
 };
@@ -765,6 +766,14 @@ impl UnevaluatedPropertiesValidator {
 }
 
 impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
+    fn schema_path(&self) -> &crate::paths::Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+
     fn validate<'i>(
         &self,
         instance: &F::Node<'i>,
@@ -905,6 +914,43 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
             }
         } else {
             EvaluationResult::valid_empty()
+        }
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(object) = instance.as_object() {
+            // Get properties that are evaluated by OTHER keywords (not unevaluatedProperties itself)
+            let mut evaluated = AHashSet::with_capacity(object.len());
+            self.validators
+                .mark_evaluated_by_other_keywords(instance, &mut evaluated, ctx);
+
+            let mut is_valid = true;
+            for (property, value) in object.members() {
+                if evaluated.contains(property.as_ref()) {
+                    continue;
+                }
+                // This property is unevaluated - trace it against unevaluatedProperties schema
+                if let Some(validator) = &self.validators.unevaluated {
+                    let path = instance_path.push(property.as_ref());
+                    let prop_valid = validator.trace(&value, &path, callback, ctx);
+                    is_valid &= prop_valid;
+                } else {
+                    // unevaluatedProperties: false and property not evaluated
+                    is_valid = false;
+                }
+            }
+            crate::tracing::TracingContext::new(instance_path, &self.location, is_valid)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, &self.location, None).call(callback);
+            true
         }
     }
 }

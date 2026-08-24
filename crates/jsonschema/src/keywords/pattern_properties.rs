@@ -18,9 +18,18 @@ use serde_json::{Map, Value};
 /// Validator for multiple patterns using compiled regex.
 pub(crate) struct PatternPropertiesValidator<R, F: Json = SerdeJson> {
     patterns: Vec<(Arc<R>, SchemaNode<F>)>,
+    location: Location,
 }
 
 impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             for (re, node) in &self.patterns {
@@ -112,6 +121,43 @@ impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
             EvaluationResult::valid_empty()
         }
     }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(item) = instance.as_object() {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (re, node) in &self.patterns {
+                for (key, value) in item.members() {
+                    if re.is_match(key.as_ref()).unwrap_or(false) {
+                        at_least_one = true;
+                        let path = instance_path.push(key.as_ref());
+                        let schema_is_valid = node.trace(&value, &path, callback, ctx);
+                        crate::tracing::TracingContext::new(
+                            instance_path,
+                            node.schema_path(),
+                            schema_is_valid,
+                        )
+                        .call(callback);
+                        is_valid &= schema_is_valid;
+                    }
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct SingleValuePatternPropertiesValidator<R, F: Json = SerdeJson> {
@@ -120,6 +166,14 @@ pub(crate) struct SingleValuePatternPropertiesValidator<R, F: Json = SerdeJson> 
 }
 
 impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValidator<R, F> {
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             for (key, value) in object.members() {
@@ -206,6 +260,41 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
             EvaluationResult::valid_empty()
         }
     }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(item) = instance.as_object() {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            for (key, value) in item.members() {
+                if self.regex.is_match(key.as_ref()).unwrap_or(false) {
+                    at_least_one = true;
+                    let path = instance_path.push(key.as_ref());
+                    let schema_is_valid = self.node.trace(&value, &path, callback, ctx);
+                    crate::tracing::TracingContext::new(
+                        instance_path,
+                        self.node.schema_path(),
+                        schema_is_valid,
+                    )
+                    .call(callback);
+                    is_valid &= schema_is_valid;
+                }
+            }
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 #[inline]
@@ -240,6 +329,7 @@ pub(crate) fn compile<'a, F: Json>(
     }
 
     // Fall back to regex compilation
+    let location = ctx.location().clone();
     let result = match ctx.config().pattern_options() {
         PatternEngineOptions::FancyRegex { .. } => {
             compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
@@ -247,7 +337,7 @@ pub(crate) fn compile<'a, F: Json>(
                     .map_err(|()| invalid_regex(pctx, subschema))
             })
             .map(|patterns| {
-                build_validator_from_entries(patterns, |regex, node| {
+                build_validator_from_entries(patterns, location, |regex, node| {
                     Box::new(SingleValuePatternPropertiesValidator { regex, node })
                         as Box<dyn Validate<F>>
                 })
@@ -259,7 +349,7 @@ pub(crate) fn compile<'a, F: Json>(
                     .map_err(|()| invalid_regex(pctx, subschema))
             })
             .map(|patterns| {
-                build_validator_from_entries(patterns, |regex, node| {
+                build_validator_from_entries(patterns, location, |regex, node| {
                     Box::new(SingleValuePatternPropertiesValidator { regex, node })
                         as Box<dyn Validate<F>>
                 })
@@ -292,9 +382,13 @@ fn try_compile_as_literals<'a, F: Json>(
         };
         entries.push((Arc::new(matcher), node));
     }
-    Some(Ok(build_validator_from_entries(entries, |regex, node| {
-        Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate<F>>
-    })))
+    Some(Ok(build_validator_from_entries(
+        entries,
+        ctx.location().clone(),
+        |regex, node| {
+            Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate<F>>
+        },
+    )))
 }
 
 fn invalid_regex<'a, F: Json>(
@@ -334,6 +428,7 @@ where
 /// Pick the optimal validator representation for the compiled pattern entries.
 fn build_validator_from_entries<R, F: Json>(
     mut entries: Vec<(Arc<R>, SchemaNode<F>)>,
+    location: Location,
     single_factory: impl FnOnce(Arc<R>, SchemaNode<F>) -> Box<dyn Validate<F>>,
 ) -> Box<dyn Validate<F>>
 where
@@ -343,7 +438,10 @@ where
         let (regex, node) = entries.pop().expect("len checked");
         single_factory(regex, node)
     } else {
-        Box::new(PatternPropertiesValidator { patterns: entries })
+        Box::new(PatternPropertiesValidator {
+            patterns: entries,
+            location,
+        })
     }
 }
 

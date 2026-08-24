@@ -17,7 +17,6 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
     if dependencies.is_empty() {
         return None;
     }
-    let schema_path = ctx.schema_path_for_keyword("dependencies");
     let checks: Vec<CompiledExpr> = dependencies
         .iter()
         .map(|(prop, dependency)| match dependency {
@@ -32,6 +31,11 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
                 if props.is_empty() {
                     CompiledExpr::always_true()
                 } else {
+                    let schema_path = ctx.with_schema_path_segment("dependencies", |ctx| {
+                        ctx.with_schema_path_segment(prop, |ctx| {
+                            ctx.current_schema_path().to_string()
+                        })
+                    });
                     CompiledExpr::with_validate_and_collect_blocks(
                         quote! {
                             if obj.contains_key(#prop) {
@@ -99,7 +103,6 @@ pub(crate) fn compile_dependent_required(
     if dependencies.is_empty() {
         return None;
     }
-    let schema_path = ctx.schema_path_for_keyword("dependentRequired");
     let checks: Vec<CompiledExpr> = dependencies
         .iter()
         .map(|(prop, required)| {
@@ -122,6 +125,9 @@ pub(crate) fn compile_dependent_required(
             if required_props.is_empty() {
                 return CompiledExpr::always_true();
             }
+            let schema_path = ctx.with_schema_path_segment("dependentRequired", |ctx| {
+                ctx.with_schema_path_segment(prop, |ctx| ctx.current_schema_path().to_string())
+            });
             CompiledExpr::with_validate_and_collect_blocks(
                 quote! {
                     if obj.contains_key(#prop) {
