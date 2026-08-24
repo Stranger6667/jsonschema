@@ -4,6 +4,7 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object,
 };
@@ -125,6 +126,43 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
             EvaluationResult::valid_empty()
         }
     }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+    fn schema_path(&self) -> &Location {
+        self.node.location()
+    }
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        if let Some(item) = instance.as_object() {
+            let mut is_valid = true;
+            let mut at_least_one = false;
+            let mut buffer = F::StringBuffer::default();
+            for (name, _) in item.members() {
+                at_least_one = true;
+                // Trace the subschema validation for each property name
+                let key_is_valid = F::with_string_node(&mut buffer, name.as_ref(), |node| {
+                    self.node.trace(&node, instance_path, callback, ctx)
+                });
+                is_valid &= key_is_valid;
+            }
+            // Report the overall propertyNames result
+            let rv = if at_least_one { Some(is_valid) } else { None };
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), rv)
+                .call(callback);
+            is_valid
+        } else {
+            // Not an object - validation doesn't apply
+            crate::tracing::TracingContext::new(instance_path, self.schema_path(), None)
+                .call(callback);
+            true
+        }
+    }
 }
 
 pub(crate) struct PropertyNamesBooleanValidator {
@@ -166,6 +204,12 @@ impl<F: Json> Validate<F> for PropertyNamesBooleanValidator {
                 instance.lazy_value(),
             ))
         }
+    }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Object
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

@@ -104,6 +104,42 @@ impl<F: Json> Validate<F> for IfThenValidator<F> {
             EvaluationResult::valid_empty()
         }
     }
+    fn schema_path(&self) -> &Location {
+        self.schema.location()
+    }
+
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        // Always trace the if condition
+        let if_valid = self.schema.trace(instance, instance_path, callback, ctx);
+        crate::tracing::TracingContext::new(instance_path, self.schema.location(), if_valid)
+            .call(callback);
+        if if_valid {
+            // If condition passed, trace then branch
+            let then_valid = self
+                .then_schema
+                .trace(instance, instance_path, callback, ctx);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                self.then_schema.location(),
+                then_valid,
+            )
+            .call(callback);
+            then_valid
+        } else {
+            // If condition failed, then doesn't apply - overall valid
+            true
+        }
+    }
 }
 
 pub(crate) struct IfElseValidator<F: Json> {
@@ -200,6 +236,42 @@ impl<F: Json> Validate<F> for IfElseValidator<F> {
                 ctx,
             );
             EvaluationResult::from_children(vec![else_node])
+        }
+    }
+    fn schema_path(&self) -> &Location {
+        self.schema.location()
+    }
+
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        // Always trace the if condition
+        let if_valid = self.schema.trace(instance, instance_path, callback, ctx);
+        crate::tracing::TracingContext::new(instance_path, self.schema.location(), if_valid)
+            .call(callback);
+        if if_valid {
+            // If condition passed, else doesn't apply - overall valid
+            true
+        } else {
+            // If condition failed, trace else branch
+            let else_valid = self
+                .else_schema
+                .trace(instance, instance_path, callback, ctx);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                self.else_schema.location(),
+                else_valid,
+            )
+            .call(callback);
+            else_valid
         }
     }
 }
@@ -314,6 +386,51 @@ impl<F: Json> Validate<F> for IfThenElseValidator<F> {
                 ctx,
             );
             EvaluationResult::from_children(vec![else_node])
+        }
+    }
+    fn schema_path(&self) -> &Location {
+        self.schema.location()
+    }
+
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        instance_path: &LazyLocation,
+        callback: crate::tracing::TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        // Always trace the if condition
+        let if_valid = self.schema.trace(instance, instance_path, callback, ctx);
+        crate::tracing::TracingContext::new(instance_path, self.schema.location(), if_valid)
+            .call(callback);
+        if if_valid {
+            // If condition passed, trace then branch
+            let then_valid = self
+                .then_schema
+                .trace(instance, instance_path, callback, ctx);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                self.then_schema.location(),
+                then_valid,
+            )
+            .call(callback);
+            then_valid
+        } else {
+            // If condition failed, trace else branch
+            let else_valid = self
+                .else_schema
+                .trace(instance, instance_path, callback, ctx);
+            crate::tracing::TracingContext::new(
+                instance_path,
+                self.else_schema.location(),
+                else_valid,
+            )
+            .call(callback);
+            else_valid
         }
     }
 }

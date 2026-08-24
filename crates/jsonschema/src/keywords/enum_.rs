@@ -74,6 +74,12 @@ impl<F: Json> Validate<F> for EnumValidator {
             false
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[derive(Debug)]
@@ -122,6 +128,12 @@ impl<F: Json> Validate<F> for SingleValueEnumValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.equals_value(&self.value)
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[derive(Debug)]
@@ -153,6 +165,10 @@ impl<N: Nullability> SmallStringEnumValidator<N> {
 }
 
 impl<F: Json, N: Nullability> Validate<F> for SmallStringEnumValidator<N> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
     fn validate<'i>(
         &self,
         instance: &F::Node<'i>,
@@ -211,6 +227,10 @@ impl<N: Nullability> BigStringEnumValidator<N> {
 }
 
 impl<F: Json, N: Nullability> Validate<F> for BigStringEnumValidator<N> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
     fn validate<'i>(
         &self,
         instance: &F::Node<'i>,
@@ -271,6 +291,10 @@ impl<N: Nullability> IntegerEnumValidator<N> {
 }
 
 impl<F: Json, N: Nullability> Validate<F> for IntegerEnumValidator<N> {
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
     fn validate<'i>(
         &self,
         instance: &F::Node<'i>,
@@ -362,7 +386,10 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::tests_util;
+    use crate::{
+        tests_util,
+        NodeEvaluationResult::{self, Invalid, Valid},
+    };
     use serde_json::{json, Value};
     use test_case::test_case;
 
@@ -370,6 +397,22 @@ mod tests {
     #[test_case(&json!({"enum": [1, 3]}), &json!(2), "/enum")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
+    }
+
+    // `enum` applies to every type, so a mismatch is `Invalid`, never `Ignored`
+    #[test_case(&json!({"enum": [1, 2]}), &json!(2), &[("/enum", Valid), ("", Valid)]; "integer member")]
+    #[test_case(&json!({"enum": [1, 2]}), &json!(2.0), &[("/enum", Valid), ("", Valid)]; "integer member written as float")]
+    #[test_case(&json!({"enum": [1, 2]}), &json!(3), &[("/enum", Invalid), ("", Invalid)]; "integer non-member")]
+    #[test_case(&json!({"enum": [1, 2]}), &json!("1"), &[("/enum", Invalid), ("", Invalid)]; "integer enum rejects string")]
+    #[test_case(&json!({"enum": [1, 2, null]}), &json!(null), &[("/enum", Valid), ("", Valid)]; "nullable integer accepts null")]
+    #[test_case(&json!({"enum": [1, 2]}), &json!(null), &[("/enum", Invalid), ("", Invalid)]; "integer rejects null")]
+    #[test_case(&json!({"enum": ["a", "b", null]}), &json!(null), &[("/enum", Valid), ("", Valid)]; "nullable small string accepts null")]
+    #[test_case(&json!({"enum": ["a", "b", null]}), &json!("c"), &[("/enum", Invalid), ("", Invalid)]; "nullable small string non-member")]
+    #[test_case(&json!({"enum": ["a", "b"]}), &json!(null), &[("/enum", Invalid), ("", Invalid)]; "small string rejects null")]
+    #[test_case(&json!({"enum": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k", null]}), &json!(null), &[("/enum", Valid), ("", Valid)]; "nullable big string accepts null")]
+    #[test_case(&json!({"enum": ["a", "b", "c", "d", "e", "f", "g", "h", "i", "j", "k"]}), &json!(null), &[("/enum", Invalid), ("", Invalid)]; "big string rejects null")]
+    fn trace(schema: &Value, instance: &Value, expected: &[(&str, NodeEvaluationResult)]) {
+        tests_util::assert_trace(schema, instance, expected);
     }
 
     // 10 entries — exercises BigStringEnumValidator

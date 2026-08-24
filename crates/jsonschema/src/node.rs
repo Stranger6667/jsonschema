@@ -3,6 +3,7 @@ use crate::{
     evaluation::{Annotations, EvaluationNode},
     keywords::{BoxedValidator, Keyword},
     paths::{LazyLocation, Location, RefTracker},
+    tracing::TracingCallback,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, SerdeJson, ValidationError,
 };
@@ -192,6 +193,10 @@ impl<F: Json> PendingTarget<F> {
             absolute_path: self.absolute_path.clone(),
         }
     }
+
+    fn location_ref(&self) -> &Location {
+        &self.location
+    }
 }
 
 impl<F: Json> Validate<F> for PendingSchemaNode<F> {
@@ -261,6 +266,30 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
             return EvaluationResult::valid_empty();
         }
         let result = self.with_node(|node| node.evaluate(instance, location, tracker, ctx));
+        ctx.exit(self.node_id(), identity);
+        result
+    }
+
+    fn schema_path(&self) -> &Location {
+        self.cell
+            .get()
+            .expect("pending node accessed before initialization")
+            .location_ref()
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let identity = instance.identity();
+        if ctx.enter(self.node_id(), identity) {
+            // Cycle detected - a pure reference cycle is equivalent to `true` schema.
+            return true;
+        }
+        let result = self.with_node(|node| node.trace(instance, location, callback, ctx));
         ctx.exit(self.node_id(), identity);
         result
     }
@@ -680,6 +709,31 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         self.evaluate_at(instance, location, instance_location, tracker, ctx)
+    }
+
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
+
+    fn trace(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        callback: TracingCallback<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        let mut is_valid = true;
+        let mut walked_any = false;
+        // Walk through all validators without short-circuiting
+        for validator in self.validators() {
+            walked_any = true;
+            is_valid &= validator.trace(instance, location, callback, ctx);
+        }
+        if !walked_any {
+            // Boolean schema with no validators: treat as `true` (valid for any instance).
+            return true;
+        }
+        is_valid
     }
 }
 

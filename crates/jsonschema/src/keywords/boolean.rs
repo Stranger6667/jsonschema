@@ -35,6 +35,12 @@ impl<F: Json> Validate<F> for FalseValidator {
             instance.lazy_value(),
         ))
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 #[cfg(test)]
