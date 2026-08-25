@@ -52,7 +52,7 @@ for error in evaluation.errors():
 - 🌐 Remote reference fetching (network/file)
 - 🔧 Custom keywords and format validators
 - ✨ Meta-schema validation for schema documents
-- 📦 Schema bundling into Compound Schema Documents
+- 📦 Schema bundling into Compound Schema Documents, and `$ref` dereferencing
 - 🧮 Experimental schema canonicalization
 
 ### Supported drafts
@@ -388,7 +388,7 @@ except ValidationError as exc:
 # predictable, matching the Rust implementation's guardrails.
 ```
 
-## Schema Bundling
+## Schema Bundling and Dereferencing
 
 Produce a Compound Schema Document ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)) by embedding all external `$ref` targets into a draft-appropriate container. The result validates identically to the original.
 
@@ -412,6 +412,12 @@ schema = {
 
 registry = jsonschema_rs.Registry([("https://example.com/address.json", address_schema)])
 bundled = jsonschema_rs.bundle(schema, registry=registry)
+```
+
+`dereference` instead replaces each `$ref` with the schema it points to, for consumers that do not resolve references. Circular references are left in place.
+
+```python
+dereferenced = jsonschema_rs.dereference(schema, registry=registry)
 ```
 
 ## Schema Canonicalization

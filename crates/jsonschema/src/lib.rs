@@ -91,6 +91,31 @@
 //!
 //! Once built, any `format` keywords in your schema will be actively validated according to the chosen draft.
 //!
+//! # Reading errors
+//!
+//! [`ValidationError::kind`] carries the failed keyword's operands, so a caller does not need to
+//! re-read the schema to describe what was expected:
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use serde_json::json;
+//! use jsonschema::error::ValidationErrorKind;
+//!
+//! let validator = jsonschema::validator_for(&json!({"minimum": 5}))?;
+//! let instance = json!(1);
+//! let error = validator.validate(&instance).expect_err("must be invalid");
+//!
+//! match error.kind() {
+//!     ValidationErrorKind::Minimum { limit } => assert_eq!(limit, &json!(5)),
+//!     other => panic!("unexpected kind: {other:?}"),
+//! }
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! [`ValidationError::absolute_keyword_location`] gives the resolvable URI of the keyword that
+//! produced the error, and [`ValidationError::masked`] hides the instance value in the message.
+//!
 //! # Compile-Time Validator Macro
 //!
 //! The `validator` attribute macro (enabled by the `macros` feature) compiles schemas at build time:
@@ -633,6 +658,30 @@
 //! - Working with API schemas that define multiple request/response types
 //! - Validating configuration snippets against specific sections of a larger schema
 //! - Testing individual schema components in isolation
+//!
+//! ## Offline validation
+//!
+//! [`ValidationOptions::offline`] disables retrieval, so a reference that is not already in the
+//! registry fails at construction instead of being fetched:
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use serde_json::json;
+//!
+//! let schema = json!({"$ref": "https://example.com/schema.json"});
+//! assert!(jsonschema::options().offline().build(&schema).is_err());
+//! # Ok(())
+//! # }
+//! ```
+//!
+//! ## Bundling and dereferencing
+//!
+//! [`bundle`] embeds every referenced resource into the schema under `$defs` (`definitions` for
+//! Draft 4/6/7), keeping each `$id` and leaving `$ref` values unchanged. The result is a Compound
+//! Schema Document that needs no retrieval.
+//!
+//! [`dereference`] instead replaces each `$ref` with the schema it points to, for consumers that
+//! do not resolve references. Circular references are left in place.
 //!
 //! # Regular Expression Configuration
 //!

@@ -49,7 +49,7 @@ end
 - 🌐 Remote reference fetching (network/file)
 - 🔧 Custom keywords and format validators
 - ✨ Meta-schema validation for schema documents
-- 📦 Schema bundling into Compound Schema Documents
+- 📦 Schema bundling into Compound Schema Documents, and `$ref` dereferencing
 - 🧮 Experimental schema canonicalization
 - ♦️ Supports Ruby 3.2, 3.4 and 4.0
 
@@ -371,7 +371,7 @@ Compare a request schema new-against-old and a response schema old-against-new: 
 
 Both operands must share one setup - the same draft, format policy, regular-expression engine and definitions - or `IncompatibleOperands` is raised. `UnsupportedOperand` means an operand is a `Raw` pass-through, and `UnsupportedResult` that the canonical form does not support the result. All three live under `JSONSchema::Canonical`.
 
-## Schema Bundling
+## Schema Bundling and Dereferencing
 
 Produce a Compound Schema Document ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)) by embedding all external `$ref` targets into a draft-appropriate container. The result validates identically to the original.
 
@@ -393,6 +393,12 @@ schema = {
 
 registry = JSONSchema::Registry.new([["https://example.com/address.json", address_schema]])
 bundled = JSONSchema.bundle(schema, registry: registry)
+```
+
+`dereference` instead replaces each `$ref` with the schema it points to, for consumers that do not resolve references. Circular references are left in place.
+
+```ruby
+dereferenced = JSONSchema.dereference(schema, registry: registry)
 ```
 
 ## Meta-Schema Validation
