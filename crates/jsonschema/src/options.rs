@@ -624,6 +624,21 @@ impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
         self.retriever = Arc::new(retriever);
         self
     }
+    /// Refuse to fetch any reference that is not already in the registry.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let schema = json!({"$ref": "https://example.com/schema.json"});
+    /// assert!(jsonschema::options().offline().build(&schema).is_err());
+    /// ```
+    #[must_use]
+    pub fn offline(mut self) -> Self {
+        self.retriever = Arc::new(crate::retriever::OfflineRetriever);
+        self
+    }
     /// Configure HTTP client options for the built-in HTTP retriever.
     ///
     /// This creates an [`HttpRetriever`](crate::HttpRetriever) with the provided options
@@ -728,6 +743,13 @@ impl<'i, F: Json> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> 
     /// cannot be retrieved or resolved.
     pub async fn build(&self, schema: &Value) -> Result<Validator<F>, ValidationError<'static>> {
         compiler::build_validator_async(self, schema).await
+    }
+
+    /// Refuse to fetch any reference that is not already in the registry.
+    #[must_use]
+    pub fn offline(mut self) -> Self {
+        self.retriever = Arc::new(crate::retriever::OfflineRetriever);
+        self
     }
 
     /// Build a [`ValidatorMap`](crate::ValidatorMap) using async retrieval for external references.
@@ -1198,6 +1220,38 @@ mod tests {
 
     fn custom(s: &str) -> bool {
         s.ends_with("42!")
+    }
+
+    #[test]
+    fn test_offline_refuses_remote_references() {
+        let schema = json!({"$ref": "https://example.com/schema.json"});
+        let error = crate::options()
+            .offline()
+            .build(&schema)
+            .expect_err("must refuse to fetch");
+        assert_eq!(
+            error.to_string(),
+            "Resource 'https://example.com/schema.json' is not present in a registry \
+             and retrieving it failed: Retrieval is disabled, cannot fetch \
+             https://example.com/schema.json"
+        );
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[tokio::test]
+    async fn test_async_offline_refuses_remote_references() {
+        let schema = json!({"$ref": "https://example.com/schema.json"});
+        let error = crate::async_options()
+            .offline()
+            .build(&schema)
+            .await
+            .expect_err("must refuse to fetch");
+        assert_eq!(
+            error.to_string(),
+            "Resource 'https://example.com/schema.json' is not present in a registry \
+             and retrieving it failed: Retrieval is disabled, cannot fetch \
+             https://example.com/schema.json"
+        );
     }
 
     #[test]

@@ -52,6 +52,13 @@ impl<'r> CanonicalizeOptions<'r> {
         self
     }
 
+    /// Refuse to fetch any reference that is not already in the registry.
+    #[must_use]
+    pub fn offline(mut self) -> Self {
+        self.retriever = Some(Arc::new(crate::retriever::OfflineRetriever));
+        self
+    }
+
     /// Use this URI as the base for resolving relative references in the root schema.
     ///
     /// Takes precedence over the root `$id`.

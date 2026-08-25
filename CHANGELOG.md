@@ -7,6 +7,7 @@
 - `Evaluation::is_valid`.
 - `Location::is_empty`.
 - `Display` for `ErrorEntry`.
+- `ValidationOptions::offline` and `canonical::CanonicalizeOptions::offline`, refusing to fetch references outside the registry.
 
 ### Changed
 

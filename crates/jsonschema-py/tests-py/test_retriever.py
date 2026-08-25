@@ -2,7 +2,7 @@ import json
 
 import pytest
 
-from jsonschema_rs import ValidationError, validator_for
+from jsonschema_rs import Registry, ValidationError, validator_for
 
 
 def test_basic_retriever():
@@ -98,3 +98,27 @@ def test_base_uri_resolution(tmp_path):
 
     assert validator.is_valid(valid)
     assert not validator.is_valid(invalid)
+
+
+def test_offline_refuses_remote_reference():
+    with pytest.raises(ValueError, match="Retrieval is disabled"):
+        validator_for({"$ref": "https://example.com/schema.json"}, offline=True)
+
+
+def test_offline_rejects_a_retriever():
+    def retrieve(uri: str):
+        return {}
+
+    with pytest.raises(ValueError, match="`offline` cannot be used together with `retriever`"):
+        validator_for({"$ref": "https://example.com/schema.json"}, offline=True, retriever=retrieve)
+
+
+def test_offline_allows_registry_references():
+    registry = Registry([("https://example.com/defs.json", {"type": "integer", "minimum": 1})])
+    validator = validator_for(
+        {"$ref": "https://example.com/defs.json"},
+        registry=registry,
+        offline=True,
+    )
+    assert validator.is_valid(3)
+    assert not validator.is_valid(0)
