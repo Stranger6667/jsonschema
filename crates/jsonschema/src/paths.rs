@@ -687,6 +687,11 @@ impl Location {
     pub fn as_str(&self) -> &str {
         &self.0
     }
+    /// Whether this location points at the root of the document.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.0.is_empty()
+    }
     /// Get a byte slice representing the location.
     #[must_use]
     pub fn as_bytes(&self) -> &[u8] {
@@ -767,6 +772,14 @@ mod tests {
     fn test_location_new() {
         let loc = Location::new();
         assert_eq!(loc.as_str(), "");
+    }
+
+    #[test]
+    fn test_location_is_empty() {
+        let root = Location::new();
+        assert!(root.is_empty());
+        assert!(!root.join("foo").is_empty());
+        assert!(!root.join(0).is_empty());
     }
 
     #[test]

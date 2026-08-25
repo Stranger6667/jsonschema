@@ -5,6 +5,7 @@
 ### Added
 
 - `Evaluation::is_valid`.
+- `Location::is_empty`.
 
 ### Performance
 
