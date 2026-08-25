@@ -811,6 +811,16 @@ pub struct ErrorEntry<'a> {
     pub error: &'a ErrorDescription,
 }
 
+impl fmt::Display for ErrorEntry<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if self.instance_location.is_empty() {
+            self.error.fmt(f)
+        } else {
+            write!(f, "{}: {}", self.instance_location, self.error)
+        }
+    }
+}
+
 struct NodeIter<'a> {
     stack: Vec<&'a EvaluationNode>,
 }
@@ -1743,5 +1753,24 @@ mod tests {
     fn test_evaluation_is_valid(instance: Value, expected: bool) {
         let validator = crate::validator_for(&json!({"type": "number"})).expect("valid schema");
         assert_eq!(validator.evaluate(&instance).is_valid(), expected);
+    }
+
+    #[test]
+    fn test_error_entry_display() {
+        let schema = json!({
+            "type": "object",
+            "properties": {"age": {"type": "number"}},
+            "required": ["name"]
+        });
+        let validator = crate::validator_for(&schema).expect("valid schema");
+        let evaluation = validator.evaluate(&json!({"age": "oops"}));
+        let rendered: Vec<String> = evaluation.iter_errors().map(|e| e.to_string()).collect();
+        assert_eq!(
+            rendered,
+            vec![
+                "\"name\" is a required property".to_string(),
+                "/age: \"oops\" is not of type \"number\"".to_string(),
+            ]
+        );
     }
 }

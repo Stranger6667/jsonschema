@@ -6,6 +6,11 @@
 
 - `Evaluation::is_valid`.
 - `Location::is_empty`.
+- `Display` for `ErrorEntry`.
+
+### Changed
+
+- `ValidationErrors`' `Display` gained the instance path of each error.
 
 ### Performance
 
