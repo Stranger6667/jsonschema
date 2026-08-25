@@ -52,7 +52,7 @@ cargo install jsonschema-cli
 jsonschema <COMMAND>
 ```
 
-Two subcommands are available: `validate` and `bundle` (inline external refs).
+Four subcommands are available: `validate`, `bundle`, `dereference` and `canonicalize`.
 
 > ⚠️ **Deprecation notice:** The flat invocation `jsonschema schema.json -i instance.json` still works but is deprecated. Migrate to `jsonschema validate schema.json -i instance.json`.
 
@@ -120,7 +120,7 @@ jsonschema validate -i tsconfig.json
 
 ---
 
-## `jsonschema bundle` — inline external `$ref` targets
+## `jsonschema bundle` — embed external resources
 
 Embeds all `$ref` targets into a draft-appropriate container:
 - `definitions` for Draft 4/6/7
@@ -152,6 +152,18 @@ Write to file:
 ```
 jsonschema bundle root.json -o bundled.json
 ```
+
+---
+
+## `jsonschema dereference` — inline `$ref` targets
+
+Replaces each `$ref` with the schema it points to. Circular references are left in place.
+
+```
+jsonschema dereference [OPTIONS] <SCHEMA>
+```
+
+Takes the same options as `bundle`.
 
 ---
 

@@ -133,6 +133,10 @@ pub trait Keyword<'i, F: Json = SerdeJson>: Send + Sync {
     fn validate(&self, instance: F::Node<'i>) -> Result<(), ValidationError<'i>>;
 
     /// Check validity without collecting error details.
+    ///
+    /// [`Validator::is_valid`](crate::Validator::is_valid) calls this instead of
+    /// [`validate`](Keyword::validate), so the two must agree on every instance.
+    /// A keyword that carries state across calls must update it in both.
     fn is_valid(&self, instance: F::Node<'i>) -> bool;
 
     /// Validate an instance, yielding every error at once.

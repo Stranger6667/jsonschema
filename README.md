@@ -77,6 +77,7 @@ If you'd like to try `jsonschema`, you can check the WebAssembly-powered [playgr
 - 📚 Full support for popular JSON Schema drafts
 - 🔧 Custom keywords and format validators
 - 🌐 Blocking & non-blocking remote reference fetching (network/file)
+- 📦 Schema bundling into Compound Schema Documents, and `$ref` dereferencing
 - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 - ✨ Meta-schema validation for schema documents, including custom metaschemas
 - 🧮 Experimental schema canonicalization
