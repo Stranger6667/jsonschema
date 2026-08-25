@@ -14,7 +14,7 @@ authors.workspace = true
 [features]
 # Conformance checks for custom JSON representations (`json` module).
 conformance = ["jsonschema-value/conformance"]
-default = ["resolve-http", "resolve-file", "tls-aws-lc-rs"]
+default = ["resolve-http", "resolve-file", "tls-aws-lc-rs", "idna"]
 resolve-http = ["reqwest", "dep:rustls"]
 resolve-file = []
 resolve-async = [
@@ -23,6 +23,8 @@ resolve-async = [
     "dep:async-trait",
     "dep:tokio",
 ]
+# `idn-hostname` and `idn-email` format validation.
+idna = ["dep:idna"]
 # Default TLS provider for HTTP resolution.
 tls-aws-lc-rs = ["rustls/aws-lc-rs"]
 # Use ring instead of aws-lc-rs for TLS.
@@ -68,7 +70,7 @@ fancy-regex = "0.19"
 fraction = { version = "0.16", default-features = false, features = [
   "with-bigint",
 ] }
-idna = "1.0.2"
+idna = { version = "1.0.2", optional = true }
 itoa = "1"
 num-bigint = { version = "0.4", optional = true }
 num-cmp = "0.1"

@@ -115,6 +115,22 @@ When the schema is known at build time, the `#[jsonschema::validator]` macro (`m
 
 For detailed benchmarks, see our [full performance comparison](https://github.com/Stranger6667/jsonschema/tree/master/crates/benchmark-suite).
 
+## Cargo features
+
+| Feature | Default | Enables |
+|---|---|---|
+| `resolve-http` | ✅ | Fetching remote references over HTTP |
+| `resolve-file` | ✅ | Reading references from the filesystem |
+| `tls-aws-lc-rs` | ✅ | TLS provider for `resolve-http` |
+| `idna` | ✅ | The `idn-hostname` and `idn-email` formats |
+| `tls-ring` | | `ring` as the TLS provider instead of `aws-lc-rs` |
+| `resolve-async` | | Non-blocking reference resolution |
+| `arbitrary-precision` | | Arbitrarily large integers and exact decimal values |
+| `macros` | | The `#[jsonschema::validator]` compile-time validator |
+
+Turning off `idna` drops the IDNA and ICU dependencies; `idn-hostname` and `idn-email` are then
+treated as unknown formats.
+
 ## Minimum Supported Rust Version (MSRV)
 
 This crate requires Rust 1.85.0 or later.

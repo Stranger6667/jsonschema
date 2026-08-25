@@ -14,7 +14,7 @@ crate-type = ["cdylib"]
 
 [dependencies]
 strum = "0.28.0"
-jsonschema = { version = "0.51.0", default-features = false, features = ["magnus", "arbitrary-precision", "resolve-http", "resolve-file", "tls-ring", "macros"] }
+jsonschema = { version = "0.51.0", default-features = false, features = ["magnus", "arbitrary-precision", "resolve-http", "resolve-file", "tls-ring", "macros", "idna"] }
 magnus = { version = "0.8", features = ["rb-sys"] }
 rb-sys = "0.9"
 serde = { workspace = true }

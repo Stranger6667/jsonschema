@@ -91,6 +91,9 @@
 //!
 //! Once built, any `format` keywords in your schema will be actively validated according to the chosen draft.
 //!
+//! `idn-hostname` and `idn-email` need the `idna` feature, which is on by default. Without it they
+//! are treated as unknown formats.
+//!
 //! # Reading errors
 //!
 //! [`ValidationError::kind`] carries the failed keyword's operands, so a caller does not need to
@@ -3382,13 +3385,22 @@ pub mod __private {
         }
     }
     pub mod format {
+        #[cfg(feature = "idna")]
+        pub use crate::keywords::format::is_valid_idn_hostname;
         pub use crate::keywords::format::{
             is_valid_date, is_valid_datetime, is_valid_duration, is_valid_hostname,
-            is_valid_hostname_rfc1034, is_valid_idn_hostname, is_valid_ipv4, is_valid_ipv6,
-            is_valid_iri, is_valid_iri_reference, is_valid_json_pointer, is_valid_regex,
+            is_valid_hostname_rfc1034, is_valid_ipv4, is_valid_ipv6, is_valid_iri,
+            is_valid_iri_reference, is_valid_json_pointer, is_valid_regex,
             is_valid_relative_json_pointer, is_valid_time, is_valid_uri, is_valid_uri_reference,
             is_valid_uri_template, is_valid_uuid,
         };
+
+        // Without `idna` the format is unknown, and an unknown format admits every instance.
+        #[cfg(not(feature = "idna"))]
+        #[must_use]
+        pub fn is_valid_idn_hostname(_: &str) -> bool {
+            true
+        }
 
         /// Per-call memoization cache for URI/IRI `format` checks in generated validators.
         pub type Cache = std::collections::HashMap<Box<str>, bool, ahash::RandomState>;
@@ -3403,12 +3415,20 @@ pub mod __private {
         }
 
         /// Validate an IDN email format using configured [`crate::EmailOptions`].
+        #[cfg(feature = "idna")]
         #[must_use]
         pub fn is_valid_idn_email_with_options(
             value: &str,
             options: Option<&crate::EmailOptions>,
         ) -> bool {
             crate::keywords::format::is_valid_idn_email(value, options.map(|opts| &opts.inner))
+        }
+
+        // Without `idna` the format is unknown, and an unknown format admits every instance.
+        #[cfg(not(feature = "idna"))]
+        #[must_use]
+        pub fn is_valid_idn_email_with_options(_: &str, _: Option<&crate::EmailOptions>) -> bool {
+            true
         }
     }
     pub mod content {
