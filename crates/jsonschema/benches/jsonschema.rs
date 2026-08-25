@@ -34,6 +34,22 @@ mod bench {
         );
     }
 
+    pub(crate) fn bench_iter_errors(
+        c: &mut Criterion,
+        name: &str,
+        schema: &Value,
+        instance: &Value,
+    ) {
+        let validator = jsonschema::validator_for(schema).expect("Valid schema");
+        c.bench_with_input(
+            BenchmarkId::new("iter_errors", name),
+            instance,
+            |b, instance| {
+                b.iter_with_large_drop(|| black_box(validator.iter_errors(instance).count()));
+            },
+        );
+    }
+
     pub(crate) fn bench_evaluate(c: &mut Criterion, name: &str, schema: &Value, instance: &Value) {
         let validator = jsonschema::validator_for(schema).expect("Valid schema");
         c.bench_with_input(
@@ -53,6 +69,7 @@ mod bench {
                     let instance_name = format!("{}/{}", name, instance.name);
                     bench_is_valid(c, &instance_name, schema, &instance.data);
                     bench_validate(c, &instance_name, schema, &instance.data);
+                    bench_iter_errors(c, &instance_name, schema, &instance.data);
                     bench_evaluate(c, &instance_name, schema, &instance.data);
                 }
             });
