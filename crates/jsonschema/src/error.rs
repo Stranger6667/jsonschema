@@ -46,7 +46,6 @@ use std::{
     borrow::Cow,
     error,
     fmt::{self, Formatter, Write},
-    iter::{empty, once},
     slice,
     string::FromUtf8Error,
     sync::Arc,
@@ -241,15 +240,6 @@ impl<'a, 'b> IntoIterator for &'b mut ValidationErrors<'a> {
     fn into_iter(self) -> Self::IntoIter {
         self.errors.iter_mut()
     }
-}
-
-// Empty iterator means no error happened
-pub(crate) fn no_error<'a>() -> ErrorIterator<'a> {
-    ErrorIterator::from_iterator(empty())
-}
-// A wrapper for one error
-pub(crate) fn error(instance: ValidationError) -> ErrorIterator {
-    ErrorIterator::from_iterator(once(instance))
 }
 
 /// Kinds of errors that may happen during validation
@@ -496,6 +486,12 @@ impl<'a> ValidationError<'a> {
             self.repr.absolute_keyword_location = uri;
         }
         self
+    }
+
+    pub(crate) fn set_absolute_keyword_location(&mut self, uri: &Arc<Uri<String>>) {
+        if self.repr.absolute_keyword_location.is_none() {
+            self.repr.absolute_keyword_location = Some(Arc::clone(uri));
+        }
     }
 
     /// Decomposes the error into its owned parts.

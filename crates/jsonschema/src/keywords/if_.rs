@@ -1,6 +1,5 @@
 use crate::{
     compiler,
-    error::{no_error, ErrorIterator},
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, RefTracker},
@@ -57,22 +56,17 @@ impl<F: Json> Validate<F> for IfThenValidator<F> {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         if self.schema.is_valid(instance, ctx) {
-            let errors: Vec<_> = self
-                .then_schema
-                .iter_errors(instance, location, tracker, ctx)
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
+            self.then_schema
+                .collect_errors(instance, location, tracker, ctx, errors);
         }
     }
 
@@ -145,22 +139,17 @@ impl<F: Json> Validate<F> for IfElseValidator<F> {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if self.schema.is_valid(instance, ctx) {
-            no_error()
-        } else {
-            let errors: Vec<_> = self
-                .else_schema
-                .iter_errors(instance, location, tracker, ctx)
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        if !self.schema.is_valid(instance, ctx) {
+            self.else_schema
+                .collect_errors(instance, location, tracker, ctx, errors);
         }
     }
 
@@ -239,26 +228,20 @@ impl<F: Json> Validate<F> for IfThenElseValidator<F> {
         }
     }
 
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         if self.schema.is_valid(instance, ctx) {
-            let errors: Vec<_> = self
-                .then_schema
-                .iter_errors(instance, location, tracker, ctx)
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
+            self.then_schema
+                .collect_errors(instance, location, tracker, ctx, errors);
         } else {
-            let errors: Vec<_> = self
-                .else_schema
-                .iter_errors(instance, location, tracker, ctx)
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
+            self.else_schema
+                .collect_errors(instance, location, tracker, ctx, errors);
         }
     }
 

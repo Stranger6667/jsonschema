@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     compiler,
-    error::{no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::{required, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -86,23 +86,21 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(object) = instance.as_object() {
-            let mut errors = Vec::new();
-            for (property, node) in &self.dependencies {
-                if object.get(property).is_some() {
-                    errors.extend(node.iter_errors(instance, location, tracker, ctx));
-                }
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(object) = instance.as_object() else {
+            return;
+        };
+        for (property, node) in &self.dependencies {
+            if object.get(property).is_some() {
+                node.collect_errors(instance, location, tracker, ctx, errors);
             }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
         }
     }
 
@@ -218,23 +216,21 @@ impl<F: Json> Validate<F> for DependentRequiredValidator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(object) = instance.as_object() {
-            let mut errors = Vec::new();
-            for (property, node) in &self.dependencies {
-                if object.get(property).is_some() {
-                    errors.extend(node.iter_errors(instance, location, tracker, ctx));
-                }
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(object) = instance.as_object() else {
+            return;
+        };
+        for (property, node) in &self.dependencies {
+            if object.get(property).is_some() {
+                node.collect_errors(instance, location, tracker, ctx, errors);
             }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
         }
     }
 
@@ -320,23 +316,21 @@ impl<F: Json> Validate<F> for DependentSchemasValidator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(object) = instance.as_object() {
-            let mut errors = Vec::new();
-            for (property, node) in &self.dependencies {
-                if object.get(property).is_some() {
-                    errors.extend(node.iter_errors(instance, location, tracker, ctx));
-                }
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(object) = instance.as_object() else {
+            return;
+        };
+        for (property, node) in &self.dependencies {
+            if object.get(property).is_some() {
+                node.collect_errors(instance, location, tracker, ctx, errors);
             }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
         }
     }
 

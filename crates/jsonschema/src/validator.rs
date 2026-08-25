@@ -4,7 +4,7 @@
 use std::collections::hash_map::Entry;
 
 use crate::{
-    error::{error, no_error, ErrorIterator},
+    error::ErrorIterator,
     evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -217,18 +217,18 @@ impl ValidationContext {
 /// # Context Types
 ///
 /// - `is_valid` takes `LightweightContext`: Only cycle detection, zero path tracking overhead.
-/// - `validate`, `iter_errors`, `evaluate` take `ValidationContext`: Cycle detection + evaluation path tracking.
+/// - `validate`, `collect_errors`, `evaluate` take `ValidationContext`: Cycle detection + evaluation path tracking.
 pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        match self.validate(instance, location, tracker, ctx) {
-            Ok(()) => no_error(),
-            Err(err) => error(err),
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        if let Err(error) = self.validate(instance, location, tracker, ctx) {
+            errors.push(error);
         }
     }
 
@@ -249,9 +249,11 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let errors: Vec<ErrorDescription> = self
-            .iter_errors(instance, location, tracker, ctx)
-            .map(|e| ErrorDescription::from_validation_error(&e))
+        let mut collected = Vec::new();
+        self.collect_errors(instance, location, tracker, ctx, &mut collected);
+        let errors: Vec<ErrorDescription> = collected
+            .iter()
+            .map(ErrorDescription::from_validation_error)
             .collect();
         if errors.is_empty() {
             EvaluationResult::valid_empty()
@@ -489,8 +491,10 @@ impl<F: Json> Validator<F> {
     #[must_use]
     pub fn iter_errors<'i>(&'i self, instance: F::Node<'i>) -> ErrorIterator<'i> {
         let mut ctx = ValidationContext::new();
+        let mut errors = Vec::new();
         self.root
-            .iter_errors(&instance, &LazyLocation::new(), None, &mut ctx)
+            .collect_errors(&instance, &LazyLocation::new(), None, &mut ctx, &mut errors);
+        ErrorIterator::from_iterator(errors.into_iter())
     }
     /// Run validation against `instance` but return a boolean result instead of an iterator.
     /// It is useful for cases, where it is important to only know the fact if the data is valid or not.

@@ -1,5 +1,4 @@
 use crate::{
-    error::ErrorIterator,
     paths::{LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
     Json, Node, SerdeJson, ValidationError,
@@ -45,26 +44,23 @@ impl<F: Json> Validate<F> for CustomKeyword<F> {
         self.inner.is_valid(instance.clone())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         instance_path: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        let inner_errors: Vec<_> = self.inner.iter_errors(instance.clone()).collect();
-        if inner_errors.is_empty() {
-            return ErrorIterator::from_iterator(Vec::new().into_iter());
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let mut inner_errors = self.inner.iter_errors(instance.clone()).peekable();
+        if inner_errors.peek().is_none() {
+            return;
         }
         let value = instance.to_value();
-        let errors: Vec<_> = inner_errors
-            .into_iter()
-            .map(|err| {
-                err.with_context(&value, instance_path, &self.location, &self.keyword)
-                    .to_owned()
-            })
-            .collect();
-        ErrorIterator::from_iterator(errors.into_iter())
+        errors.extend(inner_errors.map(|err| {
+            err.with_context(&value, instance_path, &self.location, &self.keyword)
+                .to_owned()
+        }));
     }
 }
 

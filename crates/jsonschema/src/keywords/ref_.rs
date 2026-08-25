@@ -2,7 +2,6 @@ use std::borrow::Cow;
 
 use crate::{
     compiler,
-    error::ErrorIterator,
     keywords::{BoxedValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -43,16 +42,17 @@ impl<F: Json> Validate<F> for RefValidator<F> {
             .validate(instance, location, Some(&child_tracker), ctx)
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
         self.inner
-            .iter_errors(instance, location, Some(&child_tracker), ctx)
+            .collect_errors(instance, location, Some(&child_tracker), ctx, errors);
     }
 
     fn evaluate(
@@ -102,16 +102,17 @@ impl<F: Json> Validate<F> for DirectRefValidator<F> {
             .validate(instance, location, Some(&child_tracker), ctx)
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
         self.inner
-            .iter_errors(instance, location, Some(&child_tracker), ctx)
+            .collect_errors(instance, location, Some(&child_tracker), ctx, errors);
     }
 
     fn evaluate(

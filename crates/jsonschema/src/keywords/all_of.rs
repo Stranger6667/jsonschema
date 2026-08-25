@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     compiler,
-    error::{ErrorIterator, ValidationError},
+    error::ValidationError,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
@@ -52,20 +52,17 @@ impl<F: Json> Validate<F> for AllOfValidator<F> {
         Ok(())
     }
 
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        let errors: Vec<_> = self
-            .schemas
-            .iter()
-            .flat_map(move |node| node.iter_errors(instance, location, tracker, ctx))
-            .collect();
-        ErrorIterator::from_iterator(errors.into_iter())
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        for node in &self.schemas {
+            node.collect_errors(instance, location, tracker, ctx, errors);
+        }
     }
 
     fn evaluate(
@@ -115,14 +112,16 @@ impl<F: Json> Validate<F> for SingleValueAllOfValidator<F> {
         self.node.validate(instance, location, tracker, ctx)
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        self.node.iter_errors(instance, location, tracker, ctx)
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        self.node
+            .collect_errors(instance, location, tracker, ctx, errors);
     }
 
     fn evaluate(

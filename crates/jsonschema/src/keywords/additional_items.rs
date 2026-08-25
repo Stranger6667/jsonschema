@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -57,24 +57,20 @@ impl<F: Json> Validate<F> for AdditionalItemsObjectValidator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(array) = instance.as_array() {
-            let mut errors = Vec::new();
-            for (idx, item) in array.elements().enumerate().skip(self.items_count) {
-                errors.extend(
-                    self.node
-                        .iter_errors(&item, &location.push(idx), tracker, ctx),
-                );
-            }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(array) = instance.as_array() else {
+            return;
+        };
+        for (idx, item) in array.elements().enumerate().skip(self.items_count) {
+            self.node
+                .collect_errors(&item, &location.push(idx), tracker, ctx, errors);
         }
     }
 }

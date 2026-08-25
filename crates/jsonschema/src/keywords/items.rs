@@ -1,6 +1,5 @@
 use crate::{
     compiler,
-    error::{no_error, ErrorIterator},
     evaluation::{format_schema_location, Annotations, ErrorDescription, EvaluationNode},
     keywords::{BoxedValidator, CompilationResult},
     node::SchemaNode,
@@ -61,21 +60,19 @@ impl<F: Json> Validate<F> for ItemsArrayValidator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(array) = instance.as_array() {
-            let mut errors = Vec::new();
-            for (idx, (item, node)) in array.elements().zip(self.items.iter()).enumerate() {
-                errors.extend(node.iter_errors(&item, &location.push(idx), tracker, ctx));
-            }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(array) = instance.as_array() else {
+            return;
+        };
+        for (idx, (item, node)) in array.elements().zip(self.items.iter()).enumerate() {
+            node.collect_errors(&item, &location.push(idx), tracker, ctx, errors);
         }
     }
 
@@ -138,24 +135,20 @@ impl<F: Json> Validate<F> for ItemsObjectValidator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(array) = instance.as_array() {
-            let mut errors = Vec::new();
-            for (idx, item) in array.elements().enumerate() {
-                errors.extend(
-                    self.node
-                        .iter_errors(&item, &location.push(idx), tracker, ctx),
-                );
-            }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(array) = instance.as_array() else {
+            return;
+        };
+        for (idx, item) in array.elements().enumerate() {
+            self.node
+                .collect_errors(&item, &location.push(idx), tracker, ctx, errors);
         }
     }
 
@@ -235,26 +228,25 @@ impl<F: Json> Validate<F> for ItemsObjectSkipPrefixValidator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(array) = instance.as_array() {
-            let mut errors = Vec::new();
-            for (idx, item) in array.elements().skip(self.skip_prefix).enumerate() {
-                errors.extend(self.node.iter_errors(
-                    &item,
-                    &location.push(idx + self.skip_prefix),
-                    tracker,
-                    ctx,
-                ));
-            }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(array) = instance.as_array() else {
+            return;
+        };
+        for (idx, item) in array.elements().skip(self.skip_prefix).enumerate() {
+            self.node.collect_errors(
+                &item,
+                &location.push(idx + self.skip_prefix),
+                tracker,
+                ctx,
+                errors,
+            );
         }
     }
 
@@ -332,15 +324,19 @@ impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(array) = instance.as_array() {
-            let errors: Vec<_> = array
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(array) = instance.as_array() else {
+            return;
+        };
+        errors.extend(
+            array
                 .elements()
                 .enumerate()
                 .filter(|(_, item)| !item.is_number())
@@ -352,12 +348,8 @@ impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
                         item.to_value(),
                         JsonType::Number,
                     )
-                })
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
+                }),
+        );
     }
 
     fn evaluate(
@@ -440,15 +432,19 @@ impl<F: Json> Validate<F> for ItemsStringTypeValidator {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(array) = instance.as_array() {
-            let errors: Vec<_> = array
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(array) = instance.as_array() else {
+            return;
+        };
+        errors.extend(
+            array
                 .elements()
                 .enumerate()
                 .filter(|(_, item)| !item.is_string())
@@ -460,12 +456,8 @@ impl<F: Json> Validate<F> for ItemsStringTypeValidator {
                         item.to_value(),
                         JsonType::String,
                     )
-                })
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
+                }),
+        );
     }
 
     fn evaluate(
@@ -554,15 +546,19 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidator {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(array) = instance.as_array() {
-            let errors: Vec<_> = array
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(array) = instance.as_array() else {
+            return;
+        };
+        errors.extend(
+            array
                 .elements()
                 .enumerate()
                 .filter(|(_, item)| {
@@ -578,12 +574,8 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidator {
                         item.to_value(),
                         JsonType::Integer,
                     )
-                })
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
+                }),
+        );
     }
 
     fn evaluate(
@@ -677,15 +669,19 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidatorDraft4 {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(array) = instance.as_array() {
-            let errors: Vec<_> = array
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(array) = instance.as_array() else {
+            return;
+        };
+        errors.extend(
+            array
                 .elements()
                 .enumerate()
                 .filter(|(_, item)| {
@@ -701,12 +697,8 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidatorDraft4 {
                         item.to_value(),
                         JsonType::Integer,
                     )
-                })
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
+                }),
+        );
     }
 
     fn evaluate(
@@ -793,15 +785,19 @@ impl<F: Json> Validate<F> for ItemsBooleanTypeValidator {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(array) = instance.as_array() {
-            let errors: Vec<_> = array
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(array) = instance.as_array() else {
+            return;
+        };
+        errors.extend(
+            array
                 .elements()
                 .enumerate()
                 .filter(|(_, item)| item.as_boolean().is_none())
@@ -813,12 +809,8 @@ impl<F: Json> Validate<F> for ItemsBooleanTypeValidator {
                         item.to_value(),
                         JsonType::Boolean,
                     )
-                })
-                .collect();
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
-        }
+                }),
+        );
     }
 
     fn evaluate(
@@ -1099,19 +1091,18 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         let Some(array) = instance.as_array() else {
-            return ErrorIterator::from_iterator(std::iter::once(
-                self.type_error(instance, location, tracker),
-            ));
+            errors.push(self.type_error(instance, location, tracker));
+            return;
         };
-        let mut errors = Vec::new();
         let count = array.len() as u64;
         if let Some(constraint) = &self.min_items {
             if count < constraint.limit {
@@ -1130,7 +1121,7 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
         match &self.items {
             FusedItems::Generic(node) => {
                 for (idx, item) in array.elements().enumerate() {
-                    errors.extend(node.iter_errors(&item, &location.push(idx), tracker, ctx));
+                    node.collect_errors(&item, &location.push(idx), tracker, ctx, errors);
                 }
             }
             FusedItems::Number(cold)
@@ -1138,13 +1129,8 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
             | FusedItems::Boolean(cold)
             | FusedItems::IntegerDraft4(cold)
             | FusedItems::IntegerDraft7(cold) => {
-                errors.extend(cold.iter_errors(instance, location, tracker, ctx));
+                cold.collect_errors(instance, location, tracker, ctx, errors);
             }
-        }
-        if errors.is_empty() {
-            no_error()
-        } else {
-            ErrorIterator::from_iterator(errors.into_iter())
         }
     }
 

@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     compiler,
-    error::{error, no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
@@ -72,40 +72,39 @@ impl<F: Json> Validate<F> for AnyOfValidator<F> {
                 self.schemas
                     .iter()
                     .map(|schema| {
-                        schema
-                            .iter_errors(instance, location, tracker, ctx)
-                            .collect()
+                        let mut branch = Vec::new();
+                        schema.collect_errors(instance, location, tracker, ctx, &mut branch);
+                        branch
                     })
                     .collect(),
             ))
         }
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         if self.is_valid(instance, ctx) {
-            no_error()
-        } else {
-            error(ValidationError::any_of(
-                self.location.clone(),
-                crate::paths::capture_evaluation_path(tracker, &self.location),
-                location.into(),
-                instance.to_value(),
-                self.schemas
-                    .iter()
-                    .map(|schema| {
-                        schema
-                            .iter_errors(instance, location, tracker, ctx)
-                            .collect()
-                    })
-                    .collect(),
-            ))
+            return;
         }
+        let mut branches = Vec::with_capacity(self.schemas.len());
+        for schema in &self.schemas {
+            let mut branch = Vec::new();
+            schema.collect_errors(instance, location, tracker, ctx, &mut branch);
+            branches.push(branch);
+        }
+        errors.push(ValidationError::any_of(
+            self.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &self.location),
+            location.into(),
+            instance.to_value(),
+            branches,
+        ));
     }
 
     fn evaluate(
@@ -185,35 +184,37 @@ impl<F: Json> Validate<F> for SingleAnyOfValidator<F> {
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance.to_value(),
-                vec![self
-                    .node
-                    .iter_errors(instance, location, tracker, ctx)
-                    .collect()],
+                vec![{
+                    let mut branch = Vec::new();
+                    self.node
+                        .collect_errors(instance, location, tracker, ctx, &mut branch);
+                    branch
+                }],
             ))
         }
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         if self.node.is_valid(instance, ctx) {
-            no_error()
-        } else {
-            error(ValidationError::any_of(
-                self.location.clone(),
-                crate::paths::capture_evaluation_path(tracker, &self.location),
-                location.into(),
-                instance.to_value(),
-                vec![self
-                    .node
-                    .iter_errors(instance, location, tracker, ctx)
-                    .collect()],
-            ))
+            return;
         }
+        let mut branch = Vec::new();
+        self.node
+            .collect_errors(instance, location, tracker, ctx, &mut branch);
+        errors.push(ValidationError::any_of(
+            self.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &self.location),
+            location.into(),
+            instance.to_value(),
+            vec![branch],
+        ));
     }
 
     fn evaluate(

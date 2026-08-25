@@ -122,10 +122,12 @@ impl<F: Json> Validate<F> for SingleOneOfValidator<F> {
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
                 instance.to_value(),
-                vec![self
-                    .node
-                    .iter_errors(instance, location, tracker, ctx)
-                    .collect()],
+                vec![{
+                    let mut branch = Vec::new();
+                    self.node
+                        .collect_errors(instance, location, tracker, ctx, &mut branch);
+                    branch
+                }],
             ))
         }
     }
@@ -168,9 +170,9 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
                     self.schemas
                         .iter()
                         .map(|schema| {
-                            schema
-                                .iter_errors(instance, location, tracker, ctx)
-                                .collect()
+                            let mut branch = Vec::new();
+                            schema.collect_errors(instance, location, tracker, ctx, &mut branch);
+                            branch
                         })
                         .collect(),
                 ));
@@ -185,9 +187,9 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
                 self.schemas
                     .iter()
                     .map(|schema| {
-                        schema
-                            .iter_errors(instance, location, tracker, ctx)
-                            .collect()
+                        let mut branch = Vec::new();
+                        schema.collect_errors(instance, location, tracker, ctx, &mut branch);
+                        branch
                     })
                     .collect(),
             ))

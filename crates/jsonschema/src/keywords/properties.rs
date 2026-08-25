@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     compiler,
-    error::{no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     evaluation::{format_schema_location, Annotations, ErrorDescription, EvaluationNode},
     keywords::CompilationResult,
     node::SchemaNode,
@@ -168,25 +168,24 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         Ok(())
     }
 
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         let Some(object) = instance.as_object() else {
-            return no_error();
+            return;
         };
-        let mut errors = Vec::new();
         if object.len() <= self.properties.len() {
             for (name, value) in object.members() {
                 let name = name.as_ref();
                 for (prop_name, _, node) in &self.properties {
                     if prop_name == name {
                         let instance_path = location.push(name);
-                        errors.extend(node.iter_errors(&value, &instance_path, tracker, ctx));
+                        node.collect_errors(&value, &instance_path, tracker, ctx, errors);
                         break;
                     }
                 }
@@ -195,11 +194,10 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
             for (name, key, node) in &self.properties {
                 if let Some(prop) = object.get(key) {
                     let instance_path = location.push(name.as_str());
-                    errors.extend(node.iter_errors(&prop, &instance_path, tracker, ctx));
+                    node.collect_errors(&prop, &instance_path, tracker, ctx, errors);
                 }
             }
         }
-        ErrorIterator::from_iterator(errors.into_iter())
     }
 
     fn evaluate(
@@ -333,16 +331,18 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         Ok(())
     }
 
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(object) = instance.as_object() {
-            let mut errors = Vec::new();
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(object) = instance.as_object() else {
+            return;
+        };
+        {
             // Check required
             let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
             if object.get(&self.first_key).is_none() {
@@ -369,7 +369,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     for (prop_name, _, node) in &self.properties {
                         if prop_name.as_str() == name {
                             let instance_path = location.push(name);
-                            errors.extend(node.iter_errors(&value, &instance_path, tracker, ctx));
+                            node.collect_errors(&value, &instance_path, tracker, ctx, errors);
                             break;
                         }
                     }
@@ -378,15 +378,11 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                 for (name, key, node) in &self.properties {
                     if let Some(prop) = object.get(key) {
                         let instance_path = location.push(name.as_str());
-                        errors.extend(node.iter_errors(&prop, &instance_path, tracker, ctx));
+                        node.collect_errors(&prop, &instance_path, tracker, ctx, errors);
                     }
                 }
             }
-            if !errors.is_empty() {
-                return ErrorIterator::from_iterator(errors.into_iter());
-            }
         }
-        no_error()
     }
 
     fn evaluate(
@@ -503,25 +499,22 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
         Ok(())
     }
 
-    #[allow(clippy::needless_collect)]
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(object) = instance.as_object() {
-            let mut errors = Vec::new();
-            for (name, prop) in object.members() {
-                if let Some(node) = self.properties.get(name.as_ref()) {
-                    let instance_path = location.push(name.as_ref());
-                    errors.extend(node.iter_errors(&prop, &instance_path, tracker, ctx));
-                }
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(object) = instance.as_object() else {
+            return;
+        };
+        for (name, prop) in object.members() {
+            if let Some(node) = self.properties.get(name.as_ref()) {
+                let instance_path = location.push(name.as_ref());
+                node.collect_errors(&prop, &instance_path, tracker, ctx, errors);
             }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
         }
     }
 
