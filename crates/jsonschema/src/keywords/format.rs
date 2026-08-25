@@ -566,6 +566,7 @@ pub(crate) fn is_valid_email(email: &str, options: Option<&EmailAddressOptions>)
     is_valid_email_impl(email, is_valid_hostname, options, false)
 }
 
+#[cfg(feature = "idna")]
 pub(crate) fn is_valid_idn_email(email: &str, options: Option<&EmailAddressOptions>) -> bool {
     is_valid_email_impl(email, is_valid_idn_hostname, options, true)
 }
@@ -621,6 +622,91 @@ pub fn is_valid_hostname_rfc1034(hostname: &str) -> bool {
     is_valid_ascii_hostname(hostname)
 }
 
+// RFC 3492 parameters for the Punycode variant used by IDNA:
+// https://www.rfc-editor.org/rfc/rfc3492#section-5
+const PUNYCODE_BASE: u32 = 36;
+const PUNYCODE_TMIN: u32 = 1;
+const PUNYCODE_TMAX: u32 = 26;
+const PUNYCODE_SKEW: u32 = 38;
+const PUNYCODE_DAMP: u32 = 700;
+const PUNYCODE_INITIAL_BIAS: u32 = 72;
+const PUNYCODE_INITIAL_N: u32 = 128;
+
+fn punycode_digit(byte: u8) -> Option<u32> {
+    match byte {
+        b'0'..=b'9' => Some(u32::from(byte) - u32::from(b'0') + 26),
+        b'A'..=b'Z' => Some(u32::from(byte) - u32::from(b'A')),
+        b'a'..=b'z' => Some(u32::from(byte) - u32::from(b'a')),
+        _ => None,
+    }
+}
+
+// RFC 3492, section 6.1: https://www.rfc-editor.org/rfc/rfc3492#section-6.1
+fn punycode_adapt(mut delta: u32, count: u32, first: bool) -> u32 {
+    delta /= if first { PUNYCODE_DAMP } else { 2 };
+    delta += delta / count;
+    let mut k = 0;
+    while delta > ((PUNYCODE_BASE - PUNYCODE_TMIN) * PUNYCODE_TMAX) / 2 {
+        delta /= PUNYCODE_BASE - PUNYCODE_TMIN;
+        k += PUNYCODE_BASE;
+    }
+    k + ((PUNYCODE_BASE - PUNYCODE_TMIN + 1) * delta) / (delta + PUNYCODE_SKEW)
+}
+
+/// Decode a Punycode payload, the part of an A-label after the `xn--` prefix.
+///
+/// RFC 3492, section 6.2: <https://www.rfc-editor.org/rfc/rfc3492#section-6.2>
+fn decode_punycode(input: &str) -> Option<String> {
+    let bytes = input.as_bytes();
+    // The delimiter is consumed only when it is preceded by basic code points; a leading
+    // `-` is part of the encoded portion and makes the label invalid.
+    let (basic, encoded) = match bytes.iter().rposition(|&byte| byte == b'-') {
+        Some(position) if position > 0 => (&bytes[..position], &bytes[position + 1..]),
+        _ => (&bytes[..0], bytes),
+    };
+    if !basic.is_ascii() {
+        return None;
+    }
+    let mut output: Vec<char> = basic.iter().map(|&byte| char::from(byte)).collect();
+
+    let mut code_point = PUNYCODE_INITIAL_N;
+    let mut index: u32 = 0;
+    let mut bias = PUNYCODE_INITIAL_BIAS;
+    let mut position = 0;
+
+    while position < encoded.len() {
+        let previous = index;
+        let mut weight: u32 = 1;
+        let mut k = PUNYCODE_BASE;
+        loop {
+            let digit = punycode_digit(*encoded.get(position)?)?;
+            position += 1;
+            index = index.checked_add(digit.checked_mul(weight)?)?;
+            let threshold = if k <= bias {
+                PUNYCODE_TMIN
+            } else if k >= bias + PUNYCODE_TMAX {
+                PUNYCODE_TMAX
+            } else {
+                k - bias
+            };
+            if digit < threshold {
+                break;
+            }
+            weight = weight.checked_mul(PUNYCODE_BASE - threshold)?;
+            k += PUNYCODE_BASE;
+        }
+
+        let count = u32::try_from(output.len()).ok()? + 1;
+        bias = punycode_adapt(index - previous, count, previous == 0);
+        code_point = code_point.checked_add(index / count)?;
+        index %= count;
+        output.insert(index as usize, char::from_u32(code_point)?);
+        index += 1;
+    }
+
+    Some(output.into_iter().collect())
+}
+
 /// # Panics
 ///
 /// Panics if a punycode label contains non-UTF-8 bytes, which cannot happen
@@ -639,7 +725,7 @@ pub fn is_valid_hostname(hostname: &str) -> bool {
 
         if is_punycode_label(label) {
             let payload = std::str::from_utf8(&label[4..]).expect("ASCII label already validated");
-            let Some(decoded) = idna::punycode::decode_to_string(payload) else {
+            let Some(decoded) = decode_punycode(payload) else {
                 return false;
             };
             if !validate_unicode_label(&decoded) {
@@ -808,6 +894,7 @@ fn validate_unicode_label(label: &str) -> bool {
     true
 }
 
+#[cfg(feature = "idna")]
 #[must_use]
 pub fn is_valid_idn_hostname(hostname: &str) -> bool {
     use idna::uts46::{AsciiDenyList, DnsLength, Hyphens, Uts46};
@@ -1038,13 +1125,15 @@ macro_rules! impl_format_evaluate {
 }
 
 macro_rules! format_validators {
-    ($(($validator:ident, $format:expr, $validation_fn:ident)),+ $(,)?) => {
+    ($($(#[$meta:meta])* ($validator:ident, $format:expr, $validation_fn:ident)),+ $(,)?) => {
         $(
+            $(#[$meta])*
             struct $validator {
                 location: Location,
                 annotation: Arc<Value>,
             }
 
+            $(#[$meta])*
             impl $validator {
                 pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
                     let location = ctx.location().join("format");
@@ -1053,6 +1142,7 @@ macro_rules! format_validators {
                 }
             }
 
+            $(#[$meta])*
             impl<F: Json> Validate<F> for $validator {
                 fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
                     if let Some(item) = instance.as_string() {
@@ -1098,6 +1188,7 @@ format_validators!(
         is_valid_hostname_rfc1034
     ),
     (HostnameValidator, "hostname", is_valid_hostname),
+    #[cfg(feature = "idna")]
     (IdnHostnameValidator, "idn-hostname", is_valid_idn_hostname),
     (IpV4Validator, "ipv4", is_valid_ipv4),
     (IpV6Validator, "ipv6", is_valid_ipv6),
@@ -1224,12 +1315,14 @@ impl<F: Json> Validate<F> for EmailValidator {
 }
 
 // Custom IdnEmailValidator that supports email options
+#[cfg(feature = "idna")]
 struct IdnEmailValidator {
     location: Location,
     annotation: Arc<Value>,
     email_options: Option<EmailAddressOptions>,
 }
 
+#[cfg(feature = "idna")]
 impl IdnEmailValidator {
     pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
@@ -1243,6 +1336,7 @@ impl IdnEmailValidator {
     }
 }
 
+#[cfg(feature = "idna")]
 impl<F: Json> Validate<F> for IdnEmailValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
@@ -1399,7 +1493,9 @@ pub(crate) enum BuiltinFormat {
     Email,
     Hostname,
     HostnameDraft4,
+    #[cfg(feature = "idna")]
     IdnEmail,
+    #[cfg(feature = "idna")]
     IdnHostname,
     Ipv4,
     Ipv6,
@@ -1425,7 +1521,9 @@ pub(crate) fn builtin_format(draft: Draft, format: &str) -> Option<BuiltinFormat
             Some(BuiltinFormat::HostnameDraft4)
         }
         "hostname" => Some(BuiltinFormat::Hostname),
+        #[cfg(feature = "idna")]
         "idn-email" => Some(BuiltinFormat::IdnEmail),
+        #[cfg(feature = "idna")]
         "idn-hostname" if draft >= Draft::Draft7 => Some(BuiltinFormat::IdnHostname),
         "ipv4" => Some(BuiltinFormat::Ipv4),
         "ipv6" => Some(BuiltinFormat::Ipv6),
@@ -1454,7 +1552,9 @@ impl BuiltinFormat {
             Self::Duration => "duration",
             Self::Email => "email",
             Self::Hostname | Self::HostnameDraft4 => "hostname",
+            #[cfg(feature = "idna")]
             Self::IdnEmail => "idn-email",
+            #[cfg(feature = "idna")]
             Self::IdnHostname => "idn-hostname",
             Self::Ipv4 => "ipv4",
             Self::Ipv6 => "ipv6",
@@ -1496,10 +1596,11 @@ impl BuiltinFormat {
             Self::Ipv4 => Some((7, 15)),
             // `::` up to `0000:0000:0000:0000:0000:0000:255.255.255.255`.
             Self::Ipv6 => Some((2, 45)),
-            // The first three take non-ASCII; the rest take any length, empty included.
+            // `email`, `idn-email` and `idn-hostname` take non-ASCII; the rest take any
+            // length, empty included.
+            #[cfg(feature = "idna")]
+            Self::IdnEmail | Self::IdnHostname => None,
             Self::Email
-            | Self::IdnEmail
-            | Self::IdnHostname
             | Self::Iri
             | Self::IriReference
             | Self::JsonPointer
@@ -1518,8 +1619,12 @@ impl BuiltinFormat {
             Self::Date => "2020-01-01",
             Self::DateTime => "2020-01-01T00:00:00Z",
             Self::Duration => "P1D",
-            Self::Email | Self::IdnEmail => "a@b.co",
-            Self::Hostname | Self::HostnameDraft4 | Self::IdnHostname => "example.com",
+            Self::Email => "a@b.co",
+            #[cfg(feature = "idna")]
+            Self::IdnEmail => "a@b.co",
+            Self::Hostname | Self::HostnameDraft4 => "example.com",
+            #[cfg(feature = "idna")]
+            Self::IdnHostname => "example.com",
             Self::Ipv4 => "127.0.0.1",
             Self::Ipv6 => "::1",
             Self::Iri | Self::IriReference | Self::Uri | Self::UriReference => "http://example.com",
@@ -1540,7 +1645,9 @@ impl BuiltinFormat {
             Self::Email => is_valid_email(text, None),
             Self::Hostname => is_valid_hostname(text),
             Self::HostnameDraft4 => is_valid_hostname_rfc1034(text),
+            #[cfg(feature = "idna")]
             Self::IdnEmail => is_valid_idn_email(text, None),
+            #[cfg(feature = "idna")]
             Self::IdnHostname => is_valid_idn_hostname(text),
             Self::Ipv4 => is_valid_ipv4(text),
             Self::Ipv6 => is_valid_ipv6(text),
@@ -1582,7 +1689,9 @@ pub(crate) fn compile<'a, F: Json>(
                 Some(BuiltinFormat::Email) => Some(EmailValidator::compile(ctx)),
                 Some(BuiltinFormat::Hostname) => Some(HostnameValidator::compile(ctx)),
                 Some(BuiltinFormat::HostnameDraft4) => Some(HostnameValidatorDraft4::compile(ctx)),
+                #[cfg(feature = "idna")]
                 Some(BuiltinFormat::IdnEmail) => Some(IdnEmailValidator::compile(ctx)),
+                #[cfg(feature = "idna")]
                 Some(BuiltinFormat::IdnHostname) => Some(IdnHostnameValidator::compile(ctx)),
                 Some(BuiltinFormat::Ipv4) => Some(IpV4Validator::compile(ctx)),
                 Some(BuiltinFormat::Ipv6) => Some(IpV6Validator::compile(ctx)),
@@ -1674,6 +1783,65 @@ mod tests {
         parse_four_digits(bytes)
     }
 
+    // Sample strings (A) through (S) of RFC 3492, section 7.1:
+    // https://www.rfc-editor.org/rfc/rfc3492#section-7.1
+    #[test_case("egbpdaj6bu4bxfgehfvwxn" => Some("ليهمابتكلموشعربي؟".to_string()); "rfc a arabic")]
+    #[test_case("ihqwcrb4cv8a8dqg056pqjye" => Some("他们为什么不说中文".to_string()); "rfc b chinese simplified")]
+    #[test_case("ihqwctvzc91f659drss3x8bo0yb" => Some("他們爲什麽不說中文".to_string()); "rfc c chinese traditional")]
+    #[test_case("Proprostnemluvesky-uyb24dma41a" => Some("Pročprostěnemluvíčesky".to_string()); "rfc d czech")]
+    #[test_case("4dbcagdahymbxekheh6e0a7fei0b" => Some("למההםפשוטלאמדבריםעברית".to_string()); "rfc e hebrew")]
+    #[test_case("i1baa7eci9glrd9b2ae1bj0hfcgg6iyaf8o0a1dig0cd" => Some("यहलोगहिन्दीक्योंनहींबोलसकतेहैं".to_string()); "rfc f hindi")]
+    #[test_case("n8jok5ay5dzabd5bym9f0cm5685rrjetr6pdxa" => Some("なぜみんな日本語を話してくれないのか".to_string()); "rfc g japanese")]
+    #[test_case("989aomsvi5e83db1d2a355cv1e0vak1dwrv93d5xbh15a0dt30a5jpsd879ccm6fea98c" => Some("세계의모든사람들이한국어를이해한다면얼마나좋을까".to_string()); "rfc h korean")]
+    #[test_case("b1abfaaepdrnnbgefbaDotcwatmq2g4l" => Some("почемужеонинеговорятпорусски".to_string()); "rfc i russian")]
+    #[test_case("PorqunopuedensimplementehablarenEspaol-fmd56a" => Some("PorquénopuedensimplementehablarenEspañol".to_string()); "rfc j spanish")]
+    #[test_case("TisaohkhngthchnitingVit-kjcr8268qyxafd2f1b9g" => Some("TạisaohọkhôngthểchỉnóitiếngViệt".to_string()); "rfc k vietnamese")]
+    #[test_case("3B-ww4c5e180e575a65lsy2b" => Some("3年B組金八先生".to_string()); "rfc l")]
+    #[test_case("-with-SUPER-MONKEYS-pc58ag80a8qai00g7n9n" => Some("安室奈美恵-with-SUPER-MONKEYS".to_string()); "rfc m leading hyphen in basic part")]
+    #[test_case("Hello-Another-Way--fc4qua05auwb3674vfr0b" => Some("Hello-Another-Way-それぞれの場所".to_string()); "rfc n double hyphen")]
+    #[test_case("2-u9tlzr9756bt3uc0v" => Some("ひとつ屋根の下2".to_string()); "rfc o")]
+    #[test_case("MajiKoi5-783gue6qz075azm5e" => Some("MajiでKoiする5秒前".to_string()); "rfc p")]
+    #[test_case("de-jg4avhby1noc0d" => Some("パフィーdeルンバ".to_string()); "rfc q")]
+    #[test_case("d9juau41awczczp" => Some("そのスピードで".to_string()); "rfc r")]
+    #[test_case("-> $1.00 <--" => Some("-> $1.00 <-".to_string()); "rfc s ascii only")]
+    // Boundaries the sample strings do not reach.
+    #[test_case("abc-" => Some("abc".to_string()); "empty extended part")]
+    #[test_case("" => Some(String::new()); "empty")]
+    #[test_case("a" => Some("\u{80}".to_string()); "no basic code points")]
+    #[test_case("99999999999999999999" => None; "overflow")]
+    #[test_case("-t7g" => None; "leading delimiter is not a separator")]
+    #[test_case("é" => None; "non-ascii")]
+    #[test_case("ss" => None; "incomplete")]
+    fn test_decode_punycode(input: &str) -> Option<String> {
+        decode_punycode(input)
+    }
+
+    #[cfg(feature = "idna")]
+    #[test]
+    #[allow(clippy::cast_possible_truncation)]
+    fn differential_against_idna() {
+        let alphabet: Vec<u8> = (0x20u8..=0x7e).collect();
+        let mut state: u64 = 0x9E37_79B9_7F4A_7C15;
+        let mut next = || {
+            state ^= state << 13;
+            state ^= state >> 7;
+            state ^= state << 17;
+            state
+        };
+        let mut checked = 0u32;
+        for _ in 0..400_000 {
+            let len = (next() % 40) as usize;
+            let candidate: String = (0..len)
+                .map(|_| char::from(alphabet[(next() % alphabet.len() as u64) as usize]))
+                .collect();
+            let ours = decode_punycode(&candidate);
+            let theirs = idna::punycode::decode_to_string(&candidate);
+            assert_eq!(ours, theirs, "diverged on {candidate:?}");
+            checked += 1;
+        }
+        assert_eq!(checked, 400_000);
+    }
+
     #[test]
     fn ignored_format() {
         let schema = json!({"format": "custom", "type": "string"});
@@ -1750,6 +1918,47 @@ mod tests {
     #[test_case("P1WT1H")]
     fn test_invalid_duration(input: &str) {
         assert!(!is_valid_duration(input));
+    }
+
+    #[cfg(not(feature = "idna"))]
+    #[test_case("idn-hostname")]
+    #[test_case("idn-email")]
+    fn idn_formats_are_unknown_without_idna(format: &str) {
+        let schema = json!({"format": format, "type": "string"});
+        let validator = crate::options()
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("a valid schema");
+        assert!(validator.is_valid(&json!("anything")));
+
+        let error = crate::options()
+            .should_validate_formats(true)
+            .should_ignore_unknown_formats(false)
+            .build(&schema)
+            .expect_err("the validation error should be returned");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Unknown format: '{format}'. Adjust configuration to ignore unrecognized formats"
+            )
+        );
+    }
+
+    #[cfg(feature = "idna")]
+    #[test_case(
+        "idn-hostname",
+        "\u{5B9F}\u{4F8B}.\u{30C6}\u{30B9}\u{30C8}",
+        "-\u{5B9F}\u{4F8B}"
+    )]
+    #[test_case("idn-email", "\u{03B1}@\u{03C0}\u{03B1}\u{03C1}.gr", "a@-.gr")]
+    fn idn_formats_validate_with_idna(format: &str, accepted: &str, rejected: &str) {
+        let schema = json!({"format": format, "type": "string"});
+        let validator = crate::options()
+            .should_validate_formats(true)
+            .build(&schema)
+            .expect("a valid schema");
+        assert!(validator.is_valid(&json!(accepted)));
+        assert!(!validator.is_valid(&json!(rejected)));
     }
 
     #[test]
@@ -1868,6 +2077,7 @@ mod tests {
         let _ = is_valid_datetime("2624-04-25t23:14:04-256\x112");
     }
 
+    #[cfg(feature = "idna")]
     #[test_case("example.com" ; "simple valid hostname")]
     #[test_case("xn--bcher-kva.com" ; "valid punycode")]
     #[test_case("münchen.de" ; "valid IDN")]
@@ -1884,6 +2094,7 @@ mod tests {
         assert!(is_valid_hostname(input));
     }
 
+    #[cfg(feature = "idna")]
     #[test_case("ex--ample.com" ; "hyphen at 3rd & 4th position")]
     #[test_case("-example.com" ; "leading hyphen")]
     #[test_case("example-.com" ; "trailing hyphen")]
@@ -2044,6 +2255,7 @@ mod tests {
         assert!(!validator.is_valid(&json!("not-an-email")));
     }
 
+    #[cfg(feature = "idna")]
     #[test]
     fn idn_email_options() {
         let schema = json!({"format": "idn-email", "type": "string"});
@@ -2057,6 +2269,7 @@ mod tests {
         assert!(!validator.is_valid(&json!("not-an-email")));
     }
 
+    #[cfg(feature = "idna")]
     #[test_case("δοκιμή@example.com", true; "non-ASCII local part")]
     #[test_case("\"δοκιμή\"@example.com", true; "non-ASCII quoted local part")]
     #[test_case("user@example.com", true; "ascii local part")]

@@ -44,6 +44,16 @@ mod tests {
         if should_skip_draft(test.draft) {
             return;
         }
+        // Without `idna` these are unknown formats, so the suite's expectations no longer hold.
+        #[cfg(not(feature = "idna"))]
+        if matches!(
+            test.schema
+                .get("format")
+                .and_then(serde_json::Value::as_str),
+            Some("idn-hostname" | "idn-email")
+        ) {
+            return;
+        }
         let root_uri = test.schema[draft.id_keyword()]
             .as_str()
             .unwrap_or("json-schema:///");
