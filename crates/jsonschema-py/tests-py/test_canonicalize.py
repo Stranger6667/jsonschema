@@ -998,3 +998,16 @@ def test_retriever_failure_surfaces():
     with pytest.raises(canonical.CanonicalizationError) as exc:
         canonicalize({"$ref": "https://example.com/remote"}, retriever=retrieve)
     assert "Schema not found" in str(exc.value)
+
+
+def test_offline_refuses_remote_reference():
+    with pytest.raises(ValueError, match="Retrieval is disabled"):
+        canonicalize({"$ref": "https://example.com/schema.json"}, offline=True)
+
+
+def test_offline_rejects_a_retriever():
+    def retrieve(uri: str):
+        return {}
+
+    with pytest.raises(ValueError, match="`offline` cannot be used together with `retriever`"):
+        canonicalize({"$ref": "https://example.com/schema.json"}, offline=True, retriever=retrieve)

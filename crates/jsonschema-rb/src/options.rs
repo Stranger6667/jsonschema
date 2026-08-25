@@ -37,6 +37,7 @@ define_rb_intern!(static KW_KEYWORDS: "keywords");
 define_rb_intern!(pub(crate) static KW_REGISTRY: "registry");
 // Extra kwarg names (extracted before get_kwargs)
 define_rb_intern!(static KW_VOCABULARIES: "vocabularies");
+define_rb_intern!(static KW_OFFLINE: "offline");
 define_rb_intern!(static KW_PATTERN_OPTIONS: "pattern_options");
 define_rb_intern!(static KW_EMAIL_OPTIONS: "email_options");
 define_rb_intern!(static KW_HTTP_OPTIONS: "http_options");
@@ -229,6 +230,7 @@ pub struct ExtractedKwargs {
     pub pattern_options: Option<Value>,
     pub email_options: Option<Value>,
     pub http_options: Option<Value>,
+    pub offline: Option<bool>,
 }
 
 pub fn extract_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error> {
@@ -236,6 +238,7 @@ pub fn extract_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error>
     let pattern_options = extract_and_delete(&kw, *KW_PATTERN_OPTIONS)?;
     let email_options = extract_and_delete(&kw, *KW_EMAIL_OPTIONS)?;
     let http_options = extract_and_delete(&kw, *KW_HTTP_OPTIONS)?;
+    let offline = extract_offline(&kw)?;
 
     let ids = base_option_ids();
     let base_kw: KwArgs<(), BaseKwargs, ()> = get_kwargs(kw, &[], &ids)?;
@@ -246,6 +249,7 @@ pub fn extract_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error>
         pattern_options,
         email_options,
         http_options,
+        offline,
     })
 }
 
@@ -254,6 +258,7 @@ pub fn extract_evaluate_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwarg
     let pattern_options = extract_and_delete(&kw, *KW_PATTERN_OPTIONS)?;
     let email_options = extract_and_delete(&kw, *KW_EMAIL_OPTIONS)?;
     let http_options = extract_and_delete(&kw, *KW_HTTP_OPTIONS)?;
+    let offline = extract_offline(&kw)?;
 
     let ids = base_option_ids_no_mask();
     let base_kw: KwArgs<(), BaseKwargsNoMask, ()> = get_kwargs(kw, &[], &ids)?;
@@ -284,6 +289,7 @@ pub fn extract_evaluate_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwarg
         pattern_options,
         email_options,
         http_options,
+        offline,
     })
 }
 
@@ -292,6 +298,7 @@ pub fn extract_kwargs_no_draft(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwarg
     let pattern_options = extract_and_delete(&kw, *KW_PATTERN_OPTIONS)?;
     let email_options = extract_and_delete(&kw, *KW_EMAIL_OPTIONS)?;
     let http_options = extract_and_delete(&kw, *KW_HTTP_OPTIONS)?;
+    let offline = extract_offline(&kw)?;
 
     let ids = base_option_ids_no_draft();
     let base_kw: KwArgs<(), BaseKwargsNoDraft, ()> = get_kwargs(kw, &[], &ids)?;
@@ -322,7 +329,14 @@ pub fn extract_kwargs_no_draft(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwarg
         pattern_options,
         email_options,
         http_options,
+        offline,
     })
+}
+
+fn extract_offline(kw: &RHash) -> Result<Option<bool>, Error> {
+    extract_and_delete(kw, *KW_OFFLINE)?
+        .map(TryConvert::try_convert)
+        .transpose()
 }
 
 fn extract_vocabularies(kw: &RHash) -> Result<Option<Vec<String>>, Error> {
@@ -500,7 +514,15 @@ pub fn make_options_from_kwargs(
     pattern_options_val: Option<Value>,
     email_options_val: Option<Value>,
     http_options_val: Option<Value>,
+    offline: Option<bool>,
 ) -> Result<ParsedOptions<'_>, Error> {
+    let offline = offline.unwrap_or(false);
+    if offline && retriever_val.is_some() {
+        return Err(Error::new(
+            ruby.exception_arg_error(),
+            "`offline` cannot be used together with `retriever`",
+        ));
+    }
     let mut opts = jsonschema::options_for::<Magnus>();
     let mut registry = None;
     let mut retriever = None;
@@ -560,7 +582,7 @@ pub fn make_options_from_kwargs(
             })?;
             registry = Some(reg.inner.as_ref());
 
-            if !retriever_was_provided && retriever.is_none() {
+            if !retriever_was_provided && retriever.is_none() && !offline {
                 if let Some(registry_retriever_value) = reg.retriever_value(ruby) {
                     if let Some(ret) = make_retriever(ruby, registry_retriever_value)? {
                         compilation_roots
@@ -820,6 +842,10 @@ pub fn make_options_from_kwargs(
         opts = opts
             .with_http_options(&http_opts)
             .map_err(|e| Error::new(ruby.exception_arg_error(), e.to_string()))?;
+    }
+
+    if offline {
+        opts = opts.offline();
     }
 
     Ok(ParsedOptions {

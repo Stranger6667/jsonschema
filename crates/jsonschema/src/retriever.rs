@@ -101,6 +101,29 @@ fn install_tls_provider() {
     let _ = rustls::crypto::ring::default_provider().install_default();
 }
 
+pub(crate) struct OfflineRetriever;
+
+impl Retrieve for OfflineRetriever {
+    fn retrieve(
+        &self,
+        uri: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        Err(format!("Retrieval is disabled, cannot fetch {uri}").into())
+    }
+}
+
+#[cfg(feature = "resolve-async")]
+#[cfg_attr(target_family = "wasm", async_trait::async_trait(?Send))]
+#[cfg_attr(not(target_family = "wasm"), async_trait::async_trait)]
+impl referencing::AsyncRetrieve for OfflineRetriever {
+    async fn retrieve(
+        &self,
+        uri: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        Err(format!("Retrieval is disabled, cannot fetch {uri}").into())
+    }
+}
+
 pub(crate) struct DefaultRetriever;
 
 /// HTTP-based schema retriever with configurable client options.

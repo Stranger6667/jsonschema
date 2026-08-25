@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- The `offline` argument, refusing to fetch references outside `registry`.
+
 ## [0.51.0] - 2026-08-23
 
 ### Added

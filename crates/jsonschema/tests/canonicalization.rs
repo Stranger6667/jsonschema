@@ -6411,3 +6411,18 @@ fn a_rename_rewrites_a_symbolic_complement() {
         );
     }
 }
+
+#[test]
+fn offline_refuses_remote_references() {
+    let schema = json!({"$ref": "https://example.com/schema.json"});
+    let error = options()
+        .offline()
+        .canonicalize(&schema)
+        .expect_err("must refuse to fetch");
+    assert_eq!(
+        error.to_string(),
+        "Resource 'https://example.com/schema.json' is not present in a registry \
+         and retrieving it failed: Retrieval is disabled, cannot fetch \
+         https://example.com/schema.json"
+    );
+}

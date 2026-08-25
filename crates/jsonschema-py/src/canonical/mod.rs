@@ -929,13 +929,13 @@ impl EnumView {
     }
 }
 
-/// canonicalize(schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None)
+/// canonicalize(schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None)
 ///
 /// Parse and normalize a JSON Schema to its canonical form.
 ///
 /// Returns a :class:`CanonicalSchema` that is semantically equivalent to the input.
 #[pyfunction]
-#[pyo3(signature = (schema, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None))]
+#[pyo3(signature = (schema, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None))]
 pub(crate) fn canonicalize(
     schema: &Bound<'_, PyAny>,
     draft: Option<u8>,
@@ -944,7 +944,14 @@ pub(crate) fn canonicalize(
     retriever: Option<&Bound<'_, PyAny>>,
     registry: Option<&crate::registry::Registry>,
     base_uri: Option<String>,
+    offline: Option<bool>,
 ) -> PyResult<PyCanonicalSchema> {
+    let offline = offline.unwrap_or(false);
+    if offline && retriever.is_some() {
+        return Err(pyo3::exceptions::PyValueError::new_err(
+            "`offline` cannot be used together with `retriever`",
+        ));
+    }
     let schema_value = crate::ser::to_value(schema)?;
     let mut options = jsonschema::canonical::options();
     if let Some(draft) = draft {
@@ -958,13 +965,16 @@ pub(crate) fn canonicalize(
         options = options.with_retriever(crate::retriever::Retriever { func });
     }
     if let Some(registry) = registry {
-        if retriever.is_none() {
+        if retriever.is_none() && !offline {
             if let Some(registry_retriever) = registry.retriever() {
                 let func = crate::retriever::into_retriever(registry_retriever.bind(schema.py()))?;
                 options = options.with_retriever(crate::retriever::Retriever { func });
             }
         }
         options = options.with_registry(registry.inner.as_ref());
+    }
+    if offline {
+        options = options.offline();
     }
     if let Some(base_uri) = base_uri {
         options = options.with_base_uri(base_uri);

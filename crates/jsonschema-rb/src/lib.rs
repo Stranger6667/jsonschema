@@ -204,6 +204,7 @@ fn build_parsed_options(
         kw.pattern_options,
         kw.email_options,
         kw.http_options,
+        kw.offline,
     )
 }
 
