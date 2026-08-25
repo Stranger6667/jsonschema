@@ -14,7 +14,7 @@ use uuid_simd::{parse_hyphenated, Out};
 
 use crate::{
     compiler,
-    error::{no_error, ValidationError},
+    error::ValidationError,
     evaluation::Annotations,
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
@@ -1020,8 +1020,11 @@ macro_rules! impl_format_evaluate {
             if !instance.is_string() {
                 return EvaluationResult::valid_empty();
             }
-            let errors: Vec<_> = Validate::<F>::iter_errors(self, instance, location, tracker, ctx)
-                .map(|e| crate::evaluation::ErrorDescription::from_validation_error(&e))
+            let mut collected = Vec::new();
+            Validate::<F>::collect_errors(self, instance, location, tracker, ctx, &mut collected);
+            let errors: Vec<_> = collected
+                .iter()
+                .map(crate::evaluation::ErrorDescription::from_validation_error)
                 .collect();
             let mut result = if errors.is_empty() {
                 EvaluationResult::valid_empty()
@@ -1348,14 +1351,14 @@ impl<F: Json> Validate<F> for AnnotationOnlyFormatValidator {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         _instance: &F::Node<'i>,
         _location: &LazyLocation,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> crate::error::ErrorIterator<'i> {
-        no_error()
+        _errors: &mut Vec<ValidationError<'i>>,
+    ) {
     }
 
     fn evaluate(

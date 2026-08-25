@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    error::{no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -72,37 +72,36 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(object) = instance.as_object() {
-            let mut errors = Vec::new();
-            let mut buffer = F::StringBuffer::default();
-            for (name, _) in object.members() {
-                let name_errors: Vec<_> = F::with_string_node(&mut buffer, name.as_ref(), |node| {
-                    self.node
-                        .iter_errors(&node, location, tracker, ctx)
-                        .map(ValidationError::to_owned)
-                        .collect()
-                });
-                for error in name_errors {
-                    let schema_path = error.schema_path().clone();
-                    errors.push(ValidationError::property_names(
-                        schema_path.clone(),
-                        crate::paths::capture_evaluation_path(tracker, &schema_path),
-                        location.into(),
-                        instance.to_value(),
-                        error,
-                    ));
-                }
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(object) = instance.as_object() else {
+            return;
+        };
+        let mut buffer = F::StringBuffer::default();
+        let mut name_errors = Vec::new();
+        for (name, _) in object.members() {
+            F::with_string_node(&mut buffer, name.as_ref(), |node| {
+                let mut collected = Vec::new();
+                self.node
+                    .collect_errors(&node, location, tracker, ctx, &mut collected);
+                name_errors.extend(collected.into_iter().map(ValidationError::to_owned));
+            });
+            for error in name_errors.drain(..) {
+                let schema_path = error.schema_path().clone();
+                errors.push(ValidationError::property_names(
+                    schema_path.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &schema_path),
+                    location.into(),
+                    instance.to_value(),
+                    error,
+                ));
             }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
         }
     }
 

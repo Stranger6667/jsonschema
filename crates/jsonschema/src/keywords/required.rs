@@ -2,7 +2,7 @@ use std::borrow::Cow;
 
 use crate::{
     compiler,
-    error::{no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
     properties::HASHMAP_THRESHOLD,
@@ -80,15 +80,15 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
         }
         Ok(())
     }
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         if let Some(object) = instance.as_object() {
-            let mut errors = vec![];
             let eval_path = crate::paths::capture_evaluation_path(tracker, &self.location);
             for (property_name, key) in &self.required {
                 if object.get(key).is_none() {
@@ -101,11 +101,7 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
                     ));
                 }
             }
-            if !errors.is_empty() {
-                return ErrorIterator::from_iterator(errors.into_iter());
-            }
         }
-        no_error()
     }
 }
 
@@ -227,16 +223,16 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         if let Some(object) = instance.as_object() {
             let eval_path = crate::paths::capture_evaluation_path(tracker, &self.location);
-            let mut errors = Vec::new();
             if object.get(&self.first_key).is_none() {
                 errors.push(ValidationError::required(
                     self.location.clone(),
@@ -255,11 +251,7 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
                     Value::String(self.second.clone()),
                 ));
             }
-            if !errors.is_empty() {
-                return ErrorIterator::from_iterator(errors.into_iter());
-            }
         }
-        no_error()
     }
 }
 
@@ -347,16 +339,16 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         if let Some(object) = instance.as_object() {
             let eval_path = crate::paths::capture_evaluation_path(tracker, &self.location);
-            let mut errors = Vec::new();
             if object.get(&self.first_key).is_none() {
                 errors.push(ValidationError::required(
                     self.location.clone(),
@@ -384,11 +376,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     Value::String(self.third.clone()),
                 ));
             }
-            if !errors.is_empty() {
-                return ErrorIterator::from_iterator(errors.into_iter());
-            }
         }
-        no_error()
     }
 }
 

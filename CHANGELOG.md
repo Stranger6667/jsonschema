@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `iter_errors` collects into a single buffer instead of allocating and re-boxing an iterator at every schema node.
+
 ## [0.51.0] - 2026-08-23
 
 ### Added

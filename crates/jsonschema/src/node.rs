@@ -1,6 +1,5 @@
 use crate::{
     compiler::Context,
-    error::ErrorIterator,
     evaluation::{Annotations, EvaluationNode},
     keywords::{BoxedValidator, Keyword},
     paths::{LazyLocation, Location, RefTracker},
@@ -230,20 +229,20 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         result
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         let identity = instance.identity();
         if ctx.enter(self.node_id(), identity) {
-            return crate::error::no_error();
+            return;
         }
-        let result = self.with_node(|node| node.iter_errors(instance, location, tracker, ctx));
+        self.with_node(|node| node.collect_errors(instance, location, tracker, ctx, errors));
         ctx.exit(self.node_id(), identity);
-        result
     }
 
     fn evaluate(
@@ -508,6 +507,13 @@ impl<F: Json> SchemaNode<F> {
     }
 }
 
+fn stamp_absolute_location(errors: &mut [ValidationError<'_>], uri: Option<&Arc<Uri<String>>>) {
+    let Some(uri) = uri else { return };
+    for error in errors {
+        error.set_absolute_keyword_location(uri);
+    }
+}
+
 impl<F: Json> Validate<F> for SchemaNode<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         match &self.inner.validators {
@@ -582,68 +588,43 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
         match &self.inner.validators {
-            NodeValidators::Keyword(kvs) if kvs.validators.len() == 1 => {
-                let entry = &kvs.validators[0];
-                let absolute_location = entry.absolute_location.clone();
-                ErrorIterator::from_iterator(
+            NodeValidators::Keyword(kvs) => {
+                for entry in &kvs.validators {
+                    let start = errors.len();
                     entry
                         .validator
-                        .iter_errors(instance, location, tracker, ctx)
-                        .map(move |e| e.with_absolute_keyword_location(absolute_location.clone())),
-                )
+                        .collect_errors(instance, location, tracker, ctx, errors);
+                    stamp_absolute_location(&mut errors[start..], entry.absolute_location.as_ref());
+                }
             }
-            // Multi-validator paths collect eagerly: flat_map borrows `&kvs.validators`,
-            // so the lazy iterator would hold a borrow of `self` across the return boundary.
-            NodeValidators::Keyword(kvs) => ErrorIterator::from_iterator(
-                kvs.validators
-                    .iter()
-                    .flat_map(|entry| {
-                        let absolute_location = entry.absolute_location.clone();
-                        entry
-                            .validator
-                            .iter_errors(instance, location, tracker, ctx)
-                            .map(move |e| {
-                                e.with_absolute_keyword_location(absolute_location.clone())
-                            })
-                    })
-                    .collect::<Vec<_>>()
-                    .into_iter(),
-            ),
             NodeValidators::Boolean {
                 validator: Some(v), ..
             } => {
-                let abs_path = self.absolute_path.clone();
-                ErrorIterator::from_iterator(
-                    v.iter_errors(instance, location, tracker, ctx)
-                        .map(move |e| e.with_absolute_keyword_location(abs_path.clone())),
-                )
+                let start = errors.len();
+                v.collect_errors(instance, location, tracker, ctx, errors);
+                stamp_absolute_location(&mut errors[start..], self.absolute_path.as_ref());
             }
             NodeValidators::Boolean {
                 validator: None, ..
-            } => ErrorIterator::from_iterator(std::iter::empty()),
-            NodeValidators::Array { validators } => ErrorIterator::from_iterator(
-                validators
-                    .iter()
-                    .flat_map(move |entry| {
-                        let absolute_location = entry.absolute_location.clone();
-                        entry
-                            .validator
-                            .iter_errors(instance, location, tracker, ctx)
-                            .map(move |e| {
-                                e.with_absolute_keyword_location(absolute_location.clone())
-                            })
-                    })
-                    .collect::<Vec<_>>()
-                    .into_iter(),
-            ),
+            } => {}
+            NodeValidators::Array { validators } => {
+                for entry in validators {
+                    let start = errors.len();
+                    entry
+                        .validator
+                        .collect_errors(instance, location, tracker, ctx, errors);
+                    stamp_absolute_location(&mut errors[start..], entry.absolute_location.as_ref());
+                }
+            }
         }
     }
 

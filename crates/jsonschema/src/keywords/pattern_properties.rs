@@ -2,7 +2,7 @@ use std::{borrow::Cow, sync::Arc};
 
 use crate::{
     compiler,
-    error::{no_error, ErrorIterator, ValidationError},
+    error::ValidationError,
     evaluation::Annotations,
     keywords::CompilationResult,
     node::SchemaNode,
@@ -55,30 +55,23 @@ impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(object) = instance.as_object() {
-            let mut errors = Vec::new();
-            for (re, node) in &self.patterns {
-                for (key, value) in object.members() {
-                    if re.is_match(key.as_ref()).unwrap_or(false) {
-                        errors.extend(node.iter_errors(
-                            &value,
-                            &location.push(key.as_ref()),
-                            tracker,
-                            ctx,
-                        ));
-                    }
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(object) = instance.as_object() else {
+            return;
+        };
+        for (re, node) in &self.patterns {
+            for (key, value) in object.members() {
+                if re.is_match(key.as_ref()).unwrap_or(false) {
+                    node.collect_errors(&value, &location.push(key.as_ref()), tracker, ctx, errors);
                 }
             }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
         }
     }
 
@@ -153,28 +146,27 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
         Ok(())
     }
 
-    fn iter_errors<'i>(
+    fn collect_errors<'i>(
         &self,
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> ErrorIterator<'i> {
-        if let Some(object) = instance.as_object() {
-            let mut errors = Vec::new();
-            for (key, value) in object.members() {
-                if self.regex.is_match(key.as_ref()).unwrap_or(false) {
-                    errors.extend(self.node.iter_errors(
-                        &value,
-                        &location.push(key.as_ref()),
-                        tracker,
-                        ctx,
-                    ));
-                }
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(object) = instance.as_object() else {
+            return;
+        };
+        for (key, value) in object.members() {
+            if self.regex.is_match(key.as_ref()).unwrap_or(false) {
+                self.node.collect_errors(
+                    &value,
+                    &location.push(key.as_ref()),
+                    tracker,
+                    ctx,
+                    errors,
+                );
             }
-            ErrorIterator::from_iterator(errors.into_iter())
-        } else {
-            no_error()
         }
     }
 
