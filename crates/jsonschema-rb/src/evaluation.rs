@@ -26,7 +26,7 @@ impl Evaluation {
     }
 
     fn is_valid(&self) -> bool {
-        self.inner.flag().valid
+        self.inner.is_valid()
     }
 
     /// Simplest output format — only a "valid" key.
@@ -95,10 +95,7 @@ impl Evaluation {
     }
 
     fn inspect(&self) -> String {
-        format!(
-            "#<JSONSchema::Evaluation valid={}>",
-            self.inner.flag().valid
-        )
+        format!("#<JSONSchema::Evaluation valid={}>", self.inner.is_valid())
     }
 }
 

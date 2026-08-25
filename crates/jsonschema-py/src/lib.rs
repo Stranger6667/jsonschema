@@ -212,7 +212,7 @@ impl PyEvaluation {
     /// Whether the evaluated instance is valid.
     #[getter]
     fn valid(&self) -> bool {
-        self.inner.flag().valid
+        self.inner.is_valid()
     }
 
     /// Return the flag output representation as a Python object.
@@ -257,7 +257,7 @@ impl PyEvaluation {
     }
 
     fn __repr__(&self) -> String {
-        format!("<Evaluation valid={}>", self.inner.flag().valid)
+        format!("<Evaluation valid={}>", self.inner.is_valid())
     }
 }
 

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Evaluation::is_valid`.
+
 ### Performance
 
 - `iter_errors` collects into a single buffer instead of allocating and re-boxing an iterator at every schema node.
