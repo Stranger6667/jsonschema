@@ -184,7 +184,11 @@ impl fmt::Display for ValidationErrors<'_> {
         } else {
             writeln!(f, "Validation errors:")?;
             for (idx, error) in self.errors.iter().enumerate() {
-                writeln!(f, "{:02}: {error}", idx + 1)?;
+                if error.instance_path().is_empty() {
+                    writeln!(f, "{:02}: {error}", idx + 1)?;
+                } else {
+                    writeln!(f, "{:02}: {}: {error}", idx + 1, error.instance_path())?;
+                }
             }
             Ok(())
         }
@@ -1839,6 +1843,24 @@ mod tests {
             Location::new(),
             Location::new(),
         )
+    }
+
+    #[test]
+    fn test_validation_errors_display_includes_paths() {
+        let schema = json!({
+            "type": "object",
+            "properties": {"age": {"type": "number"}},
+            "required": ["name"]
+        });
+        let validator = crate::validator_for(&schema).expect("valid schema");
+        let instance = json!({"age": "oops"});
+        let errors = validator.iter_errors(&instance).into_errors();
+        assert_eq!(
+            errors.to_string(),
+            "Validation errors:\n\
+             01: \"name\" is a required property\n\
+             02: /age: \"oops\" is not of type \"number\"\n"
+        );
     }
 
     #[test]
