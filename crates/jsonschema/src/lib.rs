@@ -526,6 +526,10 @@
 //!
 //! ## Custom retrievers
 //!
+//! A retriever is for documents fetched on demand — from a database, an embedded asset, a cache.
+//! When the set of documents is known up front, put them in a [`Registry`] instead; the example
+//! below is a retriever only because it has to be one to demonstrate the trait.
+//!
 //! You can implement custom retrievers for both blocking and non-blocking retrieval:
 //!
 //! ```rust
