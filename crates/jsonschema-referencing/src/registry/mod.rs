@@ -327,13 +327,15 @@ impl<'a> Registry<'a> {
         Resolver::new(self, Arc::new(base_uri))
     }
 
-    /// Returns the vocabulary set active for a schema with the given `contents`.
+    /// Returns the vocabulary set `draft` puts in effect for a schema with the given `contents`.
     ///
-    /// Detects the draft from the `$schema` field. If no draft is detected or
-    /// the draft has no registered vocabularies, returns the default vocabulary
-    /// set — never errors.
+    /// A `$schema` naming a custom meta-schema is the one case where `contents` decides: its
+    /// `$vocabulary` is read from the registry. Never errors.
     #[must_use]
     pub fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
+        // Detection answers one question: whether `$schema` names a custom meta-schema, the
+        // only kind that declares vocabularies of its own. Every other schema takes them from
+        // `draft`, which `with_draft` may have set over the `$schema` declaration.
         match draft.detect(contents) {
             Draft::Unknown => {
                 if let Some(specification) = contents
@@ -353,7 +355,7 @@ impl<'a> Registry<'a> {
                 }
                 Draft::Unknown.default_vocabularies()
             }
-            draft => draft.default_vocabularies(),
+            _ => draft.default_vocabularies(),
         }
     }
 
