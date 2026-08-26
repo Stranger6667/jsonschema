@@ -16,6 +16,7 @@
 
 ### Fixed
 
+- Canonicalization not idempotent where a `patternProperties` `$ref` matches a key `properties` names.
 - `format: email` and `format: idn-email` rejecting an empty quoted string as the local part (it should be accepted).
 - `format: email` and `format: idn-email` rejecting an address literal whose `IPv6:` tag is not written in that exact case (the tag is case-insensitive).
 - `format: email` accepting a non-ASCII character in the local part (it should be rejected).

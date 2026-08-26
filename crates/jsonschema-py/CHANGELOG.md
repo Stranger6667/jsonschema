@@ -6,6 +6,10 @@
 
 - The `offline` argument, refusing to fetch references outside `registry`.
 
+### Fixed
+
+- Canonicalization not idempotent where a `patternProperties` `$ref` matches a key `properties` names.
+
 ## [0.51.0] - 2026-08-23
 
 ### Added

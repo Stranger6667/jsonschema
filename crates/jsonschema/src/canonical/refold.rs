@@ -21,6 +21,11 @@ use crate::canonical::{
 /// not match what the set operations produce for the same schema.
 const FOLD_BUDGET: u64 = 40_000;
 
+/// Folding rounds one schema may take to settle. A fold can rebuild a leaf through passes that
+/// read no targets, leaving conjunctions a resolving read folds again on the next round; a form
+/// still moving past the cap is kept as it stands.
+const SETTLE_ROUNDS: usize = 8;
+
 /// `parsed` with every `allOf` folded through the schemas its branches reference.
 pub(crate) fn through_targets(
     mut parsed: ParseOutput,
@@ -46,7 +51,7 @@ pub(crate) fn through_targets(
             .get(&uri)
             .cloned()
             .expect("the order names the map's own keys");
-        let settled = folded(&body, &definitions, &resolving, &plain);
+        let settled = settle(&body, &definitions, &resolving, &plain);
         // An approximated result is not a canonical form; keep what the parse built. Both contexts
         // answer, since the union folds run against `plain`.
         if approximated(&resolving) || approximated(&plain) {
@@ -59,7 +64,7 @@ pub(crate) fn through_targets(
         // Later bodies must see the new one.
         resolving.read_targets(Arc::new(definitions.clone()));
     }
-    let root = folded(&parsed.root, &definitions, &resolving, &plain);
+    let root = settle(&parsed.root, &definitions, &resolving, &plain);
     if approximated(&resolving) || approximated(&plain) {
         return parsed;
     }
@@ -68,6 +73,25 @@ pub(crate) fn through_targets(
     // Folding inlines targets, which can leave definitions unreferenced.
     parse::prune_unreachable_definitions(&parsed.root, &mut parsed.definitions);
     parsed
+}
+
+/// `folded` to a fixpoint, since one round's rebuilt leaves can hold conjunctions the next
+/// round folds.
+fn settle(
+    schema: &Schema,
+    definitions: &DefinitionMap,
+    ctx: &CanonicalizationContext,
+    plain: &CanonicalizationContext,
+) -> Schema {
+    let mut current = schema.clone();
+    for _ in 0..SETTLE_ROUNDS {
+        let next = folded(&current, definitions, ctx, plain);
+        if approximated(ctx) || approximated(plain) || next == current {
+            return next;
+        }
+        current = next;
+    }
+    current
 }
 
 /// Whether this run had to approximate anything.
