@@ -1217,9 +1217,30 @@ mod tests {
     use super::*;
     use referencing::{Registry, Resource, Retrieve, Uri};
     use serde_json::{json, Value};
+    use test_case::test_case;
 
     fn custom(s: &str) -> bool {
         s.ends_with("42!")
+    }
+
+    // An explicit `with_draft` replaces the declared `$schema`, so the vocabularies must come
+    // from the draft actually in use, not from the declaration it overrides.
+    #[test_case("http://json-schema.org/draft-04/schema#", Draft::Draft202012)]
+    #[test_case("http://json-schema.org/draft-06/schema#", Draft::Draft202012)]
+    #[test_case("http://json-schema.org/draft-07/schema#", Draft::Draft202012)]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", Draft::Draft202012)]
+    #[test_case("http://json-schema.org/draft-04/schema#", Draft::Draft201909)]
+    #[test_case("http://json-schema.org/draft-06/schema#", Draft::Draft201909)]
+    #[test_case("http://json-schema.org/draft-07/schema#", Draft::Draft201909)]
+    fn test_explicit_draft_keeps_keywords(declared: &str, forced: Draft) {
+        let schema = json!({"$schema": declared, "type": "string", "minLength": 5});
+        let validator = crate::options()
+            .with_draft(forced)
+            .build(&schema)
+            .expect("a valid schema");
+        assert!(!validator.is_valid(&json!(42)));
+        assert!(!validator.is_valid(&json!("ab")));
+        assert!(validator.is_valid(&json!("abcde")));
     }
 
     #[test]
