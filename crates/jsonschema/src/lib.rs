@@ -96,6 +96,31 @@
 //!
 //! # Reading errors
 //!
+//! [`ErrorIterator::into_errors`] collects the whole set into a [`ValidationErrors`], which
+//! implements `Display` and [`std::error::Error`], so reporting every failure takes no formatting
+//! loop of its own:
+//!
+//! ```rust
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
+//! use serde_json::json;
+//!
+//! let validator = jsonschema::validator_for(&json!({
+//!     "type": "object",
+//!     "properties": {"n": {"minimum": 5}},
+//!     "required": ["name"]
+//! }))?;
+//! let instance = json!({"n": 1});
+//! let errors = validator.iter_errors(&instance).into_errors();
+//!
+//! assert_eq!(errors.len(), 2);
+//! // Validation errors:
+//! // 01: "name" is a required property
+//! // 02: /n: 1 is less than the minimum of 5
+//! println!("{errors}");
+//! # Ok(())
+//! # }
+//! ```
+//!
 //! [`ValidationError::kind`] carries the failed keyword's operands, so a caller does not need to
 //! re-read the schema to describe what was expected:
 //!

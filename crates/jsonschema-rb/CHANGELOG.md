@@ -9,6 +9,7 @@
 ### Fixed
 
 - Canonicalization not idempotent where a `patternProperties` `$ref` matches a key `properties` names.
+- The `draft:` keyword argument and the `Draft201909Validator` / `Draft202012Validator` classes gating keywords on the vocabularies of the `$schema` they override, so the validator accepted every instance.
 - `valid?` disagreeing with `validate!`, `each_error`, and `evaluate` on a schema that reaches its own `$ref` twice, one of them under `not`.
 
 ## [0.51.0] - 2026-08-23
