@@ -14,6 +14,12 @@
 
 - `ValidationErrors`' `Display` gained the instance path of each error.
 
+### Fixed
+
+- `format: email` and `format: idn-email` rejecting an empty quoted string as the local part (it should be accepted).
+- `format: email` and `format: idn-email` rejecting an address literal whose `IPv6:` tag is not written in that exact case (the tag is case-insensitive).
+- `format: email` accepting a non-ASCII character in the local part (it should be rejected).
+
 ### Performance
 
 - `iter_errors` collects into a single buffer instead of allocating and re-boxing an iterator at every schema node.

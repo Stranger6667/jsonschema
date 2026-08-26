@@ -514,13 +514,20 @@ fn parse_email(email: &str, options: Option<&EmailAddressOptions>) -> Option<Ema
     .ok()
 }
 
+const IPV6_TAG: &str = "IPv6:";
+
 fn validate_email_domain<F>(domain: &str, is_valid_hostname_impl: &F) -> bool
 where
     F: Fn(&str) -> bool,
 {
     if let Some(domain) = domain.strip_prefix('[').and_then(|d| d.strip_suffix(']')) {
-        if let Some(domain) = domain.strip_prefix("IPv6:") {
-            domain.parse::<Ipv6Addr>().is_ok()
+        // RFC 5321 tags are case-insensitive
+        if domain
+            .as_bytes()
+            .get(..IPV6_TAG.len())
+            .is_some_and(|tag| tag.eq_ignore_ascii_case(IPV6_TAG.as_bytes()))
+        {
+            domain[IPV6_TAG.len()..].parse::<Ipv6Addr>().is_ok()
         } else {
             domain.parse::<Ipv4Addr>().is_ok()
         }
@@ -538,7 +545,19 @@ fn is_valid_email_impl<F>(
 where
     F: Fn(&str) -> bool,
 {
+    // `email_address` 0.2.9 rejects an empty quoted local part, which RFC 5321 allows.
+    if let Some(domain) = email.strip_prefix("\"\"@") {
+        return is_valid_email_impl(
+            &format!("\"a\"@{domain}"),
+            is_valid_hostname_impl,
+            options,
+            allow_non_ascii_local_part,
+        );
+    }
     if let Some(parsed) = parse_email(email, options) {
+        if !allow_non_ascii_local_part && !parsed.local_part().is_ascii() {
+            return false;
+        }
         return validate_email_domain(parsed.domain(), &is_valid_hostname_impl);
     }
     // `email_address` 0.2.9 rejects non-ASCII in quoted local parts, which `idn-email`
