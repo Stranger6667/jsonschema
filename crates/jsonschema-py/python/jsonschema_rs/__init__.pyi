@@ -352,6 +352,7 @@ class ValidationError(ValueError):
     evaluation_path: list[str | int]
     kind: ValidationErrorKind
     instance: JsonValue
+    absolute_keyword_location: str | None
 
 Draft4: int
 Draft6: int

@@ -9,6 +9,7 @@
 ### Fixed
 
 - Canonicalization not idempotent where a `patternProperties` `$ref` matches a key `properties` names.
+- Type stubs omitting `ValidationError.absolute_keyword_location`.
 
 ## [0.51.0] - 2026-08-23
 

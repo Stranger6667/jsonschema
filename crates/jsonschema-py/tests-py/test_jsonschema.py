@@ -896,6 +896,19 @@ def test_enum_value_refcount_is_stable():
     assert sys.getrefcount(payload) == baseline
 
 
+def test_error_absolute_keyword_location():
+    schema = {
+        "$id": "https://example.com/root",
+        "$defs": {"positive": {"type": "integer", "minimum": 1}},
+        "properties": {"n": {"$ref": "#/$defs/positive"}},
+    }
+    validator = validator_for(schema)
+
+    error = next(iter(validator.iter_errors({"n": 0})))
+
+    assert error.absolute_keyword_location == "https://example.com/root#/$defs/positive/minimum"
+
+
 def test_validate_error_instance_path_traverses_instance():
     schema = {
         "type": "object",
