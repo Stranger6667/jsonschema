@@ -4687,3 +4687,157 @@ fn test_property_names_type_string_only(instance: serde_json::Value) {
         &instance,
     );
 }
+
+#[cfg(not(target_arch = "wasm32"))]
+#[path = "generation/mod.rs"]
+mod generation;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"circle":{"type":"object","required":["kind","radius"],"properties":{"kind":{"const":"circle"},"radius":{"type":"number","minimum":0}}},"square":{"type":"object","required":["kind","side"],"properties":{"kind":{"const":"square"},"side":{"type":"number","minimum":0}}}},"oneOf":[{"$ref":"#/$defs/circle"},{"$ref":"#/$defs/square"}]}"##
+)]
+struct ParityShapeValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(
+    schema = r#"{"type":"array","minItems":3,"items":{"type":"integer","multipleOf":3}}"#
+)]
+struct ParityGridArrayValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(schema = r#"{"type":"string","minLength":5,"maxLength":8}"#)]
+struct ParityWindowStringValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(
+    schema = r#"{"anyOf":[{"type":"integer","minimum":10},{"type":"string","minLength":3}]}"#
+)]
+struct ParityAnyOfValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(schema = r#"{"type":"integer","minimum":100,"multipleOf":7}"#)]
+struct ParitySparseIntegerValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(
+    schema = r#"{"type":"object","required":["a"],"properties":{"a":{"type":"integer","minimum":0}},"additionalProperties":{"type":"string"}}"#
+)]
+struct ParityShieldedObjectValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(
+    schema = r#"{"type":"object","patternProperties":{"^a":{"type":"integer"}},"propertyNames":{"maxLength":3}}"#
+)]
+struct ParityPatternObjectValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(
+    schema = r#"{"type":"number","exclusiveMinimum":0,"multipleOf":0.5,"maximum":4}"#
+)]
+struct ParityFractionalGridValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(
+    schema = r#"{"type":"array","prefixItems":[{"const":"tag"},{"type":"integer","minimum":1}],"items":{"type":"string","minLength":1}}"#
+)]
+struct ParityPrefixArrayValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+#[jsonschema::validator(schema = r#"{"enum":[[1,2],{"a":true},"x",3.5]}"#)]
+struct ParityEnumValidator;
+
+#[cfg(not(target_arch = "wasm32"))]
+struct ParityTarget {
+    source: &'static str,
+    generated_is_valid: fn(&serde_json::Value) -> bool,
+    generated_validate: fn(&serde_json::Value) -> Result<(), jsonschema::ValidationError<'_>>,
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn parity_targets() -> Vec<ParityTarget> {
+    vec![
+        ParityTarget {
+            source: r##"{"$defs":{"circle":{"type":"object","required":["kind","radius"],"properties":{"kind":{"const":"circle"},"radius":{"type":"number","minimum":0}}},"square":{"type":"object","required":["kind","side"],"properties":{"kind":{"const":"square"},"side":{"type":"number","minimum":0}}}},"oneOf":[{"$ref":"#/$defs/circle"},{"$ref":"#/$defs/square"}]}"##,
+            generated_is_valid: ParityShapeValidator::is_valid,
+            generated_validate: ParityShapeValidator::validate,
+        },
+        ParityTarget {
+            source: r#"{"type":"array","minItems":3,"items":{"type":"integer","multipleOf":3}}"#,
+            generated_is_valid: ParityGridArrayValidator::is_valid,
+            generated_validate: ParityGridArrayValidator::validate,
+        },
+        ParityTarget {
+            source: r#"{"type":"string","minLength":5,"maxLength":8}"#,
+            generated_is_valid: ParityWindowStringValidator::is_valid,
+            generated_validate: ParityWindowStringValidator::validate,
+        },
+        ParityTarget {
+            source: r#"{"anyOf":[{"type":"integer","minimum":10},{"type":"string","minLength":3}]}"#,
+            generated_is_valid: ParityAnyOfValidator::is_valid,
+            generated_validate: ParityAnyOfValidator::validate,
+        },
+        ParityTarget {
+            source: r#"{"type":"integer","minimum":100,"multipleOf":7}"#,
+            generated_is_valid: ParitySparseIntegerValidator::is_valid,
+            generated_validate: ParitySparseIntegerValidator::validate,
+        },
+        ParityTarget {
+            source: r#"{"type":"object","required":["a"],"properties":{"a":{"type":"integer","minimum":0}},"additionalProperties":{"type":"string"}}"#,
+            generated_is_valid: ParityShieldedObjectValidator::is_valid,
+            generated_validate: ParityShieldedObjectValidator::validate,
+        },
+        ParityTarget {
+            source: r#"{"type":"object","patternProperties":{"^a":{"type":"integer"}},"propertyNames":{"maxLength":3}}"#,
+            generated_is_valid: ParityPatternObjectValidator::is_valid,
+            generated_validate: ParityPatternObjectValidator::validate,
+        },
+        ParityTarget {
+            source: r#"{"type":"number","exclusiveMinimum":0,"multipleOf":0.5,"maximum":4}"#,
+            generated_is_valid: ParityFractionalGridValidator::is_valid,
+            generated_validate: ParityFractionalGridValidator::validate,
+        },
+        ParityTarget {
+            source: r#"{"type":"array","prefixItems":[{"const":"tag"},{"type":"integer","minimum":1}],"items":{"type":"string","minLength":1}}"#,
+            generated_is_valid: ParityPrefixArrayValidator::is_valid,
+            generated_validate: ParityPrefixArrayValidator::validate,
+        },
+        ParityTarget {
+            source: r#"{"enum":[[1,2],{"a":true},"x",3.5]}"#,
+            generated_is_valid: ParityEnumValidator::is_valid,
+            generated_validate: ParityEnumValidator::validate,
+        },
+    ]
+}
+
+// The generated validator agrees with the runtime one on values aimed inside each schema, where a
+// blind draw almost never lands.
+#[cfg(not(target_arch = "wasm32"))]
+#[hegel::test(test_cases = 2_000)]
+fn codegen_agrees_with_runtime_on_drawn_instances(tc: hegel::TestCase) {
+    let targets = parity_targets();
+    let index = tc.draw(
+        hegel::generators::integers::<usize>()
+            .min_value(0)
+            .max_value(targets.len() - 1),
+    );
+    let target = &targets[index];
+    let schema: serde_json::Value = serde_json::from_str(target.source).expect("valid schema JSON");
+    let canonical = jsonschema::canonical::options()
+        .canonicalize(&schema)
+        .expect("the schema canonicalizes");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    let modeled = jsonschema::validator_for(&canonical.to_json_schema())
+        .expect("the canonical form compiles");
+    let mut values = vec![tc.draw(generation::arbitrary_instance())];
+    if let Some(instance) = generation::draw_valid_instance(&tc, &canonical, &modeled) {
+        values.push(instance);
+    }
+    for value in &values {
+        assert_validate_parity(
+            (target.generated_is_valid)(value),
+            (target.generated_validate)(value),
+            &runtime,
+            value,
+        );
+    }
+}
