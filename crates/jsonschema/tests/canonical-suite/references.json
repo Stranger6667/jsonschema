@@ -2335,5 +2335,45 @@
       {"data": {}, "valid": false},
       {"data": 3, "valid": false}
     ]
+  },
+  {
+    "description": "a pattern value pointing at an accept-everything definition folds out of the named properties it meets",
+    "draft": "draft4",
+    "schema": {
+      "$defs": {
+        "integer_target": { "type": "integer" },
+        "raw_target": {}
+      },
+      "allOf": [
+        {
+          "anyOf": [
+            { "properties": { "a": { "maxProperties": 0 } } },
+            { "allOf": [{ "$ref": "#/$defs/integer_target" }] }
+          ]
+        },
+        { "patternProperties": { "^a": { "$ref": "#/$defs/raw_target" } }, "type": "object" }
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "$defs": { "raw_target": {} },
+      "patternProperties": { "^a": { "$ref": "#/$defs/raw_target" } },
+      "properties": {
+        "a": {
+          "anyOf": [
+            { "type": ["null", "boolean", "number", "string", "array"] },
+            { "enum": [{}] }
+          ]
+        }
+      },
+      "type": "object"
+    },
+    "tests": [
+      { "data": {}, "valid": true },
+      { "data": { "a": 1 }, "valid": true },
+      { "data": { "a": {} }, "valid": true },
+      { "data": { "a": { "b": 1 } }, "valid": false },
+      { "data": 5, "valid": false }
+    ]
   }
 ]
