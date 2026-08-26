@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-08-27
+
 ### Added
 
 - The `offline:` keyword argument, refusing to fetch references outside `registry:`.
@@ -477,7 +479,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.51.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.52.0...HEAD
+[0.52.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.51.0...ruby-v0.52.0
 [0.51.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.50.1...ruby-v0.51.0
 [0.50.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.50.0...ruby-v0.50.1
 [0.50.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.49.9...ruby-v0.50.0
