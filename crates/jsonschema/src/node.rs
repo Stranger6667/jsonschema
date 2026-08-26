@@ -197,19 +197,23 @@ impl<F: Json> PendingTarget<F> {
 impl<F: Json> Validate<F> for PendingSchemaNode<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let node_id = self.node_id();
-        let container_identity = instance.container_identity();
-        // Check memoization cache first (only for arrays/objects)
-        if let Some(cached) = ctx.get_cached_result(node_id, container_identity) {
-            return cached;
-        }
         let identity = instance.identity();
+        // The cycle guard comes first: while this node sits on the stack the cycle answer is the
+        // one the other modes reach, and a cached value would override it here alone.
         if ctx.enter(node_id, identity) {
             return true; // Cycle detected
         }
-        let result = self.with_node(|node| node.is_valid(instance, ctx));
+        // Check memoization cache (only for arrays/objects)
+        let container_identity = instance.container_identity();
+        let result = if let Some(cached) = ctx.get_cached_result(node_id, container_identity) {
+            cached
+        } else {
+            let computed = self.with_node(|node| node.is_valid(instance, ctx));
+            // Cache result for recursive schemas
+            ctx.cache_result(node_id, container_identity, computed);
+            computed
+        };
         ctx.exit(node_id, identity);
-        // Cache result for recursive schemas
-        ctx.cache_result(node_id, container_identity, result);
         result
     }
 
