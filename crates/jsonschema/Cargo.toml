@@ -65,7 +65,7 @@ bytecount = { version = "0.6", features = ["runtime-dispatch-simd"] }
 data-encoding = "2.9"
 email_address = "0.2.9"
 fancy-regex = "0.19"
-fraction = { version = "0.16", default-features = false, features = [
+fraction = { version = "0.17", default-features = false, features = [
   "with-bigint",
 ] }
 idna = "1.0.2"

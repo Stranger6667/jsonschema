@@ -25,7 +25,7 @@ arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint"]
 [dependencies]
 ahash.workspace = true
 bytecount = { version = "0.6", features = ["runtime-dispatch-simd"], optional = true }
-fraction = { version = "0.16", default-features = false, features = [
+fraction = { version = "0.17", default-features = false, features = [
   "with-bigint",
 ] }
 num-bigint = { version = "0.4", optional = true }
