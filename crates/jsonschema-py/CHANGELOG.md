@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.52.0] - 2026-08-27
+
 ### Added
 
 - The `offline` argument, refusing to fetch references outside `registry`.
@@ -1404,7 +1406,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.51.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.0...HEAD
+[0.52.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.51.0...python-v0.52.0
 [0.51.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.50.1...python-v0.51.0
 [0.50.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.50.0...python-v0.50.1
 [0.50.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.49.9...python-v0.50.0
