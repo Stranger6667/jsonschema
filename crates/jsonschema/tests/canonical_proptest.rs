@@ -6,6 +6,10 @@ use jsonschema::{
 };
 use serde_json::{json, Value};
 
+#[path = "generation/mod.rs"]
+mod generation;
+use generation::*;
+
 fn draw_draft(tc: &TestCase) -> Draft {
     tc.draw(gs::sampled_from(vec![
         Draft::Draft4,
@@ -40,10 +44,6 @@ fn drawn_length(tc: &TestCase) -> u64 {
     u64::from(small_length(tc))
 }
 
-fn small_int(tc: &TestCase) -> i32 {
-    tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))
-}
-
 // Divisors spanning each arithmetic `multipleOf` compiles to: exact modulo, rational division, and
 // the spellings on either side of the precision where they part ways.
 const DIVISORS: &[&str] = &[
@@ -72,93 +72,11 @@ fn divisor(tc: &TestCase) -> Value {
     serde_json::from_str(text).expect("valid number literal")
 }
 
-// Integers on both sides of exact `f64` precision, where a rewritten divisor changes the verdict.
-const WIDE_INTEGERS: &[&str] = &[
-    "9007199254740992",
-    "9007199254740993",
-    "18014398509481986",
-    "27021597764222976",
-    "27021597764222977",
-    "12345678900000001",
-    "13510798882111488",
-    "1e30",
-];
-
-fn wide_number(tc: &TestCase) -> Value {
-    let text = tc.draw(gs::sampled_from(WIDE_INTEGERS.to_vec()));
-    serde_json::from_str(text).expect("valid number literal")
-}
-
 fn ordered<T: Ord>(a: T, b: T) -> (T, T) {
     if a <= b {
         (a, b)
     } else {
         (b, a)
-    }
-}
-
-fn finite_float(tc: &TestCase) -> f64 {
-    tc.draw(gs::floats::<f64>().min_value(-8.0).max_value(8.0))
-}
-
-// One value per family, spelled several ways: normalization must equate them (and, under
-// `arbitrary-precision` where serde keeps the raw token, integer-valued floats fold to integers).
-const ALIAS_FAMILIES: &[&[&str]] = &[
-    &["1.5", "1.50", "15e-1"],
-    &["2", "2.0", "0.2e1", "2e0"],
-    &["-0.5", "-5e-1", "-0.50"],
-    &["0", "0.0", "-0", "0e0"],
-];
-
-fn aliased_number(tc: &TestCase) -> Value {
-    let family = tc.draw(gs::sampled_from(ALIAS_FAMILIES.to_vec()));
-    let index = tc.draw(
-        gs::integers::<usize>()
-            .min_value(0)
-            .max_value(family.len() - 1),
-    );
-    serde_json::from_str(family[index]).expect("valid number literal")
-}
-
-// A bounded scalar for `const`/`enum`, across the primitive types.
-#[hegel::composite]
-fn arbitrary_scalar(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(5)) {
-        0 => Value::Null,
-        1 => Value::Bool(tc.draw(gs::booleans())),
-        2 => Value::String(tc.draw(gs::text().max_size(3))),
-        3 => json!(tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))),
-        4 => json!(finite_float(tc)),
-        _ => aliased_number(tc),
-    }
-}
-
-#[hegel::composite]
-fn arbitrary_instance(tc: &TestCase) -> Value {
-    match tc.draw(gs::integers::<u8>().min_value(0).max_value(10)) {
-        0 => Value::Null,
-        1 => Value::Bool(tc.draw(gs::booleans())),
-        2 => json!(tc.draw(gs::integers::<i32>().min_value(-8).max_value(8))),
-        3 => json!(finite_float(tc)),
-        // An integer-valued float (`2.0`): Draft 4 treats it as a non-integer, later drafts as an integer.
-        4 => json!(f64::from(
-            tc.draw(gs::integers::<i32>().min_value(-4).max_value(4))
-        )),
-        5 => Value::String(tc.draw(gs::text().max_size(5))),
-        6 => wide_number(tc),
-        7 => json!([]),
-        8 => {
-            let mut object = serde_json::Map::new();
-            for key in draw_keys(tc) {
-                object.insert(key.to_string(), tc.draw(arbitrary_scalar()));
-            }
-            Value::Object(object)
-        }
-        9 => {
-            let count = tc.draw(gs::integers::<usize>().min_value(0).max_value(2));
-            Value::Array((0..count).map(|_| tc.draw(arbitrary_scalar())).collect())
-        }
-        _ => json!({}),
     }
 }
 
@@ -490,17 +408,6 @@ fn draw_leaf(tc: &TestCase) -> Value {
         ] }),
         _ => json!({ "type": ["string", "integer"] }),
     }
-}
-
-// Keys drawn from a small pool so different leaves overlap often enough to exercise merging.
-fn draw_keys(tc: &TestCase) -> Vec<&'static str> {
-    let count = tc.draw(gs::integers::<usize>().min_value(0).max_value(2));
-    let mut keys: Vec<&'static str> = (0..count)
-        .map(|_| tc.draw(gs::sampled_from(vec!["a", "b", "c", "ab"])))
-        .collect();
-    keys.sort_unstable();
-    keys.dedup();
-    keys
 }
 
 fn draw_reference_uri(tc: &TestCase) -> &'static str {
@@ -2324,4 +2231,453 @@ fn chained_set_operations_over_disagreeing_documents_answer_or_decline(tc: TestC
             );
         }
     }
+}
+
+// A value drawn from the canonical form is admitted by the original schema: anything else is a
+// widened facet.
+#[hegel::test(test_cases = 5_000)]
+fn drawn_instances_are_admitted_by_the_original(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let validate_formats = tc.draw(gs::booleans());
+    let schema = draw_schema(&tc, 3);
+    let Ok(canonical) = jsonschema::canonical::options()
+        .with_draft(draft)
+        .should_validate_formats(validate_formats)
+        .canonicalize(&schema)
+    else {
+        return;
+    };
+    let emitted = canonical.to_json_schema();
+    let build = |value: &Value| {
+        jsonschema::options()
+            .with_draft(draft)
+            .should_validate_formats(validate_formats)
+            .build(value)
+    };
+    let (Ok(raw), Ok(modeled)) = (build(&schema), build(&emitted)) else {
+        return;
+    };
+    let Some(instance) = draw_valid_instance(&tc, &canonical, &modeled) else {
+        return;
+    };
+    assert!(
+        raw.is_valid(&instance),
+        "{schema} vs {emitted} on {instance}"
+    );
+}
+
+struct MetaHarness {
+    draft: Draft,
+    dialect: &'static str,
+    canonical: CanonicalSchema,
+    validator: jsonschema::Validator,
+}
+
+// The drafts whose metaschema the canonicalizer models as a single self-contained document.
+fn metaschema_harnesses() -> &'static [MetaHarness] {
+    static HARNESSES: std::sync::OnceLock<Vec<MetaHarness>> = std::sync::OnceLock::new();
+    HARNESSES.get_or_init(|| {
+        [
+            (
+                Draft::Draft4,
+                "http://json-schema.org/draft-04/schema#",
+                include_str!("../metaschemas/draft4.json"),
+            ),
+            (
+                Draft::Draft6,
+                "http://json-schema.org/draft-06/schema#",
+                include_str!("../metaschemas/draft6.json"),
+            ),
+            (
+                Draft::Draft7,
+                "http://json-schema.org/draft-07/schema#",
+                include_str!("../metaschemas/draft7.json"),
+            ),
+            (
+                Draft::Draft201909,
+                "https://json-schema.org/draft/2019-09/schema",
+                include_str!("../../jsonschema-referencing/metaschemas/draft2019-09/schema.json"),
+            ),
+            (
+                Draft::Draft202012,
+                "https://json-schema.org/draft/2020-12/schema",
+                include_str!("../../jsonschema-referencing/metaschemas/draft2020-12/schema.json"),
+            ),
+        ]
+        .into_iter()
+        .map(|(draft, dialect, source)| {
+            let meta: Value = serde_json::from_str(source).expect("valid metaschema JSON");
+            let canonical = jsonschema::canonical::options()
+                .with_draft(draft)
+                .canonicalize(&meta)
+                .expect("the metaschema canonicalizes");
+            let validator = jsonschema::options()
+                .with_draft(draft)
+                .build(&canonical.to_json_schema())
+                .expect("the canonical metaschema compiles");
+            MetaHarness {
+                draft,
+                dialect,
+                canonical,
+                validator,
+            }
+        })
+        .collect()
+    })
+}
+
+// A schema drawn from the metaschema is meta-valid by construction: the real metaschema must
+// agree, compiling must not panic, and where it compiles and canonicalizes, the canonical form
+// must compile under its own dialect stamp, re-canonicalize to itself, absorb itself under the
+// algebra, and agree with the original.
+#[hegel::test(test_cases = 2_000)]
+fn metaschema_drawn_schemas_compile(tc: TestCase) {
+    let index = tc.draw(
+        gs::integers::<usize>()
+            .min_value(0)
+            .max_value(metaschema_harnesses().len() - 1),
+    );
+    let harness = &metaschema_harnesses()[index];
+    let Some(mut schema) = draw_valid_instance(&tc, &harness.canonical, &harness.validator) else {
+        return;
+    };
+    if let Some(map) = schema.as_object_mut() {
+        // A drawn dialect or base-URI declaration steers compilation away from the drawn draft.
+        map.remove("$schema");
+        map.remove("id");
+        map.remove("$id");
+        // Stamped with the draft it was drawn under, the schema answers to the real metaschema.
+        let mut stamped = map.clone();
+        stamped.insert("$schema".into(), json!(harness.dialect));
+        let stamped = Value::Object(stamped);
+        assert!(
+            jsonschema::meta::options().is_valid(&stamped),
+            "drawn schema is not meta-valid: {stamped}"
+        );
+    }
+    let build = |value: &Value| jsonschema::options().with_draft(harness.draft).build(value);
+    // The metaschema does not rule out an unresolvable `$ref` or an invalid `pattern`, so
+    // refusing to compile is allowed; panicking is not.
+    let Ok(raw) = build(&schema) else {
+        return;
+    };
+    let Ok(canonical) = jsonschema::canonical::options()
+        .with_draft(harness.draft)
+        .canonicalize(&schema)
+    else {
+        return;
+    };
+    let emitted = canonical.to_json_schema();
+    let modeled = build(&emitted).unwrap_or_else(|error| {
+        panic!("canonical form does not compile: {error}\n{schema} vs {emitted}")
+    });
+    // The emitted `$schema` stamp alone must steer detection to the same dialect. A `Raw`
+    // document round-trips verbatim without one, and a boolean form cannot carry one.
+    let restamped = if emitted.get("$schema").is_some() {
+        Some(jsonschema::validator_for(&emitted).unwrap_or_else(|error| {
+            panic!(
+                "canonical form does not compile under its own stamp: {error}\n{schema} vs {emitted}"
+            )
+        }))
+    } else {
+        None
+    };
+    let twice = jsonschema::canonical::options()
+        .with_draft(harness.draft)
+        .canonicalize(&emitted)
+        .unwrap_or_else(|error| {
+            panic!("canonical form does not re-canonicalize: {error}\n{schema} vs {emitted}")
+        });
+    assert_eq!(
+        twice.to_json_schema(),
+        emitted,
+        "not idempotent for {schema}"
+    );
+    if let Ok(meet) = canonical.intersect(&canonical) {
+        assert_eq!(
+            meet.to_json_schema(),
+            emitted,
+            "self-intersection changed the form of {schema}"
+        );
+    }
+    if let Ok(join) = canonical.union(&canonical) {
+        assert_eq!(
+            join.to_json_schema(),
+            emitted,
+            "self-union changed the form of {schema}"
+        );
+    }
+    let mut values = vec![tc.draw(arbitrary_instance())];
+    if let Some(directed) = draw_valid_instance(&tc, &canonical, &modeled) {
+        assert!(
+            raw.is_valid(&directed),
+            "{schema} vs {emitted} on {directed}"
+        );
+        values.push(directed);
+    }
+    for value in &values {
+        let verdict = raw.is_valid(value);
+        assert_eq!(
+            verdict,
+            modeled.is_valid(value),
+            "{schema} vs {emitted} on {value}"
+        );
+        if let Some(restamped) = &restamped {
+            assert_eq!(
+                verdict,
+                restamped.is_valid(value),
+                "dialect stamp disagrees: {schema} vs {emitted} on {value}"
+            );
+        }
+    }
+}
+
+// Rows the generator must deliver a value for; each pinned a decline when it landed. A row with
+// `reaches` must also land a value the predicate admits within the attempt budget.
+struct ReachCase {
+    source: &'static str,
+    reaches: Option<fn(&Value) -> bool>,
+}
+
+const REACH_CASES: &[ReachCase] = &[
+    ReachCase {
+        source: r#"{"type":"integer","multipleOf":1.5,"minimum":1,"maximum":5}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"allOf":[{"type":"number","multipleOf":2},{"multipleOf":3}],"minimum":1,"maximum":20}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"string","contentEncoding":"base64","minLength":8}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"string","contentMediaType":"application/json","minLength":6}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"object","not":{"propertyNames":{"pattern":"^a"}}}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"object","not":{"additionalProperties":{"type":"integer"}}}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"integer","maximum":-100}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"integer","minimum":1,"multipleOf":10.5}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"number","maximum":-100.5}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"array","maxItems":2,"not":{"uniqueItems":true}}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"array","prefixItems":[{"type":"integer"},{"type":"string","minLength":99999}]}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"array","prefixItems":[{"type":"integer"}],"maxItems":1,"contains":{"const":5}}"#,
+        reaches: None,
+    },
+    ReachCase {
+        source: r#"{"type":"object","propertyNames":{"enum":["ab","cd"]}}"#,
+        reaches: Some(|value| value.as_object().is_some_and(|object| !object.is_empty())),
+    },
+];
+
+#[hegel::test(test_cases = 600)]
+fn drawn_instances_reach_modeled_leaves(tc: TestCase) {
+    let index = tc.draw(
+        gs::integers::<usize>()
+            .min_value(0)
+            .max_value(REACH_CASES.len() - 1),
+    );
+    let case = &REACH_CASES[index];
+    let schema: Value = serde_json::from_str(case.source).expect("valid row");
+    let canonical = jsonschema::canonical::options()
+        .with_draft(Draft::Draft7)
+        .canonicalize(&schema)
+        .expect("row canonicalizes");
+    let modeled = jsonschema::options()
+        .with_draft(Draft::Draft7)
+        .build(&canonical.to_json_schema())
+        .expect("canonical form compiles");
+    let raw = jsonschema::options()
+        .with_draft(Draft::Draft7)
+        .build(&schema)
+        .expect("row compiles");
+    let Some(instance) = draw_valid_instance(&tc, &canonical, &modeled) else {
+        panic!("no value delivered for {}", case.source);
+    };
+    assert!(
+        raw.is_valid(&instance),
+        "{} rejected {instance}",
+        case.source
+    );
+    if let Some(reaches) = case.reaches {
+        for _ in 0..32 {
+            let Some(candidate) = draw_valid_instance(&tc, &canonical, &modeled) else {
+                continue;
+            };
+            assert!(
+                raw.is_valid(&candidate),
+                "{} rejected {candidate}",
+                case.source
+            );
+            if reaches(&candidate) {
+                return;
+            }
+        }
+        panic!(
+            "no delivered value reaches the predicate for {}",
+            case.source
+        );
+    }
+}
+
+// A window that no float draw can satisfy declines instead of failing the draw engine.
+#[hegel::test(test_cases = 50)]
+fn drawn_instances_decline_empty_float_windows(tc: TestCase) {
+    let schema = json!({"type": "number", "exclusiveMinimum": 0.0, "exclusiveMaximum": 5e-324});
+    let canonical = jsonschema::canonical::options()
+        .with_draft(Draft::Draft7)
+        .canonicalize(&schema)
+        .expect("the schema canonicalizes");
+    let modeled = jsonschema::options()
+        .with_draft(Draft::Draft7)
+        .build(&canonical.to_json_schema())
+        .expect("the canonical form compiles");
+    let _ = draw_valid_instance(&tc, &canonical, &modeled);
+}
+
+// The four validation modes agree on every value; the directed draw lands inside the value set,
+// where a mode that diverges on satisfied structure would otherwise go unprobed.
+#[hegel::test(test_cases = 3_000)]
+fn validation_modes_agree_on_drawn_instances(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let schema = draw_schema(&tc, 3);
+    let Ok(canonical) = jsonschema::canonical::options()
+        .with_draft(draft)
+        .canonicalize(&schema)
+    else {
+        return;
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let (Ok(raw), Ok(modeled)) = (build(&schema), build(&canonical.to_json_schema())) else {
+        return;
+    };
+    let mut values = vec![tc.draw(arbitrary_instance())];
+    if let Some(directed) = draw_valid_instance(&tc, &canonical, &modeled) {
+        values.push(directed);
+    }
+    for value in &values {
+        let valid = raw.is_valid(value);
+        assert_eq!(valid, raw.validate(value).is_ok(), "{schema} on {value}");
+        assert_eq!(
+            valid,
+            raw.iter_errors(value).next().is_none(),
+            "{schema} on {value}"
+        );
+        assert_eq!(
+            valid,
+            raw.evaluate(value).flag().valid,
+            "{schema} on {value}"
+        );
+    }
+}
+
+// Draws from an algebra result land in the operand combination it names, and operand draws land
+// in the result exactly when the combination admits them - both directions over values the fixed
+// pools never reach.
+#[hegel::test(test_cases = 3_000)]
+fn algebra_results_agree_with_drawn_instances(tc: TestCase) {
+    let draft = draw_draft(&tc);
+    let left_source = draw_schema(&tc, 2);
+    let right_source = draw_schema(&tc, 2);
+    let canonicalize = |value: &Value| {
+        jsonschema::canonical::options()
+            .with_draft(draft)
+            .canonicalize(value)
+    };
+    let (Ok(left), Ok(right)) = (canonicalize(&left_source), canonicalize(&right_source)) else {
+        return;
+    };
+    let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
+    let (Ok(left_validator), Ok(right_validator)) = (
+        build(&left.to_json_schema()),
+        build(&right.to_json_schema()),
+    ) else {
+        return;
+    };
+    let operation = tc.draw(gs::integers::<u8>().min_value(0).max_value(4));
+    let (result, expected): (_, fn(bool, bool) -> bool) = match operation {
+        0 => (
+            left.intersect(&right),
+            (|in_left, in_right| in_left && in_right) as fn(bool, bool) -> bool,
+        ),
+        1 => (left.union(&right), |in_left, in_right| in_left || in_right),
+        2 => (left.subtract(&right), |in_left, in_right| {
+            in_left && !in_right
+        }),
+        3 => (left.negate(), |in_left, _| !in_left),
+        _ => {
+            // `covers` saying yes promises every value of the right operand to the left one.
+            if let Ok(Containment::Yes) = left.covers(&right) {
+                if let Some(witness) = draw_valid_instance(&tc, &right, &right_validator) {
+                    assert!(
+                        left_validator.is_valid(&witness),
+                        "covers said yes\n  left = {left_source}\n  right = {right_source}\n  witness = {witness}"
+                    );
+                }
+            }
+            return;
+        }
+    };
+    let Ok(result) = result else {
+        return;
+    };
+    let emitted = result.to_json_schema();
+    let Ok(result_validator) = build(&emitted) else {
+        return;
+    };
+    if let Some(inside) = draw_valid_instance(&tc, &result, &result_validator) {
+        assert!(
+            expected(
+                left_validator.is_valid(&inside),
+                right_validator.is_valid(&inside)
+            ),
+            "result admits a value outside the combination\n  left = {left_source}\n  right = {right_source}\n  result = {emitted}\n  value = {inside}"
+        );
+    }
+    if let Some(from_left) = draw_valid_instance(&tc, &left, &left_validator) {
+        assert_eq!(
+            expected(true, right_validator.is_valid(&from_left)),
+            result_validator.is_valid(&from_left),
+            "left operand draw disagrees with the result\n  left = {left_source}\n  right = {right_source}\n  result = {emitted}\n  value = {from_left}"
+        );
+    }
+}
+
+// A pattern the draw engine cannot parse declines instead of failing the whole run.
+#[hegel::test(test_cases = 50)]
+fn drawn_instances_decline_foreign_patterns(tc: TestCase) {
+    let schema = json!({"type": "string", "pattern": "(?=a)x"});
+    let canonical = jsonschema::canonical::options()
+        .with_draft(Draft::Draft202012)
+        .canonicalize(&schema)
+        .expect("the schema canonicalizes");
+    let modeled = jsonschema::options()
+        .with_draft(Draft::Draft202012)
+        .build(&canonical.to_json_schema())
+        .expect("the canonical form compiles");
+    let _ = draw_valid_instance(&tc, &canonical, &modeled);
 }
