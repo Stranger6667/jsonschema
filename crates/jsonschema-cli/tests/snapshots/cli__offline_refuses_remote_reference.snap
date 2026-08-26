@@ -1,0 +1,6 @@
+---
+source: crates/jsonschema-cli/tests/cli.rs
+assertion_line: 96
+expression: sanitized
+---
+Schema is invalid. Error: Resource 'https://example.com/schema.json' is not present in a registry and retrieving it failed: Retrieval is disabled, cannot fetch https://example.com/schema.json

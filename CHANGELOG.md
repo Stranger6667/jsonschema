@@ -9,6 +9,7 @@
 - `Display` for `ErrorEntry`.
 - `ValidationOptions::offline` and `canonical::CanonicalizeOptions::offline`, refusing to fetch references outside the registry.
 - `idna` Cargo feature, enabled by default, gating the `idn-hostname` and `idn-email` formats. [#1313](https://github.com/Stranger6667/jsonschema/issues/1313)
+- **CLI**: the `--offline` flag of `jsonschema validate`, `jsonschema bundle` and `jsonschema dereference`.
 
 ### Changed
 

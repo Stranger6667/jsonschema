@@ -77,6 +77,7 @@ jsonschema validate [OPTIONS] [SCHEMA]
 | `--vocabulary <URI>` | Declare support for a vocabulary the meta-schema requires (repeatable) |
 | `--output <text\|flag\|list\|hierarchical>` | Output style (default: `text`) |
 | `--errors-only` | Suppress successful validations |
+| `--offline` | Refuse to fetch remote `$ref` targets |
 | `--connect-timeout <SECONDS>` | Connection timeout for remote `$ref` retrieval |
 | `--timeout <SECONDS>` | Total HTTP request timeout |
 | `-k, --insecure` | Skip TLS certificate verification |
@@ -139,6 +140,7 @@ jsonschema bundle [OPTIONS] <SCHEMA>
 |---|---|
 | `--resource <URI=FILE>` | Register an external schema resource (repeatable) |
 | `-o, --output <FILE>` | Write result to file instead of stdout |
+| `--offline` | Refuse to fetch references outside `--resource` |
 | `--connect-timeout`, `--timeout`, `-k`, `--cacert` | Same as `validate` |
 
 ### Examples

@@ -72,6 +72,57 @@ fn test_version() {
 }
 
 #[test]
+fn test_offline_refuses_remote_reference() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$ref": "https://example.com/schema.json"}"#,
+    );
+    let instance = create_temp_file(&dir, "instance.json", "{}");
+
+    let mut cmd = cli();
+    cmd.arg("validate")
+        .arg("--offline")
+        .arg(&schema)
+        .arg("--instance")
+        .arg(&instance);
+    let output = cmd.output().unwrap();
+    assert!(!output.status.success());
+    let sanitized = sanitize_output(
+        String::from_utf8_lossy(&output.stdout).to_string(),
+        &[&schema, &instance],
+    );
+    assert_snapshot!(sanitized);
+}
+
+// `--offline` refuses only what is not registered; a `--resource` still resolves.
+#[test]
+fn test_offline_resolves_a_registered_resource() {
+    let dir = tempdir().unwrap();
+    let resource = create_temp_file(&dir, "person.json", r#"{"type": "object"}"#);
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$ref": "https://example.com/person.json"}"#,
+    );
+
+    let mut cmd = cli();
+    cmd.arg("bundle")
+        .arg("--offline")
+        .arg(&schema)
+        .arg("--resource")
+        .arg(format!("https://example.com/person.json={resource}"));
+    let output = cmd.output().unwrap();
+    assert!(output.status.success());
+    let bundled: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        bundled["$defs"]["https://example.com/person.json"]["type"],
+        serde_json::json!("object")
+    );
+}
+
+#[test]
 fn test_valid_instance() {
     let dir = tempdir().unwrap();
     let schema = create_temp_file(

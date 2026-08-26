@@ -132,6 +132,21 @@ struct HttpArgs {
         help = "Path to a custom CA certificate file (PEM format)"
     )]
     cacert: Option<PathBuf>,
+
+    /// Refuse to fetch references that are not already registered.
+    #[arg(
+        long = "offline",
+        action = ArgAction::SetTrue,
+        help = "Refuse to fetch references outside --resource"
+    )]
+    offline: bool,
+}
+
+/// How references are resolved: HTTP settings, or a refusal to fetch at all.
+#[derive(Clone, Copy)]
+struct Retrieval<'a> {
+    http: Option<&'a jsonschema::HttpOptions>,
+    offline: bool,
 }
 
 #[derive(Args)]
@@ -331,22 +346,22 @@ impl HttpArgs {
             return None;
         }
 
-        let mut http_options = jsonschema::HttpOptions::new();
+        let mut retrieval = jsonschema::HttpOptions::new();
 
         if let Some(connect_timeout) = self.connect_timeout {
-            http_options = http_options.connect_timeout(Duration::from_secs_f64(connect_timeout));
+            retrieval = retrieval.connect_timeout(Duration::from_secs_f64(connect_timeout));
         }
         if let Some(timeout) = self.timeout {
-            http_options = http_options.timeout(Duration::from_secs_f64(timeout));
+            retrieval = retrieval.timeout(Duration::from_secs_f64(timeout));
         }
         if self.insecure {
-            http_options = http_options.danger_accept_invalid_certs(true);
+            retrieval = retrieval.danger_accept_invalid_certs(true);
         }
         if let Some(cacert) = self.cacert.as_ref() {
-            http_options = http_options.add_root_certificate(cacert);
+            retrieval = retrieval.add_root_certificate(cacert);
         }
 
-        Some(http_options)
+        Some(retrieval)
     }
 }
 
@@ -522,10 +537,14 @@ fn path_to_uri(path: &std::path::Path) -> String {
 
 fn options_for_base_uri<'a>(
     base_uri: referencing::Uri<String>,
-    http_options: Option<&jsonschema::HttpOptions>,
+    retrieval: Retrieval<'_>,
 ) -> Result<jsonschema::ValidationOptions<'a>, Box<dyn std::error::Error>> {
     let mut options = jsonschema::options().with_base_uri(base_uri);
-    if let Some(http_opts) = http_options {
+    if retrieval.offline {
+        // HTTP settings cannot take effect once retrieval is refused.
+        return Ok(options.offline());
+    }
+    if let Some(http_opts) = retrieval.http {
         options = options.with_http_options(http_opts)?;
     }
     Ok(options)
@@ -537,22 +556,22 @@ fn file_uri(path: &Path) -> Result<referencing::Uri<String>, Box<dyn std::error:
 
 fn options_for_schema<'a>(
     schema_path: &Path,
-    http_options: Option<&jsonschema::HttpOptions>,
+    retrieval: Retrieval<'_>,
 ) -> Result<jsonschema::ValidationOptions<'a>, Box<dyn std::error::Error>> {
-    options_for_base_uri(file_uri(schema_path)?, http_options)
+    options_for_base_uri(file_uri(schema_path)?, retrieval)
 }
 
 // Read `--resource URI=FILE` pairs into a prepared Registry, seeded with an HTTP retriever
 // when HTTP options are set. Shared by bundle and dereference.
 fn build_resource_registry(
     resources: &[(String, PathBuf)],
-    http_options: Option<&jsonschema::HttpOptions>,
+    retrieval: Retrieval<'_>,
 ) -> Result<jsonschema::Registry<'static>, Box<dyn std::error::Error>> {
-    let mut builder = if let Some(http_opts) = http_options {
-        let retriever = jsonschema::HttpRetriever::new(http_opts)?;
-        jsonschema::Registry::new().retriever(retriever)
-    } else {
-        jsonschema::Registry::new()
+    let mut builder = match (retrieval.offline, retrieval.http) {
+        (false, Some(http_opts)) => {
+            jsonschema::Registry::new().retriever(jsonschema::HttpRetriever::new(http_opts)?)
+        }
+        _ => jsonschema::Registry::new(),
     };
     for (uri, path) in resources {
         let resource_json = read_json(path)?;
@@ -567,7 +586,7 @@ fn output_schema_validation(
     schema_options: SchemaOptions<'_>,
     output: Output,
     errors_only: bool,
-    http_options: Option<&jsonschema::HttpOptions>,
+    retrieval: Retrieval<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     // First validate against meta-schema
     let meta_validator = jsonschema::meta::validator_for(schema_json)?;
@@ -578,7 +597,7 @@ fn output_schema_validation(
     // to check that all referenced schemas are valid
     if flag_output.valid {
         // Just try to build - if it fails, the error propagates naturally
-        let options = schema_options.apply(options_for_schema(schema_path, http_options)?);
+        let options = schema_options.apply(options_for_schema(schema_path, retrieval)?);
         options.build(schema_json)?;
     }
 
@@ -610,7 +629,7 @@ fn validate_schema_meta(
     schema_options: SchemaOptions<'_>,
     output: Output,
     errors_only: bool,
-    http_options: Option<&jsonschema::HttpOptions>,
+    retrieval: Retrieval<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let schema_json = read_json(schema_path)?;
 
@@ -623,7 +642,7 @@ fn validate_schema_meta(
         }
 
         // Then try to build a validator to check that all referenced schemas are also valid
-        let options = schema_options.apply(options_for_schema(schema_path, http_options)?);
+        let options = schema_options.apply(options_for_schema(schema_path, retrieval)?);
         match options.build(&schema_json) {
             Ok(_) => {
                 if !errors_only {
@@ -644,7 +663,7 @@ fn validate_schema_meta(
             schema_options,
             output,
             errors_only,
-            http_options,
+            retrieval,
         )
     }
 }
@@ -782,7 +801,7 @@ fn build_validator_for_uri(
     schema_uri: &referencing::Uri<String>,
     instance: &Path,
     schema_options: SchemaOptions<'_>,
-    http_options: Option<&jsonschema::HttpOptions>,
+    retrieval: Retrieval<'_>,
 ) -> Result<jsonschema::Validator, Box<dyn std::error::Error>> {
     let has_fragment = schema_uri
         .fragment()
@@ -794,7 +813,7 @@ fn build_validator_for_uri(
         // Building the pointed-at subschema alone would drop `$id` scope and sibling `$defs`, so
         // reference it from a synthetic root. Costs a `/$ref` prefix on `evaluationPath`.
         let mut options =
-            schema_options.apply(options_for_base_uri(file_uri(instance)?, http_options)?);
+            schema_options.apply(options_for_base_uri(file_uri(instance)?, retrieval)?);
         if is_meta_schema {
             options = options.with_registry(&referencing::SPECIFICATIONS);
         }
@@ -803,8 +822,15 @@ fn build_validator_for_uri(
 
     // Build the retrieved schema as the root so `evaluationPath` matches an explicit
     // `validate SCHEMA -i ...` run. `HttpRetriever` covers http, https and file alike.
+    if retrieval.offline {
+        return Err(format!(
+            "`--offline` refuses to fetch the schema `{}` this instance describes itself with",
+            schema_uri.as_str()
+        )
+        .into());
+    }
     let default_http_options;
-    let http_options = if let Some(options) = http_options {
+    let http_options = if let Some(options) = retrieval.http {
         options
     } else {
         default_http_options = jsonschema::HttpOptions::new();
@@ -814,7 +840,7 @@ fn build_validator_for_uri(
     let schema_json = retriever
         .retrieve(schema_uri)
         .map_err(|error| format!("failed to retrieve `{}`: {error}", schema_uri.as_str()))?;
-    let options = options_for_base_uri(schema_uri.clone(), Some(http_options))?;
+    let options = options_for_base_uri(schema_uri.clone(), retrieval)?;
     Ok(schema_options.apply(options).build(&schema_json)?)
 }
 
@@ -823,7 +849,7 @@ fn validate_self_describing_instances(
     schema_options: SchemaOptions<'_>,
     output: Output,
     errors_only: bool,
-    http_options: Option<&jsonschema::HttpOptions>,
+    retrieval: Retrieval<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut success = true;
     let mut validators: HashMap<String, jsonschema::Validator> = HashMap::new();
@@ -842,7 +868,7 @@ fn validate_self_describing_instances(
 
         let key = schema_uri.as_str().to_string();
         if !validators.contains_key(&key) {
-            match build_validator_for_uri(&schema_uri, instance, schema_options, http_options) {
+            match build_validator_for_uri(&schema_uri, instance, schema_options, retrieval) {
                 Ok(validator) => {
                     validators.insert(key.clone(), validator);
                 }
@@ -875,12 +901,12 @@ fn validate_instances(
     schema_options: SchemaOptions<'_>,
     output: Output,
     errors_only: bool,
-    http_options: Option<&jsonschema::HttpOptions>,
+    retrieval: Retrieval<'_>,
 ) -> Result<bool, Box<dyn std::error::Error>> {
     let mut success = true;
 
     let schema_json = read_json(schema_path)?;
-    let options = schema_options.apply(options_for_schema(schema_path, http_options)?);
+    let options = schema_options.apply(options_for_schema(schema_path, retrieval)?);
     match options.build(&schema_json) {
         Ok(validator) => {
             let schema_display = schema_path.to_string_lossy().to_string();
@@ -909,7 +935,7 @@ fn validate_instances(
                     schema_options,
                     output,
                     errors_only,
-                    http_options,
+                    retrieval,
                 )?;
             }
             success = false;
@@ -946,7 +972,12 @@ fn run_validate(args: ValidateArgs) -> ExitCode {
         http,
     } = args;
 
+    let offline = http.offline;
     let http_options = http.into_http_options();
+    let retrieval = Retrieval {
+        http: http_options.as_ref(),
+        offline,
+    };
     let schema_options = SchemaOptions {
         draft,
         assert_format: format.validate_formats(),
@@ -960,14 +991,14 @@ fn run_validate(args: ValidateArgs) -> ExitCode {
             schema_options,
             output,
             errors_only,
-            http_options.as_ref(),
+            retrieval,
         )),
         (Some(schema), None) => validation_result_to_exit(validate_schema_meta(
             &schema,
             schema_options,
             output,
             errors_only,
-            http_options.as_ref(),
+            retrieval,
         )),
         (None, Some(instances)) => {
             validation_result_to_exit(validate_self_describing_instances(
@@ -975,7 +1006,7 @@ fn run_validate(args: ValidateArgs) -> ExitCode {
                 schema_options,
                 output,
                 errors_only,
-                http_options.as_ref(),
+                retrieval,
             ))
         }
         (None, None) => fail_with_error(
@@ -996,13 +1027,18 @@ fn run_bundle(args: BundleArgs) -> ExitCode {
         Ok(value) => value,
         Err(error) => return fail_with_error(error),
     };
+    let offline = http.offline;
     let http_options = http.into_http_options();
-    let mut opts = match options_for_schema(&schema, http_options.as_ref()) {
+    let retrieval = Retrieval {
+        http: http_options.as_ref(),
+        offline,
+    };
+    let mut opts = match options_for_schema(&schema, retrieval) {
         Ok(value) => value,
         Err(error) => return fail_with_error(error),
     };
 
-    let registry = match build_resource_registry(&resources, http_options.as_ref()) {
+    let registry = match build_resource_registry(&resources, retrieval) {
         Ok(registry) => registry,
         Err(error) => return fail_with_error(error),
     };
@@ -1042,13 +1078,18 @@ fn run_dereference(args: DereferenceArgs) -> ExitCode {
         Ok(value) => value,
         Err(error) => return fail_with_error(error),
     };
+    let offline = http.offline;
     let http_options = http.into_http_options();
-    let mut opts = match options_for_schema(&schema, http_options.as_ref()) {
+    let retrieval = Retrieval {
+        http: http_options.as_ref(),
+        offline,
+    };
+    let mut opts = match options_for_schema(&schema, retrieval) {
         Ok(value) => value,
         Err(error) => return fail_with_error(error),
     };
 
-    let registry = match build_resource_registry(&resources, http_options.as_ref()) {
+    let registry = match build_resource_registry(&resources, retrieval) {
         Ok(registry) => registry,
         Err(error) => return fail_with_error(error),
     };
@@ -1153,6 +1194,7 @@ fn main() -> ExitCode {
                         timeout: cli.timeout,
                         insecure: cli.insecure,
                         cacert: cli.cacert,
+                        offline: false,
                     },
                 })
             } else {
