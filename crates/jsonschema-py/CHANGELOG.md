@@ -10,6 +10,7 @@
 
 - Canonicalization not idempotent where a `patternProperties` `$ref` matches a key `properties` names.
 - Type stubs omitting `ValidationError.absolute_keyword_location`.
+- `is_valid` disagreeing with `validate`, `iter_errors`, and `evaluate` on a schema that reaches its own `$ref` twice, one of them under `not`.
 
 ## [0.51.0] - 2026-08-23
 

@@ -400,6 +400,14 @@ mod tests {
             .unwrap()
     }
 
+    // A `$ref` re-entered while it is being validated counts as satisfied, so the sibling `$ref`
+    // cannot be served a result taken outside that state.
+    #[test]
+    fn self_reference_under_not_agrees_across_modes() {
+        let schema = json!({"allOf": [{"not": {"$ref": "#"}}, {"$ref": "#"}]});
+        tests_util::is_not_valid(&schema, &json!([]));
+    }
+
     #[test]
     fn ref_same_document_inherits_disabled_validation_vocabulary() {
         let schema = json!({

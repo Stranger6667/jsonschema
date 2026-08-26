@@ -9,6 +9,7 @@
 ### Fixed
 
 - Canonicalization not idempotent where a `patternProperties` `$ref` matches a key `properties` names.
+- `valid?` disagreeing with `validate!`, `each_error`, and `evaluate` on a schema that reaches its own `$ref` twice, one of them under `not`.
 
 ## [0.51.0] - 2026-08-23
 
