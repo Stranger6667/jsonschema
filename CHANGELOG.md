@@ -16,6 +16,7 @@
 ### Changed
 
 - `ValidationErrors`' `Display` gained the instance path of each error.
+- **BREAKING**: With `default-features = false`, the `idn-hostname` and `idn-email` formats now require the new `idna` feature. Without it they are unknown formats, which are accepted by default, or rejected at build time under `should_ignore_unknown_formats(false)`. Add `idna` to the feature list to keep the previous behavior.
 
 ### Fixed
 
