@@ -9,7 +9,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, Node,
+    Json, LazyInstance, Node,
 };
 use serde_json::{Map, Value};
 use std::{borrow::Cow, sync::Arc};
@@ -62,7 +62,7 @@ impl<F: Json> Validate<F> for ContentMediaTypeValidator {
                     loc.clone(),
                     crate::paths::capture_evaluation_path(tracker, loc),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     &self.media_type,
                 ))
             }
@@ -119,7 +119,7 @@ impl<F: Json> Validate<F> for ContentEncodingValidator {
                     loc.clone(),
                     crate::paths::capture_evaluation_path(tracker, loc),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     &self.encoding,
                 ))
             }
@@ -187,7 +187,7 @@ impl<F: Json> Validate<F> for ContentMediaTypeAndEncodingValidator {
                         encoding_location,
                         eval_path,
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         &self.encoding,
                     ))
                 }
@@ -202,7 +202,7 @@ impl<F: Json> Validate<F> for ContentMediaTypeAndEncodingValidator {
                             media_type_location,
                             eval_path,
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                             &self.media_type,
                         ))
                     }
@@ -212,7 +212,7 @@ impl<F: Json> Validate<F> for ContentMediaTypeAndEncodingValidator {
                     let eval_path =
                         crate::paths::capture_evaluation_path(tracker, &encoding_location);
                     Err(ValidationError::new(
-                        instance.to_value(),
+                        instance.lazy_value(),
                         e.into_parts().kind,
                         location.into(),
                         encoding_location,
@@ -250,7 +250,7 @@ pub(crate) fn compile_media_type<'a, F: Json>(
                     location.clone(),
                     location,
                     Location::new(),
-                    Cow::Borrowed(content_encoding),
+                    LazyInstance::Ready(Cow::Borrowed(content_encoding)),
                     JsonType::String,
                 )))
             }
@@ -267,7 +267,7 @@ pub(crate) fn compile_media_type<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(subschema),
+            LazyInstance::Ready(Cow::Borrowed(subschema)),
             JsonType::String,
         )))
     }
@@ -297,7 +297,7 @@ pub(crate) fn compile_content_encoding<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(subschema),
+            LazyInstance::Ready(Cow::Borrowed(subschema)),
             JsonType::String,
         )))
     }

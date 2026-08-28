@@ -5,7 +5,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
-    Json, Node,
+    Json, LazyInstance, Node,
 };
 use serde_json::{json, Map, Value};
 use std::{borrow::Cow, str::FromStr};
@@ -32,7 +32,7 @@ impl MultipleTypesValidator {
                             location.clone(),
                             location,
                             Location::new(),
-                            Cow::Borrowed(item),
+                            LazyInstance::Ready(Cow::Borrowed(item)),
                             &json!([
                                 "array", "boolean", "integer", "null", "number", "object", "string"
                             ]),
@@ -44,7 +44,7 @@ impl MultipleTypesValidator {
                         location.clone(),
                         location,
                         Location::new(),
-                        Cow::Borrowed(item),
+                        LazyInstance::Ready(Cow::Borrowed(item)),
                         JsonType::String,
                     ))
                 }
@@ -84,7 +84,7 @@ impl<F: Json> Validate<F> for MultipleTypesValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 self.types,
             ))
         }
@@ -124,7 +124,7 @@ impl<F: Json> Validate<F> for IntegerTypeValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 JsonType::Integer,
             ))
         }
@@ -180,7 +180,7 @@ pub(crate) fn compile<'a, F: Json>(
                         location.clone(),
                         location,
                         Location::new(),
-                        Cow::Borrowed(item),
+                        LazyInstance::Ready(Cow::Borrowed(item)),
                         JsonType::String,
                     )))
                 }
@@ -194,7 +194,7 @@ pub(crate) fn compile<'a, F: Json>(
                 location.clone(),
                 location,
                 Location::new(),
-                Cow::Borrowed(schema),
+                LazyInstance::Ready(Cow::Borrowed(schema)),
                 JsonTypeSet::from(JsonType::String).insert(JsonType::Array),
             )))
         }
@@ -218,7 +218,7 @@ fn compile_single_type<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(instance),
+            LazyInstance::Ready(Cow::Borrowed(instance)),
             "Unexpected type",
         )),
     }

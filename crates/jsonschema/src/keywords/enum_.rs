@@ -5,7 +5,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
-    Json, Node,
+    Json, LazyInstance, Node,
 };
 use ahash::AHashSet;
 use serde_json::{Map, Value};
@@ -57,7 +57,7 @@ impl<F: Json> Validate<F> for EnumValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 &self.options,
             ))
         }
@@ -112,7 +112,7 @@ impl<F: Json> Validate<F> for SingleValueEnumValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 &self.options,
             ))
         }
@@ -164,7 +164,7 @@ impl<F: Json> Validate<F> for SmallStringEnumValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 &self.options,
             ))
         }
@@ -220,7 +220,7 @@ impl<F: Json> Validate<F> for BigStringEnumValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 &self.options,
             ))
         }
@@ -261,7 +261,7 @@ pub(crate) fn compile<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(schema),
+            LazyInstance::Ready(Cow::Borrowed(schema)),
             JsonType::Array,
         )))
     }

@@ -583,7 +583,7 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                 )
                 .with_absolute_keyword_location(self.absolute_path.clone()));
             }

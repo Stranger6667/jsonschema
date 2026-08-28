@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::borrow::Cow;
 
 use crate::{
@@ -285,7 +286,7 @@ fn invalid_reference<'a, F: Json>(
         location.clone(),
         location.clone(),
         location,
-        Cow::Borrowed(schema),
+        LazyInstance::Ready(Cow::Borrowed(schema)),
         JsonType::String,
     )
 }

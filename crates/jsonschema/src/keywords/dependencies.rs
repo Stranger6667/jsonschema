@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::borrow::Cow;
 
 use crate::{
@@ -48,7 +49,7 @@ impl DependenciesValidator {
                 location.clone(),
                 location,
                 Location::new(),
-                Cow::Borrowed(schema),
+                LazyInstance::Ready(Cow::Borrowed(schema)),
                 JsonType::Object,
             ))
         }
@@ -147,7 +148,7 @@ impl DependentRequiredValidator {
                             location.clone(),
                             location,
                             Location::new(),
-                            Cow::Borrowed(subschema),
+                            LazyInstance::Ready(Cow::Borrowed(subschema)),
                         ));
                     }
                     let validators =
@@ -167,7 +168,7 @@ impl DependentRequiredValidator {
                         location.clone(),
                         location,
                         Location::new(),
-                        Cow::Borrowed(subschema),
+                        LazyInstance::Ready(Cow::Borrowed(subschema)),
                         JsonType::Array,
                     ));
                 }
@@ -179,7 +180,7 @@ impl DependentRequiredValidator {
                 location.clone(),
                 location,
                 Location::new(),
-                Cow::Borrowed(schema),
+                LazyInstance::Ready(Cow::Borrowed(schema)),
                 JsonType::Object,
             ))
         }
@@ -279,7 +280,7 @@ impl DependentSchemasValidator {
                 location.clone(),
                 location,
                 Location::new(),
-                Cow::Borrowed(schema),
+                LazyInstance::Ready(Cow::Borrowed(schema)),
                 JsonType::Object,
             ))
         }

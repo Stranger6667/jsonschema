@@ -48,7 +48,7 @@ impl<F: Json> Validate<F> for NotValidator<F> {
                 self.node.location().clone(),
                 crate::paths::capture_evaluation_path(tracker, self.node.location()),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 self.original.clone(),
             ))
         }

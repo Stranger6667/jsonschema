@@ -6,7 +6,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{Validate, ValidationContext},
-    Json, Node,
+    Json, LazyInstance, Node,
 };
 #[cfg(feature = "arbitrary-precision")]
 use jsonschema_value::JsonNumber;
@@ -59,7 +59,7 @@ impl<F: Json> Validate<F> for MultipleOfFloatValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::Number(self.original_value.clone()),
                 ));
             }
@@ -69,7 +69,7 @@ impl<F: Json> Validate<F> for MultipleOfFloatValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     self.multiple_of,
                 ));
             }
@@ -124,7 +124,7 @@ impl<F: Json> Validate<F> for MultipleOfIntegerValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::Number(self.original_value.clone()),
                 ));
             }
@@ -134,7 +134,7 @@ impl<F: Json> Validate<F> for MultipleOfIntegerValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     self.multiple_of,
                 ));
             }
@@ -236,7 +236,7 @@ impl<F: Json> Validate<F> for MultipleOfBigIntValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 Value::Number(self.original_value.clone()),
             ));
         }
@@ -310,7 +310,7 @@ impl<F: Json> Validate<F> for MultipleOfBigFracValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 Value::Number(self.original_value.clone()),
             ));
         }
@@ -385,7 +385,7 @@ pub(crate) fn compile<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(schema),
+            LazyInstance::Ready(Cow::Borrowed(schema)),
             JsonType::Number,
         )))
     }

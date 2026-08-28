@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::{borrow::Cow, sync::Arc};
 
 use crate::{
@@ -220,7 +221,7 @@ pub(crate) fn compile<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(schema),
+            LazyInstance::Ready(Cow::Borrowed(schema)),
             JsonType::Object,
         )));
     };
@@ -297,7 +298,7 @@ fn invalid_regex<'a, F: Json>(
         ctx.location().clone(),
         LazyEvaluationPath::SameAsSchemaPath,
         Location::new(),
-        Cow::Borrowed(schema),
+        LazyInstance::Ready(Cow::Borrowed(schema)),
         "regex",
     )
 }

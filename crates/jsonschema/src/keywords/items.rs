@@ -315,7 +315,7 @@ impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::Number,
                     ));
                 }
@@ -345,7 +345,7 @@ impl<F: Json> Validate<F> for ItemsNumberTypeValidator {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::Number,
                     )
                 }),
@@ -423,7 +423,7 @@ impl<F: Json> Validate<F> for ItemsStringTypeValidator {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::String,
                     ));
                 }
@@ -453,7 +453,7 @@ impl<F: Json> Validate<F> for ItemsStringTypeValidator {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::String,
                     )
                 }),
@@ -537,7 +537,7 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidator {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::Integer,
                     ));
                 }
@@ -571,7 +571,7 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidator {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::Integer,
                     )
                 }),
@@ -660,7 +660,7 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidatorDraft4 {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::Integer,
                     ));
                 }
@@ -694,7 +694,7 @@ impl<F: Json> Validate<F> for ItemsIntegerTypeValidatorDraft4 {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::Integer,
                     )
                 }),
@@ -776,7 +776,7 @@ impl<F: Json> Validate<F> for ItemsBooleanTypeValidator {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::Boolean,
                     ));
                 }
@@ -806,7 +806,7 @@ impl<F: Json> Validate<F> for ItemsBooleanTypeValidator {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         (&location.push(idx)).into(),
-                        item.to_value(),
+                        item.lazy_value(),
                         JsonType::Boolean,
                     )
                 }),
@@ -960,7 +960,7 @@ impl<F: Json> ArrayShapeValidator<F> {
             self.type_location.clone(),
             crate::paths::capture_evaluation_path(tracker, &self.type_location),
             location.into(),
-            instance.to_value(),
+            instance.lazy_value(),
             JsonType::Array,
         )
     }
@@ -976,7 +976,7 @@ fn min_items_error<'i, F: Json>(
         constraint.location.clone(),
         crate::paths::capture_evaluation_path(tracker, &constraint.location),
         location.into(),
-        instance.to_value(),
+        instance.lazy_value(),
         constraint.limit,
     )
 }
@@ -991,7 +991,7 @@ fn max_items_error<'i, F: Json>(
         constraint.location.clone(),
         crate::paths::capture_evaluation_path(tracker, &constraint.location),
         location.into(),
-        instance.to_value(),
+        instance.lazy_value(),
         constraint.limit,
     )
 }

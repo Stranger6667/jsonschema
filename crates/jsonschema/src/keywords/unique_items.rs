@@ -45,7 +45,7 @@ impl<F: Json> Validate<F> for UniqueItemsValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
             ))
         }
     }

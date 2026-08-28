@@ -14,7 +14,7 @@ use crate::{
     paths::{Location, LocationSegment},
     types::{JsonType, JsonTypeSet},
     validator::Validate,
-    Json, SerdeJson, ValidationError, Validator, ValidatorMap,
+    Json, LazyInstance, SerdeJson, ValidationError, Validator, ValidatorMap,
 };
 use ahash::{AHashMap, AHashSet};
 use referencing::{
@@ -906,7 +906,7 @@ fn ensure_vocabularies_supported<F: Json>(
                 Location::new(),
                 Location::new(),
                 Location::new(),
-                Cow::Owned(Value::Null),
+                LazyInstance::Ready(Cow::Owned(Value::Null)),
                 format!("Unknown vocabulary: '{uri}' is required by the meta-schema. Adjust configuration to declare support for it"),
             ));
         }
@@ -1157,7 +1157,7 @@ fn compile_without_cache<'a, F: Json>(
                 location.clone(),
                 location,
                 Location::new(),
-                Cow::Borrowed(resource.contents()),
+                LazyInstance::Ready(Cow::Borrowed(resource.contents())),
                 JsonTypeSet::from(JsonType::Boolean).insert(JsonType::Object),
             ))
         }

@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::{borrow::Cow, sync::Arc};
 
 use crate::{
@@ -175,7 +176,7 @@ pub(crate) fn compile_fancy_regex_patterns<'a, F: Json>(
                         kctx.location().clone(),
                         LazyEvaluationPath::SameAsSchemaPath,
                         Location::new(),
-                        Cow::Borrowed(subschema),
+                        LazyInstance::Ready(Cow::Borrowed(subschema)),
                         "regex",
                     )
                 })?;
@@ -212,7 +213,7 @@ pub(crate) fn compile_regex_patterns<'a, F: Json>(
                         kctx.location().clone(),
                         LazyEvaluationPath::SameAsSchemaPath,
                         Location::new(),
-                        Cow::Borrowed(subschema),
+                        LazyInstance::Ready(Cow::Borrowed(subschema)),
                         "regex",
                     )
                 })?;
@@ -243,7 +244,7 @@ macro_rules! compile_dynamic_prop_map_validator {
                 location.clone(),
                 location,
                 Location::new(),
-                std::borrow::Cow::Borrowed($properties),
+                LazyInstance::Ready(std::borrow::Cow::Borrowed($properties)),
                 "Unexpected type",
             )))
         }
