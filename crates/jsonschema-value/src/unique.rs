@@ -69,43 +69,47 @@ pub(crate) fn number_bits(number: f64) -> u64 {
 // case.
 pub(crate) const ITEMS_SIZE_THRESHOLD: usize = 15;
 
+/// `uniqueItems` for a representation that reads its elements in place.
+///
+/// Small arrays go pairwise, where hashing costs more than `O(N^2)`; larger ones hash. Indexed
+/// rather than iterated so an indexable array reads through and a cursor collects first.
+///
+/// `hashed`'s `Hash` and `Eq` must agree with `equal`.
+#[inline]
+pub fn is_unique_by<T, H: Hash + Eq>(
+    len: usize,
+    element: impl Fn(usize) -> T,
+    equal: impl Fn(&T, &T) -> bool,
+    hashed: impl Fn(usize) -> H,
+) -> bool {
+    if len <= 1 {
+        return true;
+    }
+    if len <= ITEMS_SIZE_THRESHOLD {
+        for index in 0..len {
+            for other in index + 1..len {
+                if equal(&element(index), &element(other)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    let mut seen = AHashSet::with_capacity(len);
+    (0..len).all(|index| seen.insert(hashed(index)))
+}
+
 // Generic over `Borrow<Value>` so both borrowed `serde_json` slices and the `Cow<Value>` handles
 // materialized from other representations run the same duplicate-detection algorithm.
 #[inline]
 #[must_use]
 pub fn is_unique<T: Borrow<Value>>(items: &[T]) -> bool {
-    let size = items.len();
-    if size <= 1 {
-        // Empty arrays and one-element arrays always contain unique elements
-        true
-    } else if let [first, second] = items {
-        !cmp::equal(first.borrow(), second.borrow())
-    } else if let [first, second, third] = items {
-        !cmp::equal(first.borrow(), second.borrow())
-            && !cmp::equal(first.borrow(), third.borrow())
-            && !cmp::equal(second.borrow(), third.borrow())
-    } else if size <= ITEMS_SIZE_THRESHOLD {
-        // If the array size is small enough we can compare all elements pairwise, which will
-        // be faster than calculating hashes for each element, even if the algorithm is O(N^2)
-        let mut idx = 0_usize;
-        while idx < items.len() {
-            let mut inner_idx = idx + 1;
-            while inner_idx < items.len() {
-                if cmp::equal(items[idx].borrow(), items[inner_idx].borrow()) {
-                    return false;
-                }
-                inner_idx += 1;
-            }
-            idx += 1;
-        }
-        true
-    } else {
-        let mut seen = AHashSet::with_capacity(size);
-        items
-            .iter()
-            .map(|item| HashedValue(item.borrow()))
-            .all(move |x| seen.insert(x))
-    }
+    is_unique_by(
+        items.len(),
+        |index| items[index].borrow(),
+        |left, right| cmp::equal(left, right),
+        |index| HashedValue(items[index].borrow()),
+    )
 }
 
 #[cfg(test)]

@@ -153,7 +153,7 @@ pub(crate) mod bigint_validators {
                                 // Can't parse as BigFraction - extremely large scientific notation
                                 // (e.g., "1e10000" which exceeds BigFraction's parsing capability)
                                 // These behave like positive/negative infinity for comparison purposes
-                                let is_negative = item.as_str().starts_with('-');
+                                let is_negative = item.is_negative();
                                 $infinity_fn(is_negative)
                             }
                         }
