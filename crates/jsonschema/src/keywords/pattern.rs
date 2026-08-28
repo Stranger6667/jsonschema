@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::{borrow::Cow, sync::Arc};
 
 use crate::{
@@ -45,7 +46,7 @@ impl<F: Json> Validate<F> for PrefixPatternValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     self.pattern.clone(),
                 ));
             }
@@ -83,7 +84,7 @@ impl<F: Json> Validate<F> for ExactPatternValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     self.pattern.clone(),
                 ));
             }
@@ -127,7 +128,7 @@ impl<F: Json> Validate<F> for AlternationPatternValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     self.pattern.clone(),
                 ));
             }
@@ -164,7 +165,7 @@ impl<F: Json> Validate<F> for NoWhitespacePatternValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     self.pattern.clone(),
                 ));
             }
@@ -197,7 +198,7 @@ impl<R: RegexEngine, F: Json> Validate<F> for PatternValidator<R> {
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                             self.pattern.clone(),
                         ));
                     }
@@ -210,14 +211,14 @@ impl<R: RegexEngine, F: Json> Validate<F> for PatternValidator<R> {
                             self.location.clone(),
                             tracker,
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                             error,
                         ),
                         RegexFailureReason::Panicked => ValidationError::regex_engine_failure(
                             self.location.clone(),
                             tracker,
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                             format!("Regex engine failed to evaluate pattern '{pattern}'"),
                         ),
                     });
@@ -302,7 +303,7 @@ pub(crate) fn compile<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(schema),
+            LazyInstance::Ready(Cow::Borrowed(schema)),
             JsonType::String,
         )))
     }
@@ -316,7 +317,7 @@ fn invalid_regex<'a, F: Json>(
         ctx.location().join("pattern"),
         LazyEvaluationPath::SameAsSchemaPath,
         Location::new(),
-        Cow::Borrowed(schema),
+        LazyInstance::Ready(Cow::Borrowed(schema)),
         "regex",
     )
 }

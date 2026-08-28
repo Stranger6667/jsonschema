@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::borrow::Cow;
 
 use crate::{
@@ -34,7 +35,7 @@ impl RequiredValidator {
                         location.clone(),
                         location,
                         Location::new(),
-                        Cow::Borrowed(item),
+                        LazyInstance::Ready(Cow::Borrowed(item)),
                         JsonType::String,
                     ))
                 }
@@ -72,7 +73,7 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         Value::String(property_name.clone()),
                     ));
                 }
@@ -96,7 +97,7 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
                         self.location.clone(),
                         eval_path.clone(),
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         Value::String(property_name.clone()),
                     ));
                 }
@@ -135,7 +136,7 @@ impl<F: Json> Validate<F> for SingleItemRequiredValidator<F> {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 Value::String(self.value.clone()),
             ));
         }
@@ -206,7 +207,7 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.first.clone()),
                 ));
             }
@@ -215,7 +216,7 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.second.clone()),
                 ));
             }
@@ -238,7 +239,7 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
                     self.location.clone(),
                     eval_path.clone(),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.first.clone()),
                 ));
             }
@@ -247,7 +248,7 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
                     self.location.clone(),
                     eval_path,
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.second.clone()),
                 ));
             }
@@ -313,7 +314,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.first.clone()),
                 ));
             }
@@ -322,7 +323,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.second.clone()),
                 ));
             }
@@ -331,7 +332,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.third.clone()),
                 ));
             }
@@ -354,7 +355,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     self.location.clone(),
                     eval_path.clone(),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.first.clone()),
                 ));
             }
@@ -363,7 +364,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     self.location.clone(),
                     eval_path.clone(),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.second.clone()),
                 ));
             }
@@ -372,7 +373,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     self.location.clone(),
                     eval_path,
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.third.clone()),
                 ));
             }
@@ -442,7 +443,7 @@ pub(crate) fn compile_with_path<F: Json>(
                         location.clone(),
                         location,
                         Location::new(),
-                        Cow::Borrowed(item),
+                        LazyInstance::Ready(Cow::Borrowed(item)),
                         JsonType::String,
                     )))
                 }
@@ -458,7 +459,7 @@ pub(crate) fn compile_with_path<F: Json>(
                             location.clone(),
                             location,
                             Location::new(),
-                            Cow::Borrowed(other),
+                            LazyInstance::Ready(Cow::Borrowed(other)),
                             JsonType::String,
                         )))
                     }
@@ -481,7 +482,7 @@ pub(crate) fn compile_with_path<F: Json>(
                         location.clone(),
                         location,
                         Location::new(),
-                        Cow::Borrowed(other),
+                        LazyInstance::Ready(Cow::Borrowed(other)),
                         JsonType::String,
                     ))),
                 }
@@ -492,7 +493,7 @@ pub(crate) fn compile_with_path<F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(schema),
+            LazyInstance::Ready(Cow::Borrowed(schema)),
             JsonType::Array,
         ))),
     }

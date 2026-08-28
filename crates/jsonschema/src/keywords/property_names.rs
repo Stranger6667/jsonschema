@@ -63,7 +63,7 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
                         schema_path.clone(),
                         crate::paths::capture_evaluation_path(tracker, &schema_path),
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         error,
                     ));
                 }
@@ -98,7 +98,7 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
                     schema_path.clone(),
                     crate::paths::capture_evaluation_path(tracker, &schema_path),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     error,
                 ));
             }
@@ -163,7 +163,7 @@ impl<F: Json> Validate<F> for PropertyNamesBooleanValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
             ))
         }
     }

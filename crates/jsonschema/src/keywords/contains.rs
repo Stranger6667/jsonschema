@@ -54,7 +54,7 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
                 loc.clone(),
                 crate::paths::capture_evaluation_path(tracker, loc),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
             ))
         } else {
             Ok(())
@@ -88,7 +88,7 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
                             loc.clone(),
                             eval_path,
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                         ),
                     )],
                     children: Vec::new(),
@@ -180,7 +180,7 @@ impl<F: Json> Validate<F> for MinContainsValidator<F> {
                     loc.clone(),
                     crate::paths::capture_evaluation_path(tracker, loc),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                 ))
             } else {
                 Ok(())
@@ -258,7 +258,7 @@ impl<F: Json> Validate<F> for MaxContainsValidator<F> {
                             loc.clone(),
                             crate::paths::capture_evaluation_path(tracker, loc),
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                         ));
                     }
                 }
@@ -270,7 +270,7 @@ impl<F: Json> Validate<F> for MaxContainsValidator<F> {
                     loc.clone(),
                     crate::paths::capture_evaluation_path(tracker, loc),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                 ))
             }
         } else {
@@ -359,7 +359,7 @@ impl<F: Json> Validate<F> for MinMaxContainsValidator<F> {
                             self.max_location.clone(),
                             eval_path,
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                         ));
                     }
                 }
@@ -370,7 +370,7 @@ impl<F: Json> Validate<F> for MinMaxContainsValidator<F> {
                     self.min_location.clone(),
                     eval_path,
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                 ))
             } else {
                 Ok(())

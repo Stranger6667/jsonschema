@@ -29,11 +29,65 @@ pub use pyo3::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
 #[cfg(feature = "serde_json")]
 pub use serde_json::SerdeJson;
 
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt, sync::OnceLock};
 
 use ::serde_json::Value;
 
 use crate::types::JsonType;
+
+/// The instance a validation error reports, built once and cached.
+pub enum LazyInstance<'a> {
+    Ready(Cow<'a, Value>),
+    /// Built on first read. A `fn` pointer rather than a boxed closure: dropck cannot see through
+    /// a `dyn` bounded by `'a` and would demand borrows outlive the error's drop, not just its use.
+    Deferred {
+        bytes: &'a [u8],
+        tag: u32,
+        // Elided, so `for<'r> fn(&'r [u8], u32)`: a lifetime in argument position is contravariant
+        // and would fight `bytes`' covariance, making the enum invariant in `'a`.
+        make: fn(&[u8], u32) -> Value,
+        // `'static`, not `'a`: `OnceLock` is invariant in its parameter, which would otherwise
+        // infect every lifetime this type appears under, `ValidationError<'a>` included.
+        cell: OnceLock<Cow<'static, Value>>,
+    },
+}
+
+impl<'a> LazyInstance<'a> {
+    /// The instance, building and caching it on the first call.
+    pub fn get(&self) -> &Cow<'a, Value> {
+        match self {
+            LazyInstance::Ready(value) => value,
+            LazyInstance::Deferred {
+                bytes,
+                tag,
+                make,
+                cell,
+            } => cell.get_or_init(|| Cow::Owned(make(bytes, *tag))),
+        }
+    }
+
+    /// Consumes `self`, returning the instance without cloning an already-built one.
+    #[must_use]
+    pub fn into_cow(self) -> Cow<'a, Value> {
+        match self {
+            LazyInstance::Ready(value) => value,
+            LazyInstance::Deferred {
+                bytes,
+                tag,
+                make,
+                cell,
+            } => cell
+                .into_inner()
+                .unwrap_or_else(|| Cow::Owned(make(bytes, tag))),
+        }
+    }
+}
+
+impl fmt::Debug for LazyInstance<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        fmt::Debug::fmt(self.get(), f)
+    }
+}
 
 /// One JSON representation.
 pub trait Json: Sized + Send + Sync + 'static {
@@ -140,6 +194,12 @@ pub trait Node<'a, F: Json>: Clone {
     /// For cold paths only: error construction, annotations, the `equals_value` and
     /// `is_unique` defaults (`const`/`enum`/`uniqueItems`), and serde-only custom keywords.
     fn to_value(&self) -> Cow<'a, Value>;
+
+    /// The instance a validation error reports. Defaults to eager [`Node::to_value`]; override only
+    /// where the node is `Send + Sync` without a VM lock — `Magnus` would compile but be unsound.
+    fn lazy_value(&self) -> LazyInstance<'a> {
+        LazyInstance::Ready(self.to_value())
+    }
 
     /// Identity for `$ref` cycle detection and `is_valid` memoization.
     ///

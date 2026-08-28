@@ -1,4 +1,5 @@
 //! Validator for `format` keyword.
+use crate::LazyInstance;
 use std::{
     borrow::Cow,
     net::{Ipv4Addr, Ipv6Addr},
@@ -1184,7 +1185,7 @@ macro_rules! format_validators {
                                 self.location.clone(),
                                 crate::paths::capture_evaluation_path(tracker, &self.location),
                                 location.into(),
-                                instance.to_value(),
+                                instance.lazy_value(),
                                 $format,
                             ));
                         }
@@ -1272,7 +1273,7 @@ impl<F: Json> Validate<F> for RegexValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 "regex",
             ));
         }
@@ -1323,7 +1324,7 @@ impl<F: Json> Validate<F> for EmailValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 "email",
             ));
         }
@@ -1377,7 +1378,7 @@ impl<F: Json> Validate<F> for IdnEmailValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 "idn-email",
             ));
         }
@@ -1425,7 +1426,7 @@ impl<F: Json> Validate<F> for CustomFormatValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 self.format_name.clone(),
             ))
         }
@@ -1744,7 +1745,7 @@ pub(crate) fn compile<'a, F: Json>(
                             location.clone(),
                             location,
                             Location::new(),
-                            Cow::Borrowed(schema),
+                            LazyInstance::Ready(Cow::Borrowed(schema)),
                             message,
                         )))
                     }
@@ -1762,7 +1763,7 @@ pub(crate) fn compile<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(schema),
+            LazyInstance::Ready(Cow::Borrowed(schema)),
             JsonType::String,
         )))
     }

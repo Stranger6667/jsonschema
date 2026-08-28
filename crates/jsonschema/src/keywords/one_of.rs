@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::borrow::Cow;
 
 use crate::{
@@ -42,7 +43,7 @@ impl OneOfValidator<SerdeJson> {
                 location.clone(),
                 location,
                 Location::new(),
-                Cow::Borrowed(schema),
+                LazyInstance::Ready(Cow::Borrowed(schema)),
                 JsonType::Array,
             ))
         }
@@ -121,7 +122,7 @@ impl<F: Json> Validate<F> for SingleOneOfValidator<F> {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 vec![{
                     let mut branch = Vec::new();
                     self.node
@@ -166,7 +167,7 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     self.schemas
                         .iter()
                         .map(|schema| {
@@ -183,7 +184,7 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 self.schemas
                     .iter()
                     .map(|schema| {

@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::borrow::Cow;
 
 use crate::{
@@ -42,7 +43,7 @@ impl AnyOfValidator<SerdeJson> {
                 location.clone(),
                 location,
                 Location::new(),
-                Cow::Borrowed(schema),
+                LazyInstance::Ready(Cow::Borrowed(schema)),
                 JsonType::Array,
             ))
         }
@@ -68,7 +69,7 @@ impl<F: Json> Validate<F> for AnyOfValidator<F> {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 self.schemas
                     .iter()
                     .map(|schema| {
@@ -102,7 +103,7 @@ impl<F: Json> Validate<F> for AnyOfValidator<F> {
             self.location.clone(),
             crate::paths::capture_evaluation_path(tracker, &self.location),
             location.into(),
-            instance.to_value(),
+            instance.lazy_value(),
             branches,
         ));
     }
@@ -183,7 +184,7 @@ impl<F: Json> Validate<F> for SingleAnyOfValidator<F> {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 vec![{
                     let mut branch = Vec::new();
                     self.node
@@ -212,7 +213,7 @@ impl<F: Json> Validate<F> for SingleAnyOfValidator<F> {
             self.location.clone(),
             crate::paths::capture_evaluation_path(tracker, &self.location),
             location.into(),
-            instance.to_value(),
+            instance.lazy_value(),
             vec![branch],
         ));
     }
@@ -248,7 +249,7 @@ pub(crate) fn compile<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(schema),
+            LazyInstance::Ready(Cow::Borrowed(schema)),
             JsonType::Array,
         )))
     }

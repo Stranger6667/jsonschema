@@ -6,6 +6,7 @@
 //!
 //! The implementation eagerly compiles a recursive `PropertyValidators` structure during
 //! schema compilation, using `Arc<OnceLock>` for circular reference handling.
+use crate::LazyInstance;
 use ahash::AHashSet;
 use fancy_regex::Regex;
 use referencing::Vocabulary;
@@ -450,7 +451,7 @@ fn compile_pattern_properties<'a, F: Json>(
                 schema_ctx.location().clone(),
                 LazyEvaluationPath::SameAsSchemaPath,
                 Location::new(),
-                Cow::Borrowed(schema),
+                LazyInstance::Ready(Cow::Borrowed(schema)),
                 "regex",
             ));
         };
@@ -806,7 +807,7 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     unevaluated,
                 ));
             }
@@ -885,7 +886,7 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         unevaluated,
                     ),
                 ));

@@ -39,6 +39,7 @@ use crate::{
     paths::{LazyLocation, Location},
     types::{JsonType, JsonTypeSet},
     validator::LazyEvaluationPath,
+    LazyInstance,
 };
 use referencing::Uri;
 use serde_json::{Number, Value};
@@ -59,7 +60,7 @@ pub struct ValidationError<'a> {
 }
 
 struct ValidationErrorRepr<'a> {
-    instance: Cow<'a, Value>,
+    instance: LazyInstance<'a>,
     kind: ValidationErrorKind,
     instance_path: Location,
     /// Canonical schema location without $ref traversals (JSON Schema "keywordLocation")
@@ -408,7 +409,7 @@ impl<'a> ValidationError<'a> {
     #[inline]
     #[must_use]
     pub(crate) fn new(
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         kind: ValidationErrorKind,
         instance_path: Location,
         schema_path: Location,
@@ -430,7 +431,7 @@ impl<'a> ValidationError<'a> {
     #[inline]
     #[must_use]
     pub fn instance(&self) -> &Cow<'a, Value> {
-        &self.repr.instance
+        self.repr.instance.get()
     }
 
     /// Returns the kind of validation error.
@@ -505,7 +506,7 @@ impl<'a> ValidationError<'a> {
         let repr = *self.repr;
         let evaluation_path = repr.tracker.into_owned(repr.schema_path.clone());
         ValidationErrorParts {
-            instance: repr.instance,
+            instance: repr.instance.into_cow(),
             kind: repr.kind,
             instance_path: repr.instance_path,
             schema_path: repr.schema_path,
@@ -516,7 +517,7 @@ impl<'a> ValidationError<'a> {
 
     #[inline]
     fn borrowed(
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         kind: ValidationErrorKind,
         instance_path: Location,
         schema_path: Location,
@@ -547,7 +548,7 @@ impl<'a> ValidationError<'a> {
     pub fn to_owned(self) -> ValidationError<'static> {
         let parts = self.into_parts();
         ValidationError::new(
-            Cow::Owned(parts.instance.into_owned()),
+            LazyInstance::Ready(Cow::Owned(parts.instance.into_owned())),
             parts.kind,
             parts.instance_path,
             parts.schema_path,
@@ -560,7 +561,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: usize,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -575,7 +576,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         unexpected: Vec<String>,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -590,7 +591,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         context: Vec<Vec<ValidationError<'a>>>,
     ) -> ValidationError<'a> {
         let context = context
@@ -610,7 +611,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         error: fancy_regex::Error,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -625,7 +626,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         message: String,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -640,7 +641,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         expected_value: &[Value],
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -657,7 +658,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         expected_value: bool,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -674,7 +675,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -690,7 +691,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         expected_value: &Number,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -707,7 +708,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         expected_value: &Value,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -724,7 +725,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         expected_value: &str,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -741,7 +742,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -755,7 +756,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         encoding: &str,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -772,7 +773,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         media_type: &str,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -789,7 +790,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         options: &Value,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -806,7 +807,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: Value,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -821,7 +822,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: Value,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -836,7 +837,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -850,7 +851,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         format: impl Into<String>,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -865,7 +866,7 @@ impl<'a> ValidationError<'a> {
     }
     pub(crate) fn from_utf8(error: FromUtf8Error) -> ValidationError<'a> {
         ValidationError::new(
-            Cow::Owned(Value::Null),
+            LazyInstance::Ready(Cow::Owned(Value::Null)),
             ValidationErrorKind::FromUtf8 { error },
             Location::new(),
             Location::new(),
@@ -876,7 +877,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: u64,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -891,7 +892,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: Value,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -906,7 +907,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: u64,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -921,7 +922,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: u64,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -936,7 +937,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: u64,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -951,7 +952,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: Value,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -966,7 +967,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: u64,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -981,7 +982,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         limit: u64,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -997,7 +998,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         multiple_of: Value,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1014,7 +1015,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         multiple_of: f64,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1029,7 +1030,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         schema: Value,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1044,7 +1045,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         context: Vec<Vec<ValidationError<'a>>>,
     ) -> ValidationError<'a> {
         let context = context
@@ -1064,7 +1065,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         context: Vec<Vec<ValidationError<'a>>>,
     ) -> ValidationError<'a> {
         let context = context
@@ -1084,7 +1085,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         pattern: String,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1099,7 +1100,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         error: ValidationError<'a>,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1116,7 +1117,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         property: Value,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1132,7 +1133,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         type_name: JsonType,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1149,7 +1150,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         types: JsonTypeSet,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1166,7 +1167,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         unexpected: Vec<String>,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1181,7 +1182,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         unexpected: Vec<String>,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1196,7 +1197,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
     ) -> ValidationError<'a> {
         Self::borrowed(
             instance,
@@ -1225,7 +1226,7 @@ impl<'a> ValidationError<'a> {
     /// ```
     pub fn custom(message: impl Into<String>) -> ValidationError<'static> {
         ValidationError::new(
-            Cow::Owned(Value::Null),
+            LazyInstance::Ready(Cow::Owned(Value::Null)),
             ValidationErrorKind::Custom {
                 keyword: String::new(),
                 message: message.into(),
@@ -1242,7 +1243,7 @@ impl<'a> ValidationError<'a> {
     /// is invalid for your custom keyword.
     pub fn schema(message: impl Into<String>) -> ValidationError<'static> {
         ValidationError::new(
-            Cow::Owned(Value::Null),
+            LazyInstance::Ready(Cow::Owned(Value::Null)),
             ValidationErrorKind::Custom {
                 keyword: String::new(),
                 message: message.into(),
@@ -1272,7 +1273,7 @@ impl<'a> ValidationError<'a> {
             other => other,
         };
         ValidationError::new(
-            Cow::Borrowed(instance),
+            LazyInstance::Ready(Cow::Borrowed(instance)),
             kind,
             instance_path.into(),
             schema_path.clone(),
@@ -1298,7 +1299,7 @@ impl<'a> ValidationError<'a> {
             other => other,
         };
         ValidationError::new(
-            Cow::Borrowed(instance),
+            LazyInstance::Ready(Cow::Borrowed(instance)),
             kind,
             instance_path,
             schema_path,
@@ -1321,7 +1322,7 @@ impl<'a> ValidationError<'a> {
             other => other,
         };
         ValidationError::new(
-            Cow::Borrowed(schema_value),
+            LazyInstance::Ready(Cow::Borrowed(schema_value)),
             kind,
             Location::new(),
             schema_path.clone(),
@@ -1333,7 +1334,7 @@ impl<'a> ValidationError<'a> {
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
-        instance: Cow<'a, Value>,
+        instance: LazyInstance<'a>,
         message: impl Into<String>,
     ) -> ValidationError<'a> {
         Self::borrowed(
@@ -1354,7 +1355,7 @@ impl From<referencing::Error> for ValidationError<'_> {
     #[inline]
     fn from(err: referencing::Error) -> Self {
         ValidationError::new(
-            Cow::Owned(Value::Null),
+            LazyInstance::Ready(Cow::Owned(Value::Null)),
             ValidationErrorKind::Referencing(err),
             Location::new(),
             Location::new(),
@@ -1835,9 +1836,17 @@ mod tests {
 
     use test_case::test_case;
 
+    // `ValidationErrorIterator` requires `Send + Sync` (see its definition above); `LazyInstance`
+    // uses `OnceLock` rather than `OnceCell` specifically to keep this holding once the repr can
+    // carry a `Deferred` closure.
+    const _: fn() = || {
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<ValidationError<'static>>();
+    };
+
     fn owned_error(instance: Value, kind: ValidationErrorKind) -> ValidationError<'static> {
         ValidationError::new(
-            Cow::Owned(instance),
+            LazyInstance::Ready(Cow::Owned(instance)),
             kind,
             Location::new(),
             Location::new(),
@@ -2026,7 +2035,7 @@ mod tests {
             Location::new(),
             Location::new(),
             Location::new(),
-            Cow::Borrowed(&instance),
+            LazyInstance::Ready(Cow::Borrowed(&instance)),
             JsonType::String,
         );
         assert_eq!(err.to_string(), r#"42 is not of type "string""#);
@@ -2040,7 +2049,7 @@ mod tests {
             Location::new(),
             Location::new(),
             Location::new(),
-            Cow::Borrowed(&instance),
+            LazyInstance::Ready(Cow::Borrowed(&instance)),
             types,
         );
         assert_eq!(err.to_string(), r#"42 is not of types "number", "string""#);
@@ -2206,7 +2215,7 @@ mod tests {
     )]
     fn test_masked_error_messages(instance: Value, kind: ValidationErrorKind, expected: &str) {
         let error = ValidationError::new(
-            Cow::Owned(instance),
+            LazyInstance::Ready(Cow::Owned(instance)),
             kind,
             Location::new(),
             Location::new(),
@@ -2236,7 +2245,7 @@ mod tests {
         expected: &str,
     ) {
         let error = ValidationError::new(
-            Cow::Owned(instance),
+            LazyInstance::Ready(Cow::Owned(instance)),
             kind,
             Location::new(),
             Location::new(),

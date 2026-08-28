@@ -6,7 +6,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
-    Array, Json, Node, SerdeJson,
+    Array, Json, LazyInstance, Node, SerdeJson,
 };
 use serde_json::{Map, Value};
 use std::borrow::Cow;
@@ -114,7 +114,7 @@ impl<F: Json> Validate<F> for AdditionalItemsBooleanValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     self.items_count,
                 ));
             }
@@ -152,7 +152,7 @@ pub(crate) fn compile<'a, F: Json>(
                             location.clone(),
                             location,
                             Location::new(),
-                            Cow::Borrowed(schema),
+                            LazyInstance::Ready(Cow::Borrowed(schema)),
                             JsonTypeSet::from(JsonType::Object).insert(JsonType::Boolean),
                         )))
                     }

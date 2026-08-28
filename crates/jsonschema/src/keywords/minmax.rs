@@ -6,7 +6,7 @@ use crate::{
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{Validate, ValidationContext},
-    Json, Node,
+    Json, LazyInstance, Node,
 };
 use num_cmp::NumCmp;
 use serde_json::{Map, Value};
@@ -50,7 +50,7 @@ macro_rules! define_numeric_keywords {
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                             self.limit_val.clone(),
                         ))
                     }
@@ -122,7 +122,7 @@ pub(crate) mod bigint_validators {
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                             self.limit_val.clone(),
                         ))
                     }
@@ -235,7 +235,7 @@ pub(crate) mod bigint_validators {
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                             self.limit_val.clone(),
                         ))
                     }
@@ -330,7 +330,7 @@ fn number_type_error<'a, F: Json>(
         location.clone(),
         location,
         Location::new(),
-        Cow::Borrowed(schema),
+        LazyInstance::Ready(Cow::Borrowed(schema)),
         JsonType::Number,
     ))
 }

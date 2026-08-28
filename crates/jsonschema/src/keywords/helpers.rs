@@ -1,5 +1,6 @@
 #![allow(clippy::float_cmp, clippy::cast_sign_loss)]
 
+use crate::LazyInstance;
 use std::borrow::Cow;
 
 use serde_json::{Map, Value};
@@ -88,7 +89,7 @@ pub(crate) fn fail_on_non_positive_integer(
             schema_path.clone(),
             schema_path,
             Location::new(),
-            Cow::Borrowed(schema_value),
+            LazyInstance::Ready(Cow::Borrowed(schema_value)),
             0.into(),
         )
     } else {
@@ -97,7 +98,7 @@ pub(crate) fn fail_on_non_positive_integer(
             schema_path.clone(),
             schema_path,
             Location::new(),
-            Cow::Borrowed(schema_value),
+            LazyInstance::Ready(Cow::Borrowed(schema_value)),
             JsonType::Integer,
         )
     }

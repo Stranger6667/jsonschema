@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::borrow::Cow;
 
 use crate::{
@@ -297,7 +298,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     self.required_location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.required_location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.first.clone()),
                 ));
             }
@@ -306,7 +307,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     self.required_location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.required_location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.second.clone()),
                 ));
             }
@@ -350,7 +351,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     self.required_location.clone(),
                     eval_path.clone(),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.first.clone()),
                 ));
             }
@@ -359,7 +360,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     self.required_location.clone(),
                     eval_path,
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.second.clone()),
                 ));
             }
@@ -426,7 +427,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                         self.required_location.clone(),
                         eval_path.clone(),
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         Value::String(self.first.clone()),
                     ),
                 ));
@@ -437,7 +438,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                         self.required_location.clone(),
                         eval_path,
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         Value::String(self.second.clone()),
                     ),
                 ));
@@ -592,7 +593,7 @@ pub(crate) fn compile<'a, F: Json>(
                     location.clone(),
                     location,
                     Location::new(),
-                    Cow::Borrowed(schema),
+                    LazyInstance::Ready(Cow::Borrowed(schema)),
                     JsonType::Object,
                 )))
             }

@@ -41,7 +41,7 @@ impl<F: Json> Validate<F> for ConstArrayValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 &self.value,
             ))
         }
@@ -89,7 +89,7 @@ impl<F: Json> Validate<F> for ConstBooleanValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 self.value,
             ))
         }
@@ -125,7 +125,7 @@ impl<F: Json> Validate<F> for ConstNullValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
             ))
         }
     }
@@ -169,7 +169,7 @@ impl<F: Json> Validate<F> for ConstNumberValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 &self.original_value,
             ))
         }
@@ -218,7 +218,7 @@ impl<F: Json> Validate<F> for ConstObjectValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 &self.value,
             ))
         }
@@ -260,7 +260,7 @@ impl<F: Json> Validate<F> for ConstStringValidator {
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 &self.value,
             ))
         }

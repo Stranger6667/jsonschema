@@ -802,7 +802,7 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     unevaluated,
                 ));
             }
@@ -850,7 +850,7 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         unevaluated,
                     ),
                 ));

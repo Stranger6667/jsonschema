@@ -22,7 +22,7 @@ use crate::{
     regex::RegexEngine,
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, Node, Object, SerdeJson,
+    Json, LazyInstance, Node, Object, SerdeJson,
 };
 use ahash::AHashMap;
 use referencing::Uri;
@@ -177,7 +177,7 @@ impl<F: Json> Validate<F> for AdditionalPropertiesFalseValidator {
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
-                    value.to_value(),
+                    value.lazy_value(),
                 ));
             }
         }
@@ -258,7 +258,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         vec![property.as_ref().to_owned()],
                     ));
                 }
@@ -291,7 +291,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 unexpected,
             ));
         }
@@ -327,7 +327,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                         self.location.clone(),
                         eval_path,
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         unexpected,
                     ),
                 ));
@@ -428,7 +428,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         vec![property.as_ref().to_owned()],
                     ));
                 }
@@ -438,7 +438,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                     self.required_location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.required_location),
                     location.into(),
-                    instance.to_value(),
+                    instance.lazy_value(),
                     Value::String(self.required.clone()),
                 ));
             }
@@ -474,7 +474,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 unexpected,
             ));
         }
@@ -483,7 +483,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                 self.required_location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.required_location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 Value::String(self.required.clone()),
             ));
         }
@@ -523,7 +523,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                         self.location.clone(),
                         eval_path,
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         unexpected,
                     ),
                 ));
@@ -536,7 +536,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                         self.required_location.clone(),
                         eval_path,
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         Value::String(self.required.clone()),
                     ),
                 ));
@@ -939,7 +939,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for AdditionalPropertiesWithPatternsFa
                         self.location.clone(),
                         crate::paths::capture_evaluation_path(tracker, &self.location),
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         vec![property.as_ref().to_owned()],
                     ));
                 }
@@ -983,7 +983,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for AdditionalPropertiesWithPatternsFa
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 unexpected,
             ));
         }
@@ -1037,7 +1037,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for AdditionalPropertiesWithPatternsFa
                         self.location.clone(),
                         eval_path,
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         unexpected,
                     ),
                 ));
@@ -1388,7 +1388,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
                             self.location.clone(),
                             crate::paths::capture_evaluation_path(tracker, &self.location),
                             location.into(),
-                            instance.to_value(),
+                            instance.lazy_value(),
                             vec![property.as_ref().to_owned()],
                         ));
                     }
@@ -1452,7 +1452,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
                 self.location.clone(),
                 crate::paths::capture_evaluation_path(tracker, &self.location),
                 location.into(),
-                instance.to_value(),
+                instance.lazy_value(),
                 unexpected,
             ));
         }
@@ -1506,7 +1506,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
                         self.location.clone(),
                         eval_path,
                         location.into(),
-                        instance.to_value(),
+                        instance.lazy_value(),
                         unexpected,
                     ),
                 ));
@@ -1644,7 +1644,7 @@ pub(crate) fn compile<'a, F: Json>(
                                         location.clone(),
                                         location,
                                         Location::new(),
-                                        Cow::Borrowed(properties),
+                                        LazyInstance::Ready(Cow::Borrowed(properties)),
                                         "Unexpected type",
                                     )))
                                 }
@@ -1676,7 +1676,7 @@ pub(crate) fn compile<'a, F: Json>(
                                         location.clone(),
                                         location,
                                         Location::new(),
-                                        Cow::Borrowed(properties),
+                                        LazyInstance::Ready(Cow::Borrowed(properties)),
                                         "Unexpected type",
                                     )))
                                 }
@@ -1717,7 +1717,7 @@ pub(crate) fn compile<'a, F: Json>(
                                         location.clone(),
                                         location,
                                         Location::new(),
-                                        Cow::Borrowed(properties),
+                                        LazyInstance::Ready(Cow::Borrowed(properties)),
                                         "Unexpected type",
                                     )))
                                 }
@@ -1748,7 +1748,7 @@ pub(crate) fn compile<'a, F: Json>(
                                         location.clone(),
                                         location,
                                         Location::new(),
-                                        Cow::Borrowed(properties),
+                                        LazyInstance::Ready(Cow::Borrowed(properties)),
                                         "Unexpected type",
                                     )))
                                 }
@@ -1776,7 +1776,7 @@ pub(crate) fn compile<'a, F: Json>(
                 location.clone(),
                 location,
                 Location::new(),
-                Cow::Borrowed(patterns),
+                LazyInstance::Ready(Cow::Borrowed(patterns)),
                 JsonType::Object,
             )))
         }

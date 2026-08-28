@@ -1,3 +1,4 @@
+use crate::LazyInstance;
 use std::borrow::Cow;
 
 use crate::{
@@ -157,7 +158,7 @@ pub(crate) fn compile<'a, F: Json>(
             location.clone(),
             location,
             Location::new(),
-            Cow::Borrowed(schema),
+            LazyInstance::Ready(Cow::Borrowed(schema)),
             JsonType::Array,
         )))
     }
