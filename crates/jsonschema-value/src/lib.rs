@@ -10,6 +10,10 @@ pub mod numeric_check;
 pub mod types;
 pub mod unique;
 
+#[cfg(feature = "jsonb")]
+mod jsonb;
+#[cfg(feature = "jsonb-testkit")]
+pub mod jsonb_encode;
 #[cfg(feature = "magnus")]
 mod magnus;
 #[cfg(feature = "pyo3")]
@@ -18,6 +22,8 @@ mod pyo3;
 mod serde_json;
 mod serde_number;
 
+#[cfg(feature = "jsonb")]
+pub use jsonb::{Jsonb, JsonbNode};
 #[cfg(feature = "magnus")]
 pub use magnus::{
     child as magnus_child, invalidate_members_cache as magnus_invalidate_members_cache,
@@ -164,6 +170,10 @@ pub trait JsonNumber {
         self.as_u64().is_some()
             || self.as_i64().is_some()
             || !self.as_str().contains(['.', 'e', 'E'])
+    }
+
+    fn is_negative(&self) -> bool {
+        self.as_str().starts_with('-')
     }
 }
 

@@ -1033,6 +1033,26 @@ pub(crate) use jsonschema_value::{
 /// `serde_json::Value`; only instances use the custom representation. [`SerdeJson`] is the
 /// built-in representation behind [`validator_for`] and the crate-level convenience functions.
 ///
+/// Reporting a failing instance back builds a `serde_json::Value`, which is recursive, so a
+/// document nesting deeper than 255 levels panics in `validate` and `iter_errors` while
+/// `is_valid` still answers.
+///
+/// Enable the `jsonb` feature for `Jsonb`, which reads a Postgres `jsonb` datum in place. It takes
+/// the container bytes, not the varlena, so the caller detoasts first:
+///
+/// ```rust,ignore
+/// let detoasted = unsafe { pgrx::pg_sys::pg_detoast_datum_packed(datum.cast_mut_ptr()) };
+/// let bytes = unsafe { pgrx::varlena_to_byte_slice(detoasted) };
+/// validator.is_valid(Jsonb::root(bytes))
+/// ```
+///
+/// Detoasting may palloc a copy, so the slice is valid only until the memory context resets.
+/// `varlena_to_byte_slice` reads either header form, so the packed variant is enough.
+///
+/// The bytes are in the backend's native byte order: storage, not a wire format. Property names
+/// and string values are assumed UTF-8, which holds under a UTF-8 server encoding. Numbers outside
+/// `f64`'s exact range need the `arbitrary-precision` feature.
+///
 /// The accessors are infallible, so the representation must be total over JSON: reject nodes
 /// with no JSON meaning (tags, foreign objects) before validation, or track them on a side
 /// channel of the representation.
@@ -1257,6 +1277,8 @@ pub mod json {
     };
     #[cfg(feature = "pyo3")]
     pub use jsonschema_value::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
+    #[cfg(feature = "jsonb")]
+    pub use jsonschema_value::{Jsonb, JsonbNode};
 }
 mod http;
 mod keywords;

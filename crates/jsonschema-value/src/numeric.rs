@@ -63,16 +63,24 @@ macro_rules! define_num_cmp {
                             }
                         }
                         // Treat unparsable numbers as infinity based on sign
-                        let is_negative = value.as_str().starts_with('-');
+                        let is_negative = value.is_negative();
                         if $infinity_positive {
                             !is_negative
                         } else {
                             is_negative
                         }
                     }
+                    // A representation keeping exact decimals can hold a value past binary64.
+                    // Without the exact arithmetic to place it, it compares as an infinity of
+                    // its own sign, which is what the branch above falls back to as well.
                     #[cfg(not(feature = "arbitrary-precision"))]
                     {
-                        unreachable!("Always Some without `arbitrary-precision`")
+                        let is_negative = value.is_negative();
+                        if $infinity_positive {
+                            !is_negative
+                        } else {
+                            is_negative
+                        }
                     }
                 }
             }
@@ -116,9 +124,11 @@ where
             }
             false
         }
+        // Placing such a value against a divisor needs the exact arithmetic that only
+        // `arbitrary-precision` brings.
         #[cfg(not(feature = "arbitrary-precision"))]
         {
-            unreachable!("Always Some without `arbitrary-precision`")
+            false
         }
     }
 }
@@ -236,6 +246,34 @@ pub fn is_multiple_of_float<N: crate::JsonNumber>(value: &N, multiple: f64) -> b
 /// Beyond this value, f64 loses precision and arithmetic operations become unreliable.
 const MAX_SAFE_INTEGER: u64 = 1u64 << 53;
 
+#[cfg(not(feature = "arbitrary-precision"))]
+/// Whether the integer written in `text` divides by `divisor`, by long division over its digits.
+///
+/// Exact at any width, so a representation carrying numbers past `f64` answers without
+/// `arbitrary-precision`. `None` when `text` is not a plain decimal integer.
+fn decimal_is_multiple_of(text: &str, divisor: u64) -> Option<bool> {
+    let text = text.strip_prefix('-').unwrap_or(text);
+    let (digits, fraction) = match text.split_once('.') {
+        Some((digits, fraction)) => (digits, Some(fraction)),
+        None => (text, None),
+    };
+    if digits.is_empty() || !digits.bytes().all(|byte| byte.is_ascii_digit()) {
+        return None;
+    }
+    // A fraction of nothing but zeros leaves the value whole; any other digit there does not.
+    if let Some(fraction) = fraction {
+        if !fraction.bytes().all(|byte| byte == b'0') {
+            return Some(false);
+        }
+    }
+    // `remainder` stays below `divisor`, itself at most 2^53, so the step cannot overflow.
+    let mut remainder = 0_u64;
+    for byte in digits.bytes() {
+        remainder = (remainder * 10 + u64::from(byte - b'0')) % divisor;
+    }
+    Some(remainder == 0)
+}
+
 pub fn is_multiple_of_integer<N: crate::JsonNumber>(value: &N, multiple: f64) -> bool {
     // Integer instances use integer modulo directly: it is exact and avoids the slower float
     // `fract()` + `%`. The divisor guard keeps it exact - divisors above 2^53 may already have
@@ -293,9 +331,17 @@ pub fn is_multiple_of_integer<N: crate::JsonNumber>(value: &N, multiple: f64) ->
             // Not an integer - can't be a multiple of an integer divisor
             false
         }
+        // Past `f64` the literal is all that is left, and long division over its digits is
+        // exact however wide the number is.
         #[cfg(not(feature = "arbitrary-precision"))]
         {
-            unreachable!("Always Some without `arbitrary-precision`")
+            if divisor_ok {
+                #[allow(clippy::cast_sign_loss)]
+                if let Some(answer) = decimal_is_multiple_of(&value.as_str(), multiple as u64) {
+                    return answer;
+                }
+            }
+            false
         }
     }
 }

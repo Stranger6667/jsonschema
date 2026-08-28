@@ -24,7 +24,7 @@ use std::{
 };
 
 use ::magnus::{rb_sys::FromRawValue as _, value::ReprValue as _, Value as MagnusValue};
-use ahash::{AHashMap, AHashSet, AHasher};
+use ahash::{AHashMap, AHasher};
 use rb_sys::{
     rb_ary_entry, rb_ary_new_capa, rb_ary_store, rb_big2str, rb_enc_str_coderange, rb_float_value,
     rb_gc_count, rb_gc_register_mark_object, rb_hash_foreach, rb_hash_lookup2, rb_hash_size,
@@ -1051,29 +1051,15 @@ impl<'a> Array<'a, Magnus> for RbArray<'a> {
     }
 
     fn is_unique(&self) -> bool {
-        if self.len <= 1 {
-            return true;
-        }
-        let element = |index: usize| unsafe { rb_ary_entry(self.value, index as c_long) };
-        if self.len <= crate::unique::ITEMS_SIZE_THRESHOLD {
-            // Pairwise beats hashing for small arrays, even at O(N^2).
-            for index in 0..self.len {
-                for other in index + 1..self.len {
-                    if equal_nodes(element(index), element(other), 0) {
-                        return false;
-                    }
-                }
-            }
-            true
-        } else {
-            let mut seen = AHashSet::with_capacity(self.len);
-            (0..self.len).all(|index| {
-                seen.insert(HashedElement {
-                    array: self.value,
-                    index,
-                })
-            })
-        }
+        crate::unique::is_unique_by(
+            self.len,
+            |index| unsafe { rb_ary_entry(self.value, index as c_long) },
+            |left, right| equal_nodes(*left, *right, 0),
+            |index| HashedElement {
+                array: self.value,
+                index,
+            },
+        )
     }
 }
 

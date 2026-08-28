@@ -14,11 +14,25 @@ static ZUORA: &[u8] = include_bytes!("../data/zuora.json");
 pub static KUBERNETES: &[u8] = include_bytes!("../data/kubernetes.json");
 static CANADA: &[u8] = include_bytes!("../data/canada.json");
 static CITM: &[u8] = include_bytes!("../data/citm_catalog.json");
-static FAST_VALID: &[u8] = include_bytes!("../data/fast_valid.json");
-static FAST_INVALID: &[u8] = include_bytes!("../data/fast_invalid.json");
-static FHIR: &[u8] = include_bytes!("../data/patient-example-d.json");
+pub static FAST_VALID: &[u8] = include_bytes!("../data/fast_valid.json");
+pub static FAST_INVALID: &[u8] = include_bytes!("../data/fast_invalid.json");
+pub static FHIR_PATIENT: &[u8] = include_bytes!("../data/patient-example-d.json");
 static RECURSIVE_INSTANCE: &[u8] = include_bytes!("../data/recursive_instance.json");
 static PETSTORE_31: &[u8] = include_bytes!("../data/petstore31.json");
+
+// Extra top-level property, so every `oneOf` branch fails and the error paths build a full tree.
+pub static FHIR_PATIENT_INVALID: &[u8] = include_bytes!("../data/patient-example-d-invalid.json");
+// The `GEOJSON` document reused as an instance, with `$id` removed so a schema requiring it rejects.
+pub static GEOJSON_INSTANCE_INVALID: &[u8] = include_bytes!("../data/geojson_invalid.json");
+
+// Postgres `jsonb` containers, varlena header stripped; captured by `tools/gen-jsonb-fixtures.sh`.
+pub static FHIR_PATIENT_JSONB: &[u8] = include_bytes!("../data/patient-example-d.jsonb");
+pub static FHIR_PATIENT_INVALID_JSONB: &[u8] =
+    include_bytes!("../data/patient-example-d-invalid.jsonb");
+pub static GEOJSON_INSTANCE_JSONB: &[u8] = include_bytes!("../data/geojson.jsonb");
+pub static GEOJSON_INSTANCE_INVALID_JSONB: &[u8] = include_bytes!("../data/geojson_invalid.jsonb");
+pub static FAST_VALID_JSONB: &[u8] = include_bytes!("../data/fast_valid.jsonb");
+pub static FAST_INVALID_JSONB: &[u8] = include_bytes!("../data/fast_invalid.jsonb");
 
 /// Parses the given JSON fixture slice into a `serde_json::Value`.
 ///
@@ -134,7 +148,7 @@ impl BenchmarkSuite {
                     schema: read_json(FHIR_SCHEMA),
                     instances: vec![BenchInstance {
                         name: "Fhir".to_string(),
-                        data: read_json(FHIR),
+                        data: read_json(FHIR_PATIENT),
                     }],
                 }),
                 LazyLock::new(|| BenchData {

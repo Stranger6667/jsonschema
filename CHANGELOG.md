@@ -8,6 +8,7 @@
 - `canonicalize_at`, canonicalizing the subschema at a JSON Pointer in its document's context.
 - **CLI**: the `--at POINTER` flag of `jsonschema canonicalize`, canonicalizing only the subschema at that pointer without breaking its references into the rest of the document.
 - **CLI**: `jsonschema canonicalize` reads YAML schemas (`.yaml`/`.yml`) as well as JSON.
+- `json::Jsonb` instance representation, reading a Postgres `jsonb` datum without an intermediate document.
 
 ### Fixed
 
