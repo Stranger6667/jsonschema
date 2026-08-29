@@ -17,3 +17,4 @@ for benchmark in Benchmark::iter() {
         // Your benchmarking code here
     });
 }
+```
