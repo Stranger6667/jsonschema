@@ -8,6 +8,7 @@ pub static CITM_SCHEMA: &[u8] = include_bytes!("../data/citm_catalog_schema.json
 pub static FAST_SCHEMA: &[u8] = include_bytes!("../data/fast_schema.json");
 pub static FHIR_SCHEMA: &[u8] = include_bytes!("../data/fhir.schema.json");
 pub static RECURSIVE_SCHEMA: &[u8] = include_bytes!("../data/recursive_schema.json");
+pub static OPEN_API_31: &[u8] = include_bytes!("../data/openapi31.json");
 
 static ZUORA: &[u8] = include_bytes!("../data/zuora.json");
 pub static KUBERNETES: &[u8] = include_bytes!("../data/kubernetes.json");
@@ -17,6 +18,7 @@ static FAST_VALID: &[u8] = include_bytes!("../data/fast_valid.json");
 static FAST_INVALID: &[u8] = include_bytes!("../data/fast_invalid.json");
 static FHIR: &[u8] = include_bytes!("../data/patient-example-d.json");
 static RECURSIVE_INSTANCE: &[u8] = include_bytes!("../data/recursive_instance.json");
+static PETSTORE_31: &[u8] = include_bytes!("../data/petstore31.json");
 
 /// Parses the given JSON fixture slice into a `serde_json::Value`.
 ///
@@ -37,6 +39,7 @@ pub enum Benchmark {
     Fast,
     Fhir,
     Recursive,
+    OpenAPI31,
 }
 
 type BenchFunc<'a> = dyn FnMut(&str, &Value, &[BenchInstance]) + 'a;
@@ -51,6 +54,7 @@ impl Benchmark {
             Benchmark::Fast,
             Benchmark::Fhir,
             Benchmark::Recursive,
+            Benchmark::OpenAPI31,
         ]
         .into_iter()
     }
@@ -72,7 +76,7 @@ pub struct BenchInstance {
 }
 
 pub struct BenchmarkSuite {
-    benchmarks: [LazyLock<BenchData>; 7],
+    benchmarks: [LazyLock<BenchData>; 8],
 }
 
 impl BenchmarkSuite {
@@ -139,6 +143,14 @@ impl BenchmarkSuite {
                     instances: vec![BenchInstance {
                         name: "StructuredContent".to_string(),
                         data: read_json(RECURSIVE_INSTANCE),
+                    }],
+                }),
+                LazyLock::new(|| BenchData {
+                    name: "Open API 3.1",
+                    schema: read_json(OPEN_API_31),
+                    instances: vec![BenchInstance {
+                        name: "Petstore".to_string(),
+                        data: read_json(PETSTORE_31),
                     }],
                 }),
             ],

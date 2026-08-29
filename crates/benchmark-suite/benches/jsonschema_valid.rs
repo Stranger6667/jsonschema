@@ -24,7 +24,7 @@ fn bench_validate(c: &mut Criterion, name: &str, schema: &Value, instance: &Valu
     );
 }
 
-static UNSUPPORTED_BENCHMARKS: &[&str] = &["Open API", "Swagger"];
+static UNSUPPORTED_BENCHMARKS: &[&str] = &["Open API", "Swagger", "Open API 3.1"];
 
 fn run_benchmarks(c: &mut Criterion) {
     for benchmark in Benchmark::iter() {
