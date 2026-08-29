@@ -32,6 +32,27 @@ use super::CompilationResult;
 /// Used for $recursiveRef and circular references to handle cycles during compilation.
 pub(crate) type PendingPropertyValidators<F = SerdeJson> = Arc<OnceLock<PropertyValidators<F>>>;
 
+/// Evaluated properties for a schema whose set cannot depend on the instance.
+#[derive(Default)]
+struct StaticEvaluated {
+    names: AHashSet<String>,
+    patterns: Vec<Regex>,
+    /// `additionalProperties` anywhere evaluates everything.
+    saturated: bool,
+    /// An `allOf` contributed. The true/false answer matches the walk, the errors may not.
+    verdict_only: bool,
+}
+
+impl StaticEvaluated {
+    fn covers(&self, property: &str) -> bool {
+        self.names.contains(property)
+            || self
+                .patterns
+                .iter()
+                .any(|pattern| pattern.is_match(property).unwrap_or(false))
+    }
+}
+
 /// Holds compiled validators for property evaluation in unevaluatedProperties.
 /// This structure is built during schema compilation and used during validation.
 pub(crate) struct PropertyValidators<F: Json = SerdeJson> {
@@ -117,6 +138,51 @@ impl<F: Json> fmt::Debug for ConditionalValidators<F> {
 }
 
 impl<F: Json> PropertyValidators<F> {
+    /// Collects evaluated properties into `out`; `false` if any applicator makes the set
+    /// instance-dependent. `root` skips the `unevaluatedProperties` being optimized.
+    fn collect_static(
+        &self,
+        root: bool,
+        out: &mut StaticEvaluated,
+        visited: &mut Vec<usize>,
+    ) -> bool {
+        if !self.any_of.is_empty()
+            || !self.one_of.is_empty()
+            || !self.dependent.is_empty()
+            || self.conditional.is_some()
+            || self.dynamic_ref.is_some()
+            || self.recursive_ref.is_some()
+            || (!root && self.unevaluated.is_some())
+        {
+            return false;
+        }
+        // A cycle returns to a node already folded into `out`.
+        let id = std::ptr::from_ref(self) as usize;
+        if visited.contains(&id) {
+            return true;
+        }
+        visited.push(id);
+
+        out.names.extend(self.properties.iter().cloned());
+        out.patterns.extend(
+            self.pattern_properties
+                .iter()
+                .map(|(pattern, _)| pattern.clone()),
+        );
+        out.saturated |= self.additional.is_some();
+
+        for (_, branch) in &self.all_of {
+            out.verdict_only = true;
+            if !branch.collect_static(false, out, visited) {
+                return false;
+            }
+        }
+        match &self.ref_ {
+            Some(ref_) => initialized(ref_).collect_static(false, out, visited),
+            None => true,
+        }
+    }
+
     /// Core implementation for marking evaluated properties.
     ///
     /// When `include_unevaluated` is `true` (used by `is_valid`/`validate`), also marks
@@ -748,6 +814,29 @@ fn compile_dependent<'a, F: Json>(
 pub(crate) struct UnevaluatedPropertiesValidator<F: Json = SerdeJson> {
     location: Location,
     validators: PropertyValidators<F>,
+    /// Filled on first use: `$ref` targets are wired up only after compilation.
+    static_evaluated: OnceLock<Option<StaticEvaluated>>,
+}
+
+impl<F: Json> UnevaluatedPropertiesValidator<F> {
+    /// Only for callers that need the true/false answer. A failing `allOf` branch fails the
+    /// schema anyway, so including it cannot change that answer, but it can drop errors.
+    fn static_evaluated(&self) -> Option<&StaticEvaluated> {
+        self.static_evaluated
+            .get_or_init(|| {
+                let mut evaluated = StaticEvaluated::default();
+                self.validators
+                    .collect_static(true, &mut evaluated, &mut Vec::new())
+                    .then_some(evaluated)
+            })
+            .as_ref()
+    }
+
+    /// The same set the walk would build, so callers may also report the failing properties.
+    fn static_evaluated_exact(&self) -> Option<&StaticEvaluated> {
+        self.static_evaluated()
+            .filter(|evaluated| !evaluated.verdict_only)
+    }
 }
 
 impl UnevaluatedPropertiesValidator {
@@ -761,6 +850,7 @@ impl UnevaluatedPropertiesValidator {
         Ok(Box::new(UnevaluatedPropertiesValidator {
             location: ctx.location().join("unevaluatedProperties"),
             validators,
+            static_evaluated: OnceLock::new(),
         }))
     }
 }
@@ -774,6 +864,31 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Some(object) = instance.as_object() {
+            if let Some(evaluated) = self.static_evaluated_exact() {
+                if evaluated.saturated {
+                    return Ok(());
+                }
+                let mut unevaluated = Vec::new();
+                for (property, value) in object.members() {
+                    if evaluated.covers(property.as_ref()) {
+                        continue;
+                    }
+                    match &self.validators.unevaluated {
+                        Some(schema) if schema.is_valid(&value, ctx) => {}
+                        _ => unevaluated.push(property.as_ref().to_owned()),
+                    }
+                }
+                if unevaluated.is_empty() {
+                    return Ok(());
+                }
+                return Err(ValidationError::unevaluated_properties(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance.lazy_value(),
+                    unevaluated,
+                ));
+            }
             let mut evaluated = AHashSet::with_capacity(object.len());
 
             // Mark all evaluated properties
@@ -817,6 +932,21 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
 
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
+            if let Some(evaluated) = self.static_evaluated() {
+                if evaluated.saturated {
+                    return true;
+                }
+                for (property, value) in object.members() {
+                    if evaluated.covers(property.as_ref()) {
+                        continue;
+                    }
+                    match &self.validators.unevaluated {
+                        Some(schema) if schema.is_valid(&value, ctx) => {}
+                        _ => return false,
+                    }
+                }
+                return true;
+            }
             let mut evaluated = AHashSet::with_capacity(object.len());
             self.validators
                 .mark_evaluated_properties(instance, &mut evaluated, ctx);

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `unevaluatedProperties` is up to 2.9x faster.
+
 ## [0.52.0] - 2026-08-27
 
 ### Added
