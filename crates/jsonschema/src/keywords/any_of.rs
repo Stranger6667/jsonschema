@@ -115,6 +115,17 @@ impl<F: Json> Validate<F> for AnyOfValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
+        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         // Per spec §10.2.1.2, annotations must be collected from ALL valid branches.
         // First detect all valid branches cheaply, then evaluate only those branches to avoid
         // constructing dropped error trees for invalid branches in the common case.
@@ -130,13 +141,23 @@ impl<F: Json> Validate<F> for AnyOfValidator<F> {
             let failures: Vec<_> = self
                 .schemas
                 .iter()
-                .map(|node| node.evaluate_instance(instance, location, tracker, ctx))
+                .map(|node| {
+                    node.evaluate_instance_at(instance, location, instance_location, tracker, ctx)
+                })
                 .collect();
             EvaluationResult::from_children(failures)
         } else {
             let valid_results: Vec<_> = valid_indices
                 .into_iter()
-                .map(|idx| self.schemas[idx].evaluate_instance(instance, location, tracker, ctx))
+                .map(|idx| {
+                    self.schemas[idx].evaluate_instance_at(
+                        instance,
+                        location,
+                        instance_location,
+                        tracker,
+                        ctx,
+                    )
+                })
                 .collect();
             EvaluationResult::from_children(valid_results)
         }
@@ -225,10 +246,24 @@ impl<F: Json> Validate<F> for SingleAnyOfValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        EvaluationResult::from(
-            self.node
-                .evaluate_instance(instance, location, tracker, ctx),
-        )
+        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        EvaluationResult::from(self.node.evaluate_instance_at(
+            instance,
+            location,
+            instance_location,
+            tracker,
+            ctx,
+        ))
     }
 }
 

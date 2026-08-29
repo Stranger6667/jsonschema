@@ -242,6 +242,23 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>>;
 
+    /// `evaluate`, where the caller has already rendered this instance position.
+    ///
+    /// Rendering a JSON Pointer walks the whole location chain, and every schema node at one
+    /// instance position renders the same one. Implementors that stay at that position should
+    /// forward `instance_location` instead of rebuilding it.
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let _ = instance_location;
+        self.evaluate(instance, location, tracker, ctx)
+    }
+
     fn evaluate(
         &self,
         instance: &F::Node<'_>,

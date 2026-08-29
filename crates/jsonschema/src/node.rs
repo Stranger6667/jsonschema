@@ -377,6 +377,19 @@ impl<F: Json> SchemaNode<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationNode {
         let instance_location: Location = location.into();
+        self.evaluate_instance_at(instance, location, &instance_location, tracker, ctx)
+    }
+
+    /// [`Self::evaluate_instance`] for a caller that already rendered this instance position.
+    pub(crate) fn evaluate_instance_at(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationNode {
+        let instance_location = instance_location.clone();
 
         let keyword_location = crate::paths::evaluation_path(tracker, &self.location, ctx);
         let schema_location = Arc::clone(self.inner.formatted_schema_location.get_or_init(|| {
@@ -436,7 +449,8 @@ impl<F: Json> SchemaNode<F> {
         let mut invalid = false;
 
         for (child_location, absolute_location, cached_schema_location, validator) in subschemas {
-            let child_result = validator.evaluate(instance, location, tracker, ctx);
+            let child_result =
+                validator.evaluate_with_location(instance, location, instance_loc, tracker, ctx);
 
             let absolute_location = absolute_location.cloned();
 
@@ -640,6 +654,17 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         self.evaluate_at(instance, location, &location.into(), tracker, ctx)
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        self.evaluate_at(instance, location, instance_location, tracker, ctx)
     }
 }
 
