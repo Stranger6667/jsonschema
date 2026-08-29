@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `multipleOf` rejecting valid values like `1070468.14` for `0.01` without `arbitrary-precision`.
+
+### Performance
+
+- `multipleOf` with a fractional divisor is 8-16x faster.
+
 ## [0.52.0] - 2026-08-26
 
 ### Added
