@@ -2,7 +2,7 @@ use crate::{
     compiler,
     keywords::CompilationResult,
     node::SchemaNode,
-    paths::{LazyLocation, RefTracker},
+    paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, SerdeJson, ValidationError,
 };
@@ -77,13 +77,28 @@ impl<F: Json> Validate<F> for IfThenValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let if_node = self
-            .schema
-            .evaluate_instance(instance, location, tracker, ctx);
+        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let if_node =
+            self.schema
+                .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
         if if_node.valid {
-            let then_node = self
-                .then_schema
-                .evaluate_instance(instance, location, tracker, ctx);
+            let then_node = self.then_schema.evaluate_instance_at(
+                instance,
+                location,
+                instance_location,
+                tracker,
+                ctx,
+            );
             EvaluationResult::from_children(vec![if_node, then_node])
         } else {
             EvaluationResult::valid_empty()
@@ -160,15 +175,30 @@ impl<F: Json> Validate<F> for IfElseValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let if_node = self
-            .schema
-            .evaluate_instance(instance, location, tracker, ctx);
+        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let if_node =
+            self.schema
+                .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
         if if_node.valid {
             EvaluationResult::from_children(vec![if_node])
         } else {
-            let else_node = self
-                .else_schema
-                .evaluate_instance(instance, location, tracker, ctx);
+            let else_node = self.else_schema.evaluate_instance_at(
+                instance,
+                location,
+                instance_location,
+                tracker,
+                ctx,
+            );
             EvaluationResult::from_children(vec![else_node])
         }
     }
@@ -252,18 +282,37 @@ impl<F: Json> Validate<F> for IfThenElseValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let if_node = self
-            .schema
-            .evaluate_instance(instance, location, tracker, ctx);
+        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let if_node =
+            self.schema
+                .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
         if if_node.valid {
-            let then_node = self
-                .then_schema
-                .evaluate_instance(instance, location, tracker, ctx);
+            let then_node = self.then_schema.evaluate_instance_at(
+                instance,
+                location,
+                instance_location,
+                tracker,
+                ctx,
+            );
             EvaluationResult::from_children(vec![if_node, then_node])
         } else {
-            let else_node = self
-                .else_schema
-                .evaluate_instance(instance, location, tracker, ctx);
+            let else_node = self.else_schema.evaluate_instance_at(
+                instance,
+                location,
+                instance_location,
+                tracker,
+                ctx,
+            );
             EvaluationResult::from_children(vec![else_node])
         }
     }

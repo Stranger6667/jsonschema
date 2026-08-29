@@ -10,6 +10,7 @@
 
 - `multipleOf` with a fractional divisor is 8-16x faster.
 - `unevaluatedProperties` is up to 2.9x faster.
+- `evaluate` is up to 27% faster on reference-heavy schemas.
 
 ## [0.52.0] - 2026-08-26
 

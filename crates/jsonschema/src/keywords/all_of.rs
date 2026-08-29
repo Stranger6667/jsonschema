@@ -73,9 +73,26 @@ impl<F: Json> Validate<F> for AllOfValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
+        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
         let mut children = Vec::with_capacity(self.schemas.len());
         for node in &self.schemas {
-            children.push(node.evaluate_instance(instance, location, tracker, ctx));
+            children.push(node.evaluate_instance_at(
+                instance,
+                location,
+                instance_location,
+                tracker,
+                ctx,
+            ));
         }
         EvaluationResult::from_children(children)
     }
@@ -132,10 +149,24 @@ impl<F: Json> Validate<F> for SingleValueAllOfValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        EvaluationResult::from(
-            self.node
-                .evaluate_instance(instance, location, tracker, ctx),
-        )
+        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        EvaluationResult::from(self.node.evaluate_instance_at(
+            instance,
+            location,
+            instance_location,
+            tracker,
+            ctx,
+        ))
     }
 }
 
