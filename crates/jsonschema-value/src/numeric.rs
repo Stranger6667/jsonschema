@@ -123,6 +123,85 @@ where
     }
 }
 
+/// A finite `f64` as the decimal it prints as: `mantissa / 10^decimals`.
+///
+/// `0.1` reads as `1/10`, the decimal JSON Schema means, not the binary `f64` holds.
+/// `None` for anything outside `i128`, which leaves the caller on the fraction path.
+fn decimal_parts(value: f64) -> Option<(i128, i32)> {
+    if !value.is_finite() {
+        return None;
+    }
+    let mut buffer = zmij::Buffer::new();
+    let mut mantissa: i128 = 0;
+    let mut decimals = 0;
+    let mut exponent = 0;
+    let mut negative = false;
+    let mut fractional = false;
+    let mut bytes = buffer.format_finite(value).bytes();
+    for byte in &mut bytes {
+        match byte {
+            b'-' => negative = true,
+            b'.' => fractional = true,
+            // `zmij` writes an exponent for magnitudes far from one, as in `1e+300`.
+            b'e' => {
+                exponent = parse_exponent(&mut bytes)?;
+                break;
+            }
+            _ => {
+                mantissa = mantissa
+                    .checked_mul(10)?
+                    .checked_add(i128::from(byte.checked_sub(b'0')?))?;
+                decimals += i32::from(fractional);
+            }
+        }
+    }
+    Some((
+        if negative { -mantissa } else { mantissa },
+        decimals - exponent,
+    ))
+}
+
+/// The signed exponent left in `bytes` after an `e`.
+fn parse_exponent(bytes: &mut impl Iterator<Item = u8>) -> Option<i32> {
+    let mut exponent = 0_i32;
+    let mut negative = false;
+    for byte in bytes {
+        match byte {
+            b'+' => {}
+            b'-' => negative = true,
+            _ => {
+                exponent = exponent
+                    .checked_mul(10)?
+                    .checked_add(i32::from(byte.checked_sub(b'0')?))?;
+            }
+        }
+    }
+    Some(if negative { -exponent } else { exponent })
+}
+
+/// Whether `value / multiple` is an integer, in the decimal reading both operands print as.
+///
+/// `None` when either side leaves `i128`, which leaves the caller on `BigFraction`. That
+/// fallback is not exact - `fraction` builds its rational from around 16 significant digits
+/// of the binary value, reading `1070468.14` as `1070468.1399999998` - so this answers
+/// wherever it can rather than only where the two agree.
+fn divides_exactly(value: f64, multiple: f64) -> Option<bool> {
+    let (value_mantissa, value_decimals) = decimal_parts(value)?;
+    let (multiple_mantissa, multiple_decimals) = decimal_parts(multiple)?;
+    if multiple_mantissa == 0 {
+        return None;
+    }
+    // value / multiple = (value_mantissa * 10^multiple_decimals)
+    //                  / (multiple_mantissa * 10^value_decimals)
+    // Cancelling the shared powers of ten first keeps both sides inside `i128` far more often.
+    let shared = value_decimals.min(multiple_decimals);
+    let scale = |mantissa: i128, decimals: i32| {
+        let places = u32::try_from(decimals - shared).ok()?;
+        mantissa.checked_mul(10_i128.checked_pow(places)?)
+    };
+    Some(scale(value_mantissa, multiple_decimals)? % scale(multiple_mantissa, value_decimals)? == 0)
+}
+
 pub fn is_multiple_of_float<N: crate::JsonNumber>(value: &N, multiple: f64) -> bool {
     if let Some(value_f64) = value.as_f64() {
         // Zero is a multiple of any non-zero number
@@ -140,6 +219,9 @@ pub fn is_multiple_of_float<N: crate::JsonNumber>(value: &N, multiple: f64) -> b
         // For fractions, integers have denominator equal to one.
         //
         // Ref: https://json-schema.org/draft/2020-12/json-schema-validation#section-6.2.1
+        if let Some(answer) = divides_exactly(value_f64, multiple) {
+            return answer;
+        }
         (BigFraction::from(value_f64) / BigFraction::from(multiple))
             .denom()
             .is_none_or(One::is_one)
@@ -691,9 +773,46 @@ pub mod bignum {
     }
 }
 
-#[cfg(all(test, feature = "arbitrary-precision"))]
+#[cfg(test)]
 mod tests {
-    use super::bignum;
+    use super::{decimal_parts, divides_exactly};
+    use test_case::test_case;
+
+    #[test_case(0.1, Some((1, 1)); "leading zero")]
+    #[test_case(2.675, Some((2675, 3)); "three decimals")]
+    #[test_case(-0.25, Some((-25, 2)); "negative")]
+    // `zmij` always writes a fractional part, so an integral value scales by ten.
+    #[test_case(7.0, Some((70, 1)); "integral")]
+    #[test_case(1e-7, Some((1, 7)); "negative exponent")]
+    #[test_case(1e300, Some((1, -300)); "positive exponent")]
+    #[test_case(f64::NAN, None; "not a number")]
+    #[test_case(f64::INFINITY, None; "infinite")]
+    fn decimal_parts_reads_the_printed_decimal(value: f64, expected: Option<(i128, i32)>) {
+        assert_eq!(decimal_parts(value), expected);
+    }
+
+    // `BigFraction::from(f64)` rounds these into non-multiples; the decimal reading does not.
+    #[test_case(1_070_468.14, 0.01, true; "large amount of cents")]
+    #[test_case(1_070_468.13, 0.01, true; "another large amount of cents")]
+    #[test_case(1_070_468.145, 0.01, false; "large amount of half cents")]
+    #[test_case(19.99, 0.01, true; "small amount of cents")]
+    #[test_case(0.0075, 0.0001, true; "fourth decimal place")]
+    #[test_case(5.35, 2.675, true; "fractional divisor")]
+    #[test_case(505_661.899_999_999_97, 0.1, false; "seventeen significant digits")]
+    fn divides_exactly_answers(value: f64, multiple: f64, expected: bool) {
+        assert_eq!(divides_exactly(value, multiple), Some(expected));
+    }
+
+    #[test_case(1e300; "too large to scale into i128")]
+    #[test_case(1e-300; "too small to scale into i128")]
+    fn divides_exactly_defers_out_of_range(value: f64) {
+        assert_eq!(divides_exactly(value, 0.01), None);
+    }
+}
+
+#[cfg(all(test, feature = "arbitrary-precision"))]
+mod bignum_tests {
+    use crate::numeric::bignum;
     use fraction::BigFraction;
     use num_bigint::BigInt;
     use serde_json::{Number, Value};
