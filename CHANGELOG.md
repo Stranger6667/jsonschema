@@ -8,6 +8,7 @@
 
 ### Performance
 
+- `minLength` and `maxLength` together now scan the string once.
 - `multipleOf` with a fractional divisor is 8-16x faster.
 - `unevaluatedProperties` is up to 2.9x faster.
 
