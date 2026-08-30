@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.52.1] - 2026-08-30
+
 ### Performance
 
 - `minLength` and `maxLength` together now scan the string once.
@@ -1412,7 +1414,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.1...HEAD
+[0.52.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.0...python-v0.52.1
 [0.52.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.51.0...python-v0.52.0
 [0.51.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.50.1...python-v0.51.0
 [0.50.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.50.0...python-v0.50.1
