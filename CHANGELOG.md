@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.52.1] - 2026-08-30
+
 ### Fixed
 
 - `multipleOf` rejecting valid values like `1070468.14` for `0.01` without `arbitrary-precision`.
@@ -1719,7 +1721,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.52.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.52.1...HEAD
+[0.52.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.52.0...rust-v0.52.1
 [0.52.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.51.0...rust-v0.52.0
 [0.51.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.50.1...rust-v0.51.0
 [0.50.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.50.0...rust-v0.50.1
