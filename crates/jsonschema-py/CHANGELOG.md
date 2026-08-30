@@ -4,6 +4,7 @@
 
 ### Performance
 
+- `minLength` and `maxLength` together now scan the string once.
 - `unevaluatedProperties` is up to 2.9x faster.
 - `evaluate` is up to 27% faster on reference-heavy schemas.
 

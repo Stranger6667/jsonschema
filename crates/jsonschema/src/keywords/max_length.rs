@@ -65,9 +65,18 @@ impl<F: Json> Validate<F> for MaxLengthValidator {
 #[inline]
 pub(crate) fn compile<'a, F: Json>(
     ctx: &compiler::Context<F>,
-    _: &'a Map<String, Value>,
+    parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
+    // a sibling `minLength` checks both bounds off one measurement
+    if size_limit(ctx, schema).is_some()
+        && parent
+            .get("minLength")
+            .and_then(|min| size_limit(ctx, min))
+            .is_some()
+    {
+        return None;
+    }
     let location = ctx.location().join("maxLength");
     Some(MaxLengthValidator::compile(ctx, schema, location))
 }
