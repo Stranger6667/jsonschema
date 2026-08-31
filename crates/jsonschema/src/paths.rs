@@ -702,6 +702,15 @@ impl Location {
     pub fn iter(&self) -> std::vec::IntoIter<LocationSegment<'_>> {
         <&Self as IntoIterator>::into_iter(self)
     }
+    /// Iterate the segments without materializing them.
+    pub fn segments(&self) -> impl Iterator<Item = LocationSegment<'_>> + Clone {
+        self.as_str().split('/').filter(|p| !p.is_empty()).map(|p| {
+            p.parse::<usize>().map_or_else(
+                |_| LocationSegment::Property(unescape_segment(p)),
+                LocationSegment::Index,
+            )
+        })
+    }
 }
 
 impl Default for Location {
@@ -721,17 +730,7 @@ impl<'a> IntoIterator for &'a Location {
     type IntoIter = std::vec::IntoIter<LocationSegment<'a>>;
 
     fn into_iter(self) -> Self::IntoIter {
-        self.as_str()
-            .split('/')
-            .filter(|p| !p.is_empty())
-            .map(|p| {
-                p.parse::<usize>().map_or(
-                    LocationSegment::Property(unescape_segment(p)),
-                    LocationSegment::Index,
-                )
-            })
-            .collect::<Vec<_>>()
-            .into_iter()
+        self.segments().collect::<Vec<_>>().into_iter()
     }
 }
 

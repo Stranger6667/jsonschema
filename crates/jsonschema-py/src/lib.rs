@@ -9,6 +9,7 @@ use std::{
     any::Any,
     cell::RefCell,
     collections::VecDeque,
+    fmt::Write as _,
     io::Write,
     panic::{self, AssertUnwindSafe},
     sync::Arc,
@@ -20,12 +21,13 @@ use http::HttpOptions;
 use jsonschema::{
     canonical::json::canonical_number,
     json::{probe_root, take_pending_error, PendingErrorScope, Pyo3},
-    paths::LocationSegment,
+    paths::{Location, LocationSegment},
     Draft, Retrieve, ValidationOptions,
 };
 use pyo3::{
     exceptions::{self, PyKeyError, PyValueError},
-    ffi::{PyList_New, PyList_SetItem, PyUnicode_AsUTF8AndSize, Py_DECREF},
+    ffi::{PyImport_GetModule, PyList_New, PyList_SetItem, PyUnicode_AsUTF8AndSize, Py_DECREF},
+    intern,
     prelude::*,
     types::{PyAny, PyDict, PyList, PyString, PyType},
     wrap_pyfunction,
@@ -54,15 +56,24 @@ const DRAFT4: u8 = 4;
 const DRAFT201909: u8 = 19;
 const DRAFT202012: u8 = 20;
 
+// Reading `sys.modules` skips the import machinery `py.import` runs on every call. The module is
+// only absent if something removed it from `sys.modules`, and importing it again restores it.
+fn module(py: Python<'_>) -> PyResult<Bound<'_, PyAny>> {
+    let name = intern!(py, "jsonschema_rs");
+    let cached = unsafe { PyImport_GetModule(name.as_ptr()) };
+    match unsafe { Bound::from_owned_ptr_or_opt(py, cached) } {
+        Some(module) => Ok(module),
+        None => Ok(py.import(name)?.into_any()),
+    }
+}
+
 fn validation_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
-    let module = py.import("jsonschema_rs")?;
-    let exception_class = module.getattr("ValidationError")?;
+    let exception_class = module(py)?.getattr(intern!(py, "ValidationError"))?;
     Ok(exception_class.cast_into::<PyType>()?)
 }
 
 fn referencing_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
-    let module = py.import("jsonschema_rs")?;
-    let exception_class = module.getattr("ReferencingError")?;
+    let exception_class = module(py)?.getattr(intern!(py, "ReferencingError"))?;
     Ok(exception_class.cast_into::<PyType>()?)
 }
 
@@ -262,7 +273,8 @@ impl PyEvaluation {
 }
 
 struct ValidationErrorArgs {
-    message: String,
+    /// The message is the prefix of `verbose_message` up to this byte.
+    message_len: usize,
     verbose_message: String,
     schema_path: Py<PyList>,
     instance_path: Py<PyList>,
@@ -279,8 +291,8 @@ fn create_validation_error_object(
     let ty = validation_error_type(py)?;
     let kind_obj = args.kind.into_pyobject(py)?.unbind();
     let obj = ty.call1((
-        args.message,
-        args.verbose_message,
+        &args.verbose_message[..args.message_len],
+        &args.verbose_message,
         args.schema_path,
         args.instance_path,
         args.evaluation_path,
@@ -731,49 +743,59 @@ impl ValidationErrorIter {
     }
 }
 
+fn location_to_list(py: Python<'_>, location: &Location) -> PyResult<Py<PyList>> {
+    let list = unsafe { PyList_New(location.segments().count() as pyo3::ffi::Py_ssize_t) };
+    for (index, segment) in location.segments().enumerate() {
+        let object = match segment {
+            LocationSegment::Property(property) => PyString::new(py, &property).into_any(),
+            LocationSegment::Index(value) => value.into_pyobject(py)?.into_any(),
+        };
+        // SAFETY: `list` has room for every segment and each slot is written once
+        unsafe {
+            PyList_SetItem(list, index as pyo3::ffi::Py_ssize_t, object.into_ptr());
+        }
+    }
+    // SAFETY: `list` is a `PyList` created by `PyList_New`
+    Ok(unsafe {
+        Bound::from_owned_ptr(py, list)
+            .cast_into_unchecked::<PyList>()
+            .unbind()
+    })
+}
+
 fn into_validation_error_args(
     py: Python<'_>,
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
 ) -> PyResult<ValidationErrorArgs> {
-    let message = if let Some(mask) = mask {
-        error.masked_with(mask).to_string()
+    // Sized for the message plus what `to_error_message` appends, so neither reallocates.
+    let mut message = String::with_capacity(256);
+    if let Some(mask) = mask {
+        write!(message, "{}", error.masked_with(mask))
     } else {
-        error.to_string()
-    };
-    let verbose_message = to_error_message(&error, message.clone(), mask);
+        write!(message, "{error}")
+    }
+    .expect("Writing to a String cannot fail");
+    let message_len = message.len();
+    let verbose_message = to_error_message(&error, message, mask);
     let parts = error.into_parts();
-    let into_path = |segment: LocationSegment<'_>| match segment {
-        LocationSegment::Property(property) => {
-            property.into_pyobject(py).and_then(Py::<PyAny>::try_from)
-        }
-        LocationSegment::Index(idx) => idx.into_pyobject(py).and_then(Py::<PyAny>::try_from),
+    let schema_path = location_to_list(py, &parts.schema_path)?;
+    let instance_path = location_to_list(py, &parts.instance_path)?;
+    // Without a `$ref` on the way the two locations are the same, and copying the list beats
+    // parsing the location and building its segments again.
+    let evaluation_path = if parts.evaluation_path.as_str() == parts.schema_path.as_str() {
+        let bound = schema_path.bind(py);
+        bound.get_slice(0, bound.len()).unbind()
+    } else {
+        location_to_list(py, &parts.evaluation_path)?
     };
-    let elements = parts
-        .schema_path
-        .into_iter()
-        .map(into_path)
-        .collect::<Result<Vec<_>, _>>()?;
-    let schema_path = PyList::new(py, elements)?.unbind();
-    let elements = parts
-        .instance_path
-        .into_iter()
-        .map(into_path)
-        .collect::<Result<Vec<_>, _>>()?;
-    let instance_path = PyList::new(py, elements)?.unbind();
-    let elements = parts
-        .evaluation_path
-        .into_iter()
-        .map(into_path)
-        .collect::<Result<Vec<_>, _>>()?;
-    let evaluation_path = PyList::new(py, elements)?.unbind();
     let kind = ValidationErrorKind::try_new(py, parts.kind, mask)?;
     let instance = value_to_python(py, parts.instance.as_ref())?;
     let absolute_keyword_location = parts
         .absolute_keyword_location
         .map(|u| u.as_str().to_owned());
     Ok(ValidationErrorArgs {
-        message,
+        message_len,
         verbose_message,
         schema_path,
         instance_path,

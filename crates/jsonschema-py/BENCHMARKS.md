@@ -6,7 +6,7 @@ A benchmarking suite for comparing different Python JSON Schema implementations.
 
 - `jsonschema-rs` (latest version in this repo)
 - [jsonschema](https://pypi.org/project/jsonschema/) (v4.26.0)
-- [fastjsonschema](https://pypi.org/project/fastjsonschema/) (v2.21.2)
+- [fastjsonschema](https://pypi.org/project/fastjsonschema/) (v2.22.2)
 
 ## Usage
 
@@ -32,7 +32,7 @@ $ pytest benches/bench.py
 | CITM     | Concert data catalog with inferred schema      | 2.3 KB      | 501 KB        |
 | Fast     | From fastjsonschema benchmarks (valid/invalid) | 595 B       | 55 B / 60 B   |
 | FHIR     | Patient example validated against FHIR schema  | 3.3 MB      | 2.1 KB        |
-| Recursive| Nested data with `$dynamicRef`                 | 1.4 KB      | 449 B         |
+| Recursive| Nested data with a self-recursive `$ref`       | 1.4 KB      | 449 B         |
 
 Sources:
 - OpenAPI: [Zuora](https://github.com/APIs-guru/openapi-directory/blob/1afd351ddf50e050acdb52937a819ef1927f417a/APIs/zuora.com/2021-04-23/openapi.yaml), [Schema](https://spec.openapis.org/oas/3.0/schema/2021-09-28)
@@ -48,22 +48,16 @@ Sources:
 
 | Benchmark     | fastjsonschema | jsonschema    | jsonschema-rs (validate) |
 |---------------|----------------|---------------|--------------------------|
-| OpenAPI       | - (1)          | 525.05 ms (**x258.37**) | 2.03 ms |
-| Swagger       | - (1)          | 910.55 ms (**x350.16**) | 2.60 ms |
-| Canada (GeoJSON) | 10.18 ms (**x15.67**) | 692.15 ms (**x1,065.50**) | 0.65 ms |
-| CITM Catalog  | 4.66 ms (**x6.34**) | 72.79 ms (**x99.00**) | 0.74 ms |
-| Fast (Valid)  | 1.83 µs (**x7.97**) | 31.79 µs (**x138.17**) | 230.10 ns |
-| Fast (Invalid)| 2.04 µs (**x5.45**) | 31.46 µs (**x83.89**) | 375.00 ns |
-| FHIR          | 2.41 ms (**x478.79**) | 11.44 ms (**x2,269.79**) | 5.04 µs |
-| Recursive     | - (2)          | 1.14 s (**x117,048**) | 9.75 µs |
+| OpenAPI       | 118.01 ms (**x58.36**) | 570.63 ms (**x282.20**) | 2.02 ms |
+| Swagger       | 73.67 ms (**x29.18**) | 985.98 ms (**x390.58**) | 2.52 ms |
+| Canada (GeoJSON) | 10.01 ms (**x15.28**) | 687.54 ms (**x1,049.85**) | 0.65 ms |
+| CITM Catalog  | 4.62 ms (**x8.06**) | 78.94 ms (**x137.60**) | 0.57 ms |
+| Fast (Valid)  | 2.09 µs (**x6.89**) | 33.78 µs (**x111.45**) | 303.10 ns |
+| Fast (Invalid)| 977.92 ns (**x0.91**) | 5.23 µs (**x4.86**) | 1.08 µs |
+| FHIR          | 2.04 ms (**x470.16**) | 12.34 ms (**x2,840.53**) | 4.34 µs |
+| Recursive     | 1.03 ms (**x114.37**) | 1.20 s (**x133,784**) | 9.00 µs |
 
-Notes:
-
-1. `fastjsonschema` fails to compile the OpenAPI and Swagger specs due to the presence of the `uri-reference` format (not defined in Draft 4). However, unknown formats are explicitly supported by the spec.
-
-2. `fastjsonschema` does not support `$dynamicRef`.
-
-You can find benchmark code in [benches/](benches/), Python version `3.14.0`, Rust version `1.96.1`.
+You can find benchmark code in [benches/](benches/), Python version `3.14.7`, Rust version `1.98.0`.
 
 ## Contributing
 

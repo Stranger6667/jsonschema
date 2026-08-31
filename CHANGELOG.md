@@ -4,6 +4,7 @@
 
 ### Added
 
+- `Location::segments`, iterating the segments without collecting them.
 - **CLI**: the `--at POINTER` flag of `jsonschema canonicalize`, canonicalizing only the subschema at that pointer without breaking its references into the rest of the document.
 - **CLI**: `jsonschema canonicalize` reads YAML schemas (`.yaml`/`.yml`) as well as JSON.
 

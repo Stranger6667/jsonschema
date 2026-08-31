@@ -56,6 +56,10 @@ FAST_INSTANCE_INVALID = [
     5,
 ]
 
+# `fastjsonschema` resolves remote references over the network. Serve the draft 4 meta-schema the
+# Swagger schema points at from `jsonschema` instead, as the other two libraries do internally.
+HANDLERS = {"http": lambda uri: jsonschema.validators.Draft4Validator.META_SCHEMA}
+
 if jsonschema_rs is not None:
     variants = [
         "jsonschema-rs-is-valid",
@@ -78,10 +82,6 @@ def variant(request):
 @pytest.fixture
 def args(request, variant):
     schema, instance = request.node.get_closest_marker("data").args
-    if (schema is OPENAPI or schema is SWAGGER) and variant == "fastjsonschema":
-        pytest.skip("fastjsonschema does not support the uri-reference format and errors")
-    if schema is RECURSIVE_SCHEMA and variant == "fastjsonschema":
-        pytest.skip("fastjsonschema does not support $dynamicRef")
     if variant == "jsonschema-rs-is-valid":
         return jsonschema_rs.validator_for(schema).is_valid, instance
     if variant == "jsonschema-rs-validate":
@@ -89,7 +89,7 @@ def args(request, variant):
     if variant == "jsonschema":
         return jsonschema.validators.validator_for(schema)(schema).is_valid, instance
     if variant == "fastjsonschema":
-        return fastjsonschema.compile(schema, use_default=False), instance
+        return fastjsonschema.compile(schema, use_default=False, handlers=HANDLERS), instance
 
 
 if jsonschema_rs is not None:
@@ -145,7 +145,7 @@ def test_fast_valid(benchmark, args):
     benchmark(*args)
 
 
-@pytest.mark.data(FAST_SCHEMA, FAST_INSTANCE_VALID)
+@pytest.mark.data(FAST_SCHEMA, FAST_INSTANCE_INVALID)
 @pytest.mark.benchmark(group="fast-invalid")
 def test_fast_invalid(benchmark, args):
     def func():
