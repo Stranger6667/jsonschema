@@ -187,6 +187,7 @@ jsonschema canonicalize [OPTIONS] <SCHEMA>
 
 | Flag | Description |
 |---|---|
+| `--at <POINTER>` | Canonicalize only the subschema at this JSON Pointer |
 | `-d, --draft <DRAFT>` | Enforce a specific draft (`4`, `6`, `7`, `2019`, `2020`) |
 | `--assert-format` / `--no-assert-format` | Turn `format` validation on or off |
 | `-o, --output <FILE>` | Write result to file instead of stdout |
@@ -236,6 +237,27 @@ $ jsonschema canonicalize empty.json
 
 Constructs the canonical form cannot model exactly — `if`/`then`/`else`, `unevaluatedProperties`
 and the like — are passed through as the original document, unchanged.
+
+### Selecting a subschema
+
+`--at` answers "what does this part of the document accept?" without lifting the subschema out of
+it, so references into the rest of the document keep resolving:
+
+```console
+$ jsonschema canonicalize openapi.yaml --at /components/schemas/Adult
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "age": {"minimum": 3, "type": "integer"},
+    "name": {"type": "string"}
+  },
+  "required": ["name"],
+  "type": "object"
+}
+```
+
+A leading `#` is accepted, so a `$ref` value can be pasted as-is, and an empty pointer selects the
+whole document. A selection that refers to itself keeps the `$defs` it needs.
 
 ---
 
