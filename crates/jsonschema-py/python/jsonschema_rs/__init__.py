@@ -64,6 +64,17 @@ Validator = Draft4Validator | Draft6Validator | Draft7Validator | Draft201909Val
 class ValidationError(ValueError):
     """An instance is invalid under a provided schema."""
 
+    __slots__ = (
+        "absolute_keyword_location",
+        "evaluation_path",
+        "instance",
+        "instance_path",
+        "kind",
+        "message",
+        "schema_path",
+        "verbose_message",
+    )
+
     message: str
     verbose_message: str
     schema_path: list[str | int]
@@ -84,7 +95,7 @@ class ValidationError(ValueError):
         instance: Any,
         absolute_keyword_location: str | None = None,
     ) -> None:
-        super().__init__(verbose_message)
+        ValueError.__init__(self, verbose_message)
         self.message = message
         self.verbose_message = verbose_message
         self.schema_path = schema_path

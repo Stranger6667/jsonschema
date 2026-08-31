@@ -11,6 +11,7 @@
 
 - `type: integer`, and `type` sets containing it, are up to 67x faster on float-heavy instances.
 - Draft 4 `type: integer` is up to 20x faster on float-heavy instances.
+- Raising `ValidationError` is up to 38% faster.
 
 ## [0.52.1] - 2026-08-30
 
