@@ -599,10 +599,12 @@ fn parse_pointer(at: &str) -> Result<&str, String> {
 }
 
 // Which segment is wrong is the whole question when a pointer is typed by hand.
-fn subschema_at<'a>(document: &'a Value, pointer: &str) -> Result<&'a Value, String> {
+const MAX_SELECTION_HOPS: usize = 32;
+
+fn check_pointer(document: &Value, pointer: &str) -> Result<(), String> {
     if let Some(target) = document.pointer(pointer) {
         return match target {
-            Value::Object(_) | Value::Bool(_) => Ok(target),
+            Value::Object(_) | Value::Bool(_) => Ok(()),
             other => Err(format!(
                 "'{pointer}' is of type {}, not a schema",
                 Node::<SerdeJson>::json_type(&other)
@@ -634,35 +636,19 @@ fn subschema_at<'a>(document: &'a Value, pointer: &str) -> Result<&'a Value, Str
 }
 
 // Which key carries a root `$id`, and whether it counts at all, is the draft's business.
-fn document_uri(
-    path: &Path,
-    resource: referencing::ResourceRef<'_>,
-) -> Result<String, Box<dyn std::error::Error>> {
-    match resource.id() {
-        Some(id) => {
-            Ok(referencing::uri::resolve_against(&file_uri(path)?.borrow(), id)?.to_string())
-        }
-        None => Ok(path_to_uri(path)),
-    }
-}
-
-// Borrows the document: cloning a multi-megabyte spec costs more than the rest of the command.
-fn document_registry<'a>(
-    uri: &str,
-    resource: referencing::ResourceRef<'a>,
-) -> Result<jsonschema::Registry<'a>, Box<dyn std::error::Error>> {
-    Ok(jsonschema::Registry::new().add(uri, resource)?.prepare()?)
-}
-
-// An identity for the wrapper that the selected document's own `#` cannot collide with.
-const SELECTION_URI: &str = "urn:jsonschema-cli:selection";
-
-// A selection is one hop, and a selection that is itself a `$ref` is two; the rest is headroom.
-const MAX_SELECTION_HOPS: usize = 32;
+// Generated definitions land under a draft-dependent keyword, and a document's own spelling is kept.
+const DEFINITION_CONTAINERS: [(&str, &str); 2] =
+    [("$defs", "#/$defs/"), ("definitions", "#/definitions/")];
 
 // Registry-reached targets are keyed by percent-encoded URI; name them after its last segment.
 fn rename_definitions(schema: &mut Value) {
-    let Some(definitions) = schema.get_mut("$defs").and_then(Value::as_object_mut) else {
+    for (keyword, prefix) in DEFINITION_CONTAINERS {
+        rename_container(schema, keyword, prefix);
+    }
+}
+
+fn rename_container(schema: &mut Value, keyword: &str, prefix: &str) {
+    let Some(definitions) = schema.get_mut(keyword).and_then(Value::as_object_mut) else {
         return;
     };
     let mut names: HashMap<String, String> = HashMap::new();
@@ -686,7 +672,7 @@ fn rename_definitions(schema: &mut Value) {
         }
     }
     // The references still spell the old keys, and are rewritten once the map is no longer borrowed.
-    rename_references(schema, &names);
+    rename_references(schema, &names, prefix);
 }
 
 fn readable_definition_name(key: &str) -> Option<String> {
@@ -704,13 +690,13 @@ fn readable_definition_name(key: &str) -> Option<String> {
     (!name.is_empty()).then_some(name)
 }
 
-fn rename_references(value: &mut Value, names: &HashMap<String, String>) {
+fn rename_references(value: &mut Value, names: &HashMap<String, String>, prefix: &str) {
     match value {
         Value::Object(map) => {
             if let Some(Value::String(reference)) = map.get_mut("$ref") {
                 // A pointer escapes the key's own percent signs again, so one decode undoes it.
                 if let Some(key) = reference
-                    .strip_prefix("#/$defs/")
+                    .strip_prefix(prefix)
                     .and_then(|segment| {
                         percent_encoding::percent_decode_str(segment)
                             .decode_utf8()
@@ -718,16 +704,16 @@ fn rename_references(value: &mut Value, names: &HashMap<String, String>) {
                     })
                     .and_then(|key| names.get(key.as_ref()))
                 {
-                    *reference = format!("#/$defs/{key}");
+                    *reference = format!("{prefix}{key}");
                 }
             }
             for (_, child) in map.iter_mut() {
-                rename_references(child, names);
+                rename_references(child, names, prefix);
             }
         }
         Value::Array(items) => {
             for item in items {
-                rename_references(item, names);
+                rename_references(item, names, prefix);
             }
         }
         _ => {}
@@ -1289,44 +1275,13 @@ fn run_canonicalize(args: CanonicalizeArgs) -> ExitCode {
         Some(Ok(pointer)) => Some(pointer),
         Some(Err(error)) => return fail_with_error(error),
     };
-
-    // A selection is canonicalized as a reference *into* its document: lifted out it would become
-    // a document of its own, and every `#/...` in it would point back at itself.
-    // `registry` is declared ahead of `options` so its borrow outlives it.
-    let registry;
-    let selection;
-    let mut options = jsonschema::canonical::options();
-    let mut subschema = None;
-    let target = match pointer {
-        None => &schema_json,
-        Some(pointer) => {
-            subschema = match subschema_at(&schema_json, pointer) {
-                Ok(value) => Some(value),
-                Err(error) => return fail_with_error(error),
-            };
-            // The wrapper carries no `$schema`, so the draft comes from the document:
-            // detection would read the wrapper, and draft-7 `definitions` would go unrecognised.
-            let resource = match draft {
-                Some(draft) => referencing::ResourceRef::new(&schema_json, draft.into()),
-                None => referencing::ResourceRef::from_contents(&schema_json),
-            };
-            let uri = match document_uri(&schema, resource) {
-                Ok(uri) => uri,
-                Err(error) => return fail_with_error(error),
-            };
-            registry = match document_registry(&uri, resource) {
-                Ok(registry) => registry,
-                Err(error) => return fail_with_error(error),
-            };
-            options = options
-                .with_registry(&registry)
-                .with_base_uri(SELECTION_URI)
-                .with_draft(resource.draft());
-            selection = json!({ "$ref": format!("{uri}#{pointer}") });
-            &selection
+    if let Some(pointer) = pointer {
+        if let Err(error) = check_pointer(&schema_json, pointer) {
+            return fail_with_error(error);
         }
-    };
+    }
 
+    let mut options = jsonschema::canonical::options();
     if let Some(draft) = draft {
         options = options.with_draft(draft.into());
     }
@@ -1334,13 +1289,15 @@ fn run_canonicalize(args: CanonicalizeArgs) -> ExitCode {
         options = options.should_validate_formats(validate_formats);
     }
 
-    let canonical = match options.canonicalize(target) {
+    let canonical = match match pointer {
+        Some(pointer) => options.canonicalize_at(&schema_json, pointer),
+        None => options.canonicalize(&schema_json),
+    } {
         Ok(canonical) => canonical,
         Err(error) => return fail_with_error(error),
     };
 
-    // The wrapper's reference is an artifact of the selection, and a selection that is itself a
-    // `$ref` adds a hop. The bound is what keeps a definition map that cycles from spinning here.
+    // A selection that is itself a `$ref` reads better resolved.
     let mut selected = canonical;
     for _ in 0..MAX_SELECTION_HOPS {
         let jsonschema::canonical::CanonicalView::Reference(uri) = selected.view() else {
@@ -1352,22 +1309,9 @@ fn run_canonicalize(args: CanonicalizeArgs) -> ExitCode {
         selected = body;
     }
 
-    // A selection that came back as a bare reference, or verbatim, is the selection itself and
-    // tells the reader nothing. Pass the subschema through, as a whole document is passed through
-    // when it cannot be modelled.
-    let opaque = matches!(
-        selected.kind(),
-        jsonschema::canonical::CanonicalKind::Raw | jsonschema::canonical::CanonicalKind::Reference
-    );
-    let rendered = match subschema {
-        // A subschema passed through has nothing to rename: its keys are the document's own.
-        Some(subschema) if opaque => serde_json::to_string_pretty(subschema),
-        _ => {
-            let mut emitted = selected.to_json_schema();
-            rename_definitions(&mut emitted);
-            serde_json::to_string_pretty(&emitted)
-        }
-    };
+    let mut emitted = selected.to_json_schema();
+    rename_definitions(&mut emitted);
+    let rendered = serde_json::to_string_pretty(&emitted);
     let json = match rendered {
         Ok(json) => json,
         Err(error) => return fail_with_error(error),

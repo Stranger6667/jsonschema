@@ -49,6 +49,8 @@ impl std::fmt::Display for OperandMismatch {
 pub enum CanonicalizationError {
     /// Schema root is neither a boolean nor an object.
     InvalidSchemaType(String),
+    /// No value lives at the JSON Pointer a subschema was selected by.
+    PointerNotFound(String),
     /// A schema reference could not be resolved.
     ReferenceResolution(referencing::Error),
     /// Meta-schema validation failed.
@@ -73,6 +75,9 @@ impl std::fmt::Display for CanonicalizationError {
             Self::InvalidSchemaType(value) => {
                 write!(f, "schema must be a boolean or object, got: {value}")
             }
+            Self::PointerNotFound(pointer) => {
+                write!(f, "no value at pointer: {pointer}")
+            }
             Self::ReferenceResolution(error) => error.fmt(f),
             Self::ValidationError(error) => write!(f, "schema validation failed: {error}"),
             Self::InvalidPattern { pattern } => {
@@ -91,6 +96,7 @@ impl std::error::Error for CanonicalizationError {
             Self::ReferenceResolution(error) => Some(error),
             Self::ValidationError(error) => Some(error),
             Self::InvalidSchemaType(_)
+            | Self::PointerNotFound(_)
             | Self::InvalidPattern { .. }
             | Self::IncompatibleOperands(_)
             | Self::UnsupportedOperand
