@@ -609,6 +609,7 @@ impl JsonNumber for PyNumber<'_> {
                 }
                 Some(value)
             }
+            ObjType::Float => None,
             _ => self.to_number().as_u64(),
         }
     }
@@ -623,6 +624,7 @@ impl JsonNumber for PyNumber<'_> {
                 }
                 Some(value)
             }
+            ObjType::Float => None,
             _ => self.to_number().as_i64(),
         }
     }
@@ -644,6 +646,14 @@ impl JsonNumber for PyNumber<'_> {
 
     fn to_number(&self) -> Cow<'_, Number> {
         number_of(self.node).map_or(Cow::Owned(Number::from(0)), Cow::Owned)
+    }
+
+    fn is_integer(&self) -> bool {
+        match self.kind {
+            ObjType::Int => true,
+            ObjType::Float => unsafe { ffi::PyFloat_AsDouble(self.node.as_ptr()) }.fract() == 0.0,
+            _ => crate::types::number_is_integer(&self.to_number()),
+        }
     }
 }
 

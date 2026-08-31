@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `type: integer`, and `type` sets containing it, are up to 67x faster on float-heavy instances.
+
 ## [0.52.1] - 2026-08-30
 
 ### Performance
