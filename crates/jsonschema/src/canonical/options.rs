@@ -99,13 +99,30 @@ impl<'r> CanonicalizeOptions<'r> {
     ///
     /// Same as [`crate::canonicalize`].
     pub fn canonicalize(self, value: &Value) -> Result<CanonicalSchema, CanonicalizationError> {
-        build(value, &self)
+        build(value, None, &self)
+    }
+
+    /// Run canonicalization on the subschema at `pointer`, in the context of `value`.
+    ///
+    /// See [`canonicalize_at`](crate::canonicalize_at).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`canonicalize`](Self::canonicalize), plus
+    /// [`CanonicalizationError::PointerNotFound`] when `pointer` names nothing.
+    pub fn canonicalize_at(
+        self,
+        value: &Value,
+        pointer: &str,
+    ) -> Result<CanonicalSchema, CanonicalizationError> {
+        build(value, Some(pointer), &self)
     }
 }
 
 /// Validate the document and reduce it to a [`CanonicalSchema`].
 fn build(
     value: &Value,
+    pointer: Option<&str>,
     options: &CanonicalizeOptions<'_>,
 ) -> Result<CanonicalSchema, CanonicalizationError> {
     // Only a boolean or object is a schema document.
@@ -115,11 +132,25 @@ fn build(
             return Err(CanonicalizationError::InvalidSchemaType(other.to_string()))
         }
     }
+    let target = match pointer {
+        None => value,
+        Some(pointer) => {
+            let target = value
+                .pointer(pointer)
+                .ok_or_else(|| CanonicalizationError::PointerNotFound(pointer.to_string()))?;
+            match target {
+                Value::Bool(_) | Value::Object(_) => target,
+                other @ (Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
+                    return Err(CanonicalizationError::InvalidSchemaType(other.to_string()))
+                }
+            }
+        }
+    };
     let pattern_options = options.pattern_options;
     let draft = detect_draft(value, options.draft, options.registry)?;
     if draft == Draft::Unknown {
         return Ok(CanonicalSchema::new(
-            Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
+            Schema::new(SchemaKind::Raw(RawJson::new(target.clone()))),
             draft,
             pattern_options,
             options.validate_formats.unwrap_or(false),
@@ -144,9 +175,9 @@ fn build(
     let base_uri = normalize_base_uri(&registry, &base_uri);
     let resolver = registry.resolver(base_uri);
     let context = CanonicalizationContext::new(draft, pattern_options, validate_formats);
-    let (inner, definitions, local) = match parse::parse(value, &context, &resolver)? {
+    let (inner, definitions, local) = match parse::parse(target, &context, &resolver)? {
         Some(parsed) => {
-            let parsed = emptiness::fold_definitions(parsed, value, &context, &resolver)?;
+            let parsed = emptiness::fold_definitions(parsed, target, &context, &resolver)?;
             // Folded now every body is known, so this entry point and the set operations agree.
             let parsed = refold::through_targets(parsed, &context);
             (
@@ -156,7 +187,7 @@ fn build(
             )
         }
         None => (
-            Schema::new(SchemaKind::Raw(RawJson::new(value.clone()))),
+            Schema::new(SchemaKind::Raw(RawJson::new(target.clone()))),
             Arc::new(DefinitionMap::new()),
             Arc::new(BTreeSet::new()),
         ),

@@ -1923,10 +1923,11 @@ fn test_canonicalize_at_names_recursive_definitions_readably() {
     let dir = tempdir().unwrap();
     let schema = create_temp_file(&dir, "schema.json", PET_DOCUMENT);
 
+    // The selection is the root of what comes back, so its own recursion spells `#`.
     let canonical = canonicalize_at(&schema, "/$defs/Tree");
     assert_eq!(
-        canonical["$defs"]["Tree"]["properties"]["kids"]["items"],
-        serde_json::json!({"$ref": "#/$defs/Tree"})
+        canonical["properties"]["kids"]["items"],
+        serde_json::json!({"$ref": "#"})
     );
     assert_eq!(
         canonical["$defs"]["Named"],
@@ -2039,6 +2040,32 @@ fn test_canonicalize_at_suffixes_colliding_definition_names() {
     let names: Vec<&String> = canonical["$defs"].as_object().unwrap().keys().collect();
     assert_eq!(names, ["Pet", "Pet_2"]);
     assert!(!canonical.to_string().contains('%'), "{canonical}");
+}
+
+// Generated definitions land under whichever keyword the draft uses, so both get renamed.
+#[test]
+fn test_canonicalize_at_names_definitions_readably_in_older_drafts() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r##"{
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "components": {"schemas": {"Tree": {
+                "type": "object", "properties": {"next": {"$ref": "#/components/schemas/Tree"}}
+            }}},
+            "Target": {"allOf": [
+                {"$ref": "#/components/schemas/Tree"}, {"type": "object"}
+            ]}
+        }"##,
+    );
+
+    let canonical = canonicalize_at(&schema, "/Target");
+    assert!(canonical["definitions"]["Tree"].is_object(), "{canonical}");
+    assert!(
+        !canonical.to_string().contains('%'),
+        "encoded URIs leaked into the output: {canonical}"
+    );
 }
 
 #[test]
