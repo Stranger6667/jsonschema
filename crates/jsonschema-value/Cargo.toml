@@ -22,6 +22,10 @@ macros = []
 conformance = []
 arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint"]
 
+# `ahash`'s runtime RNG reaches for `getrandom`, which needs to be told which backend to use here.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+getrandom = { version = "0.3.4", features = ["wasm_js"] }
+
 [dependencies]
 ahash.workspace = true
 bytecount = { version = "0.6", features = ["runtime-dispatch-simd"], optional = true }

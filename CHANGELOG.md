@@ -10,6 +10,7 @@
 ### Fixed
 
 - `jsonschema-value` failing to build with `default-features = false`.
+- `jsonschema-value` failing to build for `wasm32-unknown-unknown`, which needs `getrandom`'s `wasm_js` backend.
 
 ### Performance
 

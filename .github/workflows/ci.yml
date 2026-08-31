@@ -821,8 +821,12 @@ jobs:
       - name: Check features for referencing
         run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} $DEPTH -p referencing
 
+      # `pyo3-tests` and `magnus-tests` turn on `pyo3`/`magnus` themselves, so excluding those two
+      # in `flags` is not enough to keep libpython and libruby out of a cross-compiled check.
       - name: Check features for jsonschema-value
-        run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} $DEPTH -p jsonschema-value
+        run: >
+          cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} $DEPTH
+          --exclude-features pyo3-tests,magnus-tests -p jsonschema-value
 
   fuzz:
     strategy:
