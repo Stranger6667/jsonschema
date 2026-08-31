@@ -821,6 +821,9 @@ jobs:
       - name: Check features for referencing
         run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} $DEPTH -p referencing
 
+      - name: Check features for jsonschema-value
+        run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} $DEPTH -p jsonschema-value
+
   fuzz:
     strategy:
       fail-fast: false

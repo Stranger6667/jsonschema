@@ -6,7 +6,7 @@ use serde_json::{Map, Value};
 
 use crate::{cmp, types::JsonType};
 
-use super::{Array, Json, JsonNumber, Node, NodeIdentity, Object};
+use super::{Array, Json, Node, NodeIdentity, Object};
 
 pub struct SerdeJson;
 
@@ -28,42 +28,6 @@ impl Json for SerdeJson {
             *buffer = Value::String(string.to_owned());
         }
         f(buffer)
-    }
-}
-
-impl JsonNumber for serde_json::Number {
-    fn as_u64(&self) -> Option<u64> {
-        serde_json::Number::as_u64(self)
-    }
-    fn as_i64(&self) -> Option<i64> {
-        serde_json::Number::as_i64(self)
-    }
-    fn as_f64(&self) -> Option<f64> {
-        serde_json::Number::as_f64(self)
-    }
-    fn as_str(&self) -> Cow<'_, str> {
-        Cow::Owned(self.to_string())
-    }
-    fn to_number(&self) -> Cow<'_, serde_json::Number> {
-        Cow::Borrowed(self)
-    }
-}
-
-impl JsonNumber for &serde_json::Number {
-    fn as_u64(&self) -> Option<u64> {
-        serde_json::Number::as_u64(self)
-    }
-    fn as_i64(&self) -> Option<i64> {
-        serde_json::Number::as_i64(self)
-    }
-    fn as_f64(&self) -> Option<f64> {
-        serde_json::Number::as_f64(self)
-    }
-    fn as_str(&self) -> Cow<'_, str> {
-        Cow::Owned(self.to_string())
-    }
-    fn to_number(&self) -> Cow<'_, serde_json::Number> {
-        Cow::Borrowed(self)
     }
 }
 

@@ -16,6 +16,7 @@ mod magnus;
 mod pyo3;
 #[cfg(feature = "serde_json")]
 mod serde_json;
+mod serde_number;
 
 #[cfg(feature = "magnus")]
 pub use magnus::{
