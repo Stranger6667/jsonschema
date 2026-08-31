@@ -2,9 +2,15 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Draft 4 `type: integer` matching a `float` or not depending on its `repr`; a `float` is never a draft 4 integer.
+- Draft 4 `type: integer` accepting `Decimal("1E+2")`.
+
 ### Performance
 
 - `type: integer`, and `type` sets containing it, are up to 67x faster on float-heavy instances.
+- Draft 4 `type: integer` is up to 20x faster on float-heavy instances.
 
 ## [0.52.1] - 2026-08-30
 

@@ -655,6 +655,16 @@ impl JsonNumber for PyNumber<'_> {
             _ => crate::types::number_is_integer(&self.to_number()),
         }
     }
+
+    fn is_written_as_integer(&self) -> bool {
+        match self.kind {
+            ObjType::Int => true,
+            // `json.dumps` writes a `float` with a fraction or exponent part either way.
+            ObjType::Float => false,
+            // A `Decimal` carries its own digits.
+            _ => !self.as_str().contains(['.', 'e', 'E']),
+        }
+    }
 }
 
 // Lazy `PyDict_Next` iteration; keys and values are borrowed.

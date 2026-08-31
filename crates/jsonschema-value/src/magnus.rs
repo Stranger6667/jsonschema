@@ -465,6 +465,15 @@ impl JsonNumber for RbNumber {
             NumberKind::Decimal => crate::types::number_is_integer(&self.to_number()),
         }
     }
+
+    fn is_written_as_integer(&self) -> bool {
+        match self.kind {
+            NumberKind::Fixnum | NumberKind::Bignum => true,
+            // `to_json` writes a `Float` with a fraction or exponent part either way.
+            NumberKind::Float => false,
+            NumberKind::Decimal => !self.as_str().contains(['.', 'e', 'E']),
+        }
+    }
 }
 
 fn number_of(value: VALUE) -> Option<Number> {

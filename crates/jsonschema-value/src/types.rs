@@ -221,14 +221,15 @@ pub fn number_is_integer(n: &serde_json::Number) -> bool {
         if n.is_i64() || n.is_u64() {
             return true;
         }
-        // With no exponent to shift the point, the fractional digits decide it outright: any
-        // nonzero digit rules an integer out, all-zero digits rule one in. Settling that by
-        // scanning the text keeps the bignum parses below for the literals that need them.
+        // With no exponent to shift the point the fractional digits settle it, which skips the
+        // bignum parses below.
         let text = serde_json::Number::as_str(n);
         if let Some((integer, fraction)) = text.split_once('.') {
             if !fraction.contains(['e', 'E']) {
                 return fraction.bytes().all(|byte| byte == b'0')
-                    && integer.bytes().all(|byte| byte.is_ascii_digit() || byte == b'-');
+                    && integer
+                        .bytes()
+                        .all(|byte| byte.is_ascii_digit() || byte == b'-');
             }
         }
 

@@ -11,11 +11,14 @@
 
 - `jsonschema-value` failing to build with `default-features = false`.
 - `jsonschema-value` failing to build for `wasm32-unknown-unknown`, which needs `getrandom`'s `wasm_js` backend.
+- Draft 4 `type: integer` accepting numbers written with an exponent, like `1e2`.
+- Draft 4 `type: integer` answering differently for the same number across representations.
 
 ### Performance
 
 - Draft 4 `type: integer` with `arbitrary-precision` no longer allocates a string per number.
 - `type: integer`, and `type` sets containing it, are up to 54x faster on float-heavy instances with `arbitrary-precision`.
+- Draft 4 `type: integer` is up to 20x faster for the `Pyo3` and `Magnus` representations.
 
 ## [0.52.1] - 2026-08-30
 
