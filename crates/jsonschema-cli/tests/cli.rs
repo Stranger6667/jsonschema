@@ -1831,6 +1831,30 @@ fn test_canonicalize_output_to_file() {
 }
 
 #[test]
+fn test_canonicalize_reads_yaml() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.yaml",
+        "allOf:\n  - {type: string, minLength: 2}\n  - {maxLength: 5}\n",
+    );
+
+    let output = cli().arg("canonicalize").arg(&schema).output().unwrap();
+    assert!(output.status.success());
+
+    let canonical: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(
+        canonical,
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 5
+        })
+    );
+}
+
+#[test]
 fn test_canonicalize_invalid_schema_errors() {
     let dir = tempdir().unwrap();
     let schema = create_temp_file(&dir, "schema.json", r#"{"type":123}"#);

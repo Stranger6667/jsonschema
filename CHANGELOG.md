@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- **CLI**: `jsonschema canonicalize` reads YAML schemas (`.yaml`/`.yml`) as well as JSON.
+
 ## [0.52.1] - 2026-08-30
 
 ### Fixed

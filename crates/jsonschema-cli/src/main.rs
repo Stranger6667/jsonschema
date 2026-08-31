@@ -1125,8 +1125,9 @@ fn run_canonicalize(args: CanonicalizeArgs) -> ExitCode {
         output,
     } = args;
 
-    let schema_json = match read_json(&schema) {
-        Ok(value) => value,
+    let schema_json = match read_json_or_yaml(&schema) {
+        Ok(Ok(value)) => value,
+        Ok(Err(error)) => return fail_with_error(error),
         Err(error) => return fail_with_error(error),
     };
 
