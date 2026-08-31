@@ -1866,6 +1866,301 @@ fn test_canonicalize_invalid_schema_errors() {
     assert!(!stderr.is_empty(), "expected error on stderr");
 }
 
+const PET_DOCUMENT: &str = r##"{
+    "$schema": "https://json-schema.org/draft/2020-12/schema",
+    "$defs": {
+        "Named": {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+        "Pet": {"allOf": [
+            {"$ref": "#/$defs/Named"},
+            {"type": "object", "properties": {"age": {"type": "integer", "minimum": 0}}}
+        ]},
+        "Tree": {"type": "object", "properties": {
+            "kids": {"type": "array", "items": {"$ref": "#/$defs/Tree"}},
+            "leaf": {"$ref": "#/$defs/Named"}
+        }}
+    },
+    "type": "object",
+    "properties": {"pet": {"$ref": "#/$defs/Pet"}}
+}"##;
+
+fn canonicalize_at(schema: &str, pointer: &str) -> Value {
+    let output = cli()
+        .arg("canonicalize")
+        .arg(schema)
+        .arg("--at")
+        .arg(pointer)
+        .output()
+        .unwrap();
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(output.status.success(), "{stderr}");
+    serde_json::from_str(&String::from_utf8(output.stdout).unwrap()).unwrap()
+}
+
+// A `$ref` is usually copied out of the document with its leading `#`.
+#[test_case("/$defs/Pet"; "pointer")]
+#[test_case("#/$defs/Pet"; "pasted reference")]
+#[test_case("/properties/pet"; "through a reference of its own")]
+fn test_canonicalize_at_resolves_document_references(pointer: &str) {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", PET_DOCUMENT);
+
+    assert_eq!(
+        canonicalize_at(&schema, pointer),
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer", "minimum": 0}
+            },
+            "required": ["name"]
+        })
+    );
+}
+
+#[test]
+fn test_canonicalize_at_names_recursive_definitions_readably() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", PET_DOCUMENT);
+
+    let canonical = canonicalize_at(&schema, "/$defs/Tree");
+    assert_eq!(
+        canonical["$defs"]["Tree"]["properties"]["kids"]["items"],
+        serde_json::json!({"$ref": "#/$defs/Tree"})
+    );
+    assert_eq!(
+        canonical["$defs"]["Named"],
+        serde_json::json!({
+            "type": "object",
+            "properties": {"name": {"type": "string"}},
+            "required": ["name"]
+        })
+    );
+    // Targets reached through the registry carry percent-encoded URIs until renamed.
+    assert!(
+        !canonical.to_string().contains('%'),
+        "encoded URIs leaked into the output: {canonical}"
+    );
+}
+
+#[test]
+fn test_canonicalize_at_reports_a_contradiction() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"$defs": {"Dead": {"allOf": [{"type": "integer", "minimum": 5}, {"maximum": 3}]}}}"#,
+    );
+
+    assert_eq!(
+        canonicalize_at(&schema, "/$defs/Dead"),
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "not": {}
+        })
+    );
+}
+
+#[test]
+fn test_canonicalize_at_root_matches_the_whole_document() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", PET_DOCUMENT);
+
+    let whole = cli().arg("canonicalize").arg(&schema).output().unwrap();
+    assert!(whole.status.success());
+    assert_eq!(
+        canonicalize_at(&schema, ""),
+        serde_json::from_slice::<Value>(&whole.stdout).unwrap()
+    );
+}
+
+#[test]
+fn test_canonicalize_at_resolves_references_of_an_identified_document() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r##"{"$id": "https://example.com/pets.json", "$defs": {
+            "Short": {"type": "string", "maxLength": 5},
+            "Word": {"allOf": [{"$ref": "#/$defs/Short"}, {"minLength": 2}]}
+        }}"##,
+    );
+
+    assert_eq!(
+        canonicalize_at(&schema, "/$defs/Word"),
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 5
+        })
+    );
+}
+
+// The selection wrapper carries no `$schema`, so the draft has to come from the document: under
+// the latest draft a draft-7 document's `definitions` are not a reference target at all.
+#[test_case(r#"{"$schema": "http://json-schema.org/draft-07/schema#"}"#; "draft 7")]
+#[test_case(r##"{"$schema": "http://json-schema.org/draft-07/schema#", "$id": "#local"}"##; "draft 7 with a fragment-only id")]
+#[test_case(r#"{"$schema": "http://json-schema.org/draft-04/schema#", "id": "https://example.com/legacy.json"}"#; "draft 4 with a legacy id")]
+fn test_canonicalize_at_resolves_references_of_older_drafts(header: &str) {
+    let dir = tempdir().unwrap();
+    let mut document: Value = serde_json::from_str(header).unwrap();
+    document["definitions"] = serde_json::json!({
+        "Short": {"type": "string", "maxLength": 5},
+        "Word": {"allOf": [{"$ref": "#/definitions/Short"}, {"minLength": 2}]}
+    });
+    let schema = create_temp_file(&dir, "schema.json", &document.to_string());
+
+    let canonical = canonicalize_at(&schema, "/definitions/Word");
+    assert_eq!(canonical["type"], serde_json::json!("string"));
+    assert_eq!(canonical["minLength"], serde_json::json!(2));
+    assert_eq!(canonical["maxLength"], serde_json::json!(5));
+}
+
+#[test]
+fn test_canonicalize_at_suffixes_colliding_definition_names() {
+    let dir = tempdir().unwrap();
+    // Two recursive targets whose locations end in the same segment: both want the name `Pet`.
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r##"{
+            "$defs": {"Pet": {"type": "object", "properties": {"next": {"$ref": "#/$defs/Pet"}}}},
+            "components": {"schemas": {"Pet": {
+                "type": "object", "properties": {"next": {"$ref": "#/components/schemas/Pet"}}
+            }}},
+            "Target": {"allOf": [
+                {"$ref": "#/$defs/Pet"}, {"$ref": "#/components/schemas/Pet"}
+            ]}
+        }"##,
+    );
+
+    let canonical = canonicalize_at(&schema, "/Target");
+    let names: Vec<&String> = canonical["$defs"].as_object().unwrap().keys().collect();
+    assert_eq!(names, ["Pet", "Pet_2"]);
+    assert!(!canonical.to_string().contains('%'), "{canonical}");
+}
+
+#[test]
+fn test_canonicalize_at_honours_the_draft_flag() {
+    let dir = tempdir().unwrap();
+    // No `$schema` to detect, so only `--draft` can say that `id` is an identifier here.
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r##"{"id": "https://example.com/legacy.json", "definitions": {
+            "Short": {"type": "string", "maxLength": 5},
+            "Word": {"allOf": [{"$ref": "#/definitions/Short"}, {"minLength": 2}]}
+        }}"##,
+    );
+
+    let output = cli()
+        .args(["canonicalize"])
+        .arg(&schema)
+        .args(["--at", "/definitions/Word", "-d", "4"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+
+    let canonical: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(canonical["type"], serde_json::json!("string"));
+    assert_eq!(canonical["minLength"], serde_json::json!(2));
+    assert_eq!(canonical["maxLength"], serde_json::json!(5));
+}
+
+// A schema the canonical form cannot model is passed through, the same way a whole document is.
+#[test]
+fn test_canonicalize_at_passes_an_unmodelled_selection_through() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r##"{"$defs": {
+            "A": {"if": {}, "unevaluatedProperties": false, "$ref": "#/$defs/B"},
+            "B": {"type": "object"}
+        }}"##,
+    );
+
+    assert_eq!(
+        canonicalize_at(&schema, "/$defs/A"),
+        serde_json::json!({"if": {}, "unevaluatedProperties": false, "$ref": "#/$defs/B"})
+    );
+}
+
+#[test_case(
+    r#"{"$id": "http://[bad", "$defs": {"A": {"type": "string"}}}"#,
+    "Invalid URI reference";
+    "malformed root id"
+)]
+#[test_case(
+    r#"{"$defs": {"A": {"$ref": "https://example.invalid/nope.json"}}}"#,
+    "is not present in a registry";
+    "unretrievable reference"
+)]
+fn test_canonicalize_at_reports_a_document_that_cannot_be_registered(
+    document: &str,
+    expected: &str,
+) {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", document);
+
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .args(["--at", "/$defs/A"])
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains(expected), "got: {stderr}");
+}
+
+#[test]
+fn test_canonicalize_at_reads_yaml() {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "openapi.yaml",
+        "components:\n  schemas:\n    Named:\n      type: object\n      required: [name]\n      properties: {name: {type: string}}\n    Pet:\n      allOf:\n        - $ref: '#/components/schemas/Named'\n        - properties: {age: {type: integer, minimum: 0}}\n",
+    );
+
+    assert_eq!(
+        canonicalize_at(&schema, "/components/schemas/Pet"),
+        serde_json::json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "type": "object",
+            "properties": {
+                "name": {"type": "string"},
+                "age": {"type": "integer", "minimum": 0}
+            },
+            "required": ["name"]
+        })
+    );
+}
+
+// Which segment is wrong is the whole question when a pointer is typed by hand.
+#[test_case("/$defs/Pett", "'/$defs' has no 'Pett'"; "mistyped leaf")]
+#[test_case("/property/pet", "the document root has no 'property'"; "mistyped root member")]
+#[test_case("$defs/Pet", "is not a JSON Pointer"; "missing leading slash")]
+#[test_case("/$defs/Named/required/0", "is of type string, not a schema"; "not a schema")]
+fn test_canonicalize_at_rejects_a_bad_pointer(pointer: &str, expected: &str) {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", PET_DOCUMENT);
+
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .arg("--at")
+        .arg(pointer)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+
+    let stderr = String::from_utf8(output.stderr).unwrap();
+    assert!(stderr.contains(expected), "got: {stderr}");
+}
+
 const NAME_SCHEMA: &str = r#"{"type": "object", "properties": {"name": {"type": "string"}}}"#;
 
 #[test]
