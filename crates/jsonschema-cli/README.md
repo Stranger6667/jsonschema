@@ -169,6 +169,76 @@ Takes the same options as `bundle`.
 
 ---
 
+## `jsonschema canonicalize` — reduce a schema to a normal form
+
+Rewrites a schema to a normal form without changing the set of values it accepts. `allOf` folds
+into a single constraint set, `$ref` targets are resolved, and contradictions collapse to `false`.
+Equivalent schemas reduce to the same form, so two canonical outputs can be compared directly.
+
+```
+jsonschema canonicalize [OPTIONS] <SCHEMA>
+```
+
+`SCHEMA` may be JSON or YAML (`.yaml`/`.yml`).
+
+> ⚠️ **Experimental:** canonicalization is experimental and its output may change in minor releases.
+
+### Options
+
+| Flag | Description |
+|---|---|
+| `-d, --draft <DRAFT>` | Enforce a specific draft (`4`, `6`, `7`, `2019`, `2020`) |
+| `--assert-format` / `--no-assert-format` | Turn `format` validation on or off |
+| `-o, --output <FILE>` | Write result to file instead of stdout |
+
+### Examples
+
+`allOf` branches fold into one constraint set:
+
+```console
+$ cat pet.yaml
+allOf:
+  - type: object
+    properties: {name: {type: string}}
+    required: [name]
+  - type: object
+    properties: {age: {type: integer, minimum: 0}}
+
+$ jsonschema canonicalize pet.yaml
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "properties": {
+    "age": {"minimum": 0, "type": "integer"},
+    "name": {"type": "string"}
+  },
+  "required": ["name"],
+  "type": "object"
+}
+```
+
+Equivalent schemas share one form. Both `{"const": 1, "type": "integer"}` and
+`{"type": "integer", "minimum": 1, "maximum": 1}` canonicalize to:
+
+```json
+{"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 1}
+```
+
+A schema no value can satisfy collapses to `false`, spelled `{"not": {}}`:
+
+```console
+$ echo '{"type": "integer", "minimum": 10, "maximum": 5}' > empty.json
+$ jsonschema canonicalize empty.json
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "not": {}
+}
+```
+
+Constructs the canonical form cannot model exactly — `if`/`then`/`else`, `unevaluatedProperties`
+and the like — are passed through as the original document, unchanged.
+
+---
+
 ## Output formats (`validate`)
 
 | Mode | Description |
