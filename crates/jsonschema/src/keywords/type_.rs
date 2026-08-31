@@ -467,40 +467,7 @@ impl<F: Json> Validate<F> for IntegerTypeValidator {
 }
 
 pub(crate) fn is_integer<N: jsonschema_value::JsonNumber>(num: &N) -> bool {
-    if num.as_u64().is_some() || num.as_i64().is_some() {
-        return true;
-    }
-    let num = &num.to_number();
-    #[cfg(feature = "arbitrary-precision")]
-    {
-        use crate::numeric::bignum;
-        use num_traits::One;
-
-        // Check huge plain integers first (no decimal point)
-        if bignum::try_parse_bigint(num).is_some() {
-            return true;
-        }
-
-        // Check huge decimals - must do this BEFORE as_f64() to avoid precision loss
-        if let Some(bigfrac) = bignum::try_parse_bigfraction(num) {
-            return bigfrac.denom().is_none_or(One::is_one);
-        }
-
-        // For numbers that fit in f64 range
-        if let Some(f) = num.as_f64() {
-            return f.fract() == 0.;
-        }
-
-        // Numbers that overflow to infinity (as_f64() returns None) are not integers
-        false
-    }
-    #[cfg(not(feature = "arbitrary-precision"))]
-    {
-        if let Some(f) = num.as_f64() {
-            return f.fract() == 0.;
-        }
-        unreachable!("Numbers always fit in u64/i64/f64 without arbitrary-precision")
-    }
+    num.is_integer()
 }
 
 #[inline]

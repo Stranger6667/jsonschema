@@ -15,6 +15,7 @@
 ### Performance
 
 - Draft 4 `type: integer` with `arbitrary-precision` no longer allocates a string per number.
+- `type: integer`, and `type` sets containing it, are up to 54x faster on float-heavy instances with `arbitrary-precision`.
 
 ## [0.52.1] - 2026-08-30
 

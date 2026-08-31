@@ -218,19 +218,31 @@ pub fn number_is_integer(n: &serde_json::Number) -> bool {
         use crate::numeric::bignum;
         use num_traits::One;
 
-        // Important: check BigFraction BEFORE as_f64() to avoid precision loss.
-        n.is_i64()
-            || n.is_u64()
-            || if bignum::try_parse_bigint(n).is_some() {
-                true
-            } else if let Some(bigfrac) = bignum::try_parse_bigfraction(n) {
-                bigfrac.denom().is_none_or(One::is_one)
-            } else if let Some(f) = n.as_f64() {
-                f.fract() == 0.
-            } else {
-                // Numbers that overflow to infinity (as_f64() returns None).
-                false
+        if n.is_i64() || n.is_u64() {
+            return true;
+        }
+        // With no exponent to shift the point, the fractional digits decide it outright: any
+        // nonzero digit rules an integer out, all-zero digits rule one in. Settling that by
+        // scanning the text keeps the bignum parses below for the literals that need them.
+        let text = serde_json::Number::as_str(n);
+        if let Some((integer, fraction)) = text.split_once('.') {
+            if !fraction.contains(['e', 'E']) {
+                return fraction.bytes().all(|byte| byte == b'0')
+                    && integer.bytes().all(|byte| byte.is_ascii_digit() || byte == b'-');
             }
+        }
+
+        // Important: check BigFraction BEFORE as_f64() to avoid precision loss.
+        if bignum::try_parse_bigint(n).is_some() {
+            true
+        } else if let Some(bigfrac) = bignum::try_parse_bigfraction(n) {
+            bigfrac.denom().is_none_or(One::is_one)
+        } else if let Some(f) = n.as_f64() {
+            f.fract() == 0.
+        } else {
+            // Numbers that overflow to infinity (as_f64() returns None).
+            false
+        }
     }
     #[cfg(not(feature = "arbitrary-precision"))]
     {
