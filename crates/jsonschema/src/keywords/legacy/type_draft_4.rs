@@ -131,30 +131,10 @@ impl<F: Json> Validate<F> for IntegerTypeValidator {
     }
 }
 
+// Draft 4: "a JSON number without a fraction or exponent part", so `1.0` and `1e2` are not
+// integers here, unlike drafts 6+.
 pub(crate) fn is_integer<N: jsonschema_value::JsonNumber>(num: &N) -> bool {
-    if num.as_u64().is_some() || num.as_i64().is_some() {
-        return true;
-    }
-    // Draft 4 is strict: numbers written with decimal points are NOT integers,
-    // regardless of whether the fractional part is zero.
-    // See: tests/suite/tests/draft4/optional/zeroTerminatedFloats.json
-    #[cfg(feature = "arbitrary-precision")]
-    {
-        use crate::numeric::bignum;
-
-        if num.as_str().contains('.') {
-            return false;
-        }
-        // Plain integers or scientific notation without decimal point
-        bignum::try_parse_bigint(&num.to_number()).is_some()
-    }
-    #[cfg(not(feature = "arbitrary-precision"))]
-    {
-        // Without the raw text, a number past `i64`/`u64` is an `f64` - and every `f64` of that
-        // magnitude is an exact integer, so there is no decimal point left to be strict about.
-        num.as_f64()
-            .is_some_and(|value| value.abs() >= crate::canonical::json::I64_UPPER_EXCLUSIVE_F64)
-    }
+    num.is_written_as_integer()
 }
 
 #[inline]
@@ -252,6 +232,12 @@ mod tests {
     #[test_case(r#"{"type": "integer"}"#, "[]", false; "array")]
     #[test_case(r#"{"type": "integer"}"#, "{}", false; "object")]
     #[test_case(r#"{"type": "integer"}"#, "null", false; "null")]
+    #[test_case(r#"{"type": "integer"}"#, "1e2", false; "exponent notation is not an integer in draft4")]
+    #[test_case(r#"{"type": "integer"}"#, "1E2", false; "capital exponent notation is not an integer in draft4")]
+    #[test_case(r#"{"type": "integer"}"#, "1e0", false; "zero exponent is not an integer in draft4")]
+    #[test_case(r#"{"type": "integer"}"#, "-1e2", false; "negative exponent notation is not an integer in draft4")]
+    #[test_case(r#"{"type": "integer"}"#, "1e16", false; "exponent past the f64 fixed-notation cutoff is not an integer in draft4")]
+    #[test_case(r#"{"type": "integer"}"#, "1.0e2", false; "fraction and exponent together is not an integer in draft4")]
     fn integer_type_validation_draft4(schema_json: &str, instance_json: &str, expected: bool) {
         let schema = parse_json(schema_json);
         let instance = parse_json(instance_json);
@@ -298,9 +284,12 @@ mod tests {
             false;
             "very huge float"
         )]
-        #[test_case(r#"{"type": "integer"}"#, "1e1000", true; "huge scientific notation integer")]
-        #[test_case(r#"{"type": "integer"}"#, "1e1000001", false; "infinity positive")]
-        #[test_case(r#"{"type": "integer"}"#, "-1e1000001", false; "infinity negative")]
+        // Only decidable while the literal survives; otherwise these come back in exponent form.
+        #[test_case(r#"{"type": "integer"}"#, "1e300", false; "large exponent is not an integer in draft4")]
+        #[test_case(r#"{"type": "integer"}"#, "100000000000000000000.0", false; "large float with a fraction part is not an integer in draft4")]
+        #[test_case(r#"{"type": "integer"}"#, "1e1000", false; "huge scientific notation is not an integer in draft4")]
+        #[test_case(r#"{"type": "integer"}"#, "1e1000001", false; "scientific notation past f64 is not an integer in draft4")]
+        #[test_case(r#"{"type": "integer"}"#, "-1e1000001", false; "negative scientific notation past f64 is not an integer in draft4")]
         #[test_case(r#"{"type": ["integer", "string"]}"#, "18446744073709551616", true; "huge int in union")]
         #[test_case(r#"{"type": ["integer", "string"]}"#, "-9223372036854775809", true; "huge negative int in union")]
         #[test_case(r#"{"type": ["integer", "string"]}"#, "18446744073709551616.0", false; "huge .0 not integer in union")]

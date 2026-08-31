@@ -154,6 +154,17 @@ pub trait JsonNumber {
     fn is_integer(&self) -> bool {
         crate::types::number_is_integer(&self.to_number())
     }
+
+    /// Whether the number is *written* as an integer, with neither a fraction nor an exponent
+    /// part. Draft 4 decides `type: integer` this way, so `1.0` and `1e2` are not integers there.
+    ///
+    /// The default reads the literal from [`JsonNumber::as_str`]. A representation holding native
+    /// numbers has none, and must override this to answer from its own types.
+    fn is_written_as_integer(&self) -> bool {
+        self.as_u64().is_some()
+            || self.as_i64().is_some()
+            || !self.as_str().contains(['.', 'e', 'E'])
+    }
 }
 
 /// One JSON value; `Clone` must be cheap.

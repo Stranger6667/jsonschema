@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Draft 4 `type: integer` matching a `Float` or not depending on its formatting; a `Float` is never a draft 4 integer.
+
+### Performance
+
+- Draft 4 `type: integer` is up to 6x faster on float-heavy instances.
+
 ## [0.52.1] - 2026-08-30
 
 ### Performance
