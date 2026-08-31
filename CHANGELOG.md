@@ -16,6 +16,7 @@
 
 ### Performance
 
+- **CLI**: 1.4-1.5x faster on large schemas, from reading files before parsing them.
 - Draft 4 `type: integer` with `arbitrary-precision` no longer allocates a string per number.
 - `type: integer`, and `type` sets containing it, are up to 54x faster on float-heavy instances with `arbitrary-precision`.
 - Draft 4 `type: integer` is up to 20x faster for the `Pyo3` and `Magnus` representations.
