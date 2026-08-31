@@ -2,8 +2,7 @@
 use std::{
     borrow::Cow,
     collections::{HashMap, HashSet},
-    fs::File,
-    io::BufReader,
+    fs,
     path::{Path, PathBuf},
     process::ExitCode,
     time::Duration,
@@ -410,12 +409,11 @@ impl std::error::Error for ReadJsonError {
 }
 
 fn read_json(path: &Path) -> Result<Value, ReadJsonError> {
-    let file = File::open(path).map_err(|err| ReadJsonError::Io {
+    let bytes = fs::read(path).map_err(|err| ReadJsonError::Io {
         file: path.into(),
         err,
     })?;
-    let reader = BufReader::new(file);
-    serde_json::from_reader(reader).map_err(|err| ReadJsonError::Json {
+    serde_json::from_slice(&bytes).map_err(|err| ReadJsonError::Json {
         file: path.into(),
         err,
     })
@@ -462,20 +460,19 @@ impl std::error::Error for ReadJsonOrYamlError {
 fn read_json_or_yaml(
     path: &Path,
 ) -> Result<Result<Value, ReadJsonOrYamlError>, Box<dyn std::error::Error>> {
-    let file = File::open(path)?;
-    let reader = BufReader::new(file);
+    let bytes = fs::read(path)?;
     if let Some(ext) = path.extension() {
         if ext == "yaml" || ext == "yml" {
-            return Ok(serde_saphyr::from_reader(reader).map_err(|err| {
-                ReadJsonOrYamlError::Yaml {
+            return Ok(
+                serde_saphyr::from_slice(&bytes).map_err(|err| ReadJsonOrYamlError::Yaml {
                     file: path.into(),
                     err,
-                }
-            }));
+                }),
+            );
         }
     }
     Ok(
-        serde_json::from_reader(reader).map_err(|err| ReadJsonOrYamlError::Json {
+        serde_json::from_slice(&bytes).map_err(|err| ReadJsonOrYamlError::Json {
             file: path.into(),
             err,
         }),
