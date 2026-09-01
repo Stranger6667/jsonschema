@@ -9,6 +9,8 @@
 ### Performance
 
 - Draft 4 `type: integer` is up to 6x faster on float-heavy instances.
+- `required` scans small objects once instead of looking up each key.
+- `evaluate` renders each instance location from the one above it instead of walking the pointer chain for every child.
 
 ## [0.52.1] - 2026-08-30
 

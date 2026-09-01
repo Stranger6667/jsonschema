@@ -71,6 +71,8 @@ pub struct ValidationContext {
     ecma_regex_cache: Option<AHashMap<String, bool>>,
     evaluation_path_cache: Option<Box<EvaluationPathCache>>,
     evaluation_path_calls: u32,
+    /// Instance location of the node being evaluated; only the `evaluate` path sets it.
+    instance_location: Option<Location>,
 }
 
 /// Evaluation paths are only cached once this many have been built.
@@ -81,6 +83,21 @@ const EVALUATION_PATH_CACHE_THRESHOLD: u32 = 4096;
 impl ValidationContext {
     pub(crate) fn new() -> Self {
         Self::default()
+    }
+
+    #[inline]
+    pub(crate) fn instance_location(&self) -> Option<&Location> {
+        self.instance_location.as_ref()
+    }
+
+    #[inline]
+    pub(crate) fn enter_instance_location(&mut self, location: Location) -> Option<Location> {
+        self.instance_location.replace(location)
+    }
+
+    #[inline]
+    pub(crate) fn leave_instance_location(&mut self, previous: Option<Location>) {
+        self.instance_location = previous;
     }
 
     /// Returns `true` if cycle detected. `None` identity disables cycle tracking for this node.

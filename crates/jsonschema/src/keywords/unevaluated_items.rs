@@ -831,7 +831,7 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
                 }
                 if let Some(validator) = &self.validators.unevaluated {
                     let child =
-                        validator.evaluate_instance(&item, &location.push(idx), tracker, ctx);
+                        validator.evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
                     if !child.valid {
                         invalid = true;
                         unevaluated.push(item.to_value().to_string());

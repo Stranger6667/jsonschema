@@ -90,7 +90,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
                 for (key, value) in object.members() {
                     if pattern.is_match(key.as_ref()).unwrap_or(false) {
                         matched_propnames.push(key.as_ref().to_owned());
-                        children.push(node.evaluate_instance(
+                        children.push(node.evaluate_instance_below(
                             &value,
                             &location.push(key.as_ref()),
                             tracker,
@@ -184,7 +184,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
             for (key, value) in object.members() {
                 if self.regex.is_match(key.as_ref()).unwrap_or(false) {
                     matched_propnames.push(key.as_ref().to_owned());
-                    children.push(self.node.evaluate_instance(
+                    children.push(self.node.evaluate_instance_below(
                         &value,
                         &location.push(key.as_ref()),
                         tracker,

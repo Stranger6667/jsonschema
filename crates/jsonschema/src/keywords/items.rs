@@ -86,7 +86,12 @@ impl<F: Json> Validate<F> for ItemsArrayValidator<F> {
         if let Some(array) = instance.as_array() {
             let mut children = Vec::with_capacity(self.items.len().min(array.len()));
             for (idx, (item, node)) in array.elements().zip(self.items.iter()).enumerate() {
-                children.push(node.evaluate_instance(&item, &location.push(idx), tracker, ctx));
+                children.push(node.evaluate_instance_below(
+                    &item,
+                    &location.push(idx),
+                    tracker,
+                    ctx,
+                ));
             }
             EvaluationResult::from_children(children)
         } else {
@@ -162,7 +167,7 @@ impl<F: Json> Validate<F> for ItemsObjectValidator<F> {
         if let Some(array) = instance.as_array() {
             let mut children = Vec::with_capacity(array.len());
             for (idx, item) in array.elements().enumerate() {
-                children.push(self.node.evaluate_instance(
+                children.push(self.node.evaluate_instance_below(
                     &item,
                     &location.push(idx),
                     tracker,
@@ -260,7 +265,7 @@ impl<F: Json> Validate<F> for ItemsObjectSkipPrefixValidator<F> {
         if let Some(array) = instance.as_array() {
             let mut children = Vec::with_capacity(array.len().saturating_sub(self.skip_prefix));
             for (idx, item) in array.elements().enumerate().skip(self.skip_prefix) {
-                children.push(self.node.evaluate_instance(
+                children.push(self.node.evaluate_instance_below(
                     &item,
                     &location.push(idx),
                     tracker,
@@ -1191,7 +1196,7 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
             FusedItems::Generic(node) => {
                 let mut element_children = Vec::with_capacity(array.len());
                 for (idx, item) in array.elements().enumerate() {
-                    element_children.push(node.evaluate_instance(
+                    element_children.push(node.evaluate_instance_below(
                         &item,
                         &location.push(idx),
                         tracker,

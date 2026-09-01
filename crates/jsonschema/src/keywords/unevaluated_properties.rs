@@ -992,7 +992,7 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                     continue;
                 }
                 if let Some(validator) = &self.validators.unevaluated {
-                    let child = validator.evaluate_instance(
+                    let child = validator.evaluate_instance_below(
                         &value,
                         &location.push(property.as_ref()),
                         tracker,

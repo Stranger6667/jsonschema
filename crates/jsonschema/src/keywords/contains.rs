@@ -73,7 +73,9 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
             let mut indices = Vec::with_capacity(array.len());
             for (idx, item) in array.elements().enumerate() {
                 let path = location.push(idx);
-                let result = self.node.evaluate_instance(&item, &path, tracker, ctx);
+                let result = self
+                    .node
+                    .evaluate_instance_below(&item, &path, tracker, ctx);
                 if result.valid {
                     indices.push(idx);
                     results.push(result);

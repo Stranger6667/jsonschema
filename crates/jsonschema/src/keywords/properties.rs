@@ -220,7 +220,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
                     if prop_name == name {
                         let path = location.push(name);
                         matched_props.push(prop_name.clone());
-                        children.push(node.evaluate_instance(&value, &path, tracker, ctx));
+                        children.push(node.evaluate_instance_below(&value, &path, tracker, ctx));
                         break;
                     }
                 }
@@ -230,7 +230,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
                 if let Some(prop) = object.get(key) {
                     let path = location.push(prop_name.as_str());
                     matched_props.push(prop_name.clone());
-                    children.push(node.evaluate_instance(&prop, &path, tracker, ctx));
+                    children.push(node.evaluate_instance_below(&prop, &path, tracker, ctx));
                 }
             }
         }
@@ -403,7 +403,8 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                         if prop_name.as_str() == name {
                             let path = location.push(name);
                             matched_props.push(prop_name.clone());
-                            children.push(node.evaluate_instance(&value, &path, tracker, ctx));
+                            children
+                                .push(node.evaluate_instance_below(&value, &path, tracker, ctx));
                             break;
                         }
                     }
@@ -413,7 +414,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     if let Some(prop) = object.get(key) {
                         let path = location.push(prop_name.as_str());
                         matched_props.push(prop_name.clone());
-                        children.push(node.evaluate_instance(&prop, &path, tracker, ctx));
+                        children.push(node.evaluate_instance_below(&prop, &path, tracker, ctx));
                     }
                 }
             }
@@ -533,7 +534,7 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
                 if let Some(node) = self.properties.get(prop_name.as_ref()) {
                     let path = location.push(prop_name.as_ref());
                     matched_props.push(prop_name.as_ref().to_owned());
-                    children.push(node.evaluate_instance(&prop, &path, tracker, ctx));
+                    children.push(node.evaluate_instance_below(&prop, &path, tracker, ctx));
                 }
             }
             let mut application = EvaluationResult::from_children(children);
