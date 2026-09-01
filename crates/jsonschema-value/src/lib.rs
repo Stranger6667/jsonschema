@@ -97,6 +97,11 @@ pub trait Json: Sized + Send + Sync + 'static {
     /// Property name prepared once at compile time, for repeated object lookups.
     type PreparedKey: Send + Sync;
 
+    /// Object keys a members pass may visit per [`Object::get`] it replaces, before the pass
+    /// costs more than the lookups. Zero keeps every representation whose lookup is a hash
+    /// probe on lookups.
+    const KEYS_PER_LOOKUP: usize = 0;
+
     /// Scratch storage for [`Json::with_string_node`], reusable across calls.
     type StringBuffer: Default;
 
