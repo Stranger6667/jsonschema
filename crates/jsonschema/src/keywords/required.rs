@@ -13,6 +13,11 @@ use crate::{
 };
 use serde_json::{Map, Value};
 
+/// Object keys per required key up to which one members pass beats repeated `Object::get`.
+const KEYS_PER_REQUIRED: usize = 2;
+/// Longest `required` array scanned in one pass; beyond it the comparisons outgrow the lookups.
+const MAX_SCANNED_REQUIRED: usize = 16;
+
 pub(crate) struct RequiredValidator<F: Json = SerdeJson> {
     required: Vec<(String, F::PreparedKey)>,
     location: Location,
@@ -45,11 +50,60 @@ impl RequiredValidator {
     }
 }
 
+impl<F: Json> RequiredValidator<F> {
+    #[inline]
+    fn target(&self) -> u32 {
+        (1_u32 << self.required.len()) - 1
+    }
+
+    /// One members pass marking each required name found, or `None` to use lookups instead.
+    #[inline]
+    fn scanned<'a, O: Object<'a, F>>(&self, object: &O) -> Option<u32> {
+        let count = self.required.len();
+        if count > MAX_SCANNED_REQUIRED || object.len() > KEYS_PER_REQUIRED * count {
+            return None;
+        }
+        let target = self.target();
+        let mut found = 0_u32;
+        for (name, _) in object.members() {
+            let name: &str = name.as_ref();
+            for (index, (required, _)) in self.required.iter().enumerate() {
+                if name == required {
+                    found |= 1 << index;
+                    break;
+                }
+            }
+            if found == target {
+                break;
+            }
+        }
+        Some(found)
+    }
+}
+
 impl<F: Json> Validate<F> for RequiredValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             if object.len() < self.required.len() {
                 return false;
+            }
+            let count = self.required.len();
+            if count <= MAX_SCANNED_REQUIRED && object.len() <= KEYS_PER_REQUIRED * count {
+                let target = (1_u32 << count) - 1;
+                let mut found = 0_u32;
+                for (name, _) in object.members() {
+                    let name: &str = name.as_ref();
+                    for (index, (required, _)) in self.required.iter().enumerate() {
+                        if name == required {
+                            found |= 1 << index;
+                            break;
+                        }
+                    }
+                    if found == target {
+                        break;
+                    }
+                }
+                return found == target;
             }
             self.required
                 .iter()
@@ -67,16 +121,23 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Some(object) = instance.as_object() {
-            for (property_name, key) in &self.required {
-                if object.get(key).is_none() {
-                    return Err(ValidationError::required(
-                        self.location.clone(),
-                        crate::paths::capture_evaluation_path(tracker, &self.location),
-                        location.into(),
-                        instance.lazy_value(),
-                        Value::String(property_name.clone()),
-                    ));
-                }
+            let missing = match self.scanned(&object) {
+                Some(found) if found == self.target() => None,
+                Some(found) => Some(&self.required[found.trailing_ones() as usize].0),
+                None => self
+                    .required
+                    .iter()
+                    .find(|(_, key)| object.get(key).is_none())
+                    .map(|(property_name, _)| property_name),
+            };
+            if let Some(property_name) = missing {
+                return Err(ValidationError::required(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance.lazy_value(),
+                    Value::String(property_name.clone()),
+                ));
             }
         }
         Ok(())
@@ -91,8 +152,13 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
     ) {
         if let Some(object) = instance.as_object() {
             let eval_path = crate::paths::capture_evaluation_path(tracker, &self.location);
-            for (property_name, key) in &self.required {
-                if object.get(key).is_none() {
+            let found = self.scanned(&object);
+            for (index, (property_name, key)) in self.required.iter().enumerate() {
+                let present = match found {
+                    Some(found) => found & (1 << index) != 0,
+                    None => object.get(key).is_some(),
+                };
+                if !present {
                     errors.push(ValidationError::required(
                         self.location.clone(),
                         eval_path.clone(),
@@ -288,14 +354,46 @@ impl Required3Validator {
     }
 }
 
+impl<F: Json> Required3Validator<F> {
+    // `str` equality rejects on length; an ordered lookup must `memcmp` every probe.
+    #[inline]
+    fn found<'a, O: Object<'a, F>>(&self, object: &O) -> u8 {
+        if object.len() > KEYS_PER_REQUIRED * 3 {
+            return u8::from(object.get(&self.first_key).is_some())
+                | (u8::from(object.get(&self.second_key).is_some()) << 1)
+                | (u8::from(object.get(&self.third_key).is_some()) << 2);
+        }
+        let mut found = 0_u8;
+        for (name, _) in object.members() {
+            let name: &str = name.as_ref();
+            if name == self.first {
+                found |= 0b001;
+            } else if name == self.second {
+                found |= 0b010;
+            } else if name == self.third {
+                found |= 0b100;
+            }
+            if found == 0b111 {
+                break;
+            }
+        }
+        found
+    }
+}
+
 impl<F: Json> Validate<F> for Required3Validator<F> {
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
-            object.len() >= 3
-                && object.get(&self.first_key).is_some()
-                && object.get(&self.second_key).is_some()
-                && object.get(&self.third_key).is_some()
+            if object.len() < 3 {
+                return false;
+            }
+            if object.len() > KEYS_PER_REQUIRED * 3 {
+                return object.get(&self.first_key).is_some()
+                    && object.get(&self.second_key).is_some()
+                    && object.get(&self.third_key).is_some();
+            }
+            self.found(&object) == 0b111
         } else {
             true
         }
@@ -309,31 +407,21 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Some(object) = instance.as_object() {
-            if object.get(&self.first_key).is_none() {
+            let found = self.found(&object);
+            if found != 0b111 {
+                let missing = if found & 0b001 == 0 {
+                    &self.first
+                } else if found & 0b010 == 0 {
+                    &self.second
+                } else {
+                    &self.third
+                };
                 return Err(ValidationError::required(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(self.first.clone()),
-                ));
-            }
-            if object.get(&self.second_key).is_none() {
-                return Err(ValidationError::required(
-                    self.location.clone(),
-                    crate::paths::capture_evaluation_path(tracker, &self.location),
-                    location.into(),
-                    instance.lazy_value(),
-                    Value::String(self.second.clone()),
-                ));
-            }
-            if object.get(&self.third_key).is_none() {
-                return Err(ValidationError::required(
-                    self.location.clone(),
-                    crate::paths::capture_evaluation_path(tracker, &self.location),
-                    location.into(),
-                    instance.lazy_value(),
-                    Value::String(self.third.clone()),
+                    Value::String(missing.clone()),
                 ));
             }
         }
@@ -350,7 +438,8 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
     ) {
         if let Some(object) = instance.as_object() {
             let eval_path = crate::paths::capture_evaluation_path(tracker, &self.location);
-            if object.get(&self.first_key).is_none() {
+            let found = self.found(&object);
+            if found & 0b001 == 0 {
                 errors.push(ValidationError::required(
                     self.location.clone(),
                     eval_path.clone(),
@@ -359,7 +448,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     Value::String(self.first.clone()),
                 ));
             }
-            if object.get(&self.second_key).is_none() {
+            if found & 0b010 == 0 {
                 errors.push(ValidationError::required(
                     self.location.clone(),
                     eval_path.clone(),
@@ -368,7 +457,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     Value::String(self.second.clone()),
                 ));
             }
-            if object.get(&self.third_key).is_none() {
+            if found & 0b100 == 0 {
                 errors.push(ValidationError::required(
                     self.location.clone(),
                     eval_path,
@@ -538,6 +627,59 @@ mod tests {
         let schema = json!({"required": ["a", "b", "c"]});
         let validator = crate::validator_for(&schema).unwrap();
         assert_eq!(validator.is_valid(instance), expected);
+    }
+
+    // Objects wider than the scan window take the lookup branch instead.
+    #[test_case(&json!({"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7}), true)]
+    #[test_case(&json!({"b": 2, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8}), false)]
+    #[test_case(&json!({"a": 1, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8}), false)]
+    #[test_case(&json!({"a": 1, "b": 2, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8}), false)]
+    fn required_3_wide(instance: &Value, expected: bool) {
+        let schema = json!({"required": ["a", "b", "c"]});
+        let validator = crate::validator_for(&schema).unwrap();
+        assert_eq!(validator.is_valid(instance), expected);
+    }
+
+    #[test_case(&json!({"b": 2, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8}), r#""a" is a required property"#)]
+    #[test_case(&json!({"a": 1, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8}), r#""b" is a required property"#)]
+    #[test_case(&json!({"a": 1, "b": 2, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8}), r#""c" is a required property"#)]
+    fn required_3_wide_validate(instance: &Value, expected: &str) {
+        let schema = json!({"required": ["a", "b", "c"]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let error = validator.validate(instance).expect_err("Should fail");
+        assert_eq!(error.to_string(), expected);
+    }
+
+    #[test]
+    fn required_3_wide_iter_errors() {
+        let schema = json!({"required": ["a", "b", "c"]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance = json!({"a": 1, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8});
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 1);
+        assert_eq!(errors[0].to_string(), r#""b" is a required property"#);
+    }
+
+    #[test_case(&json!({"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6, "g": 7, "h": 8, "i": 9}), true)]
+    #[test_case(&json!({"a": 1, "b": 2, "c": 3, "e": 5, "f": 6, "g": 7, "h": 8, "i": 9, "j": 10}), false)]
+    fn required_many_wide(instance: &Value, expected: bool) {
+        let schema = json!({"required": ["a", "b", "c", "d"]});
+        let validator = crate::validator_for(&schema).unwrap();
+        assert_eq!(validator.is_valid(instance), expected);
+    }
+
+    #[test]
+    fn required_many_wide_errors() {
+        let schema = json!({"required": ["a", "b", "c", "d"]});
+        let validator = crate::validator_for(&schema).unwrap();
+        let instance =
+            json!({"a": 1, "c": 3, "e": 5, "f": 6, "g": 7, "h": 8, "i": 9, "j": 10, "k": 11});
+        let error = validator.validate(&instance).expect_err("Should fail");
+        assert_eq!(error.to_string(), r#""b" is a required property"#);
+        let errors: Vec<_> = validator.iter_errors(&instance).collect();
+        assert_eq!(errors.len(), 2);
+        assert_eq!(errors[0].to_string(), r#""b" is a required property"#);
+        assert_eq!(errors[1].to_string(), r#""d" is a required property"#);
     }
 
     #[test]
