@@ -1642,56 +1642,6 @@ pub fn canonicalize(value: &Value) -> Result<canonical::CanonicalSchema, Canonic
     canonical::options().canonicalize(value)
 }
 
-/// Reduce the subschema at `pointer` to its canonical IR form, in the context of `value`.
-///
-/// <div class="warning">
-///
-/// Experimental: keyword coverage is incomplete and the API may change in minor releases.
-///
-/// </div>
-///
-/// The document still decides the draft, the base URI and what `#` means, so a subschema's
-/// references into the rest of it resolve as they do in place.
-///
-/// # Examples
-///
-/// ```
-/// use jsonschema::canonicalize_at;
-/// use serde_json::json;
-///
-/// let document = json!({
-///     "$defs": {
-///         "Named": {"type": "object", "required": ["name"]},
-///         "Pet": {"allOf": [
-///             {"$ref": "#/$defs/Named"},
-///             {"properties": {"age": {"type": "integer", "minimum": 0}}}
-///         ]}
-///     }
-/// });
-///
-/// assert_eq!(
-///     canonicalize_at(&document, "/$defs/Pet")?.to_json_schema(),
-///     json!({
-///         "$schema": "https://json-schema.org/draft/2020-12/schema",
-///         "type": "object",
-///         "properties": {"age": {"type": "integer", "minimum": 0}},
-///         "required": ["name"]
-///     })
-/// );
-/// # Ok::<(), Box<dyn std::error::Error>>(())
-/// ```
-///
-/// # Errors
-///
-/// Same as [`canonicalize`], plus [`CanonicalizationError::PointerNotFound`] when `pointer` names
-/// nothing in `value`.
-pub fn canonicalize_at(
-    value: &Value,
-    pointer: &str,
-) -> Result<canonical::CanonicalSchema, CanonicalizationError> {
-    canonical::options().canonicalize_at(value, pointer)
-}
-
 /// Create a builder for configuring JSON Schema validation options.
 ///
 /// This function returns a [`ValidationOptions`] struct, which allows you to set various

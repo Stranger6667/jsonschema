@@ -602,7 +602,7 @@ fn parse_pointer(at: &str) -> Result<&str, String> {
 const MAX_SELECTION_HOPS: usize = 32;
 
 fn check_pointer(document: &Value, pointer: &str) -> Result<(), String> {
-    if let Some(target) = document.pointer(pointer) {
+    if let Some(target) = referencing::pointer(document, pointer) {
         return match target {
             Value::Object(_) | Value::Bool(_) => Ok(()),
             other => Err(format!(
@@ -618,7 +618,7 @@ fn check_pointer(document: &Value, pointer: &str) -> Result<(), String> {
     let mut broken = pointer;
     for segment in pointer.split('/').skip(1) {
         let end = resolved + '/'.len_utf8() + segment.len();
-        if document.pointer(&pointer[..end]).is_none() {
+        if referencing::pointer(document, &pointer[..end]).is_none() {
             broken = segment;
             break;
         }
@@ -1289,10 +1289,15 @@ fn run_canonicalize(args: CanonicalizeArgs) -> ExitCode {
         options = options.should_validate_formats(validate_formats);
     }
 
-    let canonical = match match pointer {
-        Some(pointer) => options.canonicalize_at(&schema_json, pointer),
-        None => options.canonicalize(&schema_json),
-    } {
+    let prepared = match options.prepare(&schema_json) {
+        Ok(prepared) => prepared,
+        Err(error) => return fail_with_error(error),
+    };
+    let canonical = match pointer {
+        Some(pointer) => prepared.canonicalize_at(pointer),
+        None => prepared.canonicalize(),
+    };
+    let canonical = match canonical {
         Ok(canonical) => canonical,
         Err(error) => return fail_with_error(error),
     };
