@@ -13,8 +13,6 @@ use crate::{
 };
 use serde_json::{Map, Value};
 
-/// Object keys per required key up to which one members pass beats repeated `Object::get`.
-const KEYS_PER_REQUIRED: usize = 2;
 /// Longest `required` array scanned in one pass; beyond it the comparisons outgrow the lookups.
 const MAX_SCANNED_REQUIRED: usize = 16;
 
@@ -60,7 +58,7 @@ impl<F: Json> RequiredValidator<F> {
     #[inline]
     fn scanned<'a, O: Object<'a, F>>(&self, object: &O) -> Option<u32> {
         let count = self.required.len();
-        if count > MAX_SCANNED_REQUIRED || object.len() > KEYS_PER_REQUIRED * count {
+        if count > MAX_SCANNED_REQUIRED || object.len() > F::KEYS_PER_LOOKUP * count {
             return None;
         }
         let target = self.target();
@@ -88,7 +86,7 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
                 return false;
             }
             let count = self.required.len();
-            if count <= MAX_SCANNED_REQUIRED && object.len() <= KEYS_PER_REQUIRED * count {
+            if count <= MAX_SCANNED_REQUIRED && object.len() <= F::KEYS_PER_LOOKUP * count {
                 let target = (1_u32 << count) - 1;
                 let mut found = 0_u32;
                 for (name, _) in object.members() {
@@ -358,7 +356,7 @@ impl<F: Json> Required3Validator<F> {
     // `str` equality rejects on length; an ordered lookup must `memcmp` every probe.
     #[inline]
     fn found<'a, O: Object<'a, F>>(&self, object: &O) -> u8 {
-        if object.len() > KEYS_PER_REQUIRED * 3 {
+        if object.len() > F::KEYS_PER_LOOKUP * 3 {
             return u8::from(object.get(&self.first_key).is_some())
                 | (u8::from(object.get(&self.second_key).is_some()) << 1)
                 | (u8::from(object.get(&self.third_key).is_some()) << 2);
@@ -388,7 +386,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
             if object.len() < 3 {
                 return false;
             }
-            if object.len() > KEYS_PER_REQUIRED * 3 {
+            if object.len() > F::KEYS_PER_LOOKUP * 3 {
                 return object.get(&self.first_key).is_some()
                     && object.get(&self.second_key).is_some()
                     && object.get(&self.third_key).is_some();
