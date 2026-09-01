@@ -9,8 +9,8 @@ use jsonschema::{
         options, CanonicalKind, CanonicalSchema, CanonicalView, Containment, Distinctness,
         ObjectViolationView, OperandMismatch, Satisfiability,
     },
-    canonicalize, canonicalize_at, validator_for, CanonicalizationError, Draft, JsonType,
-    PatternOptions, Registry, Retrieve, Uri,
+    canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
+    Retrieve, Uri,
 };
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
@@ -40,8 +40,84 @@ const PET_DOCUMENT: &str = r##"{
     "properties": {"pet": {"$ref": "#/$defs/Pet"}}
 }"##;
 
+fn canonicalize_at(
+    document: &Value,
+    pointer: &str,
+) -> Result<CanonicalSchema, CanonicalizationError> {
+    options().prepare(document)?.canonicalize_at(pointer)
+}
+
 fn pet_document() -> Value {
     serde_json::from_str(PET_DOCUMENT).expect("valid JSON")
+}
+
+// Preparing once and selecting many times must answer exactly as the one-shot entry points do.
+#[test]
+fn prepared_document_answers_as_the_one_shot_entry_points() {
+    let document = pet_document();
+    let prepared = options().prepare(&document).expect("prepares");
+
+    assert_eq!(
+        prepared
+            .canonicalize()
+            .expect("canonicalizes")
+            .to_json_schema(),
+        canonicalize(&document)
+            .expect("canonicalizes")
+            .to_json_schema()
+    );
+    for pointer in [
+        "/$defs/Pet",
+        "/$defs/Tree",
+        "/$defs/Dead",
+        "/$defs/Opaque",
+        "/properties/pet",
+    ] {
+        assert_eq!(
+            prepared
+                .canonicalize_at(pointer)
+                .expect("canonicalizes")
+                .to_json_schema(),
+            canonicalize_at(&document, pointer)
+                .expect("canonicalizes")
+                .to_json_schema(),
+            "{pointer}"
+        );
+    }
+}
+
+#[test]
+fn prepared_document_rejects_the_same_pointers() {
+    let document = pet_document();
+    let prepared = options().prepare(&document).expect("prepares");
+
+    assert!(matches!(
+        prepared.canonicalize_at("/$defs/Missing"),
+        Err(CanonicalizationError::PointerNotFound(_))
+    ));
+    assert!(matches!(
+        prepared.canonicalize_at("/$defs/Named/required/0"),
+        Err(CanonicalizationError::InvalidSchemaType(_))
+    ));
+}
+
+// An unknown draft leaves the document unresolvable, and every selection verbatim.
+#[test]
+fn prepared_document_of_an_unknown_draft_passes_selections_through() {
+    let document = json!({
+        "$schema": "https://example.com/unknown-meta-schema",
+        "$defs": {"A": {"type": "string"}}
+    });
+    let prepared = options().prepare(&document).expect("prepares");
+
+    assert_eq!(prepared.draft(), Draft::Unknown);
+    assert_eq!(
+        prepared
+            .canonicalize_at("/$defs/A")
+            .expect("canonicalizes")
+            .kind(),
+        CanonicalKind::Raw
+    );
 }
 
 #[test]

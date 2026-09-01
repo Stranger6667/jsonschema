@@ -180,7 +180,7 @@ pub(crate) mod view;
 mod witness;
 
 pub use error::{CanonicalizationError, OperandMismatch};
-pub use options::{options, CanonicalizeOptions};
+pub use options::{options, CanonicalizeOptions, PreparedDocument};
 pub use schema::{CanonicalSchema, Containment, Satisfiability};
 pub use view::{CanonicalKind, CanonicalView, ContainsView, Distinctness, ObjectViolationView};
 

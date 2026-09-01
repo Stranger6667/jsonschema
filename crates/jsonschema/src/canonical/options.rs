@@ -2,7 +2,7 @@
 
 use std::{collections::BTreeSet, sync::Arc};
 
-use referencing::{Draft, Registry, Retrieve};
+use referencing::{Draft, Registry, Retrieve, Uri};
 use serde_json::Value;
 
 use crate::{
@@ -99,32 +99,150 @@ impl<'r> CanonicalizeOptions<'r> {
     ///
     /// Same as [`crate::canonicalize`].
     pub fn canonicalize(self, value: &Value) -> Result<CanonicalSchema, CanonicalizationError> {
-        build(value, None, &self)
+        self.prepare(value)?.canonicalize()
     }
 
-    /// Run canonicalization on the subschema at `pointer`, in the context of `value`.
+    /// Prepare `value` for canonicalizing its subschemas.
     ///
-    /// See [`canonicalize_at`](crate::canonicalize_at).
+    /// The document decides the draft, the base URI and what `#` means, so a subschema selected
+    /// from a prepared document resolves its references as it does in place. Resolving the draft,
+    /// validating the document and indexing it depends only on the document, so preparing once
+    /// pays for it once however many subschemas are then selected.
+    ///
+    /// # Examples
+    ///
+    /// ```
+    /// use jsonschema::canonical::options;
+    /// use serde_json::json;
+    ///
+    /// let document = json!({
+    ///     "$defs": {
+    ///         "Named": {"type": "object", "required": ["name"]},
+    ///         "Pet": {"allOf": [
+    ///             {"$ref": "#/$defs/Named"},
+    ///             {"properties": {"age": {"type": "integer", "minimum": 0}}}
+    ///         ]}
+    ///     }
+    /// });
+    ///
+    /// let prepared = options().prepare(&document)?;
+    /// assert_eq!(
+    ///     prepared.canonicalize_at("/$defs/Pet")?.to_json_schema(),
+    ///     json!({
+    ///         "$schema": "https://json-schema.org/draft/2020-12/schema",
+    ///         "type": "object",
+    ///         "properties": {"age": {"type": "integer", "minimum": 0}},
+    ///         "required": ["name"]
+    ///     })
+    /// );
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
     ///
     /// # Errors
     ///
-    /// Same as [`canonicalize`](Self::canonicalize), plus
-    /// [`CanonicalizationError::PointerNotFound`] when `pointer` names nothing.
-    pub fn canonicalize_at(
+    /// Same as [`canonicalize`](Self::canonicalize), for the document itself.
+    pub fn prepare<'a>(
         self,
-        value: &Value,
-        pointer: &str,
-    ) -> Result<CanonicalSchema, CanonicalizationError> {
-        build(value, Some(pointer), &self)
+        value: &'a Value,
+    ) -> Result<PreparedDocument<'a>, CanonicalizationError>
+    where
+        'r: 'a,
+    {
+        prepare(value, &self)
     }
 }
 
-/// Validate the document and reduce it to a [`CanonicalSchema`].
-fn build(
-    value: &Value,
-    pointer: Option<&str>,
-    options: &CanonicalizeOptions<'_>,
-) -> Result<CanonicalSchema, CanonicalizationError> {
+/// A document indexed once, ready to canonicalize any number of its subschemas.
+///
+/// Built by [`CanonicalizeOptions::prepare`].
+pub struct PreparedDocument<'a> {
+    document: &'a Value,
+    draft: Draft,
+    pattern_options: PatternEngineOptions,
+    validate_formats: bool,
+    // `None` when the draft is unknown: nothing resolves, and every selection stays verbatim.
+    resolution: Option<(Registry<'a>, Uri<String>)>,
+}
+
+impl PreparedDocument<'_> {
+    /// The draft the document was read under.
+    #[must_use]
+    pub fn draft(&self) -> Draft {
+        self.draft
+    }
+
+    /// Canonicalize the document itself.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`crate::canonicalize`].
+    pub fn canonicalize(&self) -> Result<CanonicalSchema, CanonicalizationError> {
+        self.reduce(self.document)
+    }
+
+    /// Canonicalize the subschema at `pointer`, in the document's context.
+    ///
+    /// # Errors
+    ///
+    /// Same as [`crate::canonicalize`], plus [`CanonicalizationError::PointerNotFound`] when
+    /// `pointer` names nothing.
+    pub fn canonicalize_at(&self, pointer: &str) -> Result<CanonicalSchema, CanonicalizationError> {
+        let target = referencing::pointer(self.document, pointer)
+            .ok_or_else(|| CanonicalizationError::PointerNotFound(pointer.to_string()))?;
+        match target {
+            Value::Bool(_) | Value::Object(_) => self.reduce(target),
+            other @ (Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
+                Err(CanonicalizationError::InvalidSchemaType(other.to_string()))
+            }
+        }
+    }
+
+    fn reduce(&self, target: &Value) -> Result<CanonicalSchema, CanonicalizationError> {
+        let opaque = |target: &Value| {
+            CanonicalSchema::new(
+                Schema::new(SchemaKind::Raw(RawJson::new(target.clone()))),
+                self.draft,
+                self.pattern_options,
+                self.validate_formats,
+                Arc::new(DefinitionMap::new()),
+                Arc::new(BTreeSet::new()),
+            )
+        };
+        let Some((registry, base_uri)) = &self.resolution else {
+            return Ok(opaque(target));
+        };
+        let resolver = registry.resolver(base_uri.clone());
+        let context =
+            CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
+        let (inner, definitions, local) = match parse::parse(target, &context, &resolver)? {
+            Some(parsed) => {
+                let parsed = emptiness::fold_definitions(parsed, target, &context, &resolver)?;
+                // Folded now every body is known, so this entry point and the set operations agree.
+                let parsed = refold::through_targets(parsed, &context);
+                (
+                    parsed.root,
+                    Arc::new(parsed.definitions),
+                    Arc::new(parsed.local_definitions),
+                )
+            }
+            None => return Ok(opaque(target)),
+        };
+        Ok(CanonicalSchema::new(
+            inner,
+            self.draft,
+            self.pattern_options,
+            self.validate_formats,
+            definitions,
+            local,
+        ))
+    }
+}
+
+/// Validate the document and index it for reference resolution.
+fn prepare<'a, 'r: 'a>(
+    value: &'a Value,
+    options: &CanonicalizeOptions<'r>,
+) -> Result<PreparedDocument<'a>, CanonicalizationError> {
     // Only a boolean or object is a schema document.
     match value {
         Value::Bool(_) | Value::Object(_) => {}
@@ -132,31 +250,16 @@ fn build(
             return Err(CanonicalizationError::InvalidSchemaType(other.to_string()))
         }
     }
-    let target = match pointer {
-        None => value,
-        Some(pointer) => {
-            let target = value
-                .pointer(pointer)
-                .ok_or_else(|| CanonicalizationError::PointerNotFound(pointer.to_string()))?;
-            match target {
-                Value::Bool(_) | Value::Object(_) => target,
-                other @ (Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_)) => {
-                    return Err(CanonicalizationError::InvalidSchemaType(other.to_string()))
-                }
-            }
-        }
-    };
     let pattern_options = options.pattern_options;
     let draft = detect_draft(value, options.draft, options.registry)?;
     if draft == Draft::Unknown {
-        return Ok(CanonicalSchema::new(
-            Schema::new(SchemaKind::Raw(RawJson::new(target.clone()))),
+        return Ok(PreparedDocument {
+            document: value,
             draft,
             pattern_options,
-            options.validate_formats.unwrap_or(false),
-            Arc::new(DefinitionMap::new()),
-            Arc::new(BTreeSet::new()),
-        ));
+            validate_formats: options.validate_formats.unwrap_or(false),
+            resolution: None,
+        });
     }
     let validate_formats = options
         .validate_formats
@@ -173,33 +276,13 @@ fn build(
     }
     let registry = builder.draft(draft).prepare()?;
     let base_uri = normalize_base_uri(&registry, &base_uri);
-    let resolver = registry.resolver(base_uri);
-    let context = CanonicalizationContext::new(draft, pattern_options, validate_formats);
-    let (inner, definitions, local) = match parse::parse(target, &context, &resolver)? {
-        Some(parsed) => {
-            let parsed = emptiness::fold_definitions(parsed, target, &context, &resolver)?;
-            // Folded now every body is known, so this entry point and the set operations agree.
-            let parsed = refold::through_targets(parsed, &context);
-            (
-                parsed.root,
-                Arc::new(parsed.definitions),
-                Arc::new(parsed.local_definitions),
-            )
-        }
-        None => (
-            Schema::new(SchemaKind::Raw(RawJson::new(target.clone()))),
-            Arc::new(DefinitionMap::new()),
-            Arc::new(BTreeSet::new()),
-        ),
-    };
-    Ok(CanonicalSchema::new(
-        inner,
+    Ok(PreparedDocument {
+        document: value,
         draft,
         pattern_options,
         validate_formats,
-        definitions,
-        local,
-    ))
+        resolution: Some((registry, base_uri)),
+    })
 }
 
 /// Resolve the draft: an explicit override, else detected from `$schema`.
