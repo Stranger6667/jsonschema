@@ -93,7 +93,7 @@ impl<F: Json> Validate<F> for PrefixItemsValidator<F> {
                 for (idx, (schema_node, item)) in
                     self.schemas.iter().zip(array.elements()).enumerate()
                 {
-                    children.push(schema_node.evaluate_instance(
+                    children.push(schema_node.evaluate_instance_below(
                         &item,
                         &location.push(idx),
                         tracker,

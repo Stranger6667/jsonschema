@@ -380,6 +380,24 @@ impl<F: Json> SchemaNode<F> {
         self.evaluate_instance_at(instance, location, &instance_location, tracker, ctx)
     }
 
+    /// [`Self::evaluate_instance`] for a position one segment below the one being evaluated.
+    ///
+    /// Renders from the location already on the context instead of walking the chain again.
+    pub(crate) fn evaluate_instance_below(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationNode {
+        let instance_location = match ctx.instance_location() {
+            Some(parent) => parent.join_pointer_segment(location.segment()),
+            None => location.into(),
+        };
+        debug_assert_eq!(instance_location, Location::from(location));
+        self.evaluate_instance_at(instance, location, &instance_location, tracker, ctx)
+    }
+
     /// [`Self::evaluate_instance`] for a caller that already rendered this instance position.
     pub(crate) fn evaluate_instance_at(
         &self,
@@ -396,7 +414,11 @@ impl<F: Json> SchemaNode<F> {
             crate::evaluation::format_schema_location(&self.location, self.absolute_path.as_ref())
         }));
 
-        match self.evaluate_at(instance, location, &instance_location, tracker, ctx) {
+        let previous = ctx.enter_instance_location(instance_location.clone());
+        let result = self.evaluate_at(instance, location, &instance_location, tracker, ctx);
+        ctx.leave_instance_location(previous);
+
+        match result {
             EvaluationResult::Valid {
                 annotations,
                 children,

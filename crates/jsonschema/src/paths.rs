@@ -648,6 +648,26 @@ impl Location {
         })
     }
 
+    /// Append a segment taken straight from a [`LazyLocation`] frame.
+    #[must_use]
+    pub(crate) fn join_pointer_segment(&self, segment: &JsonPointerSegment<'_>) -> Self {
+        let parent = &self.0;
+        match segment {
+            JsonPointerSegment::Key(property) => {
+                build_location(parent.len() + property.len() + 1, |buffer| {
+                    buffer.push_str(parent);
+                    buffer.push('/');
+                    write_escaped_str(buffer, property);
+                })
+            }
+            JsonPointerSegment::Index(index) => build_location(parent.len() + 2, |buffer| {
+                buffer.push_str(parent);
+                buffer.push('/');
+                write_index(buffer, *index);
+            }),
+        }
+    }
+
     #[must_use]
     pub fn join<'a>(&self, segment: impl Into<LocationSegment<'a>>) -> Self {
         let parent = &self.0;

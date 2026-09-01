@@ -113,7 +113,7 @@ impl<F: Json> Validate<F> for AdditionalPropertiesValidator<F> {
         if let Some(object) = instance.as_object() {
             let mut children = Vec::with_capacity(object.len());
             for (name, value) in object.members() {
-                children.push(self.node.evaluate_instance(
+                children.push(self.node.evaluate_instance_below(
                     &value,
                     &location.push(name.as_ref()),
                     tracker,
@@ -309,7 +309,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
             let mut children = Vec::with_capacity(object.len());
             for (property, value) in object.members() {
                 if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
-                    children.push(node.evaluate_instance(
+                    children.push(node.evaluate_instance_below(
                         &value,
                         &location.push(property.as_ref()),
                         tracker,
@@ -502,7 +502,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
             let mut found_required = false;
             for (property, value) in object.members() {
                 if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
-                    children.push(node.evaluate_instance(
+                    children.push(node.evaluate_instance_below(
                         &value,
                         &location.push(property.as_ref()),
                         tracker,
@@ -682,10 +682,14 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                 if let Some((_name, property_validators)) =
                     self.properties.get_key_validator(property.as_ref())
                 {
-                    children
-                        .push(property_validators.evaluate_instance(&value, &path, tracker, ctx));
+                    children.push(
+                        property_validators.evaluate_instance_below(&value, &path, tracker, ctx),
+                    );
                 } else {
-                    children.push(self.node.evaluate_instance(&value, &path, tracker, ctx));
+                    children.push(
+                        self.node
+                            .evaluate_instance_below(&value, &path, tracker, ctx),
+                    );
                     matched_propnames.push(property.as_ref().to_owned());
                 }
             }
@@ -834,12 +838,15 @@ impl<F: Json, R: RegexEngine> Validate<F> for AdditionalPropertiesWithPatternsVa
                     if pattern.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
                         pattern_matched_propnames.push(property.as_ref().to_owned());
-                        children.push(node.evaluate_instance(&value, &path, tracker, ctx));
+                        children.push(node.evaluate_instance_below(&value, &path, tracker, ctx));
                     }
                 }
                 if !has_match {
                     additional_matched_propnames.push(property.as_ref().to_owned());
-                    children.push(self.node.evaluate_instance(&value, &path, tracker, ctx));
+                    children.push(
+                        self.node
+                            .evaluate_instance_below(&value, &path, tracker, ctx),
+                    );
                 }
             }
             if !pattern_matched_propnames.is_empty() {
@@ -1007,7 +1014,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for AdditionalPropertiesWithPatternsFa
                     if pattern.is_match(property.as_ref()).unwrap_or(false) {
                         has_match = true;
                         pattern_matched_props.push(property.as_ref().to_owned());
-                        children.push(node.evaluate_instance(&value, &path, tracker, ctx));
+                        children.push(node.evaluate_instance_below(&value, &path, tracker, ctx));
                     }
                 }
                 if !has_match {
@@ -1238,7 +1245,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
             for (property, value) in object.members() {
                 let path = location.push(property.as_ref());
                 if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
-                    children.push(node.evaluate_instance(&value, &path, tracker, ctx));
+                    children.push(node.evaluate_instance_below(&value, &path, tracker, ctx));
                     // Use pre-computed pattern indices - no regex at runtime
                     if let Some(pattern_indices) =
                         self.property_pattern_indices.get(property.as_ref())
@@ -1247,7 +1254,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
                             children.push(
                                 self.patterns[idx]
                                     .1
-                                    .evaluate_instance(&value, &path, tracker, ctx),
+                                    .evaluate_instance_below(&value, &path, tracker, ctx),
                             );
                         }
                     }
@@ -1257,12 +1264,16 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
                     for (pattern, node) in &self.patterns {
                         if pattern.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
-                            children.push(node.evaluate_instance(&value, &path, tracker, ctx));
+                            children
+                                .push(node.evaluate_instance_below(&value, &path, tracker, ctx));
                         }
                     }
                     if !has_match {
                         additional_matches.push(property.as_ref().to_owned());
-                        children.push(self.node.evaluate_instance(&value, &path, tracker, ctx));
+                        children.push(
+                            self.node
+                                .evaluate_instance_below(&value, &path, tracker, ctx),
+                        );
                     }
                 }
             }
@@ -1471,7 +1482,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
             for (property, value) in object.members() {
                 let path = location.push(property.as_ref());
                 if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
-                    children.push(node.evaluate_instance(&value, &path, tracker, ctx));
+                    children.push(node.evaluate_instance_below(&value, &path, tracker, ctx));
                     // Use pre-computed pattern indices - no regex at runtime
                     if let Some(pattern_indices) =
                         self.property_pattern_indices.get(property.as_ref())
@@ -1480,7 +1491,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
                             children.push(
                                 self.patterns[idx]
                                     .1
-                                    .evaluate_instance(&value, &path, tracker, ctx),
+                                    .evaluate_instance_below(&value, &path, tracker, ctx),
                             );
                         }
                     }
@@ -1490,7 +1501,8 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: RegexEngine> Validate<F>
                     for (pattern, node) in &self.patterns {
                         if pattern.is_match(property.as_ref()).unwrap_or(false) {
                             has_match = true;
-                            children.push(node.evaluate_instance(&value, &path, tracker, ctx));
+                            children
+                                .push(node.evaluate_instance_below(&value, &path, tracker, ctx));
                         }
                     }
                     if !has_match {

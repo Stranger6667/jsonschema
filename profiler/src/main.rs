@@ -123,7 +123,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     .expect("Failed to build registry");
             }
         }
-        "is_valid" | "validate" | "iter_errors" | "evaluate" => {
+        "is_valid" | "validate" | "iter_errors" | "evaluate" | "evaluate-serialize" => {
             let instance_path = args
                 .instance_path
                 .as_ref()
@@ -149,6 +149,11 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                     }
                 }
                 "evaluate" => {
+                    for _ in 0..args.iterations {
+                        let _ = validator.evaluate(&instance);
+                    }
+                }
+                "evaluate-serialize" => {
                     for _ in 0..args.iterations {
                         let evaluation = validator.evaluate(&instance);
                         let _ = evaluation.flag();
