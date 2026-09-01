@@ -31,11 +31,8 @@ macro_rules! num_cmp {
             }
             #[cfg(not(feature = "arbitrary-precision"))]
             {
-                if let Some(b) = $right.as_f64() {
-                    NumCmp::num_eq($left, b)
-                } else {
-                    unreachable!("Numbers always fit in u64/i64/f64 without arbitrary-precision")
-                }
+                // A value past binary64 cannot be placed against the literal either way.
+                $right.as_f64().is_some_and(|b| NumCmp::num_eq($left, b))
             }
         }
     };
@@ -103,7 +100,8 @@ pub fn equal_numbers<L: crate::JsonNumber>(left: &L, right: &serde_json::Number)
         } else if let Some(a) = left.as_f64() {
             num_cmp!(a, right)
         } else {
-            unreachable!("Numbers always fit in u64/i64/f64 without arbitrary-precision")
+            // A value past binary64 cannot be placed against the literal either way.
+            false
         }
     }
 }

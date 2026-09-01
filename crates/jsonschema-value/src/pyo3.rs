@@ -18,7 +18,7 @@ use std::{
     sync::atomic::{AtomicPtr, Ordering},
 };
 
-use ahash::{AHashSet, AHasher};
+use ahash::AHasher;
 
 use pyo3::{
     exceptions::PyValueError,
@@ -770,29 +770,13 @@ impl<'py> Array<'py, Pyo3> for PyArray<'py> {
     }
 
     fn is_unique(&self) -> bool {
-        let size = self.len;
-        if size <= 1 {
-            return true;
-        }
         let items: Vec<PyNode<'py>> = self.elements().collect();
-        if size <= crate::unique::ITEMS_SIZE_THRESHOLD {
-            // Pairwise beats hashing for small arrays, even at O(N^2).
-            let mut idx = 0;
-            while idx < size {
-                let mut inner_idx = idx + 1;
-                while inner_idx < size {
-                    if equal_nodes(items[idx], items[inner_idx], 0) {
-                        return false;
-                    }
-                    inner_idx += 1;
-                }
-                idx += 1;
-            }
-            true
-        } else {
-            let mut seen = AHashSet::with_capacity(size);
-            items.into_iter().all(|item| seen.insert(HashedNode(item)))
-        }
+        crate::unique::is_unique_by(
+            items.len(),
+            |index| items[index],
+            |left, right| equal_nodes(*left, *right, 0),
+            |index| HashedNode(items[index]),
+        )
     }
 }
 

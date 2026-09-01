@@ -105,9 +105,13 @@ jobs:
         run: >
           cargo test --no-fail-fast --workspace
           --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite
-          --features jsonschema/conformance,jsonschema/resolve-http,jsonschema/resolve-file,jsonschema/resolve-async,jsonschema/tls-aws-lc-rs,jsonschema/tls-ring,jsonschema/arbitrary-precision,jsonschema/macros,jsonschema/pyo3,referencing/retrieve-async,jsonschema-macros/arbitrary-precision,jsonschema-macros/float-roundtrip
+          --features jsonschema/conformance,jsonschema/resolve-http,jsonschema/resolve-file,jsonschema/resolve-async,jsonschema/tls-aws-lc-rs,jsonschema/tls-ring,jsonschema/arbitrary-precision,jsonschema/macros,jsonschema/pyo3,jsonschema/jsonb,referencing/retrieve-async,jsonschema-macros/arbitrary-precision,jsonschema-macros/float-roundtrip
 
-      - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros"
+      - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros,jsonb-testkit"
+
+      # The step above always carries `arbitrary-precision`; this is the only place the default
+      # feature configuration (what downstream gets without opting in) is compiled and tested.
+      - run: cargo test --no-fail-fast -p jsonschema-value --features "conformance,jsonb-testkit"
 
   test-cross:
     strategy:
@@ -144,7 +148,15 @@ jobs:
         # Everything except `pyo3`: the cross image has no libpython to link test binaries against.
         # `--tests` skips doctests: each needs its own `rustc` invocation, which under emulation
         # costs more than the whole rest of the suite, and they cover no endianness-specific code.
-        run: cross test --target ${{ matrix.target }} --tests --no-fail-fast --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest -p jsonschema
+        run: cross test --target ${{ matrix.target }} --tests --no-fail-fast --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest,jsonb -p jsonschema
+
+      - name: Test jsonb on ${{ matrix.target }}
+        env:
+          CROSS_CONTAINER_OPTS: >-
+            --env XDG_CACHE_HOME=/tmp/.cache
+            --env XDG_DATA_HOME=/tmp/.local/share
+        # Reads jsonb-corpus-be.tsv, captured from a PostgreSQL server on this same architecture.
+        run: cross test --target ${{ matrix.target }} --tests --no-fail-fast --features jsonb-testkit,conformance -p jsonschema-value
 
   test-wasm:
     strategy:

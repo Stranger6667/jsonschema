@@ -60,6 +60,44 @@ impl Hash for HashedValue<'_> {
 // case.
 pub(crate) const ITEMS_SIZE_THRESHOLD: usize = 15;
 
+/// `uniqueItems` for a representation that reads its elements in place.
+///
+/// The shape every representation needs: two- and three-element arrays settle with plain
+/// comparisons, small ones go pairwise because hashing costs more than `O(N^2)` at that size,
+/// and larger ones hash. `element` and `hashed` take an index so each representation keeps the
+/// access it is good at - an indexable array reads through, a cursor collects first.
+///
+/// `hashed`'s `Hash` and `Eq` must agree with `equal`.
+#[inline]
+pub fn is_unique_by<T, H: Hash + Eq>(
+    len: usize,
+    element: impl Fn(usize) -> T,
+    equal: impl Fn(&T, &T) -> bool,
+    hashed: impl Fn(usize) -> H,
+) -> bool {
+    match len {
+        0 | 1 => return true,
+        2 => return !equal(&element(0), &element(1)),
+        3 => {
+            let (first, second, third) = (element(0), element(1), element(2));
+            return !equal(&first, &second) && !equal(&first, &third) && !equal(&second, &third);
+        }
+        _ => {}
+    }
+    if len <= ITEMS_SIZE_THRESHOLD {
+        for index in 0..len {
+            for other in index + 1..len {
+                if equal(&element(index), &element(other)) {
+                    return false;
+                }
+            }
+        }
+        return true;
+    }
+    let mut seen = AHashSet::with_capacity(len);
+    (0..len).all(|index| seen.insert(hashed(index)))
+}
+
 // Generic over `Borrow<Value>` so both borrowed `serde_json` slices and the `Cow<Value>` handles
 // materialized from other representations run the same duplicate-detection algorithm.
 #[inline]
