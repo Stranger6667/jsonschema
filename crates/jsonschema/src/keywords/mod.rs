@@ -42,6 +42,25 @@ use serde_json::{Map, Value};
 
 use crate::{compiler, error, validator::Validate, Json, SerdeJson};
 
+/// Whether a validator specialized for one type also accepts `null`
+pub(crate) trait Nullability: Send + Sync + fmt::Debug + 'static {
+    const ACCEPTS_NULL: bool;
+}
+
+#[derive(Debug)]
+pub(crate) struct Nullable;
+
+#[derive(Debug)]
+pub(crate) struct NotNullable;
+
+impl Nullability for Nullable {
+    const ACCEPTS_NULL: bool = true;
+}
+
+impl Nullability for NotNullable {
+    const ACCEPTS_NULL: bool = false;
+}
+
 pub(crate) type CompilationResult<'a, F = SerdeJson> =
     Result<BoxedValidator<F>, error::ValidationError<'a>>;
 pub(crate) type BoxedValidator<F = SerdeJson> = Box<dyn Validate<F>>;

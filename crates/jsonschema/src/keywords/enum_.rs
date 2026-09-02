@@ -1,15 +1,16 @@
 use crate::{
     compiler,
     error::ValidationError,
-    keywords::CompilationResult,
+    keywords::{CompilationResult, NotNullable, Nullability, Nullable},
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
     Json, LazyInstance, Node,
 };
 use ahash::AHashSet;
+use jsonschema_value::JsonNumber;
 use serde_json::{Map, Value};
-use std::borrow::Cow;
+use std::{borrow::Cow, marker::PhantomData};
 
 const STRING_ENUM_THRESHOLD: usize = 10;
 
@@ -124,32 +125,34 @@ impl<F: Json> Validate<F> for SingleValueEnumValidator {
 }
 
 #[derive(Debug)]
-pub(crate) struct SmallStringEnumValidator {
+pub(crate) struct SmallStringEnumValidator<N> {
     options: Value,
     items: Vec<Box<str>>,
     location: Location,
+    nullability: PhantomData<N>,
 }
 
-impl SmallStringEnumValidator {
+impl<N: Nullability> SmallStringEnumValidator<N> {
     #[inline]
     pub(crate) fn compile<'a, F: Json>(
         schema: &'a Value,
         items: &'a [Value],
         location: Location,
     ) -> CompilationResult<'a, F> {
-        let strings = items
-            .iter()
-            .map(|v| v.as_str().expect("all items are strings").into())
-            .collect();
-        Ok(Box::new(SmallStringEnumValidator {
+        Ok(Box::new(SmallStringEnumValidator::<N> {
             options: schema.clone(),
-            items: strings,
+            items: items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(Into::into)
+                .collect(),
             location,
+            nullability: PhantomData,
         }))
     }
 }
 
-impl<F: Json> Validate<F> for SmallStringEnumValidator {
+impl<F: Json, N: Nullability> Validate<F> for SmallStringEnumValidator<N> {
     fn validate<'i>(
         &self,
         instance: &F::Node<'i>,
@@ -174,38 +177,40 @@ impl<F: Json> Validate<F> for SmallStringEnumValidator {
         if let Some(s) = instance.as_string() {
             self.items.iter().any(|item| item.as_ref() == s.as_ref())
         } else {
-            false
+            N::ACCEPTS_NULL && instance.is_null()
         }
     }
 }
 
 #[derive(Debug)]
-pub(crate) struct BigStringEnumValidator {
+pub(crate) struct BigStringEnumValidator<N> {
     options: Value,
     items: AHashSet<Box<str>>,
     location: Location,
+    nullability: PhantomData<N>,
 }
 
-impl BigStringEnumValidator {
+impl<N: Nullability> BigStringEnumValidator<N> {
     #[inline]
     pub(crate) fn compile<'a, F: Json>(
         schema: &'a Value,
         items: &'a [Value],
         location: Location,
     ) -> CompilationResult<'a, F> {
-        let strings = items
-            .iter()
-            .map(|v| v.as_str().expect("all items are strings").into())
-            .collect();
-        Ok(Box::new(BigStringEnumValidator {
+        Ok(Box::new(BigStringEnumValidator::<N> {
             options: schema.clone(),
-            items: strings,
+            items: items
+                .iter()
+                .filter_map(Value::as_str)
+                .map(Into::into)
+                .collect(),
             location,
+            nullability: PhantomData,
         }))
     }
 }
 
-impl<F: Json> Validate<F> for BigStringEnumValidator {
+impl<F: Json, N: Nullability> Validate<F> for BigStringEnumValidator<N> {
     fn validate<'i>(
         &self,
         instance: &F::Node<'i>,
@@ -230,7 +235,72 @@ impl<F: Json> Validate<F> for BigStringEnumValidator {
         if let Some(s) = instance.as_string() {
             self.items.contains(s.as_ref())
         } else {
-            false
+            N::ACCEPTS_NULL && instance.is_null()
+        }
+    }
+}
+
+#[derive(Debug)]
+pub(crate) struct IntegerEnumValidator<N> {
+    options: Value,
+    items: Vec<Value>,
+    /// Sorted and deduplicated; answers for instances written as an `i64`.
+    integers: Vec<i64>,
+    location: Location,
+    nullability: PhantomData<N>,
+}
+
+impl<N: Nullability> IntegerEnumValidator<N> {
+    #[inline]
+    pub(crate) fn compile<'a, F: Json>(
+        schema: &'a Value,
+        items: &'a [Value],
+        location: Location,
+    ) -> CompilationResult<'a, F> {
+        let mut integers: Vec<i64> = items.iter().filter_map(Value::as_i64).collect();
+        integers.sort_unstable();
+        integers.dedup();
+        Ok(Box::new(IntegerEnumValidator::<N> {
+            options: schema.clone(),
+            items: items.iter().filter(|v| !v.is_null()).cloned().collect(),
+            integers,
+            location,
+            nullability: PhantomData,
+        }))
+    }
+}
+
+impl<F: Json, N: Nullability> Validate<F> for IntegerEnumValidator<N> {
+    fn validate<'i>(
+        &self,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        if Validate::<F>::is_valid(self, instance, ctx) {
+            Ok(())
+        } else {
+            Err(ValidationError::enumeration(
+                self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
+                location.into(),
+                instance.lazy_value(),
+                &self.options,
+            ))
+        }
+    }
+
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        if let Some(number) = instance.as_number() {
+            if let Some(value) = number.as_i64() {
+                self.integers.binary_search(&value).is_ok()
+            } else {
+                // `2.0`, `1e2`, past `i64`: numeric equality across spellings and precisions
+                self.items.iter().any(|item| instance.equals_value(item))
+            }
+        } else {
+            N::ACCEPTS_NULL && instance.is_null()
         }
     }
 }
@@ -246,11 +316,34 @@ pub(crate) fn compile<'a, F: Json>(
         if items.len() == 1 {
             let value = items.iter().next().expect("Vec is not empty");
             Some(SingleValueEnumValidator::compile(schema, value, location))
-        } else if items.iter().all(|v| matches!(v, Value::String(_))) {
-            if items.len() <= STRING_ENUM_THRESHOLD {
-                Some(SmallStringEnumValidator::compile(schema, items, location))
+        } else if items
+            .iter()
+            .all(|v| matches!(v, Value::String(_) | Value::Null))
+        {
+            let small = items.len() <= STRING_ENUM_THRESHOLD;
+            match (small, items.iter().any(Value::is_null)) {
+                (true, true) => Some(SmallStringEnumValidator::<Nullable>::compile(
+                    schema, items, location,
+                )),
+                (true, false) => Some(SmallStringEnumValidator::<NotNullable>::compile(
+                    schema, items, location,
+                )),
+                (false, true) => Some(BigStringEnumValidator::<Nullable>::compile(
+                    schema, items, location,
+                )),
+                (false, false) => Some(BigStringEnumValidator::<NotNullable>::compile(
+                    schema, items, location,
+                )),
+            }
+        } else if items.iter().all(|v| v.is_null() || v.as_i64().is_some()) {
+            if items.iter().any(Value::is_null) {
+                Some(IntegerEnumValidator::<Nullable>::compile(
+                    schema, items, location,
+                ))
             } else {
-                Some(BigStringEnumValidator::compile(schema, items, location))
+                Some(IntegerEnumValidator::<NotNullable>::compile(
+                    schema, items, location,
+                ))
             }
         } else {
             Some(EnumValidator::compile(schema, items, location))
@@ -309,6 +402,52 @@ mod tests {
     fn big_string_enum_location() {
         let schema: Value = serde_json::from_str(BIG_STRING_ENUM).unwrap();
         tests_util::assert_schema_location(&schema, &json!("z"), "/enum");
+    }
+
+    // 11 strings plus null — the big string set with `null` allowed
+    const BIG_STRING_OR_NULL_ENUM: &str = r#"{
+        "enum": ["a","b","c","d","e","f","g","h","i","j","k",null]
+    }"#;
+
+    #[test_case(&json!({"enum": ["a", "b", null]}), &json!(null); "small accepts null")]
+    #[test_case(&json!({"enum": ["a", "b", null]}), &json!("b"); "small accepts string")]
+    #[test_case(&json!({"enum": [null, "a"]}), &json!("a"); "null first accepts string")]
+    #[test_case(&serde_json::from_str(BIG_STRING_OR_NULL_ENUM).unwrap(), &json!(null); "big accepts null")]
+    #[test_case(&serde_json::from_str(BIG_STRING_OR_NULL_ENUM).unwrap(), &json!("k"); "big accepts string")]
+    fn string_or_null_enum_valid(schema: &Value, instance: &Value) {
+        tests_util::is_valid(schema, instance);
+    }
+
+    #[test_case(&json!({"enum": ["a", "b", null]}), &json!("z"); "small rejects other string")]
+    #[test_case(&json!({"enum": ["a", "b", null]}), &json!(1); "small rejects number")]
+    #[test_case(&json!({"enum": ["a", "b"]}), &json!(null); "small without null rejects null")]
+    #[test_case(&serde_json::from_str(BIG_STRING_OR_NULL_ENUM).unwrap(), &json!("z"); "big rejects other string")]
+    #[test_case(&serde_json::from_str(BIG_STRING_OR_NULL_ENUM).unwrap(), &json!(false); "big rejects boolean")]
+    #[test_case(&serde_json::from_str(BIG_STRING_ENUM).unwrap(), &json!(null); "big without null rejects null")]
+    fn string_or_null_enum_invalid(schema: &Value, instance: &Value) {
+        tests_util::is_not_valid(schema, instance);
+    }
+
+    #[test_case(&json!({"enum": [1, 2, 3]}), &json!(2); "integer accepts member")]
+    #[test_case(&json!({"enum": [1, 2, 3]}), &json!(2.0); "integer accepts integral float")]
+    #[test_case(&json!({"enum": [-1, 0]}), &json!(-0.0); "integer accepts negative zero")]
+    #[test_case(&json!({"enum": [null, 10, 20]}), &json!(null); "integer with null accepts null")]
+    #[test_case(&json!({"enum": [null, 10, 20]}), &json!(10); "null first accepts integer")]
+    #[test_case(&json!({"enum": [9_007_199_254_740_993_i64]}), &json!(9_007_199_254_740_993_i64); "integer past 2^53 exact")]
+    fn integer_enum_valid(schema: &Value, instance: &Value) {
+        tests_util::is_valid(schema, instance);
+    }
+
+    #[test_case(&json!({"enum": [1, 2, 3]}), &json!(4); "integer rejects other integer")]
+    #[test_case(&json!({"enum": [1, 2, 3]}), &json!("2"); "integer rejects string")]
+    #[test_case(&json!({"enum": [1, 2, 3]}), &json!(2.5); "integer rejects fraction")]
+    #[test_case(&json!({"enum": [1, 2, 3]}), &json!(null); "integer without null rejects null")]
+    #[test_case(&json!({"enum": [1, 2, 3]}), &json!(true); "integer rejects boolean")]
+    #[test_case(&json!({"enum": [1]}), &json!(18_446_744_073_709_551_615_u64); "integer rejects u64 past i64")]
+    #[test_case(&json!({"enum": [9_007_199_254_740_993_i64]}), &json!(9_007_199_254_740_992.0); "integer rejects float neighbour past 2^53")]
+    #[test_case(&json!({"enum": [null, 10, 20]}), &json!(15); "integer with null rejects other integer")]
+    fn integer_enum_invalid(schema: &Value, instance: &Value) {
+        tests_util::is_not_valid(schema, instance);
     }
 
     #[test]
