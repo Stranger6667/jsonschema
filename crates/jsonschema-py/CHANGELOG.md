@@ -15,6 +15,7 @@
 - `evaluate` is up to 30% faster, from rendering each node's locations once.
 - Building a schema resolves each `$ref` target once instead of per reference site.
 - Building a schema with an `$id` encodes each absolute location once instead of re-validating it.
+- `enum` listing strings or integers, with or without `null`, matches against a set instead of comparing each candidate.
 
 ## [0.52.1] - 2026-08-30
 
