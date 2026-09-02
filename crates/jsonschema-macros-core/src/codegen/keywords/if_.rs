@@ -1,9 +1,10 @@
 use super::super::{compile_schema, CompileContext, CompiledExpr};
+use crate::codegen::emit::ValueEmitter;
 use quote::quote;
 use serde_json::{Map, Value};
 
-pub(crate) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     parent: &Map<String, Value>,
     if_schema: &Value,
 ) -> Option<CompiledExpr> {

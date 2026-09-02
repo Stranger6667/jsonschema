@@ -8,16 +8,18 @@ use indexmap::IndexMap;
 use proc_macro2::TokenStream;
 use referencing::{write_escaped_str, Draft, Registry, Uri, VocabularySet};
 
+use crate::codegen::emit::ValueEmitter;
+
 /// `Deref`/`DerefMut` to `CompileContext` for a scope guard holding `ctx: &mut CompileContext`.
 macro_rules! impl_scope_guard {
     ($guard:ident) => {
-        impl<'cfg> Deref for $guard<'_, 'cfg> {
-            type Target = CompileContext<'cfg>;
+        impl<'cfg, E: ValueEmitter> Deref for $guard<'_, 'cfg, E> {
+            type Target = CompileContext<'cfg, E>;
             fn deref(&self) -> &Self::Target {
                 self.ctx
             }
         }
-        impl DerefMut for $guard<'_, '_> {
+        impl<E: ValueEmitter> DerefMut for $guard<'_, '_, E> {
             fn deref_mut(&mut self) -> &mut Self::Target {
                 self.ctx
             }
@@ -207,7 +209,8 @@ pub(crate) struct CodegenConfig {
 }
 
 /// Mutable compilation state threaded through all `compile_*` calls.
-pub(crate) struct CompileContext<'cfg> {
+pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
+    backend: std::marker::PhantomData<E>,
     pub(crate) config: &'cfg CodegenConfig,
     pub(crate) draft: Draft,
     pub(crate) vocabularies: VocabularySet,
@@ -259,11 +262,12 @@ fn find_vocabularies(
     (vocabularies, undeclared)
 }
 
-impl<'cfg> CompileContext<'cfg> {
+impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
     pub(crate) fn new(config: &'cfg CodegenConfig) -> Self {
         let (vocabularies, undeclared_vocabulary) =
             find_vocabularies(config, config.draft, &config.schema);
         Self {
+            backend: std::marker::PhantomData,
             current_base_uri: config.base_uri.clone(),
             draft: config.draft,
             vocabularies,
@@ -308,7 +312,7 @@ impl<'cfg> CompileContext<'cfg> {
         &mut self,
         property_name: &str,
         reduced_property: serde_json::Value,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         let assumption = DiscriminatorAssumption {
             schema_path: self.schema_path.clone(),
@@ -337,7 +341,7 @@ impl<'cfg> CompileContext<'cfg> {
 
     pub(crate) fn with_schema_scope<T>(
         &mut self,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         self.schema_depth += 1;
         let mut scope = SchemaDepthGuard { ctx: self };
@@ -347,7 +351,7 @@ impl<'cfg> CompileContext<'cfg> {
     pub(crate) fn with_base_uri_scope<T>(
         &mut self,
         base_uri: Arc<Uri<String>>,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         let prev_base_uri = std::mem::replace(&mut self.current_base_uri, base_uri);
         let mut scope = BaseUriGuard {
@@ -361,7 +365,7 @@ impl<'cfg> CompileContext<'cfg> {
         &mut self,
         schema: &serde_json::Value,
         schema_base_uri: Arc<Uri<String>>,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         let prev_base_uri = std::mem::replace(&mut self.current_base_uri, schema_base_uri);
         let prev_draft = self.draft;
@@ -390,7 +394,7 @@ impl<'cfg> CompileContext<'cfg> {
 
     pub(crate) fn with_helper_root_scope<T>(
         &mut self,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         self.helper_root_depths.push(self.schema_depth);
         let mut scope = HelperRootDepthGuard { ctx: self };
@@ -400,7 +404,7 @@ impl<'cfg> CompileContext<'cfg> {
     pub(crate) fn with_is_valid_scope<T>(
         &mut self,
         location: &str,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         self.is_valid_fns.begin_compiling(location);
         self.compiling_stack.push(location.to_string());
@@ -414,7 +418,7 @@ impl<'cfg> CompileContext<'cfg> {
 
     pub(crate) fn with_instance_scope<T>(
         &mut self,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         self.instance_depth += 1;
         let mut scope = InstanceDepthGuard { ctx: self };
@@ -432,7 +436,7 @@ impl<'cfg> CompileContext<'cfg> {
     pub(crate) fn with_key_eval_scope<T>(
         &mut self,
         location: &str,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         self.key_eval_fns.begin_compiling(location);
         let mut scope = KeyEvalScopeGuard {
@@ -445,7 +449,7 @@ impl<'cfg> CompileContext<'cfg> {
     pub(crate) fn with_item_eval_scope<T>(
         &mut self,
         location: &str,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         self.item_eval_fns.begin_compiling(location);
         let mut scope = ItemEvalScopeGuard {
@@ -458,7 +462,7 @@ impl<'cfg> CompileContext<'cfg> {
     pub(crate) fn with_dynamic_anchor_bindings_scope<T>(
         &mut self,
         cache_key: String,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> Option<T> {
         if !self
             .dynamic_anchor_bindings_being_compiled
@@ -477,7 +481,7 @@ impl<'cfg> CompileContext<'cfg> {
     pub(crate) fn with_schema_path_swap<T>(
         &mut self,
         path: String,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         let prev_path = std::mem::replace(&mut self.schema_path, path);
         let mut scope = SchemaPathSwapGuard {
@@ -490,7 +494,7 @@ impl<'cfg> CompileContext<'cfg> {
     pub(crate) fn with_schema_path_segment<T>(
         &mut self,
         segment: &str,
-        f: impl FnOnce(&mut CompileContext<'cfg>) -> T,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
         let prev_len = self.schema_path.len();
         self.schema_path.push('/');
@@ -522,31 +526,31 @@ struct DiscriminatorAssumption {
     reduced_property: serde_json::Value,
 }
 
-pub(crate) struct SchemaDepthGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct SchemaDepthGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
 }
 
 impl_scope_guard!(SchemaDepthGuard);
 
-impl Drop for SchemaDepthGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for SchemaDepthGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.schema_depth = self.ctx.schema_depth.saturating_sub(1);
     }
 }
 
-pub(crate) struct BaseUriGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct BaseUriGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
     prev_base_uri: Arc<Uri<String>>,
 }
 
-pub(crate) struct DiscriminatorAssumptionGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct DiscriminatorAssumptionGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
     previous: Option<DiscriminatorAssumption>,
 }
 
 impl_scope_guard!(DiscriminatorAssumptionGuard);
 
-impl Drop for DiscriminatorAssumptionGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for DiscriminatorAssumptionGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.discriminator_assumption = self.previous.take();
     }
@@ -554,14 +558,14 @@ impl Drop for DiscriminatorAssumptionGuard<'_, '_> {
 
 impl_scope_guard!(BaseUriGuard);
 
-impl Drop for BaseUriGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for BaseUriGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.current_base_uri = self.prev_base_uri.clone();
     }
 }
 
-pub(crate) struct SchemaEnvGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct SchemaEnvGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
     prev_base_uri: Arc<Uri<String>>,
     prev_draft: Draft,
     prev_vocabularies: VocabularySet,
@@ -569,7 +573,7 @@ pub(crate) struct SchemaEnvGuard<'a, 'cfg> {
 
 impl_scope_guard!(SchemaEnvGuard);
 
-impl Drop for SchemaEnvGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for SchemaEnvGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.current_base_uri = self.prev_base_uri.clone();
         self.ctx.draft = self.prev_draft;
@@ -577,26 +581,26 @@ impl Drop for SchemaEnvGuard<'_, '_> {
     }
 }
 
-pub(crate) struct HelperRootDepthGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct HelperRootDepthGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
 }
 
 impl_scope_guard!(HelperRootDepthGuard);
 
-impl Drop for HelperRootDepthGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for HelperRootDepthGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.helper_root_depths.pop();
     }
 }
 
-pub(crate) struct ValidateScopeGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct ValidateScopeGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
     location: String,
 }
 
 impl_scope_guard!(ValidateScopeGuard);
 
-impl Drop for ValidateScopeGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for ValidateScopeGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.is_valid_fns.finish_compiling(&self.location);
         let popped = self.ctx.compiling_stack.pop();
@@ -605,52 +609,52 @@ impl Drop for ValidateScopeGuard<'_, '_> {
     }
 }
 
-pub(crate) struct InstanceDepthGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct InstanceDepthGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
 }
 
 impl_scope_guard!(InstanceDepthGuard);
 
-impl Drop for InstanceDepthGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for InstanceDepthGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.instance_depth = self.ctx.instance_depth.saturating_sub(1);
     }
 }
 
-pub(crate) struct KeyEvalScopeGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct KeyEvalScopeGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
     location: String,
 }
 
 impl_scope_guard!(KeyEvalScopeGuard);
 
-impl Drop for KeyEvalScopeGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for KeyEvalScopeGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.key_eval_fns.finish_compiling(&self.location);
     }
 }
 
-pub(crate) struct ItemEvalScopeGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct ItemEvalScopeGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
     location: String,
 }
 
 impl_scope_guard!(ItemEvalScopeGuard);
 
-impl Drop for ItemEvalScopeGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for ItemEvalScopeGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.item_eval_fns.finish_compiling(&self.location);
     }
 }
 
-pub(crate) struct DynamicAnchorBindingsScopeGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct DynamicAnchorBindingsScopeGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
     cache_key: String,
 }
 
 impl_scope_guard!(DynamicAnchorBindingsScopeGuard);
 
-impl Drop for DynamicAnchorBindingsScopeGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for DynamicAnchorBindingsScopeGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx
             .dynamic_anchor_bindings_being_compiled
@@ -658,27 +662,27 @@ impl Drop for DynamicAnchorBindingsScopeGuard<'_, '_> {
     }
 }
 
-pub(crate) struct SchemaPathSwapGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct SchemaPathSwapGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
     prev_path: String,
 }
 
 impl_scope_guard!(SchemaPathSwapGuard);
 
-impl Drop for SchemaPathSwapGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for SchemaPathSwapGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.schema_path = std::mem::take(&mut self.prev_path);
     }
 }
 
-pub(crate) struct SchemaPathScopeGuard<'a, 'cfg> {
-    ctx: &'a mut CompileContext<'cfg>,
+pub(crate) struct SchemaPathScopeGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
     prev_len: usize,
 }
 
 impl_scope_guard!(SchemaPathScopeGuard);
 
-impl Drop for SchemaPathScopeGuard<'_, '_> {
+impl<E: ValueEmitter> Drop for SchemaPathScopeGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.schema_path.truncate(self.prev_len);
     }

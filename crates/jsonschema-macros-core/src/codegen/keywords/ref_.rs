@@ -10,14 +10,15 @@ use super::super::{
     },
     CompileContext, CompiledExpr,
 };
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde_json::Value;
 
 /// Break a self-referential `$dynamicRef`/`$recursiveRef` `is_valid` cycle: a re-entry on
 /// the same (helper fn pointer, instance pointer) is valid, so the outer call's checks decide.
-fn cycle_guarded_is_valid(call: &TokenStream) -> TokenStream {
-    let mark_expr = quote! { (target as usize, std::ptr::from_ref(instance) as usize) };
+fn cycle_guarded_is_valid(node_address: &TokenStream, call: &TokenStream) -> TokenStream {
+    let mark_expr = quote! { (target as usize, #node_address) };
     shared_cycle_guarded_is_valid(&mark_expr, call)
 }
 
@@ -46,8 +47,8 @@ fn shared_cycle_guarded_is_valid(mark_expr: &TokenStream, call: &TokenStream) ->
 }
 
 /// Same cycle guard for the error-collecting (`validate`) dispatch; a re-entry reports no error.
-fn cycle_guarded_validate(call: &TokenStream) -> TokenStream {
-    let mark_expr = quote! { (target_validate as usize, std::ptr::from_ref(instance) as usize) };
+fn cycle_guarded_validate(node_address: &TokenStream, call: &TokenStream) -> TokenStream {
+    let mark_expr = quote! { (target_validate as usize, #node_address) };
     shared_cycle_guarded_validate(&mark_expr, call)
 }
 
@@ -76,8 +77,8 @@ fn shared_cycle_guarded_validate(mark_expr: &TokenStream, call: &TokenStream) ->
 }
 
 /// Same cycle guard for the error-collecting (`collect`) dispatch; a re-entry pushes nothing.
-fn cycle_guarded_collect(call: &TokenStream) -> TokenStream {
-    let mark_expr = quote! { (target_collect as usize, std::ptr::from_ref(instance) as usize) };
+fn cycle_guarded_collect(node_address: &TokenStream, call: &TokenStream) -> TokenStream {
+    let mark_expr = quote! { (target_collect as usize, #node_address) };
     shared_cycle_guarded_collect(&mark_expr, call)
 }
 
@@ -103,13 +104,15 @@ fn shared_cycle_guarded_collect(mark_expr: &TokenStream, call: &TokenStream) -> 
 }
 
 fn cycle_guarded_ref_collect(
+    node: &TokenStream,
+    node_address: &TokenStream,
     func_ident: &proc_macro2::Ident,
     collect_ident: &proc_macro2::Ident,
 ) -> TokenStream {
     let mark_expr = quote! {
         (
-            (#func_ident as fn(&serde_json::Value) -> bool) as usize,
-            std::ptr::from_ref(instance) as usize,
+            (#func_ident as fn(#node) -> bool) as usize,
+            #node_address,
         )
     };
     shared_cycle_guarded_collect(
@@ -118,30 +121,42 @@ fn cycle_guarded_ref_collect(
     )
 }
 
-fn cycle_guarded_ref_is_valid(func_ident: &proc_macro2::Ident) -> TokenStream {
+fn cycle_guarded_ref_is_valid(
+    node: &TokenStream,
+    node_address: &TokenStream,
+    func_ident: &proc_macro2::Ident,
+) -> TokenStream {
     let mark_expr = quote! {
         (
-            (#func_ident as fn(&serde_json::Value) -> bool) as usize,
-            std::ptr::from_ref(instance) as usize,
+            (#func_ident as fn(#node) -> bool) as usize,
+            #node_address,
         )
     };
     shared_cycle_guarded_is_valid(&mark_expr, &quote! { #func_ident(instance) })
 }
 
 fn cycle_guarded_ref_validate(
+    node: &TokenStream,
+    node_address: &TokenStream,
     func_ident: &proc_macro2::Ident,
     validate_ident: &proc_macro2::Ident,
 ) -> TokenStream {
     let mark_expr = quote! {
         (
-            (#func_ident as fn(&serde_json::Value) -> bool) as usize,
-            std::ptr::from_ref(instance) as usize,
+            (#func_ident as fn(#node) -> bool) as usize,
+            #node_address,
         )
     };
     shared_cycle_guarded_validate(&mark_expr, &quote! { #validate_ident(instance, __path) })
 }
 
-pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
+    let node = E::node_param(None);
+    let node_address = E::node_address(format_ident!("instance"));
     let Some(reference) = value.as_str() else {
         return super::super::errors::invalid_schema_expected_string_keyword_expression("$ref");
     };
@@ -238,7 +253,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                 },
             )
         } else {
-            CompiledExpr::from_bool_expr(is_valid, &schema_path)
+            CompiledExpr::from_bool_expr(is_valid, &schema_path, &err_instance)
         }
     } else {
         let plain_cycle = ctx.is_valid_fns.is_compiling(&resolved.location)
@@ -249,9 +264,9 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
             let validate_ident = format_ident!("{}_validate", func_name);
             let collect_ident = format_ident!("{}_collect_errors", func_name);
             CompiledExpr::with_validate_and_collect_blocks(
-                cycle_guarded_ref_is_valid(&func_ident),
-                cycle_guarded_ref_validate(&func_ident, &validate_ident),
-                cycle_guarded_ref_collect(&func_ident, &collect_ident),
+                cycle_guarded_ref_is_valid(&node, &node_address, &func_ident),
+                cycle_guarded_ref_validate(&node, &node_address, &func_ident, &validate_ident),
+                cycle_guarded_ref_collect(&node, &node_address, &func_ident, &collect_ident),
             )
         } else if plain_cycle || ctx.is_valid_fns.get_validate_body(&func_name).is_some() {
             let validate_ident = format_ident!("{}_validate", func_name);
@@ -268,12 +283,20 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                 },
             )
         } else {
-            CompiledExpr::from_bool_expr(quote! { #func_ident(instance) }, &schema_path)
+            CompiledExpr::from_bool_expr(
+                quote! { #func_ident(instance) },
+                &schema_path,
+                &err_instance,
+            )
         }
     }
 }
 
-pub(crate) fn compile_dynamic(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
+pub(crate) fn compile_dynamic<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> CompiledExpr {
+    let node_address = E::node_address(format_ident!("instance"));
     let Some(reference) = value.as_str() else {
         return super::super::errors::invalid_schema_expected_string_keyword_expression(
             "$dynamicRef",
@@ -302,7 +325,7 @@ pub(crate) fn compile_dynamic(ctx: &mut CompileContext<'_>, value: &Value) -> Co
         })
     };
 
-    let guarded_is_valid = cycle_guarded_is_valid(&quote! { target(instance) });
+    let guarded_is_valid = cycle_guarded_is_valid(&node_address, &quote! { target(instance) });
     let is_valid = quote! {
         {
             let __dynamic_target = #dynamic_lookup;
@@ -343,9 +366,11 @@ pub(crate) fn compile_dynamic(ctx: &mut CompileContext<'_>, value: &Value) -> Co
             })
         };
         let guarded_validate =
-            cycle_guarded_validate(&quote! { target_validate(instance, __path) });
-        let guarded_collect =
-            cycle_guarded_collect(&quote! { target_collect(instance, __path, __errors) });
+            cycle_guarded_validate(&node_address, &quote! { target_validate(instance, __path) });
+        let guarded_collect = cycle_guarded_collect(
+            &node_address,
+            &quote! { target_collect(instance, __path, __errors) },
+        );
         CompiledExpr::with_validate_and_collect_blocks(
             is_valid,
             quote! {
@@ -372,7 +397,11 @@ pub(crate) fn compile_dynamic(ctx: &mut CompileContext<'_>, value: &Value) -> Co
     }
 }
 
-pub(crate) fn compile_recursive(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
+pub(crate) fn compile_recursive<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> CompiledExpr {
+    let node_address = E::node_address(format_ident!("instance"));
     let target_has_recursive_anchor = value
         .as_str()
         .and_then(|reference| resolve_ref(ctx, reference).ok())
@@ -407,7 +436,7 @@ pub(crate) fn compile_recursive(ctx: &mut CompileContext<'_>, value: &Value) -> 
         })
     };
 
-    let guarded_is_valid = cycle_guarded_is_valid(&quote! { target(instance) });
+    let guarded_is_valid = cycle_guarded_is_valid(&node_address, &quote! { target(instance) });
     let is_valid = quote! {
         {
             let __recursive_target = #recursive_lookup;
@@ -456,9 +485,11 @@ pub(crate) fn compile_recursive(ctx: &mut CompileContext<'_>, value: &Value) -> 
             })
         };
         let guarded_validate =
-            cycle_guarded_validate(&quote! { target_validate(instance, __path) });
-        let guarded_collect =
-            cycle_guarded_collect(&quote! { target_collect(instance, __path, __errors) });
+            cycle_guarded_validate(&node_address, &quote! { target_validate(instance, __path) });
+        let guarded_collect = cycle_guarded_collect(
+            &node_address,
+            &quote! { target_collect(instance, __path, __errors) },
+        );
         CompiledExpr::with_validate_and_collect_blocks(
             is_valid,
             quote! {

@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use referencing::Draft;
@@ -18,10 +19,10 @@ use super::super::{
 
 /// Break a self-referential eval-tracking cycle under an unevaluated keyword: a re-entry on
 /// the same (helper fn pointer, instance pointer) evaluates nothing, mirroring the engine's marking.
-fn cycle_guarded_dispatch(call: &TokenStream) -> TokenStream {
+fn cycle_guarded_dispatch(node_address: &TokenStream, call: &TokenStream) -> TokenStream {
     quote! {
         {
-            let __mark = (target as usize, std::ptr::from_ref(instance) as usize);
+            let __mark = (target as usize, #node_address);
             if __JSONSCHEMA_EVAL_MARK.with(|__marks| __marks.borrow().contains(&__mark)) {
                 false
             } else {
@@ -37,7 +38,11 @@ fn cycle_guarded_dispatch(call: &TokenStream) -> TokenStream {
 /// Branch validity guard for unevaluated* evaluation tracking. Non-trivial subschemas become
 /// shared helper fns keyed by (base URI, draft, schema content) so guards compose from further
 /// guard calls instead of re-inlining subtrees (which grows code quadratically with nesting depth).
-fn compile_branch_guard(ctx: &mut CompileContext<'_>, subschema: &Value) -> CompiledExpr {
+fn compile_branch_guard<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    subschema: &Value,
+) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let Value::Object(obj) = subschema else {
         return compile_schema(ctx, subschema);
     };
@@ -58,10 +63,13 @@ fn compile_branch_guard(ctx: &mut CompileContext<'_>, subschema: &Value) -> Comp
         compile_guard_validity,
     );
     let func_ident = format_ident!("{}", func_name);
-    CompiledExpr::from_bool_expr(quote! { #func_ident(instance) }, "")
+    CompiledExpr::from_bool_expr(quote! { #func_ident(instance) }, "", &err_instance)
 }
 
-fn has_composable_applicators(ctx: &CompileContext<'_>, obj: &Map<String, Value>) -> bool {
+fn has_composable_applicators<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    obj: &Map<String, Value>,
+) -> bool {
     obj.contains_key("allOf")
         || obj.contains_key("anyOf")
         || obj.contains_key("oneOf")
@@ -71,7 +79,11 @@ fn has_composable_applicators(ctx: &CompileContext<'_>, obj: &Map<String, Value>
 
 /// Validity-only compilation that spells applicator branches as guard-helper
 /// calls instead of inlined subtrees.
-fn compile_guard_validity(ctx: &mut CompileContext<'_>, schema: &Value) -> CompiledExpr {
+fn compile_guard_validity<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    schema: &Value,
+) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let obj = schema
         .as_object()
         .expect("branch guards only compile object subschemas");
@@ -108,6 +120,7 @@ fn compile_guard_validity(ctx: &mut CompileContext<'_>, schema: &Value) -> Compi
         result = result.and(CompiledExpr::from_bool_expr(
             quote! { (#(( #calls ))||*) },
             "",
+            &err_instance,
         ));
     }
     if let Some(one_of) = obj.get("oneOf").and_then(Value::as_array) {
@@ -124,11 +137,16 @@ fn compile_guard_validity(ctx: &mut CompileContext<'_>, schema: &Value) -> Compi
                 }
             },
             "",
+            &err_instance,
         ));
     }
     if let Some(not_schema) = obj.get("not") {
         let call = compile_branch_guard(ctx, not_schema).is_valid_token_stream();
-        result = result.and(CompiledExpr::from_bool_expr(quote! { !(#call) }, ""));
+        result = result.and(CompiledExpr::from_bool_expr(
+            quote! { !(#call) },
+            "",
+            &err_instance,
+        ));
     }
     if let Some(if_schema) = obj.get("if") {
         let if_call = compile_branch_guard(ctx, if_schema).is_valid_token_stream();
@@ -141,6 +159,7 @@ fn compile_guard_validity(ctx: &mut CompileContext<'_>, schema: &Value) -> Compi
         result = result.and(CompiledExpr::from_bool_expr(
             quote! { if #if_call { #then_call } else { #else_call } },
             "",
+            &err_instance,
         ));
     }
     result
@@ -176,11 +195,11 @@ impl GuardHoist {
         &self.bindings
     }
 
-    fn guard(&mut self, value_ty: &TokenStream, valid: &CompiledExpr) -> TokenStream {
+    fn guard(&mut self, node: &TokenStream, valid: &CompiledExpr) -> TokenStream {
         if valid.is_trivially_true() {
             return quote! { true };
         }
-        let call = quote! { (|instance: &#value_ty| #valid)(instance) };
+        let call = quote! { (|instance: #node| #valid)(instance) };
         if !self.enabled {
             return call;
         }
@@ -199,19 +218,19 @@ impl GuardHoist {
 }
 
 fn compile_guarded_eval(
-    value_ty: &TokenStream,
+    node: &TokenStream,
     valid_expr: &CompiledExpr,
     eval_expr: &TokenStream,
     hoist: &mut GuardHoist,
 ) -> TokenStream {
-    let guard = hoist.guard(value_ty, valid_expr);
+    let guard = hoist.guard(node, valid_expr);
     quote! {
         #guard && (#eval_expr)
     }
 }
 
 fn compile_one_of_evaluated(
-    value_ty: &TokenStream,
+    node: &TokenStream,
     cases: &[(CompiledExpr, TokenStream)],
     hoist: &mut GuardHoist,
 ) -> Option<TokenStream> {
@@ -222,7 +241,7 @@ fn compile_one_of_evaluated(
     if hoist.enabled {
         let guards: Vec<_> = cases
             .iter()
-            .map(|(valid, _)| hoist.guard(value_ty, valid))
+            .map(|(valid, _)| hoist.guard(node, valid))
             .collect();
         let count_terms = guards.iter().map(|guard| quote! { (#guard as usize) });
         let matches_ident = hoist.hoist_match_count(&quote! { #(#count_terms)+* });
@@ -243,7 +262,7 @@ fn compile_one_of_evaluated(
             let mut __one_of_matches = 0usize;
             let mut __one_of_evaluates = false;
             #(
-                if (|instance: &#value_ty| #valid_exprs)(instance) {
+                if (|instance: #node| #valid_exprs)(instance) {
                     __one_of_matches += 1;
                     __one_of_evaluates = __one_of_evaluates || (#eval_exprs);
                 }
@@ -254,14 +273,14 @@ fn compile_one_of_evaluated(
 }
 
 fn compile_if_then_else_evaluated(
-    value_ty: &TokenStream,
+    node: &TokenStream,
     if_valid_expr: &CompiledExpr,
     if_eval_expr: &TokenStream,
     then_eval_expr: &TokenStream,
     else_eval_expr: &TokenStream,
     hoist: &mut GuardHoist,
 ) -> TokenStream {
-    let guard = hoist.guard(value_ty, if_valid_expr);
+    let guard = hoist.guard(node, if_valid_expr);
     quote! {
         if #guard {
             (#if_eval_expr) || (#then_eval_expr)
@@ -271,8 +290,8 @@ fn compile_if_then_else_evaluated(
     }
 }
 
-fn compile_pattern_coverage_for_key(
-    ctx: &mut CompileContext<'_>,
+fn compile_pattern_coverage_for_key<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     patterns: Option<&Value>,
 ) -> Option<TokenStream> {
     let coverage = match super::pattern_coverage::build_pattern_coverage(ctx, patterns) {
@@ -320,16 +339,16 @@ impl EvalKind {
         }
     }
 
-    fn is_compiling(self, ctx: &CompileContext<'_>, location: &str) -> bool {
+    fn is_compiling<E: ValueEmitter>(self, ctx: &CompileContext<'_, E>, location: &str) -> bool {
         match self {
             EvalKind::Key => ctx.key_eval_fns.is_compiling(location),
             EvalKind::Item => ctx.item_eval_fns.is_compiling(location),
         }
     }
 
-    fn create_eval_fn(
+    fn create_eval_fn<E: ValueEmitter>(
         self,
-        ctx: &mut CompileContext<'_>,
+        ctx: &mut CompileContext<'_, E>,
         resolved: &ResolvedRef,
     ) -> proc_macro2::Ident {
         let name = match self {
@@ -351,8 +370,8 @@ impl EvalKind {
 }
 
 /// Recurse into a subschema for the same evaluation dimension.
-fn recurse_eval(
-    ctx: &mut CompileContext<'_>,
+fn recurse_eval<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     kind: EvalKind,
     hoist: &mut GuardHoist,
@@ -366,11 +385,11 @@ fn recurse_eval(
 /// Push the eval expressions contributed by the `allOf`/`anyOf`/`oneOf`/
 /// `if`-`then`-`else` applicators. Callers are already inside an
 /// applicator-vocabulary guard.
-fn push_applicator_eval(
-    ctx: &mut CompileContext<'_>,
+fn push_applicator_eval<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     parts: &mut Vec<TokenStream>,
-    value_ty: &TokenStream,
+    node: &TokenStream,
     kind: EvalKind,
     hoist: &mut GuardHoist,
 ) {
@@ -386,7 +405,7 @@ fn push_applicator_eval(
             if let Value::Object(subschema_obj) = subschema {
                 let sub_eval = recurse_eval(ctx, subschema_obj, kind, hoist);
                 let sub_valid = compile_branch_guard(ctx, subschema);
-                parts.push(compile_guarded_eval(value_ty, &sub_valid, &sub_eval, hoist));
+                parts.push(compile_guarded_eval(node, &sub_valid, &sub_eval, hoist));
             }
         }
     }
@@ -402,7 +421,7 @@ fn push_applicator_eval(
                 Some((sub_valid, sub_eval))
             })
             .collect();
-        if let Some(one_of_eval) = compile_one_of_evaluated(value_ty, &cases, hoist) {
+        if let Some(one_of_eval) = compile_one_of_evaluated(node, &cases, hoist) {
             parts.push(one_of_eval);
         }
     }
@@ -422,15 +441,15 @@ fn push_applicator_eval(
             |else_obj| recurse_eval(ctx, else_obj, kind, hoist),
         );
         parts.push(compile_if_then_else_evaluated(
-            value_ty, &if_valid, &if_eval, &then_eval, &else_eval, hoist,
+            node, &if_valid, &if_eval, &then_eval, &else_eval, hoist,
         ));
     }
 }
 
 /// Push the eval expressions contributed by `$ref`, `$recursiveRef`, and
 /// `$dynamicRef` for the given dimension.
-fn push_ref_dispatch(
-    ctx: &mut CompileContext<'_>,
+fn push_ref_dispatch<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     parts: &mut Vec<TokenStream>,
     kind: EvalKind,
@@ -464,7 +483,10 @@ fn push_ref_dispatch(
                     // `$recursiveRef` in the same schema hasn't been compiled yet.
                     ctx.uses_recursive_ref = true;
                     let stack = kind.recursive_stack();
-                    let guarded = cycle_guarded_dispatch(&quote! { target(#call_args) });
+                    let guarded = cycle_guarded_dispatch(
+                        &E::node_address(format_ident!("instance")),
+                        &quote! { target(#call_args) },
+                    );
                     parts.push(quote! {
                         {
                             let __recursive_target = #stack.with(|stack| {
@@ -503,7 +525,10 @@ fn push_ref_dispatch(
                 if let Some(anchor_name) = dynamic_ref_anchor_name(reference, &resolved.schema) {
                     ctx.uses_dynamic_ref = true;
                     let stack = kind.dynamic_stack();
-                    let guarded = cycle_guarded_dispatch(&quote! { target(#call_args) });
+                    let guarded = cycle_guarded_dispatch(
+                        &E::node_address(format_ident!("instance")),
+                        &quote! { target(#call_args) },
+                    );
                     parts.push(quote! {
                         {
                             let __dynamic_target = #stack.with(|stack| {
@@ -531,14 +556,14 @@ fn push_ref_dispatch(
     }
 }
 
-pub(crate) fn compile_key_evaluated_expr(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     include_own_unevaluated: bool,
 ) -> TokenStream {
     let mut parts = Vec::new();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
-    let value_ty = crate::codegen::emit_serde::value_ty();
+    let node = E::node_param(None);
 
     if applicator_vocab_enabled
         && schema
@@ -575,7 +600,8 @@ pub(crate) fn compile_key_evaluated_expr(
             for (property, subschema) in dependent_schemas {
                 if let Value::Object(subschema_obj) = subschema {
                     let sub_eval = compile_key_evaluated_expr(ctx, subschema_obj, true);
-                    parts.push(quote! { obj.contains_key(#property) && (#sub_eval) });
+                    let contains_key = E::object_contains_key(format_ident!("obj"), property);
+                    parts.push(quote! { #contains_key && (#sub_eval) });
                 }
             }
         }
@@ -583,14 +609,7 @@ pub(crate) fn compile_key_evaluated_expr(
 
     if applicator_vocab_enabled {
         let mut hoist = GuardHoist::inline();
-        push_applicator_eval(
-            ctx,
-            schema,
-            &mut parts,
-            &value_ty,
-            EvalKind::Key,
-            &mut hoist,
-        );
+        push_applicator_eval(ctx, schema, &mut parts, &node, EvalKind::Key, &mut hoist);
     }
 
     push_ref_dispatch(ctx, schema, &mut parts, EvalKind::Key);
@@ -604,9 +623,10 @@ pub(crate) fn compile_key_evaluated_expr(
             }
             if unevaluated.as_bool() != Some(false) {
                 let schema_check = ctx.with_instance_scope(|ctx| compile_schema(ctx, unevaluated));
+                let get_by_key = E::object_get_dynamic(format_ident!("obj"), quote! { key_str });
                 return quote! {
                     (#evaluated_without_unevaluated) || {
-                        obj.get(key_str).is_some_and(|instance| {
+                        #get_by_key.is_some_and(|instance| {
                             #schema_check
                         })
                     }
@@ -618,14 +638,14 @@ pub(crate) fn compile_key_evaluated_expr(
     evaluated_without_unevaluated
 }
 
-pub(crate) fn compile_index_evaluated_expr(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile_index_evaluated_expr<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     hoist: &mut GuardHoist,
 ) -> TokenStream {
     let mut parts = Vec::new();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
-    let value_ty = crate::codegen::emit_serde::value_ty();
+    let node = E::node_param(None);
 
     if applicator_vocab_enabled {
         if let Some(items_schema) = schema.get("items") {
@@ -657,11 +677,11 @@ pub(crate) fn compile_index_evaluated_expr(
         if let Some(contains_schema) = schema.get("contains") {
             let contains_check = compile_branch_guard(ctx, contains_schema);
             parts.push(quote! {
-                (|instance: &#value_ty| #contains_check)(item)
+                (|instance: #node| #contains_check)(item)
             });
         }
 
-        push_applicator_eval(ctx, schema, &mut parts, &value_ty, EvalKind::Item, hoist);
+        push_applicator_eval(ctx, schema, &mut parts, &node, EvalKind::Item, hoist);
     }
 
     push_ref_dispatch(ctx, schema, &mut parts, EvalKind::Item);
@@ -675,10 +695,10 @@ pub(crate) fn compile_index_evaluated_expr(
             }
             if unevaluated.as_bool() != Some(false) {
                 let schema_check = ctx.with_instance_scope(|ctx| compile_schema(ctx, unevaluated));
-                let value_ty = crate::codegen::emit_serde::value_ty();
+                let node = E::node_param(None);
                 return quote! {
                     (#evaluated_without_unevaluated)
-                        || (|instance: &#value_ty| #schema_check)(item)
+                        || (|instance: #node| #schema_check)(item)
                 };
             }
         }

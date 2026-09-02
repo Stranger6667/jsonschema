@@ -3,9 +3,13 @@ use super::super::{
     errors::{invalid_schema_non_empty_array_expression, invalid_schema_type_expression},
     CompileContext, CompiledExpr,
 };
+use crate::codegen::emit::ValueEmitter;
 use serde_json::Value;
 
-pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> CompiledExpr {
     let Some(schemas) = value.as_array() else {
         return invalid_schema_type_expression(value, &["array"]);
     };

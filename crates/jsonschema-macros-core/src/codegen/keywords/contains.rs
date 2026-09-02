@@ -1,9 +1,10 @@
 use super::super::{compile_schema, CompileContext, CompiledExpr};
-use quote::quote;
+use crate::codegen::emit::ValueEmitter;
+use quote::{format_ident, quote};
 use serde_json::Value;
 
-pub(crate) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     value: &Value,
     min_contains: Option<u64>,
     max_contains: Option<u64>,
@@ -34,12 +35,14 @@ pub(crate) fn compile(
         quote! {}
     };
 
+    let contains_iter = E::array_iter(format_ident!("arr"));
+    let arr_iter_ref = E::array_iter_ref(format_ident!("arr"));
     let is_valid = match (min_contains.unwrap_or(1), max_contains) {
-        (1, None) => quote! { arr.iter().any(|instance| #schema_is_valid) },
+        (1, None) => quote! { #contains_iter.any(|instance| #schema_is_valid) },
         (_, None) => quote! {
             {
                 let mut __contains_count = 0usize;
-                for instance in arr {
+                for instance in #arr_iter_ref {
                     if #schema_is_valid {
                         __contains_count += 1;
                         if (__contains_count as u64) >= #min {
@@ -53,7 +56,7 @@ pub(crate) fn compile(
         (_, Some(_)) => quote! {
             {
                 let mut __contains_count = 0usize;
-                for instance in arr {
+                for instance in #arr_iter_ref {
                     if #schema_is_valid {
                         __contains_count += 1;
                     }
@@ -64,6 +67,7 @@ pub(crate) fn compile(
     };
 
     let min_path_str = min_path.as_str();
+    let err_instance = E::err_instance(format_ident!("instance"));
 
     // Combined min+max: check maxContains before minContains (matching the runtime) so at
     // most one error is emitted.
@@ -72,7 +76,7 @@ pub(crate) fn compile(
         quote! {
             {
                 let mut __contains_count = 0usize;
-                for item in arr.iter() {
+                for item in #contains_iter {
                     let instance = item;
                     if #schema_is_valid {
                         __contains_count += 1;
@@ -80,20 +84,20 @@ pub(crate) fn compile(
                 }
                 if (__contains_count as u64) > #max {
                     return Some(__err::contains(
-                        #max_path, __path.into(), instance,
+                        #max_path, __path.into(), #err_instance,
                     ));
                 } else if (__contains_count as u64) < #min {
                     return Some(__err::contains(
-                        #min_path_str, __path.into(), instance,
+                        #min_path_str, __path.into(), #err_instance,
                     ));
                 }
             }
         }
     } else if min_contains.unwrap_or(1) == 1 {
         quote! {
-            if !(arr.iter().any(|instance| #schema_is_valid)) {
+            if !(#contains_iter.any(|instance| #schema_is_valid)) {
                 return Some(__err::contains(
-                    #min_path_str, __path.into(), instance,
+                    #min_path_str, __path.into(), #err_instance,
                 ));
             }
         }
@@ -101,7 +105,7 @@ pub(crate) fn compile(
         quote! {
             {
                 let mut __contains_count = 0usize;
-                for item in arr.iter() {
+                for item in #contains_iter {
                     let instance = item;
                     if #schema_is_valid {
                         __contains_count += 1;
@@ -112,7 +116,7 @@ pub(crate) fn compile(
                 }
                 if (__contains_count as u64) < #min {
                     return Some(__err::contains(
-                        #min_path_str, __path.into(), instance,
+                        #min_path_str, __path.into(), #err_instance,
                     ));
                 }
             }

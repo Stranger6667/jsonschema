@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use referencing::Uri;
 use serde_json::Value;
@@ -57,8 +58,8 @@ fn collect_dynamic_anchor_names(schema: &Value, names: &mut HashSet<String>) {
     }
 }
 
-pub(crate) fn collect_dynamic_anchor_bindings(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn collect_dynamic_anchor_bindings<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema_base_uri: Arc<Uri<String>>,
 ) -> Vec<DynamicAnchorBinding> {
     let cache_key = schema_base_uri.to_string();
@@ -128,8 +129,8 @@ pub(crate) fn collect_dynamic_anchor_bindings(
 
 /// Get or create a helper function that determines whether a property key is
 /// already evaluated for the referenced schema.
-pub(crate) fn get_or_create_key_eval_fn(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn get_or_create_key_eval_fn<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     location: &str,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
@@ -174,8 +175,8 @@ pub(crate) fn get_or_create_key_eval_fn(
 
 /// Get or create a helper that determines whether an array index is already
 /// evaluated for a referenced schema.
-pub(crate) fn get_or_create_item_eval_fn(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn get_or_create_item_eval_fn<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     location: &str,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
@@ -220,8 +221,8 @@ pub(crate) fn get_or_create_item_eval_fn(
 }
 
 /// Get or create a function for a reference location.
-pub(crate) fn get_or_create_is_valid_fn(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn get_or_create_is_valid_fn<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     location: &str,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
@@ -230,12 +231,12 @@ pub(crate) fn get_or_create_is_valid_fn(
 }
 
 /// Like [`get_or_create_is_valid_fn`], with a custom body compiler.
-pub(crate) fn get_or_create_is_valid_fn_with(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     location: &str,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
-    compile: impl Fn(&mut CompileContext<'_>, &Value) -> crate::codegen::CompiledExpr,
+    compile: impl Fn(&mut CompileContext<'_, E>, &Value) -> crate::codegen::CompiledExpr,
 ) -> String {
     if let Some(name) = ctx.is_valid_fns.get_name(location) {
         return name.clone();

@@ -1,4 +1,5 @@
-use quote::quote;
+use crate::codegen::emit::ValueEmitter;
+use quote::{format_ident, quote};
 use serde_json::{Map, Value};
 
 use crate::context::CompileContext;
@@ -14,17 +15,20 @@ use super::{
 };
 
 /// Compile the "unevaluatedProperties" keyword.
-pub(crate) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> Option<CompiledExpr> {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let unevaluated = schema.get("unevaluatedProperties")?;
     if unevaluated.as_bool() == Some(true) {
         return None;
     }
-    let value_ty = crate::codegen::emit_serde::value_ty();
-    let map_ty = crate::codegen::emit_serde::map_ty();
-    let key_as_str = crate::codegen::emit_serde::key_as_str(quote! { __key });
+    let node = E::node_param(None);
+    let map = E::map_param();
+    let owned_key = E::key_to_owned(format_ident!("__key"));
+    let key_as_str = E::key_as_str(format_ident!("__key"));
+    let entries = E::object_iter_entries(format_ident!("obj"));
 
     let uses_recursive_stack = ctx.uses_recursive_ref
         && ctx.draft.supports_recursive_ref_keyword()
@@ -38,7 +42,7 @@ pub(crate) fn compile(
     } else {
         let schema_check = ctx.with_instance_scope(|ctx| compile_schema(ctx, unevaluated));
         quote! {
-            (|instance: &#value_ty| #schema_check)(__value)
+            (|instance: #node| #schema_check)(__value)
         }
     };
 
@@ -51,12 +55,12 @@ pub(crate) fn compile(
         let is_valid = quote! {
             {
                 let __root_key_eval: fn(
-                    &#value_ty,
-                    &#map_ty,
+                    #node,
+                    #map,
                     &str
                 ) -> bool = |instance, obj, key_str| { #evaluated_expr };
                 #recursive_push
-                let __result = obj.iter().all(|(__key, __value)| {
+                let __result = #entries.all(|(__key, __value)| {
                     let key_str = #key_as_str;
                     if __root_key_eval(instance, obj, key_str) {
                         true
@@ -68,33 +72,34 @@ pub(crate) fn compile(
                 __result
             }
         };
-        let validate = quote! {
-            if let #value_ty::Object(obj) = instance {
+        let validate = E::if_object(
+            format_ident!("instance"),
+            quote! {
                 let __root_key_eval: fn(
-                    &#value_ty,
-                    &#map_ty,
+                    #node,
+                    #map,
                     &str
                 ) -> bool = |instance, obj, key_str| { #evaluated_expr };
                 #recursive_push
                 let mut __unexpected: Vec<String> = Vec::new();
-                for (__key, __value) in obj.iter() {
+                for (__key, __value) in #entries {
                     let key_str = #key_as_str;
                     if !__root_key_eval(instance, obj, key_str) && !(#unevaluated_check) {
-                        __unexpected.push(__key.clone());
+                        __unexpected.push(#owned_key);
                     }
                 }
                 #recursive_pop
                 if !__unexpected.is_empty() {
                     return Some(__err::unevaluated_properties(
-                        #schema_path, __path.into(), instance, __unexpected,
+                        #schema_path, __path.into(), #err_instance, __unexpected,
                     ));
                 }
-            }
-        };
+            },
+        );
         Some(CompiledExpr::with_validate_blocks(is_valid, validate))
     } else {
         let is_valid = quote! {
-            obj.iter().all(|(__key, __value)| {
+            #entries.all(|(__key, __value)| {
                 let key_str = #key_as_str;
                 if #evaluated_expr {
                     true
@@ -103,22 +108,23 @@ pub(crate) fn compile(
                 }
             })
         };
-        let validate = quote! {
-            if let #value_ty::Object(obj) = instance {
+        let validate = E::if_object(
+            format_ident!("instance"),
+            quote! {
                 let mut __unexpected: Vec<String> = Vec::new();
-                for (__key, __value) in obj.iter() {
+                for (__key, __value) in #entries {
                     let key_str = #key_as_str;
                     if !(#evaluated_expr) && !(#unevaluated_check) {
-                        __unexpected.push(__key.clone());
+                        __unexpected.push(#owned_key);
                     }
                 }
                 if !__unexpected.is_empty() {
                     return Some(__err::unevaluated_properties(
-                        #schema_path, __path.into(), instance, __unexpected,
+                        #schema_path, __path.into(), #err_instance, __unexpected,
                     ));
                 }
-            }
-        };
+            },
+        );
         Some(CompiledExpr::with_validate_blocks(is_valid, validate))
     }
 }

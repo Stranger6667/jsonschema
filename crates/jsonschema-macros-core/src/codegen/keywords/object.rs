@@ -9,8 +9,9 @@ use super::{
     additional_properties, compile_count_range, dependencies, object_pass, pattern_properties,
     properties, property_names, required, unevaluated_properties,
 };
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde_json::{Map, Value};
 
 fn property_names_implied_by_coverage(schema: &Map<String, Value>) -> bool {
@@ -34,8 +35,8 @@ fn property_names_implied_by_coverage(schema: &Map<String, Value>) -> bool {
 }
 
 /// Compile all object-specific keywords.
-pub(in super::super) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(in super::super) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> CompiledExpr {
     // Each check carries a flag: `true` marks the object cluster
@@ -51,7 +52,7 @@ pub(in super::super) fn compile(
                 (property_name.to_owned(), reduced_property.clone())
             });
 
-    let object_len = crate::codegen::emit_serde::object_len(quote! { obj });
+    let object_len = E::object_len(format_ident!("obj"));
     let mut count_checks: Vec<CompiledExpr> = Vec::new();
     compile_count_range(
         ctx,
@@ -233,7 +234,8 @@ pub(in super::super) fn compile(
                     true,
                 ));
             }
-            if let Some(compiled) = pattern_properties::compile(pattern_properties_value, &cluster)
+            if let Some(compiled) =
+                pattern_properties::compile::<E>(pattern_properties_value, &cluster)
             {
                 checks.push((compiled, true));
             }
@@ -255,13 +257,13 @@ pub(in super::super) fn compile(
             true,
         ));
         if let Some(value) = pattern_properties_schema {
-            if let Some(compiled) = pattern_properties::compile(value, &cluster) {
+            if let Some(compiled) = pattern_properties::compile::<E>(value, &cluster) {
                 checks.push((compiled, true));
             }
         }
     } else if applicator_vocab_enabled {
         if let Some(value) = pattern_properties_schema {
-            if let Some(compiled) = pattern_properties::compile(value, &cluster) {
+            if let Some(compiled) = pattern_properties::compile::<E>(value, &cluster) {
                 checks.push((compiled, true));
             }
         }
@@ -298,7 +300,7 @@ pub(in super::super) fn compile(
         .as_ref()
         .zip(reduced_discriminator_property.as_ref())
         .map(|((property_name, _), compiled)| (property_name.as_str(), compiled));
-    let unified = object_pass::compile_is_valid(
+    let unified = object_pass::compile_is_valid::<E>(
         &cluster,
         additional_properties_schema,
         &is_valid_required_fields,

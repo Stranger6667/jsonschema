@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use referencing::{Draft, Vocabulary};
 
 use crate::context::CompileContext;
@@ -124,7 +125,7 @@ impl DraftExt for Draft {
 }
 
 /// Vocabulary-gated availability: depends on the active meta-schema, not the draft alone.
-impl CompileContext<'_> {
+impl<E: ValueEmitter> CompileContext<'_, E> {
     fn has_vocabulary(&self, vocabulary: &Vocabulary) -> bool {
         if self.draft < Draft::Draft201909 || vocabulary == &Vocabulary::Core {
             true

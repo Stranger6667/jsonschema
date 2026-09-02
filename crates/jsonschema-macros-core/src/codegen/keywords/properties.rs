@@ -3,29 +3,35 @@ use super::{
     additional_properties::{compile_first_unexpected_check, compile_wildcard_arm},
     object_pass::ClusterSubschemas,
 };
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde_json::{Map, Value};
 
-fn compile_known_keys_precheck(properties: &Map<String, Value>, schema_path: &str) -> CompiledExpr {
+fn compile_known_keys_precheck<E: ValueEmitter>(
+    properties: &Map<String, Value>,
+    schema_path: &str,
+) -> CompiledExpr {
     let known_props: Vec<&str> = properties.keys().map(String::as_str).collect();
     let is_valid = if known_props.is_empty() {
-        quote! { obj.is_empty() }
+        E::object_is_empty(format_ident!("obj"))
     } else {
+        let keys_iter = E::object_keys_iter(format_ident!("obj"));
+        let key_as_str = E::key_as_str(format_ident!("key"));
         quote! {
-            obj.keys().all(|key| {
-                matches!(key.as_str(), #(#known_props)|*)
+            #keys_iter.all(|key| {
+                matches!(#key_as_str, #(#known_props)|*)
             })
         }
     };
-    let validate = compile_first_unexpected_check(&known_props, schema_path);
+    let validate = compile_first_unexpected_check::<E>(&known_props, schema_path);
     CompiledExpr::with_validate_blocks(is_valid, validate)
 }
 
 /// Compile `properties` together with the `additionalProperties` wildcard arm. This integrated
 /// form emits a single `obj.iter().all(...)` pass with a match on each key.
-pub(crate) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     properties: &Map<String, Value>,
     additional_properties: Option<&Value>,
     cluster: &ClusterSubschemas<'_>,
@@ -39,7 +45,7 @@ pub(crate) fn compile(
         compile_wildcard_arm(ctx, additional_properties, cluster.additional.as_ref())
     };
     let known_keys_precheck = if use_known_keys_precheck {
-        compile_known_keys_precheck(properties, &additional_properties_path)
+        compile_known_keys_precheck::<E>(properties, &additional_properties_path)
     } else {
         CompiledExpr::always_true()
     };
@@ -63,7 +69,7 @@ pub(crate) fn compile(
     let main_iter_is_valid: Option<TokenStream> = if iter_trivially_true {
         None
     } else {
-        let key_as_str = crate::codegen::emit_serde::key_as_str(quote! { key });
+        let key_as_str = E::key_as_str(format_ident!("key"));
         // With `additionalProperties: false` and no patternProperties, the wildcard arm
         // rejects unknown keys in this single pass, so `is_valid` needs no separate
         // key-membership scan.
@@ -79,26 +85,25 @@ pub(crate) fn compile(
                 _ => #is_valid_wildcard
             }
         };
-        Some(crate::codegen::emit_serde::object_iter_all(
-            quote! { obj },
-            iter_body,
-        ))
+        Some(E::object_iter_all(format_ident!("obj"), iter_body))
     };
 
     let base_iter_check: CompiledExpr = if let Some(main_is_valid) = main_iter_is_valid {
         // With `additionalProperties: false` and no patternProperties, the wildcard arm reports the
         // first unexpected key inline, so its error interleaves with covered-value errors in one pass.
         let wildcard_validate = if use_known_keys_precheck {
+            let err_instance = E::err_instance(format_ident!("instance"));
+            let owned_key = E::key_to_owned(format_ident!("key"));
             quote! {
                 return Some(__err::additional_properties(
-                    #additional_properties_path, __path.into(), instance, vec![key.clone()],
+                    #additional_properties_path, __path.into(), #err_instance, vec![#owned_key],
                 ));
             }
         } else {
             wildcard_arm_body.validate.as_token_stream()
         };
-        let validate = build_validate_block(compiled_props, &wildcard_validate);
-        let collect = build_collect_block(
+        let validate = build_validate_block::<E>(compiled_props, &wildcard_validate);
+        let collect = build_collect_block::<E>(
             compiled_props,
             use_known_keys_precheck,
             &wildcard_arm_body,
@@ -122,7 +127,7 @@ pub(crate) fn compile(
             // known-keys precheck alone reports the first unexpected key.
             let known_keys_is_valid = known_keys_precheck.is_valid_token_stream();
             let precheck_validate = known_keys_precheck.validate.as_token_stream();
-            let precheck_collect = build_collect_block(
+            let precheck_collect = build_collect_block::<E>(
                 compiled_props,
                 use_known_keys_precheck,
                 &wildcard_arm_body,
@@ -142,7 +147,7 @@ pub(crate) fn compile(
 /// Build the `collect` block. Pure `properties` iterates schema order (`obj.get`); fused
 /// `additionalProperties` cases iterate instance order, with `false` aggregating unexpected keys
 /// into one trailing error — matching the respective runtime validators.
-fn build_collect_block(
+fn build_collect_block<E: ValueEmitter>(
     compiled_props: &[(&str, CompiledExpr)],
     use_known_keys_precheck: bool,
     wildcard_arm_body: &CompiledExpr,
@@ -156,8 +161,9 @@ fn build_collect_block(
             }
             let is_valid = compiled.is_valid_token_stream();
             let child = compiled.collect.as_token_stream();
+            let get_expr = E::object_get(format_ident!("obj"), name);
             Some(quote! {
-                if let Some(value) = obj.get(#name) {
+                if let Some(value) = #get_expr {
                     let instance = value;
                     if !(#is_valid) {
                         let __path = &__path.push(#name);
@@ -169,7 +175,8 @@ fn build_collect_block(
         return quote! { #(#arms)* };
     }
 
-    let key_as_str = crate::codegen::emit_serde::key_as_str(quote! { key });
+    let key_as_str = E::key_as_str(format_ident!("key"));
+    let entries = E::object_iter_entries(format_ident!("obj"));
     let match_arms = compiled_props.iter().map(|(name, compiled)| {
         if compiled.is_trivially_true() {
             return quote! { #name => {} };
@@ -187,25 +194,27 @@ fn build_collect_block(
         }
     });
     if use_known_keys_precheck {
+        let err_instance = E::err_instance(format_ident!("instance"));
+        let owned_key = E::key_to_owned(format_ident!("key"));
         quote! {
             let mut __unexpected: Vec<String> = Vec::new();
-            for (key, value) in obj.iter() {
+            for (key, value) in #entries {
                 let key_str = #key_as_str;
                 match key_str {
                     #(#match_arms,)*
-                    _ => { __unexpected.push(key.clone()); }
+                    _ => { __unexpected.push(#owned_key); }
                 }
             }
             if !__unexpected.is_empty() {
                 __errors.push(__err::additional_properties(
-                    #additional_properties_path, __path.into(), instance, __unexpected,
+                    #additional_properties_path, __path.into(), #err_instance, __unexpected,
                 ));
             }
         }
     } else {
         let wildcard_collect = wildcard_arm_body.collect.as_token_stream();
         quote! {
-            for (key, value) in obj.iter() {
+            for (key, value) in #entries {
                 let key_str = #key_as_str;
                 match key_str {
                     #(#match_arms,)*
@@ -217,11 +226,12 @@ fn build_collect_block(
 }
 
 /// Build the `validate` block for the properties for-loop.
-fn build_validate_block(
+fn build_validate_block<E: ValueEmitter>(
     compiled_props: &[(&str, CompiledExpr)],
     wildcard_validate: &TokenStream,
 ) -> TokenStream {
-    let key_as_str = crate::codegen::emit_serde::key_as_str(quote! { key });
+    let key_as_str = E::key_as_str(format_ident!("key"));
+    let entries = E::object_iter_entries(format_ident!("obj"));
 
     let mut validate_arms = Vec::new();
     for (name, compiled) in compiled_props {
@@ -240,7 +250,7 @@ fn build_validate_block(
     };
 
     quote! {
-        for (key, value) in obj.iter() {
+        for (key, value) in #entries {
             let key_str = #key_as_str;
             match key_str {
                 #(#validate_arms,)*

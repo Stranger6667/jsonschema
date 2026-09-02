@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
@@ -5,8 +6,8 @@ use crate::context::{CompileContext, PatternEngineConfig};
 
 use super::{errors::invalid_regex_expression, CompiledExpr};
 
-pub(super) fn translate_and_validate_regex(
-    ctx: &mut CompileContext<'_>,
+pub(super) fn translate_and_validate_regex<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     keyword: &str,
     pattern: &str,
 ) -> Result<String, CompiledExpr> {
@@ -57,7 +58,10 @@ pub(super) fn translate_and_validate_regex(
     Ok(translated)
 }
 
-fn get_or_create_regex_helper(ctx: &mut CompileContext<'_>, pattern: &str) -> proc_macro2::Ident {
+fn get_or_create_regex_helper<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    pattern: &str,
+) -> proc_macro2::Ident {
     if let Some(name) = ctx.regex_to_helper.get(pattern) {
         return format_ident!("{}", name);
     }
@@ -69,8 +73,8 @@ fn get_or_create_regex_helper(ctx: &mut CompileContext<'_>, pattern: &str) -> pr
     format_ident!("{}", name)
 }
 
-pub(super) fn compile_regex_match(
-    ctx: &mut CompileContext<'_>,
+pub(super) fn compile_regex_match<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     pattern: &str,
     subject: &TokenStream,
 ) -> TokenStream {

@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use referencing::Draft;
@@ -18,8 +19,9 @@ use errors::{invalid_schema_minimum_expression, invalid_schema_type_expression};
 
 mod dispatch;
 mod draft;
+pub(crate) mod emit;
 mod emit_root;
-mod emit_serde;
+pub(crate) mod emit_serde;
 mod errors;
 mod expr;
 mod helpers;
@@ -39,13 +41,13 @@ pub(crate) use helpers::DynamicAnchorBinding;
 ///
 /// A meta-schema of the schema or of a referenced resource requires a vocabulary this crate does
 /// not implement and the caller did not declare support for.
-pub(crate) fn generate_from_config(
+pub(crate) fn generate_from_config<E: ValueEmitter>(
     config: &CodegenConfig,
     recompile_trigger: &TokenStream,
     name: &Ident,
     impl_mod_name: &Ident,
 ) -> syn::Result<TokenStream> {
-    let mut ctx = CompileContext::new(config);
+    let mut ctx = CompileContext::<E>::new(config);
     let validation_expr = compile_schema(&mut ctx, &config.schema);
     let recursive_stack_needed = ctx.uses_recursive_ref;
     let dynamic_stack_needed = ctx.uses_dynamic_ref;
@@ -134,7 +136,11 @@ pub(crate) fn parse_nonnegative_integer_keyword(
 }
 
 /// Compile a schema into validation code.
-pub(crate) fn compile_schema(ctx: &mut CompileContext<'_>, schema: &Value) -> CompiledExpr {
+pub(crate) fn compile_schema<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    schema: &Value,
+) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     ctx.with_schema_scope(|ctx| match schema {
         Value::Bool(true) => CompiledExpr::always_true(),
         Value::Bool(false) => {
@@ -143,7 +149,7 @@ pub(crate) fn compile_schema(ctx: &mut CompileContext<'_>, schema: &Value) -> Co
                 quote! { false },
                 quote! {
                     return Some(__err::false_schema(
-                        #schema_path, __path.into(), instance,
+                        #schema_path, __path.into(), #err_instance,
                     ));
                 },
             )

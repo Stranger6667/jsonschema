@@ -1,4 +1,5 @@
-use quote::quote;
+use crate::codegen::emit::ValueEmitter;
+use quote::{format_ident, quote};
 use serde_json::{Map, Value};
 
 use crate::context::CompileContext;
@@ -14,10 +15,11 @@ use super::{
 };
 
 /// Compile the "unevaluatedItems" keyword.
-pub(crate) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> Option<CompiledExpr> {
+    let err_instance = E::err_instance(format_ident!("instance"));
     if !ctx.supports_unevaluated_items() {
         return None;
     }
@@ -26,8 +28,8 @@ pub(crate) fn compile(
     if unevaluated.as_bool() == Some(true) {
         return None;
     }
-    let value_ty = crate::codegen::emit_serde::value_ty();
-    let value_slice_ty = crate::codegen::emit_serde::value_slice_ty();
+    let node = E::node_param(None);
+    let array = E::array_param();
 
     let mut hoist = GuardHoist::hoisting();
     let evaluated_expr = compile_index_evaluated_expr(ctx, schema, &mut hoist);
@@ -36,10 +38,12 @@ pub(crate) fn compile(
         quote! { false }
     } else {
         let schema_check = ctx.with_instance_scope(|ctx| compile_schema(ctx, unevaluated));
-        quote! { (|instance: &#value_ty| #schema_check)(item) }
+        quote! { (|instance: #node| #schema_check)(item) }
     };
 
     let schema_path = ctx.schema_path_for_keyword("unevaluatedItems");
+    let iter_expr = E::array_iter(format_ident!("arr"));
+    let unexpected_item = E::node_to_json_string(format_ident!("item"));
     if ctx.uses_recursive_ref
         && ctx.draft.supports_recursive_ref_keyword()
         && schema.get("$recursiveAnchor").and_then(Value::as_bool) == Some(true)
@@ -51,13 +55,13 @@ pub(crate) fn compile(
         let is_valid = quote! {
             {
                 let __root_item_eval: fn(
-                    &#value_ty,
-                    &#value_slice_ty,
+                    #node,
+                    #array,
                     usize,
-                    &#value_ty
+                    #node
                 ) -> bool = |instance, arr, idx, item| { #(#guard_bindings)* #evaluated_expr };
                 #recursive_push
-                let __result = arr.iter().enumerate().all(|(idx, item)| {
+                let __result = #iter_expr.enumerate().all(|(idx, item)| {
                     if __root_item_eval(instance, arr, idx, item) {
                         true
                     } else {
@@ -68,33 +72,34 @@ pub(crate) fn compile(
                 __result
             }
         };
-        let validate = quote! {
-            if let #value_ty::Array(arr) = instance {
+        let validate = E::if_array(
+            format_ident!("instance"),
+            quote! {
                 let __root_item_eval: fn(
-                    &#value_ty,
-                    &#value_slice_ty,
+                    #node,
+                    #array,
                     usize,
-                    &#value_ty
+                    #node
                 ) -> bool = |instance, arr, idx, item| { #(#guard_bindings)* #evaluated_expr };
                 #recursive_push
                 let mut __unexpected: Vec<String> = Vec::new();
-                for (idx, item) in arr.iter().enumerate() {
+                for (idx, item) in #iter_expr.enumerate() {
                     if !__root_item_eval(instance, arr, idx, item) && !(#unevaluated_check) {
-                        __unexpected.push(item.to_string());
+                        __unexpected.push(#unexpected_item);
                     }
                 }
                 #recursive_pop
                 if !__unexpected.is_empty() {
                     return Some(__err::unevaluated_items(
-                        #schema_path, __path.into(), instance, __unexpected,
+                        #schema_path, __path.into(), #err_instance, __unexpected,
                     ));
                 }
-            }
-        };
+            },
+        );
         Some(CompiledExpr::with_validate_blocks(is_valid, validate))
     } else {
         let all_expr = quote! {
-            arr.iter().enumerate().all(|(idx, item)| {
+            #iter_expr.enumerate().all(|(idx, item)| {
                 if #evaluated_expr {
                     true
                 } else {
@@ -107,22 +112,23 @@ pub(crate) fn compile(
         } else {
             quote! { { #(#guard_bindings)* #all_expr } }
         };
-        let validate = quote! {
-            if let #value_ty::Array(arr) = instance {
+        let validate = E::if_array(
+            format_ident!("instance"),
+            quote! {
                 #(#guard_bindings)*
                 let mut __unexpected: Vec<String> = Vec::new();
-                for (idx, item) in arr.iter().enumerate() {
+                for (idx, item) in #iter_expr.enumerate() {
                     if !(#evaluated_expr) && !(#unevaluated_check) {
-                        __unexpected.push(item.to_string());
+                        __unexpected.push(#unexpected_item);
                     }
                 }
                 if !__unexpected.is_empty() {
                     return Some(__err::unevaluated_items(
-                        #schema_path, __path.into(), instance, __unexpected,
+                        #schema_path, __path.into(), #err_instance, __unexpected,
                     ));
                 }
-            }
-        };
+            },
+        );
         Some(CompiledExpr::with_validate_blocks(is_valid, validate))
     }
 }

@@ -2,15 +2,16 @@ use super::{
     super::{compile_schema, expr::ValidateBlock, CompileContext, CompiledExpr},
     pattern_coverage::build_pattern_coverage,
 };
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde_json::Value;
 
 // The wildcard arm for keys that are not defined properties. It runs only without patternProperties
 // (patterns route through `object_pass`), so a key reaching it is simply not a defined property, and
 // `additionalProperties: false` is instead rejected by the known-keys precheck.
-pub(super) fn compile_wildcard_arm(
-    ctx: &mut CompileContext<'_>,
+pub(super) fn compile_wildcard_arm<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     additional_properties: Option<&Value>,
     compiled: Option<&CompiledExpr>,
 ) -> CompiledExpr {
@@ -56,12 +57,13 @@ pub(super) fn compile_wildcard_arm(
     }
 }
 
-pub(crate) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     additional_properties: Option<&Value>,
     pattern_properties: Option<&Value>,
     compiled: Option<&CompiledExpr>,
 ) -> Option<CompiledExpr> {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let additional_properties = additional_properties?;
 
     // `patternProperties` combined with a false or schema `additionalProperties` is fused into a
@@ -74,8 +76,9 @@ pub(crate) fn compile(
     let schema_path = ctx.schema_path_for_keyword("additionalProperties");
     match additional_properties {
         Value::Bool(false) => Some(CompiledExpr::from_bool_expr(
-            quote! { obj.is_empty() },
+            E::object_is_empty(format_ident!("obj")),
             &schema_path,
+            &err_instance,
         )),
         Value::Bool(true) => None,
         schema => {
@@ -95,19 +98,22 @@ pub(crate) fn compile(
             match &schema_check.validate {
                 ValidateBlock::Expr(expr) => {
                     let child_collect = schema_check.collect.as_token_stream();
+                    let entries = E::object_iter_entries(format_ident!("obj"));
+                    let key_as_str = E::key_as_str(format_ident!("key"));
+                    let values_iter = E::object_values_iter(format_ident!("obj"));
                     Some(CompiledExpr::with_validate_and_collect_blocks(
-                        quote! { obj.values().all(|instance| #schema_is_valid) },
+                        quote! { #values_iter.all(|instance| #schema_is_valid) },
                         quote! {
-                            for (key, value) in obj.iter() {
+                            for (key, value) in #entries {
                                 let instance = value;
-                                let __path = &__path.push(key.as_str());
+                                let __path = &__path.push(#key_as_str);
                                 #expr
                             }
                         },
                         quote! {
-                            for (key, value) in obj.iter() {
+                            for (key, value) in #entries {
                                 let instance = value;
-                                let __path = &__path.push(key.as_str());
+                                let __path = &__path.push(#key_as_str);
                                 #child_collect
                             }
                         },
@@ -122,7 +128,7 @@ pub(crate) fn compile(
 /// Build a `validate` block for `additionalProperties: false`: return an `AdditionalProperties`
 /// error for the first key not covered by `properties` (`known_props`), matching the runtime's
 /// fail-fast reporting.
-pub(super) fn compile_first_unexpected_check(
+pub(super) fn compile_first_unexpected_check<E: ValueEmitter>(
     known_properties: &[&str],
     schema_path: &str,
 ) -> TokenStream {
@@ -131,12 +137,16 @@ pub(super) fn compile_first_unexpected_check(
     } else {
         quote! { matches!(key_str, #(#known_properties)|*) }
     };
+    let keys_iter = E::object_keys_iter(format_ident!("obj"));
+    let key_as_str = E::key_as_str(format_ident!("key"));
+    let err_instance = E::err_instance(format_ident!("instance"));
+    let owned_key = E::key_to_owned(format_ident!("key"));
     quote! {
-        for key in obj.keys() {
-            let key_str = key.as_str();
+        for key in #keys_iter {
+            let key_str = #key_as_str;
             if !(#covered) {
                 return Some(__err::additional_properties(
-                    #schema_path, __path.into(), instance, vec![key.clone()],
+                    #schema_path, __path.into(), #err_instance, vec![#owned_key],
                 ));
             }
         }

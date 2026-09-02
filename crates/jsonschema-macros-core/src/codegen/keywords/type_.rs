@@ -1,5 +1,6 @@
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde_json::Value;
 
 use super::super::{
@@ -13,13 +14,13 @@ use super::super::{
 
 /// Match pattern for a type whose check is a bare serde variant pattern.
 /// `None` for "number"/"integer", whose checks carry an integer sub-guard.
-fn simple_type_pattern(ty: &str) -> Option<TokenStream> {
+fn simple_type_pattern<E: ValueEmitter>(ty: &str) -> Option<TokenStream> {
     Some(match ty {
-        "string" => crate::codegen::emit_serde::pattern_string(),
-        "boolean" => crate::codegen::emit_serde::pattern_boolean(),
-        "null" => crate::codegen::emit_serde::pattern_null(),
-        "array" => crate::codegen::emit_serde::pattern_array(),
-        "object" => crate::codegen::emit_serde::pattern_object(),
+        "string" => E::pattern_string(),
+        "boolean" => E::pattern_boolean(),
+        "null" => E::pattern_null(),
+        "array" => E::pattern_array(),
+        "object" => E::pattern_object(),
         _ => return None,
     })
 }
@@ -28,7 +29,7 @@ fn wrap_type_check(is_valid: &TokenStream, error_expr: &TokenStream) -> Compiled
     CompiledExpr::from_check_and_error(is_valid.clone(), error_expr.clone())
 }
 
-pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
+pub(crate) fn compile<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Value) -> CompiledExpr {
     fn is_known_type_name(name: &str) -> bool {
         matches!(
             name,
@@ -68,33 +69,35 @@ pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
             let has_number = type_names.contains(&"number");
 
             if has_integer || has_number {
+                // Bare (non-block) arms, so each carries its own trailing comma: `type_match`
+                // concatenates arms with no separator.
                 let number_arm = if has_number {
-                    let pattern = crate::codegen::emit_serde::pattern_number();
-                    quote! { #pattern => true }
+                    let pattern = E::pattern_number();
+                    quote! { #pattern => true, }
                 } else {
-                    let pattern = crate::codegen::emit_serde::pattern_number_binding();
-                    let integer_check = crate::codegen::emit_serde::integer_number_guard(ctx.draft);
-                    quote! { #pattern => #integer_check }
+                    let pattern = E::pattern_number_binding();
+                    let integer_check = E::integer_number_guard(ctx.draft);
+                    quote! { #pattern => #integer_check, }
                 };
                 let mut arms = vec![number_arm];
                 for &ty in &type_names {
-                    if let Some(pattern) = simple_type_pattern(ty) {
-                        arms.push(quote! { #pattern => true });
+                    if let Some(pattern) = simple_type_pattern::<E>(ty) {
+                        arms.push(quote! { #pattern => true, });
                     }
                 }
-                arms.push(quote! { _ => false });
+                arms.push(quote! { _ => false, });
                 wrap_type_check(
-                    &quote! { match instance { #(#arms),* } },
-                    &build_type_error_expr(value, &schema_path),
+                    &E::type_match(format_ident!("instance"), arms),
+                    &build_type_error_expr::<E>(value, &schema_path),
                 )
             } else {
                 let patterns: Vec<TokenStream> = type_names
                     .iter()
-                    .filter_map(|&ty| simple_type_pattern(ty))
+                    .filter_map(|&ty| simple_type_pattern::<E>(ty))
                     .collect();
                 wrap_type_check(
-                    &quote! { matches!(instance, #(#patterns)|*) },
-                    &build_type_error_expr(value, &schema_path),
+                    &E::type_matches(patterns),
+                    &build_type_error_expr::<E>(value, &schema_path),
                 )
             }
         }
@@ -102,17 +105,21 @@ pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
     }
 }
 
-fn generate_type_check(ctx: &CompileContext<'_>, value: &str, schema_path: &str) -> CompiledExpr {
+fn generate_type_check<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    value: &str,
+    schema_path: &str,
+) -> CompiledExpr {
     let is_valid = match value {
-        "string" => crate::codegen::emit_serde::instance_is_string(),
-        "number" => crate::codegen::emit_serde::instance_is_number(),
-        "integer" => crate::codegen::emit_serde::instance_is_integer(ctx.draft),
-        "boolean" => crate::codegen::emit_serde::instance_is_boolean(),
-        "null" => crate::codegen::emit_serde::instance_is_null(),
-        "array" => crate::codegen::emit_serde::instance_is_array(),
-        "object" => crate::codegen::emit_serde::instance_is_object(),
+        "string" => E::instance_is_string(),
+        "number" => E::instance_is_number(),
+        "integer" => E::instance_is_integer(ctx.draft),
+        "boolean" => E::instance_is_boolean(),
+        "null" => E::instance_is_null(),
+        "array" => E::instance_is_array(),
+        "object" => E::instance_is_object(),
         _ => return invalid_schema_unexpected_type_expression(),
     };
-    let error_expr = build_type_error_expr(&Value::String(value.to_string()), schema_path);
+    let error_expr = build_type_error_expr::<E>(&Value::String(value.to_string()), schema_path);
     wrap_type_check(&is_valid, &error_expr)
 }

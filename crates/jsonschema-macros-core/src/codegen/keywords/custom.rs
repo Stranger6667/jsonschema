@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use serde_json::{Map, Value};
 
@@ -6,8 +7,8 @@ use super::super::{CompileContext, CompiledExpr};
 /// Compile a user-registered keyword into a lazily constructed `Keyword`. The factory runs at
 /// first use; a failing factory panics, since the schema is fixed at compile time and the failure
 /// is deterministic.
-pub(crate) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     name: &str,
     parent: &Map<String, Value>,
     value: &Value,

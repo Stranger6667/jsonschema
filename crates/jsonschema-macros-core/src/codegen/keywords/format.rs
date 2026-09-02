@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use referencing::Draft;
@@ -12,7 +13,7 @@ fn validates_formats_by_default(draft: Draft) -> bool {
     matches!(draft, Draft::Draft4 | Draft::Draft6 | Draft::Draft7)
 }
 
-impl CompileContext<'_> {
+impl<E: ValueEmitter> CompileContext<'_, E> {
     fn validates_formats(&self) -> bool {
         self.config.validate_formats.unwrap_or_else(|| {
             self.asserts_formats_by_dialect() || validates_formats_by_default(self.draft)
@@ -24,18 +25,23 @@ impl CompileContext<'_> {
     }
 }
 
-fn format_check(schema_path: &str, format_name: &str, check: TokenStream) -> CompiledExpr {
+fn format_check<E: ValueEmitter>(
+    schema_path: &str,
+    format_name: &str,
+    check: TokenStream,
+) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let validate = quote! {
         if !(#check) {
             return Some(__err::format(
-                #schema_path, __path.into(), instance, #format_name,
+                #schema_path, __path.into(), #err_instance, #format_name,
             ));
         }
     };
     CompiledExpr::with_validate_blocks(check, validate)
 }
 
-fn compile_email_options_argument(ctx: &CompileContext<'_>) -> TokenStream {
+fn compile_email_options_argument<E: ValueEmitter>(ctx: &CompileContext<'_, E>) -> TokenStream {
     let Some(options) = ctx.config.email_options else {
         return quote! { None };
     };
@@ -68,8 +74,8 @@ fn compile_email_options_argument(ctx: &CompileContext<'_>) -> TokenStream {
     quote! { Some(&(#expr)) }
 }
 
-fn compile_builtin_format_check(
-    ctx: &CompileContext<'_>,
+fn compile_builtin_format_check<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
     format_name: &str,
 ) -> Option<TokenStream> {
     let draft = ctx.draft;
@@ -128,7 +134,10 @@ fn compile_builtin_format_check(
     }
 }
 
-pub(crate) fn format_emits_assertion(ctx: &CompileContext<'_>, value: &Value) -> bool {
+pub(crate) fn format_emits_assertion<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    value: &Value,
+) -> bool {
     let Some(format_name) = value.as_str() else {
         return true;
     };
@@ -147,7 +156,10 @@ pub(crate) fn format_emits_assertion(ctx: &CompileContext<'_>, value: &Value) ->
 }
 
 /// Compile the "format" keyword.
-pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<CompiledExpr> {
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> Option<CompiledExpr> {
     let Some(format_name) = value.as_str() else {
         return Some(invalid_schema_type_expression(value, &["string"]));
     };
@@ -159,7 +171,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
     let schema_path = ctx.schema_path_for_keyword("format");
 
     if let Some(custom_call_path) = ctx.config.custom_formats.get(format_name) {
-        return Some(format_check(
+        return Some(format_check::<E>(
             &schema_path,
             format_name,
             quote! { #custom_call_path(s) },
@@ -170,13 +182,17 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
         if let Some(cache) = UriFormatCache::for_format(format_name) {
             ctx.uri_format_caches.insert(cache);
             let wrapper = format_ident!("__cached_{}", cache.base());
-            return Some(format_check(
+            return Some(format_check::<E>(
                 &schema_path,
                 format_name,
                 quote! { #wrapper(s) },
             ));
         }
-        return Some(format_check(&schema_path, format_name, validation_call));
+        return Some(format_check::<E>(
+            &schema_path,
+            format_name,
+            validation_call,
+        ));
     }
 
     if ctx.are_unknown_formats_ignored() {
