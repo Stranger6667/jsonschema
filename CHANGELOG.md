@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `backend = SerdeJson` on `#[jsonschema::validator]`, naming the JSON representation the generated validator reads.
+
 ## [0.53.0] - 2026-09-02
 
 ### Added

@@ -22,6 +22,7 @@ use proc_macro::TokenStream;
 ///
 /// # Optional attributes
 ///
+/// - `backend = SerdeJson` (default: `SerdeJson`)
 /// - `draft = Draft4|Draft6|Draft7|Draft201909|Draft202012` (a qualified path like
 ///   `jsonschema::Draft::Draft7` is accepted; only the final segment is inspected)
 /// - `base_uri = "json-schema:///root/main.json"`

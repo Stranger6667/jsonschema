@@ -53,6 +53,12 @@ pub enum LazyInstance<'a> {
     },
 }
 
+impl<'a> From<&'a Value> for LazyInstance<'a> {
+    fn from(value: &'a Value) -> Self {
+        LazyInstance::Ready(Cow::Borrowed(value))
+    }
+}
+
 impl<'a> LazyInstance<'a> {
     /// The instance, building and caching it on the first call.
     pub fn get(&self) -> &Cow<'a, Value> {

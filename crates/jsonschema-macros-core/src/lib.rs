@@ -106,6 +106,14 @@ struct Config {
     ignore_unknown_formats: Option<bool>,
     email_options: Option<context::EmailOptionsConfig>,
     pattern_options: PatternOptionsConfig,
+    backend: Backend,
+}
+
+/// The JSON representation the generated validator reads.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+enum Backend {
+    #[default]
+    SerdeJson,
 }
 
 enum SchemaSource {
@@ -471,6 +479,7 @@ impl Parse for Config {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut schema_source = None;
         let mut draft = None;
+        let mut backend = Backend::default();
         let mut base_uri = None;
         let mut resources: Vec<ResourceEntry> = Vec::new();
         let mut vocabularies: Vec<String> = Vec::new();
@@ -522,6 +531,19 @@ impl Parse for Config {
                     input.parse::<Token![=]>()?;
                     // Accept a bare variant or any qualified path to it; only the final segment matters.
                     draft = Some(input.parse()?);
+                }
+                "backend" => {
+                    input.parse::<Token![=]>()?;
+                    let value: Ident = input.parse()?;
+                    backend = match value.to_string().as_str() {
+                        "SerdeJson" => Backend::SerdeJson,
+                        other => {
+                            return Err(syn::Error::new_spanned(
+                                &value,
+                                format!("Unknown JSON representation: `{other}`"),
+                            ))
+                        }
+                    };
                 }
                 "base_uri" => {
                     input.parse::<Token![=]>()?;
@@ -642,7 +664,7 @@ impl Parse for Config {
                 _ => {
                     return Err(syn::Error::new_spanned(
                         ident,
-                        "Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute",
+                        "Expected `path`, `schema`, `draft`, `backend`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute",
                     ));
                 }
             }
@@ -673,6 +695,7 @@ impl Parse for Config {
             ignore_unknown_formats,
             email_options,
             pattern_options,
+            backend,
         })
     }
 }
@@ -842,12 +865,11 @@ so the generated methods cannot depend on type parameters",
     let recompile_trigger = quote! {
         #(#recompile_triggers)*
     };
-    let tokens = crate::codegen::generate_from_config::<crate::codegen::emit_serde::SerdeEmitter>(
-        &config,
-        &recompile_trigger,
-        name,
-        &impl_mod_name,
-    )?;
+    let tokens = match attr.backend {
+        Backend::SerdeJson => crate::codegen::generate_from_config::<
+            crate::codegen::emit_serde::SerdeEmitter,
+        >(&config, &recompile_trigger, name, &impl_mod_name)?,
+    };
 
     Ok(quote! {
         #input

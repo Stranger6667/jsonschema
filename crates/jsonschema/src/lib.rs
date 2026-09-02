@@ -3612,8 +3612,6 @@ pub mod __private {
 
     /// Per-keyword error constructors for generated code; evaluation path always equals schema path.
     pub mod error {
-        use std::borrow::Cow;
-
         use serde_json::Value;
 
         use crate::{
@@ -3635,14 +3633,14 @@ pub mod __private {
         pub fn content_encoding<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             encoding: &str,
         ) -> ValidationError<'i> {
             ValidationError::content_encoding(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 encoding,
             )
         }
@@ -3652,14 +3650,14 @@ pub mod __private {
         pub fn content_media_type<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             media_type: &str,
         ) -> ValidationError<'i> {
             ValidationError::content_media_type(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 media_type,
             )
         }
@@ -3669,14 +3667,14 @@ pub mod __private {
         pub fn min_length<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::min_length(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3686,14 +3684,14 @@ pub mod __private {
         pub fn max_length<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::max_length(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3703,14 +3701,14 @@ pub mod __private {
         pub fn pattern<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             pattern: &str,
         ) -> ValidationError<'i> {
             ValidationError::pattern(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 pattern.to_string(),
             )
         }
@@ -3720,14 +3718,14 @@ pub mod __private {
         pub fn format<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             format: &str,
         ) -> ValidationError<'i> {
             ValidationError::format(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 format,
             )
         }
@@ -3739,14 +3737,14 @@ pub mod __private {
         pub fn single_type<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             ty: JsonType,
         ) -> ValidationError<'i> {
             ValidationError::single_type_error(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 ty,
             )
         }
@@ -3756,14 +3754,14 @@ pub mod __private {
         pub fn multiple_types<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             types: JsonTypeSet,
         ) -> ValidationError<'i> {
             ValidationError::multiple_type_error(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 types,
             )
         }
@@ -3773,14 +3771,14 @@ pub mod __private {
         pub fn minimum<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: Value,
         ) -> ValidationError<'i> {
             ValidationError::minimum(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3790,14 +3788,14 @@ pub mod __private {
         pub fn maximum<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: Value,
         ) -> ValidationError<'i> {
             ValidationError::maximum(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3807,14 +3805,14 @@ pub mod __private {
         pub fn exclusive_minimum<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: Value,
         ) -> ValidationError<'i> {
             ValidationError::exclusive_minimum(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3824,14 +3822,14 @@ pub mod __private {
         pub fn exclusive_maximum<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: Value,
         ) -> ValidationError<'i> {
             ValidationError::exclusive_maximum(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3842,14 +3840,14 @@ pub mod __private {
         pub fn multiple_of<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             multiple_of: f64,
         ) -> ValidationError<'i> {
             ValidationError::multiple_of(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 multiple_of,
             )
         }
@@ -3860,14 +3858,14 @@ pub mod __private {
         pub fn multiple_of<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             multiple_of: Value,
         ) -> ValidationError<'i> {
             ValidationError::multiple_of(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 multiple_of,
             )
         }
@@ -3877,14 +3875,14 @@ pub mod __private {
         pub fn min_items<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::min_items(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3894,14 +3892,14 @@ pub mod __private {
         pub fn max_items<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::max_items(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3911,14 +3909,14 @@ pub mod __private {
         pub fn additional_items<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: usize,
         ) -> ValidationError<'i> {
             ValidationError::additional_items(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3928,13 +3926,13 @@ pub mod __private {
         pub fn unique_items<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
         ) -> ValidationError<'i> {
             ValidationError::unique_items(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
             )
         }
 
@@ -3943,13 +3941,13 @@ pub mod __private {
         pub fn contains<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
         ) -> ValidationError<'i> {
             ValidationError::contains(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
             )
         }
 
@@ -3958,14 +3956,14 @@ pub mod __private {
         pub fn min_properties<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::min_properties(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3975,14 +3973,14 @@ pub mod __private {
         pub fn max_properties<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::max_properties(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 limit,
             )
         }
@@ -3992,14 +3990,14 @@ pub mod __private {
         pub fn required<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             property: &str,
         ) -> ValidationError<'i> {
             ValidationError::required(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 Value::String(property.to_owned()),
             )
         }
@@ -4009,14 +4007,14 @@ pub mod __private {
         pub fn additional_properties<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             unexpected: Vec<String>,
         ) -> ValidationError<'i> {
             ValidationError::additional_properties(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 unexpected,
             )
         }
@@ -4026,11 +4024,11 @@ pub mod __private {
         pub fn constant<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             expected: Value,
         ) -> ValidationError<'i> {
             ValidationError::new(
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 crate::error::ValidationErrorKind::Constant {
                     expected_value: expected,
                 },
@@ -4045,14 +4043,14 @@ pub mod __private {
         pub fn enumeration<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             options: &Value,
         ) -> ValidationError<'i> {
             ValidationError::enumeration(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 options,
             )
         }
@@ -4062,13 +4060,13 @@ pub mod __private {
         pub fn false_schema<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
         ) -> ValidationError<'i> {
             ValidationError::false_schema(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
             )
         }
 
@@ -4077,14 +4075,14 @@ pub mod __private {
         pub fn not<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             schema: Value,
         ) -> ValidationError<'i> {
             ValidationError::not(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 schema,
             )
         }
@@ -4094,14 +4092,14 @@ pub mod __private {
         pub fn any_of<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             context: Vec<Vec<ValidationError<'i>>>,
         ) -> ValidationError<'i> {
             ValidationError::any_of(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 context,
             )
         }
@@ -4111,14 +4109,14 @@ pub mod __private {
         pub fn one_of_not_valid<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             context: Vec<Vec<ValidationError<'i>>>,
         ) -> ValidationError<'i> {
             ValidationError::one_of_not_valid(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 context,
             )
         }
@@ -4128,14 +4126,14 @@ pub mod __private {
         pub fn one_of_multiple_valid<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             context: Vec<Vec<ValidationError<'i>>>,
         ) -> ValidationError<'i> {
             ValidationError::one_of_multiple_valid(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 context,
             )
         }
@@ -4145,14 +4143,14 @@ pub mod __private {
         pub fn unevaluated_properties<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             unexpected: Vec<String>,
         ) -> ValidationError<'i> {
             ValidationError::unevaluated_properties(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 unexpected,
             )
         }
@@ -4162,14 +4160,14 @@ pub mod __private {
         pub fn unevaluated_items<'i>(
             schema_path: &str,
             instance_path: Location,
-            instance: &'i Value,
+            instance: impl Into<LazyInstance<'i>>,
             unexpected: Vec<String>,
         ) -> ValidationError<'i> {
             ValidationError::unevaluated_items(
                 Location::from_escaped(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
-                LazyInstance::Ready(Cow::Borrowed(instance)),
+                instance.into(),
                 unexpected,
             )
         }
