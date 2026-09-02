@@ -192,16 +192,15 @@ fn compile_reference_validator<'a, F: Json>(
     if reference.is_empty() {
         return None;
     }
-    let alias = match ctx
-        .resolve_reference_uri(reference)
+    let (alias, ref_target_base) = match ctx
+        .ref_target(reference, extract_ref_target_base)
         .map_err(ValidationError::from)
     {
-        Ok(uri) => uri,
+        Ok(target) => target,
         Err(error) => return Some(Err(error)),
     };
 
     let ref_suffix = ctx.suffix().join(keyword);
-    let ref_target_base = extract_ref_target_base(&alias);
 
     let resolved = match ctx.lookup(reference) {
         Ok(resolved) => resolved,
@@ -266,10 +265,9 @@ fn compile_recursive_validator<'a, F: Json>(
     reference: &str,
 ) -> CompilationResult<'a, F> {
     let ref_suffix = ctx.suffix().join("$recursiveRef");
-    let alias = ctx
-        .resolve_reference_uri(reference)
+    let (alias, ref_target_base) = ctx
+        .ref_target(reference, extract_ref_target_base)
         .map_err(ValidationError::from)?;
-    let ref_target_base = extract_ref_target_base(&alias);
 
     match ctx.lookup_maybe_recursive(reference) {
         Ok(Some(validator)) => {

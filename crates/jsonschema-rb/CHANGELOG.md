@@ -10,6 +10,7 @@
 
 - Draft 4 `type: integer` is up to 6x faster on float-heavy instances.
 - `evaluate` renders each node's locations once instead of rebuilding them.
+- Building a schema resolves each `$ref` target once instead of per reference site.
 
 ## [0.52.1] - 2026-08-30
 

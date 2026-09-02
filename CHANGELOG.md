@@ -18,6 +18,7 @@
 
 ### Performance
 
+- Building a schema is up to 5% faster, from cheaper cache sharing and resolving each `$ref` target once.
 - `required` scans small objects once instead of looking up each key.
 - `evaluate` is up to 33% faster, from rendering each node's locations once.
 - **CLI**: 1.4-1.5x faster on large schemas, from reading files before parsing them.

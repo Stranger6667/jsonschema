@@ -32,9 +32,9 @@ pub(crate) const fn formats_are_assertions_by_default(draft: Draft) -> bool {
 }
 
 /// Type alias for shared cache maps in compiler state.
-type SharedCache<K, V> = Rc<RefCell<AHashMap<K, V>>>;
+type SharedCache<K, V> = RefCell<AHashMap<K, V>>;
 /// Type alias for shared sets in compiler state.
-type SharedSet<T> = Rc<RefCell<AHashSet<T>>>;
+type SharedSet<T> = RefCell<AHashSet<T>>;
 
 pub(crate) trait CompilationOptions<F: Json> {
     fn validate_formats(&self) -> Option<bool>;
@@ -136,6 +136,28 @@ pub(crate) struct AliasCacheKey {
     dynamic_scope: List<Uri<String>>,
 }
 
+/// A `$ref`'s resolved URI and the location its target starts at.
+type RefTarget = (Arc<Uri<String>>, Location);
+
+/// Base URIs are interned, so identity keys them without hashing the whole URI. Holding the `Arc`
+/// keeps the address from being reused.
+#[derive(Clone)]
+struct BaseUriKey(Arc<Uri<String>>);
+
+impl PartialEq for BaseUriKey {
+    fn eq(&self, other: &Self) -> bool {
+        Arc::ptr_eq(&self.0, &other.0)
+    }
+}
+
+impl Eq for BaseUriKey {}
+
+impl std::hash::Hash for BaseUriKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        std::ptr::addr_of!(*self.0).hash(state);
+    }
+}
+
 /// Shared caches reused across every `Context` derived from a schema root.
 struct SharedContextState<F: Json = SerdeJson> {
     seen: SharedSet<Arc<Uri<String>>>,
@@ -150,27 +172,8 @@ struct SharedContextState<F: Json = SerdeJson> {
     pending_items_validators_by_schema:
         SharedCache<ItemsValidatorsPendingKey, PendingItemsValidators<F>>,
     pattern_cache: SharedCache<Arc<str>, PatternCacheEntry>,
-    uri_buffer: Rc<RefCell<String>>,
-}
-
-impl<F: Json> Clone for SharedContextState<F> {
-    fn clone(&self) -> Self {
-        Self {
-            seen: self.seen.clone(),
-            location_nodes: self.location_nodes.clone(),
-            alias_nodes: self.alias_nodes.clone(),
-            pending_nodes: self.pending_nodes.clone(),
-            alias_placeholders: self.alias_placeholders.clone(),
-            pending_property_validators: self.pending_property_validators.clone(),
-            pending_property_validators_by_schema: self
-                .pending_property_validators_by_schema
-                .clone(),
-            pending_items_validators: self.pending_items_validators.clone(),
-            pending_items_validators_by_schema: self.pending_items_validators_by_schema.clone(),
-            pattern_cache: self.pattern_cache.clone(),
-            uri_buffer: self.uri_buffer.clone(),
-        }
-    }
+    ref_targets: SharedCache<BaseUriKey, AHashMap<Box<str>, RefTarget>>,
+    uri_buffer: RefCell<String>,
 }
 
 impl<F: Json> fmt::Debug for SharedContextState<F> {
@@ -190,17 +193,18 @@ impl<F: Json> SharedContextState<F> {
     /// `capacity` pre-sizes the per-location node cache to avoid rehashing during a build.
     fn new(capacity: usize) -> Self {
         Self {
-            seen: Rc::new(RefCell::new(AHashSet::new())),
-            location_nodes: Rc::new(RefCell::new(AHashMap::with_capacity(capacity))),
-            alias_nodes: Rc::new(RefCell::new(AHashMap::new())),
-            pending_nodes: Rc::new(RefCell::new(AHashMap::new())),
-            alias_placeholders: Rc::new(RefCell::new(AHashMap::new())),
-            pending_property_validators: Rc::new(RefCell::new(AHashMap::new())),
-            pending_property_validators_by_schema: Rc::new(RefCell::new(AHashMap::new())),
-            pending_items_validators: Rc::new(RefCell::new(AHashMap::new())),
-            pending_items_validators_by_schema: Rc::new(RefCell::new(AHashMap::new())),
-            pattern_cache: Rc::new(RefCell::new(AHashMap::new())),
-            uri_buffer: Rc::new(RefCell::new(String::new())),
+            seen: RefCell::new(AHashSet::new()),
+            location_nodes: RefCell::new(AHashMap::with_capacity(capacity)),
+            alias_nodes: RefCell::new(AHashMap::new()),
+            pending_nodes: RefCell::new(AHashMap::new()),
+            alias_placeholders: RefCell::new(AHashMap::new()),
+            pending_property_validators: RefCell::new(AHashMap::new()),
+            pending_property_validators_by_schema: RefCell::new(AHashMap::new()),
+            pending_items_validators: RefCell::new(AHashMap::new()),
+            pending_items_validators_by_schema: RefCell::new(AHashMap::new()),
+            pattern_cache: RefCell::new(AHashMap::new()),
+            ref_targets: RefCell::new(AHashMap::new()),
+            uri_buffer: RefCell::new(String::new()),
         }
     }
 }
@@ -228,7 +232,7 @@ pub(crate) struct Context<'a, F: Json = SerdeJson> {
     /// ```
     resource_base: Location,
     pub(crate) draft: Draft,
-    shared: SharedContextState<F>,
+    shared: Rc<SharedContextState<F>>,
 }
 
 impl<F: Json> Clone for Context<'_, F> {
@@ -240,7 +244,7 @@ impl<F: Json> Clone for Context<'_, F> {
             location: self.location.clone(),
             resource_base: self.resource_base.clone(),
             draft: self.draft,
-            shared: self.shared.clone(),
+            shared: Rc::clone(&self.shared),
         }
     }
 }
@@ -261,7 +265,7 @@ impl<'a, F: Json> Context<'a, F> {
             location,
             vocabularies,
             draft,
-            shared: SharedContextState::new(capacity),
+            shared: Rc::new(SharedContextState::new(capacity)),
         }
     }
     pub(crate) fn draft(&self) -> Draft {
@@ -284,7 +288,7 @@ impl<'a, F: Json> Context<'a, F> {
             draft: resource.draft(),
             resource_base: self.resource_base.clone(),
             location: self.location.clone(),
-            shared: self.shared.clone(),
+            shared: Rc::clone(&self.shared),
         })
     }
     pub(crate) fn as_resource_ref<'r>(&'a self, contents: &'r Value) -> ResourceRef<'r> {
@@ -301,7 +305,7 @@ impl<'a, F: Json> Context<'a, F> {
             resource_base: self.resource_base.clone(),
             location,
             draft: self.draft,
-            shared: self.shared.clone(),
+            shared: Rc::clone(&self.shared),
         }
     }
     pub(crate) fn lookup(&'a self, reference: &str) -> Result<Resolved<'a>, referencing::Error> {
@@ -402,7 +406,7 @@ impl<'a, F: Json> Context<'a, F> {
             vocabularies,
             location: resource_base.clone(),
             resource_base,
-            shared: self.shared.clone(),
+            shared: Rc::clone(&self.shared),
         })
     }
     pub(crate) fn get_content_media_type_check(
@@ -456,6 +460,36 @@ impl<'a, F: Json> Context<'a, F> {
     ) -> Result<Arc<Uri<String>>, referencing::Error> {
         self.resolver
             .resolve_uri(&self.resolver.base_uri().borrow(), reference)
+    }
+
+    /// The resolved URI of `reference` and the location its target starts at.
+    ///
+    /// Schemas reuse a handful of targets across many `$ref` sites, so this is derived once per
+    /// base URI and reference rather than per site. `target_base` runs only on a miss.
+    pub(crate) fn ref_target(
+        &self,
+        reference: &str,
+        target_base: impl FnOnce(&Uri<String>) -> Location,
+    ) -> Result<RefTarget, referencing::Error> {
+        let base_uri = BaseUriKey(self.resolver.base_uri());
+        if let Some(target) = self
+            .shared
+            .ref_targets
+            .borrow()
+            .get(&base_uri)
+            .and_then(|by_reference| by_reference.get(reference))
+        {
+            return Ok(target.clone());
+        }
+        let alias = self.resolve_reference_uri(reference)?;
+        let target = (Arc::clone(&alias), target_base(&alias));
+        self.shared
+            .ref_targets
+            .borrow_mut()
+            .entry(base_uri)
+            .or_default()
+            .insert(reference.into(), target.clone());
+        Ok(target)
     }
 
     pub(crate) fn cached_location_node(&self, key: &LocationCacheKey) -> Option<SchemaNode<F>> {
