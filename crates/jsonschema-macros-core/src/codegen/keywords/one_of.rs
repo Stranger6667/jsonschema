@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use std::collections::{BTreeMap, HashMap, HashSet};
 
 use super::super::{
@@ -65,7 +66,11 @@ type KeyStats = (
     bool,
 );
 
-pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let Some(schemas) = value.as_array() else {
         return invalid_schema_type_expression(value, &["array"]);
     };
@@ -134,15 +139,9 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
 
     let discriminator_init = if let Some(plan) = &discriminator_plan {
         let init_expr = match plan.kind {
-            DiscriminatorKind::Str => {
-                crate::codegen::emit_serde::instance_object_property_as_str(&plan.key)
-            }
-            DiscriminatorKind::Bool => {
-                crate::codegen::emit_serde::instance_object_property_as_bool(&plan.key)
-            }
-            DiscriminatorKind::Int => {
-                crate::codegen::emit_serde::instance_object_property_as_i64(&plan.key)
-            }
+            DiscriminatorKind::Str => E::instance_object_property_as_str(&plan.key),
+            DiscriminatorKind::Bool => E::instance_object_property_as_bool(&plan.key),
+            DiscriminatorKind::Int => E::instance_object_property_as_i64(&plan.key),
         };
         quote! { let __one_of_discriminator = #init_expr; }
     } else {
@@ -151,7 +150,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
     let validate_correction = match &discriminator_plan {
         Some(plan) if plan.vacuous_guarded > 0 => {
             let vacuous_guarded = plan.vacuous_guarded;
-            let is_object = crate::codegen::emit_serde::instance_is_object();
+            let is_object = E::instance_is_object();
             quote! { if !(#is_object) { __count += #vacuous_guarded; } }
         }
         _ => quote! {},
@@ -206,11 +205,11 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                     })*
                     return Some(if __count == 0 {
                         __err::one_of_not_valid(
-                            #schema_path, __path.into(), instance, __context,
+                            #schema_path, __path.into(), #err_instance, __context,
                         )
                     } else {
                         __err::one_of_multiple_valid(
-                            #schema_path, __path.into(), instance, __context,
+                            #schema_path, __path.into(), #err_instance, __context,
                         )
                     });
                 }
@@ -332,8 +331,8 @@ fn vacuous_branches_safely_guarded(
         .all(|(class, values)| *class != BranchObjectApplicability::Vacuous || values.is_some())
 }
 
-fn build_discriminator_plan(
-    ctx: &mut CompileContext<'_>,
+fn build_discriminator_plan<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schemas: &[Value],
 ) -> Option<DiscriminatorPlan> {
     if !ctx.supports_validation_vocabulary() || !ctx.supports_applicator_vocabulary() {

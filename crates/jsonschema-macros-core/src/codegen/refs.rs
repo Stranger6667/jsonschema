@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use std::{borrow::Cow, sync::Arc};
 
 use referencing::Uri;
@@ -13,8 +14,8 @@ pub(crate) struct ResolvedRef {
 }
 
 /// Resolve a short top-level `$ref` chain for schema-shape analysis.
-pub(super) fn resolve_lone_top_level_ref<'b>(
-    ctx: &mut CompileContext<'_>,
+pub(super) fn resolve_lone_top_level_ref<'b, E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &'b Value,
 ) -> Cow<'b, Value> {
     let mut current = Cow::Borrowed(schema);
@@ -42,8 +43,8 @@ pub(super) fn resolve_lone_top_level_ref<'b>(
 }
 
 /// Resolve a reference using the Registry.
-pub(crate) fn resolve_ref(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn resolve_ref<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     reference: &str,
 ) -> Result<ResolvedRef, String> {
     let base_uri = ctx.current_base_uri.clone();

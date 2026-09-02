@@ -2,14 +2,16 @@ use super::{
     super::{draft::DraftExt, parse_nonnegative_integer_keyword, CompileContext, CompiledExpr},
     compile_count_limit, content, format, pattern, Limit,
 };
-use quote::quote;
+use crate::codegen::emit::ValueEmitter;
+use quote::{format_ident, quote};
 use serde_json::{Map, Value};
 
 /// Compile all string-specific keywords.
-pub(in super::super) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(in super::super) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let mut items: Vec<CompiledExpr> = Vec::new();
     let validation_vocab_enabled = ctx.supports_validation_vocabulary();
 
@@ -35,7 +37,7 @@ pub(in super::super) fn compile(
             items.push(CompiledExpr::from_check_and_error(
                 quote! { s.is_empty() },
                 quote! {
-                    __err::max_length(#max_path, __path.into(), instance, 0)
+                    __err::max_length(#max_path, __path.into(), #err_instance, 0)
                 },
             ));
         }
@@ -50,12 +52,12 @@ pub(in super::super) fn compile(
                     let len = s.chars().count();
                     if (len as u64) < #min {
                         return Some(__err::min_length(
-                            #min_path, __path.into(), instance, #min,
+                            #min_path, __path.into(), #err_instance, #min,
                         ));
                     }
                     if (len as u64) > #max {
                         return Some(__err::max_length(
-                            #max_path, __path.into(), instance, #max,
+                            #max_path, __path.into(), #err_instance, #max,
                         ));
                     }
                 }));
@@ -67,7 +69,7 @@ pub(in super::super) fn compile(
                 items.push(CompiledExpr::from_check_and_error(
                     quote! { !s.is_empty() },
                     quote! {
-                        __err::min_length(#min_path, __path.into(), instance, 1)
+                        __err::min_length(#min_path, __path.into(), #err_instance, 1)
                     },
                 ));
             } else if let Some(value) = schema.get("minLength").filter(|_| validation_vocab_enabled)
@@ -86,7 +88,7 @@ pub(in super::super) fn compile(
                 items.push(CompiledExpr::from_check_and_error(
                     quote! { s.is_empty() },
                     quote! {
-                        __err::max_length(#max_path, __path.into(), instance, 0)
+                        __err::max_length(#max_path, __path.into(), #err_instance, 0)
                     },
                 ));
             } else if let Some(value) = schema.get("maxLength").filter(|_| validation_vocab_enabled)

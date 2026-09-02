@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use std::borrow::Cow;
 
 use proc_macro2::TokenStream;
@@ -28,8 +29,8 @@ impl PatternCoverage {
 
 /// Build the coverage checks for `patternProperties`, or `Err` with the first
 /// invalid-regex diagnostic.
-pub(super) fn build_pattern_coverage(
-    ctx: &mut CompileContext<'_>,
+pub(super) fn build_pattern_coverage<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     pattern_properties: Option<&Value>,
 ) -> Result<PatternCoverage, CompiledExpr> {
     let Some(obj) = pattern_properties.and_then(Value::as_object) else {

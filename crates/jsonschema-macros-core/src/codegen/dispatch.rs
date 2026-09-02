@@ -1,5 +1,6 @@
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde_json::{Map, Value};
 
 use crate::context::CompileContext;
@@ -20,8 +21,8 @@ fn type_keyword_includes(type_value: &Value, name: &str) -> bool {
     }
 }
 
-pub(super) fn compile_typed(
-    ctx: &mut CompileContext<'_>,
+pub(super) fn compile_typed<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     has_type_constraint: bool,
 ) -> Option<CompiledExpr> {
@@ -83,21 +84,15 @@ pub(super) fn compile_typed(
     let mut is_valid_arms = Vec::new();
     let mut validate_arms = Vec::new();
     let mut collect_arms = Vec::new();
-    let integer_guard = crate::codegen::emit_serde::integer_number_guard(ctx.draft);
+    let integer_guard = E::integer_number_guard(ctx.draft);
 
     if has_string {
         let for_string = keywords::string::compile(ctx, schema);
         if has_type_constraint || !for_string.is_trivially_true() {
-            is_valid_arms.push(crate::codegen::emit_serde::match_string_arm(
-                for_string.is_valid_token_stream(),
-            ));
+            is_valid_arms.push(E::match_string_arm(for_string.is_valid_token_stream()));
             if has_type_constraint || matches!(&for_string.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(crate::codegen::emit_serde::match_string_arm(
-                    for_string.validate.as_token_stream(),
-                ));
-                collect_arms.push(crate::codegen::emit_serde::match_string_arm(
-                    for_string.collect.as_token_stream(),
-                ));
+                validate_arms.push(E::match_string_arm(for_string.validate.as_token_stream()));
+                collect_arms.push(E::match_string_arm(for_string.collect.as_token_stream()));
             }
         }
     }
@@ -111,21 +106,15 @@ pub(super) fn compile_typed(
             let allows_number = type_keyword_includes(type_val, "number");
             let allows_integer = type_keyword_includes(type_val, "integer");
             if allows_number {
-                is_valid_arms.push(crate::codegen::emit_serde::match_number_arm(
-                    for_number.is_valid_token_stream(),
-                ));
-                validate_arms.push(crate::codegen::emit_serde::match_number_arm(
-                    for_number.validate.as_token_stream(),
-                ));
-                collect_arms.push(crate::codegen::emit_serde::match_number_arm(
-                    for_number.collect.as_token_stream(),
-                ));
+                is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
+                validate_arms.push(E::match_number_arm(for_number.validate.as_token_stream()));
+                collect_arms.push(E::match_number_arm(for_number.collect.as_token_stream()));
             } else if allows_integer {
-                is_valid_arms.push(crate::codegen::emit_serde::match_integer_arm(
+                is_valid_arms.push(E::match_integer_arm(
                     integer_guard.clone(),
                     for_number.is_valid_token_stream(),
                 ));
-                validate_arms.push(crate::codegen::emit_serde::match_integer_arm(
+                validate_arms.push(E::match_integer_arm(
                     integer_guard.clone(),
                     for_number.validate.as_token_stream(),
                 ));
@@ -133,37 +122,25 @@ pub(super) fn compile_typed(
                 // under `type: integer`, so collect runs the numeric checks for every number and pushes
                 // the type error inline when it is not an integer.
                 let type_schema_path = ctx.schema_path_for_keyword("type");
-                let type_error_expr = build_type_error_expr(type_val, &type_schema_path);
+                let type_error_expr = build_type_error_expr::<E>(type_val, &type_schema_path);
                 let guard = integer_guard.clone();
                 let numeric_collect = for_number.collect.as_token_stream();
-                collect_arms.push(crate::codegen::emit_serde::match_number_arm(quote! {
+                collect_arms.push(E::match_number_arm(quote! {
                     if !(#guard) {
                         __errors.push(#type_error_expr);
                     }
                     #numeric_collect
                 }));
             } else if for_number.is_compile_error() {
-                is_valid_arms.push(crate::codegen::emit_serde::match_number_arm(
-                    for_number.is_valid_token_stream(),
-                ));
-                validate_arms.push(crate::codegen::emit_serde::match_number_arm(
-                    for_number.validate.as_token_stream(),
-                ));
-                collect_arms.push(crate::codegen::emit_serde::match_number_arm(
-                    for_number.collect.as_token_stream(),
-                ));
+                is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
+                validate_arms.push(E::match_number_arm(for_number.validate.as_token_stream()));
+                collect_arms.push(E::match_number_arm(for_number.collect.as_token_stream()));
             }
         } else if !for_number.is_trivially_true() {
-            is_valid_arms.push(crate::codegen::emit_serde::match_number_arm(
-                for_number.is_valid_token_stream(),
-            ));
+            is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
             if matches!(&for_number.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(crate::codegen::emit_serde::match_number_arm(
-                    for_number.validate.as_token_stream(),
-                ));
-                collect_arms.push(crate::codegen::emit_serde::match_number_arm(
-                    for_number.collect.as_token_stream(),
-                ));
+                validate_arms.push(E::match_number_arm(for_number.validate.as_token_stream()));
+                collect_arms.push(E::match_number_arm(for_number.collect.as_token_stream()));
             }
         }
     }
@@ -171,16 +148,10 @@ pub(super) fn compile_typed(
     if has_array {
         let for_array = keywords::array::compile(ctx, schema);
         if has_type_constraint || !for_array.is_trivially_true() {
-            is_valid_arms.push(crate::codegen::emit_serde::match_array_arm(
-                for_array.is_valid_token_stream(),
-            ));
+            is_valid_arms.push(E::match_array_arm(for_array.is_valid_token_stream()));
             if has_type_constraint || matches!(&for_array.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(crate::codegen::emit_serde::match_array_arm(
-                    for_array.validate.as_token_stream(),
-                ));
-                collect_arms.push(crate::codegen::emit_serde::match_array_arm(
-                    for_array.collect.as_token_stream(),
-                ));
+                validate_arms.push(E::match_array_arm(for_array.validate.as_token_stream()));
+                collect_arms.push(E::match_array_arm(for_array.collect.as_token_stream()));
             }
         }
     }
@@ -188,16 +159,10 @@ pub(super) fn compile_typed(
     if has_object {
         let for_object = keywords::object::compile(ctx, schema);
         if has_type_constraint || !for_object.is_trivially_true() {
-            is_valid_arms.push(crate::codegen::emit_serde::match_object_arm(
-                for_object.is_valid_token_stream(),
-            ));
+            is_valid_arms.push(E::match_object_arm(for_object.is_valid_token_stream()));
             if has_type_constraint || matches!(&for_object.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(crate::codegen::emit_serde::match_object_arm(
-                    for_object.validate.as_token_stream(),
-                ));
-                collect_arms.push(crate::codegen::emit_serde::match_object_arm(
-                    for_object.collect.as_token_stream(),
-                ));
+                validate_arms.push(E::match_object_arm(for_object.validate.as_token_stream()));
+                collect_arms.push(E::match_object_arm(for_object.collect.as_token_stream()));
             }
         }
     }
@@ -218,31 +183,31 @@ pub(super) fn compile_typed(
         let has_null_fallback = type_keyword_includes(type_val, "null");
 
         if has_string_fallback {
-            additional_types.push(crate::codegen::emit_serde::pattern_string());
+            additional_types.push(E::pattern_string());
         }
         if has_number_fallback {
-            additional_types.push(crate::codegen::emit_serde::pattern_number());
+            additional_types.push(E::pattern_number());
         }
         if has_integer_fallback {
-            additional_types.push(crate::codegen::emit_serde::pattern_integer(
-                integer_guard.clone(),
-            ));
+            additional_types.push(E::pattern_integer(integer_guard.clone()));
         }
         if has_array_fallback {
-            additional_types.push(crate::codegen::emit_serde::pattern_array());
+            additional_types.push(E::pattern_array());
         }
         if has_object_fallback {
-            additional_types.push(crate::codegen::emit_serde::pattern_object());
+            additional_types.push(E::pattern_object());
         }
         if has_boolean_fallback {
-            additional_types.push(crate::codegen::emit_serde::pattern_boolean());
+            additional_types.push(E::pattern_boolean());
         }
         if has_null_fallback {
-            additional_types.push(crate::codegen::emit_serde::pattern_null());
+            additional_types.push(E::pattern_null());
         }
 
         if !additional_types.is_empty() {
-            is_valid_arms.push(quote! { #(#additional_types)|* => true });
+            // Bare (non-block) arm, so it carries its own trailing comma: `type_match`
+            // concatenates arms with no separator, and `_ => false` always follows it.
+            is_valid_arms.push(quote! { #(#additional_types)|* => true, });
             for pattern in &additional_types {
                 validate_arms.push(quote! { #pattern => {} });
                 collect_arms.push(quote! { #pattern => {} });
@@ -254,7 +219,7 @@ pub(super) fn compile_typed(
         let type_value = schema
             .get("type")
             .expect("has_type_constraint implies a `type` keyword");
-        let type_error_expr = build_type_error_expr(type_value, &type_schema_path);
+        let type_error_expr = build_type_error_expr::<E>(type_value, &type_schema_path);
         validate_arms.push(quote! { _ => { return Some(#type_error_expr); } });
         collect_arms.push(quote! { _ => { __errors.push(#type_error_expr); } });
     } else {
@@ -266,13 +231,9 @@ pub(super) fn compile_typed(
         collect_arms.push(quote! { _ => {} });
     }
 
-    let is_valid_ts = quote! {
-        match instance {
-            #(#is_valid_arms),*
-        }
-    };
-    let validate_ts = quote! { match instance { #(#validate_arms),* } };
-    let collect_ts = quote! { match instance { #(#collect_arms),* } };
+    let is_valid_ts = E::type_match(format_ident!("instance"), is_valid_arms);
+    let validate_ts = E::type_match(format_ident!("instance"), validate_arms);
+    let collect_ts = E::type_match(format_ident!("instance"), collect_arms);
     Some(CompiledExpr {
         is_valid: IsValidExpr::Expr(is_valid_ts),
         validate: ValidateBlock::Expr(validate_ts),
@@ -281,13 +242,17 @@ pub(super) fn compile_typed(
     })
 }
 
-pub(super) fn build_type_error_expr(type_val: &Value, type_schema_path: &str) -> TokenStream {
+pub(super) fn build_type_error_expr<E: ValueEmitter>(
+    type_val: &Value,
+    type_schema_path: &str,
+) -> TokenStream {
+    let err_instance = E::err_instance(format_ident!("instance"));
     match type_val {
         Value::String(ty) => {
             let json_type = type_name_to_json_type_token(ty.as_str());
             quote! {
                 __err::single_type(
-                    #type_schema_path, __path.into(), instance, #json_type,
+                    #type_schema_path, __path.into(), #err_instance, #json_type,
                 )
             }
         }
@@ -302,14 +267,14 @@ pub(super) fn build_type_error_expr(type_val: &Value, type_schema_path: &str) ->
             );
             quote! {
                 __err::multiple_types(
-                    #type_schema_path, __path.into(), instance, #chain,
+                    #type_schema_path, __path.into(), #err_instance, #chain,
                 )
             }
         }
         _ => {
             quote! {
                 __err::false_schema(
-                    #type_schema_path, __path.into(), instance,
+                    #type_schema_path, __path.into(), #err_instance,
                 )
             }
         }

@@ -2,6 +2,7 @@ use super::{
     super::{compile_schema, expr::ValidateBlock, CompileContext, CompiledExpr},
     pattern_properties::key_match_expr,
 };
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde_json::{Map, Value};
@@ -16,8 +17,8 @@ pub(crate) struct ClusterSubschemas<'a> {
     pub(crate) additional: Option<CompiledExpr>,
 }
 
-pub(crate) fn compile_cluster_subschemas<'a>(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile_cluster_subschemas<'a, E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     properties: Option<&'a Map<String, Value>>,
     pattern_properties: Option<&'a Value>,
     additional_properties: Option<&'a Value>,
@@ -65,8 +66,8 @@ pub(crate) fn compile_cluster_subschemas<'a>(
 /// Single-pass `validate` for the object cluster: per key, validate the matching property, then
 /// matching patterns, then `additionalProperties` for keys covered by neither. Returns `None` when
 /// there is no `patternProperties` to merge or a pattern regex is invalid.
-pub(crate) fn compile_validate(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile_validate<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     cluster: &ClusterSubschemas<'_>,
     additional_properties: Option<&Value>,
 ) -> Option<TokenStream> {
@@ -74,6 +75,8 @@ pub(crate) fn compile_validate(
         return None;
     }
     let additional_properties_path = ctx.schema_path_for_keyword("additionalProperties");
+    let err_instance = E::err_instance(format_ident!("instance"));
+    let owned_key = E::key_to_owned(format_ident!("key"));
 
     let (additional_properties_fallback, track_covered): (TokenStream, bool) =
         match additional_properties {
@@ -81,7 +84,7 @@ pub(crate) fn compile_validate(
                 quote! {
                     if !covered {
                         return Some(__err::additional_properties(
-                            #additional_properties_path, __path.into(), instance, vec![key.clone()],
+                            #additional_properties_path, __path.into(), #err_instance, vec![#owned_key],
                         ));
                     }
                 },
@@ -165,9 +168,11 @@ pub(crate) fn compile_validate(
         quote! { match key_str { #(#match_arms)* _ => {} } }
     };
 
+    let entries = E::object_iter_entries(format_ident!("obj"));
+    let key_as_str = E::key_as_str(format_ident!("key"));
     Some(quote! {
-        for (key, value) in obj.iter() {
-            let key_str = key.as_str();
+        for (key, value) in #entries {
+            let key_str = #key_as_str;
             #covered_decl
             #match_block
             #(#pattern_checks)*
@@ -178,23 +183,25 @@ pub(crate) fn compile_validate(
 
 /// Single-pass `collect` for the object cluster: like [`compile_validate`] but pushing instead of
 /// returning, with `additionalProperties: false` aggregating unexpected keys into one trailing error.
-pub(crate) fn compile_collect(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile_collect<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     cluster: &ClusterSubschemas<'_>,
     additional_properties: Option<&Value>,
 ) -> Option<TokenStream> {
+    let err_instance = E::err_instance(format_ident!("instance"));
     if cluster.patterns.is_empty() {
         return None;
     }
     let additional_properties_path = ctx.schema_path_for_keyword("additionalProperties");
     let is_false = matches!(additional_properties, Some(Value::Bool(false)));
+    let owned_key = E::key_to_owned(format_ident!("key"));
 
     let (additional_properties_fallback, track_covered): (TokenStream, bool) =
         match additional_properties {
             Some(Value::Bool(false)) => (
                 quote! {
                     if !covered {
-                        __unexpected.push(key.clone());
+                        __unexpected.push(#owned_key);
                     }
                 },
                 true,
@@ -295,7 +302,7 @@ pub(crate) fn compile_collect(
         quote! {
             if !__unexpected.is_empty() {
                 __errors.push(__err::additional_properties(
-                    #additional_properties_path, __path.into(), instance, __unexpected,
+                    #additional_properties_path, __path.into(), #err_instance, __unexpected,
                 ));
             }
         }
@@ -303,10 +310,12 @@ pub(crate) fn compile_collect(
         quote! {}
     };
 
+    let entries = E::object_iter_entries(format_ident!("obj"));
+    let key_as_str = E::key_as_str(format_ident!("key"));
     Some(quote! {
         #unexpected_decl
-        for (key, value) in obj.iter() {
-            let key_str = key.as_str();
+        for (key, value) in #entries {
+            let key_str = #key_as_str;
             #covered_decl
             #match_block
             #(#pattern_checks)*
@@ -319,7 +328,7 @@ pub(crate) fn compile_collect(
 /// Single-pass `is_valid` for the object cluster (`properties` + `patternProperties` +
 /// `additionalProperties` + `required`). Returns `None` when no merge is warranted or a pattern
 /// regex is invalid.
-pub(crate) fn compile_is_valid(
+pub(crate) fn compile_is_valid<E: ValueEmitter>(
     cluster: &ClusterSubschemas<'_>,
     additional_properties: Option<&Value>,
     required_names: &[&str],
@@ -430,15 +439,16 @@ pub(crate) fn compile_is_valid(
     let match_block = if match_arms.is_empty() {
         quote! {}
     } else {
-        quote! { match key.as_str() { #(#match_arms)* _ => {} } }
+        let key_as_str = E::key_as_str(format_ident!("key"));
+        quote! { match #key_as_str { #(#match_arms)* _ => {} } }
     };
     let req_decls = req_idents
         .iter()
         .map(|(_, id)| quote! { let mut #id = false; });
     let req_checks = req_idents.iter().map(|(_, id)| quote! { #id });
 
-    let pass = crate::codegen::emit_serde::object_iter_all(
-        quote! { obj },
+    let pass = E::object_iter_all(
+        format_ident!("obj"),
         quote! {
             #covered_decl
             #match_block

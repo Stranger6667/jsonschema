@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use std::collections::HashSet;
 
 use super::super::{
@@ -6,11 +7,16 @@ use super::super::{
     expr::ValidateBlock,
     CompileContext, CompiledExpr,
 };
-use quote::quote;
+use proc_macro2::TokenStream;
+use quote::{format_ident, quote};
 use serde_json::Value;
 
 /// Compile the legacy `dependencies` keyword (Draft 4/6/7).
-pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<CompiledExpr> {
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> Option<CompiledExpr> {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let Value::Object(dependencies) = value else {
         return Some(invalid_schema_type_expression(value, &["object"]));
     };
@@ -32,31 +38,36 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
                 if props.is_empty() {
                     CompiledExpr::always_true()
                 } else {
+                    let guard = E::object_contains_key(format_ident!("obj"), prop);
+                    let checks: Vec<TokenStream> = props
+                        .iter()
+                        .map(|prop| E::object_contains_key(format_ident!("obj"), prop))
+                        .collect();
                     CompiledExpr::with_validate_and_collect_blocks(
                         quote! {
-                            if obj.contains_key(#prop) {
-                                #(obj.contains_key(#props))&&*
+                            if #guard {
+                                #(#checks)&&*
                             } else {
                                 true
                             }
                         },
                         quote! {
-                            if obj.contains_key(#prop) {
+                            if #guard {
                                 #(
-                                    if !obj.contains_key(#props) {
+                                    if !#checks {
                                         return Some(__err::required(
-                                            #schema_path, __path.into(), instance, #props,
+                                            #schema_path, __path.into(), #err_instance, #props,
                                         ));
                                     }
                                 )*
                             }
                         },
                         quote! {
-                            if obj.contains_key(#prop) {
+                            if #guard {
                                 #(
-                                    if !obj.contains_key(#props) {
+                                    if !#checks {
                                         __errors.push(__err::required(
-                                            #schema_path, __path.into(), instance, #props,
+                                            #schema_path, __path.into(), #err_instance, #props,
                                         ));
                                     }
                                 )*
@@ -70,13 +81,14 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
                     ctx.with_schema_path_segment(prop, |ctx| compile_schema(ctx, schema))
                 });
                 let is_valid = compiled.is_valid_token_stream();
+                let guard = E::object_contains_key(format_ident!("obj"), prop);
                 match &compiled.validate {
                     ValidateBlock::Expr(expr) => {
                         let child_collect = compiled.collect.as_token_stream();
                         CompiledExpr::with_validate_and_collect_blocks(
-                            quote! { if obj.contains_key(#prop) { #is_valid } else { true } },
-                            quote! { if obj.contains_key(#prop) { #expr } },
-                            quote! { if obj.contains_key(#prop) { #child_collect } },
+                            quote! { if #guard { #is_valid } else { true } },
+                            quote! { if #guard { #expr } },
+                            quote! { if #guard { #child_collect } },
                         )
                     }
                     ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
@@ -89,10 +101,11 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> Option<Com
 }
 
 /// Compile the `dependentRequired` keyword (Draft 2019-09+).
-pub(crate) fn compile_dependent_required(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile_dependent_required<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     value: &Value,
 ) -> Option<CompiledExpr> {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let Value::Object(dependencies) = value else {
         return Some(invalid_schema_type_expression(value, &["object"]));
     };
@@ -122,31 +135,36 @@ pub(crate) fn compile_dependent_required(
             if required_props.is_empty() {
                 return CompiledExpr::always_true();
             }
+            let guard = E::object_contains_key(format_ident!("obj"), prop);
+            let required_checks: Vec<TokenStream> = required_props
+                .iter()
+                .map(|required_prop| E::object_contains_key(format_ident!("obj"), required_prop))
+                .collect();
             CompiledExpr::with_validate_and_collect_blocks(
                 quote! {
-                    if obj.contains_key(#prop) {
-                        #(obj.contains_key(#required_props))&&*
+                    if #guard {
+                        #(#required_checks)&&*
                     } else {
                         true
                     }
                 },
                 quote! {
-                    if obj.contains_key(#prop) {
+                    if #guard {
                         #(
-                            if !obj.contains_key(#required_props) {
+                            if !#required_checks {
                                 return Some(__err::required(
-                                    #schema_path, __path.into(), instance, #required_props,
+                                    #schema_path, __path.into(), #err_instance, #required_props,
                                 ));
                             }
                         )*
                     }
                 },
                 quote! {
-                    if obj.contains_key(#prop) {
+                    if #guard {
                         #(
-                            if !obj.contains_key(#required_props) {
+                            if !#required_checks {
                                 __errors.push(__err::required(
-                                    #schema_path, __path.into(), instance, #required_props,
+                                    #schema_path, __path.into(), #err_instance, #required_props,
                                 ));
                             }
                         )*
@@ -160,8 +178,8 @@ pub(crate) fn compile_dependent_required(
 }
 
 /// Compile the `dependentSchemas` keyword (Draft 2019-09+).
-pub(crate) fn compile_dependent_schemas(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile_dependent_schemas<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     value: &Value,
 ) -> Option<CompiledExpr> {
     let Value::Object(dependencies) = value else {
@@ -177,13 +195,14 @@ pub(crate) fn compile_dependent_schemas(
                 ctx.with_schema_path_segment(prop, |ctx| compile_schema(ctx, subschema))
             });
             let is_valid = compiled.is_valid_token_stream();
+            let guard = E::object_contains_key(format_ident!("obj"), prop);
             match &compiled.validate {
                 ValidateBlock::Expr(expr) => {
                     let child_collect = compiled.collect.as_token_stream();
                     CompiledExpr::with_validate_and_collect_blocks(
-                        quote! { if obj.contains_key(#prop) { #is_valid } else { true } },
-                        quote! { if obj.contains_key(#prop) { #expr } },
-                        quote! { if obj.contains_key(#prop) { #child_collect } },
+                        quote! { if #guard { #is_valid } else { true } },
+                        quote! { if #guard { #expr } },
+                        quote! { if #guard { #child_collect } },
                     )
                 }
                 ValidateBlock::AlwaysValid => CompiledExpr::always_true(),

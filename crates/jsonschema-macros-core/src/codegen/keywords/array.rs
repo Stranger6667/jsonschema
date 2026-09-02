@@ -6,12 +6,13 @@ use super::{
     additional_items, compile_count_range, contains, items, prefix_items, unevaluated_items,
     unique_items,
 };
-use quote::quote;
+use crate::codegen::emit::ValueEmitter;
+use quote::format_ident;
 use serde_json::{Map, Value};
 
 /// Compile all array-specific keywords.
-pub(in super::super) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(in super::super) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> CompiledExpr {
     let mut checks: Vec<CompiledExpr> = Vec::new();
@@ -20,7 +21,7 @@ pub(in super::super) fn compile(
 
     // Checks are pushed in the runtime's `keyword_priority` order so that
     // `validate` reports the same first error as the runtime validator.
-    let array_len = crate::codegen::emit_serde::array_len(quote! { arr });
+    let array_len = E::array_len(format_ident!("arr"));
     compile_count_range(
         ctx,
         schema.get("minItems").filter(|_| validation_vocab_enabled),

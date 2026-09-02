@@ -82,7 +82,7 @@ pub mod bench {
 
     #[must_use]
     pub fn generate(input: &Input) -> proc_macro2::TokenStream {
-        crate::codegen::generate_from_config(
+        crate::codegen::generate_from_config::<crate::codegen::emit_serde::SerdeEmitter>(
             &input.0,
             &quote! {},
             &format_ident!("Validator"),
@@ -842,8 +842,12 @@ so the generated methods cannot depend on type parameters",
     let recompile_trigger = quote! {
         #(#recompile_triggers)*
     };
-    let tokens =
-        crate::codegen::generate_from_config(&config, &recompile_trigger, name, &impl_mod_name)?;
+    let tokens = crate::codegen::generate_from_config::<crate::codegen::emit_serde::SerdeEmitter>(
+        &config,
+        &recompile_trigger,
+        name,
+        &impl_mod_name,
+    )?;
 
     Ok(quote! {
         #input

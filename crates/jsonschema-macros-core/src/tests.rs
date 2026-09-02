@@ -126,8 +126,13 @@ fn render_config(config: &CodegenConfig) -> String {
     let name = format_ident!("Validator");
     let impl_mod_name = format_ident!("__validator_impl");
     let recompile_trigger: TokenStream = quote! {};
-    let tokens = generate_from_config(config, &recompile_trigger, &name, &impl_mod_name)
-        .expect("schema should generate");
+    let tokens = generate_from_config::<crate::codegen::emit_serde::SerdeEmitter>(
+        config,
+        &recompile_trigger,
+        &name,
+        &impl_mod_name,
+    )
+    .expect("schema should generate");
 
     // Wrap in a struct declaration so syn can parse as a complete file
     let wrapped: TokenStream = quote! {

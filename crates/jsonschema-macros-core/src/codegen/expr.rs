@@ -99,11 +99,15 @@ impl CompiledExpr {
     /// `validate` block. The block re-evaluates the check and emits a `false_schema` error
     /// when the check fails. The `schema_path` string is embedded in the generated error.
     #[allow(clippy::needless_pass_by_value)]
-    pub(crate) fn from_bool_expr(is_valid: TokenStream, schema_path: &str) -> Self {
+    pub(crate) fn from_bool_expr(
+        is_valid: TokenStream,
+        schema_path: &str,
+        err_instance: &TokenStream,
+    ) -> Self {
         let validate = quote! {
             if !(#is_valid) {
                 return Some(__err::false_schema(
-                    #schema_path, __path.into(), instance,
+                    #schema_path, __path.into(), #err_instance,
                 ));
             }
         };
@@ -120,7 +124,7 @@ impl CompiledExpr {
     }
 
     pub(crate) fn from_error(is_valid: TokenStream) -> Self {
-        let mut expr = Self::from_bool_expr(is_valid, "");
+        let mut expr = Self::from_bool_expr(is_valid, "", &quote! { instance });
         expr.collect = CollectBlock::AlwaysValid;
         expr.compile_error = true;
         expr
@@ -228,7 +232,7 @@ impl CompiledExpr {
 
 impl From<TokenStream> for CompiledExpr {
     fn from(tokens: TokenStream) -> Self {
-        Self::from_bool_expr(tokens, "")
+        Self::from_bool_expr(tokens, "", &quote! { instance })
     }
 }
 

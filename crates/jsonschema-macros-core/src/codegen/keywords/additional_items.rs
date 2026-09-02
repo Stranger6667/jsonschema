@@ -1,13 +1,15 @@
 use super::super::{compile_schema, expr::ValidateBlock, CompileContext, CompiledExpr};
-use quote::quote;
+use crate::codegen::emit::ValueEmitter;
+use quote::{format_ident, quote};
 use serde_json::Value;
 
-pub(crate) fn compile(
-    ctx: &mut CompileContext<'_>,
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     items: &Value,
     schema: Option<&Value>,
     max_items: Option<&Value>,
 ) -> Option<CompiledExpr> {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let tuple_len = if let Some(Value::Array(items)) = schema {
         items.len()
     } else {
@@ -22,11 +24,12 @@ pub(crate) fn compile(
             {
                 return None;
             }
-            let check = quote! { arr.len() <= #tuple_len };
+            let len_expr = E::array_len(format_ident!("arr"));
+            let check = quote! { #len_expr <= #tuple_len };
             let validate = quote! {
                 if !(#check) {
                     return Some(__err::additional_items(
-                        #schema_path, __path.into(), instance, #tuple_len,
+                        #schema_path, __path.into(), #err_instance, #tuple_len,
                     ));
                 }
             };
@@ -44,17 +47,18 @@ pub(crate) fn compile(
             match &compiled.validate {
                 ValidateBlock::Expr(expr) => {
                     let child_collect = compiled.collect.as_token_stream();
+                    let iter_expr = E::array_iter(format_ident!("arr"));
                     Some(CompiledExpr::with_validate_and_collect_blocks(
-                        quote! { arr.iter().skip(#tuple_len).all(|instance| #is_valid) },
+                        quote! { #iter_expr.skip(#tuple_len).all(|instance| #is_valid) },
                         quote! {
-                            for (idx, item) in arr.iter().enumerate().skip(#tuple_len) {
+                            for (idx, item) in #iter_expr.enumerate().skip(#tuple_len) {
                                 let instance = item;
                                 let __path = &__path.push(idx);
                                 #expr
                             }
                         },
                         quote! {
-                            for (idx, item) in arr.iter().enumerate().skip(#tuple_len) {
+                            for (idx, item) in #iter_expr.enumerate().skip(#tuple_len) {
                                 let instance = item;
                                 let __path = &__path.push(idx);
                                 #child_collect

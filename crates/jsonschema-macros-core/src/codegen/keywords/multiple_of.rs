@@ -2,11 +2,13 @@ use super::super::{
     errors::{invalid_schema_exclusive_minimum_expression, invalid_schema_type_expression},
     CompileContext, CompiledExpr,
 };
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde_json::Value;
 
-pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
+pub(crate) fn compile<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Value) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let check = generate_multiple_of_check(value);
 
     // If the check itself is an error expression (invalid schema), just return it as-is.
@@ -19,7 +21,7 @@ pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
     #[cfg(not(feature = "arbitrary-precision"))]
     let error_expr = {
         let divisor = value.as_f64().expect("multipleOf is a JSON number");
-        quote! { __err::multiple_of(#schema_path, __path.into(), instance, #divisor) }
+        quote! { __err::multiple_of(#schema_path, __path.into(), #err_instance, #divisor) }
     };
 
     #[cfg(feature = "arbitrary-precision")]
@@ -42,7 +44,7 @@ pub(crate) fn compile(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
                 .expect("multipleOf below the safe-integer bound is a positive u64");
             quote! { serde_json::Value::Number(serde_json::Number::from(#unsigned)) }
         };
-        quote! { __err::multiple_of(#schema_path, __path.into(), instance, #limit_value) }
+        quote! { __err::multiple_of(#schema_path, __path.into(), #err_instance, #limit_value) }
     };
 
     CompiledExpr::from_check_and_error(check, error_expr)

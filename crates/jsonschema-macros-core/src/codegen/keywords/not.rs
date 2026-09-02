@@ -1,8 +1,13 @@
 use super::super::{compile_schema, CompileContext, CompiledExpr};
-use quote::quote;
+use crate::codegen::emit::ValueEmitter;
+use quote::{format_ident, quote};
 use serde_json::Value;
 
-pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let inner = compile_schema(ctx, value);
     let schema_path = ctx.schema_path_for_keyword("not");
     let not_schema_json = serde_json::to_string(value).expect("Failed to serialize not schema");
@@ -13,7 +18,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                 serde_json::from_str(#not_schema_json).expect("Failed to parse not schema")
             });
         return Some(__err::not(
-            #schema_path, __path.into(), instance, NOT_SCHEMA.clone(),
+            #schema_path, __path.into(), #err_instance, NOT_SCHEMA.clone(),
         ));
     };
 

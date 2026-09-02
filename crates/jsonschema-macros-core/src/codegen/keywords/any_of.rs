@@ -3,10 +3,15 @@ use super::super::{
     errors::{invalid_schema_non_empty_array_expression, invalid_schema_type_expression},
     CompileContext, CompiledExpr,
 };
+use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use serde_json::Value;
 
-pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledExpr {
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     let Some(schemas) = value.as_array() else {
         return invalid_schema_type_expression(value, &["array"]);
     };
@@ -61,7 +66,7 @@ pub(crate) fn compile(ctx: &mut CompileContext<'_>, value: &Value) -> CompiledEx
                     __context.push(__branch_errors);
                 })*
                 return Some(__err::any_of(
-                    #schema_path, __path.into(), instance, __context,
+                    #schema_path, __path.into(), #err_instance, __context,
                 ));
             }
         },

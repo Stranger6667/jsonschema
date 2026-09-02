@@ -34,6 +34,7 @@ pub(super) mod unevaluated_items;
 pub(super) mod unevaluated_properties;
 pub(super) mod unique_items;
 
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde_json::Value;
@@ -58,8 +59,8 @@ pub(super) enum Limit {
 /// Compile a min/max count-limit keyword pair, folding equal bounds into a
 /// single equality check.
 #[allow(clippy::too_many_arguments)]
-pub(super) fn compile_count_range(
-    ctx: &CompileContext<'_>,
+pub(super) fn compile_count_range<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
     min_value: Option<&Value>,
     max_value: Option<&Value>,
     count: &TokenStream,
@@ -69,6 +70,7 @@ pub(super) fn compile_count_range(
     max_error: &str,
     checks: &mut Vec<CompiledExpr>,
 ) {
+    let err_instance = E::err_instance(format_ident!("instance"));
     if let (Some(min_value), Some(max_value)) = (min_value, max_value) {
         if let (Ok(min), Ok(max)) = (
             parse_nonnegative_integer_keyword(ctx.draft, min_value),
@@ -85,12 +87,12 @@ pub(super) fn compile_count_range(
                     quote! {
                         if (#count as u64) < #limit {
                             return Some(__err::#min_error(
-                                #min_path, __path.into(), instance, #limit,
+                                #min_path, __path.into(), #err_instance, #limit,
                             ));
                         }
                         if (#count as u64) > #limit {
                             return Some(__err::#max_error(
-                                #max_path, __path.into(), instance, #limit,
+                                #max_path, __path.into(), #err_instance, #limit,
                             ));
                         }
                     },
@@ -124,14 +126,15 @@ pub(super) fn compile_count_range(
 /// Compile a count-limit keyword (`minLength`, `maxItems`, `minProperties`, ...):
 /// compares `count` against a non-negative integer limit, reporting failures
 /// via the `__private::error` constructor named by `error_name`.
-pub(super) fn compile_count_limit(
-    ctx: &CompileContext<'_>,
+pub(super) fn compile_count_limit<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
     value: &Value,
     count: &TokenStream,
     keyword: &str,
     error_name: &str,
     limit_kind: &Limit,
 ) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     match parse_nonnegative_integer_keyword(ctx.draft, value) {
         Ok(0) if matches!(limit_kind, Limit::Min) => CompiledExpr::always_true(),
         Ok(limit) => {
@@ -146,7 +149,7 @@ pub(super) fn compile_count_limit(
                 quote! { (#count as u64) #valid_cmp #limit },
                 quote! {
                     __err::#error(
-                        #schema_path, __path.into(), instance, #limit,
+                        #schema_path, __path.into(), #err_instance, #limit,
                     )
                 },
             )

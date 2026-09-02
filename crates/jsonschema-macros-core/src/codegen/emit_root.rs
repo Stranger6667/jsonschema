@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
 
@@ -17,8 +18,8 @@ use super::{
     CompiledExpr,
 };
 
-pub(super) fn emit_root_module(
-    ctx: &CompileContext<'_>,
+pub(super) fn emit_root_module<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
     runtime_crate: Option<&TokenStream>,
     recompile_trigger: &TokenStream,
     name: &Ident,
@@ -37,11 +38,15 @@ pub(super) fn emit_root_module(
         .cloned()
         .unwrap_or_else(|| quote! { jsonschema });
     let ref_cycle_needed = ctx.uses_ref_cycle;
-    let value_ty = crate::codegen::emit_serde::value_ty();
-    let map_ty = crate::codegen::emit_serde::map_ty();
-    let value_slice_ty = crate::codegen::emit_serde::value_slice_ty();
+    let module_prelude = E::module_prelude();
+    let function_prelude = E::function_prelude();
+    let node = E::node_param(None);
+    let borrowed_node = E::node_param(Some(quote! { '__i }));
+    let reborrowed_node = E::node_param(Some(quote! { '__r }));
+    let map = E::map_param();
+    let array = E::array_param();
     // Public `impl` methods live outside the aliased module, so they use the full type.
-    let public_value_ty = quote! { serde_json::Value };
+    let entry_points = E::entry_points(impl_mod_name, &runtime_crate);
 
     let regex_helpers: Vec<TokenStream> = ctx
         .regex_helpers
@@ -161,21 +166,23 @@ pub(super) fn emit_root_module(
                 .expect("every is_valid fn stores a collect body");
             quote! {
                 #[inline]
-                fn #func_ident(instance: &#value_ty) -> bool { #body }
+                fn #func_ident(instance: #node) -> bool { #function_prelude #body }
                 #[inline]
                 fn #validate_ident<'__i>(
-                    instance: &'__i #value_ty,
+                    instance: #borrowed_node,
                     __path: &__paths::LazyLocation,
                 ) -> Option<__VE<'__i>> {
+                    #function_prelude
                     #validate_body
                 }
                 #[cold]
                 #[inline(never)]
                 fn #collect_ident<'__i>(
-                    instance: &'__i #value_ty,
+                    instance: #borrowed_node,
                     __path: &__paths::LazyLocation,
                     __errors: &mut Vec<__VE<'__i>>,
                 ) {
+                    #function_prelude
                     #collect_body
                 }
             }
@@ -192,16 +199,18 @@ pub(super) fn emit_root_module(
             let collect_ident = format_ident!("collect_branch_errors_{}", idx);
             quote! {
                 #[inline]
-                fn #is_valid_ident(instance: &#value_ty) -> bool {
+                fn #is_valid_ident(instance: #node) -> bool {
+                    #function_prelude
                     #is_valid
                 }
                 #[cold]
                 #[inline(never)]
                 fn #collect_ident<'__i>(
-                    instance: &'__i #value_ty,
+                    instance: #borrowed_node,
                     __path: &__paths::LazyLocation,
                     __errors: &mut Vec<__VE<'__i>>,
                 ) {
+                    #function_prelude
                     #collect
                 }
             }
@@ -216,10 +225,10 @@ pub(super) fn emit_root_module(
             quote! {
                 #[inline]
                 fn #func_ident(
-                    instance: &#value_ty,
-                    obj: &#map_ty,
+                    instance: #node,
+                    obj: #map,
                     key_str: &str
-                ) -> bool { #body }
+                ) -> bool { #function_prelude #body }
             }
         })
         .collect();
@@ -232,30 +241,30 @@ pub(super) fn emit_root_module(
             quote! {
                 #[inline]
                 fn #func_ident(
-                    instance: &#value_ty,
-                    arr: &#value_slice_ty,
+                    instance: #node,
+                    arr: #array,
                     idx: usize,
-                    item: &#value_ty
-                ) -> bool { #body }
+                    item: #node
+                ) -> bool { #function_prelude #body }
             }
         })
         .collect();
 
     let recursive_stack_defs = if recursive_stack_needed {
         quote! {
-            static __JSONSCHEMA_RECURSIVE_STACK: std::cell::RefCell<Vec<(fn(&#value_ty) -> bool, bool)>> =
+            static __JSONSCHEMA_RECURSIVE_STACK: std::cell::RefCell<Vec<(fn(#node) -> bool, bool)>> =
                 std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK: std::cell::RefCell<
-                Vec<(fn(&#value_ty, &#map_ty, &str) -> bool, bool)>
+                Vec<(fn(#node, #map, &str) -> bool, bool)>
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK: std::cell::RefCell<
-                Vec<(fn(&#value_ty, &#value_slice_ty, usize, &#value_ty) -> bool, bool)>
+                Vec<(fn(#node, #array, usize, #node) -> bool, bool)>
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_RECURSIVE_VALIDATE_STACK: std::cell::RefCell<
-                Vec<(for<'__r, '__a, '__b, '__c> fn(&'__r #value_ty, &'__c __paths::LazyLocation<'__a, '__b>) -> Option<__VE<'__r>>, bool)>
+                Vec<(for<'__r, '__a, '__b, '__c> fn(#reborrowed_node, &'__c __paths::LazyLocation<'__a, '__b>) -> Option<__VE<'__r>>, bool)>
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_RECURSIVE_COLLECT_STACK: std::cell::RefCell<
-                Vec<(for<'__r, '__a, '__b, '__c> fn(&'__r #value_ty, &'__c __paths::LazyLocation<'__a, '__b>, &mut Vec<__VE<'__r>>), bool)>
+                Vec<(for<'__r, '__a, '__b, '__c> fn(#reborrowed_node, &'__c __paths::LazyLocation<'__a, '__b>, &mut Vec<__VE<'__r>>), bool)>
             > = std::cell::RefCell::new(Vec::new());
         }
     } else {
@@ -264,25 +273,25 @@ pub(super) fn emit_root_module(
     let dynamic_stack_defs = if dynamic_stack_needed {
         quote! {
             static __JSONSCHEMA_DYNAMIC_STACK: std::cell::RefCell<
-                Vec<(&'static str, fn(&#value_ty) -> bool)>
+                Vec<(&'static str, fn(#node) -> bool)>
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK: std::cell::RefCell<
                 Vec<(
                     &'static str,
-                    fn(&#value_ty, &#map_ty, &str) -> bool,
+                    fn(#node, #map, &str) -> bool,
                 )>
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK: std::cell::RefCell<
                 Vec<(
                     &'static str,
-                    fn(&#value_ty, &#value_slice_ty, usize, &#value_ty) -> bool,
+                    fn(#node, #array, usize, #node) -> bool,
                 )>
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_DYNAMIC_VALIDATE_STACK: std::cell::RefCell<
-                Vec<(&'static str, for<'__r, '__a, '__b, '__c> fn(&'__r #value_ty, &'__c __paths::LazyLocation<'__a, '__b>) -> Option<__VE<'__r>>)>
+                Vec<(&'static str, for<'__r, '__a, '__b, '__c> fn(#reborrowed_node, &'__c __paths::LazyLocation<'__a, '__b>) -> Option<__VE<'__r>>)>
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_DYNAMIC_COLLECT_STACK: std::cell::RefCell<
-                Vec<(&'static str, for<'__r, '__a, '__b, '__c> fn(&'__r #value_ty, &'__c __paths::LazyLocation<'__a, '__b>, &mut Vec<__VE<'__r>>))>
+                Vec<(&'static str, for<'__r, '__a, '__b, '__c> fn(#reborrowed_node, &'__c __paths::LazyLocation<'__a, '__b>, &mut Vec<__VE<'__r>>))>
             > = std::cell::RefCell::new(Vec::new());
         }
     } else {
@@ -488,9 +497,10 @@ pub(super) fn emit_root_module(
         };
         quote! {
             pub(super) fn validate<'__i>(
-                instance: &'__i #value_ty,
+                instance: #borrowed_node,
                 __path: &__paths::LazyLocation,
             ) -> Option<__VE<'__i>> {
+                #function_prelude
                 #uri_cache_clears
                 #validate_body
             }
@@ -539,32 +549,14 @@ pub(super) fn emit_root_module(
         };
         quote! {
             pub(super) fn collect_errors<'__i>(
-                instance: &'__i #value_ty,
+                instance: #borrowed_node,
                 __path: &__paths::LazyLocation,
                 __errors: &mut Vec<__VE<'__i>>,
             ) {
+                #function_prelude
                 #uri_cache_clears
                 #collect_body
             }
-        }
-    };
-
-    let validate_impls = quote! {
-        pub fn validate<'__i>(
-            instance: &'__i #public_value_ty,
-        ) -> ::std::result::Result<(), #runtime_crate::ValidationError<'__i>> {
-            match #impl_mod_name::validate(instance, &#runtime_crate::paths::LazyLocation::new()) {
-                Some(e) => Err(e),
-                None => Ok(()),
-            }
-        }
-
-        pub fn iter_errors<'__i>(
-            instance: &'__i #public_value_ty,
-        ) -> #runtime_crate::ErrorIterator<'__i> {
-            let mut errors = Vec::new();
-            #impl_mod_name::collect_errors(instance, &#runtime_crate::paths::LazyLocation::new(), &mut errors);
-            #runtime_crate::__private::error::iterator_from(errors)
         }
     };
 
@@ -580,9 +572,7 @@ pub(super) fn emit_root_module(
             use jsonschema::JsonType as __JT;
             use jsonschema::JsonTypeSet as __JTS;
             use jsonschema::ValidationError as __VE;
-            use serde_json::Value as __Value;
-            use std::sync::LazyLock as __Lazy;
-            type __Map = serde_json::Map<String, __Value>;
+            #module_prelude
 
             #recursive_stack
             #uri_cache_defs
@@ -592,7 +582,8 @@ pub(super) fn emit_root_module(
             #(#key_eval_fns)*
             #(#item_eval_fns)*
 
-            pub(super) fn is_valid(instance: &#value_ty) -> bool {
+            pub(super) fn is_valid(instance: #node) -> bool {
+                #function_prelude
                 #recompile_trigger
                 #uri_cache_clears
                 #is_valid_body
@@ -603,11 +594,7 @@ pub(super) fn emit_root_module(
         }
 
         impl #name {
-            pub fn is_valid(instance: &#public_value_ty) -> bool {
-                #impl_mod_name::is_valid(instance)
-            }
-
-            #validate_impls
+            #entry_points
         }
     }
 }

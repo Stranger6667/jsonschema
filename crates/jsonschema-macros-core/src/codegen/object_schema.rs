@@ -1,3 +1,4 @@
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use referencing::Draft;
@@ -55,8 +56,8 @@ fn type_check_is_redundant(schema: &Map<String, Value>, draft: Draft) -> bool {
 }
 
 /// Compile an object schema.
-pub(super) fn compile_object_schema(
-    ctx: &mut CompileContext<'_>,
+pub(super) fn compile_object_schema<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> CompiledExpr {
     // Older drafts ignore siblings when `$ref` is present.

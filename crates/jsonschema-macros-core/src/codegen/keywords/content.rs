@@ -1,5 +1,6 @@
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use serde_json::{Map, Value};
 
 use super::super::{errors::invalid_schema_type_expression, CompileContext, CompiledExpr};
@@ -33,7 +34,10 @@ fn builtin_encoding_fns(name: &str) -> Option<(TokenStream, TokenStream)> {
 }
 
 /// `(check, convert)` fns for an encoding: user-configured first, then builtins.
-fn resolve_encoding(ctx: &CompileContext<'_>, name: &str) -> Option<(TokenStream, TokenStream)> {
+fn resolve_encoding<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    name: &str,
+) -> Option<(TokenStream, TokenStream)> {
     if let Some((check, convert)) = ctx.config.content_encodings.get(name) {
         return Some((check.clone(), convert.clone()));
     }
@@ -41,17 +45,21 @@ fn resolve_encoding(ctx: &CompileContext<'_>, name: &str) -> Option<(TokenStream
 }
 
 /// Check fn for a media type: user-configured first, then builtins.
-fn resolve_media_type(ctx: &CompileContext<'_>, name: &str) -> Option<TokenStream> {
+fn resolve_media_type<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    name: &str,
+) -> Option<TokenStream> {
     if let Some(check) = ctx.config.content_media_types.get(name) {
         return Some(check.clone());
     }
     (name == "application/json").then(|| quote! { jsonschema::__private::content::is_json })
 }
 
-pub(crate) fn compile(
-    ctx: &CompileContext<'_>,
+pub(crate) fn compile<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> Option<CompiledExpr> {
+    let err_instance = E::err_instance(format_ident!("instance"));
     // Mirrors the runtime dispatch: `contentMediaType` owns the combined case,
     // and `contentEncoding` is skipped whenever `contentMediaType` is present.
     if let Some(media_value) = schema.get("contentMediaType") {
@@ -78,13 +86,13 @@ pub(crate) fn compile(
                         Ok(Some(__decoded)) => {
                             if !#media_check(&__decoded) {
                                 return Some(__err::content_media_type(
-                                    #media_path, __path.into(), instance, #media_name,
+                                    #media_path, __path.into(), #err_instance, #media_name,
                                 ));
                             }
                         }
                         Ok(None) => {
                             return Some(__err::content_encoding(
-                                #encoding_path, __path.into(), instance, #encoding_name,
+                                #encoding_path, __path.into(), #err_instance, #encoding_name,
                             ));
                         }
                         Err(__err) => return Some(__err),
@@ -97,7 +105,7 @@ pub(crate) fn compile(
                 quote! {
                     if !#media_check(s) {
                         return Some(__err::content_media_type(
-                            #media_path, __path.into(), instance, #media_name,
+                            #media_path, __path.into(), #err_instance, #media_name,
                         ));
                     }
                 },
@@ -114,7 +122,7 @@ pub(crate) fn compile(
             quote! {
                 if !#check(s) {
                     return Some(__err::content_encoding(
-                        #encoding_path, __path.into(), instance, #encoding_name,
+                        #encoding_path, __path.into(), #err_instance, #encoding_name,
                     ));
                 }
             },

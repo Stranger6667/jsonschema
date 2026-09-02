@@ -3,14 +3,15 @@ use super::{
     minmax::{self, ComparisonOp},
     multiple_of,
 };
+use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use referencing::Draft;
 use serde_json::{Map, Value};
 
 /// Compile all number-specific keywords.
-pub(in super::super) fn compile(
-    ctx: &CompileContext<'_>,
+pub(in super::super) fn compile<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> CompiledExpr {
     let mut items: Vec<CompiledExpr> = Vec::new();
@@ -70,16 +71,16 @@ pub(in super::super) fn compile(
     CompiledExpr::combine_and(items)
 }
 
-fn compile_min(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
+fn compile_min<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Value) -> CompiledExpr {
     compile_bound(ctx, value, ComparisonOp::Gte, "minimum")
 }
 
-fn compile_max(ctx: &CompileContext<'_>, value: &Value) -> CompiledExpr {
+fn compile_max<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Value) -> CompiledExpr {
     compile_bound(ctx, value, ComparisonOp::Lte, "maximum")
 }
 
-fn compile_inclusive_min_max(
-    ctx: &CompileContext<'_>,
+fn compile_inclusive_min_max<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
     minimum: Option<&Value>,
     maximum: Option<&Value>,
     items: &mut Vec<CompiledExpr>,
@@ -98,11 +99,12 @@ fn compile_inclusive_min_max(
     }
 }
 
-fn compile_equal_bounds(
-    ctx: &CompileContext<'_>,
+fn compile_equal_bounds<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
     min_value: &Value,
     max_value: &Value,
 ) -> Option<CompiledExpr> {
+    let err_instance = E::err_instance(format_ident!("instance"));
     if min_value != max_value {
         return None;
     }
@@ -121,12 +123,12 @@ fn compile_equal_bounds(
         quote! {
             if #below_check {
                 return Some(__err::minimum(
-                    #min_path, __path.into(), instance, #limit_expr,
+                    #min_path, __path.into(), #err_instance, #limit_expr,
                 ));
             }
             if #above_check {
                 return Some(__err::maximum(
-                    #max_path, __path.into(), instance, #limit_expr,
+                    #max_path, __path.into(), #err_instance, #limit_expr,
                 ));
             }
         },
@@ -146,20 +148,29 @@ fn equal_bound_check(value: &Value) -> TokenStream {
 
 /// `keyword` is the schema keyword whose path is emitted (either "minimum"/"maximum" for draft4
 /// exclusive flags, or "exclusiveMinimum"/"exclusiveMaximum" for draft6+).
-fn compile_exclusive_min(ctx: &CompileContext<'_>, value: &Value, keyword: &str) -> CompiledExpr {
+fn compile_exclusive_min<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    value: &Value,
+    keyword: &str,
+) -> CompiledExpr {
     compile_bound(ctx, value, ComparisonOp::Gt, keyword)
 }
 
-fn compile_exclusive_max(ctx: &CompileContext<'_>, value: &Value, keyword: &str) -> CompiledExpr {
+fn compile_exclusive_max<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    value: &Value,
+    keyword: &str,
+) -> CompiledExpr {
     compile_bound(ctx, value, ComparisonOp::Lt, keyword)
 }
 
-fn compile_bound(
-    ctx: &CompileContext<'_>,
+fn compile_bound<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
     value: &Value,
     op: ComparisonOp,
     keyword: &str,
 ) -> CompiledExpr {
+    let err_instance = E::err_instance(format_ident!("instance"));
     if !value.is_number() {
         return CompiledExpr::from_error(minmax::generate_numeric_check(op, value));
     }
@@ -179,7 +190,7 @@ fn compile_bound(
 
     CompiledExpr::from_check_and_error(
         check,
-        quote! { #error_fn(#schema_path, __path.into(), instance, #limit_expr) },
+        quote! { #error_fn(#schema_path, __path.into(), #err_instance, #limit_expr) },
     )
 }
 
