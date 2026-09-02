@@ -15,6 +15,7 @@
 - `jsonschema-value` failing to build for `wasm32-unknown-unknown`, which needs `getrandom`'s `wasm_js` backend.
 - Draft 4 `type: integer` accepting numbers written with an exponent, like `1e2`.
 - Draft 4 `type: integer` answering differently for the same number across representations.
+- `uniqueItems` accepting `0` alongside `-0.0` in arrays of more than 15 items.
 
 ### Performance
 

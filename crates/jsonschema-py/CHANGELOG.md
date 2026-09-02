@@ -6,6 +6,7 @@
 
 - Draft 4 `type: integer` matching a `float` or not depending on its `repr`; a `float` is never a draft 4 integer.
 - Draft 4 `type: integer` accepting `Decimal("1E+2")`.
+- `uniqueItems` accepting `0` alongside `-0.0` in arrays of more than 15 items.
 
 ### Performance
 

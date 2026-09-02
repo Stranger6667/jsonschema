@@ -5,6 +5,7 @@
 ### Fixed
 
 - Draft 4 `type: integer` matching a `Float` or not depending on its formatting; a `Float` is never a draft 4 integer.
+- `uniqueItems` accepting `0` alongside `-0.0` in arrays of more than 15 items.
 
 ### Performance
 

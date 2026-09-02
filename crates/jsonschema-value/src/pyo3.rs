@@ -892,7 +892,7 @@ fn hash_node<H: Hasher>(node: PyNode<'_>, state: &mut H, depth: u8) {
         ObjType::Int | ObjType::Float | ObjType::Decimal => {
             if let Some(number) = number_of(node) {
                 if let Some(number) = number.as_f64() {
-                    number.to_bits().hash(state);
+                    crate::unique::number_bits(number).hash(state);
                 } else if let Some(number) = number.as_u64() {
                     number.hash(state);
                 } else if let Some(number) = number.as_i64() {

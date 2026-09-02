@@ -1158,7 +1158,7 @@ fn hash_node<H: Hasher>(value: VALUE, state: &mut H, depth: u16) {
                 return;
             };
             if let Some(number) = number.as_f64() {
-                number.to_bits().hash(state);
+                crate::unique::number_bits(number).hash(state);
             }
         }
     }

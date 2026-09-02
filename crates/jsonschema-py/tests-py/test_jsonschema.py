@@ -194,6 +194,20 @@ def test_unique_items_with_cyclic_elements():
         validate({"uniqueItems": True}, [cyclic_list(), cyclic_list()])
 
 
+@pytest.mark.parametrize(
+    "instance",
+    (
+        [0, 1, 2, -0.0],
+        # Beyond the pairwise threshold, so duplicates are found by hashing
+        [*range(16), -0.0],
+        [{"a": 0}, {"a": 1}, {"a": -0.0}],
+        [{"a": i} for i in range(16)] + [{"a": -0.0}],
+    ),
+)
+def test_unique_items_zero_and_negative_zero(instance):
+    assert not is_valid({"uniqueItems": True}, instance)
+
+
 class Opaque:
     pass
 
