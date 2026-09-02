@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-09-02
+
 ### Fixed
 
 - Draft 4 `type: integer` matching a `float` or not depending on its `repr`; a `float` is never a draft 4 integer.
@@ -1432,7 +1434,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.53.0...HEAD
+[0.53.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.1...python-v0.53.0
 [0.52.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.0...python-v0.52.1
 [0.52.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.51.0...python-v0.52.0
 [0.51.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.50.1...python-v0.51.0
