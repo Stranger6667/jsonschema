@@ -13,6 +13,7 @@
 - Draft 4 `type: integer` is up to 20x faster on float-heavy instances.
 - Raising `ValidationError` is up to 38% faster.
 - `evaluate` is up to 30% faster, from rendering each node's locations once.
+- Building a schema resolves each `$ref` target once instead of per reference site.
 
 ## [0.52.1] - 2026-08-30
 
