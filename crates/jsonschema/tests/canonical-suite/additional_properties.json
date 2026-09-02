@@ -1430,5 +1430,124 @@
         "type": "string"
       }
     }
+  },
+  {
+    "description": "intersecting objects naming different keys meets each key with the other side's additionalProperties",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {"type": "integer"},
+            "c": {"type": "integer", "minimum": 0}
+          },
+          "additionalProperties": {"type": "integer", "minimum": 5}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "b": {"type": "integer"},
+            "d": {"type": "integer", "maximum": 10}
+          },
+          "additionalProperties": {"type": "integer", "maximum": 100}
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {"type": "integer", "maximum": 100},
+        "b": {"type": "integer", "minimum": 5},
+        "c": {"type": "integer", "minimum": 0, "maximum": 100},
+        "d": {"type": "integer", "minimum": 5, "maximum": 10}
+      },
+      "additionalProperties": {"type": "integer", "minimum": 5, "maximum": 100}
+    },
+    "tests": [
+      {"data": {"a": 50, "b": 5, "c": 0, "d": 10, "x": 100}, "valid": true},
+      {"data": {"a": 101}, "valid": false},
+      {"data": {"b": 4}, "valid": false},
+      {"data": {"c": -1}, "valid": false},
+      {"data": {"d": 11}, "valid": false},
+      {"data": {"x": 4}, "valid": false},
+      {"data": {"x": 101}, "valid": false},
+      {"data": {"x": "s"}, "valid": false}
+    ]
+  },
+  {
+    "description": "a patternProperties match on one side keeps that side's additionalProperties off a key only the other side names",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {"a": {"type": "integer"}},
+          "patternProperties": {"^b": {"type": "integer", "minimum": 1}},
+          "additionalProperties": {"type": "string"}
+        },
+        {
+          "type": "object",
+          "properties": {
+            "b": {"type": "integer", "maximum": 9},
+            "c": {"type": "integer"}
+          }
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {"type": "integer"},
+        "b": {"type": "integer", "minimum": 1, "maximum": 9},
+        "c": false
+      },
+      "patternProperties": {"^b": {"type": "integer", "minimum": 1}},
+      "additionalProperties": {"type": "string"}
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 5, "bar": 3, "z": "s"}, "valid": true},
+      {"data": {"b": 0}, "valid": false},
+      {"data": {"b": 10}, "valid": false},
+      {"data": {"c": 1}, "valid": false},
+      {"data": {"bar": 0}, "valid": false},
+      {"data": {"z": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "a key both sides name meets both entries and neither side's additionalProperties",
+    "schema": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {"type": "integer", "minimum": 0},
+            "b": {"type": "string"}
+          },
+          "additionalProperties": {"type": "boolean"}
+        },
+        {
+          "type": "object",
+          "properties": {"a": {"type": "integer", "maximum": 10}},
+          "additionalProperties": {"type": "boolean", "const": true}
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {
+        "a": {"type": "integer", "minimum": 0, "maximum": 10},
+        "b": false
+      },
+      "additionalProperties": {"const": true}
+    },
+    "tests": [
+      {"data": {"a": 0, "x": true}, "valid": true},
+      {"data": {"a": -1}, "valid": false},
+      {"data": {"a": 11}, "valid": false},
+      {"data": {"b": "s"}, "valid": false},
+      {"data": {"x": false}, "valid": false}
+    ]
   }
 ]

@@ -314,7 +314,8 @@ type DynamicEnv = Arc<[(Arc<str>, Arc<str>)]>;
 const RECURSIVE_ANCHOR_NAME: &str = "$recursiveAnchor";
 
 fn empty_environment() -> DynamicEnv {
-    Arc::from(Vec::new())
+    static EMPTY: std::sync::OnceLock<DynamicEnv> = std::sync::OnceLock::new();
+    Arc::clone(EMPTY.get_or_init(|| Arc::from([])))
 }
 
 fn dynamic_scope_digest(

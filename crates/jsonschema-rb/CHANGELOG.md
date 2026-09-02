@@ -9,6 +9,7 @@
 
 ### Performance
 
+- Canonicalizing an `allOf` of object schemas walks their property maps once instead of looking every key up.
 - `properties` and `required` compare short names without `memcmp`.
 - Draft 4 `type: integer` is up to 6x faster on float-heavy instances.
 - `evaluate` renders each node's locations once instead of rebuilding them.

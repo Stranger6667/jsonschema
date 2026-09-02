@@ -4608,10 +4608,23 @@ fn governing_shield<'leaf>(
     key: &str,
     ctx: &CanonicalizationContext,
 ) -> Option<&'leaf Schema> {
-    let shield = leaf.additional.as_ref()?;
     if leaf.properties.contains_key(key) {
         return None;
     }
+    unnamed_key_shield(leaf, key, ctx)
+}
+
+/// [`governing_shield`] for a key the leaf is already known not to name.
+fn unnamed_key_shield<'leaf>(
+    leaf: &'leaf ObjectLeaf,
+    key: &str,
+    ctx: &CanonicalizationContext,
+) -> Option<&'leaf Schema> {
+    debug_assert!(
+        !leaf.properties.contains_key(key),
+        "a named key answers to its entry, never to the shield"
+    );
+    let shield = leaf.additional.as_ref()?;
     (!leaf
         .pattern_properties
         .keys()
@@ -4621,34 +4634,55 @@ fn governing_shield<'leaf>(
 
 /// The entry for every key either leaf names, meeting what both sides demand of it: the stored
 /// entry where the side names the key, and the side's shield where it leaves the key to one.
+/// Both maps are sorted, so one walk over the two visits each key once in order.
 fn intersect_property_entries(
     first: &ObjectLeaf,
     second: &ObjectLeaf,
     ctx: &CanonicalizationContext,
 ) -> PropertyMap {
-    let mut keys: Vec<&Arc<str>> = first
-        .properties
-        .keys()
-        .chain(second.properties.keys())
-        .collect();
-    keys.sort();
-    keys.dedup();
-    let mut entries = PropertyMap::default();
-    for key in keys {
-        let entry = [
-            first.properties.get(key),
-            governing_shield(first, key, ctx),
-            second.properties.get(key),
-            governing_shield(second, key, ctx),
-        ]
-        .into_iter()
-        .flatten()
-        .cloned()
-        .reduce(|held, applicable| intersect(held, applicable, ctx))
-        .expect("a key of the union is named by one of the two property maps");
-        entries.insert(Arc::clone(key), entry);
+    let left = first.properties.as_slice();
+    let right = second.properties.as_slice();
+    let mut entries = Vec::with_capacity(left.len() + right.len());
+    let (mut next_left, mut next_right) = (0, 0);
+    loop {
+        let (key, demands) = match (left.get(next_left), right.get(next_right)) {
+            (None, None) => break,
+            (Some((key, entry)), None) => {
+                next_left += 1;
+                (key, [Some(entry), unnamed_key_shield(second, key, ctx)])
+            }
+            (None, Some((key, entry))) => {
+                next_right += 1;
+                (key, [unnamed_key_shield(first, key, ctx), Some(entry)])
+            }
+            (Some((key, entry)), Some((other_key, other))) => match key.cmp(other_key) {
+                std::cmp::Ordering::Less => {
+                    next_left += 1;
+                    (key, [Some(entry), unnamed_key_shield(second, key, ctx)])
+                }
+                std::cmp::Ordering::Greater => {
+                    next_right += 1;
+                    (
+                        other_key,
+                        [unnamed_key_shield(first, other_key, ctx), Some(other)],
+                    )
+                }
+                std::cmp::Ordering::Equal => {
+                    next_left += 1;
+                    next_right += 1;
+                    (key, [Some(entry), Some(other)])
+                }
+            },
+        };
+        let entry = demands
+            .into_iter()
+            .flatten()
+            .cloned()
+            .reduce(|held, applicable| intersect(held, applicable, ctx))
+            .expect("a key of the union is named by one of the two property maps");
+        entries.push((Arc::clone(key), entry));
     }
-    entries
+    PropertyMap::from_sorted(entries)
 }
 
 /// The pattern entries of both leaves, met where they share a pattern. A side carrying no pattern

@@ -37,7 +37,7 @@ impl PropertyMap {
     }
 
     /// Rebuilds the shape a sorted entry list calls for.
-    fn from_sorted(mut entries: Vec<Entry>) -> Self {
+    pub(crate) fn from_sorted(mut entries: Vec<Entry>) -> Self {
         debug_assert!(
             entries.windows(2).all(|pair| pair[0].0 < pair[1].0),
             "property entries left unsorted or duplicated"
