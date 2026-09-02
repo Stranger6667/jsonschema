@@ -1,0 +1,5 @@
+error: Unknown JSON representation: `Nonsense`
+ --> tests/ui/unknown_backend.rs:1:50
+  |
+1 | #[jsonschema::validator(schema = "{}", backend = Nonsense)]
+  |                                                  ^^^^^^^^

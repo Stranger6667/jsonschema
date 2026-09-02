@@ -247,7 +247,7 @@ fn config_rejects_unknown_attribute() {
 
     assert_eq!(
         error.to_string(),
-        "Expected `path`, `schema`, `draft`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute"
+        "Expected `path`, `schema`, `draft`, `backend`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute"
     );
 }
 
