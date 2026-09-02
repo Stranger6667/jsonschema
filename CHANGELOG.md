@@ -8,6 +8,7 @@
 - `CanonicalizeOptions::prepare`, canonicalizing any number of a document's subschemas by JSON Pointer, with the document indexed once.
 - **CLI**: the `--at POINTER` flag of `jsonschema canonicalize`, canonicalizing only the subschema at that pointer without breaking its references into the rest of the document.
 - **CLI**: `jsonschema canonicalize` reads YAML schemas (`.yaml`/`.yml`) as well as JSON.
+- `canonical::{ArrayView, IntegerView, NumberView, ObjectView, StringView, TypedGroupView}`, the payload types of `CanonicalView`, so consumers can name them in signatures.
 
 ### Fixed
 

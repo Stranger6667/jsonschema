@@ -1,42 +1,19 @@
-use std::collections::{BTreeMap, HashSet};
+use std::collections::HashSet;
 
 use hegel::generators as gs;
 use jsonschema::{
     canonical::{
-        CanonicalSchema, Containment, ContainsView, Distinctness, ObjectViolationView,
-        Satisfiability,
+        ArrayView, CanonicalSchema, Containment, ContainsView, Distinctness, ObjectView,
+        ObjectViolationView, Satisfiability,
     },
     Draft,
 };
-use serde_json::{json, Number, Value};
+use serde_json::{json, Value};
 
 use super::{
     fraction::Fraction, pool::arbitrary_scalar, size_ceiling, size_floor, Sampler, MAX_ATTEMPTS,
     MAX_SIZE,
 };
-
-/// The array constraints of one canonical node, in the view's own vocabulary.
-pub(crate) struct ArrayFacets {
-    pub(crate) min_items: Option<Number>,
-    pub(crate) max_items: Option<Number>,
-    pub(crate) distinctness: Distinctness,
-    pub(crate) prefix_items: Vec<CanonicalSchema>,
-    pub(crate) items: Option<CanonicalSchema>,
-    pub(crate) contains: Vec<ContainsView>,
-}
-
-/// The object constraints of one canonical node, in the view's own vocabulary.
-pub(crate) struct ObjectFacets {
-    pub(crate) draft: Draft,
-    pub(crate) min_properties: Option<Number>,
-    pub(crate) max_properties: Option<Number>,
-    pub(crate) required: Vec<String>,
-    pub(crate) property_names: Option<CanonicalSchema>,
-    pub(crate) properties: BTreeMap<String, CanonicalSchema>,
-    pub(crate) pattern_properties: BTreeMap<String, CanonicalSchema>,
-    pub(crate) additional_properties: Option<CanonicalSchema>,
-    pub(crate) violations: Vec<ObjectViolationView>,
-}
 
 // What `uniqueItems` counts as one value: numbers compare by value across their forms.
 fn uniqueness_key(value: &Value) -> String {
@@ -137,15 +114,15 @@ fn carry_demands(
     appends
 }
 
-pub(crate) fn draw_array(sampler: &Sampler<'_>, facets: ArrayFacets) -> Option<Value> {
-    let ArrayFacets {
+pub(crate) fn draw_array(sampler: &Sampler<'_>, view: ArrayView) -> Option<Value> {
+    let ArrayView {
         min_items,
         max_items,
         distinctness,
         prefix_items,
         items,
         contains,
-    } = facets;
+    } = view;
     let floor = size_floor(min_items.as_ref());
     if floor > MAX_SIZE {
         return None;
@@ -250,7 +227,8 @@ pub(crate) fn draw_array(sampler: &Sampler<'_>, facets: ArrayFacets) -> Option<V
 
 struct ObjectDraw<'a> {
     sampler: &'a Sampler<'a>,
-    facets: &'a ObjectFacets,
+    draft: Draft,
+    view: &'a ObjectView,
     // Pattern schemas paired with the validator deciding which names they match.
     claims: Vec<(jsonschema::Validator, &'a CanonicalSchema)>,
 }
@@ -259,7 +237,7 @@ impl ObjectDraw<'_> {
     /// The value a key answers to: its named schema and every matching pattern schema at once.
     fn value_for(&self, key: &str) -> Option<Value> {
         let mut parts: Vec<&CanonicalSchema> = Vec::new();
-        if let Some(entry) = self.facets.properties.get(key) {
+        if let Some(entry) = self.view.properties.get(key) {
             parts.push(entry);
         }
         for (matcher, entry) in &self.claims {
@@ -268,7 +246,7 @@ impl ObjectDraw<'_> {
             }
         }
         match parts.as_slice() {
-            [] => match &self.facets.additional_properties {
+            [] => match &self.view.additional_properties {
                 Some(additional) => self.sampler.descend(additional),
                 None => Some(self.sampler.tc.draw(arbitrary_scalar())),
             },
@@ -285,7 +263,7 @@ impl ObjectDraw<'_> {
 
     /// A fresh key name honoring the name constraint, or `None` when this attempt has none.
     fn drawn_name(&self) -> Option<String> {
-        match &self.facets.property_names {
+        match &self.view.property_names {
             Some(names) => match self.sampler.descend(names) {
                 Some(Value::String(name)) => Some(name),
                 _ => None,
@@ -325,7 +303,7 @@ impl ObjectDraw<'_> {
     ) -> Option<()> {
         let matchers: Vec<jsonschema::Validator> = patterns
             .iter()
-            .filter_map(|pattern| pattern_matcher(self.facets.draft, pattern))
+            .filter_map(|pattern| pattern_matcher(self.draft, pattern))
             .collect();
         if matchers.len() != patterns.len() {
             return None;
@@ -358,37 +336,38 @@ impl ObjectDraw<'_> {
     }
 }
 
-pub(crate) fn draw_object(sampler: &Sampler<'_>, facets: &ObjectFacets) -> Option<Value> {
-    let floor = size_floor(facets.min_properties.as_ref());
+pub(crate) fn draw_object(sampler: &Sampler<'_>, draft: Draft, view: &ObjectView) -> Option<Value> {
+    let floor = size_floor(view.min_properties.as_ref());
     if floor > MAX_SIZE {
         return None;
     }
-    let ceiling = size_ceiling(facets.max_properties.as_ref());
-    let injected = facets.violations.len() as u64;
-    if ceiling < floor || facets.required.len() as u64 + injected > ceiling {
+    let ceiling = size_ceiling(view.max_properties.as_ref());
+    let injected = view.violations.len() as u64;
+    if ceiling < floor || view.required.len() as u64 + injected > ceiling {
         return None;
     }
     // Violation entries land last, each with a key of its own, so the base draw keeps
     // that much of the ceiling free.
     let budget = ceiling - injected;
-    let claims: Vec<(jsonschema::Validator, &CanonicalSchema)> = facets
+    let claims: Vec<(jsonschema::Validator, &CanonicalSchema)> = view
         .pattern_properties
         .iter()
         .filter_map(|(pattern, entry)| {
-            pattern_matcher(facets.draft, pattern).map(|matcher| (matcher, entry))
+            pattern_matcher(draft, pattern).map(|matcher| (matcher, entry))
         })
         .collect();
     let draw = ObjectDraw {
         sampler,
-        facets,
+        draft,
+        view,
         claims,
     };
     let mut object = serde_json::Map::new();
-    for key in &facets.required {
+    for key in &view.required {
         let value = draw.value_for(key)?;
         object.insert(key.clone(), value);
     }
-    for key in facets.properties.keys() {
+    for key in view.properties.keys() {
         if object.len() as u64 >= budget {
             break;
         }
@@ -399,7 +378,7 @@ pub(crate) fn draw_object(sampler: &Sampler<'_>, facets: &ObjectFacets) -> Optio
             }
         }
     }
-    for pattern in facets.pattern_properties.keys().take(2) {
+    for pattern in view.pattern_properties.keys().take(2) {
         if object.len() as u64 >= budget {
             break;
         }
@@ -440,7 +419,7 @@ pub(crate) fn draw_object(sampler: &Sampler<'_>, facets: &ObjectFacets) -> Optio
         if object.len() as u64 >= fill_target {
             break;
         }
-        let name = match &facets.property_names {
+        let name = match &view.property_names {
             Some(_) => match draw.drawn_name() {
                 Some(name) => name,
                 None => continue,
@@ -458,7 +437,7 @@ pub(crate) fn draw_object(sampler: &Sampler<'_>, facets: &ObjectFacets) -> Optio
     if (object.len() as u64) < fill_target {
         return None;
     }
-    for violation in &facets.violations {
+    for violation in &view.violations {
         match violation {
             ObjectViolationView::NameFails(bar) => {
                 draw.inject_name_violation(&mut object, bar)?;

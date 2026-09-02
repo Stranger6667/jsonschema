@@ -106,58 +106,11 @@ impl Sampler<'_> {
                 let value = self.descend(&group.body)?;
                 value_has_type(&value, group.ty).then_some(value)
             }
-            CanonicalView::String(view) => scalar::draw_string(
-                self.tc,
-                view.min_length.as_ref(),
-                view.max_length.as_ref(),
-                &view.patterns,
-                &view.formats,
-                &view.excluded,
-                &view.content_media_types,
-                &view.content_encodings,
-            ),
-            CanonicalView::Integer(view) => scalar::draw_integer(
-                self.tc,
-                view.minimum.as_ref(),
-                view.maximum.as_ref(),
-                &view.multiple_of,
-                &view.not_multiple_of,
-            ),
-            CanonicalView::Number(view) => scalar::draw_number(
-                self.tc,
-                view.minimum.as_ref(),
-                view.exclusive_minimum,
-                view.maximum.as_ref(),
-                view.exclusive_maximum,
-                &view.multiple_of,
-                &view.not_multiple_of,
-                view.excludes_integers,
-            ),
-            CanonicalView::Array(view) => container::draw_array(
-                self,
-                container::ArrayFacets {
-                    min_items: view.min_items,
-                    max_items: view.max_items,
-                    distinctness: view.distinctness,
-                    prefix_items: view.prefix_items,
-                    items: view.items,
-                    contains: view.contains,
-                },
-            ),
-            CanonicalView::Object(view) => container::draw_object(
-                self,
-                &container::ObjectFacets {
-                    draft: schema.draft(),
-                    min_properties: view.min_properties,
-                    max_properties: view.max_properties,
-                    required: view.required,
-                    property_names: view.property_names,
-                    properties: view.properties,
-                    pattern_properties: view.pattern_properties,
-                    additional_properties: view.additional_properties,
-                    violations: view.violations,
-                },
-            ),
+            CanonicalView::String(view) => scalar::draw_string(self.tc, &view),
+            CanonicalView::Integer(view) => scalar::draw_integer(self.tc, &view),
+            CanonicalView::Number(view) => scalar::draw_number(self.tc, &view),
+            CanonicalView::Array(view) => container::draw_array(self, view),
+            CanonicalView::Object(view) => container::draw_object(self, schema.draft(), &view),
             CanonicalView::AllOf(branches) => {
                 // Following each pointer one hop often lets `intersect` fold the conjunction
                 // into one node.
