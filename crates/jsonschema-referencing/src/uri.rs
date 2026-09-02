@@ -1,6 +1,6 @@
 //! URI handling utilities for JSON Schema references.
 use fluent_uri::{
-    pct_enc::{encoder::Fragment, EStr, Encoder},
+    pct_enc::{encoder::Fragment, EStr, EString},
     Uri, UriRef,
 };
 use std::sync::LazyLock;
@@ -20,15 +20,11 @@ pub fn resolve_against(base: &Uri<&str>, uri: &str) -> Result<Uri<String>, Error
     // RFC 3986, 5.2.1: the base URI's fragment is undefined and takes no part in resolution.
     // Drafts 4-7 allow `$id` to carry one, so drop it rather than reject the base.
     let without_fragment;
-    let base = match base.fragment() {
-        Some(fragment) => {
-            let full = base.as_str();
-            let end = full.len() - fragment.len() - "#".len();
-            without_fragment =
-                Uri::parse(&full[..end]).map_err(|error| Error::uri_parsing_error(full, error))?;
-            &without_fragment
-        }
-        None => base,
+    let base = if base.has_fragment() {
+        without_fragment = base.strip_fragment();
+        &without_fragment
+    } else {
+        base
     };
     Ok(UriRef::parse(uri)
         .map_err(|error| Error::uri_reference_parsing_error(uri, error))?
@@ -61,31 +57,5 @@ pub(crate) static DEFAULT_ROOT_URI: LazyLock<Uri<String>> =
     LazyLock::new(|| Uri::parse("json-schema:///".to_string()).expect("Invalid URI"));
 
 pub type EncodedString = EStr<Fragment>;
-
-// Adapted from `https://github.com/yescallop/fluent-uri-rs/blob/main/src/encoding/table.rs#L153`
-pub fn encode_to(input: &str, buffer: &mut String) {
-    const HEX_TABLE: [u8; 512] = {
-        const HEX_DIGITS: &[u8; 16] = b"0123456789ABCDEF";
-
-        let mut i = 0;
-        let mut table = [0; 512];
-        while i < 256 {
-            table[i * 2] = HEX_DIGITS[i >> 4];
-            table[i * 2 + 1] = HEX_DIGITS[i & 0b1111];
-            i += 1;
-        }
-        table
-    };
-
-    for ch in input.chars() {
-        if Path::TABLE.allows(ch) {
-            buffer.push(ch);
-        } else {
-            for x in ch.encode_utf8(&mut [0; 4]).bytes() {
-                buffer.push('%');
-                buffer.push(HEX_TABLE[x as usize * 2] as char);
-                buffer.push(HEX_TABLE[x as usize * 2 + 1] as char);
-            }
-        }
-    }
-}
+/// Reusable buffer for building a percent-encoded fragment.
+pub type EncodedBuffer = EString<Fragment>;
