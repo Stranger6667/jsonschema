@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.53.0] - 2026-09-02
+
 ### Fixed
 
 - Draft 4 `type: integer` matching a `Float` or not depending on its formatting; a `Float` is never a draft 4 integer.
@@ -502,7 +504,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.52.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.53.0...HEAD
+[0.53.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.52.1...ruby-v0.53.0
 [0.52.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.52.0...ruby-v0.52.1
 [0.52.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.51.0...ruby-v0.52.0
 [0.51.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.50.1...ruby-v0.51.0
