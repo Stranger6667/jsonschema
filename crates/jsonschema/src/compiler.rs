@@ -173,7 +173,7 @@ struct SharedContextState<F: Json = SerdeJson> {
         SharedCache<ItemsValidatorsPendingKey, PendingItemsValidators<F>>,
     pattern_cache: SharedCache<Arc<str>, PatternCacheEntry>,
     ref_targets: SharedCache<BaseUriKey, AHashMap<Box<str>, RefTarget>>,
-    uri_buffer: RefCell<String>,
+    uri_buffer: RefCell<uri::EncodedBuffer>,
 }
 
 impl<F: Json> fmt::Debug for SharedContextState<F> {
@@ -204,7 +204,7 @@ impl<F: Json> SharedContextState<F> {
             pending_items_validators_by_schema: RefCell::new(AHashMap::new()),
             pattern_cache: RefCell::new(AHashMap::new()),
             ref_targets: RefCell::new(AHashMap::new()),
-            uri_buffer: RefCell::new(String::new()),
+            uri_buffer: RefCell::new(uri::EncodedBuffer::new()),
         }
     }
 }
@@ -340,8 +340,8 @@ impl<'a, F: Json> Context<'a, F> {
         let base = self.base_uri()?;
         let mut buffer = self.shared.uri_buffer.borrow_mut();
         buffer.clear();
-        uri::encode_to(location.as_str(), &mut buffer);
-        let resolved = base.with_fragment(Some(uri::EncodedString::new_or_panic(&buffer)));
+        buffer.encode_str::<uri::Path>(location.as_str());
+        let resolved = base.with_fragment(Some(buffer.as_estr()));
         buffer.clear();
         Some(Arc::new(resolved))
     }
