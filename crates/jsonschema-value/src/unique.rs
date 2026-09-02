@@ -25,7 +25,7 @@ impl Hash for HashedValue<'_> {
             Value::Bool(ref item) => item.hash(state),
             Value::Number(ref item) => {
                 if let Some(number) = item.as_f64() {
-                    number.to_bits().hash(state);
+                    number_bits(number).hash(state);
                 } else if let Some(number) = item.as_u64() {
                     number.hash(state);
                 } else if let Some(number) = item.as_i64() {
@@ -51,6 +51,15 @@ impl Hash for HashedValue<'_> {
                 state.write_u64(hash);
             }
         }
+    }
+}
+
+// `0` and `-0.0` are equal numbers, so they must hash alike.
+pub(crate) fn number_bits(number: f64) -> u64 {
+    if number == 0.0 {
+        0
+    } else {
+        number.to_bits()
     }
 }
 
@@ -116,6 +125,9 @@ mod tests {
     #[test_case(&[json!(1), json!("string"), json!(true), json!(null), json!({"key": "value"}), json!([1, 2, 3])] => true; "mixed types")]
     #[test_case(&[json!({"a": 1, "b": 1}), json!({"a": 1, "b": 2}), json!({"a": 1, "b": 3})] => true; "complex objects unique")]
     #[test_case(&[json!({"a": 1, "b": 2}), json!({"b": 2, "a": 1}), json!({"a": 1, "b": 2})] => false; "complex objects non-unique")]
+    #[test_case(&[json!(0), json!(1), json!(2), json!(-0.0)] => false; "zero and negative zero")]
+    #[test_case(&[json!(0), json!(1), json!(2), json!(3), json!(4), json!(5), json!(6), json!(7), json!(8), json!(9), json!(10), json!(11), json!(12), json!(13), json!(14), json!(15), json!(-0.0)] => false; "zero and negative zero beyond the pairwise threshold")]
+    #[test_case(&[json!({"a": 0}), json!({"a": 1}), json!({"a": 2}), json!({"a": 3}), json!({"a": 4}), json!({"a": 5}), json!({"a": 6}), json!({"a": 7}), json!({"a": 8}), json!({"a": 9}), json!({"a": 10}), json!({"a": 11}), json!({"a": 12}), json!({"a": 13}), json!({"a": 14}), json!({"a": 15}), json!({"a": -0.0})] => false; "zero and negative zero inside objects beyond the pairwise threshold")]
     fn test_is_unique(items: &[Value]) -> bool {
         is_unique(items)
     }

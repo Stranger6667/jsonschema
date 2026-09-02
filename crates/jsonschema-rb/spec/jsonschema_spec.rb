@@ -18,6 +18,14 @@ RSpec.describe JSONSchema do
       schema = { "type" => "string" }
       expect(JSONSchema.valid?(schema, 42)).to be false
     end
+
+    it "rejects 0 alongside -0.0 under uniqueItems" do
+      schema = { "uniqueItems" => true }
+      expect(JSONSchema.valid?(schema, [0, 1, 2, -0.0])).to be false
+      expect(JSONSchema.valid?(schema, [*0..15, -0.0])).to be false
+      expect(JSONSchema.valid?(schema, [{ "a" => 0 }, { "a" => 1 }, { "a" => -0.0 }])).to be false
+      expect(JSONSchema.valid?(schema, (0..15).map { |i| { "a" => i } } + [{ "a" => -0.0 }])).to be false
+    end
   end
 
   describe ".validate!" do
