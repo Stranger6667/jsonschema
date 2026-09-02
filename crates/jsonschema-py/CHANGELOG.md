@@ -10,6 +10,7 @@
 
 ### Performance
 
+- Canonicalizing an `allOf` of object schemas walks their property maps once instead of looking every key up.
 - `properties` and `required` compare short names without `memcmp`.
 - `type: integer`, and `type` sets containing it, are up to 67x faster on float-heavy instances.
 - Draft 4 `type: integer` is up to 20x faster on float-heavy instances.

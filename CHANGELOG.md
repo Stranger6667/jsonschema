@@ -20,6 +20,7 @@
 
 ### Performance
 
+- Canonicalizing an `allOf` of object schemas walks their property maps once instead of looking every key up.
 - `properties` and `required` compare short names without `memcmp`.
 - Building a schema is up to 5% faster, from cheaper cache sharing and resolving each `$ref` target once.
 - Building a schema with an `$id` is up to 15% faster, from encoding each absolute location once.
