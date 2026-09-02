@@ -482,20 +482,13 @@ impl<F: Json> SchemaNode<F> {
             // Per JSON Schema spec: "MUST NOT include by-reference applicators such as $ref"
             // For by-reference validators like $ref, use the target's canonical location.
             // For regular validators, use the keyword's location.
-            let formatted_schema_location =
-                if let Some(schema_location) = validator.canonical_location() {
-                    crate::evaluation::format_schema_location(
-                        schema_location,
-                        absolute_location.as_ref(),
-                    )
-                } else {
-                    Arc::clone(cached_schema_location.get_or_init(|| {
-                        crate::evaluation::format_schema_location(
-                            child_location,
-                            absolute_location.as_ref(),
-                        )
-                    }))
-                };
+            // schemaLocation is fixed per subschema, by-reference or not, so it is rendered once.
+            let formatted_schema_location = Arc::clone(cached_schema_location.get_or_init(|| {
+                crate::evaluation::format_schema_location(
+                    validator.canonical_location().unwrap_or(child_location),
+                    absolute_location.as_ref(),
+                )
+            }));
 
             let child_node = match child_result {
                 EvaluationResult::Valid {
