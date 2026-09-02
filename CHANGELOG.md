@@ -19,7 +19,7 @@
 ### Performance
 
 - `required` scans small objects once instead of looking up each key.
-- `evaluate` is up to 26% faster, from reusing a rendered instance location instead of re-walking the pointer chain for every child.
+- `evaluate` is up to 33% faster, from rendering each node's locations once.
 - **CLI**: 1.4-1.5x faster on large schemas, from reading files before parsing them.
 - Draft 4 `type: integer` with `arbitrary-precision` no longer allocates a string per number.
 - `type: integer`, and `type` sets containing it, are up to 54x faster on float-heavy instances with `arbitrary-precision`.
