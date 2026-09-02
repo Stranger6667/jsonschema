@@ -1,4 +1,5 @@
 use hegel::{generators as gs, TestCase};
+use jsonschema::canonical::{IntegerView, NumberView, StringView};
 use serde_json::{json, Number, Value};
 
 use super::{
@@ -37,13 +38,13 @@ fn i64_at_or_below(bound: &Number) -> Option<i64> {
     Some(float.floor() as i64)
 }
 
-pub(crate) fn draw_integer(
-    tc: &TestCase,
-    minimum: Option<&Number>,
-    maximum: Option<&Number>,
-    multiple_of: &[Number],
-    not_multiple_of: &[Number],
-) -> Option<Value> {
+pub(crate) fn draw_integer(tc: &TestCase, view: &IntegerView) -> Option<Value> {
+    let IntegerView {
+        minimum,
+        maximum,
+        multiple_of,
+        not_multiple_of,
+    } = view;
     let low = match minimum {
         Some(bound) => Some(i64_at_or_above(bound)?),
         None => None,
@@ -105,17 +106,19 @@ pub(crate) fn draw_integer(
     Some(json!(value))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_number(
-    tc: &TestCase,
-    minimum: Option<&Number>,
-    exclusive_minimum: bool,
-    maximum: Option<&Number>,
-    exclusive_maximum: bool,
-    multiple_of: &[Number],
-    not_multiple_of: &[Number],
-    excludes_integers: bool,
-) -> Option<Value> {
+pub(crate) fn draw_number(tc: &TestCase, view: &NumberView) -> Option<Value> {
+    let NumberView {
+        minimum,
+        maximum,
+        multiple_of,
+        not_multiple_of,
+        ..
+    } = view;
+    let (exclusive_minimum, exclusive_maximum, excludes_integers) = (
+        view.exclusive_minimum,
+        view.exclusive_maximum,
+        view.excludes_integers,
+    );
     let low = match minimum {
         Some(bound) => Some(bound.as_f64()?),
         None => None,
@@ -234,22 +237,22 @@ pub(crate) fn draw_number(
     Some(json!(value))
 }
 
-#[allow(clippy::too_many_arguments)]
-pub(crate) fn draw_string(
-    tc: &TestCase,
-    min_length: Option<&Number>,
-    max_length: Option<&Number>,
-    patterns: &[String],
-    formats: &[String],
-    excluded: &[String],
-    content_media_types: &[String],
-    content_encodings: &[String],
-) -> Option<Value> {
-    let floor = size_floor(min_length);
+pub(crate) fn draw_string(tc: &TestCase, view: &StringView) -> Option<Value> {
+    let StringView {
+        min_length,
+        max_length,
+        patterns,
+        formats,
+        excluded,
+        content_media_types,
+        content_encodings,
+        ..
+    } = view;
+    let floor = size_floor(min_length.as_ref());
     if floor > MAX_SIZE {
         return None;
     }
-    let ceiling = size_ceiling(max_length);
+    let ceiling = size_ceiling(max_length.as_ref());
     if ceiling < floor {
         return None;
     }
