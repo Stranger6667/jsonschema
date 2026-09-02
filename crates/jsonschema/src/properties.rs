@@ -59,14 +59,85 @@ pub(crate) trait PropertiesValidatorsMap<F: Json = SerdeJson>: Send + Sync {
 /// Threshold for switching from linear scan to `HashMap`.
 pub(crate) const HASHMAP_THRESHOLD: usize = 15;
 
-pub(crate) type SmallValidatorsMap<F = SerdeJson> = Vec<(String, SchemaNode<F>)>;
+/// A name's length with its first and last eight bytes, read as two overlapping words. Names of up
+/// to 16 bytes are decided by the head alone; longer ones only reach `memcmp` when heads agree.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct KeyHead {
+    len: usize,
+    first: u64,
+    last: u64,
+}
+
+#[inline]
+fn word(bytes: &[u8]) -> u64 {
+    u64::from_le_bytes(bytes.try_into().expect("eight bytes"))
+}
+
+#[inline]
+fn half_word(bytes: &[u8]) -> u64 {
+    u64::from(u32::from_le_bytes(bytes.try_into().expect("four bytes")))
+}
+
+impl KeyHead {
+    const INLINE_BYTES: usize = 16;
+
+    #[inline]
+    pub(crate) fn of(name: &str) -> Self {
+        let bytes = name.as_bytes();
+        let len = bytes.len();
+        let (first, last) = if len >= 8 {
+            (word(&bytes[..8]), word(&bytes[len - 8..]))
+        } else if len >= 4 {
+            (half_word(&bytes[..4]), half_word(&bytes[len - 4..]))
+        } else {
+            let mut packed = 0_u64;
+            for (index, byte) in bytes.iter().enumerate() {
+                packed |= u64::from(*byte) << (index * 8);
+            }
+            (packed, 0)
+        };
+        KeyHead { len, first, last }
+    }
+}
+
+/// A declared property name alongside its head, for scans that test it against many keys.
+#[derive(Debug, Clone)]
+pub(crate) struct PropertyName {
+    head: KeyHead,
+    text: String,
+}
+
+impl PropertyName {
+    pub(crate) fn new(text: String) -> Self {
+        PropertyName {
+            head: KeyHead::of(&text),
+            text,
+        }
+    }
+
+    #[inline]
+    pub(crate) fn as_str(&self) -> &str {
+        &self.text
+    }
+
+    /// Whether `key`, whose head is `head`, is this name.
+    #[inline]
+    pub(crate) fn matches(&self, head: KeyHead, key: &str) -> bool {
+        self.head == head
+            && (head.len <= KeyHead::INLINE_BYTES
+                || self.text.as_bytes()[8..head.len - 8] == key.as_bytes()[8..head.len - 8])
+    }
+}
+
+pub(crate) type SmallValidatorsMap<F = SerdeJson> = Vec<(PropertyName, SchemaNode<F>)>;
 pub(crate) type BigValidatorsMap<F = SerdeJson> = AHashMap<String, SchemaNode<F>>;
 
 impl<F: Json> PropertiesValidatorsMap<F> for SmallValidatorsMap<F> {
     #[inline]
     fn get_validator(&self, property: &str) -> Option<&SchemaNode<F>> {
+        let head = KeyHead::of(property);
         for (prop, node) in self {
-            if prop == property {
+            if prop.matches(head, property) {
                 return Some(node);
             }
         }
@@ -74,8 +145,9 @@ impl<F: Json> PropertiesValidatorsMap<F> for SmallValidatorsMap<F> {
     }
     #[inline]
     fn get_key_validator(&self, property: &str) -> Option<(&str, &SchemaNode<F>)> {
+        let head = KeyHead::of(property);
         for (prop, node) in self {
-            if prop == property {
+            if prop.matches(head, property) {
                 return Some((prop.as_str(), node));
             }
         }
@@ -105,7 +177,7 @@ pub(crate) fn compile_small_map<'a, F: Json>(
     for (key, subschema) in map {
         let pctx = kctx.new_at_location(key.as_str());
         properties.push((
-            key.clone(),
+            PropertyName::new(key.clone()),
             compiler::compile(&pctx, pctx.as_resource_ref(subschema))?,
         ));
     }
