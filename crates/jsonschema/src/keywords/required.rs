@@ -6,7 +6,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
-    properties::HASHMAP_THRESHOLD,
+    properties::{KeyHead, PropertyName, HASHMAP_THRESHOLD},
     types::JsonType,
     validator::{Validate, ValidationContext},
     Json, Node, Object, SerdeJson,
@@ -17,7 +17,7 @@ use serde_json::{Map, Value};
 const MAX_SCANNED_REQUIRED: usize = 16;
 
 pub(crate) struct RequiredValidator<F: Json = SerdeJson> {
-    required: Vec<(String, F::PreparedKey)>,
+    required: Vec<(PropertyName, F::PreparedKey)>,
     location: Location,
 }
 
@@ -31,7 +31,7 @@ impl RequiredValidator {
         for item in items {
             match item {
                 Value::String(string) => {
-                    required.push((string.clone(), F::prepare_key(string)));
+                    required.push((PropertyName::new(string.clone()), F::prepare_key(string)));
                 }
                 _ => {
                     return Err(ValidationError::single_type_error(
@@ -65,8 +65,9 @@ impl<F: Json> RequiredValidator<F> {
         let mut found = 0_u32;
         for (name, _) in object.members() {
             let name: &str = name.as_ref();
+            let head = KeyHead::of(name);
             for (index, (required, _)) in self.required.iter().enumerate() {
-                if name == required {
+                if required.matches(head, name) {
                     found |= 1 << index;
                     break;
                 }
@@ -91,8 +92,9 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
                 let mut found = 0_u32;
                 for (name, _) in object.members() {
                     let name: &str = name.as_ref();
+                    let head = KeyHead::of(name);
                     for (index, (required, _)) in self.required.iter().enumerate() {
-                        if name == required {
+                        if required.matches(head, name) {
                             found |= 1 << index;
                             break;
                         }
@@ -134,7 +136,7 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(property_name.clone()),
+                    Value::String(property_name.as_str().to_owned()),
                 ));
             }
         }
@@ -162,7 +164,7 @@ impl<F: Json> Validate<F> for RequiredValidator<F> {
                         eval_path.clone(),
                         location.into(),
                         instance.lazy_value(),
-                        Value::String(property_name.clone()),
+                        Value::String(property_name.as_str().to_owned()),
                     ));
                 }
             }
@@ -272,7 +274,7 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(self.first.clone()),
+                    Value::String(self.first.as_str().to_owned()),
                 ));
             }
             if object.get(&self.second_key).is_none() {
@@ -281,7 +283,7 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(self.second.clone()),
+                    Value::String(self.second.as_str().to_owned()),
                 ));
             }
         }
@@ -304,7 +306,7 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
                     eval_path.clone(),
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(self.first.clone()),
+                    Value::String(self.first.as_str().to_owned()),
                 ));
             }
             if object.get(&self.second_key).is_none() {
@@ -313,7 +315,7 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
                     eval_path,
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(self.second.clone()),
+                    Value::String(self.second.as_str().to_owned()),
                 ));
             }
         }
@@ -323,11 +325,11 @@ impl<F: Json> Validate<F> for Required2Validator<F> {
 /// Specialized validator for exactly 3 required properties.
 /// Uses fixed-size fields and unrolled checks to avoid Vec/iterator overhead.
 pub(crate) struct Required3Validator<F: Json = SerdeJson> {
-    first: String,
+    first: PropertyName,
     first_key: F::PreparedKey,
-    second: String,
+    second: PropertyName,
     second_key: F::PreparedKey,
-    third: String,
+    third: PropertyName,
     third_key: F::PreparedKey,
     location: Location,
 }
@@ -344,9 +346,9 @@ impl Required3Validator {
             first_key: F::prepare_key(&first),
             second_key: F::prepare_key(&second),
             third_key: F::prepare_key(&third),
-            first,
-            second,
-            third,
+            first: PropertyName::new(first),
+            second: PropertyName::new(second),
+            third: PropertyName::new(third),
             location,
         }))
     }
@@ -364,11 +366,12 @@ impl<F: Json> Required3Validator<F> {
         let mut found = 0_u8;
         for (name, _) in object.members() {
             let name: &str = name.as_ref();
-            if name == self.first {
+            let head = KeyHead::of(name);
+            if self.first.matches(head, name) {
                 found |= 0b001;
-            } else if name == self.second {
+            } else if self.second.matches(head, name) {
                 found |= 0b010;
-            } else if name == self.third {
+            } else if self.third.matches(head, name) {
                 found |= 0b100;
             }
             if found == 0b111 {
@@ -419,7 +422,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     crate::paths::capture_evaluation_path(tracker, &self.location),
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(missing.clone()),
+                    Value::String(missing.as_str().to_owned()),
                 ));
             }
         }
@@ -443,7 +446,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     eval_path.clone(),
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(self.first.clone()),
+                    Value::String(self.first.as_str().to_owned()),
                 ));
             }
             if found & 0b010 == 0 {
@@ -452,7 +455,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     eval_path.clone(),
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(self.second.clone()),
+                    Value::String(self.second.as_str().to_owned()),
                 ));
             }
             if found & 0b100 == 0 {
@@ -461,7 +464,7 @@ impl<F: Json> Validate<F> for Required3Validator<F> {
                     eval_path,
                     location.into(),
                     instance.lazy_value(),
-                    Value::String(self.third.clone()),
+                    Value::String(self.third.as_str().to_owned()),
                 ));
             }
         }
@@ -598,6 +601,23 @@ mod tests {
     #[test_case(&json!({"required": ["a", "b", "c"]}), &json!({}), "/required")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
+    }
+
+    // Required names and instance keys that agree on length and on long prefixes
+    #[test_case("abcdefghijklX", "abcdefghijklX", true; "thirteen bytes equal")]
+    #[test_case("abcdefghijklX", "abcdefghijklY", false; "thirteen bytes differing after the head")]
+    #[test_case("abcdefghijkl", "abcdefghijkL", false; "twelve bytes differing in the last byte")]
+    #[test_case("abcdEFGHijkl", "abcdefghijkl", false; "twelve bytes differing in the middle")]
+    #[test_case("abcd", "abce", false; "four bytes differing")]
+    #[test_case("abcd", "abcde", false; "prefix of a longer key")]
+    #[test_case("", "", true; "empty equal")]
+    #[test_case("café-résumé-naïve", "café-rÉsumé-naïve", false; "multibyte differing after the head")]
+    fn required_name_matching(required: &str, key: &str, matches: bool) {
+        let instance = json!({key: 1, "p": 1, "q": 1, "r": 1});
+        let three = json!({"required": [required, "p", "q"]});
+        assert_eq!(crate::is_valid(&three, &instance), matches);
+        let four = json!({"required": [required, "p", "q", "r"]});
+        assert_eq!(crate::is_valid(&four, &instance), matches);
     }
 
     // Required2Validator tests
