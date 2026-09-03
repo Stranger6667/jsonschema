@@ -764,25 +764,21 @@
     ]
   },
   {
-    "description": "raw: if/then can annotate keys the unevaluatedProperties would see",
+    "description": "ir: keys a then evaluates count for unevaluatedProperties only where its if passes",
     "schema": {"if": {"required": ["a"]}, "then": {"properties": {"a": {}}}, "unevaluatedProperties": false},
-    "kind": "raw",
     "tests": [
       {"data": {"a": 1}, "valid": true},
-      {"data": {"b": 1}, "valid": false}
+      {"data": {"b": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": false},
+      {"data": {}, "valid": true},
+      {"data": 1, "valid": true}
     ],
     "expected": {
-      "if": {
-        "required": [
-          "a"
-        ]
-      },
-      "then": {
-        "properties": {
-          "a": {}
-        }
-      },
-      "unevaluatedProperties": false
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "propertyNames": {"const": "a"}}
+      ]
     }
   },
   {
@@ -1972,5 +1968,226 @@
         }
       ]
     }
+  },
+  {
+    "description": "ir: unevaluatedProperties beside a dependentSchemas entry evaluating nothing degrades like additionalProperties",
+    "schemas": [
+      {"type": "object", "properties": {"id": {"type": "string"}, "url": {"type": "string"}}, "dependentSchemas": {"id": {"not": {"required": ["url"]}}}, "unevaluatedProperties": false},
+      {"type": "object", "properties": {"id": {"type": "string"}, "url": {"type": "string"}}, "dependentSchemas": {"id": {"not": {"required": ["url"]}}}, "additionalProperties": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"id": {"type": "string"}, "url": false}, "propertyNames": {"enum": ["id", "url"]}},
+        {"type": "object", "properties": {"id": false, "url": {"type": "string"}}, "propertyNames": {"enum": ["id", "url"]}}
+      ]
+    },
+    "tests": [
+      {"data": {"id": "x"}, "valid": true},
+      {"data": {"url": "u"}, "valid": true},
+      {"data": {"id": "x", "url": "u"}, "valid": false},
+      {"data": {"id": "x", "extra": 1}, "valid": false},
+      {"data": {}, "valid": true},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: unevaluatedProperties beside a dependentSchemas entry evaluating keys splits on the trigger key",
+    "schemas": [
+      {"type": "object", "properties": {"schema": {"type": "object"}, "content": {"type": "object"}}, "dependentSchemas": {"schema": {"properties": {"style": {"type": "string"}, "explode": {"type": "boolean"}}}}, "unevaluatedProperties": false},
+      {"anyOf": [
+        {"type": "object", "properties": {"schema": {"type": "object"}, "content": {"type": "object"}}, "not": {"required": ["schema"]}, "additionalProperties": false},
+        {"type": "object", "required": ["schema"], "properties": {"schema": {"type": "object"}, "content": {"type": "object"}, "style": {"type": "string"}, "explode": {"type": "boolean"}}, "additionalProperties": false}
+      ]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"content": {"type": "object"}, "schema": {"type": "object"}}, "propertyNames": {"enum": ["content", "schema"]}},
+        {"type": "object", "required": ["schema"], "properties": {"content": {"type": "object"}, "explode": {"type": "boolean"}, "schema": {"type": "object"}, "style": {"type": "string"}}, "propertyNames": {"enum": ["content", "explode", "schema", "style"]}}
+      ]
+    },
+    "tests": [
+      {"data": {"schema": {}, "style": "x"}, "valid": true},
+      {"data": {"style": "x"}, "valid": false},
+      {"data": {"schema": {}, "explode": 1}, "valid": false},
+      {"data": {"content": {}, "style": "x"}, "valid": false},
+      {"data": {"content": {}}, "valid": true},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: unevaluatedProperties beside if and then splits on the condition, crediting what a passing if evaluates",
+    "schemas": [
+      {"type": "object", "properties": {"in": {"enum": ["query", "path"]}, "name": {"type": "string"}}, "if": {"properties": {"in": {"const": "query"}}, "required": ["in"]}, "then": {"properties": {"allowEmptyValue": {"type": "boolean"}}}, "unevaluatedProperties": false},
+      {"anyOf": [
+        {"type": "object", "required": ["in"], "properties": {"in": {"const": "query"}, "name": {"type": "string"}, "allowEmptyValue": {"type": "boolean"}}, "additionalProperties": false},
+        {"type": "object", "properties": {"in": {"enum": ["query", "path"]}, "name": {"type": "string"}}, "not": {"properties": {"in": {"const": "query"}}, "required": ["in"]}, "additionalProperties": false}
+      ]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"in": {"enum": ["path", "query"]}, "name": {"type": "string"}}, "propertyNames": {"enum": ["in", "name"]}},
+        {"type": "object", "required": ["in"], "properties": {"allowEmptyValue": {"type": "boolean"}, "in": {"const": "query"}, "name": {"type": "string"}}, "propertyNames": {"enum": ["allowEmptyValue", "in", "name"]}}
+      ]
+    },
+    "tests": [
+      {"data": {"in": "query", "allowEmptyValue": true}, "valid": true},
+      {"data": {"in": "path", "allowEmptyValue": true}, "valid": false},
+      {"data": {"in": "path"}, "valid": true},
+      {"data": {"name": "n"}, "valid": true},
+      {"data": {"in": "query", "allowEmptyValue": "x"}, "valid": false},
+      {"data": {"in": "query", "zzz": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a passing if alone evaluates its keys for unevaluatedProperties",
+    "schema": {"type": "object", "if": {"properties": {"flag": {"const": true}}, "required": ["flag"]}, "unevaluatedProperties": false},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "properties": {"flag": {"const": true}},
+      "propertyNames": {"const": "flag"}
+    },
+    "tests": [
+      {"data": {"flag": true}, "valid": true},
+      {"data": {}, "valid": true},
+      {"data": {"flag": false}, "valid": false},
+      {"data": {"x": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: unevaluatedItems beside if and then splits on the condition",
+    "schemas": [
+      {"type": "array", "if": {"minItems": 1}, "then": {"prefixItems": [{"type": "string"}]}, "unevaluatedItems": false},
+      {"anyOf": [
+        {"type": "array", "minItems": 1, "prefixItems": [{"type": "string"}], "items": false},
+        {"type": "array", "maxItems": 0}
+      ]}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "array",
+      "maxItems": 1,
+      "prefixItems": [{"type": "string"}]
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": ["a"], "valid": true},
+      {"data": ["a", "b"], "valid": false},
+      {"data": [1], "valid": false}
+    ]
+  },
+  {
+    "description": "raw: a conditional split outgrowing its case budget keeps the document raw",
+    "schema": {
+      "type": "object",
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}},
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}},
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"a": 1, "a1": 2}},
+      {"data": {"z": 1}}
+    ]
+  },
+  {
+    "description": "ir: dependentSchemas triggers only on objects, so a non-object beside unevaluatedProperties stays admitted",
+    "schema": {"type": "string", "dependentSchemas": {"a": {"type": "object"}}, "unevaluatedProperties": false},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "string"
+    },
+    "tests": [
+      {"data": "s", "valid": true},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: a dependentSchemas consequent evaluates nothing on an array beside unevaluatedItems",
+    "schema": {"dependentSchemas": {"a": {"prefixItems": [true]}}, "unevaluatedItems": false},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"const": []}
+      ]
+    },
+    "tests": [
+      {"data": [1], "valid": false},
+      {"data": [], "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: dependentSchemas beside if, then and else split together, carrying a sibling allOf into every case",
+    "schema": {
+      "type": "object",
+      "allOf": [{"properties": {"z": {"type": "integer"}}}],
+      "properties": {"a": {}, "b": {}, "c": {}},
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}},
+      "if": {"required": ["a"]},
+      "then": {"properties": {"t": {}}},
+      "else": {"properties": {"e": {}}},
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"a": false, "z": {"type": "integer"}}, "propertyNames": {"enum": ["a", "b", "c", "e", "z"]}},
+        {"type": "object", "required": ["a"], "properties": {"z": {"type": "integer"}}, "propertyNames": {"enum": ["a", "a1", "b", "c", "t", "z"]}},
+        {"type": "object", "required": ["a", "b"], "properties": {"z": {"type": "integer"}}, "propertyNames": {"enum": ["a", "a1", "b", "b1", "c", "t", "z"]}},
+        {"type": "object", "required": ["a", "b", "c"], "properties": {"z": {"type": "integer"}}, "propertyNames": {"enum": ["a", "a1", "b", "b1", "c", "c1", "t", "z"]}},
+        {"type": "object", "required": ["a", "c"], "properties": {"z": {"type": "integer"}}, "propertyNames": {"enum": ["a", "a1", "b", "c", "c1", "t", "z"]}},
+        {"type": "object", "required": ["b"], "properties": {"a": false, "z": {"type": "integer"}}, "propertyNames": {"enum": ["a", "b", "b1", "c", "e", "z"]}},
+        {"type": "object", "required": ["b", "c"], "properties": {"a": false, "z": {"type": "integer"}}, "propertyNames": {"enum": ["a", "b", "b1", "c", "c1", "e", "z"]}},
+        {"type": "object", "required": ["c"], "properties": {"a": false, "z": {"type": "integer"}}, "propertyNames": {"enum": ["a", "b", "c", "c1", "e", "z"]}}
+      ]
+    },
+    "tests": [
+      {"data": {"z": 1}, "valid": true},
+      {"data": {"z": "x"}, "valid": false},
+      {"data": {"e": 1}, "valid": true},
+      {"data": {"a": 1, "e": 1}, "valid": false},
+      {"data": {"a": 1, "t": 1}, "valid": true},
+      {"data": {"t": 1}, "valid": false},
+      {"data": {"a": 1, "b": 1, "a1": 1, "b1": 1, "t": 1}, "valid": true},
+      {"data": {"a": 1, "c1": 1}, "valid": false},
+      {"data": {"c": 1, "c1": 1, "e": 1, "z": 2}, "valid": true},
+      {"data": {"b": 1, "e": 1}, "valid": true},
+      {"data": {"b": 1, "b1": 1, "e": 1}, "valid": true},
+      {"data": {"b1": 1}, "valid": false},
+      {"data": {"q": 1}, "valid": false},
+      {"data": "s", "valid": false}
+    ]
+  },
+  {
+    "description": "raw: a condition doubling the dependent cases past the budget keeps the document raw",
+    "schema": {
+      "type": "object",
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}},
+      "if": {"required": ["a"]},
+      "then": {"properties": {"t": {}}},
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}},
+      "if": {"required": ["a"]},
+      "then": {"properties": {"t": {}}},
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"a": 1, "a1": 2, "t": 3}},
+      {"data": {"z": 1}}
+    ]
   }
 ]

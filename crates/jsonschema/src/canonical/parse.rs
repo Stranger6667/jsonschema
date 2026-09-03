@@ -1317,26 +1317,127 @@ fn finite_pattern_keys(pattern: &str) -> Option<Vec<Arc<str>>> {
     }
 }
 
-/// In-place applicators whose annotations depend on which branch the instance matched. `allOf` is
-/// absent: every branch must pass, so [`property_cover`] can read its contribution off the document.
-/// `not` is absent too: it succeeds only when its subschema fails, and a failure annotates nothing.
 /// Whether an in-place applicator sits here that no cover reads. `anyOf`/`oneOf` are absent because
-/// the cover handles them, taking their branches only when those agree.
+/// the cover handles them, taking their branches only when those agree; `dependentSchemas` and
+/// `if`/`then`/`else` are absent because [`split_conditionals`] spreads them over their cases first.
 fn has_unresolved_applicator(map: &serde_json::Map<String, Value>) -> bool {
     map.keys().any(|key| {
         matches!(
             key.as_str(),
-            "$dynamicRef"
-                | "$recursiveRef"
-                | "dependencies"
-                | "dependentSchemas"
-                | "else"
-                | "if"
-                | "then"
+            "$dynamicRef" | "$recursiveRef" | "dependencies"
         )
     })
 }
 
+/// Cases one conditional split may spread an `unevaluated*` over before the document stays raw.
+const CONDITIONAL_CASE_BUDGET: usize = 16;
+
+enum Split {
+    /// No conditional applicator beside the `unevaluated*`.
+    Untouched,
+    /// The cases outgrew the per-node or the per-run budget.
+    Declined,
+    /// An `anyOf` holding one variant per case.
+    Variants(Value),
+}
+
+/// Every case continued both ways: with the conjuncts holding where the condition is met, and
+/// with those holding where it fails. `None` where the doubled cases would pass the budget.
+fn fork(cases: Vec<Vec<Value>>, met: &[Value], failed: &[Value]) -> Option<Vec<Vec<Value>>> {
+    if cases.len() * 2 > CONDITIONAL_CASE_BUDGET {
+        return None;
+    }
+    let mut forked = Vec::with_capacity(cases.len() * 2);
+    for case in cases {
+        let mut holds = case.clone();
+        holds.extend_from_slice(met);
+        let mut fails = case;
+        fails.extend_from_slice(failed);
+        forked.push(holds);
+        forked.push(fails);
+    }
+    Some(forked)
+}
+
+/// `dependentSchemas` and `if`/`then`/`else` evaluate keys only on the instances that trigger them,
+/// so an `unevaluated*` beside one splits into an `anyOf` with a variant per case, each carrying the
+/// subschemas that ran as `allOf` conjuncts, where the covers read them.
+/// ```text
+/// e.g.  {"dependentSchemas": {"a": {"properties": {"b": {}}}}, "unevaluatedProperties": false}
+///       =>  anyOf: [{"allOf": [{"type": "object", "required": ["a"]}, {"properties": {"b": {}}}],
+///                    "unevaluatedProperties": false},
+///                   {"allOf": [{"not": {"type": "object", "required": ["a"]}}],
+///                    "unevaluatedProperties": false}]
+/// ```
+fn split_conditionals(
+    map: &serde_json::Map<String, Value>,
+    ctx: &CanonicalizationContext,
+) -> Split {
+    // Shapes are settled: the document passed its metaschema before parsing began.
+    let dependent = map.get("dependentSchemas").and_then(Value::as_object);
+    let condition = map.get("if");
+    if dependent.is_none() && condition.is_none() {
+        return Split::Untouched;
+    }
+    let shared = map.get("allOf").and_then(Value::as_array);
+    // Each case is the list of conjuncts holding on it.
+    let mut cases: Vec<Vec<Value>> = vec![Vec::new()];
+    if let Some(entries) = dependent {
+        for (key, consequent) in entries {
+            // A dependency triggers on objects only; `required` alone passes every other type.
+            let trigger = serde_json::json!({"type": "object", "required": [key]});
+            let absent = serde_json::json!({"not": trigger});
+            let Some(forked) = fork(cases, &[trigger, consequent.clone()], &[absent]) else {
+                return Split::Declined;
+            };
+            cases = forked;
+        }
+    }
+    if let Some(condition) = condition {
+        let mut met = vec![condition.clone()];
+        met.extend(map.get("then").cloned());
+        let mut failed = vec![serde_json::json!({"not": condition})];
+        failed.extend(map.get("else").cloned());
+        let Some(forked) = fork(cases, &met, &failed) else {
+            return Split::Declined;
+        };
+        cases = forked;
+    }
+    if !ctx.take_variants(u64::try_from(cases.len()).unwrap_or(u64::MAX)) {
+        return Split::Declined;
+    }
+    // Document-scoped keywords stay on the wrapper; the rest is copied into every variant.
+    let mut wrapper = serde_json::Map::new();
+    let mut base = serde_json::Map::new();
+    for (key, value) in map {
+        match key.as_str() {
+            "dependentSchemas" | "if" | "then" | "else" | "allOf" => {}
+            "$id" | "id" | "$schema" | "$anchor" | "$dynamicAnchor" | "$recursiveAnchor"
+            | "$vocabulary" | "$defs" | "definitions" => {
+                wrapper.insert(key.clone(), value.clone());
+            }
+            _ => {
+                base.insert(key.clone(), value.clone());
+            }
+        }
+    }
+    let variants = cases
+        .into_iter()
+        .map(|conjuncts| {
+            let mut variant = base.clone();
+            let mut branches = shared.cloned().unwrap_or_default();
+            branches.extend(conjuncts);
+            variant.insert("allOf".to_string(), Value::Array(branches));
+            Value::Object(variant)
+        })
+        .collect();
+    wrapper.insert("anyOf".to_string(), Value::Array(variants));
+    Split::Variants(Value::Object(wrapper))
+}
+
+/// In-place applicators whose annotations depend on which branch the instance matched. `allOf` is
+/// absent: every branch must pass, so [`property_cover`] can read its contribution off the document.
+/// `not` is absent too: it succeeds only when its subschema fails, and a failure annotates nothing.
 fn has_instance_dependent_applicator(map: &serde_json::Map<String, Value>) -> bool {
     map.keys().any(|key| {
         matches!(
@@ -1793,6 +1894,11 @@ fn degrade_unevaluated(
     }
     if has_unresolved_applicator(map) {
         return Ok(None);
+    }
+    match split_conditionals(map, ctx) {
+        Split::Untouched => {}
+        Split::Declined => return Ok(None),
+        Split::Variants(variants) => return Ok(Some(variants)),
     }
     let mut degraded = map.clone();
     // A local `additionalProperties` leaves nothing unevaluated, so the sibling is inert - and

@@ -3,9 +3,10 @@
 require "spec_helper"
 
 DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
-# `anyOf` annotates whichever branch the instance matched, which no `additional*` twin spells,
-# so this stays raw. Each construct canonicalization learns needs a still-unsupported stand-in here.
-UNSUPPORTED = { "if" => {}, "unevaluatedProperties" => false }.freeze
+# `dependencies` is the one conditional applicator canonicalization does not split beside an
+# `unevaluated*`, so this stays raw. Each construct canonicalization learns needs a
+# still-unsupported stand-in here.
+UNSUPPORTED = { "dependencies" => {}, "unevaluatedProperties" => false }.freeze
 
 RSpec.describe "JSONSchema.canonicalize" do
   [

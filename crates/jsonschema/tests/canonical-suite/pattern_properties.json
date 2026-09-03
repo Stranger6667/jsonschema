@@ -596,7 +596,7 @@
       "patternProperties": {
         "^a": {
           "type": "array",
-          "if": {},
+          "dependencies": {},
           "unevaluatedItems": false
         }
       }
@@ -606,7 +606,7 @@
       "patternProperties": {
         "^a": {
           "type": "array",
-          "if": {},
+          "dependencies": {},
           "unevaluatedItems": false
         }
       }

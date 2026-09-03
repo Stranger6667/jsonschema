@@ -2103,14 +2103,14 @@ fn test_canonicalize_at_passes_an_unmodelled_selection_through() {
         &dir,
         "schema.json",
         r##"{"$defs": {
-            "A": {"if": {}, "unevaluatedProperties": false, "$ref": "#/$defs/B"},
+            "A": {"dependencies": {}, "unevaluatedProperties": false, "$ref": "#/$defs/B"},
             "B": {"type": "object"}
         }}"##,
     );
 
     assert_eq!(
         canonicalize_at(&schema, "/$defs/A"),
-        serde_json::json!({"if": {}, "unevaluatedProperties": false, "$ref": "#/$defs/B"})
+        serde_json::json!({"dependencies": {}, "unevaluatedProperties": false, "$ref": "#/$defs/B"})
     );
 }
 

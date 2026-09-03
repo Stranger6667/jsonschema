@@ -6,6 +6,10 @@
 
 - `backend = SerdeJson` on `#[jsonschema::validator]`, naming the JSON representation the generated validator reads.
 
+### Changed
+
+- Canonicalization of `unevaluated*` beside `dependentSchemas` or `if`/`then`/`else`, which kept the document `Raw`.
+
 ## [0.53.0] - 2026-09-02
 
 ### Added

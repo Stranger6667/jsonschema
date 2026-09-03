@@ -975,7 +975,7 @@
       "$defs": {
         "target": {
           "$dynamicAnchor": "n",
-          "if": {},
+          "dependencies": {},
           "unevaluatedProperties": false
         },
         "use": {
@@ -994,7 +994,7 @@
       "$defs": {
         "target": {
           "$dynamicAnchor": "n",
-          "if": {},
+          "dependencies": {},
           "unevaluatedProperties": false
         },
         "use": {

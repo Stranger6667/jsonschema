@@ -55,12 +55,18 @@ pub(crate) struct CanonicalizationContext {
     cyclic: BTreeSet<Arc<str>>,
     /// Intersections this run may still take before giving up. A conjunction over unions multiplies them.
     intersections_left: Cell<u64>,
+    /// Variants the conditional splits of this run may still produce. Nesting multiplies them.
+    variants_left: Cell<u64>,
 }
 
 /// Intersections one run may take before giving up and leaving the document `Raw`. Above what the
 /// most demanding document written in earnest needs; a row of conjunctions over unions passes it in
 /// a fraction of a second.
 const INTERSECTION_BUDGET: u64 = 1_000_000;
+
+/// Variants the conditional splits of one run may produce before the document stays `Raw`. Two
+/// nested nodes at the per-node cap fit; a third would spend 4096 more.
+const VARIANT_BUDGET: u64 = 4096;
 
 impl CanonicalizationContext {
     pub(crate) fn new(
@@ -76,6 +82,7 @@ impl CanonicalizationContext {
             intersections: RefCell::new(AHashMap::new()),
             inexact_intersection: Cell::new(false),
             intersections_left: Cell::new(INTERSECTION_BUDGET),
+            variants_left: Cell::new(VARIANT_BUDGET),
             definitions: None,
             cyclic: BTreeSet::new(),
         }
@@ -149,6 +156,17 @@ impl CanonicalizationContext {
             return false;
         }
         self.intersections_left.set(left - 1);
+        true
+    }
+
+    /// Take `count` conditional-split variants from what this run may still spend, reporting
+    /// whether it had them.
+    pub(crate) fn take_variants(&self, count: u64) -> bool {
+        let left = self.variants_left.get();
+        if left < count {
+            return false;
+        }
+        self.variants_left.set(left - count);
         true
     }
 

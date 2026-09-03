@@ -7,9 +7,10 @@ from jsonschema_rs import CanonicalSchema, ValidationError, canonical, canonical
 from jsonschema_rs.canonical import CanonicalKind, Containment, Distinctness, Satisfiability
 
 DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
-# `anyOf` annotates whichever branch the instance matched, which no `additional*` twin spells,
-# so this stays raw. Each construct canonicalization learns needs a still-unsupported stand-in here.
-UNSUPPORTED = {"if": {}, "unevaluatedProperties": False}
+# `dependencies` is the one conditional applicator canonicalization does not split beside an
+# `unevaluated*`, so this stays raw. Each construct canonicalization learns needs a
+# still-unsupported stand-in here.
+UNSUPPORTED = {"dependencies": {}, "unevaluatedProperties": False}
 
 
 @pytest.mark.parametrize(

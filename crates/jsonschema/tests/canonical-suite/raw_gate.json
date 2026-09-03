@@ -1,8 +1,8 @@
 [
   {
     "description": "an unmodeled subschema under `oneOf` keeps the whole document raw",
-    "schema": {"oneOf": [{"if": {}, "unevaluatedProperties": false}, {"type": "string"}]},
-    "expected": {"oneOf": [{"if": {}, "unevaluatedProperties": false}, {"type": "string"}]},
+    "schema": {"oneOf": [{"dependencies": {}, "unevaluatedProperties": false}, {"type": "string"}]},
+    "expected": {"oneOf": [{"dependencies": {}, "unevaluatedProperties": false}, {"type": "string"}]},
     "kind": "raw",
     "tests": [
       {"data": {"a": 1}},
@@ -12,8 +12,8 @@
   },
   {
     "description": "an unmodeled subschema under `items` keeps the whole document raw",
-    "schema": {"items": {"if": {}, "unevaluatedProperties": false}},
-    "expected": {"items": {"if": {}, "unevaluatedProperties": false}},
+    "schema": {"items": {"dependencies": {}, "unevaluatedProperties": false}},
+    "expected": {"items": {"dependencies": {}, "unevaluatedProperties": false}},
     "kind": "raw",
     "tests": [
       {"data": {"a": 1}},
@@ -23,8 +23,8 @@
   },
   {
     "description": "an unmodeled subschema under `propertyNames` keeps the whole document raw",
-    "schema": {"propertyNames": {"if": {}, "unevaluatedProperties": false}},
-    "expected": {"propertyNames": {"if": {}, "unevaluatedProperties": false}},
+    "schema": {"propertyNames": {"dependencies": {}, "unevaluatedProperties": false}},
+    "expected": {"propertyNames": {"dependencies": {}, "unevaluatedProperties": false}},
     "kind": "raw",
     "tests": [
       {"data": {"a": 1}},
@@ -34,8 +34,8 @@
   },
   {
     "description": "an unmodeled subschema under `additionalProperties` keeps the whole document raw",
-    "schema": {"additionalProperties": {"if": {}, "unevaluatedProperties": false}},
-    "expected": {"additionalProperties": {"if": {}, "unevaluatedProperties": false}},
+    "schema": {"additionalProperties": {"dependencies": {}, "unevaluatedProperties": false}},
+    "expected": {"additionalProperties": {"dependencies": {}, "unevaluatedProperties": false}},
     "kind": "raw",
     "tests": [
       {"data": {"a": 1}},
@@ -45,8 +45,8 @@
   },
   {
     "description": "an unmodeled subschema under `not` keeps the whole document raw",
-    "schema": {"not": {"not": {"if": {}, "unevaluatedProperties": false}}},
-    "expected": {"not": {"not": {"if": {}, "unevaluatedProperties": false}}},
+    "schema": {"not": {"not": {"dependencies": {}, "unevaluatedProperties": false}}},
+    "expected": {"not": {"not": {"dependencies": {}, "unevaluatedProperties": false}}},
     "kind": "raw",
     "tests": [
       {"data": {"a": 1}},

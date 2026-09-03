@@ -15,7 +15,7 @@ use jsonschema::{
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
 
-#[test_case(&json!({"if": {}, "unevaluatedProperties": false}); "unevaluated properties beside an applicator")]
+#[test_case(&json!({"dependencies": {}, "unevaluatedProperties": false}); "unevaluated properties beside an applicator")]
 fn unsupported_document_round_trips_verbatim(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(&canonical.to_json_schema(), schema);
@@ -34,7 +34,7 @@ const PET_DOCUMENT: &str = r##"{
             "leaf": {"$ref": "#/$defs/Named"}
         }},
         "Dead": {"allOf": [{"type": "integer", "minimum": 5}, {"maximum": 3}]},
-        "Opaque": {"if": {}, "unevaluatedProperties": false}
+        "Opaque": {"dependencies": {}, "unevaluatedProperties": false}
     },
     "type": "object",
     "properties": {"pet": {"$ref": "#/$defs/Pet"}}
@@ -765,7 +765,7 @@ fn a_definition_name_spelling_a_canonical_uri_does_not_alias_a_registry_resource
 fn unsupported_reference_target_keeps_the_whole_document_raw() {
     let schema = json!({
         "$ref": "#/$defs/value",
-        "$defs": {"value": {"if": {}, "unevaluatedProperties": false}}
+        "$defs": {"value": {"dependencies": {}, "unevaluatedProperties": false}}
     });
     let canonical = canonicalize(&schema).expect("canonicalizes");
 
@@ -1064,10 +1064,10 @@ fn unsupported_documents_hash_by_document_identity() {
             .expect("canonicalizes")
     };
     let integer = canonical(
-        r#"{"if": {}, "unevaluatedProperties": {"enum": [1, null, true, "x", [2], {"b": 3}]}}"#,
+        r#"{"dependencies": {}, "unevaluatedProperties": {"enum": [1, null, true, "x", [2], {"b": 3}]}}"#,
     );
     let float = canonical(
-        r#"{"if": {}, "unevaluatedProperties": {"enum": [1.0, null, true, "x", [2], {"b": 3}]}}"#,
+        r#"{"dependencies": {}, "unevaluatedProperties": {"enum": [1.0, null, true, "x", [2], {"b": 3}]}}"#,
     );
     assert_eq!(integer.kind(), CanonicalKind::Raw);
     let distinct: HashSet<CanonicalSchema> =
@@ -1235,7 +1235,7 @@ fn unsupported_result_display() {
 #[test_case(&json!(false), CanonicalKind::False, "false"; "boolean false")]
 #[test_case(&json!({"type": "integer", "minimum": 0}), CanonicalKind::Integer, "integer"; "integer_leaf")]
 #[test_case(&json!({"type": "number", "minimum": 0}), CanonicalKind::Number, "number"; "number_leaf")]
-#[test_case(&json!({"if": {}, "unevaluatedProperties": false}), CanonicalKind::Raw, "raw"; "raw")]
+#[test_case(&json!({"dependencies": {}, "unevaluatedProperties": false}), CanonicalKind::Raw, "raw"; "raw")]
 fn kind_reports_its_label(schema: &Value, kind: CanonicalKind, label: &str) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(canonical.kind(), kind);
@@ -1387,7 +1387,7 @@ fn deeply_nested_document_round_trips() {
     let mut schema = json!({"type": "string"});
     for _ in 0..300 {
         let mut map = Map::new();
-        map.insert("if".to_string(), json!({}));
+        map.insert("dependencies".to_string(), json!({}));
         map.insert("unevaluatedProperties".to_string(), schema);
         schema = Value::Object(map);
     }
@@ -1523,15 +1523,16 @@ fn canonical_schema_ordering() {
     assert!(two > one);
 
     let raw = |text: &str| canonicalize(&serde_json::from_str(text).unwrap()).unwrap();
-    let raw_one = raw(r#"{"if":{},"unevaluatedProperties":{"const":1}}"#);
-    let raw_two = raw(r#"{"if":{},"unevaluatedProperties":{"const":2}}"#);
+    let raw_one = raw(r#"{"dependencies":{},"unevaluatedProperties":{"const":1}}"#);
+    let raw_two = raw(r#"{"dependencies":{},"unevaluatedProperties":{"const":2}}"#);
+    assert_eq!(raw_one.kind(), CanonicalKind::Raw);
     assert_eq!(raw_one.partial_cmp(&raw_two), Some(Ordering::Less));
     assert!(raw_one < raw_two);
 
     #[cfg(feature = "arbitrary-precision")]
     assert!(
-        raw(r#"{"if":{},"unevaluatedProperties":{"const":1e400}}"#)
-            < raw(r#"{"if":{},"unevaluatedProperties":{"const":2e400}}"#)
+        raw(r#"{"dependencies":{},"unevaluatedProperties":{"const":1e400}}"#)
+            < raw(r#"{"dependencies":{},"unevaluatedProperties":{"const":2e400}}"#)
     );
 }
 
@@ -2142,7 +2143,7 @@ fn intersect_is_commutative_and_idempotent() {
 
 // A pattern the canonical form does not support keeps the whole document raw.
 fn unsupported() -> Value {
-    json!({"if": {}, "unevaluatedProperties": false})
+    json!({"dependencies": {}, "unevaluatedProperties": false})
 }
 
 #[test]
@@ -6644,4 +6645,32 @@ fn offline_refuses_remote_references() {
          and retrieving it failed: Retrieval is disabled, cannot fetch \
          https://example.com/schema.json"
     );
+}
+
+// Each node keeps within its own case budget; the product across nesting levels is what the
+// run-level budget caps, so the document stays raw instead of splitting for seconds.
+#[test]
+fn nested_conditional_splits_past_the_run_budget_stay_raw() {
+    let dependent = json!({
+        "a": {"properties": {"a1": {}}},
+        "b": {"properties": {"b1": {}}},
+        "c": {"properties": {"c1": {}}},
+        "d": {"properties": {"d1": {}}}
+    });
+    let mut schema = json!({
+        "type": "object",
+        "dependentSchemas": dependent,
+        "unevaluatedProperties": false
+    });
+    // Sixteen cases per level: 16 + 256 + 4096 variants, past what one run may spend.
+    for _ in 0..2 {
+        schema = json!({
+            "type": "object",
+            "properties": {"x": schema},
+            "dependentSchemas": dependent,
+            "unevaluatedProperties": false
+        });
+    }
+    let canonical = canonicalize(&schema).expect("canonicalizes");
+    assert_eq!(canonical.kind(), CanonicalKind::Raw);
 }
