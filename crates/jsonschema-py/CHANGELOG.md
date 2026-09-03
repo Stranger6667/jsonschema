@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Faster validating objects against object-heavy schemas.
+
 ## [0.53.0] - 2026-09-02
 
 ### Fixed
