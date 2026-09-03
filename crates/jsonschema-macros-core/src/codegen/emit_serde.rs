@@ -308,6 +308,24 @@ impl ValueEmitter for SerdeEmitter {
         TokenStream::new()
     }
 
+    fn sole_array_match(body: TokenStream, fallback: TokenStream) -> TokenStream {
+        quote! {
+            match instance {
+                __Value::Array(arr) => { #body }
+                _ => #fallback
+            }
+        }
+    }
+
+    fn sole_object_match(body: TokenStream, fallback: TokenStream) -> TokenStream {
+        quote! {
+            match instance {
+                __Value::Object(obj) => { #body }
+                _ => #fallback
+            }
+        }
+    }
+
     fn type_match(scrutinee: impl ToTokens, arms: Vec<TokenStream>) -> TokenStream {
         quote! { match #scrutinee { #(#arms)* } }
     }
