@@ -42,7 +42,7 @@
 //! }
 //!
 //! // Unsupported constructs keep the whole document as an opaque `Raw` pass-through.
-//! let raw = canonicalize(&json!({"if": {}, "unevaluatedProperties": false})).unwrap();
+//! let raw = canonicalize(&json!({"dependencies": {}, "unevaluatedProperties": false})).unwrap();
 //! assert_eq!(raw.kind(), CanonicalKind::Raw);
 //! ```
 //!

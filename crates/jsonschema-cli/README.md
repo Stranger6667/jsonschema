@@ -235,8 +235,8 @@ $ jsonschema canonicalize empty.json
 }
 ```
 
-Constructs the canonical form cannot model exactly — `if`/`then`/`else`, `unevaluatedProperties`
-and the like — are passed through as the original document, unchanged.
+Constructs the canonical form cannot model exactly — `$dynamicRef` beside `unevaluatedProperties`,
+a `not` over a pattern map, and the like — are passed through as the original document, unchanged.
 
 ### Selecting a subschema
 
