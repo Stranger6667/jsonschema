@@ -67,6 +67,11 @@ pub(crate) trait ValueEmitter {
     /// function starts from.
     fn module_prelude() -> TokenStream;
     fn function_prelude() -> TokenStream;
+    /// Dispatch for a schema whose only typed arm is an array, narrowing once instead of
+    /// classifying and then narrowing.
+    fn sole_array_match(body: TokenStream, fallback: TokenStream) -> TokenStream;
+    /// The object counterpart of [`ValueEmitter::sole_array_match`].
+    fn sole_object_match(body: TokenStream, fallback: TokenStream) -> TokenStream;
     fn type_match(scrutinee: impl ToTokens, arms: Vec<TokenStream>) -> TokenStream;
     /// Type dispatch with no per-type body: whether the instance has one of `patterns`' types.
     fn type_matches(patterns: Vec<TokenStream>) -> TokenStream;
