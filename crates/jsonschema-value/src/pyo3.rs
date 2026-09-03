@@ -676,6 +676,9 @@ pub struct PyMembers<'py> {
 impl<'py> Iterator for PyMembers<'py> {
     type Item = (Cow<'py, str>, PyNode<'py>);
 
+    // The plain hint is declined at the call sites in generated validators.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
         let mut key: *mut ffi::PyObject = std::ptr::null_mut();
         let mut value: *mut ffi::PyObject = std::ptr::null_mut();
@@ -776,12 +779,25 @@ impl<'py> Array<'py, Pyo3> for PyArray<'py> {
         }
         let items: Vec<PyNode<'py>> = self.elements().collect();
         if size <= crate::unique::ITEMS_SIZE_THRESHOLD {
-            // Pairwise beats hashing for small arrays, even at O(N^2).
+            // Pairwise beats hashing for small arrays, even at O(N^2); each item's type is
+            // derived once here rather than twice per pair.
+            let mut kinds = [ObjType::Null; crate::unique::ITEMS_SIZE_THRESHOLD];
+            for (slot, item) in kinds.iter_mut().zip(&items) {
+                *slot = object_type(*item);
+            }
             let mut idx = 0;
             while idx < size {
                 let mut inner_idx = idx + 1;
                 while inner_idx < size {
-                    if equal_nodes(items[idx], items[inner_idx], 0) {
+                    if items[idx].as_ptr() == items[inner_idx].as_ptr()
+                        || equal_typed(
+                            items[idx],
+                            kinds[idx],
+                            items[inner_idx],
+                            kinds[inner_idx],
+                            0,
+                        )
+                    {
                         return false;
                     }
                     inner_idx += 1;
@@ -802,7 +818,16 @@ fn equal_nodes(left: PyNode<'_>, right: PyNode<'_>, depth: u8) -> bool {
     if left.as_ptr() == right.as_ptr() {
         return true;
     }
-    let (left_type, right_type) = (object_type(left), object_type(right));
+    equal_typed(left, object_type(left), right, object_type(right), depth)
+}
+
+fn equal_typed(
+    left: PyNode<'_>,
+    left_type: ObjType,
+    right: PyNode<'_>,
+    right_type: ObjType,
+    depth: u8,
+) -> bool {
     match (left_type, right_type) {
         (ObjType::Enum, _) => equal_nodes(resolved(left), right, depth),
         (_, ObjType::Enum) => equal_nodes(left, resolved(right), depth),
@@ -955,6 +980,9 @@ pub struct PyElements<'py> {
 impl<'py> Iterator for PyElements<'py> {
     type Item = PyNode<'py>;
 
+    // The plain hint is declined at the call sites in generated validators.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
     fn next(&mut self) -> Option<PyNode<'py>> {
         if self.index >= self.len {
             return None;
