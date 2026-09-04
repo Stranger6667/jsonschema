@@ -15,6 +15,10 @@
 
 - Canonicalization cloning leaves per intersection and the definition map per settled target.
 
+### Fixed
+
+- Canonicalization of `not` over an object with `properties`, `patternProperties` and `additionalProperties`, which applied `additionalProperties` to the keys listed in `properties`.
+
 ## [0.53.0] - 2026-09-02
 
 ### Added
