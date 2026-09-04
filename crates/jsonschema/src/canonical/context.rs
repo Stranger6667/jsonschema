@@ -106,10 +106,31 @@ impl CanonicalizationContext {
         self
     }
 
-    /// Point this run at a map a settling pass has moved on. What it already remembers stays: a
-    /// pass settling a body only after every body it reads met those bodies in their final form.
-    pub(crate) fn read_targets(&mut self, definitions: Arc<DefinitionMap>) {
-        self.definitions = Some(definitions);
+    /// The targets this run reads through.
+    pub(crate) fn targets(&self) -> &DefinitionMap {
+        self.definitions
+            .as_deref()
+            .expect("a settling run reads targets")
+    }
+
+    /// The targets, for a settling pass to move on. What the run already remembers stays: a pass
+    /// settles a body only after every body it reads met those bodies in their final form.
+    pub(crate) fn targets_mut(&mut self) -> &mut DefinitionMap {
+        let definitions = self
+            .definitions
+            .as_mut()
+            .expect("a settling run reads targets");
+        // Held here alone, so the edit lands in place instead of copying the map per body.
+        debug_assert_eq!(
+            Arc::strong_count(definitions),
+            1,
+            "a settling run holds its targets alone"
+        );
+        Arc::make_mut(definitions)
+    }
+
+    pub(crate) fn into_targets(self) -> DefinitionMap {
+        Arc::unwrap_or_clone(self.definitions.expect("a settling run reads targets"))
     }
 
     pub(crate) fn pattern_options(&self) -> PatternEngineOptions {

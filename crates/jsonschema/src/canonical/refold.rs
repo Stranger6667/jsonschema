@@ -43,15 +43,16 @@ pub(crate) fn through_targets(
     // Normalization must not read targets, or it would produce forms the parse cannot.
     let plain =
         CanonicalizationContext::new(ctx.draft(), ctx.pattern_options(), ctx.validate_formats());
-    let mut definitions = parsed.definitions.clone();
-    // One context for the whole pass, so the intersection cache and the budget are shared.
-    let mut resolving = reading(&definitions, ctx);
+    // One context for the whole pass, so the intersection cache and the budget are shared. It
+    // holds the map alone, so a settled body lands in place and later bodies read it.
+    let mut resolving = reading(&parsed.definitions, ctx);
     for uri in order {
-        let body = definitions
+        let body = resolving
+            .targets()
             .get(&uri)
             .cloned()
             .expect("the order names the map's own keys");
-        let settled = settle(&body, &definitions, &resolving, &plain);
+        let settled = settle(&body, resolving.targets(), &resolving, &plain);
         // An approximated result is not a canonical form; keep what the parse built. Both contexts
         // answer, since the union folds run against `plain`.
         if approximated(&resolving) || approximated(&plain) {
@@ -60,16 +61,14 @@ pub(crate) fn through_targets(
         if settled == body {
             continue;
         }
-        definitions.insert(uri, settled);
-        // Later bodies must see the new one.
-        resolving.read_targets(Arc::new(definitions.clone()));
+        resolving.targets_mut().insert(uri, settled);
     }
-    let root = settle(&parsed.root, &definitions, &resolving, &plain);
+    let root = settle(&parsed.root, resolving.targets(), &resolving, &plain);
     if approximated(&resolving) || approximated(&plain) {
         return parsed;
     }
     parsed.root = root;
-    parsed.definitions = definitions;
+    parsed.definitions = resolving.into_targets();
     // Folding inlines targets, which can leave definitions unreferenced.
     parse::prune_unreachable_definitions(&parsed.root, &mut parsed.definitions);
     parsed
@@ -271,9 +270,13 @@ fn folded(
         SchemaKind::Object(leaf) => {
             let leaf = leaf.get();
             let entries = |map: &PropertyMap| -> PropertyMap {
-                map.iter()
-                    .map(|(key, schema)| (Arc::clone(key), folded(schema, definitions, ctx, plain)))
-                    .collect()
+                PropertyMap::from_sorted(
+                    map.iter()
+                        .map(|(key, schema)| {
+                            (Arc::clone(key), folded(schema, definitions, ctx, plain))
+                        })
+                        .collect(),
+                )
             };
             let keys = ObjectLeaf {
                 sizes: leaf.sizes.clone(),

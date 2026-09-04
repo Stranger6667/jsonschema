@@ -60,10 +60,10 @@ pub(crate) fn intersect(left: Schema, right: Schema, ctx: &CanonicalizationConte
     if let Some(remembered) = ctx.recall_intersection(&left, &right) {
         return pointers.reshare(remembered);
     }
-    let key = (left.clone(), right.clone());
+    let key = (left, right);
     // Whether this pair approximated travels with it: a later walk reading the remembered result
     // reads the same approximation, and deciding on it needs to know that.
-    let (result, inexact) = ctx.probe(|| intersect_pair(left, right, ctx));
+    let (result, inexact) = ctx.probe(|| intersect_pair(&key.0, &key.1, ctx));
     if inexact {
         ctx.record_inexact_intersection();
     }
@@ -125,8 +125,8 @@ fn computed_exactly<T>(ctx: &CanonicalizationContext, compute: impl FnOnce() -> 
     (!inexact && !ctx.outgrew_distribution()).then_some(computed)
 }
 
-fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
-    match (left.into_kind(), right.into_kind()) {
+fn intersect_pair(left: &Schema, right: &Schema, ctx: &CanonicalizationContext) -> Schema {
+    match (left.kind(), right.kind()) {
         // `False` accepts no value, so nothing satisfies both sides.
         (SchemaKind::False, _)
         | (_, SchemaKind::False)
@@ -166,8 +166,8 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         }
         // References stay opaque. Equal references deduplicate; every other interaction remains an
         // exact symbolic conjunction rather than claiming facts about an unresolved target.
-        (SchemaKind::Reference(left), SchemaKind::Reference(right)) if left == right => {
-            Schema::new(SchemaKind::Reference(left))
+        (SchemaKind::Reference(first), SchemaKind::Reference(second)) if first == second => {
+            left.clone()
         }
         // Both sides are unions: every pair goes into one union, not into a union per branch of
         // whichever side came first. An inner union normalizes what it holds, and a leaf folded
@@ -191,30 +191,29 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         // One side is an `AnyOf` (matches if any branch matches). Push the intersection inside the union:
         // (A or B) and C = (A and C) or (B and C). This happens before opaque ref handling so an `AllOf`
         // never retains a distributable union that would change shape when emitted and parsed again.
-        (SchemaKind::AnyOf(branches), other) | (other, SchemaKind::AnyOf(branches)) => {
-            distribute(branches, Schema::new(other), ctx)
-        }
+        (SchemaKind::AnyOf(branches), _) => distribute(branches, right.clone(), ctx),
+        (_, SchemaKind::AnyOf(branches)) => distribute(branches, left.clone(), ctx),
         (
-            left @ (SchemaKind::Not(_)
+            SchemaKind::Not(_)
             | SchemaKind::AllOf(_)
             | SchemaKind::OneOf(_)
-            | SchemaKind::Reference(_)),
-            right,
+            | SchemaKind::Reference(_),
+            _,
         )
         | (
-            left,
-            right @ (SchemaKind::Not(_)
+            _,
+            SchemaKind::Not(_)
             | SchemaKind::AllOf(_)
             | SchemaKind::OneOf(_)
-            | SchemaKind::Reference(_)),
-        ) => opaque_intersection(Schema::new(left), Schema::new(right), ctx),
+            | SchemaKind::Reference(_),
+        ) => opaque_intersection(left.clone(), right.clone(), ctx),
         // `Const`/`Enum` is a fixed set of allowed values. Keep only those values the other side also accepts.
-        (left @ (SchemaKind::Const(_) | SchemaKind::Enum(_)), right) => {
-            restrict_members(into_members(left), Schema::new(right), ctx)
+        (values @ (SchemaKind::Const(_) | SchemaKind::Enum(_)), _) => {
+            restrict_members(members_of(values), right, ctx)
         }
         // Same as above with the fixed value set on the right.
-        (left, right @ (SchemaKind::Const(_) | SchemaKind::Enum(_))) => {
-            restrict_members(into_members(right), Schema::new(left), ctx)
+        (_, values @ (SchemaKind::Const(_) | SchemaKind::Enum(_))) => {
+            restrict_members(members_of(values), left, ctx)
         }
         // Each side is a set of allowed JSON types (e.g. string, number). Keep the types allowed by both;
         // `Number` also allows every `Integer`. If they share no type, nothing matches, so `False`.
@@ -224,7 +223,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         //       ]  =>  {"type": "string"}
         (SchemaKind::MultiType(first), SchemaKind::MultiType(second)) => {
             let cover =
-                SchemaKind::semantic_cover(first).intersect(SchemaKind::semantic_cover(second));
+                SchemaKind::semantic_cover(*first).intersect(SchemaKind::semantic_cover(*second));
             if cover.is_empty() {
                 Schema::falsy()
             } else {
@@ -237,13 +236,11 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         //         {"type": "integer", "enum": [1, 2]},
         //         {"type": "string"}
         //       ]  =>  {"not": {}}
-        (SchemaKind::MultiType(set), SchemaKind::TypedGroup { ty, body })
-        | (SchemaKind::TypedGroup { ty, body }, SchemaKind::MultiType(set)) => {
-            if SchemaKind::semantic_cover(set).contains(ty) {
-                Schema::new(SchemaKind::TypedGroup { ty, body })
-            } else {
-                Schema::falsy()
-            }
+        (SchemaKind::MultiType(set), SchemaKind::TypedGroup { ty, .. }) => {
+            typed_group_within(*set, *ty, right)
+        }
+        (SchemaKind::TypedGroup { ty, .. }, SchemaKind::MultiType(set)) => {
+            typed_group_within(*set, *ty, left)
         }
         // Two `TypedGroup`s can overlap only if they use the same type. Same type: keep it and intersect
         // their value sets. Different types share no value (nothing is two types at once), so `False`.
@@ -259,7 +256,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
             },
         ) => {
             if first == second {
-                typed_group(first, intersect(body, other, ctx))
+                typed_group(*first, intersect(body.clone(), other.clone(), ctx))
             } else {
                 Schema::falsy()
             }
@@ -268,8 +265,8 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         // otherwise the two share no value, so `False`.
         (SchemaKind::MultiType(set), SchemaKind::String(leaf))
         | (SchemaKind::String(leaf), SchemaKind::MultiType(set)) => {
-            if SchemaKind::semantic_cover(set).contains(JsonType::String) {
-                string_leaf(leaf.into_inner(), ctx)
+            if SchemaKind::semantic_cover(*set).contains(JsonType::String) {
+                string_leaf(leaf.get().clone(), ctx)
             } else {
                 Schema::falsy()
             }
@@ -277,7 +274,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         // Two string leaves: keep the strings both accept by tightening to the narrower length window.
         (SchemaKind::String(first), SchemaKind::String(second)) => {
             string_leaf(
-                intersect_string_leaves(first.into_inner(), second.into_inner()),
+                intersect_string_leaves(first.get().clone(), second.get().clone()),
                 ctx,
             )
         }
@@ -285,8 +282,8 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         // `integer`; otherwise the two share no value, so `False`.
         (SchemaKind::MultiType(set), SchemaKind::Integer(bounds))
         | (SchemaKind::Integer(bounds), SchemaKind::MultiType(set)) => {
-            if SchemaKind::semantic_cover(set).contains(JsonType::Integer) {
-                integer_leaf(bounds.into_inner(), ctx)
+            if SchemaKind::semantic_cover(*set).contains(JsonType::Integer) {
+                integer_leaf(bounds.get().clone(), ctx)
             } else {
                 Schema::falsy()
             }
@@ -294,7 +291,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         // Two integer leaves: keep the integers both accept by tightening to the narrower interval.
         (SchemaKind::Integer(first), SchemaKind::Integer(second)) => {
             integer_leaf(
-                intersect_integer_leaves(first.into_inner(), second.into_inner()),
+                intersect_integer_leaves(first.get().clone(), second.get().clone()),
                 ctx,
             )
         }
@@ -302,25 +299,25 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         // ones the interval admits.
         (SchemaKind::TypedGroup { ty, body }, SchemaKind::Number(leaf))
         | (SchemaKind::Number(leaf), SchemaKind::TypedGroup { ty, body }) => {
-            let kept = into_members(body.into_kind())
+            let kept = members_of(body.kind())
                 .into_iter()
                 .filter(|member| number_leaf_admits(leaf.get(), member))
                 .collect();
-            typed_group(ty, canonicalize_value_set(kept))
+            typed_group(*ty, canonicalize_value_set(kept))
         }
         // A typed group holds `integer` values (Draft 4); keep the ones within the leaf's interval.
         (SchemaKind::TypedGroup { ty, body }, SchemaKind::Integer(leaf))
         | (SchemaKind::Integer(leaf), SchemaKind::TypedGroup { ty, body }) => {
-            let kept = into_members(body.into_kind())
+            let kept = members_of(body.kind())
                 .into_iter()
                 .filter(|member| integer_leaf_admits(leaf.get(), member))
                 .collect();
-            typed_group(ty, canonicalize_value_set(kept))
+            typed_group(*ty, canonicalize_value_set(kept))
         }
         // A number interval keeps only the values both sides admit.
         (SchemaKind::Number(first), SchemaKind::Number(second)) => {
             number_leaf(
-                intersect_number_leaves(first.into_inner(), second.into_inner()),
+                intersect_number_leaves(first.get().clone(), second.get().clone()),
                 ctx,
             )
         }
@@ -328,10 +325,10 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         (SchemaKind::MultiType(set), SchemaKind::Number(leaf))
         | (SchemaKind::Number(leaf), SchemaKind::MultiType(set)) => {
             if set.contains(JsonType::Number) {
-                number_leaf(leaf.into_inner(), ctx)
+                number_leaf(leaf.get().clone(), ctx)
             } else if set.contains(JsonType::Integer) {
                 // `integer` is a subset of `number`, so the interval keeps its integers.
-                integer_within(&leaf.into_inner(), ctx)
+                integer_within(leaf.get(), ctx)
             } else {
                 Schema::falsy()
             }
@@ -341,7 +338,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         (SchemaKind::MultiType(set), SchemaKind::Array(leaf))
         | (SchemaKind::Array(leaf), SchemaKind::MultiType(set)) => {
             if set.contains(JsonType::Array) {
-                array_leaf(leaf.into_inner(), ctx)
+                array_leaf(leaf.get().clone(), ctx)
             } else {
                 Schema::falsy()
             }
@@ -349,7 +346,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         // Two array leaves: keep the arrays both accept - the narrower window, and the distinctness
         // both sides ask for.
         (SchemaKind::Array(first), SchemaKind::Array(second)) => {
-            match intersect_array_leaves(first.into_inner(), second.into_inner(), ctx) {
+            match intersect_array_leaves(first.get(), second.get(), ctx) {
                 Some(leaf) => array_leaf(leaf, ctx),
                 None => Schema::falsy(),
             }
@@ -359,7 +356,7 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         (SchemaKind::MultiType(set), SchemaKind::Object(leaf))
         | (SchemaKind::Object(leaf), SchemaKind::MultiType(set)) => {
             if set.contains(JsonType::Object) {
-                object_leaf(leaf.into_inner(), ctx)
+                object_leaf(leaf.get().clone(), ctx)
             } else {
                 Schema::falsy()
             }
@@ -367,15 +364,16 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
         // Two object leaves: keep the objects both accept - the narrower window, every required key.
         (SchemaKind::Object(first), SchemaKind::Object(second)) => {
             object_leaf(
-                intersect_object_leaves(first.into_inner(), second.into_inner(), ctx),
+                intersect_object_leaves(first.get(), second.get(), ctx),
                 ctx,
             )
         }
         // An integer leaf inside a number interval keeps the integers the interval admits.
-        (SchemaKind::Integer(integers), SchemaKind::Number(numbers))
-        | (SchemaKind::Number(numbers), SchemaKind::Integer(integers)) => {
-            let within = integer_within(&numbers.into_inner(), ctx);
-            intersect(Schema::new(SchemaKind::Integer(integers)), within, ctx)
+        (SchemaKind::Integer(_), SchemaKind::Number(numbers)) => {
+            intersect(left.clone(), integer_within(numbers.get(), ctx), ctx)
+        }
+        (SchemaKind::Number(numbers), SchemaKind::Integer(_)) => {
+            intersect(right.clone(), integer_within(numbers.get(), ctx), ctx)
         }
         // `Raw` is an unsupported schema kept verbatim. It only ever appears as the whole document (parse keeps
         // the entire document `Raw` when it cannot model it), never nested in a combinator, so intersect never sees it.
@@ -385,17 +383,26 @@ fn intersect_pair(left: Schema, right: Schema, ctx: &CanonicalizationContext) ->
     }
 }
 
+/// The group where the type set covers its type; nothing otherwise.
+fn typed_group_within(set: JsonTypeSet, ty: JsonType, group: &Schema) -> Schema {
+    if SchemaKind::semantic_cover(set).contains(ty) {
+        group.clone()
+    } else {
+        Schema::falsy()
+    }
+}
+
 fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {
     let mut symbolic = Vec::new();
     let mut structural = Schema::truthy();
     let mut stack = vec![left, right];
     while let Some(schema) = stack.pop() {
-        match schema.into_kind() {
-            SchemaKind::AllOf(inner) => stack.extend(inner),
-            kind @ (SchemaKind::Not(_) | SchemaKind::OneOf(_) | SchemaKind::Reference(_)) => {
-                symbolic.push(Schema::new(kind));
+        match schema.kind() {
+            SchemaKind::AllOf(inner) => stack.extend(inner.as_slice().iter().cloned()),
+            SchemaKind::Not(_) | SchemaKind::OneOf(_) | SchemaKind::Reference(_) => {
+                symbolic.push(schema);
             }
-            kind @ (SchemaKind::MultiType(_)
+            SchemaKind::MultiType(_)
             | SchemaKind::TypedGroup { .. }
             | SchemaKind::String(_)
             | SchemaKind::Integer(_)
@@ -404,8 +411,8 @@ fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContex
             | SchemaKind::Object(_)
             | SchemaKind::Const(_)
             | SchemaKind::Enum(_)
-            | SchemaKind::AnyOf(_)) => {
-                structural = intersect(structural, Schema::new(kind), ctx);
+            | SchemaKind::AnyOf(_) => {
+                structural = intersect(structural, schema, ctx);
                 if matches!(structural.kind(), SchemaKind::False) {
                     return structural;
                 }
@@ -423,10 +430,12 @@ fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContex
         !symbolic.is_empty(),
         "opaque intersection retains at least one symbolic branch"
     );
-    match structural.into_kind() {
+    match structural.kind() {
         SchemaKind::AnyOf(branches) => union(
             branches
-                .into_iter()
+                .as_slice()
+                .iter()
+                .cloned()
                 .map(|branch| {
                     let mut conjuncts = symbolic.clone();
                     conjuncts.push(branch);
@@ -436,7 +445,7 @@ fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContex
             ctx,
         ),
         SchemaKind::True => opaque_conjunction(symbolic),
-        kind @ (SchemaKind::MultiType(_)
+        SchemaKind::MultiType(_)
         | SchemaKind::TypedGroup { .. }
         | SchemaKind::String(_)
         | SchemaKind::Integer(_)
@@ -450,8 +459,8 @@ fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContex
         | SchemaKind::OneOf(_)
         | SchemaKind::Reference(_)
         | SchemaKind::False
-        | SchemaKind::Raw(_)) => {
-            symbolic.push(Schema::new(kind));
+        | SchemaKind::Raw(_) => {
+            symbolic.push(structural);
             opaque_conjunction(symbolic)
         }
     }
@@ -925,7 +934,7 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             // A `TypedGroup` accepts values of one JSON type that lie in a value set; collect those
             // values under that type.
             SchemaKind::TypedGroup { ty, body } => {
-                let values = into_members(body.into_kind());
+                let values = members_of(body.kind());
                 match groups.iter_mut().find(|(existing, _)| *existing == ty) {
                     Some((_, collected)) => collected.extend(values),
                     None => groups.push((ty, values)),
@@ -2357,23 +2366,23 @@ fn widen_entry_covered_by_sibling(
 
 /// Intersect `other` with each union branch; the last branch moves `other` instead of cloning it.
 fn distribute(
-    branches: AtLeastTwo<Schema>,
+    branches: &AtLeastTwo<Schema>,
     other: Schema,
     ctx: &CanonicalizationContext,
 ) -> Schema {
     let (rest, last) = branches.split_last();
     let mut out: Vec<Schema> = rest
-        .into_iter()
-        .map(|branch| intersect(branch, other.clone(), ctx))
+        .iter()
+        .map(|branch| intersect(branch.clone(), other.clone(), ctx))
         .collect();
-    out.push(intersect(last, other, ctx));
+    out.push(intersect(last.clone(), other, ctx));
     union(out, ctx)
 }
 
-fn into_members(kind: SchemaKind) -> Vec<CanonicalJson> {
+fn members_of(kind: &SchemaKind) -> Vec<CanonicalJson> {
     match kind {
-        SchemaKind::Const(value) => vec![value],
-        SchemaKind::Enum(values) => values.into_vec(),
+        SchemaKind::Const(value) => vec![value.clone()],
+        SchemaKind::Enum(values) => values.as_slice().to_vec(),
         other @ (SchemaKind::MultiType(_)
         | SchemaKind::TypedGroup { .. }
         | SchemaKind::String(_)
@@ -2395,13 +2404,13 @@ fn into_members(kind: SchemaKind) -> Vec<CanonicalJson> {
 /// Keep only the `members` that `other` also accepts, packed back into a canonical value set.
 fn restrict_members(
     members: Vec<CanonicalJson>,
-    other: Schema,
+    other: &Schema,
     ctx: &CanonicalizationContext,
 ) -> Schema {
-    match other.into_kind() {
+    match other.kind() {
         // `other` is itself a value set: keep the members present in both.
         kind @ (SchemaKind::Const(_) | SchemaKind::Enum(_)) => {
-            let admitted = into_members(kind);
+            let admitted = members_of(kind);
             canonicalize_value_set(
                 members
                     .into_iter()
@@ -2410,7 +2419,7 @@ fn restrict_members(
             )
         }
         // `other` allows a set of JSON types: keep the members whose type is allowed.
-        SchemaKind::MultiType(set) => parse::restrict_values_to_types(members, set, ctx),
+        SchemaKind::MultiType(set) => parse::restrict_values_to_types(members, *set, ctx),
         // `other` is a string leaf: keep the members that fit its window and match every pattern.
         SchemaKind::String(leaf) => {
             let matchers = StringMatchers::compile(leaf.get(), ctx);
@@ -2448,12 +2457,14 @@ fn restrict_members(
         }
         // `other` is a typed group: keep the members that match its type AND sit in its value set.
         SchemaKind::TypedGroup { ty, body } => {
-            let admitted = into_members(body.into_kind());
+            let admitted = members_of(body.kind());
             let kept: Vec<_> = members
                 .into_iter()
-                .filter(|member| member.json_type() == ty && admitted.binary_search(member).is_ok())
+                .filter(|member| {
+                    member.json_type() == *ty && admitted.binary_search(member).is_ok()
+                })
                 .collect();
-            typed_group(ty, canonicalize_value_set(kept))
+            typed_group(*ty, canonicalize_value_set(kept))
         }
         // Intersect dispatch already handled `True`/`False`/`AnyOf`/`Raw`, so `other` is a leaf here.
         // `other` is a number interval: keep the numeric members it fully admits, and pin a member
@@ -3428,8 +3439,8 @@ fn cap_length(leaf: &mut ArrayLeaf, ceiling: usize) {
 /// elements both leaves admit at every index. `None` when one side demands distinct elements and
 /// the other a repeat, which no array does at once.
 fn intersect_array_leaves(
-    first: ArrayLeaf,
-    second: ArrayLeaf,
+    first: &ArrayLeaf,
+    second: &ArrayLeaf,
     ctx: &CanonicalizationContext,
 ) -> Option<ArrayLeaf> {
     let distinctness = match (first.distinctness, second.distinctness) {
@@ -3444,18 +3455,18 @@ fn intersect_array_leaves(
     for index in 0..length {
         // The longer prefix always supplies a schema at every index below `length`, so an index the
         // shorter one leaves open falls back to its tail, and the pair always has something to keep.
-        let left = element_constraint(&first, index);
-        let right = element_constraint(&second, index);
+        let left = element_constraint(first, index);
+        let right = element_constraint(second, index);
         prefix.push(intersect(left, right, ctx));
     }
-    let items = match (first.items, second.items) {
-        (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
-        (items, None) | (None, items) => items,
+    let items = match (&first.items, &second.items) {
+        (Some(left), Some(right)) => Some(intersect(left.clone(), right.clone(), ctx)),
+        (items, None) | (None, items) => items.clone(),
     };
-    let mut contains = first.contains;
-    contains.extend(second.contains);
+    let mut contains = first.contains.clone();
+    contains.extend(second.contains.iter().cloned());
     Some(ArrayLeaf {
-        lengths: first.lengths.intersect(second.lengths),
+        lengths: first.lengths.clone().intersect(second.lengths.clone()),
         distinctness,
         prefix,
         items,
@@ -4565,33 +4576,33 @@ fn is_known_content_encoding(encoding: &str) -> bool {
 
 /// Keep the objects both leaves accept: the narrower window, and every key either demands.
 fn intersect_object_leaves(
-    first: ObjectLeaf,
-    second: ObjectLeaf,
+    first: &ObjectLeaf,
+    second: &ObjectLeaf,
     ctx: &CanonicalizationContext,
 ) -> ObjectLeaf {
-    let properties = intersect_property_entries(&first, &second, ctx);
-    let pattern_properties = intersect_pattern_entries(&first, &second, ctx);
-    if !spells_shielded_meet(&first, &second, &properties, ctx) {
+    let properties = intersect_property_entries(first, second, ctx);
+    let pattern_properties = intersect_pattern_entries(first, second, ctx);
+    if !spells_shielded_meet(first, second, &properties, ctx) {
         ctx.record_inexact_intersection();
     }
-    let mut required = first.required;
-    required.extend(second.required);
+    let mut required = first.required.clone();
+    required.extend(second.required.iter().cloned());
     required.sort();
     required.dedup();
-    let property_names = match (first.property_names, second.property_names) {
-        (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
-        (names, None) | (None, names) => names,
+    let property_names = match (&first.property_names, &second.property_names) {
+        (Some(left), Some(right)) => Some(intersect(left.clone(), right.clone(), ctx)),
+        (names, None) | (None, names) => names.clone(),
     };
-    let additional = match (first.additional, second.additional) {
-        (Some(left), Some(right)) => Some(intersect(left, right, ctx)),
-        (shield, None) | (None, shield) => shield,
+    let additional = match (&first.additional, &second.additional) {
+        (Some(left), Some(right)) => Some(intersect(left.clone(), right.clone(), ctx)),
+        (shield, None) | (None, shield) => shield.clone(),
     };
-    let mut violations = first.violations;
-    violations.extend(second.violations);
+    let mut violations = first.violations.clone();
+    violations.extend(second.violations.iter().cloned());
     violations.sort();
     violations.dedup();
     ObjectLeaf {
-        sizes: first.sizes.intersect(second.sizes),
+        sizes: first.sizes.clone().intersect(second.sizes.clone()),
         required,
         property_names,
         properties,
