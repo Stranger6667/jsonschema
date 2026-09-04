@@ -5,6 +5,7 @@
 ### Performance
 
 - Faster validating objects against object-heavy schemas.
+- Canonicalization cloning leaves per intersection and the definition map per settled target.
 
 ### Changed
 

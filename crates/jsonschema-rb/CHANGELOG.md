@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Canonicalization cloning leaves per intersection and the definition map per settled target.
+
 ### Changed
 
 - Canonicalization of `unevaluated*` beside `dependentSchemas` or `if`/`then`/`else`, which kept the document `Raw`.

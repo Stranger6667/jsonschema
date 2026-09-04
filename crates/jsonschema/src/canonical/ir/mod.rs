@@ -646,13 +646,13 @@ impl<T> AtLeastTwo<T> {
         }
     }
 
-    /// Split the last element off; the remainder still holds at least one.
-    pub(crate) fn split_last(self) -> (Vec<T>, T) {
+    /// The rest and the last element; the rest still holds at least one.
+    pub(crate) fn split_last(&self) -> (&[T], &T) {
         match self {
-            Self::Two([first, second]) => (vec![first], second),
-            Self::Many(mut items) => {
-                let last = items.pop().expect("at least two elements");
-                (items, last)
+            Self::Two([first, second]) => (std::slice::from_ref(first), second),
+            Self::Many(items) => {
+                let (last, rest) = items.split_last().expect("at least two elements");
+                (rest, last)
             }
         }
     }
