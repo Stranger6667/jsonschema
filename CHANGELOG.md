@@ -5,6 +5,7 @@
 ### Added
 
 - `backend = SerdeJson` on `#[jsonschema::validator]`, generating a validator that reads `serde_json::Value`.
+- `PreparedDocument::unsatisfiable_pointers`, listing every subschema no value satisfies.
 
 ### Changed
 

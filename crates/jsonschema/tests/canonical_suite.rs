@@ -36,6 +36,24 @@ fn run_case(case: CanonicalCase) {
         return;
     }
 
+    // Every pointer reported empty must answer `No` when selected on its own.
+    for input in &inputs {
+        let Ok(prepared) = case.options().prepare(input) else {
+            continue;
+        };
+        for pointer in prepared.unsatisfiable_pointers().expect("reports") {
+            assert_eq!(
+                prepared
+                    .canonicalize_at(&pointer)
+                    .expect("canonicalizes")
+                    .satisfiability(),
+                Satisfiability::No,
+                "case `{}`: `{pointer}` reported empty for {input}",
+                case.description
+            );
+        }
+    }
+
     let raw_draft = case
         .draft()
         .unwrap_or_else(|| Draft::default().detect(inputs[0]));
