@@ -4,7 +4,7 @@
 
 ### Added
 
-- `backend = SerdeJson` on `#[jsonschema::validator]`, naming the JSON representation the generated validator reads.
+- `backend = SerdeJson` on `#[jsonschema::validator]`, generating a validator that reads `serde_json::Value`.
 
 ### Changed
 
