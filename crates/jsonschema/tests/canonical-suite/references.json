@@ -1,6 +1,6 @@
 [
   {
-    "description": "a conjunction of references absorbs the stricter conjunction built from it",
+    "description": "an allOf of references absorbs the stricter allOf built from it",
     "schemas": [
       {
         "anyOf": [
@@ -192,7 +192,7 @@
     ]
   },
   {
-    "description": "a sibling covering one conjunct covers the whole conjunction",
+    "description": "a sibling covering one allOf branch covers the whole allOf",
     "schemas": [
       {
         "anyOf": [
@@ -221,7 +221,7 @@
     ]
   },
   {
-    "description": "a reference beside its own complement leaves no value out",
+    "description": "a reference beside its own negation leaves no value out",
     "schema": {
       "anyOf": [{"$ref": "#/$defs/node"}, {"not": {"$ref": "#/$defs/node"}}],
       "$defs": {"node": {"type": "object", "properties": {"child": {"$ref": "#/$defs/node"}}}}
@@ -235,7 +235,7 @@
     ]
   },
   {
-    "description": "a complement branch drops its own reference from a sibling conjunction",
+    "description": "a negation branch drops its own reference from a sibling allOf",
     "schemas": [
       {
         "anyOf": [
@@ -486,7 +486,7 @@
     ]
   },
   {
-    "description": "definitions spelling stays aligned with its reference pointer",
+    "description": "a definition name stays aligned with its reference pointer",
     "schema": {
       "$ref": "#/definitions/value",
       "definitions": {
@@ -590,7 +590,7 @@
     ]
   },
   {
-    "description": "an opaque reference conjunction distributes across a symbolic union",
+    "description": "an opaque reference allOf distributes across a symbolic union",
     "schema": {
       "allOf": [
         {
@@ -640,7 +640,7 @@
     ]
   },
   {
-    "description": "not of a reference takes the complement of its target",
+    "description": "not of a reference negates its target",
     "schemas": [
       {
         "not": {"$ref": "#/$defs/value"},
@@ -720,7 +720,7 @@
     ]
   },
   {
-    "description": "a direct reference absorbs conjunctions introduced by double negation",
+    "description": "a direct reference absorbs allOf branches introduced by double negation",
     "draft": "draft4",
     "schema": {
       "not": {
@@ -780,7 +780,7 @@
     ]
   },
   {
-    "description": "syntactic double negation restores a reference conjunction without subset absorption",
+    "description": "syntactic double negation restores a reference allOf without subset absorption",
     "draft": "draft4",
     "schema": {
       "not": {
@@ -879,7 +879,7 @@
     ]
   },
   {
-    "description": "a reference intersected with its exact complement is false",
+    "description": "a reference intersected with its exact negation is false",
     "schema": {
       "allOf": [
         {"$ref": "#/$defs/value"},
@@ -954,7 +954,7 @@
     ]
   },
   {
-    "description": "reference condition keeps its symbolic complement",
+    "description": "reference condition keeps its symbolic negation",
     "schema": {
       "if": {"$ref": "#/$defs/condition"},
       "then": {"const": 1},
@@ -980,7 +980,7 @@
     ]
   },
   {
-    "description": "a reference condition the walk can open takes the complement of its target",
+    "description": "a reference condition the walk can open negates its target",
     "schemas": [
       {
         "if": {"$ref": "#/$defs/condition"},
@@ -1153,7 +1153,7 @@
     ]
   },
   {
-    "description": "an opaque reference conjunction distributes across a restricted value set",
+    "description": "an opaque reference allOf distributes across a restricted value set",
     "draft": "draft4",
     "schema": {
       "allOf": [
@@ -1239,7 +1239,7 @@
     ]
   },
   {
-    "description": "an opaque conjunction with disjoint types is unsatisfiable",
+    "description": "an opaque allOf with disjoint types is unsatisfiable",
     "schema": {
       "allOf": [
         {"$ref": "#/$defs/x"},
@@ -1496,7 +1496,7 @@
     ]
   },
   {
-    "description": "a reference under a shield leaves a finite object member unabsorbed",
+    "description": "a reference under additionalProperties leaves a finite object member unabsorbed",
     "schema": {
       "anyOf": [
         {"const": {"a": [1]}},
@@ -1562,7 +1562,7 @@
     ]
   },
   {
-    "description": "a definition name spelling a canonical URI does not alias the target that URI names",
+    "description": "a definition name written as a canonical URI does not alias the target that URI names",
     "schema": {
       "$id": "http://doc/root",
       "anyOf": [
@@ -1602,7 +1602,7 @@
     ]
   },
   {
-    "description": "a definition name spelling a canonical URI does not alias a subresource with that identifier",
+    "description": "a definition name written as a canonical URI does not alias a subresource with that identifier",
     "schema": {
       "$id": "http://doc/root",
       "anyOf": [
@@ -1890,7 +1890,7 @@
     ]
   },
   {
-    "description": "a Draft 4 recursive closed pattern map with no finite witness admits nothing",
+    "description": "a Draft 4 recursive closed pattern map with no finite candidate admits nothing",
     "draft": "draft4",
     "schema": {
       "$ref": "#/definitions/a",
@@ -2337,7 +2337,7 @@
     ]
   },
   {
-    "description": "a pattern value pointing at an accept-everything definition folds out of the named properties it meets",
+    "description": "a pattern value pointing at an accept-everything definition folds out of the named properties it matches",
     "draft": "draft4",
     "schema": {
       "$defs": {

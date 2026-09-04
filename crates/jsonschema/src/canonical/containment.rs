@@ -1,4 +1,4 @@
-//! Reasoning queries over canonical IR nodes.
+//! Containment queries over canonical IR nodes.
 use crate::canonical::{
     algebra,
     context::CanonicalizationContext,
@@ -7,8 +7,8 @@ use crate::canonical::{
 
 /// Whether `outer` admits every value `inner` admits.
 ///
-/// `outer ∩ inner == inner` proves it. Anything else is `Unknown`, since two schemas can
-/// accept the same values in different forms.
+/// Intersecting the two and getting `inner` back proves it. Anything else is `Unknown`, since two
+/// schemas can accept the same values in different forms.
 pub(crate) fn covers(outer: &Schema, inner: &Schema, ctx: &CanonicalizationContext) -> Verdict {
     // A facet no checker covers reads here as met, so the equality below would prove a containment
     // a validator carrying that checker does not have - unless `inner` demands those facets too,

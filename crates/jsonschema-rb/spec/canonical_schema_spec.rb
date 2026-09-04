@@ -303,7 +303,7 @@ RSpec.describe "JSONSchema.canonicalize" do
   end
 
   it "view returns AllOfView with a symbolic reference" do
-    # A cycle keeps the conjunction symbolic: such a document is not folded through its targets.
+    # A cycle keeps the `allOf` symbolic: such a document is not folded through its targets.
     schema = {
       "allOf" => [{ "$ref" => "#/$defs/value" }, { "type" => "string" }],
       "$defs" => { "value" => { "type" => "object", "properties" => { "self" => { "$ref" => "#/$defs/value" } } } }
@@ -491,7 +491,7 @@ RSpec.describe "JSONSchema.canonicalize" do
   it "carries exactly the targets the result still names" do
     left = JSONSchema.canonicalize({ "$defs" => { "a" => { "type" => "string" } }, "$ref" => "#/$defs/a" })
     right = JSONSchema.canonicalize({ "$defs" => { "b" => { "minLength" => 4 } }, "$ref" => "#/$defs/b" })
-    # Both pointers are read through and the meet folds into one leaf, naming neither.
+    # Both pointers are read through and the intersection folds into one leaf, naming neither.
     result = left.intersect(right)
     expect(result.definitions).to be_empty
     expect(result.to_json_schema).to eq(
@@ -628,13 +628,13 @@ RSpec.describe "JSONSchema.canonicalize" do
       .to raise_error(JSONSchema::Canonical::UnsupportedResult, "result is not supported in canonical form")
   end
 
-  it "raises UnsupportedResult subtracting a schema whose complement is not supported" do
+  it "raises UnsupportedResult subtracting a schema whose negation is not supported" do
     plain = JSONSchema.canonicalize({ "type" => "array" })
     hard = JSONSchema.canonicalize({ "type" => "array", "contains" => { "type" => "string" }, "minContains" => 2 })
     expect { plain.subtract(hard) }.to raise_error(JSONSchema::Canonical::UnsupportedResult)
   end
 
-  it "subtracts a schema from itself without asking for a complement" do
+  it "subtracts a schema from itself without asking for a negation" do
     schema = { "type" => "array", "contains" => { "type" => "string" }, "minContains" => 2 }
     expect { JSONSchema.canonicalize(schema).negate }
       .to raise_error(JSONSchema::Canonical::UnsupportedResult)
@@ -690,8 +690,8 @@ RSpec.describe "JSONSchema.canonicalize" do
 
   it "negate resolves a reference" do
     schema = JSONSchema.canonicalize({ "$defs" => { "a" => { "type" => "string" } }, "$ref" => "#/$defs/a" })
-    complement = schema.negate
-    expect(complement.to_json_schema).to eq(
+    negation = schema.negate
+    expect(negation.to_json_schema).to eq(
       { "$schema" => "https://json-schema.org/draft/2020-12/schema",
         "type" => %w[null boolean number array object] }
     )

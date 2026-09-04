@@ -822,7 +822,7 @@
     ]
   },
   {
-    "description": "ir: an anchored single-key pattern names its key, so it converges with the properties spelling",
+    "description": "ir: an anchored single-key pattern names its key, so it converges with the `properties` form",
     "schemas": [
       {"type": "object", "patternProperties": {"^a$": {"type": "integer"}}},
       {"type": "object", "patternProperties": {"^(a)$": {"type": "integer"}}},
@@ -840,7 +840,7 @@
     ]
   },
   {
-    "description": "ir: a named single key keeps its spelling",
+    "description": "ir: a named single key keeps its form",
     "schema": {"type": "object", "properties": {"a": {"type": "integer"}}},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -966,7 +966,7 @@
     }
   },
   {
-    "description": "ir: draft 4 folds a finite-key pattern into the coverage additionalProperties:false spells",
+    "description": "ir: draft 4 folds a finite-key pattern into the coverage additionalProperties:false writes",
     "draft": "draft4",
     "schemas": [
       {"type": "object", "patternProperties": {"^a$": {"type": "integer"}}, "additionalProperties": false},

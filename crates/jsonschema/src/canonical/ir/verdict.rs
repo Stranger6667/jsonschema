@@ -10,7 +10,7 @@ pub(crate) enum Verdict {
 
 /// How a facet no checker covers reads. A validator without a checker skips the keyword, so a
 /// demanded facet passes the value and a barred one rejects it; a value set carries no facet of its
-/// own, so intersection can spell only that reading. Union keeps such a facet undecided instead,
+/// own, so intersection can express only that reading. Union keeps such a facet undecided instead,
 /// because absorbing a branch on a guess drops values a checker would have kept.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum UncheckableFacet {
@@ -27,7 +27,8 @@ impl Verdict {
         }
     }
 
-    /// Kleene conjunction: a definite rejection dominates, an undecided input taints the rest.
+    /// Logical AND over three values: a definite rejection wins, and one undecided input leaves
+    /// the whole answer undecided.
     pub(crate) fn and(self, other: Self) -> Self {
         match (self, other) {
             (Verdict::Rejects, Verdict::Admits | Verdict::Rejects | Verdict::Unknown)
@@ -49,7 +50,8 @@ impl Verdict {
         result
     }
 
-    /// Kleene disjunction: a definite admission dominates, an undecided input taints the rest.
+    /// Logical OR over three values: a definite admission wins, and one undecided input leaves
+    /// the whole answer undecided.
     pub(crate) fn any(verdicts: impl IntoIterator<Item = Self>) -> Self {
         let mut result = Verdict::Rejects;
         for verdict in verdicts {

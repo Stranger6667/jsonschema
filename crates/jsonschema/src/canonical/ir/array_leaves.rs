@@ -180,7 +180,7 @@ fn constrains_only_length(leaf: &ArrayLeaf) -> bool {
 
 /// Widen a facet-carrying window over a bare sibling window it touches: the lengths gained lie
 /// inside the bare window, which admits those arrays with any content, so the union is unchanged.
-/// The boundary between the two then has one spelling, whatever the facet leaf's window said.
+/// The boundary between the two then has one form, whatever the facet leaf's window said.
 /// ```text
 /// e.g.  anyOf [
 ///         {"type": "array", "maxItems": 1},

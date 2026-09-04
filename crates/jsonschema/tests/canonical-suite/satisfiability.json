@@ -96,7 +96,7 @@
     }
   },
   {
-    "description": "admits oracle coverage - anyof null bounded integer parity and satisfiability",
+    "description": "admits parity coverage - anyof null bounded integer parity and satisfiability",
     "schema": {
       "anyOf": [
         {
@@ -148,7 +148,7 @@
     }
   },
   {
-    "description": "admits oracle coverage - allOf const string not anyof format parity and satisfiability",
+    "description": "admits parity coverage - allOf const string not anyof format parity and satisfiability",
     "schema": {
       "allOf": [
         {
@@ -190,7 +190,7 @@
     "satisfiable": false
   },
   {
-    "description": "admits oracle coverage - allOf const true not anyof format parity and satisfiability",
+    "description": "admits parity coverage - allOf const true not anyof format parity and satisfiability",
     "schema": {
       "allOf": [
         {
@@ -2675,7 +2675,7 @@
     }
   },
   {
-    "description": "a witness is built for an object as wide as it must be",
+    "description": "a candidate is built for an object as wide as it must be",
     "schema": {
       "type": "object",
       "minProperties": 1
@@ -2688,7 +2688,7 @@
     }
   },
   {
-    "description": "a witness is built for an object several keys wide",
+    "description": "a candidate is built for an object several keys wide",
     "schema": {
       "type": "object",
       "minProperties": 3
@@ -2701,7 +2701,7 @@
     }
   },
   {
-    "description": "a witness is built for an array holding what it demands",
+    "description": "a candidate is built for an array holding what it demands",
     "schema": {
       "type": "array",
       "contains": {
@@ -2718,7 +2718,7 @@
     }
   },
   {
-    "description": "a witness is built for a required key whose schema is named",
+    "description": "a candidate is built for a required key whose schema is named",
     "schema": {
       "$defs": {
         "s": {
@@ -2757,7 +2757,7 @@
     }
   },
   {
-    "description": "a witness is built for a required key a shield leaves unconstrained",
+    "description": "a candidate is built for a required key additionalProperties leaves unconstrained",
     "schema": {
       "type": "object",
       "required": [
@@ -2787,7 +2787,7 @@
     }
   },
   {
-    "description": "a witness is built through a key barring a named schema",
+    "description": "a candidate is built through a key barring a named schema",
     "schema": {
       "$defs": {
         "s": {
@@ -2827,7 +2827,7 @@
     }
   },
   {
-    "description": "a witness is built through a key whose branches carry a format",
+    "description": "a candidate is built through a key whose branches carry a format",
     "schema": {
       "type": "object",
       "required": [
@@ -2916,7 +2916,7 @@
     }
   },
   {
-    "description": "a count bound past what a witness costs is left undecided - string",
+    "description": "a count bound past what a candidate costs is left undecided - string",
     "schema": {
       "type": "string",
       "minLength": 18446744073709551615,
@@ -2931,7 +2931,7 @@
     }
   },
   {
-    "description": "a count bound past what a witness costs is left undecided - array",
+    "description": "a count bound past what a candidate costs is left undecided - array",
     "schema": {
       "type": "array",
       "minItems": 1000000000000
@@ -2944,7 +2944,7 @@
     }
   },
   {
-    "description": "a count bound past what a witness costs is left undecided - object",
+    "description": "a count bound past what a candidate costs is left undecided - object",
     "schema": {
       "type": "object",
       "minProperties": 18446744073709551615
@@ -2957,7 +2957,7 @@
     }
   },
   {
-    "description": "a witness is not walked for past the depth it costs",
+    "description": "a candidate is not walked for past the depth it costs",
     "schema": {
       "type": "object",
       "required": [
@@ -3114,7 +3114,7 @@
     }
   },
   {
-    "description": "a witness within that depth is built",
+    "description": "a candidate within that depth is built",
     "schema": {
       "type": "object",
       "required": [
@@ -3420,7 +3420,7 @@
     }
   },
   {
-    "description": "a required key spelled like a filler key does not take its place",
+    "description": "a required key written like a filler key does not take its place",
     "schema": {
       "type": "object",
       "minProperties": 3,
@@ -3592,7 +3592,7 @@
     }
   },
   {
-    "description": "a witness is built for a string pattern that is a plain literal",
+    "description": "a candidate is built for a string pattern that is a plain literal",
     "schema": {
       "pattern": "=",
       "type": "string"
@@ -3605,7 +3605,7 @@
     }
   },
   {
-    "description": "a witness is built for a string pattern anchored at the start",
+    "description": "a candidate is built for a string pattern anchored at the start",
     "schema": {
       "pattern": "^abc",
       "type": "string"
@@ -3618,7 +3618,7 @@
     }
   },
   {
-    "description": "a witness is built from the alternatives a string pattern lists",
+    "description": "a candidate is built from the alternatives a string pattern lists",
     "schema": {
       "pattern": "^(red|green)$",
       "type": "string"
@@ -3631,7 +3631,7 @@
     }
   },
   {
-    "description": "a witness matches a pattern anchored at the start and one anchored at the end",
+    "description": "a candidate matches a pattern anchored at the start and one anchored at the end",
     "schema": {
       "allOf": [
         {
@@ -3658,7 +3658,7 @@
     }
   },
   {
-    "description": "a pattern witness is padded up to minLength",
+    "description": "a pattern candidate is padded up to minLength",
     "schema": {
       "minLength": 10,
       "pattern": "^abc",
@@ -3673,7 +3673,7 @@
     }
   },
   {
-    "description": "a witness is built for an asserted string format",
+    "description": "a candidate is built for an asserted string format",
     "schema": {
       "format": "email",
       "type": "string"
@@ -3687,7 +3687,7 @@
     }
   },
   {
-    "description": "a witness is built for an asserted uuid",
+    "description": "a candidate is built for an asserted uuid",
     "schema": {
       "format": "uuid",
       "type": "string"
@@ -3701,7 +3701,7 @@
     }
   },
   {
-    "description": "a format whose witness does not fit minLength and maxLength is left undecided",
+    "description": "a format whose candidate does not fit minLength and maxLength is left undecided",
     "schema": {
       "format": "email",
       "maxLength": 5,
@@ -3719,7 +3719,7 @@
     }
   },
   {
-    "description": "a witness is built for a key whose value is patterned",
+    "description": "a candidate is built for a key whose value is patterned",
     "schema": {
       "properties": {
         "a": {
@@ -3748,7 +3748,7 @@
     }
   },
   {
-    "description": "a witness is built for an array of patterned strings",
+    "description": "a candidate is built for an array of patterned strings",
     "schema": {
       "items": {
         "pattern": "=",

@@ -1642,9 +1642,9 @@ mod tests {
         assert!(!validator.is_valid(&json!({})));
     }
 
-    /// Spelling the same reference absolutely must not change the outcome.
+    /// Writing the same reference absolutely must not change the outcome.
     #[test]
-    fn absolute_spelling_of_shadowed_pointer_ref_agrees() {
+    fn absolute_form_of_shadowed_pointer_ref_agrees() {
         let schema = json!({
             "$id": "https://example.com/outer",
             "$ref": "#/$defs/target",

@@ -54,7 +54,7 @@ pub enum CanonicalView {
     Object(ObjectView),
     Const(Value),
     Enum(Vec<Value>),
-    /// The exact complement of an opaque schema, keeping the references it names symbolic.
+    /// The exact negation of an opaque schema, keeping the references it names symbolic.
     Not(Box<CanonicalSchema>),
     /// A value matches iff every opaque branch matches.
     AllOf(Vec<CanonicalSchema>),
@@ -104,7 +104,7 @@ pub struct NumberView {
     pub multiple_of: Vec<Number>,
     /// Divisors no admitted value is a multiple of.
     pub not_multiple_of: Vec<Number>,
-    /// No admitted value is one of the draft's integers (Draft 4 only; later drafts respell this
+    /// No admitted value is one of the draft's integers (Draft 4 only; later drafts write this
     /// as a barred divisor of one).
     pub excludes_integers: bool,
 }
@@ -230,7 +230,7 @@ impl CanonicalSchema {
                 leaf.get()
                     .additional
                     .as_ref()
-                    .map(|shield| self.wrap_child(shield)),
+                    .map(|additional| self.wrap_child(additional)),
                 leaf.get()
                     .violations
                     .iter()

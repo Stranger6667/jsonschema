@@ -314,7 +314,7 @@
     ]
   },
   {
-    "description": "value-set intersection lands on the same node as the direct spelling",
+    "description": "value-set intersection lands on the same node as the direct form",
     "schemas": [
       {
         "allOf": [
@@ -356,7 +356,7 @@
     ]
   },
   {
-    "description": "draft 4 integer guard from intersection lands on the parse spelling",
+    "description": "draft 4 integer guard from intersection lands on the parse form",
     "draft": "draft4",
     "schemas": [
       {

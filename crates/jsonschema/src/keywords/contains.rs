@@ -290,7 +290,7 @@ pub(crate) struct MinMaxContainsValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
     min_contains: u64,
     max_contains: u64,
-    // Both bounds report against their own keyword, which the shared subschema location cannot spell.
+    // Both bounds report against their own keyword, which the shared subschema location cannot name.
     min_location: Location,
     max_location: Location,
 }

@@ -16,7 +16,7 @@ use crate::{
 };
 
 /// How far a candidate walks into a node before giving up.
-pub(crate) const CANDIDATE_DEPTH: u32 = 6;
+pub(crate) const DEPTH: u32 = 6;
 
 /// The longest instance worth building. A bound past this is a bound no instance is built for: the
 /// answer is left undecided rather than spending the memory a schema keyword asked for.
@@ -28,7 +28,7 @@ const FILLER_KEY: &str = "a";
 /// How many instances one walk may build. Depth and width bound a candidate on their own, but a
 /// node wide at every level multiplies them - 64 keys six levels down is a number of values no
 /// machine holds - so the walk also spends from one count and gives up where it runs out.
-pub(crate) const CANDIDATE_NODES: u32 = 4_096;
+pub(crate) const NODES: u32 = 4_096;
 
 /// Names tried per seed before the next one. A leaf wanting more is answered by later seeds, or
 /// left undecided.
@@ -46,7 +46,7 @@ fn demanded_length(minimum: Option<&BoundCardinality>) -> Option<usize> {
 
 /// Instances worth trying against `node`, shortest first. A candidate proves nothing on its own -
 /// `algebra::admits_value` decides - so the list only has to be short.
-pub(crate) fn candidate_instances<'a>(
+pub(crate) fn instances<'a>(
     node: &'a Schema,
     target: &dyn Fn(&str) -> Option<&'a Schema>,
     depth: u32,
@@ -60,7 +60,7 @@ pub(crate) fn candidate_instances<'a>(
     match node.kind() {
         // A pointer accepts what its target does, so the instances worth trying are the target's.
         SchemaKind::Reference(uri) => target(uri)
-            .map(|named| candidate_instances(named, target, depth - 1, budget, ctx))
+            .map(|named| instances(named, target, depth - 1, budget, ctx))
             .unwrap_or_default(),
         SchemaKind::True => vec![Value::Null],
         SchemaKind::Const(value) => vec![value.as_value().clone()],
@@ -70,9 +70,7 @@ pub(crate) fn candidate_instances<'a>(
             .map(|value| value.as_value().clone())
             .collect(),
         SchemaKind::MultiType(set) => set.iter().map(shortest_instance).collect(),
-        SchemaKind::TypedGroup { body, .. } => {
-            candidate_instances(body, target, depth - 1, budget, ctx)
-        }
+        SchemaKind::TypedGroup { body, .. } => instances(body, target, depth - 1, budget, ctx),
         SchemaKind::String(leaf) => string_candidates(leaf.get()),
         SchemaKind::Integer(leaf) => {
             // An integer bound is stored as the first integer it admits.
@@ -108,7 +106,7 @@ pub(crate) fn candidate_instances<'a>(
                 .contains
                 .iter()
                 .map(|facet| {
-                    candidate_instances(&facet.schema, target, depth - 1, budget, ctx)
+                    instances(&facet.schema, target, depth - 1, budget, ctx)
                         .into_iter()
                         .next()
                 })
@@ -119,7 +117,7 @@ pub(crate) fn candidate_instances<'a>(
             let element = |index: usize| {
                 let schema = leaf.prefix.get(index).or(leaf.items.as_ref());
                 schema.map_or(Some(Value::Null), |schema| {
-                    candidate_instances(schema, target, depth - 1, budget, ctx)
+                    instances(schema, target, depth - 1, budget, ctx)
                         .into_iter()
                         .next()
                 })
@@ -151,8 +149,8 @@ pub(crate) fn candidate_instances<'a>(
             let mut object = serde_json::Map::new();
             for key in candidate_keys(leaf, size, ctx) {
                 // A key answers to the entry declaring it, then a pattern entry it matches, then
-                // the shield. Where several govern one key, the check below turns down a value that
-                // satisfies only the one taken here.
+                // `additionalProperties`. Where several apply to one key, the check below turns
+                // down a value that satisfies only the one taken here.
                 let governing = leaf
                     .properties
                     .get(key.as_str())
@@ -164,7 +162,7 @@ pub(crate) fn candidate_instances<'a>(
                     })
                     .or(leaf.additional.as_ref());
                 let Some(value) = governing.map_or(Some(Value::Null), |schema| {
-                    candidate_instances(schema, target, depth - 1, budget, ctx)
+                    instances(schema, target, depth - 1, budget, ctx)
                         .into_iter()
                         .next()
                 }) else {
@@ -178,11 +176,11 @@ pub(crate) fn candidate_instances<'a>(
         SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => branches
             .as_slice()
             .iter()
-            .flat_map(|branch| candidate_instances(branch, target, depth - 1, budget, ctx))
+            .flat_map(|branch| instances(branch, target, depth - 1, budget, ctx))
             .collect(),
         SchemaKind::OneOf(branches) => branches
             .iter()
-            .flat_map(|branch| candidate_instances(branch, target, depth - 1, budget, ctx))
+            .flat_map(|branch| instances(branch, target, depth - 1, budget, ctx))
             .collect(),
         SchemaKind::False | SchemaKind::Not(_) | SchemaKind::Raw(_) => Vec::new(),
     }
@@ -251,7 +249,7 @@ fn string_candidates(leaf: &StringLeaf) -> Vec<Value> {
     proposals.extend(
         leaf.formats
             .iter()
-            .filter_map(StringFormat::witness)
+            .filter_map(StringFormat::example)
             .map(ToOwned::to_owned),
     );
     // The shortest string the window allows, for a leaf constrained only by length.
@@ -292,7 +290,7 @@ fn fit_to_window(mut text: String, window: &LengthBounds) -> Option<String> {
 }
 
 /// The literal head of a key pattern, which every key an anchored one matches carries. Empty where
-/// the pattern spells nothing a name can be built from.
+/// the pattern holds nothing a name can be built from.
 fn literal_prefix(pattern: &str) -> String {
     pattern
         .strip_prefix('^')
@@ -329,7 +327,7 @@ pub(crate) struct WindowEnd {
     admitted: bool,
 }
 
-/// A number strictly inside the window, where one can be spelled. A window narrower than the gap
+/// A number strictly inside the window, where one can be written. A window narrower than the gap
 /// between two neighbouring floats has none.
 fn interior_point(minimum: Option<&Number>, maximum: Option<&Number>) -> Option<Value> {
     let point = match (

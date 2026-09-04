@@ -5,7 +5,7 @@ use super::BoundRational;
 ///
 /// `members` is every divisor the leaf was built from; `folded` is the same set with each pair one
 /// divisor can stand for folded together. Both are kept: folding on the way in would leave a later
-/// intersection a divisor short and make the result depend on the order the sets met in, while
+/// intersection a divisor short and make the result depend on the order the sets were taken in, while
 /// folding on the way out would repeat the work at every comparison.
 #[derive(Debug, Clone, Default)]
 pub(crate) struct Divisors {
@@ -114,8 +114,8 @@ impl Divisors {
 
 /// Divisors no admitted value is a multiple of.
 ///
-/// The dual of [`Divisors`]: each member bars its multiples, so the set is a conjunction of
-/// exclusions and folds the other way — a member whose multiples another member's already cover is
+/// The dual of [`Divisors`]: each member bars its multiples, so the set demands every one of its
+/// exclusions at once and folds the other way — a member whose multiples another member's already cover is
 /// dropped, where [`Divisors`] folds a pair up to their least common multiple.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct ExcludedDivisors {

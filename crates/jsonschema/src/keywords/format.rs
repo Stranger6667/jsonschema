@@ -1634,7 +1634,7 @@ impl BuiltinFormat {
 
     /// A string this format accepts. The test below checks every one against `is_valid`.
     #[must_use]
-    pub(crate) const fn witness(self) -> &'static str {
+    pub(crate) const fn example(self) -> &'static str {
         match self {
             Self::Date => "2020-01-01",
             Self::DateTime => "2020-01-01T00:00:00Z",
@@ -2587,26 +2587,26 @@ mod tests {
     }
 
     #[test]
-    fn every_builtin_format_witness_satisfies_its_own_format() {
+    fn every_builtin_format_example_satisfies_its_own_format() {
         for format in BuiltinFormat::VARIANTS {
             assert!(
-                format.is_valid(format.witness()),
-                "{format:?} witness `{}` does not satisfy `{}`",
-                format.witness(),
+                format.is_valid(format.example()),
+                "{format:?} example `{}` does not satisfy `{}`",
+                format.example(),
                 format.as_str()
             );
             if let Some((minimum, maximum)) = format.length_window() {
-                let length = format.witness().chars().count() as u64;
+                let length = format.example().chars().count() as u64;
                 assert!(
                     (minimum..=maximum).contains(&length),
-                    "{format:?} witness `{}` falls outside its declared length window",
-                    format.witness()
+                    "{format:?} example `{}` falls outside its declared length window",
+                    format.example()
                 );
             }
         }
     }
 
-    /// The hostname ceiling, too long to spell out as a case above.
+    /// The hostname ceiling, too long to write out as a case above.
     #[test]
     fn the_longest_hostname_is_accepted() {
         let label = "a".repeat(63);

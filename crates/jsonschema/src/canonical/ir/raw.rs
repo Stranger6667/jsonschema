@@ -122,7 +122,7 @@ pub(crate) fn compare_values(left: &Value, right: &Value) -> Ordering {
     }
 }
 
-/// Where a string sits among values ordered by [`compare_values`], without spelling the string as a
+/// Where a string sits among values ordered by [`compare_values`], without wrapping the string as a
 /// [`Value`] first.
 pub(crate) fn compare_value_to_str(value: &Value, text: &str) -> Ordering {
     match value {

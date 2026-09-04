@@ -81,7 +81,7 @@ fn referencing_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
 fn float_spells(value: f64, text: &str) -> bool {
     let mut buffer = zmij::Buffer::new();
     let written = buffer.format_finite(value);
-    // Two spellings of one value share a canonical form, so this compares values, not text: `1e20`
+    // Two written forms of one value share a canonical form, so this compares values, not text: `1e20`
     // and `100000000000000000000` agree, while `100000000000000000000.1` differs from both.
     canonical_number(written).as_deref().unwrap_or(written)
         == canonical_number(text).as_deref().unwrap_or(text)

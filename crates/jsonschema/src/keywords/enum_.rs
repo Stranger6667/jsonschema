@@ -296,7 +296,7 @@ impl<F: Json, N: Nullability> Validate<F> for IntegerEnumValidator<N> {
             if let Some(value) = number.as_i64() {
                 self.integers.binary_search(&value).is_ok()
             } else {
-                // `2.0`, `1e2`, past `i64`: numeric equality across spellings and precisions
+                // `2.0`, `1e2`, past `i64`: numeric equality across written forms and precisions
                 self.items.iter().any(|item| instance.equals_value(item))
             }
         } else {

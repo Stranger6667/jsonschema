@@ -112,7 +112,7 @@ impl Sampler<'_> {
             CanonicalView::Array(view) => container::draw_array(self, view),
             CanonicalView::Object(view) => container::draw_object(self, schema.draft(), &view),
             CanonicalView::AllOf(branches) => {
-                // Following each pointer one hop often lets `intersect` fold the conjunction
+                // Following each pointer one hop often lets `intersect` fold the `allOf`
                 // into one node.
                 let mut resolved = Vec::new();
                 for branch in &branches {

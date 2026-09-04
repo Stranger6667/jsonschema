@@ -8,9 +8,9 @@ use serde_json::Number;
 
 use super::{normalized_number, BoundInteger};
 
-/// A divisor kept in the spelling the validator will read, so membership matches it exactly. The
-/// exact rational alongside it is what the spelling denotes, and is absent when no rational this
-/// build can hold spells back to it - membership stands either way, only arithmetic needs it.
+/// A divisor kept in the text the validator will read, so membership matches it exactly. The
+/// exact rational alongside it is what that text denotes, and is absent when no rational this
+/// build can hold writes back to it - membership stands either way, only arithmetic needs it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct BoundRational {
     limit: Number,
@@ -28,8 +28,8 @@ enum IntegerFold {
 
 impl BoundRational {
     /// `None` only when the divisor has no `f64` at all, which is where the validator drops the
-    /// keyword. The rational is kept when it spells back to the divisor, which is what lets the
-    /// exact arithmetic below stand in for the spelling.
+    /// keyword. The rational is kept when it writes back to the divisor, which is what lets the
+    /// exact arithmetic below stand in for the text.
     pub(crate) fn new(limit: &Number) -> Option<Self> {
         let limit = normalized_number(limit);
         limit.as_f64()?;
@@ -86,14 +86,14 @@ impl BoundRational {
     }
 
     /// The smallest value both divisors admit, or `None` when no divisor the validator reads the
-    /// same way spells it.
+    /// same way writes it.
     pub(crate) fn checked_lcm(&self, other: &Self) -> Option<Self> {
         // For reduced fractions `lcm(p/q, r/s)` is `lcm(p, r) / gcd(q, s)`.
         let (mine, theirs) = (self.exact_value()?, other.exact_value()?);
         let numerator = mine.numer()?.lcm(theirs.numer()?);
         let denominator = mine.denom()?.gcd(theirs.denom()?);
         let combined = Self::new(&decimal(&BigFraction::new(numerator, denominator))?)?;
-        // A spelling the validator reads as a different number cannot stand for the pair, and nor
+        // A text the validator reads as a different number cannot stand for the pair, and nor
         // can one it reads with different arithmetic.
         (combined.exact_value().is_some()
             && combined.shares_arithmetic(self)
@@ -110,7 +110,7 @@ impl BoundRational {
         let Some(step) = self.exact_value() else {
             return true;
         };
-        // An end no rational this build spells back to is not the end the validator compares
+        // An end no rational this build writes back to is not the end the validator compares
         // against, so the interval is left holding a multiple rather than called empty.
         let (Some(low), Some((maximum, high))) = (
             minimum.and_then(|bound| denoted(&bound.to_number())),
@@ -162,7 +162,7 @@ impl BoundRational {
     }
 
     /// The first multiple at or past `bound` in `direction`, as a bound admitting it. `None` when no
-    /// decimal spells that multiple.
+    /// decimal writes that multiple.
     pub(crate) fn multiple_beyond(
         &self,
         bound: &super::BoundNumber,
@@ -182,7 +182,7 @@ impl BoundRational {
             candidate = grid_point(step, &index)?;
         }
         let snapped = decimal(&candidate)?;
-        // A spelling the validator reads as a different number would move the end, not pin it.
+        // A text the validator reads as a different number would move the end, not pin it.
         (exact(&snapped).as_ref() == Some(&candidate))
             .then(|| super::BoundNumber::new(&snapped, true))
     }
@@ -239,7 +239,7 @@ impl PartialOrd for BoundRational {
 
 impl Ord for BoundRational {
     fn cmp(&self, other: &Self) -> Ordering {
-        // A divisor with no rational still needs a place in the order, and its spelling is all
+        // A divisor with no rational still needs a place in the order, and its text is all
         // there is to sort it by.
         self.value
             .cmp(&other.value)
@@ -290,8 +290,8 @@ fn grid_point(divisor: &BigFraction, index: &BigInt) -> Option<BigFraction> {
     Some(BigFraction::new_raw_signed(sign, numerator, denominator))
 }
 
-/// The rational a JSON number denotes, when this build reads one that spells back to it. Exact
-/// arithmetic may only stand in for a spelling it reproduces: past `f64` precision `exact` rounds,
+/// The rational a JSON number denotes, when this build reads one that writes back to it. Exact
+/// arithmetic may only stand in for a text it reproduces: past `f64` precision `exact` rounds,
 /// and the rounded value is not what the validator compares against.
 fn denoted(number: &Number) -> Option<BigFraction> {
     exact(number).filter(|value| decimal(value).as_ref() == Some(number))
@@ -324,7 +324,7 @@ fn whole(value: num_bigint::BigInt) -> BigFraction {
     }
 }
 
-/// `value` written as a decimal JSON number, or `None` when no finite decimal spells it.
+/// `value` written as a decimal JSON number, or `None` when no finite decimal writes it.
 fn decimal(value: &BigFraction) -> Option<Number> {
     let (numerator, denominator) = (value.numer()?, value.denom()?);
     // Scaling by ten clears one factor of two and one of five, so a finite decimal exists exactly
@@ -344,18 +344,18 @@ fn decimal(value: &BigFraction) -> Option<Number> {
         return None;
     }
     let places = twos.max(fives);
-    let text = spelled(numerator, denominator, places, value.is_sign_negative());
+    let text = decimal_text(numerator, denominator, places, value.is_sign_negative());
     debug_assert_eq!(
         text,
         format!("{value:.width$}", width = places as usize),
-        "the scaled spelling reads as the formatted one"
+        "the scaled text reads as the formatted one"
     );
     text.parse().ok()
 }
 
 /// The text `format!("{value:.places$}")` writes. Scaling to a whole number and placing the point
 /// keeps this clear of the fraction crate's formatting, which walks the numerator once per place.
-fn spelled(
+fn decimal_text(
     numerator: &fraction::BigUint,
     denominator: &fraction::BigUint,
     places: u32,

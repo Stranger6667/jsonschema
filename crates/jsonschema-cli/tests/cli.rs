@@ -1923,7 +1923,7 @@ fn test_canonicalize_at_names_recursive_definitions_readably() {
     let dir = tempdir().unwrap();
     let schema = create_temp_file(&dir, "schema.json", PET_DOCUMENT);
 
-    // The selection is the root of what comes back, so its own recursion spells `#`.
+    // The selection is the root of what comes back, so its own recursion names `#`.
     let canonical = canonicalize_at(&schema, "/$defs/Tree");
     assert_eq!(
         canonical["properties"]["kids"]["items"],

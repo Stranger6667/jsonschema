@@ -1,6 +1,6 @@
 //! Constructors for canonical shapes built from more than one module.
 //!
-//! Convergence is an IR-equality contract: two spellings of one value set must land on the same
+//! Convergence is an IR-equality contract: two written forms of one value set must land on the same
 //! node. A `SchemaKind` shape constructed in two or more modules gets its constructor here, and
 //! parse, algebra, and negate all call it.
 use serde_json::Value;

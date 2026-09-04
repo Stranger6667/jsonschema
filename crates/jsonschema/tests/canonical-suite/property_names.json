@@ -282,7 +282,7 @@
     ]
   },
   {
-    "description": "ir: a key constraint every string meets leaves no trace",
+    "description": "ir: a key constraint every string satisfies leaves no trace",
     "schema": {"type": "object", "propertyNames": {"not": {"type": "integer"}}},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"},
     "tests": [

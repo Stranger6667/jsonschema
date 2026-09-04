@@ -1,6 +1,6 @@
 [
   {
-    "description": "fractional spellings unify: const 3.14e-3 intersects enum 0.00314",
+    "description": "fractional forms unify: const 3.14e-3 intersects enum 0.00314",
     "schema": {
       "allOf": [
         {
@@ -25,7 +25,7 @@
     }
   },
   {
-    "description": "fractional spellings unify: exponent vs decimal 5e-1 vs 0.5",
+    "description": "fractional forms unify: exponent vs decimal 5e-1 vs 0.5",
     "schema": {
       "allOf": [
         {
@@ -50,7 +50,7 @@
     }
   },
   {
-    "description": "fractional spellings unify: trailing zero 1.50 vs plain 1.5",
+    "description": "fractional forms unify: trailing zero 1.50 vs plain 1.5",
     "schema": {
       "allOf": [
         {
@@ -75,7 +75,7 @@
     }
   },
   {
-    "description": "fractional spellings unify: zero aliases 0.0 vs 0.00",
+    "description": "fractional forms unify: zero aliases 0.0 vs 0.00",
     "schema": {
       "allOf": [
         {
@@ -279,7 +279,7 @@
     ]
   },
   {
-    "description": "ir: exclusive bounds meeting on adjacent integers are unsatisfiable",
+    "description": "ir: exclusive bounds on adjacent integers are unsatisfiable",
     "schema": {"type": "integer", "exclusiveMinimum": 5, "exclusiveMaximum": 6},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false,
@@ -639,7 +639,7 @@
     ]
   },
   {
-    "description": "ir: intervals meeting on a point neither end admits stay apart",
+    "description": "ir: intervals touching on a point neither end admits stay apart",
     "schema": {"anyOf": [{"type": "number", "exclusiveMaximum": 2}, {"type": "number", "exclusiveMinimum": 2}]},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [{"type": "number", "exclusiveMaximum": 2}, {"type": "number", "exclusiveMinimum": 2}]},
     "tests": [
@@ -649,7 +649,7 @@
     ]
   },
   {
-    "description": "ir: intervals meeting on a point one end admits merge",
+    "description": "ir: intervals touching on a point one end admits merge",
     "schemas": [
       {"anyOf": [{"type": "number", "maximum": 2}, {"type": "number", "exclusiveMinimum": 2}]},
       {"type": "number"}
@@ -721,7 +721,7 @@
     "satisfiable": false
   },
   {
-    "description": "ir: fractional intervals meeting on a shared point merge",
+    "description": "ir: fractional intervals touching on a shared point merge",
     "schemas": [
       {"anyOf": [{"type": "number", "maximum": 1.5}, {"type": "number", "minimum": 1.5}]},
       {"type": "number"}
@@ -891,7 +891,7 @@
     ]
   },
   {
-    "description": "ir: a divisor every integer already meets leaves no trace",
+    "description": "ir: a divisor every integer already satisfies leaves no trace",
     "schemas": [
       {"type": "integer", "multipleOf": 0.5},
       {"type": "integer"}
@@ -1137,7 +1137,7 @@
     ]
   },
   {
-    "description": "a maximum past i64 has no modeled integer projection (default build keeps it raw); the bound still rejects larger integer-valued numbers, and the form differs by feature, so both spellings are pinned",
+    "description": "a maximum past i64 has no modeled integer projection (default build keeps it raw); the bound still rejects larger integer-valued numbers, and the form differs by feature, so both forms are pinned",
     "schema": {"maximum": 18446744073709551615},
     "tests": [
       {"data": 5, "valid": true},
@@ -1678,7 +1678,7 @@
     ]
   },
   {
-    "description": "ir: Draft 4, an integer value set meets a number interval",
+    "description": "ir: Draft 4, an integer value set intersects a number interval",
     "draft": "draft4",
     "schema": {"allOf": [{"type": "integer", "enum": [1, 2, 3]}, {"type": "number", "minimum": 2}]},
     "expected": {

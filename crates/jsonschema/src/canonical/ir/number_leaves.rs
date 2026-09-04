@@ -84,7 +84,7 @@ impl IntoIterator for NumberLeaves {
     }
 }
 
-/// Fold intervals that overlap or meet on an admitted point.
+/// Fold intervals that overlap or touch on an admitted point.
 /// e.g.  anyOf [
 ///         {"type": "number", "minimum": 0, "maximum": 2},
 ///         {"type": "number", "minimum": 2, "maximum": 4}
@@ -96,7 +96,7 @@ impl IntoIterator for NumberLeaves {
 ///         {"type": "number", "multipleOf": 1.5, "minimum": 4}
 ///       ]  =>  {"type": "number", "multipleOf": 1.5}
 ///
-/// Two intervals meeting on a point neither admits leave a hole, so they stay apart.
+/// Two intervals touching on a point neither admits leave a hole, so they stay apart.
 /// e.g.  anyOf [
 ///         {"type": "number", "maximum": 2, "exclusiveMaximum": 2},
 ///         {"type": "number", "exclusiveMinimum": 2}
@@ -173,7 +173,7 @@ fn reaches(last: &NumberLeaf, next: &NumberLeaf) -> bool {
         return true;
     };
     let touches = if end.to_number() == start.to_number() {
-        // They meet on one point, which closes the gap only if either side admits it.
+        // They touch on one point, which closes the gap only if either side admits it.
         end.is_inclusive() || start.is_inclusive()
     } else {
         end.admits(&start.to_number(), Side::Upper)
@@ -182,7 +182,7 @@ fn reaches(last: &NumberLeaf, next: &NumberLeaf) -> bool {
 }
 
 /// Whether the progression carries no value into the gap the two ends leave. Only a lone divisor
-/// gives a progression to walk, and a multiple no decimal spells leaves the answer unknown, which
+/// gives a progression to walk, and a multiple no decimal writes leaves the answer unknown, which
 /// keeps the intervals apart.
 fn steps_over(divisor: &Divisors, end: &BoundNumber, start: &BoundNumber) -> bool {
     let Some(step) = divisor.sole() else {

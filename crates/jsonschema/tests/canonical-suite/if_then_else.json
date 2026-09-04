@@ -64,7 +64,7 @@
     ]
   },
   {
-    "description": "if and else with no then: values meeting the condition need nothing further",
+    "description": "if and else with no then: values satisfying the condition need nothing further",
     "schema": {
       "if": { "type": "number", "minimum": 0 },
       "else": { "type": "string", "minLength": 3 }
@@ -157,7 +157,7 @@
     ]
   },
   {
-    "description": "if over an integer condition folds into the complement union",
+    "description": "if over an integer condition folds into the negation union",
     "schema": {
       "if": { "type": "integer" },
       "then": { "minimum": 5 }
@@ -177,7 +177,7 @@
     ]
   },
   {
-    "description": "if with an inexpressible complement beside only an else needs no complement",
+    "description": "if with an inexpressible negation beside only an else needs no negation",
     "schema": {
       "if": { "type": "integer" },
       "else": { "const": "fallback" }
@@ -302,7 +302,7 @@
     ]
   },
   {
-    "description": "the negative arm dissolves once the consequent sheds against a complement sibling",
+    "description": "the negative arm dissolves once the consequent drops against a negation sibling",
     "schema": {
       "$defs": {"t": {"type": "array", "items": {"$ref": "#/$defs/t"}}},
       "anyOf": [
@@ -327,7 +327,7 @@
     ]
   },
   {
-    "description": "a conjunction of conditionals whose product outgrows the budget stays unmodeled",
+    "description": "an allOf of conditionals whose product outgrows the budget stays unmodeled",
     "schema": {"allOf": [{"if": {"type": "object", "properties": {"kind": {"const": "k0"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f0": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k1"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f1": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k2"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f2": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k3"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f3": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k4"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f4": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k5"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f5": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k6"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f6": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k7"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f7": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k8"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f8": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k9"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f9": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k10"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f10": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k11"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f11": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k12"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f12": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k13"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f13": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k14"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f14": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k15"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f15": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k16"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f16": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k17"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f17": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k18"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f18": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k19"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f19": {"type": "string"}}}}]},
     "kind": "raw",
     "expected": {"allOf": [{"if": {"type": "object", "properties": {"kind": {"const": "k0"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f0": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k1"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f1": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k2"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f2": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k3"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f3": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k4"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f4": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k5"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f5": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k6"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f6": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k7"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f7": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k8"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f8": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k9"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f9": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k10"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f10": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k11"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f11": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k12"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f12": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k13"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f13": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k14"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f14": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k15"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f15": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k16"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f16": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k17"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f17": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k18"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f18": {"type": "string"}}}}, {"if": {"type": "object", "properties": {"kind": {"const": "k19"}}, "required": ["kind"]}, "then": {"type": "object", "properties": {"f19": {"type": "string"}}}}]},

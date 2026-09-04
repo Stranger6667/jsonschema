@@ -493,13 +493,13 @@
     ]
   },
   {
-    "description": "ir: a contains demand no element position can meet is unsatisfiable",
+    "description": "ir: a contains demand no element position can satisfy is unsatisfiable",
     "schema": {"type": "array", "contains": {"type": "integer"}, "items": {"type": "string"}},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false
   },
   {
-    "description": "ir: a contains demand outnumbering the positions that can meet it is unsatisfiable",
+    "description": "ir: a contains demand outnumbering the positions that can satisfy it is unsatisfiable",
     "schema": {
       "type": "array",
       "prefixItems": [{"type": "string"}],
@@ -511,7 +511,7 @@
     "satisfiable": false
   },
   {
-    "description": "ir: a contains demand a prefix position meets survives a rejecting tail",
+    "description": "ir: a contains demand a prefix position satisfies survives a rejecting tail",
     "schema": {
       "type": "array",
       "prefixItems": [{"type": "string"}, {"type": "string"}],
@@ -551,7 +551,7 @@
     ]
   },
   {
-    "description": "ir: contains demands no element meets together floor the length",
+    "description": "ir: contains demands no element satisfies together floor the length",
     "schemas": [
       {"type": "array", "allOf": [{"contains": {"const": 1}}, {"contains": {"const": 2}}]},
       {
@@ -589,7 +589,7 @@
     ]
   },
   {
-    "description": "ir: the floor sums every demand no two of which one element meets",
+    "description": "ir: the floor sums every demand no two of which one element satisfies",
     "schema": {
       "type": "array",
       "maxItems": 2,
@@ -622,7 +622,7 @@
     ]
   },
   {
-    "description": "ir: demands one element can meet together leave the length alone",
+    "description": "ir: demands one element can satisfy together leave the length alone",
     "schema": {
       "type": "array",
       "maxItems": 1,

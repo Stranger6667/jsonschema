@@ -386,7 +386,7 @@
     ]
   },
   {
-    "description": "ir: draft 4 pins an intersected object member to its integer spelling",
+    "description": "ir: draft 4 pins an intersected object member to its integer form",
     "schema": {
       "allOf": [
         {"enum": [{"a": 1}]},
@@ -462,7 +462,7 @@
     ]
   },
   {
-    "description": "ir: draft 4 spells a forbidden key the parser reads back",
+    "description": "ir: draft 4 writes a forbidden key the parser reads back",
     "schemas": [
       {"type": "object", "properties": {"a": {"not": {}}}},
       {"type": "object", "properties": {"a": {"type": "string", "minLength": 2, "maxLength": 1}}}
@@ -574,7 +574,7 @@
     ]
   },
   {
-    "description": "ir: a union-shaped property schema converges with its type-set spelling",
+    "description": "ir: a union-shaped property schema converges with its type-set form",
     "schemas": [
       {"type": "object", "properties": {"a": {"anyOf": [{"type": "string"}, {"type": "integer"}]}}},
       {"type": "object", "properties": {"a": {"type": ["string", "integer"]}}}

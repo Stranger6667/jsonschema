@@ -136,7 +136,7 @@
     ]
   },
   {
-    "description": "ir: additionalProperties:false meets a preexisting propertyNames",
+    "description": "ir: additionalProperties:false intersects a preexisting propertyNames",
     "schemas": [
       {
         "type": "object",
@@ -422,7 +422,7 @@
     ]
   },
   {
-    "description": "ir: additionalProperties:false under draft 4 is spelled directly",
+    "description": "ir: additionalProperties:false under draft 4 is written directly",
     "schema": {
       "type": "object",
       "properties": {
@@ -473,7 +473,7 @@
     ]
   },
   {
-    "description": "ir: an additionalProperties complement child canonicalizes in place",
+    "description": "ir: an additionalProperties negation child canonicalizes in place",
     "schema": {
       "type": "object",
       "additionalProperties": {
@@ -610,7 +610,7 @@
     ]
   },
   {
-    "description": "ir: draft 4 spells a pattern-shaped key constraint as the closed map it was parsed from",
+    "description": "ir: draft 4 writes a pattern-shaped key constraint as the closed map it was parsed from",
     "schema": {
       "type": "object",
       "patternProperties": {
@@ -724,7 +724,7 @@
     }
   },
   {
-    "description": "Draft 4 spells two closed pattern maps meeting as their closed-map intersection",
+    "description": "Draft 4 writes two closed pattern maps intersecting as their closed-map intersection",
     "schema": {
       "allOf": [
         {
@@ -946,7 +946,7 @@
     ]
   },
   {
-    "description": "ir: two additionalProperties schemas meet pointwise",
+    "description": "ir: two additionalProperties schemas intersect pointwise",
     "schemas": [
       {
         "allOf": [
@@ -1293,7 +1293,7 @@
     }
   },
   {
-    "description": "a shield expands over the keys no pattern matches",
+    "description": "additionalProperties expands over the keys no pattern matches",
     "schema": {
       "type": "object",
       "propertyNames": {
@@ -1367,7 +1367,7 @@
     ]
   },
   {
-    "description": "a shield no key can reach governs nothing and goes",
+    "description": "an additionalProperties no key can reach governs nothing and goes",
     "schema": {
       "type": "object",
       "propertyNames": {
@@ -1399,7 +1399,7 @@
     }
   },
   {
-    "description": "a shield the pattern map only partly covers still governs a key",
+    "description": "an additionalProperties the pattern map only partly covers still governs a key",
     "schema": {
       "type": "object",
       "propertyNames": {
@@ -1432,7 +1432,7 @@
     }
   },
   {
-    "description": "intersecting objects naming different keys meets each key with the other side's additionalProperties",
+    "description": "intersecting objects naming different keys combines each key with the other side's additionalProperties",
     "schema": {
       "allOf": [
         {
@@ -1515,7 +1515,7 @@
     ]
   },
   {
-    "description": "a key both sides name meets both entries and neither side's additionalProperties",
+    "description": "a key both sides name intersects both entries and neither side's additionalProperties",
     "schema": {
       "allOf": [
         {

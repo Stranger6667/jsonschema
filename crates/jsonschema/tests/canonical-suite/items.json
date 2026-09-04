@@ -60,7 +60,7 @@
     ]
   },
   {
-    "description": "ir: an item schema admitting no value converges with the false spelling",
+    "description": "ir: an item schema admitting no value converges with the `false` form",
     "schemas": [
       {"type": "array", "items": {"allOf": [{"type": "string"}, {"type": "integer"}]}},
       {"type": "array", "items": false}
@@ -522,7 +522,7 @@
     ]
   },
   {
-    "description": "ir: a union-shaped item schema converges with its type-set spelling",
+    "description": "ir: a union-shaped item schema converges with its type-set form",
     "schemas": [
       {"type": "array", "items": {"anyOf": [{"type": "string"}, {"type": "integer"}]}},
       {"type": "array", "items": {"type": ["string", "integer"]}}
@@ -602,7 +602,7 @@
     ]
   },
   {
-    "description": "ir: draft 4 item schemas pin a value set member to its integer spelling",
+    "description": "ir: draft 4 item schemas pin a value set member to its integer form",
     "schema": {"enum": [[1]], "items": {"type": "integer"}},
     "draft": "draft4",
     "expected": {
@@ -620,7 +620,7 @@
     ]
   },
   {
-    "description": "ir: draft 4 keeps an array value beside an integer-item leaf that rejects its float spelling",
+    "description": "ir: draft 4 keeps an array value beside an integer-item leaf that rejects its float form",
     "schema": {"anyOf": [{"enum": [[1]]}, {"type": "array", "items": {"type": "integer"}}]},
     "draft": "draft4",
     "expected": {

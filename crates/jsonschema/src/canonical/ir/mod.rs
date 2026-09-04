@@ -74,9 +74,9 @@ impl StringFormat {
 
     /// A string this format accepts, or `None` when the format is not one of the built-ins.
     #[must_use]
-    pub(crate) fn witness(&self) -> Option<&'static str> {
+    pub(crate) fn example(&self) -> Option<&'static str> {
         match self {
-            Self::Builtin(format) => Some(format.witness()),
+            Self::Builtin(format) => Some(format.example()),
             Self::Unknown(_) => None,
         }
     }
@@ -159,7 +159,7 @@ impl Hash for CanonicalJson {
     }
 }
 
-/// One spelling per JSON value: integer-valued numbers become integers everywhere in the tree.
+/// One form per JSON value: integer-valued numbers become integers everywhere in the tree.
 fn normalized(value: &Value) -> Value {
     match value {
         Value::Number(number) => Value::Number(normalized_number(number)),
@@ -192,7 +192,7 @@ pub(crate) fn normalized_number(number: &Number) -> Number {
 /// Rewrite an integer-valued float (`1.0`, `-0.0`) to its integer form so `Number` equality is value equality.
 #[cfg(feature = "arbitrary-precision")]
 pub(crate) fn normalized_number(number: &Number) -> Number {
-    // The modeling gate admits only plain spellings, whose canonical texts are plain too.
+    // The modeling gate admits only plain decimals, whose canonical texts are plain too.
     match crate::canonical::json::canonical_number(number.as_str()) {
         Some(text) => text.parse().expect("canonical number text parses"),
         None => number.clone(),
@@ -200,8 +200,8 @@ pub(crate) fn normalized_number(number: &Number) -> Number {
 }
 
 thread_local! {
-    static TRUE: Schema = Schema::nullary(SchemaKind::True);
-    static FALSE: Schema = Schema::nullary(SchemaKind::False);
+    static TRUE: Schema = Schema::new(SchemaKind::True);
+    static FALSE: Schema = Schema::new(SchemaKind::False);
 }
 
 /// Reference-counted canonical IR handle, passed throughout canonicalization.
@@ -211,11 +211,6 @@ pub(crate) struct Schema(Arc<SchemaData>);
 impl Schema {
     #[must_use]
     pub(crate) fn new(kind: SchemaKind) -> Self {
-        let hash = structural_hash(&kind);
-        Self(Arc::new(SchemaData { kind, hash }))
-    }
-
-    fn nullary(kind: SchemaKind) -> Self {
         let hash = structural_hash(&kind);
         Self(Arc::new(SchemaData { kind, hash }))
     }
@@ -284,7 +279,7 @@ pub(crate) enum SchemaKind {
     Const(CanonicalJson),
     /// A sorted, deduplicated finite set of admitted values.
     Enum(AtLeastTwo<CanonicalJson>),
-    /// The exact complement of an opaque schema, keeping the references it names symbolic.
+    /// The exact negation of an opaque schema, keeping the references it names symbolic.
     Not(Schema),
     /// A value matches iff every opaque branch matches.
     AllOf(AtLeastTwo<Schema>),
@@ -313,7 +308,7 @@ pub(crate) struct NumberLeaf {
     /// Divisors no admitted value is a multiple of.
     pub(crate) not_multiple_of: ExcludedDivisors,
     /// No admitted value is one of the draft's integers. Survives only under Draft 4, whose
-    /// token integers no divisor can name; later drafts respell it as a barred divisor of one.
+    /// token integers no divisor can name; later drafts rewrite it as a barred divisor of one.
     pub(crate) excludes_integers: bool,
 }
 
@@ -334,7 +329,7 @@ impl NumberLeaf {
         let (Some(min), Some(max)) = (&self.minimum, &self.maximum) else {
             return false;
         };
-        // The ends cross, or they meet on a limit at least one side excludes.
+        // The ends cross, or they touch on a limit at least one side excludes.
         !min.admits(&max.to_number(), Side::Lower) || !max.admits(&min.to_number(), Side::Upper)
     }
 }
@@ -409,7 +404,7 @@ impl ArrayLeaf {
     }
 }
 
-/// One `contains` demand: how many elements match `schema`. An absent minimum spells the draft
+/// One `contains` demand: how many elements match `schema`. An absent minimum means the draft
 /// default of one; an explicit one is normalized to absent.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct ContainsFacet {
@@ -548,7 +543,7 @@ pub(crate) struct StringLeaf {
     /// Sorted, deduplicated. A string must match every pattern.
     pub(crate) patterns: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must match none of these patterns. Only syntactic equality
-    /// against `patterns` is decided, so a leaf can be spelled and still admit nothing.
+    /// against `patterns` is decided, so a leaf can be built and still admit nothing.
     pub(crate) excluded_patterns: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must satisfy every format. Empty unless formats assert.
     pub(crate) formats: Vec<StringFormat>,

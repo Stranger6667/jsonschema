@@ -12,14 +12,12 @@ use strum::{IntoStaticStr, VariantArray};
 
 use crate::{
     canonical::{
-        algebra,
+        algebra, candidates, containment,
         context::CanonicalizationContext,
         emit, emptiness,
         error::OperandMismatch,
         ir::{BoundCardinality, Distinctness, Schema, SchemaKind, UncheckableFacet, Verdict},
-        negate, oracle, parse, rename,
-        witness::{candidate_instances, CANDIDATE_DEPTH, CANDIDATE_NODES},
-        CanonicalizationError, ROOT_DEFINITION_KEY,
+        negate, parse, rename, CanonicalizationError, ROOT_DEFINITION_KEY,
     },
     options::PatternEngineOptions,
 };
@@ -91,7 +89,8 @@ fn pointers_read(schema: &Schema, definitions: &DefinitionMap) -> BTreeSet<Arc<s
 }
 
 /// Intersections the difference behind a coverage question may take. It is the last resort, after
-/// the oracle and a value scan, and a caller comparing two wide documents wants an answer back.
+/// the containment check and a value scan, and a caller comparing two wide documents wants an
+/// answer back.
 const COVERS_DIFFERENCE_BUDGET: u64 = 20_000;
 
 /// `Yes` when the leaf's own size or value window is enough to pick a value out of, `Unknown` when
@@ -320,7 +319,7 @@ impl CanonicalSchema {
         }
         // Canonicalization reduces what it proves empty to `False`. Every other answer here names a
         // value the schema takes: a member it lists, or the shortest value of its type.
-        // TODO(canonical): the composite forms wait on an oracle that finds a value for them.
+        // TODO(canonical): the composite forms wait on a search that finds a value for them.
         let answer = match node.kind() {
             SchemaKind::False => Satisfiability::No,
             // `Enum` carries at least two members by construction, so it names one outright, and a
@@ -395,11 +394,11 @@ impl CanonicalSchema {
             &[&self.document.root],
             &self.document.definitions,
         );
-        for candidate in candidate_instances(
+        for candidate in candidates::instances(
             node,
             &|uri| self.document.target(uri),
-            CANDIDATE_DEPTH,
-            &Cell::new(CANDIDATE_NODES),
+            candidates::DEPTH,
+            &Cell::new(candidates::NODES),
             &context,
         ) {
             let (verdict, inexact) = context.probe(|| {
@@ -546,7 +545,7 @@ impl CanonicalSchema {
     /// [`CanonicalizationError::IncompatibleOperands`] when the operands cannot be combined,
     /// [`CanonicalizationError::UnsupportedOperand`] when either side is unsupported, and
     /// [`CanonicalizationError::UnsupportedResult`] when the canonical form cannot express `other`'s
-    /// complement, or the intersection with it, exactly.
+    /// negation, or the intersection with it, exactly.
     pub fn subtract(&self, other: &Self) -> Result<Self, CanonicalizationError> {
         self.combine(other, |left, right, ctx, definitions| {
             self.difference(left, right, ctx, definitions)
@@ -563,8 +562,8 @@ impl CanonicalSchema {
         ctx: &CanonicalizationContext,
         definitions: &DefinitionMap,
     ) -> Option<Schema> {
-        // A degenerate difference is one of the operands or empty, so it needs no complement -
-        // and asking for one would decline over a schema whose complement is inexpressible even
+        // A difference that is one of the operands, or empty, needs no negation -
+        // and asking for one would decline over a schema whose negation is inexpressible even
         // where the difference itself is free.
         match (taken.kind(), removed.kind()) {
             _ if taken == removed => return Some(Schema::falsy()),
@@ -574,18 +573,19 @@ impl CanonicalSchema {
         }
         // Operands that share no value, and one that contains the other, have a difference the form
         // gives directly.
-        // Under a probe, so an approximated intersection falls through to the complement below.
-        let (met, inexact) = ctx.probe(|| algebra::intersect(taken.clone(), removed.clone(), ctx));
-        if !inexact && matches!(met.kind(), SchemaKind::False) {
+        // Under a probe, so an approximated intersection falls through to the negation below.
+        let (intersection, inexact) =
+            ctx.probe(|| algebra::intersect(taken.clone(), removed.clone(), ctx));
+        if !inexact && matches!(intersection.kind(), SchemaKind::False) {
             return Some(taken.clone());
         }
         // Everything `taken` admits `removed` admits too, so the difference is empty. Asked through
-        // the oracle, which turns down an equality resting on a facet no checker covers and compares
+        // the containment check, which turns down an equality resting on a facet no checker covers and compares
         // through the targets its pointers name.
-        if oracle::covers(removed, taken, ctx) == Verdict::Admits {
+        if containment::covers(removed, taken, ctx) == Verdict::Admits {
             return Some(Schema::falsy());
         }
-        // A complement over a facet no checker covers bars the values the algebra reads as meeting
+        // A negation over a facet no checker covers bars the values the algebra reads as meeting
         // it, so the difference built around it is not the one that checker takes - unless `taken`
         // demands the same facets, where both sides carry them.
         if !algebra::uncheckable_string_facets(removed, ctx)
@@ -593,24 +593,23 @@ impl CanonicalSchema {
         {
             return None;
         }
-        // On the operation's own context, so the complement reads the same targets; the probe keeps
+        // On the operation's own context, so the negation reads the same targets; the probe keeps
         // what it approximated deciding only itself. Sharing a document keeps `#` naming the root
         // both operands were read against.
         let same_document = self.document.definitions.as_ref() == definitions;
-        let (complement, inexact) =
-            ctx.probe(|| negate::negate_in_place(removed, definitions, ctx));
-        let complement = complement?;
-        // Across documents, a complement naming `#` would name the wrong root on the side that did
+        let (negation, inexact) = ctx.probe(|| negate::negate_in_place(removed, definitions, ctx));
+        let negation = negation?;
+        // Across documents, a negation naming `#` would name the wrong root on the side that did
         // not supply it.
-        if !same_document && reads_document_root(&complement, definitions) {
+        if !same_document && reads_document_root(&negation, definitions) {
             return None;
         }
-        // A complement built around an intersection the form could only approximate, or around
-        // whatever a walk out of intersections had reached, is no complement to subtract with.
+        // A negation built around an intersection the form could only approximate, or around
+        // whatever a walk out of intersections had reached, is no negation to subtract with.
         if inexact || ctx.outgrew_distribution() {
             return None;
         }
-        Some(algebra::intersect(taken.clone(), complement, ctx))
+        Some(algebra::intersect(taken.clone(), negation, ctx))
     }
 
     /// The frame every set operation shares: combinable operands, one context, and the document the
@@ -676,7 +675,7 @@ impl CanonicalSchema {
             (verdict == Verdict::Admits).then_some(decided)
         };
         if let Some(answer) = decided(
-            oracle::covers(&merged.left, &merged.right, &context),
+            containment::covers(&merged.left, &merged.right, &context),
             Containment::Yes,
         ) {
             return Ok(answer);
@@ -745,11 +744,11 @@ impl CanonicalSchema {
     ///
     /// [`CanonicalizationError::UnsupportedOperand`] when this schema is unsupported, and
     /// [`CanonicalizationError::UnsupportedResult`] where the canonical form cannot express the
-    /// complement exactly. The complement of a schema admitting nothing is every value, which is a
+    /// negation exactly. The negation of a schema admitting nothing is every value, which is a
     /// result like any other - it is returned as `true`, never an error.
     pub fn negate(&self) -> Result<Self, CanonicalizationError> {
         // A `Raw` operand is unsupported whichever operation reaches it, so a unary one reports it the
-        // same way the binary ones do rather than as a complement it could not express.
+        // same way the binary ones do rather than as a negation it could not express.
         if matches!(self.schema_kind(), SchemaKind::Raw(_)) {
             return Err(CanonicalizationError::UnsupportedOperand);
         }
@@ -761,14 +760,14 @@ impl CanonicalSchema {
         let inner =
             negate::negate_with_definitions(&self.inner, &self.document.definitions, &context)
                 .ok_or(CanonicalizationError::UnsupportedResult)?;
-        // A complement built around an intersection the form could only approximate, or around
+        // A negation built around an intersection the form could only approximate, or around
         // whatever a walk out of intersections had reached, is a decline and not a result.
         if context.outgrew_distribution() || context.saw_inexact_intersection() {
             return Err(CanonicalizationError::UnsupportedResult);
         }
-        // `negate_with_definitions` declines a complement naming the root, so this one is a root of
+        // `negate_with_definitions` declines a negation naming the root, so this one is a root of
         // its own.
-        // A resolved complement may name fewer targets than the source; carrying the dead ones
+        // A resolved negation may name fewer targets than the source; carrying the dead ones
         // would emit unreferenced definitions and block combination with other documents.
         let mut definitions = (*self.document.definitions).clone();
         parse::prune_unreachable_definitions(&inner, &mut definitions);
@@ -793,7 +792,7 @@ impl CanonicalSchema {
     ) -> Document {
         // Both maps, pruned to what the result still names - or `definitions()` would answer about
         // targets nothing emits. The root is read off the *result*: one that folded its pointer
-        // away names none, and keeping one would carry a closure the result cannot reach.
+        // away names none, and keeping one would carry definitions the result cannot reach.
         let root = if !reads_document_root(inner, definitions) {
             inner.clone()
         } else if reads_document_root(&other.left, definitions) {
@@ -851,7 +850,7 @@ impl CanonicalSchema {
         for node in nodes {
             reachable.extend(pointers_read(node, definitions));
         }
-        // Through the operands' own roots: `self`'s spells the names it had before the merge
+        // Through the operands' own roots: `self`'s names the ones it had before the merge
         // renamed them apart, which are no longer keys of this map.
         if reachable.contains(ROOT_DEFINITION_KEY) {
             for root in roots {

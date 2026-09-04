@@ -658,7 +658,7 @@ mod tests {
         assert_eq!(canonical(raw), expected);
     }
 
-    // Within-cap spellings share one plain-decimal normal form.
+    // Within-cap texts share one plain-decimal normal form.
     #[cfg(feature = "arbitrary-precision")]
     #[test_case("1e+3", "1000" ; "positive exponent expands")]
     #[test_case("12e2", "1200" ; "multi digit positive exponent expands")]
@@ -678,8 +678,8 @@ mod tests {
     }
 
     // A plain decimal past the digit cap re-dispatches to scientific form with no explicit exponent,
-    // sharing one text with the equivalent scientific spelling. A non-zero last digit must not let the
-    // already-canonical fast path keep the unexpanded spelling.
+    // sharing one text with the equivalent scientific form. A non-zero last digit must not let the
+    // already-canonical fast path keep the unexpanded text.
     #[cfg(feature = "arbitrary-precision")]
     #[test_case(&format!("0.{}10", "0".repeat(1 << 20)), "1e-1048577" ; "trailing zero")]
     #[test_case(&format!("0.{}1", "0".repeat(1 << 20)), "1e-1048577" ; "non zero last digit")]
@@ -689,7 +689,7 @@ mod tests {
         assert_eq!(canonical(plain), canonical(scientific));
     }
 
-    // At the cap the plain decimal is the normal form, and the scientific spelling expands into it.
+    // At the cap the plain decimal is the normal form, and the scientific form expands into it.
     #[cfg(feature = "arbitrary-precision")]
     #[test]
     fn fraction_at_the_cap_stays_plain() {
