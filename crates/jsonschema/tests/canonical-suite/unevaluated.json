@@ -1003,7 +1003,7 @@
     }
   },
   {
-    "description": "raw: unevaluatedItems beside an instance-dependent branch stays unmodeled",
+    "description": "ir: a conditional inside an allOf branch evaluating no index leaves unevaluatedItems closing the array",
     "schema": {
       "allOf": [
         {
@@ -1016,18 +1016,19 @@
       "unevaluatedItems": false
     },
     "draft": "draft2020-12",
-    "kind": "raw",
     "expected": {
-      "allOf": [
-        {
-          "if": {
-            "type": "array"
-          },
-          "then": true
-        }
-      ],
-      "unevaluatedItems": false
-    }
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "object"]},
+        {"const": []}
+      ]
+    },
+    "tests": [
+      {"data": [], "valid": true},
+      {"data": [1], "valid": false},
+      {"data": 1, "valid": true},
+      {"data": {}, "valid": true}
+    ]
   },
   {
     "description": "ir: a boolean allOf branch evaluates nothing, so unevaluatedProperties sees only the local keys",
@@ -2083,13 +2084,13 @@
     "description": "raw: a conditional split outgrowing its case budget keeps the document raw",
     "schema": {
       "type": "object",
-      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}},
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}, "f": {"properties": {"f1": {}}}},
       "unevaluatedProperties": false
     },
     "kind": "raw",
     "expected": {
       "type": "object",
-      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}},
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}, "f": {"properties": {"f1": {}}}},
       "unevaluatedProperties": false
     },
     "tests": [
@@ -2172,7 +2173,7 @@
     "description": "raw: a condition doubling the dependent cases past the budget keeps the document raw",
     "schema": {
       "type": "object",
-      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}},
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}},
       "if": {"required": ["a"]},
       "then": {"properties": {"t": {}}},
       "unevaluatedProperties": false
@@ -2180,7 +2181,7 @@
     "kind": "raw",
     "expected": {
       "type": "object",
-      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}},
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}},
       "if": {"required": ["a"]},
       "then": {"properties": {"t": {}}},
       "unevaluatedProperties": false
@@ -2188,6 +2189,547 @@
     "tests": [
       {"data": {"a": 1, "a1": 2, "t": 3}},
       {"data": {"z": 1}}
+    ]
+  },
+  {
+    "description": "ir: a conditional inside an allOf branch splits like a sibling one",
+    "schemas": [
+      {"type": "object", "properties": {"a": {}}, "allOf": [{"if": {"required": ["a"]}, "then": {"properties": {"t": {}}}}], "unevaluatedProperties": false},
+      {"type": "object", "properties": {"a": {}}, "if": {"required": ["a"]}, "then": {"properties": {"t": {}}}, "unevaluatedProperties": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "required": ["a"], "propertyNames": {"enum": ["a", "t"]}},
+        {"const": {}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1, "t": 1}, "valid": true},
+      {"data": {"t": 1}, "valid": false},
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a conditional behind a $ref splits like a sibling one",
+    "schemas": [
+      {"$defs": {"cond": {"if": {"required": ["a"]}, "then": {"properties": {"t": {}}}}}, "type": "object", "properties": {"a": {}}, "$ref": "#/$defs/cond", "unevaluatedProperties": false},
+      {"$defs": {"cond": {"if": {"required": ["a"]}, "then": {"properties": {"t": {}}}}}, "type": "object", "properties": {"a": {}}, "if": {"required": ["a"]}, "then": {"properties": {"t": {}}}, "unevaluatedProperties": false}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "required": ["a"], "propertyNames": {"enum": ["a", "t"]}},
+        {"const": {}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1, "t": 1}, "valid": true},
+      {"data": {"t": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a conditional inside a dependent consequent splits under the held case only",
+    "schema": {
+      "$defs": {"style": {"if": {"properties": {"in": {"const": "path"}}, "required": ["in"]}, "then": {"properties": {"s": {}}}}},
+      "type": "object",
+      "properties": {"in": {}, "schema": {}},
+      "dependentSchemas": {"schema": {"allOf": [{"$ref": "#/$defs/style"}]}},
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"in": {"anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "not": {"enum": ["path"]}}]}}, "propertyNames": {"enum": ["in", "schema"]}},
+        {"type": "object", "properties": {"schema": false}, "propertyNames": {"enum": ["in", "schema"]}},
+        {"type": "object", "required": ["in", "schema"], "properties": {"in": {"const": "path"}}, "propertyNames": {"enum": ["in", "s", "schema"]}}
+      ]
+    },
+    "tests": [
+      {"data": {"schema": 1, "in": "path", "s": 1}, "valid": true},
+      {"data": {"in": "path", "s": 1}, "valid": false},
+      {"data": {"schema": 1, "in": "query", "s": 1}, "valid": false},
+      {"data": {"schema": 1}, "valid": true},
+      {"data": {"schema": 1, "in": "path"}, "valid": true},
+      {"data": {"s": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: conditions excluding each other on one key take one case each",
+    "schema": {
+      "type": "object",
+      "properties": {"k": {}},
+      "allOf": [
+        {"if": {"properties": {"k": {"const": "a"}}, "required": ["k"]}, "then": {"properties": {"pa": {}}}},
+        {"if": {"properties": {"k": {"const": "b"}}, "required": ["k"]}, "then": {"properties": {"pb": {}}}},
+        {"if": {"properties": {"k": {"const": "c"}}, "required": ["k"]}, "then": {"properties": {"pc": {}}}},
+        {"if": {"properties": {"k": {"const": "d"}}, "required": ["k"]}, "then": {"properties": {"pd": {}}}},
+        {"if": {"properties": {"k": {"const": "e"}}, "required": ["k"]}, "then": {"properties": {"pe": {}}}},
+        {"if": {"properties": {"k": {"const": "f"}}, "required": ["k"]}, "then": {"properties": {"pf": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"k": {"anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "not": {"enum": ["a", "b", "c", "d", "e", "f"]}}, {"enum": ["a", "b", "c", "d", "e", "f"]}]}}, "propertyNames": {"const": "k"}},
+        {"type": "object", "required": ["k"], "properties": {"k": {"const": "a"}}, "propertyNames": {"enum": ["k", "pa"]}},
+        {"type": "object", "required": ["k"], "properties": {"k": {"const": "b"}}, "propertyNames": {"enum": ["k", "pb"]}},
+        {"type": "object", "required": ["k"], "properties": {"k": {"const": "c"}}, "propertyNames": {"enum": ["k", "pc"]}},
+        {"type": "object", "required": ["k"], "properties": {"k": {"const": "d"}}, "propertyNames": {"enum": ["k", "pd"]}},
+        {"type": "object", "required": ["k"], "properties": {"k": {"const": "e"}}, "propertyNames": {"enum": ["k", "pe"]}},
+        {"type": "object", "required": ["k"], "properties": {"k": {"const": "f"}}, "propertyNames": {"enum": ["k", "pf"]}}
+      ]
+    },
+    "tests": [
+      {"data": {"k": "a", "pa": 1}, "valid": true},
+      {"data": {"k": "a", "pb": 1}, "valid": false},
+      {"data": {"pa": 1}, "valid": false},
+      {"data": {}, "valid": true},
+      {"data": {"k": "z"}, "valid": true},
+      {"data": {"k": "f", "pf": 1}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a condition naming a second property stays outside the exclusive group",
+    "schema": {
+      "type": "object",
+      "properties": {"type": {}, "scheme": {}},
+      "allOf": [
+        {"if": {"properties": {"type": {"const": "apiKey"}}, "required": ["type"]}, "then": {"properties": {"name": {}}}},
+        {"if": {"properties": {"type": {"const": "http"}}, "required": ["type"]}, "then": {"properties": {"scheme": {}}}},
+        {"if": {"properties": {"type": {"const": "http"}, "scheme": {"const": "bearer"}}, "required": ["type", "scheme"]}, "then": {"properties": {"bearerFormat": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"scheme": {"anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "not": {"enum": ["bearer"]}}]}, "type": {"anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "not": {"enum": ["apiKey", "http"]}}, {"enum": ["apiKey", "http"]}]}}, "propertyNames": {"enum": ["scheme", "type"]}},
+        {"type": "object", "properties": {"type": {"anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "not": {"enum": ["apiKey", "http"]}}, {"const": "apiKey"}]}}, "propertyNames": {"enum": ["scheme", "type"]}},
+        {"type": "object", "required": ["scheme", "type"], "properties": {"scheme": {"const": "bearer"}, "type": {"const": "http"}}, "propertyNames": {"enum": ["bearerFormat", "scheme", "type"]}},
+        {"type": "object", "required": ["type"], "properties": {"type": {"const": "apiKey"}}, "propertyNames": {"enum": ["name", "scheme", "type"]}}
+      ]
+    },
+    "tests": [
+      {"data": {"type": "apiKey", "name": "n"}, "valid": true},
+      {"data": {"type": "http", "scheme": "basic"}, "valid": true},
+      {"data": {"type": "http", "scheme": "bearer", "bearerFormat": "JWT"}, "valid": true},
+      {"data": {"type": "http", "scheme": "basic", "bearerFormat": "x"}, "valid": false},
+      {"data": {"type": "apiKey", "scheme": "x"}, "valid": true},
+      {"data": {"name": "n"}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "raw: conditions on distinct keys past the case budget keep the document raw",
+    "schema": {
+      "type": "object",
+      "allOf": [
+        {"if": {"required": ["k1"]}, "then": {"properties": {"p1": {}}}},
+        {"if": {"required": ["k2"]}, "then": {"properties": {"p2": {}}}},
+        {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
+        {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
+        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}},
+        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "allOf": [
+        {"if": {"required": ["k1"]}, "then": {"properties": {"p1": {}}}},
+        {"if": {"required": ["k2"]}, "then": {"properties": {"p2": {}}}},
+        {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
+        {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
+        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}},
+        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"k1": 1, "p1": 1}},
+      {"data": {"z": 1}}
+    ]
+  },
+  {
+    "description": "ir: conditions excluding each other on one key all hold on a non-object, where properties assert nothing",
+    "schema": {
+      "allOf": [
+        {"if": {"properties": {"k": {"const": "a"}}, "required": ["k"]}, "then": {}, "else": {"maxLength": 1}},
+        {"if": {"properties": {"k": {"const": "b"}}, "required": ["k"]}, "then": {}, "else": {"maxLength": 1}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"k": {"enum": ["a", "b"]}}, "propertyNames": {"const": "k"}}
+      ]
+    },
+    "tests": [
+      {"data": "abc", "valid": true},
+      {"data": [1, 2, 3], "valid": true},
+      {"data": {}, "valid": true},
+      {"data": {"k": "a"}, "valid": true},
+      {"data": {"k": "c"}, "valid": false},
+      {"data": {"k": "a", "x": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "ir: numeric constants on one key form no exclusive group, since 1 and 1.0 pin the same values",
+    "schema": {
+      "type": "object",
+      "allOf": [
+        {"if": {"properties": {"k": {"const": 1}}, "required": ["k"]}, "then": {"properties": {"p": {}}}},
+        {"if": {"properties": {"k": {"const": 1.0}}, "required": ["k"]}, "then": {"properties": {"q": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"k": {"const": 1}}, "required": ["k"], "propertyNames": {"enum": ["k", "p", "q"]}},
+        {"const": {}}
+      ]
+    },
+    "tests": [
+      {"data": {"k": 1, "p": 1, "q": 1}, "valid": true},
+      {"data": {"k": 1.0, "p": 1, "q": 1}, "valid": true},
+      {"data": {"k": 2}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "raw: a conditional behind a $ref target with its own $id keeps the document raw, since its bodies resolve references against that target",
+    "schema": {
+      "$defs": {
+        "part": {
+          "$id": "https://example.com/part",
+          "$defs": {"inner": {"properties": {"a": {"type": "integer"}}}},
+          "if": {"required": ["a"]},
+          "then": {"$ref": "#/$defs/inner"}
+        }
+      },
+      "allOf": [{"$ref": "#/$defs/part"}],
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "$defs": {
+        "part": {
+          "$id": "https://example.com/part",
+          "$defs": {"inner": {"properties": {"a": {"type": "integer"}}}},
+          "if": {"required": ["a"]},
+          "then": {"$ref": "#/$defs/inner"}
+        }
+      },
+      "allOf": [{"$ref": "#/$defs/part"}],
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": "x"}, "valid": false},
+      {"data": {}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: a conditional whose body carries an anchor keeps the document raw, since a copy would register it twice",
+    "schema": {
+      "type": "object",
+      "if": {"required": ["a"]},
+      "then": {"$anchor": "held", "properties": {"a": {}, "b": {}}},
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "if": {"required": ["a"]},
+      "then": {"$anchor": "held", "properties": {"a": {}, "b": {}}},
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1, "c": 1}, "valid": false},
+      {"data": {"z": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: conditions pinning different keys form separate groups",
+    "schema": {
+      "type": "object",
+      "allOf": [
+        {"if": {"properties": {"k": {"const": "a"}}, "required": ["k"]}, "then": {"properties": {"p": {}}}},
+        {"if": {"properties": {"x": {"const": "b"}}, "required": ["x"]}, "then": {"properties": {"q": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": "object", "properties": {"k": {"const": "a"}}, "required": ["k"], "propertyNames": {"enum": ["k", "p"]}},
+        {"type": "object", "properties": {"k": {"const": "a"}, "x": {"const": "b"}}, "required": ["k", "x"], "propertyNames": {"enum": ["k", "p", "q", "x"]}},
+        {"type": "object", "properties": {"x": {"const": "b"}}, "required": ["x"], "propertyNames": {"enum": ["q", "x"]}},
+        {"const": {}}
+      ]
+    },
+    "tests": [
+      {"data": {"k": "a", "p": 1}, "valid": true},
+      {"data": {"x": "b", "q": 1}, "valid": true},
+      {"data": {"k": "a", "x": "b", "p": 1, "q": 1}, "valid": true},
+      {"data": {"k": "a", "q": 1}, "valid": false},
+      {"data": {"k": "c"}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a condition whose required names a key other than the one it pins forks in two",
+    "schema": {
+      "type": "object",
+      "allOf": [
+        {"if": {"properties": {"k": {"const": "a"}}, "required": ["x"]}, "then": {"properties": {"p": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "const": {}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"x": 1, "k": "a", "p": 1}, "valid": false},
+      {"data": {"k": "a"}, "valid": false},
+      {"data": {"p": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: a dependency consequent referencing a target of another draft keeps the document raw",
+    "schema": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "dependentSchemas": {"a": {"$ref": "https://example.com/old"}},
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "dependentSchemas": {"a": {"$ref": "https://example.com/old"}},
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": 1, "b": 2}, "valid": false},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: a then referencing a target of another draft keeps the document raw",
+    "schema": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "properties": {"a": {}},
+      "if": {"required": ["a"]},
+      "then": {"$ref": "https://example.com/old"},
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "properties": {"a": {}},
+      "if": {"required": ["a"]},
+      "then": {"$ref": "https://example.com/old"},
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"a": 1, "c": 1}, "valid": false},
+      {"data": {}, "valid": true},
+      {"data": {"b": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "raw: an else referencing a target of another draft keeps the document raw",
+    "schema": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "properties": {"a": {}},
+      "if": {"required": ["a"]},
+      "then": {},
+      "else": {"$ref": "https://example.com/old"},
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "properties": {"a": {}},
+      "if": {"required": ["a"]},
+      "then": {},
+      "else": {"$ref": "https://example.com/old"},
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "raw: a then in an exclusive group referencing a target of another draft keeps the document raw",
+    "schema": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "allOf": [
+        {"if": {"properties": {"k": {"const": "a"}}, "required": ["k"]}, "then": {"$ref": "https://example.com/old"}},
+        {"if": {"properties": {"k": {"const": "b"}}, "required": ["k"]}, "then": {"properties": {"q": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "allOf": [
+        {"if": {"properties": {"k": {"const": "a"}}, "required": ["k"]}, "then": {"$ref": "https://example.com/old"}},
+        {"if": {"properties": {"k": {"const": "b"}}, "required": ["k"]}, "then": {"properties": {"q": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"k": "a", "b": 1}, "valid": true},
+      {"data": {"k": "b", "q": 1}, "valid": true},
+      {"data": {"k": "a", "q": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "raw: an else in an exclusive group referencing a target of another draft keeps the document raw",
+    "schema": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "allOf": [
+        {"if": {"properties": {"k": {"const": "a"}}, "required": ["k"]}, "then": {"properties": {"p": {}}}, "else": {"$ref": "https://example.com/old"}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "$defs": {"old": {"$id": "https://example.com/old", "$schema": "http://json-schema.org/draft-07/schema#", "properties": {"b": {}}}},
+      "allOf": [
+        {"if": {"properties": {"k": {"const": "a"}}, "required": ["k"]}, "then": {"properties": {"p": {}}}, "else": {"$ref": "https://example.com/old"}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"k": "a", "p": 1}, "valid": true},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"k": "a", "b": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "raw: a group case forking past the case budget keeps the document raw",
+    "schema": {
+      "type": "object",
+      "if": {"properties": {"k": {"const": "a"}}, "required": ["k"]},
+      "then": {"properties": {"p": {}}},
+      "allOf": [
+        {"if": {"required": ["k1"]}, "then": {"properties": {"p1": {}}}},
+        {"if": {"required": ["k2"]}, "then": {"properties": {"p2": {}}}},
+        {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
+        {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
+        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}},
+        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "if": {"properties": {"k": {"const": "a"}}, "required": ["k"]},
+      "then": {"properties": {"p": {}}},
+      "allOf": [
+        {"if": {"required": ["k1"]}, "then": {"properties": {"p1": {}}}},
+        {"if": {"required": ["k2"]}, "then": {"properties": {"p2": {}}}},
+        {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
+        {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
+        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}},
+        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"k": "a", "p": 1}, "valid": true},
+      {"data": {"k1": 1, "p1": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "raw: the case where no group member is met forking past the case budget keeps the document raw",
+    "schema": {
+      "type": "object",
+      "if": {"properties": {"k": {"const": "a"}}, "required": ["k"]},
+      "then": {"properties": {"p": {}}},
+      "allOf": [
+        {"if": {"required": ["k1"]}, "then": {"properties": {"p1": {}}}},
+        {"if": {"required": ["k2"]}, "then": {"properties": {"p2": {}}}},
+        {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
+        {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
+        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "if": {"properties": {"k": {"const": "a"}}, "required": ["k"]},
+      "then": {"properties": {"p": {}}},
+      "allOf": [
+        {"if": {"required": ["k1"]}, "then": {"properties": {"p1": {}}}},
+        {"if": {"required": ["k2"]}, "then": {"properties": {"p2": {}}}},
+        {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
+        {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
+        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {"k": "a", "p": 1}, "valid": true},
+      {"data": {"k1": 1, "p1": 1}, "valid": false},
+      {"data": {}, "valid": true}
+    ]
+  },
+  {
+    "description": "raw: a body referring back to its own conditional keeps the document raw",
+    "schema": {
+      "type": "object",
+      "$defs": {"loop": {"if": {"required": ["never"]}, "then": {"$ref": "#/$defs/loop"}}},
+      "if": {"required": ["never"]},
+      "then": {"$ref": "#/$defs/loop"},
+      "unevaluatedProperties": false
+    },
+    "kind": "raw",
+    "expected": {
+      "type": "object",
+      "$defs": {"loop": {"if": {"required": ["never"]}, "then": {"$ref": "#/$defs/loop"}}},
+      "if": {"required": ["never"]},
+      "then": {"$ref": "#/$defs/loop"},
+      "unevaluatedProperties": false
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": false}
     ]
   }
 ]

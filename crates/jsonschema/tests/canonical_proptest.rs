@@ -4,7 +4,7 @@ use jsonschema::{
     canonical::{CanonicalSchema, CanonicalView, Containment, Satisfiability},
     Draft, JsonType,
 };
-use serde_json::{json, Value};
+use serde_json::{json, Map, Value};
 
 #[path = "generation/mod.rs"]
 mod generation;
@@ -424,6 +424,8 @@ fn draw_reference_uri(tc: &TestCase) -> &'static str {
         "#/$defs/recursive_target",
         "#/$defs/object_target",
         "#/$defs/array_target",
+        "#/$defs/conditional_target",
+        "#/$defs/scoped_target",
     ]))
 }
 
@@ -496,10 +498,10 @@ fn draw_ref_unevaluated_leaf(tc: &TestCase) -> Value {
 
 fn draw_schema_node(tc: &TestCase, depth: u32) -> Value {
     if depth == 0 || tc.draw(gs::booleans()) {
-        return if tc.draw(gs::integers::<u8>().min_value(0).max_value(7)) == 0 {
-            draw_reference_leaf(tc)
-        } else {
-            draw_leaf(tc)
+        return match tc.draw(gs::integers::<u8>().min_value(0).max_value(7)) {
+            0 => draw_reference_leaf(tc),
+            1 => draw_conditional_leaf(tc),
+            _ => draw_leaf(tc),
         };
     }
     let count = tc.draw(gs::integers::<usize>().min_value(1).max_value(2));
@@ -526,7 +528,19 @@ fn shared_defs() -> Value {
             "properties": { "a": { "$ref": "#/$defs/recursive_target" } }
         },
         "object_target": { "type": "object", "properties": { "z": { "type": "integer" } } },
-        "array_target": { "type": "array", "prefixItems": [{ "type": "integer" }] }
+        "array_target": { "type": "array", "prefixItems": [{ "type": "integer" }] },
+        "conditional_target": {
+            "if": { "properties": { "k": { "const": "a" } }, "required": ["k"] },
+            "then": { "properties": { "p": {} } },
+            "else": { "maxLength": 1 }
+        },
+        // Its own base: a copied `then` would resolve `#/$defs/inner` against the root.
+        "scoped_target": {
+            "$id": "https://example.com/scoped",
+            "$defs": { "inner": { "properties": { "p": { "type": "integer" } } } },
+            "if": { "required": ["k"] },
+            "then": { "$ref": "#/$defs/inner" }
+        }
     })
 }
 
@@ -707,6 +721,8 @@ fn canonical_form_preserves_validation(tc: TestCase) {
     // set that lost or gained a member shows.
     let mut named = Vec::new();
     named_values(&schema, &mut named);
+    named.push(draw_conditional_instance(&tc));
+    named.push(draw_conditional_instance(&tc));
     for instance in named.iter().chain(std::iter::once(&instance)) {
         assert_eq!(
             raw.is_valid(instance),
@@ -2680,4 +2696,259 @@ fn drawn_instances_decline_foreign_patterns(tc: TestCase) {
         .build(&canonical.to_json_schema())
         .expect("the canonical form compiles");
     let _ = draw_valid_instance(&tc, &canonical, &modeled);
+}
+
+// Instances draw from the keys the conditional schemas name.
+const CONDITIONAL_KEYS: [&str; 4] = ["k", "p", "q", "x"];
+
+fn draw_condition_constant(tc: &TestCase) -> Value {
+    tc.draw(gs::sampled_from(vec![
+        json!("a"),
+        json!("b"),
+        json!(null),
+        json!(true),
+        json!(1),
+        json!(1.0),
+    ]))
+}
+
+fn draw_condition(tc: &TestCase, key: &str) -> Value {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(3)) {
+        0 => json!({ "required": [key] }),
+        1 => json!({
+            "properties": { key: { "const": draw_condition_constant(tc) } },
+            "required": [key]
+        }),
+        2 => json!({
+            "type": "object",
+            "properties": { key: { "const": draw_condition_constant(tc) } },
+            "required": [key]
+        }),
+        _ => json!({
+            "properties": { key: { "const": draw_condition_constant(tc) }, "x": {} },
+            "required": [key]
+        }),
+    }
+}
+
+fn draw_conditional_body(tc: &TestCase, depth: u32) -> Value {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(6)) {
+        0 => json!({}),
+        1 => json!({ "properties": { "p": {} } }),
+        2 => json!({ "properties": { "p": { "type": "integer" } }, "required": ["p"] }),
+        3 => json!({ "maxLength": 1 }),
+        4 => json!({ "minItems": 1 }),
+        5 => json!({ "$ref": "#/$defs/object_target" }),
+        _ if depth > 0 => Value::Object(draw_conditional(tc, depth - 1)),
+        _ => json!({ "properties": { "q": {} } }),
+    }
+}
+
+fn draw_conditional(tc: &TestCase, depth: u32) -> Map<String, Value> {
+    let key = tc.draw(gs::sampled_from(vec!["k", "x"]));
+    let mut node = Map::new();
+    if tc.draw(gs::booleans()) {
+        node.insert(
+            "dependentSchemas".into(),
+            json!({ key: draw_conditional_body(tc, depth) }),
+        );
+        return node;
+    }
+    node.insert("if".into(), draw_condition(tc, key));
+    if tc.draw(gs::booleans()) {
+        node.insert("then".into(), draw_conditional_body(tc, depth));
+    }
+    if tc.draw(gs::booleans()) {
+        node.insert("else".into(), draw_conditional_body(tc, depth));
+    }
+    node
+}
+
+/// An `unevaluated*` node with conditionals wherever the split has to find them.
+fn draw_conditional_leaf(tc: &TestCase) -> Value {
+    let mut node = Map::new();
+    let mut branches = Vec::new();
+    let count = tc.draw(gs::integers::<u8>().min_value(1).max_value(3));
+    for index in 0..count {
+        match tc.draw(gs::integers::<u8>().min_value(0).max_value(5)) {
+            0 if !node.contains_key("if") && !node.contains_key("dependentSchemas") => {
+                node.extend(draw_conditional(tc, 1));
+            }
+            0 | 1 => branches.push(Value::Object(draw_conditional(tc, 1))),
+            2 => {
+                // Self-contained, so its references resolve; the copies could not.
+                let mut branch = draw_conditional(tc, 1);
+                branch.insert(
+                    "$id".into(),
+                    json!(format!("https://example.com/branch{index}")),
+                );
+                branch.insert(
+                    "$defs".into(),
+                    json!({ "object_target": shared_defs()["object_target"] }),
+                );
+                branches.push(Value::Object(branch));
+            }
+            3 => branches.push(json!({ "$ref": "#/$defs/conditional_target" })),
+            4 => branches.push(json!({ "$ref": "#/$defs/scoped_target" })),
+            _ => branches.push(json!({ "allOf": [Value::Object(draw_conditional(tc, 1))] })),
+        }
+    }
+    if tc.draw(gs::booleans()) {
+        branches.push(json!({ "properties": { "q": {} } }));
+    }
+    if !branches.is_empty() {
+        node.insert("allOf".into(), Value::Array(branches));
+    }
+    if tc.draw(gs::booleans()) {
+        node.insert("type".into(), json!("object"));
+    }
+    let keyword = if tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) == 0 {
+        "unevaluatedItems"
+    } else {
+        "unevaluatedProperties"
+    };
+    node.insert(keyword.into(), json!(false));
+    Value::Object(node)
+}
+
+fn draw_conditional_schema(tc: &TestCase) -> Value {
+    attach_root_definitions(draw_conditional_leaf(tc), Some(shared_defs()))
+}
+
+fn draw_conditional_instance(tc: &TestCase) -> Value {
+    match tc.draw(gs::integers::<u8>().min_value(0).max_value(7)) {
+        0 => json!(null),
+        1 => json!(true),
+        2 => json!(1.5),
+        3 => tc.draw(gs::sampled_from(vec![json!(""), json!("a"), json!("abc")])),
+        4 => tc.draw(gs::sampled_from(vec![json!([]), json!([1]), json!([1, 2])])),
+        _ => {
+            let mut object = Map::new();
+            for key in CONDITIONAL_KEYS {
+                if tc.draw(gs::booleans()) {
+                    let value = tc.draw(gs::sampled_from(vec![
+                        json!("a"),
+                        json!("b"),
+                        json!("c"),
+                        json!(null),
+                        json!(true),
+                        json!(1),
+                        json!(1.0),
+                        json!(2),
+                    ]));
+                    object.insert(key.into(), value);
+                }
+            }
+            if tc.draw(gs::booleans()) {
+                object.insert("z".into(), json!(1));
+            }
+            Value::Object(object)
+        }
+    }
+}
+
+fn draw_unevaluated_draft(tc: &TestCase) -> Draft {
+    tc.draw(gs::sampled_from(vec![
+        Draft::Draft201909,
+        Draft::Draft202012,
+    ]))
+}
+
+fn canonicalize_or_panic(schema: &Value, draft: Draft) -> CanonicalSchema {
+    jsonschema::canonical::options()
+        .with_draft(draft)
+        .canonicalize(schema)
+        .unwrap_or_else(|error| panic!("canonicalize failed: {error}\n  schema = {schema}"))
+}
+
+// Every generated document is valid, so canonicalization answers, agrees with the document on
+// the values its cases turn on, and is idempotent.
+#[hegel::test(test_cases = 5_000)]
+fn conditionals_beside_unevaluated_canonicalize_and_agree(tc: TestCase) {
+    let draft = draw_unevaluated_draft(&tc);
+    let schema = draw_conditional_schema(&tc);
+    let emitted = canonicalize_or_panic(&schema, draft).to_json_schema();
+    let again = canonicalize_or_panic(&emitted, draft).to_json_schema();
+    assert_eq!(emitted, again, "schema = {schema}");
+    let build = |value: &Value| {
+        jsonschema::options()
+            .with_draft(draft)
+            .build(value)
+            .unwrap_or_else(|error| panic!("build failed: {error}\n  schema = {value}"))
+    };
+    let raw = build(&schema);
+    let modeled = build(&emitted);
+    let mut instances = Vec::new();
+    named_values(&schema, &mut instances);
+    for _ in 0..8 {
+        instances.push(draw_conditional_instance(&tc));
+    }
+    for instance in &instances {
+        assert_eq!(
+            raw.is_valid(instance),
+            modeled.is_valid(instance),
+            "{schema} vs {emitted} on {instance}"
+        );
+    }
+}
+
+/// Every `{"const": c}` as `{"enum": [c]}`: the same values, no condition left pinning a key.
+fn const_as_enum(value: &Value) -> Value {
+    match value {
+        Value::Object(map) => {
+            if map.len() == 1 {
+                if let Some(constant) = map.get("const") {
+                    return json!({ "enum": [constant.clone()] });
+                }
+            }
+            Value::Object(
+                map.iter()
+                    .map(|(key, entry)| (key.clone(), const_as_enum(entry)))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.iter().map(const_as_enum).collect()),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => value.clone(),
+    }
+}
+
+// The group cases and the plain forks are both exact, so the forms agree wherever both fit the
+// budget.
+#[hegel::test(test_cases = 5_000)]
+fn exclusive_groups_converge_with_the_plain_forks(tc: TestCase) {
+    let draft = draw_unevaluated_draft(&tc);
+    let schema = draw_conditional_schema(&tc);
+    let forked = const_as_enum(&schema);
+    let grouped = canonicalize_or_panic(&schema, draft);
+    let plain = canonicalize_or_panic(&forked, draft);
+    let raw = jsonschema::canonical::CanonicalKind::Raw;
+    if grouped.kind() == raw || plain.kind() == raw {
+        return;
+    }
+    assert_eq!(
+        grouped.to_json_schema(),
+        plain.to_json_schema(),
+        "schema = {schema}"
+    );
+}
+
+// Two-way forks double the cases: six conditions on distinct keys outgrow the per-node budget.
+#[hegel::test(test_cases = 200)]
+fn conditions_past_the_case_budget_stay_raw(tc: TestCase) {
+    let count = tc.draw(gs::integers::<u32>().min_value(1).max_value(8));
+    let branches: Vec<Value> = (0..count)
+        .map(|index| {
+            let key = format!("k{index}");
+            let property = format!("p{index}");
+            json!({ "if": { "required": [key] }, "then": { "properties": { property: {} } } })
+        })
+        .collect();
+    let schema = json!({ "type": "object", "allOf": branches, "unevaluatedProperties": false });
+    let canonical = canonicalize_or_panic(&schema, Draft::Draft202012);
+    let past_budget = 2u64.pow(count) > 32;
+    assert_eq!(
+        canonical.kind() == jsonschema::canonical::CanonicalKind::Raw,
+        past_budget,
+        "count = {count}"
+    );
 }
