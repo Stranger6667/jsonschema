@@ -224,7 +224,7 @@ Equivalent schemas share one form. Both `{"const": 1, "type": "integer"}` and
 {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 1}
 ```
 
-A schema no value can satisfy collapses to `false`, spelled `{"not": {}}`:
+A schema no value can satisfy collapses to `false`, written `{"not": {}}`:
 
 ```console
 $ echo '{"type": "integer", "minimum": 10, "maximum": 5}' > empty.json

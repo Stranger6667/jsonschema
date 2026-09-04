@@ -665,7 +665,7 @@ class CanonicalSchema:
         """Every value this schema rejects.
 
         Raises ``UnsupportedOperand`` when this schema is a ``Raw`` pass-through, and
-        ``UnsupportedResult`` when the canonical form does not support the complement.
+        ``UnsupportedResult`` when the canonical form does not support the negation.
         """
         ...
 

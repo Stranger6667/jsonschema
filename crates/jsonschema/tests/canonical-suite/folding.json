@@ -560,7 +560,7 @@
     ]
   },
   {
-    "description": "ir: a window reaching the representable maximum meets the ray above it",
+    "description": "ir: a window reaching the representable maximum merges with the ray above it",
     "schema": {"anyOf": [{"type": "integer", "maximum": 9223372036854775807}, {"type": "integer", "minimum": 0}]},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "integer"},
     "tests": [

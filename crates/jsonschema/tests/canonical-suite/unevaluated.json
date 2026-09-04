@@ -189,7 +189,7 @@
     }
   },
   {
-    "description": "ir: 2019-09 spells the tuple tail additionalItems",
+    "description": "ir: 2019-09 writes the tuple tail additionalItems",
     "draft": "draft2019-09",
     "schemas": [
       {"type": "array", "items": [{"type": "integer"}], "unevaluatedItems": false},
@@ -596,7 +596,7 @@
     }
   },
   {
-    "description": "ir: 2019-09 spells the branch tuple as array-form items",
+    "description": "ir: 2019-09 writes the branch tuple as array-form items",
     "draft": "draft2019-09",
     "schema": {"allOf": [{"items": [{"type": "integer"}]}], "unevaluatedItems": false},
     "tests": [
@@ -665,7 +665,7 @@
     }
   },
   {
-    "description": "raw: a branch contains marks indexes no prefix length spells",
+    "description": "raw: a branch contains marks indexes no prefix length writes",
     "schema": {"allOf": [{"contains": {"const": 2}}], "unevaluatedItems": false},
     "kind": "raw",
     "tests": [
@@ -983,7 +983,7 @@
     }
   },
   {
-    "description": "ir: 2019-09 spells the contains tail additionalItems",
+    "description": "ir: 2019-09 writes the contains tail additionalItems",
     "draft": "draft2019-09",
     "schema": {"type": "array", "contains": {"type": "integer"}, "unevaluatedItems": false},
     "tests": [

@@ -420,7 +420,7 @@ def test_view_reference_and_definitions():
 
 
 def test_view_all_of_with_symbolic_reference():
-    # A cycle keeps the conjunction symbolic: such a document is not folded through its targets.
+    # A cycle keeps the `allOf` symbolic: such a document is not folded through its targets.
     schema = {
         "allOf": [
             {"$ref": "#/$defs/value"},
@@ -666,7 +666,7 @@ def test_set_operations_reject_uncombinable_operands(operation):
 def test_result_carries_exactly_the_targets_it_still_names():
     left = canonicalize({"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A"})
     right = canonicalize({"$defs": {"B": {"minLength": 4}}, "$ref": "#/$defs/B"})
-    # Both pointers are read through and the meet folds into one leaf, naming neither.
+    # Both pointers are read through and the intersection folds into one leaf, naming neither.
     result = left.intersect(right)
     assert result.definitions() == {}
     assert result.to_json_schema() == {
@@ -865,7 +865,7 @@ def test_subtract_raises_unsupported_result():
 
 def test_subtracting_a_schema_from_itself_needs_no_complement():
     schema = {"type": "array", "contains": {"type": "string"}, "minContains": 2}
-    # Negating this schema declines, so the self-difference must not go through a complement.
+    # Negating this schema declines, so the self-difference must not go through a negation.
     with pytest.raises(canonical.UnsupportedResult):
         canonicalize(schema).negate()
     assert canonicalize(schema).subtract(canonicalize(schema)).satisfiability() == Satisfiability.NO
@@ -940,8 +940,8 @@ def test_negate_integer_leaf():
 
 def test_negate_resolves_a_reference():
     schema = canonicalize({"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A"})
-    complement = schema.negate()
-    assert complement.to_json_schema() == {
+    negation = schema.negate()
+    assert negation.to_json_schema() == {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": ["null", "boolean", "number", "array", "object"],
     }

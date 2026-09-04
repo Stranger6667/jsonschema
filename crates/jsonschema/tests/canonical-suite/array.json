@@ -410,7 +410,7 @@
     ]
   },
   {
-    "description": "ir: an integer-valued float length bound converges with its integer spelling",
+    "description": "ir: an integer-valued float length bound converges with its integer form",
     "schemas": [
       {"type": "array", "maxItems": 2.0},
       {"type": "array", "maxItems": 2}

@@ -907,7 +907,7 @@
     ]
   },
   {
-    "description": "ir: draft 4 integer beside another type keeps the spelling guard on the integer members",
+    "description": "ir: draft 4 integer beside another type keeps the numeric-form guard on the integer members",
     "draft": "draft4",
     "schemas": [
       {"type": ["integer", "string"], "enum": [2, 2.0, "x"]},
@@ -925,7 +925,7 @@
     ]
   },
   {
-    "description": "ir: draft 4 a number beside integer admits every spelling, so the value set needs no guard",
+    "description": "ir: draft 4 a number beside integer admits every numeric form, so the value set needs no guard",
     "draft": "draft4",
     "schemas": [
       {"type": ["integer", "number"], "enum": [2, 2.0, "x"]},
@@ -952,7 +952,7 @@
     ]
   },
   {
-    "description": "ir: draft 4 an enum whose only numeric member is spelled as a float still pins the integer spelling",
+    "description": "ir: draft 4 an enum whose only numeric member is written as a float still pins the integer form",
     "draft": "draft4",
     "schema": {"type": ["integer", "string"], "enum": [2.0, "x"]},
     "tests": [

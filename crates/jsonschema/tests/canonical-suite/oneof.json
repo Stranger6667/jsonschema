@@ -966,7 +966,7 @@
     ]
   },
   {
-    "description": "a branch overlapping nothing needs no complement",
+    "description": "a branch overlapping nothing needs no negation",
     "schema": {
       "oneOf": [
         {
@@ -1032,7 +1032,7 @@
     ]
   },
   {
-    "description": "a repeated symbolic oneOf branch becomes the complement of the survivors",
+    "description": "a repeated symbolic oneOf branch becomes the negation of the survivors",
     "schema": {"oneOf": [{"$ref": "#/$defs/x"}, {"$ref": "#/$defs/x"}, {"type": "integer"}], "$defs": {"x": {"type": "object", "properties": {"child": {"$ref": "#/$defs/x"}}}}},
     "satisfiable": true,
     "tests": [
@@ -1217,7 +1217,7 @@
     ]
   },
   {
-    "description": "oneOf over a member past this build's integers and the integers cannot spell the overlap",
+    "description": "oneOf over a member past this build's integers and the integers cannot express the overlap",
     "schema": {"oneOf": [{"enum": [1e300]}, {"type": "integer"}]},
     "expected": {"oneOf": [{"enum": [1e300]}, {"type": "integer"}]},
     "expected_arbitrary_precision": {
@@ -1466,7 +1466,7 @@
     ]
   },
   {
-    "description": "object targets whose tag is optional keep the choice, since one carrying no tag meets both",
+    "description": "object targets whose tag is optional keep the choice, since one carrying no tag satisfies both",
     "schema": {
       "oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}],
       "$defs": {
@@ -1563,7 +1563,7 @@
     ]
   },
   {
-    "description": "a choice whose overlapping branches outrun the conjunction budget stays symbolic",
+    "description": "a choice whose overlapping branches outrun the allOf budget stays symbolic",
     "schema": {
       "oneOf": [
         {"type": "object", "properties": {"kind": {"const": "K0"}, "f0": {"type": "string"}}},

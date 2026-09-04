@@ -27,7 +27,7 @@ pub(crate) fn finite_float(tc: &TestCase) -> f64 {
     tc.draw(gs::floats::<f64>().min_value(-8.0).max_value(8.0))
 }
 
-// One value per family, spelled several ways: normalization must equate them (and, under
+// One value per family, written several ways: normalization must equate them (and, under
 // `arbitrary-precision` where serde keeps the raw token, integer-valued floats fold to integers).
 pub(crate) const ALIAS_FAMILIES: &[&[&str]] = &[
     &["1.5", "1.50", "15e-1"],

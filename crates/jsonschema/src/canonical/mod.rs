@@ -164,6 +164,8 @@
 pub mod json;
 
 pub(crate) mod algebra;
+mod candidates;
+pub(crate) mod containment;
 pub(crate) mod context;
 pub(crate) mod emit;
 pub(crate) mod emptiness;
@@ -171,13 +173,11 @@ pub(crate) mod error;
 pub(crate) mod ir;
 pub(crate) mod negate;
 pub(crate) mod options;
-pub(crate) mod oracle;
 pub(crate) mod parse;
 pub(crate) mod refold;
 pub(crate) mod rename;
 pub(crate) mod schema;
 pub(crate) mod view;
-mod witness;
 
 pub use error::{CanonicalizationError, OperandMismatch};
 pub use options::{options, CanonicalizeOptions, PreparedDocument};
@@ -189,7 +189,7 @@ pub use view::{
 
 pub(crate) const CANONICAL_REFERENCE_PREFIX: &str = "urn:jsonschema:canonical:";
 
-/// Names the document root in the definition key space. No minted key can collide with it: a
+/// Names the document root in the definition key space. No generated key can collide with it: a
 /// reference resolving to the root short-circuits before a key is derived, and every derived key
 /// is either a `#/$defs/`-style pointer or carries [`CANONICAL_REFERENCE_PREFIX`].
 pub(crate) const ROOT_DEFINITION_KEY: &str = "#";

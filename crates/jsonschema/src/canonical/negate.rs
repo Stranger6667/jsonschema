@@ -1,4 +1,4 @@
-//! Structural complement of a canonical node.
+//! Structural negation of a canonical node.
 use std::sync::Arc;
 
 use ahash::AHashSet;
@@ -21,21 +21,21 @@ use crate::{
     JsonType, JsonTypeSet,
 };
 
-/// Resolutions one walk may spend before declining: a complement growing past this many inlined
+/// Resolutions one walk may spend before declining: a negation growing past this many inlined
 /// targets costs more to express than the caller can put to use, and the recursion it would take
 /// runs ahead of the stack.
 const RESOLUTION_BUDGET: usize = 1024;
 
-/// Shared regions one choice's complement may produce: their number grows with the square of the
-/// branch count, and a complement past this many costs more to assemble than the caller can put to
+/// Shared regions one choice's negation may produce: their number grows with the square of the
+/// branch count, and a negation past this many costs more to assemble than the caller can put to
 /// use.
 const OVERLAP_BUDGET: usize = 64;
 
-/// Branches the conjunction of a union's branch complements may produce. Intersecting complements
+/// Branches the intersection of a union's branch negations may produce. Intersecting negations
 /// multiplies their branch counts, so a union of branches that each rule out a value in several
 /// independent ways has a union form exponential in the branch count. Past this many the symbolic
-/// complement is both exact and smaller.
-pub(crate) const CONJUNCTION_BUDGET: usize = 16;
+/// negation is both exact and smaller.
+pub(crate) const UNION_WIDTH_BUDGET: usize = 16;
 
 /// State of one resolving negation walk.
 struct NegationWalk<'a> {
@@ -46,24 +46,24 @@ struct NegationWalk<'a> {
     active: Vec<Arc<str>>,
     /// Resolutions left before the walk declines.
     budget: usize,
-    unspellable: Unspellable,
+    inexpressible: Inexpressible,
 }
 
-/// What the walk does where the complement has no structural form: either the exact `Not` re-wrap,
+/// What the walk does where the negation has no structural form: either the exact `Not` re-wrap,
 /// or nothing at all.
 #[derive(Clone, Copy)]
-enum Unspellable {
-    /// The node keeps its complement symbolic under `Not`.
-    Bar,
+enum Inexpressible {
+    /// The node keeps its negation symbolic under `Not`.
+    KeepUnderNot,
     /// The walk declines, so nothing it returns depends on which targets are already known.
     Decline,
 }
 
-/// The complement of a node, taking that node's place inside the document being canonicalized, or
+/// The negation of a node, taking that node's place inside the document being canonicalized, or
 /// `None` when the IR cannot express it and the caller keeps the document `Raw`. Negation has no safe
 /// default direction, so every arm is exact or declines.
 ///
-/// A walk reaching every target it needs through `definitions` inlines their complements; one that
+/// A walk reaching every target it needs through `definitions` inlines their negations; one that
 /// cannot keeps the whole node symbolic rather than resolving the part it reached, so the form
 /// follows the document's reference graph and not the order its targets were canonicalized in.
 pub(crate) fn negate_in_place(
@@ -76,17 +76,17 @@ pub(crate) fn negate_in_place(
         in_place_cycles: emptiness::in_place_cycle_keys(schema, definitions),
         active: Vec::new(),
         budget: RESOLUTION_BUDGET,
-        unspellable: Unspellable::Decline,
+        inexpressible: Inexpressible::Decline,
     };
     // `probe` leaves the flag as it found it, so what the abandoned walk approximated does not
     // travel into the re-walk below.
     let (first, inexact) = ctx.probe(|| negate_within(schema, &mut walk, ctx));
-    if let Some(complement) = first {
+    if let Some(negation) = first {
         // This walk produced a result, so what it reached counts again.
         if inexact {
             ctx.record_inexact_intersection();
         }
-        return Some(complement);
+        return Some(negation);
     }
     let detached = DefinitionMap::new();
     let mut walk = NegationWalk {
@@ -94,12 +94,12 @@ pub(crate) fn negate_in_place(
         in_place_cycles: AHashSet::new(),
         active: Vec::new(),
         budget: RESOLUTION_BUDGET,
-        unspellable: Unspellable::Bar,
+        inexpressible: Inexpressible::KeepUnderNot,
     };
     negate_within(schema, &mut walk, ctx)
 }
 
-/// [`negate_in_place`], for a complement that replaces the document root instead. A complement
+/// [`negate_in_place`], for a negation that replaces the document root instead. A negation
 /// still naming the root would name the wrong document once it takes the root's place, so it
 /// declines.
 pub(crate) fn negate_with_definitions(
@@ -112,18 +112,18 @@ pub(crate) fn negate_with_definitions(
         in_place_cycles: emptiness::in_place_cycle_keys(schema, definitions),
         active: Vec::new(),
         budget: RESOLUTION_BUDGET,
-        unspellable: Unspellable::Bar,
+        inexpressible: Inexpressible::KeepUnderNot,
     };
-    let complement = negate_within(schema, &mut walk, ctx)?;
-    // Reached through a target as well as written directly: a complement referring to `#/$defs/x`
+    let negation = negate_within(schema, &mut walk, ctx)?;
+    // Reached through a target as well as written directly: a negation referring to `#/$defs/x`
     // whose body is `{"$ref": "#"}` refers to the root just the same.
-    if schema::reads_document_root(&complement, definitions) {
+    if schema::reads_document_root(&negation, definitions) {
         return None;
     }
-    Some(complement)
+    Some(negation)
 }
 
-/// The node's own complement, left symbolic. A conjunction too wide to express as a union is not a
+/// The node's own negation, left symbolic. An `allOf` too wide to express as a union is not a
 /// gap in what the IR can express, so it holds whether or not the walk resolves references.
 fn keep_symbolic(schema: &Schema) -> Option<Schema> {
     Some(Schema::new(SchemaKind::Not(schema.clone())))
@@ -139,10 +139,10 @@ pub(crate) fn union_width(schema: &Schema) -> usize {
 }
 
 /// The exact `Not` re-wrap of a node the walk cannot open, for a walk that accepts one.
-fn bar(schema: &Schema, walk: &NegationWalk<'_>) -> Option<Schema> {
-    match walk.unspellable {
-        Unspellable::Bar => Some(Schema::new(SchemaKind::Not(schema.clone()))),
-        Unspellable::Decline => None,
+fn keep_under_not(schema: &Schema, walk: &NegationWalk<'_>) -> Option<Schema> {
+    match walk.inexpressible {
+        Inexpressible::KeepUnderNot => Some(Schema::new(SchemaKind::Not(schema.clone()))),
+        Inexpressible::Decline => None,
     }
 }
 
@@ -176,7 +176,7 @@ fn negate_within(
         SchemaKind::Array(leaf) => negate_array_leaf(leaf.get(), walk, ctx),
         SchemaKind::Object(leaf) => negate_object_leaf(leaf.get(), walk, ctx),
         SchemaKind::Not(inner) => {
-            // A target whose complement is itself leaves nothing consistent to return.
+            // A target whose negation is itself leaves nothing consistent to return.
             if let SchemaKind::Reference(uri) = inner.kind() {
                 if walk.active.iter().any(|name| name == uri) {
                     return None;
@@ -184,31 +184,33 @@ fn negate_within(
             }
             Some(inner.clone())
         }
-        // De Morgan: the complement of a union is the intersection of the branch complements, so
+        // The negation of a union is the intersection of the branch negations, so
         // one inexpressible branch declines the whole node. A union reading a target that reads
         // itself back stays symbolic instead, as a choice does.
-        SchemaKind::AnyOf(_) if reads_an_in_place_cycle(schema, walk) => bar(schema, walk),
+        SchemaKind::AnyOf(_) if reads_an_in_place_cycle(schema, walk) => {
+            keep_under_not(schema, walk)
+        }
         SchemaKind::AnyOf(branches) => {
             let mut result = Schema::truthy();
             for branch in branches.as_slice() {
                 result = algebra::intersect(result, negate_within(branch, walk, ctx)?, ctx);
-                if union_width(&result) > CONJUNCTION_BUDGET {
+                if union_width(&result) > UNION_WIDTH_BUDGET {
                     return keep_symbolic(schema);
                 }
             }
             Some(result)
         }
-        // De Morgan in the other direction restores a union when every branch has an exact
-        // structural complement. Otherwise the whole conjunction stays opaque.
+        // In the other direction, the negation of an intersection is the union of the branch
+        // negations, which is restored when every branch has an exact structural negation. Otherwise the whole `allOf` stays opaque.
         SchemaKind::AllOf(branches) => {
-            let mut complements = Vec::with_capacity(branches.as_slice().len());
+            let mut negations = Vec::with_capacity(branches.as_slice().len());
             for branch in branches.as_slice() {
-                let Some(complement) = negate_within(branch, walk, ctx) else {
-                    return bar(schema, walk);
+                let Some(negation) = negate_within(branch, walk, ctx) else {
+                    return keep_under_not(schema, walk);
                 };
-                complements.push(complement);
+                negations.push(negation);
             }
-            Some(algebra::union(complements, ctx))
+            Some(algebra::union(negations, ctx))
         }
         SchemaKind::OneOf(branches) => negate_one_of(schema, branches, walk, ctx),
         SchemaKind::Reference(uri) => negate_reference(schema, uri, walk, ctx),
@@ -217,9 +219,9 @@ fn negate_within(
     }
 }
 
-/// A choice holds where exactly one branch does, so its complement holds where no branch does and
+/// A choice holds where exactly one branch does, so its negation holds where no branch does and
 /// where two branches share the value. Intersection is total, so every shared region is expressible
-/// and only the half no branch matches rests on branch complements.
+/// and only the half no branch matches rests on branch negations.
 /// ```text
 /// e.g.  {"not": {"oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]}}
 ///       =>  anyOf: [{"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]},
@@ -251,7 +253,7 @@ fn negate_one_of(
                 *position == emptiness::Position::InPlace
                     && walk.active.iter().any(|name| name == *uri)
             }) {
-                return bar(schema, walk);
+                return keep_under_not(schema, walk);
             }
         }
     }
@@ -274,28 +276,28 @@ fn negate_one_of(
     for branch in branches {
         matched_by_none =
             algebra::intersect(matched_by_none, negate_within(branch, walk, ctx)?, ctx);
-        if union_width(&matched_by_none) > CONJUNCTION_BUDGET {
+        if union_width(&matched_by_none) > UNION_WIDTH_BUDGET {
             return keep_symbolic(schema);
         }
     }
-    // The branch complements resolve references through the same walk, so they leave the path they
+    // The branch negations resolve references through the same walk, so they leave the path they
     // found and can only have spent budget on it.
     debug_assert_eq!(
         walk.active.len(),
         depth,
-        "a branch complement left the negation path unbalanced"
+        "a branch negation left the negation path unbalanced"
     );
     debug_assert!(
         walk.budget <= budget,
-        "a branch complement refilled the resolution budget"
+        "a branch negation refilled the resolution budget"
     );
     regions.push(matched_by_none);
     Some(algebra::union(regions, ctx))
 }
 
-/// The complement of the reference's target. A target already being negated on the current path
+/// The negation of the reference's target. A target already being negated on the current path
 /// would resolve forever, and a target this map does not name leaves the reference opaque; both
-/// keep the complement symbolic. A complement that merely re-wraps the target hands the caller back
+/// keep the negation symbolic. A negation that merely re-wraps the target hands the caller back
 /// the problem it asked about, so it declines instead.
 fn negate_reference(
     schema: &Schema,
@@ -304,10 +306,10 @@ fn negate_reference(
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
     if walk.active.iter().any(|name| name == uri) {
-        return bar(schema, walk);
+        return keep_under_not(schema, walk);
     }
     let Some(target) = walk.definitions.get(uri.as_ref()) else {
-        return bar(schema, walk);
+        return keep_under_not(schema, walk);
     };
     walk.budget = walk.budget.checked_sub(1)?;
     // Every active entry is a distinct key of the map, so the walk is bounded by its size.
@@ -316,19 +318,20 @@ fn negate_reference(
         "more active negations than definitions"
     );
     walk.active.push(Arc::clone(uri));
-    let complement = negate_within(target, walk, ctx);
+    let negation = negate_within(target, walk, ctx);
     let finished = walk.active.pop();
     debug_assert_eq!(finished.as_ref(), Some(uri), "unbalanced negation path");
-    let complement = complement?;
-    // A complement that is the target barred whole is written against the pointer, which names the
+    let negation = negation?;
+    // A negation that is the target barred whole is written against the pointer, which names the
     // same body. A walk that may not bar declines as before.
-    if matches!(complement.kind(), SchemaKind::Not(inner) if inner == target) {
-        return bar(schema, walk);
+    if matches!(negation.kind(), SchemaKind::Not(inner) if inner == target) {
+        return keep_under_not(schema, walk);
     }
-    Some(complement)
+    Some(negation)
 }
 
-/// De Morgan over the conjunction a typed group spells: the values off the type, and the values of
+/// The type and the body are demanded together, so the negation takes either apart: the values off
+/// the type, and the values of
 /// the type that the body rejects.
 /// ```text
 /// e.g.  draft 4: {"not": {"type": "integer", "enum": [1, 2]}}
@@ -347,7 +350,7 @@ fn negate_typed_group(
     Some(algebra::union(vec![off_type, within], ctx))
 }
 
-/// Complement of a finite value set: the untouched types stay whole, an unpaired boolean leaves the
+/// Negation of a finite value set: the untouched types stay whole, an unpaired boolean leaves the
 /// other one, the numeric members carve rays and gaps out of the number line, the string members
 /// become exclusions on the strings, and an empty container leaves the sizes above it.
 /// ```text
@@ -438,9 +441,9 @@ fn negate_finite_values(values: &[CanonicalJson], ctx: &CanonicalizationContext)
     Some(algebra::union(branches, ctx))
 }
 
-/// The number-line complement of a finite set of numbers: the outer rays and the open gaps
+/// The number-line negation of a finite set of numbers: the outer rays and the open gaps
 /// between neighbours. Empty input adds nothing - the whole `number` type then stays remaining.
-/// A gap the integers cannot express declines the whole complement; dropping that one branch would
+/// A gap the integers cannot express declines the whole negation; dropping that one branch would
 /// narrow the union.
 fn number_gaps(numbers: &[Number], ctx: &CanonicalizationContext) -> Option<Vec<Schema>> {
     if numbers.is_empty() {
@@ -480,7 +483,7 @@ fn number_window(
     Some(algebra::number_leaf(leaf, ctx))
 }
 
-/// Complement of a number window: the values of every other type plus the outer rays, each
+/// Negation of a number window: the values of every other type plus the outer rays, each
 /// endpoint's inclusivity flipped. A value escapes a run of divisors as soon as it misses one, and
 /// a run of exclusions as soon as it lands on one, so each divisor flips into its dual on its own
 /// branch. `None` where a flipped end leaves a ray the canonical form cannot express.
@@ -526,7 +529,7 @@ fn negate_number_leaf(leaf: &NumberLeaf, ctx: &CanonicalizationContext) -> Optio
     Some(algebra::union(branches, ctx))
 }
 
-/// Complement of an integer window: every other type, the non-integer numbers, and one branch per
+/// Negation of an integer window: every other type, the non-integer numbers, and one branch per
 /// facet violation, or `None` where the canonical form cannot express it exactly.
 /// ```text
 /// e.g.  {"not": {"type": "integer", "minimum": 0}}
@@ -623,7 +626,7 @@ fn flipped(bound: &BoundNumber) -> BoundNumber {
     BoundNumber::new(&bound.to_number(), !bound.is_inclusive())
 }
 
-/// Complements of a count window: the ray below the floor and the ray above the ceiling. A floor
+/// Negations of a count window: the ray below the floor and the ray above the ceiling. A floor
 /// of zero excludes nothing below it; a ceiling with no successor in this build declines.
 pub(crate) fn length_windows(lengths: &LengthBounds) -> Option<Vec<LengthBounds>> {
     let mut windows = Vec::new();
@@ -658,7 +661,7 @@ pub(crate) fn length_windows(lengths: &LengthBounds) -> Option<Vec<LengthBounds>
 /// ```
 fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
     if !leaf.excluded.is_empty() {
-        // The dual of the arm above: a leaf that only excludes values complements to those values.
+        // The dual of the arm above: a leaf that only excludes values negates to those values.
         let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::String))];
         branches.push(finite_strings(&leaf.excluded));
         let positive = StringLeaf {
@@ -726,10 +729,10 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
 }
 
 /// An element schema fails on an array exactly when one element violates it, which is a `contains`
-/// demand for its complement. A demand for one match fails exactly when every element violates it,
+/// demand for its negation. A demand for one match fails exactly when every element violates it,
 /// which is the same trade the other way round. A positional schema constrains only the arrays long
 /// enough to reach its index, so its violation carries that length as a floor. Distinctness is its
-/// own dual: a demand that every element differ fails exactly when two of them coincide.
+/// own dual: a demand that every element differ fails exactly when two of them are equal.
 /// ```text
 /// e.g.  {"not": {"type": "array", "maxItems": 2}}
 ///       =>  anyOf: [<non-array types>, {"type": "array", "minItems": 3}]
@@ -846,8 +849,8 @@ fn negate_array_leaf(
     Some(algebra::union(branches, ctx))
 }
 
-/// The leaf is a conjunction of facets over objects, so its complement is the union of the
-/// per-facet complements beside the non-object types: a size window flips into its outer rays, a
+/// The leaf demands every one of its facets over objects, so its negation is the union of the
+/// per-facet negations beside the non-object types: a size window flips into its outer rays, a
 /// required key into its absence, a property schema into the key held with a violating value, and a
 /// key constraint into a demand for a key that breaks it.
 /// ```text
@@ -906,16 +909,17 @@ fn negate_object_leaf(
             ctx,
         ));
     }
-    // A value shield fails on an object exactly when some key outside `properties` and
-    // `patternProperties` holds a value it rejects: the demand records that declared key set so
-    // the shield's reach stays exact once reinstated. Beside patterns it stays under `not` below.
-    if let (Some(shield), true) = (&leaf.additional, leaf.pattern_properties.is_empty()) {
+    // An `additionalProperties` schema fails on an object exactly when some key outside
+    // `properties` and `patternProperties` holds a value it rejects: the demand records that
+    // declared key set so which keys it applies to stays exact once reinstated. Beside patterns it
+    // stays under `not` below.
+    if let (Some(additional), true) = (&leaf.additional, leaf.pattern_properties.is_empty()) {
         branches.push(algebra::object_leaf(
             ObjectLeaf {
                 violations: vec![ObjectViolation::UndeclaredValueFails {
                     names: leaf.properties.keys().cloned().collect(),
                     patterns: leaf.pattern_properties.keys().cloned().collect(),
-                    additional: shield.clone(),
+                    additional: additional.clone(),
                 }],
                 ..ObjectLeaf::default()
             },
@@ -957,8 +961,8 @@ fn negate_object_leaf(
         }
     }
     // A key matching a pattern with a violating value has no facet, so the pattern facet and the
-    // shield whose reach the patterns bound stay under `not`, beside the named keys the shield
-    // never reaches. Nothing in them is resolved, so the walk's mode does not matter.
+    // `additionalProperties` whose keys the patterns bound stay under `not`, beside the named keys
+    // it never applies to. Nothing in them is resolved, so the walk's mode does not matter.
     if !leaf.pattern_properties.is_empty() {
         branches.push(Schema::new(SchemaKind::Not(algebra::object_leaf(
             ObjectLeaf {
@@ -997,7 +1001,7 @@ fn object_branch(
     )
 }
 
-/// Complement of a type set over the value space. A set admitting `integer` but not `number`
+/// Negation of a type set over the value space. A set admitting `integer` but not `number`
 /// leaves the non-integer numbers to a numeric facet no type set can name.
 /// ```text
 /// e.g.  {"not": {"type": "string"}}  =>  {"type": ["null", "boolean", "number", "array", "object"]}
@@ -1005,7 +1009,7 @@ fn object_branch(
 ///       =>  anyOf: [<non-number types>, {"type": "number", "not": {"multipleOf": 1}}]
 /// ```
 fn negate_type_set(set: JsonTypeSet, ctx: &CanonicalizationContext) -> Option<Schema> {
-    let mut complement = JsonTypeSet::empty();
+    let mut negation = JsonTypeSet::empty();
     for ty in [
         JsonType::Null,
         JsonType::Boolean,
@@ -1014,27 +1018,27 @@ fn negate_type_set(set: JsonTypeSet, ctx: &CanonicalizationContext) -> Option<Sc
         JsonType::Object,
     ] {
         if !set.contains(ty) {
-            complement = complement.insert(ty);
+            negation = negation.insert(ty);
         }
     }
     if set.contains(JsonType::Integer) && !set.contains(JsonType::Number) {
         let mut branches = vec![non_integer_number(ctx)];
-        if !complement.is_empty() {
-            branches.push(type_set_schema(complement));
+        if !negation.is_empty() {
+            branches.push(type_set_schema(negation));
         }
         return Some(algebra::union(branches, ctx));
     }
-    // A set carrying `number` admits every number, so its complement admits none; a set carrying
-    // neither numeric type admits no number, so its complement admits all of them.
+    // A set carrying `number` admits every number, so its negation admits none; a set carrying
+    // neither numeric type admits no number, so its negation admits all of them.
     if !set.contains(JsonType::Number) {
-        complement = complement.insert(JsonType::Number);
+        negation = negation.insert(JsonType::Number);
     }
-    if complement.is_empty() {
+    if negation.is_empty() {
         return Some(Schema::falsy());
     }
-    // The shared constructor, so a complement spelling a lone `null` or `boolean` lands on the same
-    // canonical node as the direct spelling.
-    Some(type_set_schema(complement))
+    // The shared constructor, so a negation written as a lone `null` or `boolean` lands on the same
+    // canonical node as the directly written form.
+    Some(type_set_schema(negation))
 }
 
 #[cfg(test)]
@@ -1088,11 +1092,11 @@ mod tests {
         }
     }
 
-    // Membership for the canonical shapes a complement can take: a type set, its boolean-schema
-    // collapses, the value-set spellings of a lone `null` or `boolean` type, and the
+    // Membership for the canonical shapes a negation can take: a type set, its boolean-schema
+    // collapses, the value-set forms of a lone `null` or `boolean` type, and the
     // non-integer-number leaf beside its union.
     #[allow(clippy::wildcard_enum_match_arm)]
-    fn complement_admits(schema: &Schema, value: &Value) -> bool {
+    fn negation_admits(schema: &Schema, value: &Value) -> bool {
         match schema.kind() {
             SchemaKind::True => true,
             SchemaKind::False => false,
@@ -1113,7 +1117,7 @@ mod tests {
             SchemaKind::AnyOf(branches) => branches
                 .as_slice()
                 .iter()
-                .any(|branch| complement_admits(branch, value)),
+                .any(|branch| negation_admits(branch, value)),
             SchemaKind::Number(leaf) => {
                 assert!(leaf.get().minimum.is_none());
                 assert!(leaf.get().maximum.is_none());
@@ -1129,16 +1133,16 @@ mod tests {
                 matches!(value, Value::Number(number) if !number.is_i64() && !number.is_u64())
             }
             other => {
-                panic!("scaffold complement of a type set is a type-set shape, got {other:?}")
+                panic!("scaffold negation of a type set is a type-set shape, got {other:?}")
             }
         }
     }
 
-    // The scaffold's domain is finite, so the complement-membership law is proven exhaustively: for
-    // every one of the 128 type sets, the complement admits a value exactly when the original does
+    // The scaffold's domain is finite, so the negation-membership law is proven exhaustively: for
+    // every one of the 128 type sets, the negation admits a value exactly when the original does
     // not.
     #[test]
-    fn type_set_complement_partitions_the_value_space() {
+    fn type_set_negation_partitions_the_value_space() {
         let ctx = context();
         for mask in 0u8..128 {
             let mut set = JsonTypeSet::empty();
@@ -1148,12 +1152,12 @@ mod tests {
                 }
             }
             let schema = Schema::new(SchemaKind::MultiType(set));
-            let complement = negate_in_place(&schema, &DefinitionMap::new(), &ctx)
-                .expect("expressible complement");
+            let negation = negate_in_place(&schema, &DefinitionMap::new(), &ctx)
+                .expect("expressible negation");
             for value in &representatives() {
                 assert_ne!(
                     admits(set, value),
-                    complement_admits(&complement, value),
+                    negation_admits(&negation, value),
                     "membership not partitioned for set {set:?} on {value}"
                 );
             }

@@ -117,7 +117,7 @@
     ]
   },
   {
-    "description": "not of a multi-type set complements the set",
+    "description": "not of a multi-type set negates the set",
     "schema": {
       "not": {
         "type": [
@@ -471,7 +471,7 @@
     ]
   },
   {
-    "description": "`not` a string value set, whose complement excludes every member",
+    "description": "`not` a string value set, whose negation excludes every member",
     "schema": {
       "not": {
         "enum": [
@@ -1336,7 +1336,7 @@
     ]
   },
   {
-    "description": "not of a required key under draft 4 spells the empty complement as not",
+    "description": "not of a required key under draft 4 writes the empty negation as not",
     "draft": "draft4",
     "schema": {
       "not": {
@@ -1920,7 +1920,7 @@
     ]
   },
   {
-    "description": "`not` an element schema every value meets, which no element can violate",
+    "description": "`not` an element schema every value satisfies, which no element can violate",
     "schema": {
       "not": {
         "type": "array",
@@ -1956,7 +1956,7 @@
     ]
   },
   {
-    "description": "`not` an element schema under Draft 4, which spells the complement demand as a barred element schema",
+    "description": "`not` an element schema under Draft 4, which writes the negation demand as a barred element schema",
     "draft": "draft4",
     "schema": {
       "not": {
@@ -2020,7 +2020,7 @@
     ]
   },
   {
-    "description": "`not` a string constant, whose complement is every other string beside the other types",
+    "description": "`not` a string constant, whose negation is every other string beside the other types",
     "schema": {
       "not": {
         "const": "a"
@@ -2141,7 +2141,7 @@
     ]
   },
   {
-    "description": "A constant excluded by its own complement",
+    "description": "A constant excluded by its own negation",
     "schema": {
       "allOf": [
         {
@@ -2194,7 +2194,7 @@
     ]
   },
   {
-    "description": "Double complement of a string constant",
+    "description": "Double negation of a string constant",
     "schema": {
       "not": {
         "not": {
@@ -2218,7 +2218,7 @@
     ]
   },
   {
-    "description": "`not` a string constant under Draft 4, spelled with `enum` in every draft",
+    "description": "`not` a string constant under Draft 4, written with `enum` in every draft",
     "draft": "draft4",
     "schema": {
       "not": {
@@ -2416,7 +2416,7 @@
     ]
   },
   {
-    "description": "`not` the empty object, which every non-object and every object holding a key meets",
+    "description": "`not` the empty object, which every non-object and every object holding a key satisfies",
     "schema": {"not": {"const": {}}},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2433,7 +2433,7 @@
     ]
   },
   {
-    "description": "`not` the empty array, which every non-array and every array holding an element meets",
+    "description": "`not` the empty array, which every non-array and every array holding an element satisfies",
     "schema": {"not": {"const": []}},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -2665,7 +2665,7 @@
     ]
   },
   {
-    "description": "an integer window and its complement leave nothing",
+    "description": "an integer window and its negation leave nothing",
     "schema": {"allOf": [{"allOf": [{"type": "integer"}, {"minimum": 0}]}, {"not": {"type": "integer", "minimum": 0}}]},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false,
@@ -2700,7 +2700,7 @@
     ]
   },
   {
-    "description": "a number barring the integers under draft 4 keeps its spelling",
+    "description": "a number barring the integers under draft 4 keeps its form",
     "draft": "draft4",
     "schema": {"type": "number", "not": {"type": "integer"}},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "type": "number", "not": {"type": "integer"}},
@@ -2747,7 +2747,7 @@
     ]
   },
   {
-    "description": "an integer type meeting the barred integers under draft 4 admits nothing",
+    "description": "an integer type intersecting the barred integers under draft 4 admits nothing",
     "draft": "draft4",
     "schema": {"allOf": [{"type": "integer"}, {"not": {"type": "integer"}}]},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "not": {}},
@@ -2758,7 +2758,7 @@
     ]
   },
   {
-    "description": "a whole enum member meeting the barred integers keeps its float spelling under draft 4",
+    "description": "a whole enum member intersecting the barred integers keeps its float form under draft 4",
     "draft": "draft4",
     "schema": {"enum": [1, 2.5], "not": {"type": "integer"}},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"type": "number", "minimum": 1, "maximum": 1, "not": {"type": "integer"}}, {"enum": [2.5]}]},
@@ -2770,7 +2770,7 @@
     ]
   },
   {
-    "description": "a whole enum member outside the window vanishes with its float spelling under draft 4",
+    "description": "a whole enum member outside the window vanishes with its float form under draft 4",
     "draft": "draft4",
     "schema": {"allOf": [{"enum": [3, 7.5]}, {"type": "number", "minimum": 5, "not": {"type": "integer"}}]},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "enum": [7.5]},
@@ -2782,7 +2782,7 @@
     ]
   },
   {
-    "description": "a whole enum member meeting the barred integers folds outside draft 4",
+    "description": "a whole enum member intersecting the barred integers folds outside draft 4",
     "schema": {"enum": [1, 2.5], "not": {"type": "integer"}},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "const": 2.5},
     "tests": [
@@ -2874,7 +2874,7 @@
     ]
   },
   {
-    "description": "not of a typed integer value set under draft 4 keeps the members' float spellings",
+    "description": "not of a typed integer value set under draft 4 keeps the members' float forms",
     "draft": "draft4",
     "schema": {"not": {"type": "integer", "enum": [1, 2]}},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "integer", "maximum": 0}, {"type": "integer", "minimum": 3}, {"type": "number", "not": {"type": "integer"}}]},
@@ -3075,7 +3075,7 @@
     ]
   },
   {
-    "description": "negated value shield beside a declared property",
+    "description": "negated additionalProperties beside a declared property",
     "schema": {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3125,7 +3125,7 @@
     ]
   },
   {
-    "description": "negated value shield with no declared properties",
+    "description": "negated additionalProperties with no declared properties",
     "schema": {"not": {"type": "object", "additionalProperties": {"type": "string"}}},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
       {"type": ["null", "boolean", "number", "string", "array"]},
@@ -3154,7 +3154,7 @@
     ]
   },
   {
-    "description": "double negation of a value shield beside a declared property restores it",
+    "description": "double negation of an additionalProperties beside a declared property restores it",
     "schemas": [
       {"not": {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}}},
       {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}
@@ -3196,7 +3196,7 @@
     ]
   },
   {
-    "description": "a value shield beside its own negation admits nothing",
+    "description": "an additionalProperties beside its own negation admits nothing",
     "schema": {"allOf": [
       {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
       {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}}
@@ -3227,7 +3227,7 @@
     ]
   },
   {
-    "description": "two negated key constraints on one object emit as a conjunction",
+    "description": "two negated key constraints on one object emit as an allOf",
     "schema": {"allOf": [
       {"not": {"type": "object", "propertyNames": {"pattern": "^a"}}},
       {"not": {"type": "object", "propertyNames": {"pattern": "^b"}}}
@@ -3324,7 +3324,7 @@
     ]
   },
   {
-    "description": "a negated closed object under draft 4 spells the violating key as a closed map",
+    "description": "a negated closed object under draft 4 writes the violating key as a closed map",
     "draft": "draft4",
     "schema": {"not": {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false}},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
@@ -3356,7 +3356,7 @@
     ]
   },
   {
-    "description": "a value set narrowed by a negated value shield keeps only the breaking member",
+    "description": "a value set narrowed by a negated additionalProperties keeps only the breaking member",
     "schema": {"allOf": [
       {"enum": [{"c": 5}, {"c": "s"}, {"a": 1}]},
       {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}}
@@ -3403,7 +3403,7 @@
     ]
   },
   {
-    "description": "a constant the negated value shield already admits folds into it",
+    "description": "a constant the negated additionalProperties already admits folds into it",
     "schema": {"anyOf": [
       {"const": {"c": 5}},
       {"not": {"type": "object", "additionalProperties": {"type": "string"}}}
@@ -3420,7 +3420,7 @@
     ]
   },
   {
-    "description": "a constant the negated value shield rejects stays its own branch",
+    "description": "a constant the negated additionalProperties rejects stays its own branch",
     "schema": {"anyOf": [
       {"const": {"c": "s"}},
       {"not": {"type": "object", "additionalProperties": {"type": "string"}}}
@@ -3502,7 +3502,7 @@
     ]
   },
   {
-    "description": "a key constraint coexists with a negated value shield",
+    "description": "a key constraint coexists with a negated additionalProperties",
     "schema": {"allOf": [
       {"type": "object", "propertyNames": {"maxLength": 4}},
       {"not": {"type": "object", "additionalProperties": {"type": "string"}}}
@@ -3531,7 +3531,7 @@
     ]
   },
   {
-    "description": "value shields meeting on no value close the map over the declared keys",
+    "description": "additionalProperties schemas intersecting on no value close the map over the declared keys",
     "schema": {"allOf": [
       {"type": "object", "propertyNames": {"maxLength": 4}, "properties": {"ab": {}}, "additionalProperties": {"type": "string"}},
       {"type": "object", "additionalProperties": {"type": "integer"}}
@@ -3546,7 +3546,7 @@
     ]
   },
   {
-    "description": "a value set beside a negated referenced value shield pins its members undecided",
+    "description": "a value set beside a negated referenced additionalProperties pins its members undecided",
     "schema": {"$defs": {"V": {"type": "string"}}, "allOf": [
       {"enum": [{"c": 5}, {"c": true}]},
       {"not": {"type": "object", "additionalProperties": {"$ref": "#/$defs/V"}}}
@@ -3563,7 +3563,7 @@
     ]
   },
   {
-    "description": "a constant beside a negated referenced value shield stays its own branch",
+    "description": "a constant beside a negated referenced additionalProperties stays its own branch",
     "schema": {"$defs": {"V": {"type": "string"}}, "anyOf": [
       {"const": {"a": 1, "c": 5}},
       {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"$ref": "#/$defs/V"}}}
@@ -3586,7 +3586,7 @@
     ]
   },
   {
-    "description": "a constant folds into a branch whose property holds a negated value shield",
+    "description": "a constant folds into a branch whose property holds a negated additionalProperties",
     "schema": {"anyOf": [
       {"const": {"x": {"c": 5}}},
       {"type": "object", "properties": {"x": {"not": {"type": "object", "additionalProperties": {"type": "string"}}}}}
@@ -3651,7 +3651,7 @@
     ]
   },
   {
-    "description": "a negated value shield under draft 4",
+    "description": "a negated additionalProperties under draft 4",
     "draft": "draft4",
     "schema": {"not": {"additionalProperties": {"type": "string"}, "properties": {"a": {"type": "string"}}}},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
@@ -3773,7 +3773,7 @@
     ]
   },
   {
-    "description": "a negated pointer to an array target under draft 4 takes the target's complement",
+    "description": "a negated pointer to an array target under draft 4 negates the target",
     "draft": "draft4",
     "schema": {"definitions": {"t": {"type": "array", "items": {"type": "string"}, "minItems": 1, "maxItems": 4}},
       "not": {"allOf": [{"$ref": "#/definitions/t"}, {"description": "x"}]}},
@@ -3900,7 +3900,7 @@
     ]
   },
   {
-    "description": "a negated choice under draft 7 resolves through the definitions spelling",
+    "description": "a negated choice under draft 7 resolves through the definition name",
     "draft": "draft7",
     "schema": {
       "definitions": {"a": {"type": "string"}},
@@ -3947,7 +3947,7 @@
     ]
   },
   {
-    "description": "a negated element schema under draft 4 spells the violating element as a barred element schema",
+    "description": "a negated element schema under draft 4 writes the violating element as a barred element schema",
     "draft": "draft4",
     "schema": {"not": {"type": "array", "items": {"type": "string"}}},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
@@ -4050,7 +4050,7 @@
     ]
   },
   {
-    "description": "a negated element schema every value meets under draft 4, which no element can break",
+    "description": "a negated element schema every value satisfies under draft 4, which no element can break",
     "draft": "draft4",
     "schema": {"not": {"type": "array", "items": {}}},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#",
@@ -4062,7 +4062,7 @@
     ]
   },
   {
-    "description": "a negated element schema no value meets under draft 4, which every non-empty array breaks",
+    "description": "a negated element schema no value satisfies under draft 4, which every non-empty array breaks",
     "draft": "draft4",
     "schema": {"not": {"type": "array", "items": {"not": {}}}},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
@@ -4112,7 +4112,7 @@
     ]
   },
   {
-    "description": "a negated `prefixItems` tuple, where the position complement stands under the same floor",
+    "description": "a negated `prefixItems` tuple, where the position negation stands under the same floor",
     "schema": {"not": {"type": "array", "prefixItems": [{"type": "string"}]}},
     "kind": "any_of",
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
@@ -4164,7 +4164,7 @@
     ]
   },
   {
-    "description": "a negated two-position tuple under draft 4, where an unconstrained position spells as the empty schema",
+    "description": "a negated two-position tuple under draft 4, where an unconstrained position is written as the accept-everything schema",
     "draft": "draft4",
     "schema": {"not": {"type": "array", "items": [{"type": "string"}, {"type": "boolean"}]}},
     "kind": "any_of",
@@ -4269,7 +4269,7 @@
     ]
     },
   {
-    "description": "a negated distinctness demand, where the complement demands a repeat within a length floor",
+    "description": "a negated distinctness demand, where the negation demands a repeat within a length floor",
     "schema": {"not": {"type": "array", "uniqueItems": true}},
     "kind": "any_of",
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "anyOf": [
@@ -4286,7 +4286,7 @@
     ]
   },
   {
-    "description": "a negated distinctness demand under draft 4, spelled the same way",
+    "description": "a negated distinctness demand under draft 4, written the same way",
     "draft": "draft4",
     "schema": {"not": {"type": "array", "uniqueItems": true}},
     "kind": "any_of",
@@ -4381,7 +4381,7 @@
     ]
   },
   {
-    "description": "a negated choice too wide to spell as a union keeps its complement symbolic",
+    "description": "a negated choice too wide to write as a union keeps its negation symbolic",
     "schema": {
       "not": {
         "oneOf": [
@@ -4633,7 +4633,7 @@
     ]
   },
   {
-    "description": "a negated closed pattern map bars the pattern facet and keeps the shield violation exact",
+    "description": "a negated closed pattern map bars the pattern facet and keeps the additionalProperties violation exact",
     "schema": {"not": {"type": "object", "additionalProperties": false, "patternProperties": {"^x-": {"type": "string"}}}},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -4670,7 +4670,7 @@
     ]
   },
   {
-    "description": "a pattern map beside its own negated closed pattern map meets the barred pattern facet in a conjunction",
+    "description": "a pattern map beside its own negated closed pattern map intersects the barred pattern facet in an allOf",
     "schema": {
       "type": "object",
       "additionalProperties": false,
@@ -4731,7 +4731,7 @@
     ]
   },
   {
-    "description": "a draft 4 pattern map beside its own negated closed pattern map with reference values meets it in a conjunction",
+    "description": "a draft 4 pattern map beside its own negated closed pattern map with reference values intersects it in an allOf",
     "draft": "draft4",
     "schema": {
       "definitions": {"ext": {}, "value": {"type": "object"}},

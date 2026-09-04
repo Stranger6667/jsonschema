@@ -163,7 +163,7 @@ fn attach_definitions(mut value: Value, definitions: &DefinitionMap, draft: Draf
 /// The name the document root takes when a node below it is emitted on its own.
 const ROOT_DEFINITION_NAME: &str = "root";
 
-/// Instance data, not schemas: a `$ref` spelled inside one is a value that happens to look like a
+/// Instance data, not schemas: a `$ref` written inside one is a value that happens to look like a
 /// pointer.
 const VALUE_KEYWORDS: [&str; 2] = ["const", "enum"];
 
@@ -264,7 +264,7 @@ const fn definition_keyword(draft: Draft) -> &'static str {
 }
 
 /// Emit a string leaf as `{"type":"string"}` plus its length bounds and facets. A single pattern or
-/// format is inline; the rest become `allOf` conjuncts, since one leaf holds only one `pattern`, one
+/// format is inline; the rest become `allOf` branches, since one leaf holds only one `pattern`, one
 /// `format`, and one `not`.
 fn emit_string(leaf: &StringLeaf) -> Value {
     debug_assert!(
@@ -287,13 +287,13 @@ fn emit_string(leaf: &StringLeaf) -> Value {
     if let Some(max) = &leaf.lengths.maximum {
         map.insert("maxLength".into(), Value::Number(max.to_number()));
     }
-    let mut conjuncts: Vec<Value> = Vec::new();
+    let mut all_of: Vec<Value> = Vec::new();
     match leaf.patterns.as_slice() {
         [] => {}
         [pattern] => {
             map.insert("pattern".into(), Value::String(pattern.as_ref().to_owned()));
         }
-        patterns => conjuncts.extend(
+        patterns => all_of.extend(
             patterns
                 .iter()
                 .map(|pattern| keyed("pattern", Value::String(pattern.as_ref().to_owned()))),
@@ -304,20 +304,20 @@ fn emit_string(leaf: &StringLeaf) -> Value {
         [format] => {
             map.insert("format".into(), Value::String(format.as_str().to_owned()));
         }
-        formats => conjuncts.extend(
+        formats => all_of.extend(
             formats
                 .iter()
                 .map(|format| keyed("format", Value::String(format.as_str().to_owned()))),
         ),
     }
-    // Every barred facet goes into its own `allOf` branch: the main object already spells what a
+    // Every barred facet goes into its own `allOf` branch: the main object already says what a
     // string must satisfy, and one `not` slot cannot hold several of them.
-    conjuncts.extend(leaf.excluded_formats.iter().map(|format| {
+    all_of.extend(leaf.excluded_formats.iter().map(|format| {
         let mut inner = Map::new();
         inner.insert("format".into(), Value::String(format.as_str().to_owned()));
         keyed("not", Value::Object(inner))
     }));
-    conjuncts.extend(leaf.excluded_patterns.iter().map(|pattern| {
+    all_of.extend(leaf.excluded_patterns.iter().map(|pattern| {
         let mut inner = Map::new();
         inner.insert("pattern".into(), Value::String(pattern.as_ref().to_owned()));
         keyed("not", Value::Object(inner))
@@ -336,7 +336,7 @@ fn emit_string(leaf: &StringLeaf) -> Value {
                 Value::String(media_type.as_ref().to_owned()),
             );
         }
-        media_types => conjuncts.extend(media_types.iter().map(|media_type| {
+        media_types => all_of.extend(media_types.iter().map(|media_type| {
             keyed(
                 "contentMediaType",
                 Value::String(media_type.as_ref().to_owned()),
@@ -351,14 +351,14 @@ fn emit_string(leaf: &StringLeaf) -> Value {
                 Value::String(encoding.as_ref().to_owned()),
             );
         }
-        encodings => conjuncts.extend(encodings.iter().map(|encoding| {
+        encodings => all_of.extend(encodings.iter().map(|encoding| {
             keyed(
                 "contentEncoding",
                 Value::String(encoding.as_ref().to_owned()),
             )
         })),
     }
-    // `enum` in every draft, so one spelling covers Draft 4 as well.
+    // `enum` in every draft, so one form covers Draft 4 as well.
     if !leaf.excluded.is_empty() {
         let members = Value::Array(
             leaf.excluded
@@ -370,13 +370,13 @@ fn emit_string(leaf: &StringLeaf) -> Value {
         inner.insert("enum".into(), members);
         map.insert("not".into(), Value::Object(inner));
     }
-    if !conjuncts.is_empty() {
-        map.insert("allOf".into(), Value::Array(conjuncts));
+    if !all_of.is_empty() {
+        map.insert("allOf".into(), Value::Array(all_of));
     }
     Value::Object(map)
 }
 
-/// Emit a number leaf as `{"type":"number"}` plus its interval bounds, using the exclusive spelling
+/// Emit a number leaf as `{"type":"number"}` plus its interval bounds, using the exclusive keyword
 /// for an endpoint the interval does not admit.
 fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
     debug_assert!(
@@ -385,7 +385,7 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
     );
     let mut map = Map::new();
     map.insert("type".into(), Value::String("number".into()));
-    // Draft 4 spells exclusivity as a boolean flag beside the bound; later drafts give it its own
+    // Draft 4 writes exclusivity as a boolean flag beside the bound; later drafts give it its own
     // numeric keyword.
     let draft4 = matches!(draft, Draft::Draft4);
     for (bound, inclusive_key, exclusive_key) in [
@@ -415,7 +415,7 @@ fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
 }
 
 /// Emit an array leaf as `{"type":"array"}` plus its length bounds, distinctness and element schemas.
-/// A tuple prefix is spelled `prefixItems` with an `items` tail in 2020-12, and array-form `items`
+/// A tuple prefix is named `prefixItems` with an `items` tail in 2020-12, and array-form `items`
 /// with an `additionalItems` tail in 2019-09 and earlier.
 fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
     let mut map = Map::new();
@@ -452,11 +452,11 @@ fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
             .contains
             .iter()
             .any(|facet| facet.minimum.as_ref() == Some(&BoundCardinality::from(1))),
-        "a default contains minimum is spelled as absent"
+        "a default contains minimum is written as absent"
     );
     let mut facets = leaf.contains.iter();
     if let Some(facet) = facets.next() {
-        // A demand's spelling is single-valued, so one sits inline and the rest take clauses.
+        // A demand's keyword is single-valued, so one sits inline and the rest take clauses.
         insert_contains(&mut map, facet, draft);
         surplus.extend(facets.map(|facet| {
             let mut entry = Map::new();
@@ -494,7 +494,7 @@ fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
     Value::Object(map)
 }
 
-/// Emit one existential demand into `map`, spelled as the draft carries it; the count window keys
+/// Emit one existential demand into `map`, written as the draft carries it; the count window keys
 /// appear only where a draft put them.
 ///
 /// ```text
@@ -505,7 +505,7 @@ fn insert_contains(map: &mut Map<String, Value>, facet: &ContainsFacet, draft: D
     let demand = emit(facet.schema.kind(), draft);
     if matches!(draft, Draft::Draft4) {
         // Draft 4 has no `contains`: an array holds a matching element exactly when its elements
-        // do not all fail the demand, which `not` and `items` spell between them.
+        // do not all fail the demand, which `not` and `items` express between them.
         debug_assert!(
             facet.minimum.is_none(),
             "a Draft 4 demand carries no count floor"
@@ -530,25 +530,25 @@ fn insert_contains(map: &mut Map<String, Value>, facet: &ContainsFacet, draft: D
 fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("object".into()));
-    // Draft 4 has no `propertyNames`, so a key constraint is spelled as the closed maps it takes to
+    // Draft 4 has no `propertyNames`, so a key constraint is written as the closed maps it takes to
     // name exactly the keys it admits.
-    let spelling = if matches!(draft, Draft::Draft4) {
-        draft4_key_spelling(leaf)
+    let draft4_keys = if matches!(draft, Draft::Draft4) {
+        draft4_keys(leaf)
     } else {
         None
     };
     if let Some(names) = &leaf.property_names {
-        if spelling.is_none() {
+        if draft4_keys.is_none() {
             // Draft 4 ignores `propertyNames`, so reaching it there would silently widen the
-            // emitted schema; every key constraint Draft 4 can hold has a closed-map spelling.
+            // emitted schema; every key constraint Draft 4 can hold has a closed-map form.
             debug_assert!(
                 !matches!(draft, Draft::Draft4),
-                "a Draft 4 key constraint reached emit without a closed-map spelling"
+                "a Draft 4 key constraint reached emit without a closed-map form"
             );
             map.insert("propertyNames".into(), emit(names.kind(), draft));
         }
     }
-    match &spelling {
+    match &draft4_keys {
         // One closed map names every admitted key, so the entries sit inside it.
         Some(Draft4Keys::Fused(clause)) => insert_fused_map(&mut map, clause, leaf, draft),
         // No single closed map names them, so the constraint gets maps of its own and the entries
@@ -591,9 +591,12 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
                 patterns,
                 additional,
             } => {
-                // A leaf carrying pattern entries has no complement, so the demand negation records
-                // beside a shield names keys and nothing else.
-                debug_assert!(patterns.is_empty(), "a value-shield demand names a pattern");
+                // A leaf carrying pattern entries has no negation, so the demand negation records
+                // beside an `additionalProperties` names keys and nothing else.
+                debug_assert!(
+                    patterns.is_empty(),
+                    "an undeclared-value demand names a pattern"
+                );
                 let mut inner = Map::new();
                 if !names.is_empty() {
                     inner.insert(
@@ -624,14 +627,14 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
         };
         map.extend(wrapper);
     } else if !violated.is_empty() {
-        // A demand can ride beside the split spelling of a Draft 4 key constraint, which carries an
-        // `allOf` of its own. Both are conjuncts of one leaf, so they join rather than replace.
-        let conjuncts = match map.remove("allOf") {
-            Some(Value::Array(spelled)) => spelled.into_iter().chain(violated).collect(),
+        // A demand can ride beside the split form of a Draft 4 key constraint, which carries an
+        // `allOf` of its own. Both are `allOf` branches of one leaf, so they join rather than replace.
+        let all_of = match map.remove("allOf") {
+            Some(Value::Array(existing)) => existing.into_iter().chain(violated).collect(),
             Some(_) => unreachable!("every `allOf` this module writes is an array"),
             None => violated,
         };
-        map.insert("allOf".into(), Value::Array(conjuncts));
+        map.insert("allOf".into(), Value::Array(all_of));
     }
     Value::Object(map)
 }
@@ -729,23 +732,23 @@ fn emit_closed_clause(clause: &KeyClause) -> Value {
 ///       =>  {"properties": {"a": {}}, "additionalProperties": false}
 /// ```
 fn emit_every_key_holds(names: &Schema, draft: Draft) -> Value {
-    // Draft 4 has no `propertyNames`, so the constraint is spelled as the closed maps it takes to
+    // Draft 4 has no `propertyNames`, so the constraint is written as the closed maps it takes to
     // name exactly the keys it admits.
     let clauses = matches!(draft, Draft::Draft4)
         .then(|| draft4_key_clauses(names))
         .flatten();
     let Some(clauses) = clauses else {
         // Draft 4 ignores `propertyNames`, so reaching it there would leave a demand no object can
-        // break; every key constraint Draft 4 can hold has a closed-map spelling.
+        // break; every key constraint Draft 4 can hold has a closed-map form.
         debug_assert!(
             !matches!(draft, Draft::Draft4),
-            "a Draft 4 key constraint reached emit without a closed-map spelling"
+            "a Draft 4 key constraint reached emit without a closed-map form"
         );
         return keyed("propertyNames", emit(names.kind(), draft));
     };
     debug_assert!(
         !clauses.is_empty(),
-        "a key constraint spells at least one closed map"
+        "a key constraint has at least one closed map"
     );
     match clauses.as_slice() {
         [clause] => emit_closed_clause(clause),
@@ -765,7 +768,7 @@ struct KeyClause {
 
 impl KeyClause {
     /// The clause admitting every key either one admits.
-    fn join(&self, other: &Self) -> Self {
+    fn merged(&self, other: &Self) -> Self {
         let mut keys = self.keys.clone();
         keys.extend_from_slice(&other.keys);
         keys.sort_unstable();
@@ -778,7 +781,7 @@ impl KeyClause {
     }
 }
 
-/// How Draft 4 spells an object leaf's key constraint.
+/// How Draft 4 writes an object leaf's key constraint.
 enum Draft4Keys {
     /// One closed map names every admitted key, so the leaf's entries fit inside it.
     Fused(KeyClause),
@@ -786,17 +789,17 @@ enum Draft4Keys {
     Split(Vec<KeyClause>),
 }
 
-/// The closed maps spelling `leaf`'s key constraint, or `None` when none of them name it exactly.
-fn draft4_key_spelling(leaf: &ObjectLeaf) -> Option<Draft4Keys> {
+/// The closed maps expressing `leaf`'s key constraint, or `None` when none of them name it exactly.
+fn draft4_keys(leaf: &ObjectLeaf) -> Option<Draft4Keys> {
     let names = leaf.property_names.as_ref()?;
     let clauses = draft4_key_clauses(names)?;
     debug_assert!(
         !clauses.is_empty(),
-        "a key constraint spells at least one closed map"
+        "a key constraint has at least one closed map"
     );
     // A lone clause takes the entries in only when it already names every pattern among them: one
-    // it leaves out would admit the keys that pattern matches, and a shield beside it would take
-    // the place of the `additionalProperties: false` closing the map.
+    // it leaves out would admit the keys that pattern matches, and an `additionalProperties`
+    // beside it would take the place of the `additionalProperties: false` closing the map.
     if let [clause] = clauses.as_slice() {
         if leaf.additional.is_none()
             && leaf.pattern_properties.keys().all(|pattern| {
@@ -835,7 +838,7 @@ fn draft4_key_clauses(names: &Schema) -> Option<Vec<KeyClause>> {
         // A key matches every pattern the leaf carries, so each pattern closes the map on its own.
         SchemaKind::String(leaf) => {
             let leaf = leaf.get();
-            // Any facet beyond the patterns narrows the constraint below what they spell.
+            // Any facet beyond the patterns narrows the constraint below what they express.
             // The barred facets are defensive: no synthesis path reaches here carrying one.
             if leaf.lengths.minimum.is_some()
                 || leaf.lengths.maximum.is_some()
@@ -863,9 +866,9 @@ fn draft4_key_clauses(names: &Schema) -> Option<Vec<KeyClause>> {
             )
         }
         // A key holds the union by holding one branch, so taking one clause from each branch and
-        // joining them gives a map every admitted key is named by - one such map per combination.
+        // merging them gives a map every admitted key is named by - one such map per combination.
         // e.g.  anyOf [{"type": "string", "pattern": "^a"}, {"enum": ["x"]}]
-        //       met with
+        //       intersected with
         //       anyOf [{"type": "string", "pattern": "^b"}, {"enum": ["x"]}]
         //       =>  allOf [
         //             {"properties": {"x": {}}, "patternProperties": {"^a": {}}, "additionalProperties": false},
@@ -880,7 +883,7 @@ fn draft4_key_clauses(names: &Schema) -> Option<Vec<KeyClause>> {
                     .flat_map(|clause| {
                         alternatives
                             .iter()
-                            .map(|alternative| clause.join(alternative))
+                            .map(|alternative| clause.merged(alternative))
                     })
                     .collect();
             }
@@ -919,7 +922,7 @@ fn emit_integer(leaf: &IntegerLeaf) -> Value {
 }
 
 /// A lone divisor sits beside the other facets, and a lone barred constraint under `not`; several
-/// of either are spelled as an `allOf`, since one keyword slot cannot carry them.
+/// of either are written as an `allOf`, since one keyword slot cannot carry them.
 fn emit_divisors(
     map: &mut Map<String, Value>,
     divisors: &Divisors,
@@ -931,13 +934,13 @@ fn emit_divisors(
         object.insert("multipleOf".into(), Value::Number(step.to_number()));
         Value::Object(object)
     };
-    let mut conjuncts: Vec<Value> = Vec::new();
+    let mut all_of: Vec<Value> = Vec::new();
     match divisors.as_slice() {
         [] => {}
         [step] => {
             map.insert("multipleOf".into(), Value::Number(step.to_number()));
         }
-        steps => conjuncts.extend(steps.iter().map(step_object)),
+        steps => all_of.extend(steps.iter().map(step_object)),
     }
     let mut negated: Vec<Value> = Vec::new();
     if excludes_integers {
@@ -948,10 +951,10 @@ fn emit_divisors(
         Ok([sole]) => {
             map.insert("not".into(), sole);
         }
-        Err(negated) => conjuncts.extend(negated.into_iter().map(|inner| keyed("not", inner))),
+        Err(negated) => all_of.extend(negated.into_iter().map(|inner| keyed("not", inner))),
     }
-    if !conjuncts.is_empty() {
-        map.insert("allOf".into(), Value::Array(conjuncts));
+    if !all_of.is_empty() {
+        map.insert("allOf".into(), Value::Array(all_of));
     }
 }
 

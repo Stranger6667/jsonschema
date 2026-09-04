@@ -8,7 +8,7 @@ use super::normalized_number;
 
 /// One end of a number interval: a limit and whether the limit itself is admitted. Membership goes
 /// through the runtime's own numeric checks, so the canonical form and the validator agree on every
-/// value by construction. The limit is stored in canonical spelling, so equality is value equality.
+/// value by construction. The limit is stored in canonical text, so equality is value equality.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct BoundNumber {
     limit: Number,
@@ -16,7 +16,7 @@ pub(crate) struct BoundNumber {
 }
 
 impl BoundNumber {
-    /// The limit is stored in the one spelling its value has, so two bounds are equal exactly when
+    /// The limit is stored in the one text its value has, so two bounds are equal exactly when
     /// they admit the same values.
     pub(crate) fn new(limit: &Number, inclusive: bool) -> Self {
         Self {

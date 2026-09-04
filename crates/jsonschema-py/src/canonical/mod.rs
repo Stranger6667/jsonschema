@@ -394,7 +394,7 @@ impl PyCanonicalSchema {
                         .collect::<PyResult<_>>()?,
                     additional_properties: view
                         .additional_properties
-                        .map(|shield| Py::new(py, PyCanonicalSchema { inner: shield }))
+                        .map(|additional| Py::new(py, PyCanonicalSchema { inner: additional }))
                         .transpose()?,
                     violations: view
                         .violations
@@ -869,7 +869,7 @@ impl AllOfView {
     }
 }
 
-/// The complement of `schema`, preserving a symbolic ref under ``not``, conditionals, and ``oneOf``.
+/// The negation of `schema`, preserving a symbolic ref under ``not``, conditionals, and ``oneOf``.
 #[pyclass(frozen, name = "NotView", module = "jsonschema_rs.canonical")]
 pub(crate) struct NotView {
     #[pyo3(get)]

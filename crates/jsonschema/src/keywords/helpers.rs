@@ -22,7 +22,7 @@ pub(crate) fn size_limit<F: Json>(ctx: &compiler::Context<F>, schema: &Value) ->
     if is_integer_past_u64(schema) {
         return Some(u64::MAX);
     }
-    // Draft 4 spells a bound as an integer literal; later drafts also read integer-valued floats.
+    // Draft 4 writes a bound as an integer literal; later drafts also read integer-valued floats.
     if ctx.supports_integer_valued_numbers() {
         // Anything past `u64` was handled above, so the cast cannot lose the value.
         #[allow(clippy::cast_possible_truncation)]

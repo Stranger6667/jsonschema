@@ -636,7 +636,7 @@ fn check_pointer(document: &Value, pointer: &str) -> Result<(), String> {
 }
 
 // Which key carries a root `$id`, and whether it counts at all, is the draft's business.
-// Generated definitions land under a draft-dependent keyword, and a document's own spelling is kept.
+// Generated definitions land under a draft-dependent keyword, and a document's own choice is kept.
 const DEFINITION_CONTAINERS: [(&str, &str); 2] =
     [("$defs", "#/$defs/"), ("definitions", "#/definitions/")];
 
@@ -671,7 +671,7 @@ fn rename_container(schema: &mut Value, keyword: &str, prefix: &str) {
             definitions.insert(name.clone(), body);
         }
     }
-    // The references still spell the old keys, and are rewritten once the map is no longer borrowed.
+    // The references still name the old keys, and are rewritten once the map is no longer borrowed.
     rename_references(schema, &names, prefix);
 }
 

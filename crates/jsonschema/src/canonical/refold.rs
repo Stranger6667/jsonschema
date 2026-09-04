@@ -22,7 +22,7 @@ use crate::canonical::{
 const FOLD_BUDGET: u64 = 40_000;
 
 /// Folding rounds one schema may take to settle. A fold can rebuild a leaf through passes that
-/// read no targets, leaving conjunctions a resolving read folds again on the next round; a form
+/// read no targets, leaving `allOf`s a resolving read folds again on the next round; a form
 /// still moving past the cap is kept as it stands.
 const SETTLE_ROUNDS: usize = 8;
 
@@ -74,7 +74,7 @@ pub(crate) fn through_targets(
     parsed
 }
 
-/// `folded` to a fixpoint, since one round's rebuilt leaves can hold conjunctions the next
+/// `folded` until it stops changing, since one round's rebuilt leaves can hold `allOf`s the next
 /// round folds.
 fn settle(
     schema: &Schema,
@@ -166,7 +166,7 @@ fn settled(schema: &Schema) -> bool {
 
 /// `schema` with every `allOf` below it folded.
 ///
-/// `ctx` resolves references - that is what lets a conjunction settle. `plain` does not, and only
+/// `ctx` resolves references - that is what lets an `allOf` settle. `plain` does not, and only
 /// the union fold uses it: resolving there would replace a branch with the schema it references,
 /// which the parse never does.
 fn folded(
@@ -177,14 +177,14 @@ fn folded(
 ) -> Schema {
     match schema.kind() {
         SchemaKind::AllOf(branches) => {
-            let conjuncts = each(branches.as_slice(), definitions, ctx, plain);
+            let folded = each(branches.as_slice(), definitions, ctx, plain);
             // Nothing changed below and no branch resolves: leave it alone.
-            if conjuncts == branches.as_slice()
-                && !conjuncts.iter().any(|branch| names_a_body(branch, ctx))
+            if folded == branches.as_slice()
+                && !folded.iter().any(|branch| names_a_body(branch, ctx))
             {
                 return schema.clone();
             }
-            conjuncts
+            folded
                 .into_iter()
                 .reduce(|left, right| algebra::intersect(left, right, ctx))
                 .unwrap_or_else(|| schema.clone())
@@ -226,11 +226,11 @@ fn folded(
             Schema::new(SchemaKind::OneOf(choice))
         }
         SchemaKind::Not(inner) => {
-            let complemented = folded(inner, definitions, ctx, plain);
-            if complemented == *inner {
+            let negated = folded(inner, definitions, ctx, plain);
+            if negated == *inner {
                 return schema.clone();
             }
-            Schema::new(SchemaKind::Not(complemented))
+            Schema::new(SchemaKind::Not(negated))
         }
         SchemaKind::Array(leaf) => {
             let leaf = leaf.get();

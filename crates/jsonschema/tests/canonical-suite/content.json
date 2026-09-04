@@ -119,7 +119,7 @@
     ]
   },
   {
-    "description": "contentEncoding and contentMediaType together in the same schema decode-then-check, which the leaf's independent facets cannot spell",
+    "description": "contentEncoding and contentMediaType together in the same schema decode-then-check, which the leaf's independent facets cannot express",
     "schema": {
       "type": "string",
       "contentMediaType": "application/json",

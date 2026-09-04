@@ -221,7 +221,7 @@ class UndeclaredValueFailsView:
 
 @final
 class NotView:
-    """The exact complement of ``schema``."""
+    """The exact negation of ``schema``."""
 
     __match_args__: tuple[str, ...]
     @property

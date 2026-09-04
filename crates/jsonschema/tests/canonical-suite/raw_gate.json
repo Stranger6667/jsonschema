@@ -55,7 +55,7 @@
     ]
   },
   {
-    "description": "a condition whose complement declines keeps a `if`/`then` document raw",
+    "description": "a condition whose negation declines keeps a `if`/`then` document raw",
     "schema": {
       "$defs": {
         "d0": {"type": "object", "required": ["k0"]},
@@ -126,7 +126,7 @@
     ]
   },
   {
-    "description": "a condition whose complement declines keeps a `if`/`then`/`else` document raw",
+    "description": "a condition whose negation declines keeps a `if`/`then`/`else` document raw",
     "schema": {
       "$defs": {
         "d0": {"type": "object", "required": ["k0"]},
@@ -199,7 +199,7 @@
     ]
   },
   {
-    "description": "a repeated branch whose complement declines keeps the choice symbolic",
+    "description": "a repeated branch whose negation declines keeps the choice symbolic",
     "schema": {
       "$defs": {
         "d0": {"type": "object", "required": ["k0"]},

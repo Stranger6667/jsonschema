@@ -41,8 +41,8 @@ pub(crate) struct CanonicalizationContext {
     validate_formats: bool,
     /// `None` caches a rejected pattern so callers don't recompile it.
     regex_cache: RefCell<AHashMap<Arc<str>, Option<Arc<CompiledMatcher>>>>,
-    /// A conjunction over unions takes the product of their branches, which reaches the same pair
-    /// of nodes over and over - on a schema of five such conjunctions, 431 times per distinct pair.
+    /// An `allOf` over unions takes the product of their branches, which reaches the same pair
+    /// of nodes over and over - on a schema of five such `allOf`s, 431 times per distinct pair.
     intersections: RefCell<AHashMap<(Schema, Schema), Remembered>>,
     /// An intersection reached during this run that the canonical form cannot express exactly.
     /// Nodes built around it may already be wrong, so the whole run is discarded rather than the site.
@@ -53,14 +53,14 @@ pub(crate) struct CanonicalizationContext {
     /// The targets that lie on a reference cycle, which no walk reads through: it would not
     /// terminate. Every other target of the same map is read through as usual.
     cyclic: BTreeSet<Arc<str>>,
-    /// Intersections this run may still take before giving up. A conjunction over unions multiplies them.
+    /// Intersections this run may still take before giving up. An `allOf` over unions multiplies them.
     intersections_left: Cell<u64>,
     /// Variants the conditional splits of this run may still produce. Nesting multiplies them.
     variants_left: Cell<u64>,
 }
 
 /// Intersections one run may take before giving up and leaving the document `Raw`. Above what the
-/// most demanding document written in earnest needs; a row of conjunctions over unions passes it in
+/// most demanding document written in earnest needs; a row of `allOf`s over unions passes it in
 /// a fraction of a second.
 const INTERSECTION_BUDGET: u64 = 1_000_000;
 

@@ -119,10 +119,10 @@ fn parse_inner<'a>(
         let attempt = parse_once(value, ctx, resolver, &folded, pruning, tracks)?;
         if attempt.needs_dynamic_scope {
             debug_assert!(!tracks, "a tracked parse never requests tracking");
-            // A referenced resource spells a dynamic reference the root document does not, so the
-            // definitions minted so far were keyed without the environment; reparse with it
+            // A referenced resource carries a dynamic reference the root document does not, so the
+            // definitions generated so far were keyed without the environment; reparse with it
             // tracked. Untracked keys carry an empty digest, the same string a tracked parse
-            // mints for them, so the folded set stays valid.
+            // generates for them, so the folded set stays valid.
             tracks = true;
             continue;
         }
@@ -176,9 +176,9 @@ fn parse_once<'a>(
         };
     }
     let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
-    // An in-between object meet the IR cannot express may have produced nodes already, so discard
-    // the whole document rather than just that pairing site. A conjunction outgrowing what the run
-    // may spell out leaves the same partial nodes behind.
+    // An in-between object intersection the IR cannot express may have produced nodes already, so discard
+    // the whole document rather than just that pairing site. An `allOf` outgrowing what the run
+    // may write out leaves the same partial nodes behind.
     if ctx.saw_inexact_intersection() || ctx.outgrew_distribution() {
         return Ok(DocumentParse {
             output: None,
@@ -215,7 +215,7 @@ struct ParseState<'a> {
     facts: DocumentFacts,
     definitions: DefinitionMap,
     in_progress: AHashSet<Arc<str>>,
-    /// The target each definition key was minted for, so a key cannot be reused for another one.
+    /// The target each definition key was generated for, so a key cannot be reused for another one.
     sources: AHashMap<Arc<str>, &'a Value>,
     /// Empty on every parse outside the definition fixpoint.
     assumptions: &'a Assumptions,
@@ -238,7 +238,7 @@ struct DocumentFacts {
 
 /// How a parse attempt treats the dynamic scope.
 enum DynamicScope {
-    /// A dynamic reference is spelled: digests are computed and definition keys specialized.
+    /// A dynamic reference is present: digests are computed and definition keys specialized.
     Tracked,
     /// No dynamic reference has been reached, so keys stay unspecialized until one does.
     Untracked { needs_tracking: bool },
@@ -310,7 +310,7 @@ fn parse_schema<'a>(
 /// [`ParseState::in_progress`] closes the cycle.
 type DynamicEnv = Arc<[(Arc<str>, Arc<str>)]>;
 
-/// The 2019-09 spelling binds here. `anchorString` cannot start with `$`, so no collision.
+/// The 2019-09 keyword binds here. `anchorString` cannot start with `$`, so no collision.
 const RECURSIVE_ANCHOR_NAME: &str = "$recursiveAnchor";
 
 fn empty_environment() -> DynamicEnv {
@@ -408,7 +408,7 @@ fn has_dynamic_reference(map: &Map<String, Value>, draft: Draft) -> bool {
 
 /// The definition key `key` takes under `env`.
 ///
-/// Any target reached under a binding is specialized, whether or not it spells a dynamic reference
+/// Any target reached under a binding is specialized, whether or not it carries a dynamic reference
 /// itself: it may only *reach* one through a `$ref`, and its canonical form still differs per
 /// binding. Filtering on the target's own text instead would let a plain-keyed intermediary be
 /// cached from the first path and wrongly reused for the second.
@@ -423,8 +423,8 @@ fn specialized_key(key: &Arc<str>, env: &DynamicEnv) -> Arc<str> {
         None => key.to_string(),
     };
     // Anchor names from externally registered resources bypass `anchorString` validation, so a
-    // component may spell the join delimiters; escaping keeps `(key, env) -> string` injective.
-    let mut spelled = match Cow::from(percent_encoding::utf8_percent_encode(
+    // component may contain the join delimiters; escaping keeps `(key, env) -> string` injective.
+    let mut key_text = match Cow::from(percent_encoding::utf8_percent_encode(
         &decoded,
         SPECIALIZATION_COMPONENT,
     )) {
@@ -432,20 +432,20 @@ fn specialized_key(key: &Arc<str>, env: &DynamicEnv) -> Arc<str> {
         Cow::Owned(escaped) => escaped,
     };
     for (name, resource) in env.iter() {
-        spelled.push_str("|dyn=");
-        spelled.extend(percent_encoding::utf8_percent_encode(
+        key_text.push_str("|dyn=");
+        key_text.extend(percent_encoding::utf8_percent_encode(
             name,
             SPECIALIZATION_COMPONENT,
         ));
-        spelled.push('@');
-        spelled.extend(percent_encoding::utf8_percent_encode(
+        key_text.push('@');
+        key_text.extend(percent_encoding::utf8_percent_encode(
             resource,
             SPECIALIZATION_COMPONENT,
         ));
     }
-    let spelled =
-        percent_encoding::utf8_percent_encode(&spelled, percent_encoding::NON_ALPHANUMERIC);
-    let uri = format!("{CANONICAL_REFERENCE_PREFIX}{spelled}");
+    let key_text =
+        percent_encoding::utf8_percent_encode(&key_text, percent_encoding::NON_ALPHANUMERIC);
+    let uri = format!("{CANONICAL_REFERENCE_PREFIX}{key_text}");
     let uri = referencing::uri::from_str(&uri).expect("a percent-encoded canonical URI is valid");
     Arc::from(uri.as_str())
 }
@@ -485,8 +485,8 @@ fn parse_schema_in_scope<'a>(
         return Ok(None);
     }
 
-    // The reference keywords are independent and may be spelled together, so each contributes a
-    // conjunct.
+    // The reference keywords are independent and may be written together, so each contributes a
+    // part of its own.
     let mut references: Vec<Schema> = Vec::new();
     if let Some(reference) = map.get("$ref").and_then(Value::as_str) {
         let Some(schema) = resolve_reference(reference, ctx, resolver, state)? else {
@@ -509,7 +509,7 @@ fn parse_schema_in_scope<'a>(
             references.push(schema);
         }
     }
-    // 2020-12 still spells `$recursiveRef` in its metaschema as a deprecated compatibility entry,
+    // 2020-12 still lists `$recursiveRef` in its metaschema as a deprecated compatibility entry,
     // so `is_known_keyword` is true there - but the validator only compiles it under 2019-09.
     if matches!(ctx.draft(), Draft::Draft201909) {
         if let Some(reference) = map.get("$recursiveRef").and_then(Value::as_str) {
@@ -579,20 +579,20 @@ fn parse_schema_in_scope<'a>(
     // to fold it into, unlike the integer path below.
     let mut real_minimum: Option<BoundNumber> = None;
     let mut real_maximum: Option<BoundNumber> = None;
-    // Draft 4 spells exclusivity as a boolean modifier on `minimum`/`maximum`, which may be read
+    // Draft 4 writes exclusivity as a boolean modifier on `minimum`/`maximum`, which may be read
     // before the bound it modifies, so it is applied once the whole object has been read.
     let mut draft4_exclusive_minimum = false;
     let mut draft4_exclusive_maximum = false;
     let mut if_schema: Option<Schema> = None;
     let mut then_schema: Option<Schema> = None;
     let mut else_schema: Option<Schema> = None;
-    let mut conjuncts: Vec<Schema> = Vec::new();
+    let mut parts: Vec<Schema> = Vec::new();
     for (key, entry) in map {
         match (key.as_str(), entry) {
             ("$schema", Value::String(uri)) => {
                 let declared = Draft::from_schema_uri(uri);
                 // An unknown dialect has unknowable semantics. A nested one naming the dialect
-                // already in force is inert - every bundled `meta/*.json` spells it that way.
+                // already in force is inert - every bundled `meta/*.json` writes it that way.
                 //
                 // TODO(canonical): not modeled yet - a nested `$schema` that switches dialect.
                 if matches!(declared, Draft::Unknown) || (!is_root && declared != ctx.draft()) {
@@ -609,7 +609,7 @@ fn parse_schema_in_scope<'a>(
             ("allOf", Value::Array(branches)) => {
                 for branch in branches {
                     match parse_schema(branch, ctx, false, resolver, state)? {
-                        Some(schema) => conjuncts.push(schema),
+                        Some(schema) => parts.push(schema),
                         None => return Ok(None),
                     }
                 }
@@ -622,7 +622,7 @@ fn parse_schema_in_scope<'a>(
                         None => return Ok(None),
                     }
                 }
-                conjuncts.push(algebra::union(branches, ctx));
+                parts.push(algebra::union(branches, ctx));
             }
             ("oneOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
@@ -639,7 +639,7 @@ fn parse_schema_in_scope<'a>(
                     &mut state.facts.pending_choices,
                     ctx,
                 ) {
-                    Some(schema) => conjuncts.push(schema),
+                    Some(schema) => parts.push(schema),
                     None => return Ok(None),
                 }
             }
@@ -647,17 +647,17 @@ fn parse_schema_in_scope<'a>(
                 Some(set) => type_set = Some(set),
                 None => return Ok(None),
             },
-            // A `const`/`enum` number too large to expand into a plain decimal spelling has no
+            // A `const`/`enum` number too large to expand into a plain decimal has no
             // exact runtime comparison, so such a document stays raw. Only `arbitrary-precision`
             // reaches this: the cap is a million digits, past every other build's numeric range.
             ("enum", Value::Array(values)) if ctx.draft().is_known_keyword("enum") => {
-                if !values.iter().all(finite_value_spelling_is_exact) {
+                if !values.iter().all(nested_numbers_are_plain_decimals) {
                     return Ok(None);
                 }
                 enum_values = Some(values);
             }
             ("const", value) if ctx.draft().is_known_keyword("const") => {
-                if !finite_value_spelling_is_exact(value) {
+                if !nested_numbers_are_plain_decimals(value) {
                     return Ok(None);
                 }
                 const_value = Some(value);
@@ -712,7 +712,7 @@ fn parse_schema_in_scope<'a>(
                     None => return Ok(None),
                 }
             }
-            // Array-form `items` is the tuple in 2019-09 and earlier; 2020-12 spells it `prefixItems`.
+            // Array-form `items` is the tuple in 2019-09 and earlier; 2020-12 names it `prefixItems`.
             ("items", Value::Array(schemas))
                 if matches!(
                     ctx.draft(),
@@ -726,7 +726,7 @@ fn parse_schema_in_scope<'a>(
             }
             // `additionalItems` constrains the elements beyond an array-form `items` tuple, and is
             // inert when `items` is a schema or absent. Its value is held raw and parsed only once
-            // a tuple makes it live. 2020-12 spells the tuple `prefixItems`, which this keyword
+            // a tuple makes it live. 2020-12 names the tuple `prefixItems`, which this keyword
             // never tails, and an array-form `items` there keeps the document raw.
             ("additionalItems", value @ (Value::Object(_) | Value::Bool(_))) => {
                 additional_items = Some(value);
@@ -799,7 +799,7 @@ fn parse_schema_in_scope<'a>(
             }
             // A schema admitting everything says nothing about a key, so `true`/`{}` leaves no
             // trace; one admitting nothing forbids the unmatched keys, which the key constraint
-            // carries; anything in between shields the named keys and constrains the rest.
+            // carries; anything in between exempts the named keys and constrains the rest.
             ("additionalProperties", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("additionalProperties") =>
             {
@@ -854,7 +854,7 @@ fn parse_schema_in_scope<'a>(
                     Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown
                 ) => {}
             // Together the two decode-then-check the encoded string, which the leaf's independent
-            // facets cannot spell - each alone checks the string it sits beside directly, so the
+            // facets cannot express - each alone checks the string it sits beside directly, so the
             // guard only fires when both keywords share this schema object.
             ("contentMediaType", Value::String(name))
                 if matches!(ctx.draft(), Draft::Draft6 | Draft::Draft7)
@@ -868,7 +868,7 @@ fn parse_schema_in_scope<'a>(
             {
                 content_encodings.push(Arc::from(name.as_str()));
             }
-            // Only a positive divisor whose spelling denotes an exact rational is modeled; without
+            // Only a positive divisor written as an exact rational is modeled; without
             // one the validator's own division is what decides membership.
             ("multipleOf", Value::Number(number)) if ctx.draft().is_known_keyword("multipleOf") => {
                 match BoundRational::new(number) {
@@ -882,7 +882,7 @@ fn parse_schema_in_scope<'a>(
             ("maximum", Value::Number(number)) if ctx.draft().is_known_keyword("maximum") => {
                 real_maximum = tighter_real(real_maximum, number, true, Side::Upper);
             }
-            // Draft 6+ spells an exclusive bound as its own numeric keyword.
+            // Draft 6+ writes an exclusive bound as its own numeric keyword.
             ("exclusiveMinimum", Value::Number(number))
                 if !matches!(ctx.draft(), Draft::Draft4)
                     && ctx.draft().is_known_keyword("exclusiveMinimum") =>
@@ -921,17 +921,17 @@ fn parse_schema_in_scope<'a>(
             }
             // Property dependencies: each key, when held by an object, demands its consequent -
             // more required keys in the array form, a whole-value schema in the schema form. Every
-            // draft validates `dependencies`, 2019-09 onward also under its split spellings.
+            // draft validates `dependencies`, 2019-09 onward also under its split keywords.
             ("dependencies", Value::Object(entries)) => {
                 for (key, entry) in entries {
                     match entry {
                         Value::Array(names) if names.iter().all(Value::is_string) => {
-                            conjuncts.push(required_dependency(key, names, ctx));
+                            parts.push(required_dependency(key, names, ctx));
                         }
                         value @ (Value::Object(_) | Value::Bool(_)) => {
                             match parse_schema(value, ctx, false, resolver, state)? {
                                 Some(schema) => {
-                                    conjuncts.push(schema_dependency(key, schema, ctx));
+                                    parts.push(schema_dependency(key, schema, ctx));
                                 }
                                 None => return Ok(None),
                             }
@@ -948,7 +948,7 @@ fn parse_schema_in_scope<'a>(
                 for (key, entry) in entries {
                     match entry {
                         Value::Array(names) if names.iter().all(Value::is_string) => {
-                            conjuncts.push(required_dependency(key, names, ctx));
+                            parts.push(required_dependency(key, names, ctx));
                         }
                         Value::Null
                         | Value::Bool(_)
@@ -967,7 +967,7 @@ fn parse_schema_in_scope<'a>(
                         value @ (Value::Object(_) | Value::Bool(_)) => {
                             match parse_schema(value, ctx, false, resolver, state)? {
                                 Some(schema) => {
-                                    conjuncts.push(schema_dependency(key, schema, ctx));
+                                    parts.push(schema_dependency(key, schema, ctx));
                                 }
                                 None => return Ok(None),
                             }
@@ -978,7 +978,8 @@ fn parse_schema_in_scope<'a>(
                     }
                 }
             }
-            // Cancel a syntactic double complement before parsing its body, avoiding symbolic De Morgan expansion.
+            // Cancel a syntactic double negation before parsing its body, so the body is never
+            // negated twice through the combinators.
             ("not", Value::Object(inner))
                 if ctx.draft().is_known_keyword("not")
                     && inner.len() == 1
@@ -986,18 +987,18 @@ fn parse_schema_in_scope<'a>(
             {
                 let body = inner
                     .get("not")
-                    .expect("the double-complement guard found its body");
+                    .expect("the double-negation guard found its body");
                 match parse_schema(body, ctx, false, resolver, state)? {
-                    Some(schema) => conjuncts.push(schema),
+                    Some(schema) => parts.push(schema),
                     None => return Ok(None),
                 }
             }
-            // The complement of the negated schema, when the IR can express it; an unsupported child or
-            // an inexpressible complement keeps the whole document raw.
+            // The negation of the `not` body, when the IR can express it; an unsupported child or
+            // an inexpressible negation keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
                 match parse_schema(value, ctx, false, resolver, state)? {
                     Some(child) => match negate::negate_in_place(&child, &state.definitions, ctx) {
-                        Some(complement) => conjuncts.push(complement),
+                        Some(negation) => parts.push(negation),
                         None => return Ok(None),
                     },
                     None => return Ok(None),
@@ -1048,14 +1049,14 @@ fn parse_schema_in_scope<'a>(
             content_encodings,
             excluded: Vec::new(),
         };
-        conjuncts.push(string_facet_schema(leaf, ctx));
+        parts.push(string_facet_schema(leaf, ctx));
     }
 
     // `minItems: 0` is the type-default, so drop it: the window then compares equal to one without it.
     if min_items.as_ref().is_some_and(BoundCardinality::is_zero) {
         min_items = None;
     }
-    // A tuple's tail is spelled `additionalItems` before 2020-12 and schema-form `items` in it. A
+    // A tuple's tail is named `additionalItems` before 2020-12 and schema-form `items` in it. A
     // schema-form `items` with no tuple constrains every element, so it is the tail of an empty
     // prefix, and `additionalItems` is then inert.
     let (prefix, tail) = match item_prefix {
@@ -1077,7 +1078,7 @@ fn parse_schema_in_scope<'a>(
         Some(prefix) => {
             debug_assert!(
                 !matches!(map.get("items"), Some(Value::Array(_))),
-                "a prefix spelled `prefixItems` leaves no array-form `items` for `additionalItems` to tail"
+                "a prefix named `prefixItems` leaves no array-form `items` for `additionalItems` to tail"
             );
             (prefix, items)
         }
@@ -1105,7 +1106,7 @@ fn parse_schema_in_scope<'a>(
         || tail.is_some()
         || !contains.is_empty()
     {
-        conjuncts.push(array_facet_schema(
+        parts.push(array_facet_schema(
             ArrayLeaf {
                 lengths: LengthBounds {
                     minimum: min_items,
@@ -1132,8 +1133,8 @@ fn parse_schema_in_scope<'a>(
     // pairing at all - `additionalProperties` already knows to skip a named key.
     fold_finite_key_patterns(&mut pattern_properties, &mut properties, ctx);
     // `additionalProperties: false` forbids every key the property map does not name and no
-    // pattern matches, which a key constraint spells: the named keys and the patterns' keys,
-    // met into any stored constraint.
+    // pattern matches, which a key constraint states: the named keys and the patterns' keys,
+    // intersected into any stored constraint.
     // e.g.  {"type": "object", "properties": {"a": {"type": "string"}}, "additionalProperties": false}
     //       =>  {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": {"type": "string"}}}
     if forbid_unmatched_keys {
@@ -1181,7 +1182,7 @@ fn parse_schema_in_scope<'a>(
     {
         // Every draft marks `required` as unique, so the meta-validated list only needs ordering.
         required.sort();
-        conjuncts.push(object_facet_schema(
+        parts.push(object_facet_schema(
             ObjectLeaf {
                 sizes: LengthBounds {
                     minimum: min_properties,
@@ -1206,13 +1207,14 @@ fn parse_schema_in_scope<'a>(
             not_multiple_of: ExcludedDivisors::default(),
             excludes_integers: false,
         };
-        // The integers the interval admits must be representable: the interval may still meet
-        // `integer` through an `allOf`, and there it is the only form left to express.
+        // The integers the interval admits must be representable: the interval may still be
+        // intersected with `integer` through an `allOf`, and there it is the only form left to
+        // express.
         let Some(bounds) = algebra::integer_bounds_within(&leaf) else {
             return Ok(None);
         };
         if type_set == Some(JsonTypeSet::from(JsonType::Integer)) {
-            conjuncts.push(algebra::integer_leaf(
+            parts.push(algebra::integer_leaf(
                 IntegerLeaf {
                     bounds,
                     multiple_of: leaf.multiple_of,
@@ -1221,7 +1223,7 @@ fn parse_schema_in_scope<'a>(
                 ctx,
             ));
         } else {
-            conjuncts.push(number_facet_schema(leaf, ctx));
+            parts.push(number_facet_schema(leaf, ctx));
         }
     }
 
@@ -1231,22 +1233,22 @@ fn parse_schema_in_scope<'a>(
         // ¬if ∨ then: a value the condition rejects needs nothing further.
         (Some(condition), Some(then), None) => {
             match negate::negate_in_place(&condition, &state.definitions, ctx) {
-                Some(complement) => conjuncts.push(algebra::union(vec![complement, then], ctx)),
+                Some(negation) => parts.push(algebra::union(vec![negation, then], ctx)),
                 None => return Ok(None),
             }
         }
-        // if ∨ else: a value the condition admits needs nothing further, so the complement is
+        // if ∨ else: a value the condition admits needs nothing further, so the negation is
         // never needed - unlike every other arm here, this one cannot force the document raw.
         (Some(condition), None, Some(else_branch)) => {
-            conjuncts.push(algebra::union(vec![condition, else_branch], ctx));
+            parts.push(algebra::union(vec![condition, else_branch], ctx));
         }
         // (if ∧ then) ∨ (¬if ∧ else)
         (Some(condition), Some(then), Some(else_branch)) => {
             match negate::negate_in_place(&condition, &state.definitions, ctx) {
-                Some(complement) => {
+                Some(negation) => {
                     let holds = algebra::intersect(condition, then, ctx);
-                    let fails = algebra::intersect(complement, else_branch, ctx);
-                    conjuncts.push(algebra::union(vec![holds, fails], ctx));
+                    let fails = algebra::intersect(negation, else_branch, ctx);
+                    parts.push(algebra::union(vec![holds, fails], ctx));
                 }
                 None => return Ok(None),
             }
@@ -1260,14 +1262,12 @@ fn parse_schema_in_scope<'a>(
         (Some(set), Some(values)) => restrict_values_to_types(values, set, ctx),
     };
     // A schema object's keywords all apply to the same value at once, so combine them by intersection.
-    Ok(Some(
-        conjuncts.into_iter().fold(base, |result, conjunct| {
-            algebra::intersect(result, conjunct, ctx)
-        }),
-    ))
+    Ok(Some(parts.into_iter().fold(base, |result, part| {
+        algebra::intersect(result, part, ctx)
+    })))
 }
 
-/// Move every pattern matching finitely many keys onto those keys, met into whatever the property
+/// Move every pattern matching finitely many keys onto those keys, intersected into whatever the property
 /// map already demands of each, and drop the pattern.
 fn fold_finite_key_patterns(
     pattern_properties: &mut PropertyMap,
@@ -1290,7 +1290,7 @@ fn fold_finite_key_patterns(
 }
 
 /// The keys a pattern matches when it matches finitely many; `^` and `$` anchor the whole string,
-/// so an exact or alternation spelling names its keys outright.
+/// so an exact or alternation pattern names its keys outright.
 fn finite_pattern_keys(pattern: &str) -> Option<Vec<Arc<str>>> {
     match jsonschema_regex::analyze_pattern(pattern)? {
         jsonschema_regex::PatternAnalysis::Exact(key) => Some(vec![Arc::from(key.as_ref())]),
@@ -1317,9 +1317,9 @@ fn has_unresolved_applicator(map: &Map<String, Value>) -> bool {
 /// Cases one conditional split may spread an `unevaluated*` over before the document stays raw.
 const CONDITIONAL_CASE_BUDGET: usize = 32;
 
-/// Conjuncts one case may collect before the document stays raw: a body referring back to its
+/// Subschemas one case may collect before the document stays raw: a body referring back to its
 /// own conditional would otherwise nest without end.
-const CASE_CONJUNCT_BUDGET: usize = 64;
+const CASE_SUBSCHEMA_BUDGET: usize = 64;
 
 enum Split {
     /// No conditional applicator to split on.
@@ -1463,15 +1463,15 @@ fn branch_conditionals(
     applied_conditionals(map, ctx, &resolver, walk, scoped, out)
 }
 
-/// A body that ran: its conjunct and the conditionals inside it.
+/// A body that ran: the subschema it contributes and the conditionals inside it.
 struct Ran {
-    conjunct: Option<Value>,
+    subschema: Option<Value>,
     nested: Vec<Conditional>,
 }
 
 impl Ran {
     fn add_to(&self, case: &mut Vec<Value>, pending: &mut Vec<Conditional>) {
-        case.extend(self.conjunct.iter().cloned());
+        case.extend(self.subschema.iter().cloned());
         pending.extend(self.nested.iter().cloned());
     }
 }
@@ -1485,7 +1485,7 @@ fn run_once(
 ) -> Result<Option<Ran>, CanonicalizationError> {
     let Some(body) = body else {
         return Ok(Some(Ran {
-            conjunct: None,
+            subschema: None,
             nested: Vec::new(),
         }));
     };
@@ -1498,7 +1498,7 @@ fn run_once(
         return Ok(None);
     };
     Ok(Some(Ran {
-        conjunct: Some(body.clone()),
+        subschema: Some(body.clone()),
         nested,
     }))
 }
@@ -1520,7 +1520,7 @@ fn expand_cases(
         out.push(case);
         return Ok(Some(()));
     }
-    if case.len() > CASE_CONJUNCT_BUDGET {
+    if case.len() > CASE_SUBSCHEMA_BUDGET {
         return Ok(None);
     }
     match pending.remove(0) {
@@ -1551,12 +1551,12 @@ fn expand_cases(
                 else {
                     return Ok(None);
                 };
-                let mut met = case.clone();
-                met.push(first.condition.clone());
+                let mut passed = case.clone();
+                passed.push(first.condition.clone());
                 let mut nested = Vec::new();
-                then.add_to(&mut met, &mut nested);
+                then.add_to(&mut passed, &mut nested);
                 nested.extend(pending.iter().map(Conditional::clone));
-                let Some(()) = expand_cases(met, nested, ctx, resolver, walk, out)? else {
+                let Some(()) = expand_cases(passed, nested, ctx, resolver, walk, out)? else {
                     return Ok(None);
                 };
                 let mut failed = case;
@@ -1611,21 +1611,21 @@ fn expand_cases(
                 }
             }
             for constant in constants {
-                let mut met = case.clone();
-                met.push(object.clone());
+                let mut passed = case.clone();
+                passed.push(object.clone());
                 let mut nested = Vec::new();
                 for (member, (then, otherwise)) in members.iter().zip(&ran) {
                     let pins = discriminator(&member.condition).is_some_and(|(_, c)| c == constant);
                     let body = if pins {
-                        met.push(member.condition.clone());
+                        passed.push(member.condition.clone());
                         then
                     } else {
                         otherwise
                     };
-                    body.add_to(&mut met, &mut nested);
+                    body.add_to(&mut passed, &mut nested);
                 }
                 nested.extend(pending.iter().map(Conditional::clone));
-                let Some(()) = expand_cases(met, nested, ctx, resolver, walk, out)? else {
+                let Some(()) = expand_cases(passed, nested, ctx, resolver, walk, out)? else {
                     return Ok(None);
                 };
             }
@@ -1653,7 +1653,7 @@ fn expand_cases(
 }
 
 /// An `unevaluated*` beside a conditional, or above one through `allOf` or `$ref`, splits into one
-/// variant per case, each carrying the subschemas that ran as `allOf` conjuncts for the covers.
+/// variant per case, each carrying the subschemas that ran as `allOf` branches for the covers.
 /// ```text
 /// e.g.  {"dependentSchemas": {"a": {"properties": {"b": {}}}}, "unevaluatedProperties": false}
 ///       =>  anyOf: [{"allOf": [{"not": {"type": "object", "required": ["a"]}}],
@@ -1709,10 +1709,10 @@ fn split_conditionals(
     );
     let variants = cases
         .into_iter()
-        .map(|conjuncts| {
+        .map(|subschemas| {
             let mut variant = base.clone();
             let mut branches = shared.cloned().unwrap_or_default();
-            branches.extend(conjuncts);
+            branches.extend(subschemas);
             variant.insert("allOf".to_string(), Value::Array(branches));
             variant
         })
@@ -1748,7 +1748,7 @@ struct PropertyCover {
 }
 
 impl PropertyCover {
-    /// Spell one cover one way, so two of them compare by what they reach.
+    /// Write one cover one way, so two of them compare by what they reach.
     fn normalize(&mut self) {
         for names in [&mut self.keys, &mut self.patterns] {
             names.sort();
@@ -1920,7 +1920,7 @@ fn property_cover_in_scope(
 }
 
 /// Fold `reference`'s raw target cover in, unconditionally - a `$ref` behaves as one more `allOf`
-/// conjunct. Dispatches into [`property_cover_in_scope`] directly (not [`property_cover`], which
+/// branch. Dispatches into [`property_cover_in_scope`] directly (not [`property_cover`], which
 /// would shift scope a second time onto a base `resolver.lookup` already moved).
 fn fold_referenced_property_cover(
     reference: &str,
@@ -1997,7 +1997,7 @@ fn item_cover_in_scope(
     if has_instance_dependent_applicator(map) || (!walk.hoisted && has_conditional(map)) {
         return Ok(None);
     }
-    // `contains` marks the indexes it matches, which no prefix length spells.
+    // `contains` marks the indexes it matches, which no prefix length expresses.
     if map.contains_key("contains") {
         return Ok(None);
     }
@@ -2273,7 +2273,7 @@ fn degrade_plain(
             // index past the tuple, leaving nothing for the twin.
             let tuple_is_prefix_items = matches!(draft, Draft::Draft202012 | Draft::Unknown);
             let tail = match (map.get("items"), tuple_is_prefix_items) {
-                // A branch prefix needs a local tuple to sit behind, spelled `items` before 2020-12.
+                // A branch prefix needs a local tuple to sit behind, named `items` before 2020-12.
                 (None, false) if cover.prefix > 0 => Some("additionalItems"),
                 (None, _) => Some("items"),
                 (Some(Value::Array(_)), false) => Some("additionalItems"),
@@ -2323,14 +2323,14 @@ fn ref_has_assertion_siblings(map: &Map<String, Value>, draft: Draft) -> bool {
     })
 }
 
-/// The conjunction of the reference keywords an object spells, if any.
+/// The reference keywords an object carries, demanded together, if any.
 fn combine_references(references: Vec<Schema>, ctx: &CanonicalizationContext) -> Option<Schema> {
     let mut references = references.into_iter();
     let first = references.next()?;
     Some(references.fold(first, |left, right| algebra::intersect(left, right, ctx)))
 }
 
-/// A `$recursiveRef`, the 2019-09 spelling.
+/// A `$recursiveRef`, the 2019-09 keyword.
 ///
 /// [`Resolver::lookup_recursive_ref`] follows the scope while each resource carries
 /// `$recursiveAnchor: true`. Absent or `false`, it behaves as `$ref: "#"`.
@@ -2377,13 +2377,13 @@ fn reference_to_definition<'a>(
     };
     // Sites inside the root parse see the root resource as their outermost scope entry, so a
     // back-reference whose digest binds everything to the root resource observes exactly what
-    // those sites did; any other binding differs and mints its own definition below.
+    // those sites did; any other binding differs and generates its own definition below.
     if std::ptr::eq(target, state.root)
         && env
             .iter()
             .all(|(_, resource)| *resource == state.root_base_uri)
     {
-        // The root is never keyed, so the fixpoint names it by the spelling emitted here.
+        // The root is never keyed, so the fixpoint names it by the key emitted here.
         if state.assumes_empty(ROOT_DEFINITION_KEY) {
             return Ok(Some(Schema::falsy()));
         }
@@ -2408,7 +2408,7 @@ fn reference_to_definition<'a>(
         "a resolved reference target is complete or actively being canonicalized"
     );
     // Unlike the fold below, canonical URIs are not exempt: a cycle closed through an `$id`-bearing
-    // subresource is keyed by a minted URI, and exempting it would leave it live once proven empty.
+    // subresource is keyed by a generated URI, and exempting it would leave it live once proven empty.
     if state.assumes_empty(&key) {
         return Ok(Some(Schema::falsy()));
     }
@@ -2475,7 +2475,7 @@ fn canonical_reference_uri(reference: &str, location: &str, root_base_uri: &str)
 }
 
 /// The keys whose body was written inside the document, found by walking it once and asking which
-/// targets it holds. A nested `$id` puts a body under a minted URI rather than a `#/$defs/` name,
+/// targets it holds. A nested `$id` puts a body under a generated URI rather than a `#/$defs/` name,
 /// so the name alone cannot tell a private body from a retrieved one.
 fn local_definitions(state: &ParseState<'_>) -> BTreeSet<Arc<str>> {
     let mut held = AHashSet::new();
@@ -2515,8 +2515,8 @@ fn ensure_definition<'a>(
     // One target reached along two dynamic paths canonicalizes two ways, so a URI alone cannot key
     // the cache. The digest of the target's own scope is what its parse can observe.
     let key = specialized_key(key, env);
-    // A `$defs` name spelling a canonical URI keys the same string that a reference to the resource
-    // it encodes mints, so without this the early return below would alias the two targets.
+    // A `$defs` name written as a canonical URI keys the same string that a reference to the resource
+    // it encodes generates, so without this the early return below would alias the two targets.
     if let Some(existing) = state.sources.get(&key) {
         if !std::ptr::eq(*existing, target) {
             return Ok(false);
@@ -2592,17 +2592,17 @@ fn required_dependency(key: &str, names: &[Value], ctx: &CanonicalizationContext
     required.push(Arc::from(key));
     required.sort();
     required.dedup();
-    dependency_conjunct(key, object_with_required(required, ctx), ctx)
+    dependency_schema(key, object_with_required(required, ctx), ctx)
 }
 
 /// The schema-form dependency on `key`: holding it demands the whole value meet `schema`.
 fn schema_dependency(key: &str, schema: Schema, ctx: &CanonicalizationContext) -> Schema {
-    dependency_conjunct(key, schema, ctx)
+    dependency_schema(key, schema, ctx)
 }
 
 /// A dependency triggers only on objects holding `key`: non-objects and objects without the key
 /// pass vacuously, everything else answers to `consequent`.
-fn dependency_conjunct(key: &str, consequent: Schema, ctx: &CanonicalizationContext) -> Schema {
+fn dependency_schema(key: &str, consequent: Schema, ctx: &CanonicalizationContext) -> Schema {
     let vacuous = type_set_schema(JsonTypeSet::all().remove(JsonType::Object));
     let absent = algebra::object_leaf(
         ObjectLeaf {
@@ -2635,7 +2635,7 @@ fn object_with_required(required: Vec<Arc<str>>, ctx: &CanonicalizationContext) 
     )
 }
 
-/// The finite value set admitted by `const` and `enum` together: their conjunction.
+/// The finite value set admitted by `const` and `enum` together: the values both admit.
 fn admitted_values(
     enum_values: Option<&Vec<Value>>,
     const_value: Option<&Value>,
@@ -2686,25 +2686,25 @@ pub(crate) fn restrict_values_to_types(
     algebra::union(branches, ctx)
 }
 
-/// Whether every number nested in an instance-data value keeps a plain canonical spelling, which
+/// Whether every number nested in an instance-data value writes out as a plain decimal, which
 /// holds until a magnitude needs more digits to write out than `MAX_EXPANDED_INTEGER_DIGITS`.
 #[cfg(feature = "arbitrary-precision")]
-fn finite_value_spelling_is_exact(value: &Value) -> bool {
+fn nested_numbers_are_plain_decimals(value: &Value) -> bool {
     match value {
         Value::Number(number) => {
             let canonical = crate::canonical::json::canonical_number(number.as_str());
             let text = canonical.as_deref().unwrap_or(number.as_str());
             !text.bytes().any(|byte| matches!(byte, b'e' | b'E'))
         }
-        Value::Array(items) => items.iter().all(finite_value_spelling_is_exact),
-        Value::Object(map) => map.values().all(finite_value_spelling_is_exact),
+        Value::Array(items) => items.iter().all(nested_numbers_are_plain_decimals),
+        Value::Object(map) => map.values().all(nested_numbers_are_plain_decimals),
         Value::Null | Value::Bool(_) | Value::String(_) => true,
     }
 }
 
 #[cfg(not(feature = "arbitrary-precision"))]
-fn finite_value_spelling_is_exact(_value: &Value) -> bool {
-    // Default-build numbers are `i64`/`u64`/`f64`; their canonical spellings never go scientific.
+fn nested_numbers_are_plain_decimals(_value: &Value) -> bool {
+    // Default-build numbers are `i64`/`u64`/`f64`; their canonical texts never go scientific.
     true
 }
 
@@ -2801,9 +2801,9 @@ mod tests {
     use super::*;
 
     // Anchor names from externally registered resources bypass `anchorString` validation, so a
-    // name or resource URI may spell the join delimiters themselves.
+    // name or resource URI may contain the join delimiters themselves.
     #[test]
-    fn specialized_key_is_injective_for_delimiter_spelling_components() {
+    fn specialized_key_is_injective_for_components_holding_delimiters() {
         let key: Arc<str> = Arc::from("https://example.com/target");
         let name_with_at: DynamicEnv =
             Arc::from(vec![(Arc::<str>::from("a@r"), Arc::<str>::from("x"))]);

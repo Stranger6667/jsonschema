@@ -1004,9 +1004,9 @@ impl ObjectView {
 
     fn additional_properties(ruby: &Ruby, rb_self: &Self) -> Value {
         match &rb_self.additional_properties {
-            Some(shield) => ruby
+            Some(additional) => ruby
                 .obj_wrap(RbCanonicalSchema {
-                    inner: shield.clone(),
+                    inner: additional.clone(),
                 })
                 .as_value(),
             None => ruby.qnil().as_value(),
@@ -1185,7 +1185,7 @@ impl AllOfView {
     }
 }
 
-/// The complement of `schema`, preserving a symbolic ref under `not`, conditionals, and `oneOf`.
+/// The negation of `schema`, preserving a symbolic ref under `not`, conditionals, and `oneOf`.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::NotView", free_immediately)]
 pub struct NotView {

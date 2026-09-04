@@ -20,7 +20,7 @@
     ]
   },
   {
-    "description": "ir: an array-form dependency spells the absent trigger without boolean schemas under draft 4",
+    "description": "ir: an array-form dependency writes the absent trigger without boolean schemas under draft 4",
     "schema": {"dependencies": {"a": ["b"]}},
     "draft": "draft4",
     "expected": {
@@ -320,7 +320,7 @@
     }
   },
   {
-    "description": "ir: the trigger-absent branch dissolves once the consequent sheds against a complement sibling",
+    "description": "ir: the trigger-absent branch dissolves once the consequent drops against a negation sibling",
     "schema": {
       "$defs": {"t": {"type": "array", "items": {"$ref": "#/$defs/t"}}},
       "anyOf": [

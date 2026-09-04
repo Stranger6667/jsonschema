@@ -272,7 +272,7 @@
     "satisfiable": false
   },
   {
-    "description": "ir: a constant array whose duplicate differs only in spelling is unsatisfiable",
+    "description": "ir: a constant array whose duplicate differs only in how it is written is unsatisfiable",
     "schema": {
       "allOf": [
         {"const": [1, 1.0]},
@@ -767,31 +767,31 @@
     ]
   },
   {
-    "description": "ir: a one-value contains domain under uniqueItems cannot meet minContains 2",
+    "description": "ir: a one-value contains domain under uniqueItems cannot satisfy minContains 2",
     "schema": {"type": "array", "contains": {"const": "A"}, "minContains": 2, "uniqueItems": true},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false
   },
   {
-    "description": "ir: a two-value contains domain under uniqueItems cannot meet minContains 3",
+    "description": "ir: a two-value contains domain under uniqueItems cannot satisfy minContains 3",
     "schema": {"type": "array", "contains": {"enum": ["A", "B"]}, "minContains": 3, "uniqueItems": true},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false
   },
   {
-    "description": "ir: a null contains domain under uniqueItems cannot meet minContains 2",
+    "description": "ir: a null contains domain under uniqueItems cannot satisfy minContains 2",
     "schema": {"type": "array", "contains": {"type": "null"}, "minContains": 2, "uniqueItems": true},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false
   },
   {
-    "description": "ir: a boolean contains domain under uniqueItems cannot meet minContains 3",
+    "description": "ir: a boolean contains domain under uniqueItems cannot satisfy minContains 3",
     "schema": {"type": "array", "contains": {"type": "boolean"}, "minContains": 3, "uniqueItems": true},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false
   },
   {
-    "description": "ir: a bounded integer contains domain under uniqueItems cannot meet minContains 3",
+    "description": "ir: a bounded integer contains domain under uniqueItems cannot satisfy minContains 3",
     "schema": {
       "type": "array",
       "contains": {"type": "integer", "minimum": 0, "maximum": 1},
@@ -808,7 +808,7 @@
     "satisfiable": false
   },
   {
-    "description": "ir: a two-value contains domain under uniqueItems can exactly meet minContains 2",
+    "description": "ir: a two-value contains domain under uniqueItems can exactly satisfy minContains 2",
     "schema": {"type": "array", "contains": {"enum": ["A", "B"]}, "minContains": 2, "uniqueItems": true},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -824,7 +824,7 @@
     ]
   },
   {
-    "description": "ir: a one-value contains domain meets minContains 2 without uniqueItems",
+    "description": "ir: a one-value contains domain satisfies minContains 2 without uniqueItems",
     "schema": {"type": "array", "contains": {"const": "A"}, "minContains": 2},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
