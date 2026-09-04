@@ -4,7 +4,7 @@ use std::{borrow::Cow, collections::BTreeSet, sync::Arc};
 use ahash::{AHashMap, AHashSet};
 
 use referencing::{Draft, Resolver};
-use serde_json::Value;
+use serde_json::{json, Map, Number, Value};
 
 use crate::{
     canonical::{
@@ -400,7 +400,7 @@ fn resource_root_has_recursive_anchor(contents: &Value) -> bool {
 }
 
 /// Whether this schema object carries a reference whose resolver consults the dynamic scope.
-fn has_dynamic_reference(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
+fn has_dynamic_reference(map: &Map<String, Value>, draft: Draft) -> bool {
     (draft.is_known_keyword("$dynamicRef") && map.get("$dynamicRef").is_some_and(Value::is_string))
         || (matches!(draft, Draft::Draft201909)
             && map.get("$recursiveRef").is_some_and(Value::is_string))
@@ -1320,7 +1320,7 @@ fn finite_pattern_keys(pattern: &str) -> Option<Vec<Arc<str>>> {
 /// Whether an in-place applicator sits here that no cover reads. `anyOf`/`oneOf` are absent because
 /// the cover handles them, taking their branches only when those agree; `dependentSchemas` and
 /// `if`/`then`/`else` are absent because [`split_conditionals`] spreads them over their cases first.
-fn has_unresolved_applicator(map: &serde_json::Map<String, Value>) -> bool {
+fn has_unresolved_applicator(map: &Map<String, Value>) -> bool {
     map.keys().any(|key| {
         matches!(
             key.as_str(),
@@ -1330,88 +1330,384 @@ fn has_unresolved_applicator(map: &serde_json::Map<String, Value>) -> bool {
 }
 
 /// Cases one conditional split may spread an `unevaluated*` over before the document stays raw.
-const CONDITIONAL_CASE_BUDGET: usize = 16;
+const CONDITIONAL_CASE_BUDGET: usize = 32;
+
+/// Conjuncts one case may collect before the document stays raw: a body referring back to its
+/// own conditional would otherwise nest without end.
+const CASE_CONJUNCT_BUDGET: usize = 64;
 
 enum Split {
-    /// No conditional applicator beside the `unevaluated*`.
+    /// No conditional applicator to split on.
     Untouched,
-    /// The cases outgrew the per-node or the per-run budget.
+    /// Past a budget, or a branch or target could not be read.
     Declined,
-    /// An `anyOf` holding one variant per case.
-    Variants(Value),
+    /// The document-scoped keywords, and one variant per case.
+    Variants {
+        wrapper: Map<String, Value>,
+        variants: Vec<Map<String, Value>>,
+    },
 }
 
-/// Every case continued both ways: with the conjuncts holding where the condition is met, and
-/// with those holding where it fails. `None` where the doubled cases would pass the budget.
-fn fork(cases: Vec<Vec<Value>>, met: &[Value], failed: &[Value]) -> Option<Vec<Vec<Value>>> {
-    if cases.len() * 2 > CONDITIONAL_CASE_BUDGET {
+#[derive(Clone)]
+struct IfThenElse {
+    condition: Value,
+    then: Option<Value>,
+    otherwise: Option<Value>,
+}
+
+#[derive(Clone)]
+enum Conditional {
+    Dependency { key: String, consequent: Value },
+    Condition(IfThenElse),
+}
+
+/// The key and constant an `if` of the shape `{"properties": {K: {"const": c}}, "required": [K]}`
+/// pins; such conditions on one key exclude each other on objects. Numbers alias (`1`, `1.0`).
+fn discriminator(condition: &Value) -> Option<(&str, &Value)> {
+    let map = condition.as_object()?;
+    if map.len() != 2 {
         return None;
     }
-    let mut forked = Vec::with_capacity(cases.len() * 2);
-    for case in cases {
-        let mut holds = case.clone();
-        holds.extend_from_slice(met);
-        let mut fails = case;
-        fails.extend_from_slice(failed);
-        forked.push(holds);
-        forked.push(fails);
+    let properties = map.get("properties")?.as_object()?;
+    let required = map.get("required")?.as_array()?;
+    if properties.len() != 1 || required.len() != 1 {
+        return None;
     }
-    Some(forked)
+    let (key, schema) = properties.iter().next()?;
+    if required[0].as_str() != Some(key) {
+        return None;
+    }
+    let schema = schema.as_object()?;
+    if schema.len() != 1 {
+        return None;
+    }
+    let constant = schema.get("const")?;
+    match constant {
+        Value::Null | Value::Bool(_) | Value::String(_) => Some((key.as_str(), constant)),
+        Value::Number(_) | Value::Array(_) | Value::Object(_) => None,
+    }
 }
 
-/// `dependentSchemas` and `if`/`then`/`else` evaluate keys only on the instances that trigger them,
-/// so an `unevaluated*` beside one splits into an `anyOf` with a variant per case, each carrying the
-/// subschemas that ran as `allOf` conjuncts, where the covers read them.
+/// Whether a subschema can be copied onto the node being split: an identity keyword would register
+/// twice, and a reference under a shifted base would resolve against the wrong document.
+fn hoistable(value: &Value, scoped: bool, draft: Draft) -> bool {
+    let Value::Object(map) = value else {
+        return true;
+    };
+    map.keys().all(|key| match key.as_str() {
+        "$id" | "$anchor" | "$dynamicAnchor" | "$recursiveAnchor" => false,
+        "$ref" | "$dynamicRef" | "$recursiveRef" => !scoped,
+        _ => true,
+    }) && draft
+        .subresources_of(value)
+        .all(|subresource| hoistable(subresource, scoped, draft))
+}
+
+/// The conditionals on `map`, its `allOf` branches and its `$ref` target, recursively; `scoped`
+/// marks a base other than the split node's. `None` where one cannot be copied or read.
+fn applied_conditionals(
+    map: &Map<String, Value>,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    scoped: bool,
+    out: &mut Vec<Conditional>,
+) -> Result<Option<()>, CanonicalizationError> {
+    if let Some(Value::Object(entries)) = map.get("dependentSchemas") {
+        for (key, consequent) in entries {
+            if !hoistable(consequent, scoped, ctx.draft()) {
+                return Ok(None);
+            }
+            out.push(Conditional::Dependency {
+                key: key.clone(),
+                consequent: consequent.clone(),
+            });
+        }
+    }
+    if let Some(condition) = map.get("if") {
+        let bodies = [Some(condition), map.get("then"), map.get("else")];
+        if !bodies
+            .into_iter()
+            .flatten()
+            .all(|body| hoistable(body, scoped, ctx.draft()))
+        {
+            return Ok(None);
+        }
+        out.push(Conditional::Condition(IfThenElse {
+            condition: condition.clone(),
+            then: map.get("then").cloned(),
+            otherwise: map.get("else").cloned(),
+        }));
+    }
+    if let Some(Value::Array(branches)) = map.get("allOf") {
+        for branch in branches {
+            let Some(()) = branch_conditionals(branch, ctx, resolver, walk, scoped, out)? else {
+                return Ok(None);
+            };
+        }
+    }
+    if let Some(Value::String(reference)) = map.get("$ref") {
+        let base = resolver.base_uri();
+        let Some(()) = fold_reference(reference, ctx, resolver, walk, |map, target, walk| {
+            let scoped = scoped || target.base_uri().as_str() != base.as_str();
+            applied_conditionals(map, ctx, target, walk, scoped, out)
+        })?
+        else {
+            return Ok(None);
+        };
+    }
+    Ok(Some(()))
+}
+
+/// [`applied_conditionals`] of a branch, after the scope shift its own `$id` may carry.
+fn branch_conditionals(
+    branch: &Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    scoped: bool,
+    out: &mut Vec<Conditional>,
+) -> Result<Option<()>, CanonicalizationError> {
+    let map = match branch {
+        Value::Bool(_) => return Ok(Some(())),
+        Value::Object(map) => map,
+        Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return Ok(None),
+    };
+    let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(branch))?;
+    let scoped = scoped || map.contains_key("$id");
+    applied_conditionals(map, ctx, &resolver, walk, scoped, out)
+}
+
+/// A body that ran: its conjunct and the conditionals inside it.
+struct Ran {
+    conjunct: Option<Value>,
+    nested: Vec<Conditional>,
+}
+
+impl Ran {
+    fn add_to(&self, case: &mut Vec<Value>, pending: &mut Vec<Conditional>) {
+        case.extend(self.conjunct.iter().cloned());
+        pending.extend(self.nested.iter().cloned());
+    }
+}
+
+/// `None` where a branch or target inside the body cannot be read.
+fn run_once(
+    body: Option<&Value>,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+) -> Result<Option<Ran>, CanonicalizationError> {
+    let Some(body) = body else {
+        return Ok(Some(Ran {
+            conjunct: None,
+            nested: Vec::new(),
+        }));
+    };
+    debug_assert!(
+        hoistable(body, false, ctx.draft()),
+        "a body reaching a case carries no identity keyword"
+    );
+    let mut nested = Vec::new();
+    let Some(()) = branch_conditionals(body, ctx, resolver, walk, false, &mut nested)? else {
+        return Ok(None);
+    };
+    Ok(Some(Ran {
+        conjunct: Some(body.clone()),
+        nested,
+    }))
+}
+
+/// One finished case in `out` per way `pending` can resolve. `None` past the case budget, or
+/// where a body cannot be read.
+fn expand_cases(
+    case: Vec<Value>,
+    mut pending: Vec<Conditional>,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    out: &mut Vec<Vec<Value>>,
+) -> Result<Option<()>, CanonicalizationError> {
+    if pending.is_empty() {
+        if out.len() >= CONDITIONAL_CASE_BUDGET {
+            return Ok(None);
+        }
+        out.push(case);
+        return Ok(Some(()));
+    }
+    if case.len() > CASE_CONJUNCT_BUDGET {
+        return Ok(None);
+    }
+    match pending.remove(0) {
+        Conditional::Dependency { key, consequent } => {
+            // A dependency triggers on objects only; `required` alone passes every other type.
+            let trigger = json!({"type": "object", "required": [key]});
+            let mut absent = case.clone();
+            absent.push(json!({"not": trigger}));
+            let Some(()) = expand_cases(absent, pending.clone(), ctx, resolver, walk, out)? else {
+                return Ok(None);
+            };
+            let Some(ran) = run_once(Some(&consequent), ctx, resolver, walk)? else {
+                return Ok(None);
+            };
+            let mut held = case;
+            held.push(trigger);
+            let mut nested = Vec::new();
+            ran.add_to(&mut held, &mut nested);
+            nested.extend(pending);
+            expand_cases(held, nested, ctx, resolver, walk, out)
+        }
+        Conditional::Condition(first) => {
+            let Some((key, _)) = discriminator(&first.condition) else {
+                let Some(then) = run_once(first.then.as_ref(), ctx, resolver, walk)? else {
+                    return Ok(None);
+                };
+                let Some(otherwise) = run_once(first.otherwise.as_ref(), ctx, resolver, walk)?
+                else {
+                    return Ok(None);
+                };
+                let mut met = case.clone();
+                met.push(first.condition.clone());
+                let mut nested = Vec::new();
+                then.add_to(&mut met, &mut nested);
+                nested.extend(pending.iter().map(Conditional::clone));
+                let Some(()) = expand_cases(met, nested, ctx, resolver, walk, out)? else {
+                    return Ok(None);
+                };
+                let mut failed = case;
+                failed.push(json!({"not": first.condition}));
+                let mut nested = Vec::new();
+                otherwise.add_to(&mut failed, &mut nested);
+                nested.extend(pending);
+                return expand_cases(failed, nested, ctx, resolver, walk, out);
+            };
+            let key = key.to_owned();
+            let mut members = vec![first];
+            let mut rest = Vec::with_capacity(pending.len());
+            for entry in pending {
+                match entry {
+                    Conditional::Condition(other)
+                        if discriminator(&other.condition).is_some_and(|(k, _)| k == key) =>
+                    {
+                        members.push(other);
+                    }
+                    other @ (Conditional::Dependency { .. } | Conditional::Condition(_)) => {
+                        rest.push(other);
+                    }
+                }
+            }
+            pending = rest;
+            debug_assert!(
+                members
+                    .iter()
+                    .all(|member| discriminator(&member.condition).is_some_and(|(k, _)| k == key)),
+                "every group member pins the group's key"
+            );
+            let mut ran = Vec::with_capacity(members.len());
+            for member in &members {
+                let Some(then) = run_once(member.then.as_ref(), ctx, resolver, walk)? else {
+                    return Ok(None);
+                };
+                let Some(otherwise) = run_once(member.otherwise.as_ref(), ctx, resolver, walk)?
+                else {
+                    return Ok(None);
+                };
+                ran.push((then, otherwise));
+            }
+            // Members pinning another constant fail without a `not`: the key already holds this one.
+            let object = json!({"type": "object"});
+            let mut constants: Vec<&Value> = Vec::new();
+            for constant in members
+                .iter()
+                .filter_map(|member| discriminator(&member.condition).map(|(_, c)| c))
+            {
+                if !constants.contains(&constant) {
+                    constants.push(constant);
+                }
+            }
+            for constant in constants {
+                let mut met = case.clone();
+                met.push(object.clone());
+                let mut nested = Vec::new();
+                for (member, (then, otherwise)) in members.iter().zip(&ran) {
+                    let pins = discriminator(&member.condition).is_some_and(|(_, c)| c == constant);
+                    let body = if pins {
+                        met.push(member.condition.clone());
+                        then
+                    } else {
+                        otherwise
+                    };
+                    body.add_to(&mut met, &mut nested);
+                }
+                nested.extend(pending.iter().map(Conditional::clone));
+                let Some(()) = expand_cases(met, nested, ctx, resolver, walk, out)? else {
+                    return Ok(None);
+                };
+            }
+            let mut failed = case.clone();
+            let mut nested = Vec::new();
+            for (member, (_, otherwise)) in members.iter().zip(&ran) {
+                failed.push(json!({"not": member.condition}));
+                otherwise.add_to(&mut failed, &mut nested);
+            }
+            nested.extend(pending.iter().map(Conditional::clone));
+            let Some(()) = expand_cases(failed, nested, ctx, resolver, walk, out)? else {
+                return Ok(None);
+            };
+            // A non-object, where `properties` and `required` assert nothing: every member is met.
+            let mut other = case;
+            other.push(json!({"not": object}));
+            let mut nested = Vec::new();
+            for (then, _) in &ran {
+                then.add_to(&mut other, &mut nested);
+            }
+            nested.extend(pending);
+            expand_cases(other, nested, ctx, resolver, walk, out)
+        }
+    }
+}
+
+/// An `unevaluated*` beside a conditional, or above one through `allOf` or `$ref`, splits into one
+/// variant per case, each carrying the subschemas that ran as `allOf` conjuncts for the covers.
 /// ```text
 /// e.g.  {"dependentSchemas": {"a": {"properties": {"b": {}}}}, "unevaluatedProperties": false}
-///       =>  anyOf: [{"allOf": [{"type": "object", "required": ["a"]}, {"properties": {"b": {}}}],
+///       =>  anyOf: [{"allOf": [{"not": {"type": "object", "required": ["a"]}}],
 ///                    "unevaluatedProperties": false},
-///                   {"allOf": [{"not": {"type": "object", "required": ["a"]}}],
+///                   {"allOf": [{"type": "object", "required": ["a"]}, {"properties": {"b": {}}}],
 ///                    "unevaluatedProperties": false}]
 /// ```
 fn split_conditionals(
-    map: &serde_json::Map<String, Value>,
+    map: &Map<String, Value>,
     ctx: &CanonicalizationContext,
-) -> Split {
-    // Shapes are settled: the document passed its metaschema before parsing began.
-    let dependent = map.get("dependentSchemas").and_then(Value::as_object);
-    let condition = map.get("if");
-    if dependent.is_none() && condition.is_none() {
-        return Split::Untouched;
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+) -> Result<Split, CanonicalizationError> {
+    let mut conditionals = Vec::new();
+    let Some(()) = applied_conditionals(map, ctx, resolver, walk, false, &mut conditionals)? else {
+        return Ok(Split::Declined);
+    };
+    if conditionals.is_empty() {
+        return Ok(Split::Untouched);
     }
-    let shared = map.get("allOf").and_then(Value::as_array);
-    // Each case is the list of conjuncts holding on it.
-    let mut cases: Vec<Vec<Value>> = vec![Vec::new()];
-    if let Some(entries) = dependent {
-        for (key, consequent) in entries {
-            // A dependency triggers on objects only; `required` alone passes every other type.
-            let trigger = serde_json::json!({"type": "object", "required": [key]});
-            let absent = serde_json::json!({"not": trigger});
-            let Some(forked) = fork(cases, &[trigger, consequent.clone()], &[absent]) else {
-                return Split::Declined;
-            };
-            cases = forked;
-        }
-    }
-    if let Some(condition) = condition {
-        let mut met = vec![condition.clone()];
-        met.extend(map.get("then").cloned());
-        let mut failed = vec![serde_json::json!({"not": condition})];
-        failed.extend(map.get("else").cloned());
-        let Some(forked) = fork(cases, &met, &failed) else {
-            return Split::Declined;
-        };
-        cases = forked;
-    }
+    let mut cases = Vec::new();
+    let Some(()) = expand_cases(Vec::new(), conditionals, ctx, resolver, walk, &mut cases)? else {
+        return Ok(Split::Declined);
+    };
+    debug_assert!(
+        cases.len() <= CONDITIONAL_CASE_BUDGET,
+        "the expansion stops at the case budget"
+    );
     if !ctx.take_variants(u64::try_from(cases.len()).unwrap_or(u64::MAX)) {
-        return Split::Declined;
+        return Ok(Split::Declined);
     }
-    // Document-scoped keywords stay on the wrapper; the rest is copied into every variant.
-    let mut wrapper = serde_json::Map::new();
-    let mut base = serde_json::Map::new();
+    // A copied conditional also stays in its branch or target, where the covers skip it.
+    let shared = map.get("allOf").and_then(Value::as_array);
+    let mut wrapper = Map::new();
+    let mut base = Map::new();
+    let mut split = 0;
     for (key, value) in map {
         match key.as_str() {
-            "dependentSchemas" | "if" | "then" | "else" | "allOf" => {}
+            "dependentSchemas" | "if" | "then" | "else" | "allOf" => split += 1,
             "$id" | "id" | "$schema" | "$anchor" | "$dynamicAnchor" | "$recursiveAnchor"
             | "$vocabulary" | "$defs" | "definitions" => {
                 wrapper.insert(key.clone(), value.clone());
@@ -1421,6 +1717,11 @@ fn split_conditionals(
             }
         }
     }
+    debug_assert_eq!(
+        wrapper.len() + base.len() + split,
+        map.len(),
+        "every key lands on the wrapper, on the base, or in the cases"
+    );
     let variants = cases
         .into_iter()
         .map(|conjuncts| {
@@ -1428,31 +1729,28 @@ fn split_conditionals(
             let mut branches = shared.cloned().unwrap_or_default();
             branches.extend(conjuncts);
             variant.insert("allOf".to_string(), Value::Array(branches));
-            Value::Object(variant)
+            variant
         })
         .collect();
-    wrapper.insert("anyOf".to_string(), Value::Array(variants));
-    Split::Variants(Value::Object(wrapper))
+    Ok(Split::Variants { wrapper, variants })
 }
 
 /// In-place applicators whose annotations depend on which branch the instance matched. `allOf` is
 /// absent: every branch must pass, so [`property_cover`] can read its contribution off the document.
 /// `not` is absent too: it succeeds only when its subschema fails, and a failure annotates nothing.
-fn has_instance_dependent_applicator(map: &serde_json::Map<String, Value>) -> bool {
+fn has_instance_dependent_applicator(map: &Map<String, Value>) -> bool {
     map.keys().any(|key| {
         matches!(
             key.as_str(),
-            "$dynamicRef"
-                | "$recursiveRef"
-                | "anyOf"
-                | "dependencies"
-                | "dependentSchemas"
-                | "else"
-                | "if"
-                | "oneOf"
-                | "then"
+            "$dynamicRef" | "$recursiveRef" | "anyOf" | "dependencies" | "oneOf"
         )
     })
+}
+
+/// The covers read past a conditional only once it was split into cases.
+fn has_conditional(map: &Map<String, Value>) -> bool {
+    map.keys()
+        .any(|key| matches!(key.as_str(), "dependentSchemas" | "else" | "if" | "then"))
 }
 
 /// The keys an in-place applicator evaluates beside an `unevaluatedProperties`.
@@ -1481,7 +1779,7 @@ impl PropertyCover {
 }
 
 /// Name each covered key and pattern here as a vacuous entry, so the `additional*` twin skips it.
-fn hoist_cover(degraded: &mut serde_json::Map<String, Value>, cover: &PropertyCover) {
+fn hoist_cover(degraded: &mut Map<String, Value>, cover: &PropertyCover) {
     for (keyword, names) in [
         ("properties", &cover.keys),
         ("patternProperties", &cover.patterns),
@@ -1491,7 +1789,7 @@ fn hoist_cover(degraded: &mut serde_json::Map<String, Value>, cover: &PropertyCo
         }
         let Value::Object(entries) = degraded
             .entry(keyword)
-            .or_insert_with(|| Value::Object(serde_json::Map::new()))
+            .or_insert_with(|| Value::Object(Map::new()))
         else {
             continue;
         };
@@ -1506,6 +1804,8 @@ fn hoist_cover(degraded: &mut serde_json::Map<String, Value>, cover: &PropertyCo
 struct ReferenceWalk {
     visited: AHashSet<Arc<str>>,
     budget: u32,
+    /// The conditionals were split into cases, so a cover reads past them.
+    hoisted: bool,
 }
 
 /// Folds one `unevaluated*` computation may perform before giving up and leaving the document `Raw`.
@@ -1516,8 +1816,54 @@ impl ReferenceWalk {
         Self {
             visited: AHashSet::default(),
             budget: REFERENCE_FOLD_BUDGET,
+            hoisted: false,
         }
     }
+
+    fn hoisted() -> Self {
+        Self {
+            hoisted: true,
+            ..Self::new()
+        }
+    }
+}
+
+/// Run `fold` over `reference`'s target: never on a cycle, past the budget, on another draft or
+/// on a non-schema.
+fn fold_reference(
+    reference: &str,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+    fold: impl FnOnce(
+        &Map<String, Value>,
+        &Resolver<'_>,
+        &mut ReferenceWalk,
+    ) -> Result<Option<()>, CanonicalizationError>,
+) -> Result<Option<()>, CanonicalizationError> {
+    let Some(remaining) = walk.budget.checked_sub(1) else {
+        return Ok(None);
+    };
+    walk.budget = remaining;
+    let location = resolver.resolve_uri(&resolver.base_uri().borrow(), reference)?;
+    let key: Arc<str> = Arc::from(location.as_str());
+    if !walk.visited.insert(Arc::clone(&key)) {
+        return Ok(None);
+    }
+    let result = (|| {
+        let (target, target_resolver, target_draft) = resolver.lookup(reference)?.into_inner();
+        if target_draft != ctx.draft() {
+            return Ok(None);
+        }
+        match target {
+            // No keywords, so nothing is annotated.
+            Value::Bool(_) => Ok(Some(())),
+            Value::Object(map) => fold(map, &target_resolver, walk),
+            Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => Ok(None),
+        }
+    })();
+    walk.visited.remove(&key);
+    result
 }
 
 /// Accumulate what `branch` evaluates; `None` when the instance decides it.
@@ -1543,13 +1889,13 @@ fn property_cover(
 /// [`property_cover`]'s body, once scope is settled - also used for a resolved `$ref` target, whose
 /// resolver `resolver.lookup` already scoped.
 fn property_cover_in_scope(
-    map: &serde_json::Map<String, Value>,
+    map: &Map<String, Value>,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'_>,
     walk: &mut ReferenceWalk,
     cover: &mut PropertyCover,
 ) -> Result<Option<()>, CanonicalizationError> {
-    if has_instance_dependent_applicator(map) {
+    if has_instance_dependent_applicator(map) || (!walk.hoisted && has_conditional(map)) {
         return Ok(None);
     }
     // `additionalProperties` is never rewritten, so its presence is a stable "reaches everything".
@@ -1598,29 +1944,9 @@ fn fold_referenced_property_cover(
     walk: &mut ReferenceWalk,
     cover: &mut PropertyCover,
 ) -> Result<Option<()>, CanonicalizationError> {
-    let Some(remaining) = walk.budget.checked_sub(1) else {
-        return Ok(None);
-    };
-    walk.budget = remaining;
-    let location = resolver.resolve_uri(&resolver.base_uri().borrow(), reference)?;
-    let key: Arc<str> = Arc::from(location.as_str());
-    if !walk.visited.insert(Arc::clone(&key)) {
-        return Ok(None);
-    }
-    let result = (|| {
-        let (target, target_resolver, target_draft) = resolver.lookup(reference)?.into_inner();
-        if target_draft != ctx.draft() {
-            return Ok(None);
-        }
-        match target {
-            // No keywords, so nothing is annotated.
-            Value::Bool(_) => Ok(Some(())),
-            Value::Object(map) => property_cover_in_scope(map, ctx, &target_resolver, walk, cover),
-            Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => Ok(None),
-        }
-    })();
-    walk.visited.remove(&key);
-    result
+    fold_reference(reference, ctx, resolver, walk, |map, resolver, walk| {
+        property_cover_in_scope(map, ctx, resolver, walk, cover)
+    })
 }
 
 /// The indexes an in-place applicator evaluates beside an `unevaluatedItems`.
@@ -1641,7 +1967,7 @@ impl ItemCover {
 
 /// Extend the local tuple so the tail keyword starts past every index the branches evaluate; the
 /// branch that evaluated an index still carries its constraint.
-fn pad_tuple(degraded: &mut serde_json::Map<String, Value>, prefix_items: bool, prefix: usize) {
+fn pad_tuple(degraded: &mut Map<String, Value>, prefix_items: bool, prefix: usize) {
     if prefix == 0 {
         return;
     }
@@ -1676,14 +2002,14 @@ fn item_cover(
 
 /// [`item_cover`]'s body - same split, same reason, as [`property_cover_in_scope`].
 fn item_cover_in_scope(
-    map: &serde_json::Map<String, Value>,
+    map: &Map<String, Value>,
     draft: Draft,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'_>,
     walk: &mut ReferenceWalk,
     cover: &mut ItemCover,
 ) -> Result<Option<()>, CanonicalizationError> {
-    if has_instance_dependent_applicator(map) {
+    if has_instance_dependent_applicator(map) || (!walk.hoisted && has_conditional(map)) {
         return Ok(None);
     }
     // `contains` marks the indexes it matches, which no prefix length spells.
@@ -1745,31 +2071,9 @@ fn fold_referenced_item_cover(
     walk: &mut ReferenceWalk,
     cover: &mut ItemCover,
 ) -> Result<Option<()>, CanonicalizationError> {
-    let Some(remaining) = walk.budget.checked_sub(1) else {
-        return Ok(None);
-    };
-    walk.budget = remaining;
-    let location = resolver.resolve_uri(&resolver.base_uri().borrow(), reference)?;
-    let key: Arc<str> = Arc::from(location.as_str());
-    if !walk.visited.insert(Arc::clone(&key)) {
-        return Ok(None);
-    }
-    let result = (|| {
-        let (target, target_resolver, target_draft) = resolver.lookup(reference)?.into_inner();
-        if target_draft != ctx.draft() {
-            return Ok(None);
-        }
-        match target {
-            // No keywords, so nothing is annotated.
-            Value::Bool(_) => Ok(Some(())),
-            Value::Object(map) => {
-                item_cover_in_scope(map, draft, ctx, &target_resolver, walk, cover)
-            }
-            Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => Ok(None),
-        }
-    })();
-    walk.visited.remove(&key);
-    result
+    fold_reference(reference, ctx, resolver, walk, |map, resolver, walk| {
+        item_cover_in_scope(map, draft, ctx, resolver, walk, cover)
+    })
 }
 
 /// The keys the in-place applicators beside an `unevaluatedProperties` evaluate. Every `allOf`
@@ -1777,7 +2081,7 @@ fn fold_referenced_item_cover(
 /// pin one only when each branch reaches the same keys, since otherwise which branch matched decides
 /// what is left over.
 fn sibling_property_cover(
-    map: &serde_json::Map<String, Value>,
+    map: &Map<String, Value>,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'_>,
     walk: &mut ReferenceWalk,
@@ -1796,6 +2100,9 @@ fn sibling_property_cover(
             };
         }
     }
+    // Under an alternative nothing was split, so its conditionals still decline.
+    let hoisted = walk.hoisted;
+    walk.hoisted = false;
     for keyword in ["anyOf", "oneOf"] {
         let Some(Value::Array(branches)) = map.get(keyword) else {
             continue;
@@ -1817,13 +2124,14 @@ fn sibling_property_cover(
             cover.absorb(agreed);
         }
     }
+    walk.hoisted = hoisted;
     Ok(Some(cover))
 }
 
 /// The indexes the in-place applicators beside an `unevaluatedItems` evaluate, on the same terms as
 /// the key cover.
 fn sibling_item_cover(
-    map: &serde_json::Map<String, Value>,
+    map: &Map<String, Value>,
     draft: Draft,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'_>,
@@ -1844,6 +2152,9 @@ fn sibling_item_cover(
             };
         }
     }
+    // Under an alternative nothing was split, so its conditionals still decline.
+    let hoisted = walk.hoisted;
+    walk.hoisted = false;
     for keyword in ["anyOf", "oneOf"] {
         let Some(Value::Array(branches)) = map.get(keyword) else {
             continue;
@@ -1864,12 +2175,13 @@ fn sibling_item_cover(
             cover.absorb(agreed);
         }
     }
+    walk.hoisted = hoisted;
     Ok(Some(cover))
 }
 
 /// Whether this object asserts an `unevaluated*` keyword. Both enter the vocabulary in the same
 /// draft, so one `is_known_keyword` answer covers the pair.
-fn has_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
+fn has_unevaluated(map: &Map<String, Value>, draft: Draft) -> bool {
     draft.is_known_keyword("unevaluatedProperties")
         && (map.contains_key("unevaluatedProperties") || map.contains_key("unevaluatedItems"))
 }
@@ -1878,7 +2190,7 @@ fn has_unevaluated(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
 /// beside it, `unevaluated*` sees exactly the keys or indices its twin sees; a live twin already
 /// evaluates all of them, leaving it inert and dropped. `None` keeps the document raw.
 fn degrade_unevaluated(
-    map: &serde_json::Map<String, Value>,
+    map: &Map<String, Value>,
     draft: Draft,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'_>,
@@ -1895,11 +2207,41 @@ fn degrade_unevaluated(
     if has_unresolved_applicator(map) {
         return Ok(None);
     }
-    match split_conditionals(map, ctx) {
-        Split::Untouched => {}
-        Split::Declined => return Ok(None),
-        Split::Variants(variants) => return Ok(Some(variants)),
+    let mut walk = ReferenceWalk::new();
+    let split = split_conditionals(map, ctx, resolver, &mut walk)?;
+    debug_assert!(
+        walk.visited.is_empty(),
+        "every reference fold leaves the walk as it found it"
+    );
+    match split {
+        Split::Untouched => degrade_plain(map, draft, ctx, resolver, &mut ReferenceWalk::new()),
+        Split::Declined => Ok(None),
+        Split::Variants {
+            mut wrapper,
+            variants,
+        } => {
+            let mut degraded = Vec::with_capacity(variants.len());
+            for variant in &variants {
+                let mut walk = ReferenceWalk::hoisted();
+                let Some(variant) = degrade_plain(variant, draft, ctx, resolver, &mut walk)? else {
+                    return Ok(None);
+                };
+                degraded.push(variant);
+            }
+            wrapper.insert("anyOf".to_string(), Value::Array(degraded));
+            Ok(Some(Value::Object(wrapper)))
+        }
     }
+}
+
+/// [`degrade_unevaluated`] past the split, reading the covers through `walk`.
+fn degrade_plain(
+    map: &Map<String, Value>,
+    draft: Draft,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+) -> Result<Option<Value>, CanonicalizationError> {
     let mut degraded = map.clone();
     // A local `additionalProperties` leaves nothing unevaluated, so the sibling is inert - and
     // hoisting would change which keys that `additionalProperties` reaches, so it must not run.
@@ -1909,8 +2251,7 @@ fn degrade_unevaluated(
     {
         // Naming a covered key here is all `additionalProperties` needs to skip it; the branch
         // that named it still carries the constraint.
-        let mut walk = ReferenceWalk::new();
-        let Some(cover) = sibling_property_cover(map, ctx, resolver, &mut walk)? else {
+        let Some(cover) = sibling_property_cover(map, ctx, resolver, walk)? else {
             return Ok(None);
         };
         if !cover.everything {
@@ -1925,7 +2266,7 @@ fn degrade_unevaluated(
         //            "items": {"anyOf": [{"type": "integer"}, {"type": "string"}]}}
         let value = match map.get("contains") {
             Some(contains @ (Value::Object(_) | Value::Bool(_))) => {
-                let mut tail = serde_json::Map::new();
+                let mut tail = Map::new();
                 tail.insert(
                     "anyOf".to_string(),
                     Value::Array(vec![contains.clone(), value]),
@@ -1938,8 +2279,7 @@ fn degrade_unevaluated(
             }
             None => value,
         };
-        let mut walk = ReferenceWalk::new();
-        let Some(cover) = sibling_item_cover(map, draft, ctx, resolver, &mut walk)? else {
+        let Some(cover) = sibling_item_cover(map, draft, ctx, resolver, walk)? else {
             return Ok(None);
         };
         if !cover.everything {
@@ -1974,7 +2314,7 @@ fn degrade_unevaluated(
     Ok(Some(Value::Object(degraded)))
 }
 
-fn ref_has_assertion_siblings(map: &serde_json::Map<String, Value>, draft: Draft) -> bool {
+fn ref_has_assertion_siblings(map: &Map<String, Value>, draft: Draft) -> bool {
     map.keys().any(|key| {
         !matches!(
             key.as_str(),
@@ -2398,7 +2738,7 @@ fn parse_type_set(value: &Value) -> Option<JsonTypeSet> {
 /// Keep whichever end admits fewer values.
 fn tighter_real(
     current: Option<BoundNumber>,
-    limit: &serde_json::Number,
+    limit: &Number,
     inclusive: bool,
     side: Side,
 ) -> Option<BoundNumber> {
