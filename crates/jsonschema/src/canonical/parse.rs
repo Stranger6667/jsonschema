@@ -37,6 +37,10 @@ pub(crate) struct ParseOutput {
     /// outside it. Only these may be renamed apart when two documents are merged: two documents
     /// binding one *external* resource to different bodies disagree about the resource itself.
     pub(crate) local_definitions: BTreeSet<Arc<str>>,
+    /// What this parse made of each node it read, for the nodes that can be unsatisfiable.
+    pub(crate) parsed_nodes: AHashMap<*const Value, ParsedNode>,
+    /// The same for each definition body, kept whether or not the final IR still reads it.
+    pub(crate) parsed_definitions: AHashMap<Arc<str>, ParsedNode>,
 }
 
 /// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
@@ -53,7 +57,32 @@ pub(crate) fn parse<'a>(
         resolver,
         &Assumptions::default(),
         Pruning::Prune,
+        Recording::Skip,
     )
+}
+
+/// [`parse`] also noting what each document node parsed to, which only
+/// [`PreparedDocument::unsatisfiable_pointers`](crate::canonical::PreparedDocument::unsatisfiable_pointers)
+/// reads. Recording allocates two maps per parse, so every other caller skips it.
+pub(crate) fn parse_tracking_nodes<'a>(
+    value: &'a Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'a>,
+) -> Result<Option<ParseOutput>, CanonicalizationError> {
+    parse_inner(
+        value,
+        ctx,
+        resolver,
+        &Assumptions::default(),
+        Pruning::Prune,
+        Recording::Record,
+    )
+}
+
+/// What a parse made of one document node: unsatisfiable outright, or a pointer to another node.
+pub(crate) enum ParsedNode {
+    Unsatisfiable,
+    Reference(Arc<str>),
 }
 
 /// Targets a parse resolves to a fixed body rather than to a symbolic `Reference`.
@@ -78,7 +107,14 @@ pub(crate) fn parse_with<'a>(
     resolver: &Resolver<'a>,
     assumptions: &Assumptions,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
-    parse_inner(value, ctx, resolver, assumptions, Pruning::Prune)
+    parse_inner(
+        value,
+        ctx,
+        resolver,
+        assumptions,
+        Pruning::Prune,
+        Recording::Skip,
+    )
 }
 
 /// [`parse_with`] keeping every body, including those the hypothesis made unreachable.
@@ -91,7 +127,21 @@ pub(crate) fn parse_hypothesis<'a>(
     resolver: &Resolver<'a>,
     assumptions: &Assumptions,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
-    parse_inner(value, ctx, resolver, assumptions, Pruning::Keep)
+    parse_inner(
+        value,
+        ctx,
+        resolver,
+        assumptions,
+        Pruning::Keep,
+        Recording::Skip,
+    )
+}
+
+/// Whether to note what each document node parsed to.
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Recording {
+    Record,
+    Skip,
 }
 
 /// Whether to drop the definitions the emitted IR no longer references.
@@ -107,6 +157,7 @@ fn parse_inner<'a>(
     resolver: &Resolver<'a>,
     assumptions: &Assumptions,
     pruning: Pruning,
+    recording: Recording,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
     // A body that came out `false` denotes the empty set, so every reference to it folds as well -
     // but `resolve_reference` can only fold a target whose body already finished parsing, which
@@ -116,7 +167,7 @@ fn parse_inner<'a>(
     let mut tracks = false;
     let mut reparsed_for_bodies = false;
     loop {
-        let attempt = parse_once(value, ctx, resolver, &folded, pruning, tracks)?;
+        let attempt = parse_once(value, ctx, resolver, &folded, pruning, tracks, recording)?;
         if attempt.needs_dynamic_scope {
             debug_assert!(!tracks, "a tracked parse never requests tracking");
             // A referenced resource carries a dynamic reference the root document does not, so the
@@ -168,8 +219,9 @@ fn parse_once<'a>(
     assumptions: &'a Assumptions,
     pruning: Pruning,
     tracks_dynamic_scope: bool,
+    recording: Recording,
 ) -> Result<DocumentParse, CanonicalizationError> {
-    let mut state = ParseState::new(value, resolver.base_uri().as_str(), assumptions);
+    let mut state = ParseState::new(value, resolver.base_uri().as_str(), assumptions, recording);
     if !tracks_dynamic_scope {
         state.dynamic_scope = DynamicScope::Untracked {
             needs_tracking: false,
@@ -191,6 +243,7 @@ fn parse_once<'a>(
             needs_dynamic_scope: state.dynamic_scope.needs_tracking(),
         });
     };
+    state.note_parsed_node(value, Some(&root));
     let needs_dynamic_scope = state.dynamic_scope.needs_tracking();
     if pruning == Pruning::Prune {
         prune_unreachable_definitions(&root, &mut state.definitions);
@@ -202,6 +255,8 @@ fn parse_once<'a>(
             definitions: state.definitions,
             has_references: state.facts.has_references,
             pending_choices: state.facts.pending_choices,
+            parsed_nodes: state.parsed_nodes,
+            parsed_definitions: state.parsed_definitions,
         }),
         needs_dynamic_scope,
     })
@@ -220,6 +275,11 @@ struct ParseState<'a> {
     /// Empty on every parse outside the definition fixpoint.
     assumptions: &'a Assumptions,
     dynamic_scope: DynamicScope,
+    /// Entries for [`ParseOutput::parsed_nodes`].
+    parsed_nodes: AHashMap<*const Value, ParsedNode>,
+    /// Entries for [`ParseOutput::parsed_definitions`].
+    parsed_definitions: AHashMap<Arc<str>, ParsedNode>,
+    recording: Recording,
 }
 
 /// Flags set anywhere in the document and read after the whole parse.
@@ -267,7 +327,12 @@ impl DynamicScope {
 }
 
 impl<'a> ParseState<'a> {
-    fn new(root: &'a Value, root_base_uri: &str, assumptions: &'a Assumptions) -> Self {
+    fn new(
+        root: &'a Value,
+        root_base_uri: &str,
+        assumptions: &'a Assumptions,
+        recording: Recording,
+    ) -> Self {
         Self {
             root,
             root_base_uri: Arc::from(root_base_uri),
@@ -277,6 +342,9 @@ impl<'a> ParseState<'a> {
             sources: AHashMap::default(),
             assumptions,
             dynamic_scope: DynamicScope::Tracked,
+            parsed_nodes: AHashMap::default(),
+            parsed_definitions: AHashMap::default(),
+            recording,
         }
     }
 
@@ -289,6 +357,68 @@ impl<'a> ParseState<'a> {
     fn assumes_admits_all(&self, key: &str) -> bool {
         self.assumptions.admits_all.contains(key)
     }
+
+    /// Remember what `value` parsed to, when that decides whether it is unsatisfiable.
+    ///
+    /// Keyed by address: a rewritten schema is dropped before anything reads this, and a dead
+    /// allocation cannot share an address with a node the document still holds.
+    fn note_parsed_node(&mut self, value: &Value, parsed: Option<&Schema>) {
+        if self.recording == Recording::Skip {
+            return;
+        }
+        let entry = match parsed.map(Schema::kind) {
+            Some(SchemaKind::False) => ParsedNode::Unsatisfiable,
+            // A pointer and the body it names accept the same values, so a body proven unsatisfiable
+            // after this node was read still makes it unsatisfiable.
+            Some(SchemaKind::Reference(key)) => ParsedNode::Reference(Arc::clone(key)),
+            None
+            | Some(
+                SchemaKind::MultiType(_)
+                | SchemaKind::TypedGroup { .. }
+                | SchemaKind::String(_)
+                | SchemaKind::Integer(_)
+                | SchemaKind::Number(_)
+                | SchemaKind::Array(_)
+                | SchemaKind::Object(_)
+                | SchemaKind::Const(_)
+                | SchemaKind::Enum(_)
+                | SchemaKind::Not(_)
+                | SchemaKind::AllOf(_)
+                | SchemaKind::AnyOf(_)
+                | SchemaKind::OneOf(_)
+                | SchemaKind::True
+                | SchemaKind::Raw(_),
+            ) => return,
+        };
+        self.parsed_nodes.insert(std::ptr::from_ref(value), entry);
+    }
+
+    /// Remember what the body `key` names parsed to.
+    fn note_parsed_definition(&mut self, key: &Arc<str>, parsed: &Schema) {
+        if self.recording == Recording::Skip {
+            return;
+        }
+        let entry = match parsed.kind() {
+            SchemaKind::False => ParsedNode::Unsatisfiable,
+            SchemaKind::Reference(names) => ParsedNode::Reference(Arc::clone(names)),
+            SchemaKind::MultiType(_)
+            | SchemaKind::TypedGroup { .. }
+            | SchemaKind::String(_)
+            | SchemaKind::Integer(_)
+            | SchemaKind::Number(_)
+            | SchemaKind::Array(_)
+            | SchemaKind::Object(_)
+            | SchemaKind::Const(_)
+            | SchemaKind::Enum(_)
+            | SchemaKind::Not(_)
+            | SchemaKind::AllOf(_)
+            | SchemaKind::AnyOf(_)
+            | SchemaKind::OneOf(_)
+            | SchemaKind::True
+            | SchemaKind::Raw(_) => return,
+        };
+        self.parsed_definitions.insert(Arc::clone(key), entry);
+    }
 }
 
 fn parse_schema<'a>(
@@ -299,7 +429,9 @@ fn parse_schema<'a>(
     state: &mut ParseState<'a>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(value))?;
-    parse_schema_in_scope(value, ctx, is_root, &resolver, state)
+    let parsed = parse_schema_in_scope(value, ctx, is_root, &resolver, state)?;
+    state.note_parsed_node(value, parsed.as_ref());
+    Ok(parsed)
 }
 
 /// The dynamic-scope facts a target's parse can observe, derived from its resolver: for each
@@ -2537,6 +2669,8 @@ fn ensure_definition<'a>(
     let Some(parsed) = parsed? else {
         return Ok(false);
     };
+    state.note_parsed_node(target, Some(&parsed));
+    state.note_parsed_definition(&key, &parsed);
     let previous = state.definitions.insert(key, parsed);
     debug_assert!(
         previous.is_none(),

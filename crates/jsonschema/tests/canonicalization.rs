@@ -101,6 +101,130 @@ fn prepared_document_rejects_the_same_pointers() {
     ));
 }
 
+/// Every pointer in `document`, deepest first.
+fn every_pointer(document: &Value) -> Vec<String> {
+    fn walk(value: &Value, pointer: &str, out: &mut Vec<String>) {
+        match value {
+            Value::Object(map) => {
+                for (key, child) in map {
+                    let escaped = key.replace('~', "~0").replace('/', "~1");
+                    walk(child, &format!("{pointer}/{escaped}"), out);
+                }
+            }
+            Value::Array(items) => {
+                for (index, child) in items.iter().enumerate() {
+                    walk(child, &format!("{pointer}/{index}"), out);
+                }
+            }
+            Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+        }
+        out.push(pointer.to_string());
+    }
+    let mut out = Vec::new();
+    walk(document, "", &mut out);
+    out
+}
+
+#[test_case(&json!({
+    "$defs": {"dead": {"allOf": [{"type": "integer", "minimum": 5}, {"maximum": 3}]}},
+    "type": "object",
+    "properties": {"a": {"$ref": "#/$defs/dead"}}
+}) ; "definitions and references")]
+#[test_case(&json!({
+    "type": "object",
+    "properties": {
+        "bounded": {"type": "integer", "minimum": 5, "maximum": 3},
+        "sized": {"type": "string", "minLength": 5, "maxLength": 2},
+        "disjoint": {"allOf": [{"type": "string"}, {"type": "integer"}]},
+        "live": {"type": "string"}
+    }
+}) ; "empty property schemas")]
+#[test_case(&json!({
+    "$defs": {"bounded": {"type": "integer", "minimum": 5, "maximum": 3}},
+    "type": "object",
+    "required": ["a"],
+    "properties": {"a": {"$ref": "#/$defs/bounded"}}
+}) ; "emptiness reached through a reference")]
+#[test_case(&json!({
+    "$defs": {"node": {"type": "object", "properties": {"next": {"$ref": "#/$defs/node"}}}},
+    "$ref": "#/$defs/node"
+}) ; "recursive definition")]
+#[test_case(&json!({
+    "$defs": {"loop": {"allOf": [
+        {"$ref": "#/$defs/loop"},
+        {"type": "integer", "minimum": 5, "maximum": 3}
+    ]}},
+    "$ref": "#/$defs/loop"
+}) ; "emptiness through a reference cycle")]
+#[test_case(&json!({
+    "type": "object",
+    "properties": {"a": {"type": "string"}},
+    "additionalProperties": false,
+    "required": ["b"]
+}) ; "a required key the map closes out")]
+#[test_case(&json!({
+    "$defs": {"dead": false},
+    "type": "object",
+    "required": ["a"],
+    "properties": {"a": {"$ref": "#/$defs/dead"}}
+}) ; "a reference to a definition written as false")]
+#[test_case(&json!({
+    "allOf": [{"type": "string"}, {"type": "integer"}],
+    "properties": {"a": {"$ref": "#"}}
+}) ; "a reference to an unsatisfiable document root")]
+fn unsatisfiable_pointers_agree_with_selecting_each_pointer(document: &Value) {
+    let prepared = options().prepare(document).expect("prepares");
+    let reported = prepared.unsatisfiable_pointers().expect("reports");
+
+    for pointer in every_pointer(document) {
+        let Ok(selected) = prepared.canonicalize_at(&pointer) else {
+            continue;
+        };
+        assert_eq!(
+            reported.contains(pointer.as_str()),
+            selected.satisfiability() == Satisfiability::No,
+            "{pointer}"
+        );
+    }
+}
+
+// Everything reported is empty, whatever the document leaves unread.
+#[test]
+fn unsatisfiable_pointers_reports_only_empty_subschemas() {
+    let document = pet_document();
+    let prepared = options().prepare(&document).expect("prepares");
+
+    for pointer in prepared.unsatisfiable_pointers().expect("reports") {
+        assert_eq!(
+            prepared
+                .canonicalize_at(&pointer)
+                .expect("canonicalizes")
+                .satisfiability(),
+            Satisfiability::No,
+            "{pointer}"
+        );
+    }
+}
+
+// A definition nothing reads is never parsed, so it is not reported - `Dead` is unsatisfiable and unread.
+#[test]
+fn unsatisfiable_pointers_passes_over_a_definition_the_document_never_reads() {
+    let document = pet_document();
+    let prepared = options().prepare(&document).expect("prepares");
+
+    assert_eq!(
+        prepared
+            .canonicalize_at("/$defs/Dead")
+            .expect("canonicalizes")
+            .satisfiability(),
+        Satisfiability::No
+    );
+    assert!(!prepared
+        .unsatisfiable_pointers()
+        .expect("reports")
+        .contains("/$defs/Dead"));
+}
+
 // An unknown draft leaves the document unresolvable, and every selection verbatim.
 #[test]
 fn prepared_document_of_an_unknown_draft_passes_selections_through() {
