@@ -5,6 +5,7 @@
 ### Changed
 
 - Canonicalization of `unevaluated*` beside `dependentSchemas` or `if`/`then`/`else`, which kept the document `Raw`.
+- Canonicalization of `not` over `patternProperties`, which kept the document `Raw`.
 
 ## [0.53.0] - 2026-09-02
 

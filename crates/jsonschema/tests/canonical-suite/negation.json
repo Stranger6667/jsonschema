@@ -3668,10 +3668,14 @@
     ]
   },
   {
-    "description": "a negated closed pattern map under draft 4 stays raw",
+    "description": "a negated closed pattern map under draft 4 keeps the map under not, on objects alone",
     "draft": "draft4",
     "schema": {"not": {"patternProperties": {"^a": {}}, "additionalProperties": false}},
-    "expected": {"not": {"patternProperties": {"^a": {}}, "additionalProperties": false}},
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "object",
+      "not": {"patternProperties": {"^a": {}}, "additionalProperties": false}
+    },
     "tests": [
       {"data": {"b": 1}, "valid": true},
       {"data": {"ab": 1}, "valid": false},
@@ -3918,7 +3922,7 @@
     ]
   },
   {
-    "description": "a negated choice whose branch complement is inexpressible keeps the document raw",
+    "description": "a negated choice whose branch carries a pattern map keeps that map under not",
     "schema": {
       "$defs": {"a": {"type": "string"}},
       "not": {"oneOf": [
@@ -3927,11 +3931,14 @@
       ]}
     },
     "expected": {
-      "$defs": {"a": {"type": "string"}},
-      "not": {"oneOf": [
-        {"$ref": "#/$defs/a"},
-        {"type": "object", "patternProperties": {"^a": {"type": "string"}}}
-      ]}
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "array"]},
+        {"allOf": [
+          {"type": ["null", "boolean", "number", "array", "object"]},
+          {"not": {"type": "object", "patternProperties": {"^a": {"type": "string"}}}}
+        ]}
+      ]
     },
     "tests": [
       {"data": "x", "valid": false},
@@ -4604,6 +4611,163 @@
         "data": 1,
         "valid": true
       }
+    ]
+  },
+  {
+    "description": "a negated pattern map keeps its other facets exact and bars the pattern facet alone",
+    "schema": {"not": {"type": "object", "required": ["id"], "patternProperties": {"^x-": {"type": "string"}}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "properties": {"id": false}},
+        {"not": {"type": "object", "patternProperties": {"^x-": {"type": "string"}}}}
+      ]
+    },
+    "tests": [
+      {"data": {"id": 1}, "valid": false},
+      {"data": {"id": 1, "x-a": "s"}, "valid": false},
+      {"data": {"id": 1, "x-a": 1}, "valid": true},
+      {"data": {"x-a": "s"}, "valid": true},
+      {"data": "s", "valid": true}
+    ]
+  },
+  {
+    "description": "a negated closed pattern map bars the pattern facet and keeps the shield violation exact",
+    "schema": {"not": {"type": "object", "additionalProperties": false, "patternProperties": {"^x-": {"type": "string"}}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"propertyNames": {"pattern": "^x-", "type": "string"}}},
+        {"not": {"type": "object", "patternProperties": {"^x-": {"type": "string"}}}}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"x-a": "s"}, "valid": false},
+      {"data": {"x-a": 1}, "valid": true},
+      {"data": {"y": 1}, "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated pattern map whose value is a reference bars the pattern facet with the reference intact",
+    "schema": {"$defs": {"ext": {}}, "not": {"type": "object", "patternProperties": {"^x-": {"$ref": "#/$defs/ext"}}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"ext": true},
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"not": {"type": "object", "patternProperties": {"^x-": {"$ref": "#/$defs/ext"}}}}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"x-a": 1}, "valid": false},
+      {"data": {"y": 1}, "valid": false},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a pattern map beside its own negated closed pattern map meets the barred pattern facet in a conjunction",
+    "schema": {
+      "type": "object",
+      "additionalProperties": false,
+      "patternProperties": {"^[0-9]{3}$": {"type": "object"}, "^x-": {}},
+      "not": {"type": "object", "additionalProperties": false, "patternProperties": {"^x-": {"type": "string"}}}
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "type": "object",
+          "patternProperties": {"^[0-9]{3}$": {"type": "object"}},
+          "propertyNames": {"anyOf": [{"type": "string", "pattern": "^[0-9]{3}$"}, {"type": "string", "pattern": "^x-"}]},
+          "not": {"propertyNames": {"type": "string", "pattern": "^x-"}}
+        },
+        {
+          "allOf": [
+            {
+              "type": "object",
+              "patternProperties": {"^[0-9]{3}$": {"type": "object"}},
+              "propertyNames": {"anyOf": [{"type": "string", "pattern": "^[0-9]{3}$"}, {"type": "string", "pattern": "^x-"}]}
+            },
+            {"not": {"type": "object", "patternProperties": {"^x-": {"type": "string"}}}}
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {"data": {"200": {}}, "valid": true},
+      {"data": {"200": {}, "x-a": 1}, "valid": true},
+      {"data": {"x-a": 1}, "valid": true},
+      {"data": {"x-a": "s"}, "valid": false},
+      {"data": {}, "valid": false},
+      {"data": {"abc": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "a negated closed pattern map under draft 4 whose values are references keeps the map under not",
+    "draft": "draft4",
+    "schema": {
+      "definitions": {"ext": {}},
+      "not": {"type": "object", "additionalProperties": false, "patternProperties": {"^x-": {"$ref": "#/definitions/ext"}}}
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "definitions": {"ext": {}},
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"additionalProperties": false, "patternProperties": {"^x-": {}}}},
+        {"not": {"type": "object", "patternProperties": {"^x-": {"$ref": "#/definitions/ext"}}}}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"x-a": 1}, "valid": false},
+      {"data": {"y": 1}, "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a draft 4 pattern map beside its own negated closed pattern map with reference values meets it in a conjunction",
+    "draft": "draft4",
+    "schema": {
+      "definitions": {"ext": {}, "value": {"type": "object"}},
+      "type": "object",
+      "minProperties": 1,
+      "additionalProperties": false,
+      "patternProperties": {"^[0-9]{3}$": {"$ref": "#/definitions/value"}, "^x-": {"$ref": "#/definitions/ext"}},
+      "not": {"type": "object", "additionalProperties": false, "patternProperties": {"^x-": {"$ref": "#/definitions/ext"}}}
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "definitions": {"ext": {}, "value": {"type": "object"}},
+      "anyOf": [
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {"^[0-9]{3}$": {"$ref": "#/definitions/value"}, "^x-": {"$ref": "#/definitions/ext"}},
+          "not": {"additionalProperties": false, "patternProperties": {"^x-": {}}}
+        },
+        {"allOf": [
+          {
+            "type": "object",
+            "minProperties": 1,
+            "additionalProperties": false,
+            "patternProperties": {"^[0-9]{3}$": {"$ref": "#/definitions/value"}, "^x-": {"$ref": "#/definitions/ext"}}
+          },
+          {"not": {"type": "object", "patternProperties": {"^x-": {"$ref": "#/definitions/ext"}}}}
+        ]}
+      ]
+    },
+    "tests": [
+      {"data": {"200": {}}, "valid": true},
+      {"data": {"200": {}, "x-a": 1}, "valid": true},
+      {"data": {"x-a": 1}, "valid": false},
+      {"data": {}, "valid": false},
+      {"data": {"abc": 1}, "valid": false}
     ]
   }
 ]

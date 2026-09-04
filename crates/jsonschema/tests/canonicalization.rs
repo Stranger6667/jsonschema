@@ -1218,12 +1218,15 @@ fn error_display(schema: &Value, message: &str) {
 
 #[test]
 fn unsupported_result_display() {
-    let plain = canonicalize(&json!({"type": "object"})).expect("canonicalizes");
-    let patterned =
-        canonicalize(&json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}}))
-            .expect("canonicalizes");
+    let plain = canonicalize(&json!({"type": "array"})).expect("canonicalizes");
+    let tuple = canonicalize(&json!({
+        "type": "array",
+        "prefixItems": [{"type": "string"}],
+        "items": {"type": "integer"}
+    }))
+    .expect("canonicalizes");
     assert_eq!(
-        plain.subtract(&patterned).unwrap_err().to_string(),
+        plain.subtract(&tuple).unwrap_err().to_string(),
         "result is not supported in canonical form"
     );
 }
@@ -3593,7 +3596,6 @@ fn operands_from_one_document_canonicalized_twice_combine() {
 // A degenerate difference is one of the operands or empty, so it needs no complement - and these
 // are schemas whose complement is not modeled, where asking for one would decline.
 #[test_case(&json!({"type": "array", "contains": {"type": "string"}, "minContains": 2}); "a counted contains")]
-#[test_case(&json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}}); "pattern properties")]
 #[test_case(&json!({"type": "object", "properties": {"a": {"$ref": "#"}}}); "root self-reference")]
 fn subtracting_a_schema_from_itself_needs_no_complement(schema: &Value) {
     let left = canonicalize(schema).expect("canonicalizes");
@@ -3610,7 +3612,7 @@ fn subtracting_a_schema_from_itself_needs_no_complement(schema: &Value) {
 
 // What `subtract` declines is not what `negate` declines: it skips the degenerate cases, so a
 // caller cannot predict one from the other.
-#[test_case(&json!({"type": "object"}), &json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}}); "a pattern map complement")]
+#[test_case(&json!({"type": "array"}), &json!({"type": "array", "prefixItems": [{"type": "string"}], "items": {"type": "integer"}}); "an open tail tuple complement")]
 fn subtract_declines_an_unsupported_complement(left: &Value, right: &Value) {
     let left = canonicalize(left).expect("canonicalizes");
     let right = canonicalize(right).expect("canonicalizes");
@@ -4776,10 +4778,6 @@ fn negate_rejects_an_unsupported_schema() {
     "reference through its own complement"
 )]
 #[test_case(
-    &json!({"type": "object", "patternProperties": {"^a": {"type": "string"}}});
-    "pattern properties"
-)]
-#[test_case(
     &json!({"type": "array", "prefixItems": [{"type": "string"}], "items": {"type": "integer"}});
     "array tuple with an open tail"
 )]
@@ -5706,16 +5704,13 @@ fn coverage_over_an_intersection_the_form_cannot_spell_rests_on_a_value_or_decli
         patterns.covers(&shielded).expect("covers"),
         Containment::Unknown
     );
-    // The complement is built on a context of its own, and one that approximated is no complement
-    // to subtract with.
-    assert!(matches!(
-        shielded.subtract(&patterns),
-        Err(CanonicalizationError::UnsupportedResult)
-    ));
-    assert!(matches!(
-        patterns.negate(),
-        Err(CanonicalizationError::UnsupportedResult)
-    ));
+    // The complement keeps the pattern facet under `not`, so the difference exists: a key matching
+    // the pattern with a value past its ceiling, and nothing the pattern map admits.
+    let difference = shielded.subtract(&patterns).expect("subtracts");
+    let admits = jsonschema::validator_for(&difference.to_json_schema()).expect("builds");
+    assert!(admits.is_valid(&json!({"ab": "0123456789x"})));
+    assert!(!admits.is_valid(&json!({"b": "x"})));
+    assert!(!admits.is_valid(&json!({"ab": "x"})));
 }
 
 // `#` names the document root, which is no entry of the map: reading through the pointer is reading

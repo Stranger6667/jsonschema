@@ -995,9 +995,6 @@ fn parse_schema_in_scope<'a>(
             // The complement of the negated schema, when the IR can express it; an unsupported child or
             // an inexpressible complement keeps the whole document raw.
             ("not", value) if ctx.draft().is_known_keyword("not") => {
-                if matches!(ctx.draft(), Draft::Draft4) && is_closed_pattern_map(value) {
-                    return Ok(None);
-                }
                 match parse_schema(value, ctx, false, resolver, state)? {
                     Some(child) => match negate::negate_in_place(&child, &state.definitions, ctx) {
                         Some(complement) => conjuncts.push(complement),
@@ -1268,18 +1265,6 @@ fn parse_schema_in_scope<'a>(
             algebra::intersect(result, conjunct, ctx)
         }),
     ))
-}
-
-/// Whether this schema has the Draft 4 closed-map spelling that negation must preserve directly.
-fn is_closed_pattern_map(value: &Value) -> bool {
-    let Some(map) = value.as_object() else {
-        return false;
-    };
-    map.get("additionalProperties") == Some(&Value::Bool(false))
-        && map
-            .get("patternProperties")
-            .and_then(Value::as_object)
-            .is_some_and(|patterns| !patterns.is_empty())
 }
 
 /// Move every pattern matching finitely many keys onto those keys, met into whatever the property

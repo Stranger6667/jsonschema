@@ -622,24 +622,20 @@ RSpec.describe "JSONSchema.canonicalize" do
       .to raise_error(JSONSchema::Canonical::UnsupportedOperand)
   end
 
-  [
-    { "type" => "object", "patternProperties" => { "^a" => { "type" => "string" } } },
-    { "type" => "array", "contains" => { "type" => "string" }, "minContains" => 2 }
-  ].each do |schema|
-    it "raises UnsupportedResult negating #{schema.inspect}" do
-      expect { JSONSchema.canonicalize(schema).negate }
-        .to raise_error(JSONSchema::Canonical::UnsupportedResult, "result is not supported in canonical form")
-    end
+  it "raises UnsupportedResult negating a contains window" do
+    schema = { "type" => "array", "contains" => { "type" => "string" }, "minContains" => 2 }
+    expect { JSONSchema.canonicalize(schema).negate }
+      .to raise_error(JSONSchema::Canonical::UnsupportedResult, "result is not supported in canonical form")
   end
 
   it "raises UnsupportedResult subtracting a schema whose complement is not supported" do
-    plain = JSONSchema.canonicalize({ "type" => "object" })
-    hard = JSONSchema.canonicalize({ "type" => "object", "patternProperties" => { "^a" => { "type" => "string" } } })
+    plain = JSONSchema.canonicalize({ "type" => "array" })
+    hard = JSONSchema.canonicalize({ "type" => "array", "contains" => { "type" => "string" }, "minContains" => 2 })
     expect { plain.subtract(hard) }.to raise_error(JSONSchema::Canonical::UnsupportedResult)
   end
 
   it "subtracts a schema from itself without asking for a complement" do
-    schema = { "type" => "object", "patternProperties" => { "^a" => { "type" => "string" } } }
+    schema = { "type" => "array", "contains" => { "type" => "string" }, "minContains" => 2 }
     expect { JSONSchema.canonicalize(schema).negate }
       .to raise_error(JSONSchema::Canonical::UnsupportedResult)
     expect(JSONSchema.canonicalize(schema).subtract(JSONSchema.canonicalize(schema)).satisfiability)
