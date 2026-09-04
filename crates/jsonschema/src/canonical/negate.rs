@@ -857,15 +857,16 @@ fn negate_array_leaf(
 ///                   {"type": "object", "maxProperties": 1}]
 /// e.g.  {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
 ///       =>  anyOf: [<non-object types>, {"type": "object", "not": {"propertyNames": {"enum": ["a", "b"]}}}]
+/// e.g.  {"not": {"type": "object", "required": ["id"], "patternProperties": {"^x-": {"type": "string"}}}}
+///       =>  anyOf: [<non-object types>,
+///                   {"type": "object", "properties": {"id": false}},
+///                   {"not": {"type": "object", "patternProperties": {"^x-": {"type": "string"}}}}]
 /// ```
 fn negate_object_leaf(
     leaf: &ObjectLeaf,
     walk: &mut NegationWalk<'_>,
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
-    if !leaf.pattern_properties.is_empty() {
-        return None;
-    }
     let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::Object))];
     for sizes in length_windows(&leaf.sizes)? {
         branches.push(object_branch(
@@ -907,8 +908,8 @@ fn negate_object_leaf(
     }
     // A value shield fails on an object exactly when some key outside `properties` and
     // `patternProperties` holds a value it rejects: the demand records that declared key set so
-    // the shield's reach stays exact once reinstated.
-    if let Some(shield) = &leaf.additional {
+    // the shield's reach stays exact once reinstated. Beside patterns it stays under `not` below.
+    if let (Some(shield), true) = (&leaf.additional, leaf.pattern_properties.is_empty()) {
         branches.push(algebra::object_leaf(
             ObjectLeaf {
                 violations: vec![ObjectViolation::UndeclaredValueFails {
@@ -954,6 +955,19 @@ fn negate_object_leaf(
                 ));
             }
         }
+    }
+    // A key matching a pattern with a violating value has no facet, so the pattern facet and the
+    // shield whose reach the patterns bound stay under `not`. Nothing in them is resolved, so the
+    // walk's mode does not matter.
+    if !leaf.pattern_properties.is_empty() {
+        branches.push(Schema::new(SchemaKind::Not(algebra::object_leaf(
+            ObjectLeaf {
+                pattern_properties: leaf.pattern_properties.clone(),
+                additional: leaf.additional.clone(),
+                ..ObjectLeaf::default()
+            },
+            ctx,
+        ))));
     }
     Some(algebra::union(branches, ctx))
 }

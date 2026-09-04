@@ -849,28 +849,22 @@ def test_negate_rejects_an_unsupported_schema():
 
 
 # The two declines are different answers, so each needs its own reachable case.
-@pytest.mark.parametrize(
-    "schema",
-    [
-        {"type": "object", "patternProperties": {"^a": {"type": "string"}}},
-        {"type": "array", "contains": {"type": "string"}, "minContains": 2},
-    ],
-)
-def test_negate_raises_unsupported_result(schema):
+def test_negate_raises_unsupported_result():
+    schema = {"type": "array", "contains": {"type": "string"}, "minContains": 2}
     with pytest.raises(canonical.UnsupportedResult) as exc:
         canonicalize(schema).negate()
     assert str(exc.value) == "result is not supported in canonical form"
 
 
 def test_subtract_raises_unsupported_result():
-    plain = canonicalize({"type": "object"})
-    hard = canonicalize({"type": "object", "patternProperties": {"^a": {"type": "string"}}})
+    plain = canonicalize({"type": "array"})
+    hard = canonicalize({"type": "array", "contains": {"type": "string"}, "minContains": 2})
     with pytest.raises(canonical.UnsupportedResult):
         plain.subtract(hard)
 
 
 def test_subtracting_a_schema_from_itself_needs_no_complement():
-    schema = {"type": "object", "patternProperties": {"^a": {"type": "string"}}}
+    schema = {"type": "array", "contains": {"type": "string"}, "minContains": 2}
     # Negating this schema declines, so the self-difference must not go through a complement.
     with pytest.raises(canonical.UnsupportedResult):
         canonicalize(schema).negate()
