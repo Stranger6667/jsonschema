@@ -1,6 +1,9 @@
 //! Configuration and entry points for canonicalization.
 
-use std::{collections::BTreeSet, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashSet},
+    sync::Arc,
+};
 
 use referencing::{Draft, Registry, Retrieve, Uri};
 use serde_json::Value;
@@ -12,7 +15,7 @@ use crate::{
         ir::{RawJson, Schema, SchemaKind},
         parse, refold,
         schema::CanonicalSchema,
-        CanonicalizationError, DefinitionMap,
+        CanonicalizationError, DefinitionMap, ROOT_DEFINITION_KEY,
     },
     compiler::{
         formats_are_assertions_by_default, normalize_base_uri, resolve_base_uri, validate_schema,
@@ -197,6 +200,31 @@ impl PreparedDocument<'_> {
         }
     }
 
+    /// Pointers to the subschemas that admit no value.
+    ///
+    /// One reduction answers for the whole document, where selecting each pointer in turn reduces
+    /// its subtree again. A pointer left out is not proven non-empty: an unmodeled document reports
+    /// nothing at all, matching [`Satisfiability::Unknown`](crate::canonical::Satisfiability) from
+    /// [`canonicalize_at`](Self::canonicalize_at).
+    ///
+    /// # Errors
+    ///
+    /// Same as [`crate::canonicalize`], for the document itself.
+    pub fn unsatisfiable_pointers(&self) -> Result<HashSet<String>, CanonicalizationError> {
+        let Some((registry, base_uri)) = &self.resolution else {
+            return Ok(HashSet::new());
+        };
+        let resolver = registry.resolver(base_uri.clone());
+        let context =
+            CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
+        let Some(parsed) = parse::parse(self.document, &context, &resolver)? else {
+            return Ok(HashSet::new());
+        };
+        let mut pointers = HashSet::new();
+        collect_unsatisfiable_pointers(self.document, &mut String::new(), &parsed, &mut pointers);
+        Ok(pointers)
+    }
+
     fn reduce(&self, target: &Value) -> Result<CanonicalSchema, CanonicalizationError> {
         let opaque = |target: &Value| {
             CanonicalSchema::new(
@@ -301,4 +329,89 @@ fn detect_draft<'r>(
     options
         .draft_for(value)
         .map_err(CanonicalizationError::from)
+}
+
+/// Whether the body `key` names is unsatisfiable, reading through a chain of pointers as
+/// [`CanonicalSchema::satisfiability`] does.
+fn names_unsatisfiable_body(parsed: &parse::ParseOutput, key: &str) -> bool {
+    let mut key = key;
+    let mut walked: Vec<&str> = Vec::new();
+    loop {
+        if walked.contains(&key) {
+            return false;
+        }
+        walked.push(key);
+        match parsed.parsed_definitions.get(key) {
+            Some(parse::ParsedNode::Unsatisfiable) => return true,
+            Some(parse::ParsedNode::Reference(next)) => {
+                key = next.as_ref();
+                continue;
+            }
+            None => {}
+        }
+        let body = if key == ROOT_DEFINITION_KEY {
+            &parsed.root
+        } else {
+            match parsed.definitions.get(key) {
+                Some(body) => body,
+                None => return false,
+            }
+        };
+        match body.kind() {
+            SchemaKind::False => return true,
+            SchemaKind::Reference(next) => key = next.as_ref(),
+            SchemaKind::MultiType(_)
+            | SchemaKind::TypedGroup { .. }
+            | SchemaKind::String(_)
+            | SchemaKind::Integer(_)
+            | SchemaKind::Number(_)
+            | SchemaKind::Array(_)
+            | SchemaKind::Object(_)
+            | SchemaKind::Const(_)
+            | SchemaKind::Enum(_)
+            | SchemaKind::Not(_)
+            | SchemaKind::AllOf(_)
+            | SchemaKind::AnyOf(_)
+            | SchemaKind::OneOf(_)
+            | SchemaKind::True
+            | SchemaKind::Raw(_) => return false,
+        }
+    }
+}
+
+/// Walk `value` alongside what the parse made of each node, naming the unsatisfiable ones by pointer.
+fn collect_unsatisfiable_pointers(
+    value: &Value,
+    pointer: &mut String,
+    parsed: &parse::ParseOutput,
+    out: &mut HashSet<String>,
+) {
+    let empty = match parsed.parsed_nodes.get(&std::ptr::from_ref(value)) {
+        Some(parse::ParsedNode::Unsatisfiable) => true,
+        Some(parse::ParsedNode::Reference(key)) => names_unsatisfiable_body(parsed, key),
+        None => false,
+    };
+    if empty {
+        out.insert(pointer.clone());
+    }
+    let restore = pointer.len();
+    match value {
+        Value::Object(map) => {
+            for (key, child) in map {
+                pointer.push('/');
+                referencing::write_escaped_str(pointer, key);
+                collect_unsatisfiable_pointers(child, pointer, parsed, out);
+                pointer.truncate(restore);
+            }
+        }
+        Value::Array(items) => {
+            for (index, child) in items.iter().enumerate() {
+                use std::fmt::Write;
+                let _ = write!(pointer, "/{index}");
+                collect_unsatisfiable_pointers(child, pointer, parsed, out);
+                pointer.truncate(restore);
+            }
+        }
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
 }

@@ -37,6 +37,10 @@ pub(crate) struct ParseOutput {
     /// outside it. Only these may be renamed apart when two documents are merged: two documents
     /// binding one *external* resource to different bodies disagree about the resource itself.
     pub(crate) local_definitions: BTreeSet<Arc<str>>,
+    /// What this parse made of each document node it reduced, for the nodes that can be unsatisfiable.
+    pub(crate) parsed_nodes: AHashMap<*const Value, ParsedNode>,
+    /// The same for each definition body, kept whether or not the final IR still reads it.
+    pub(crate) parsed_definitions: AHashMap<Arc<str>, ParsedNode>,
 }
 
 /// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
@@ -54,6 +58,12 @@ pub(crate) fn parse<'a>(
         &Assumptions::default(),
         Pruning::Prune,
     )
+}
+
+/// What a parse made of one document node: unsatisfiable outright, or a pointer to another node.
+pub(crate) enum ParsedNode {
+    Unsatisfiable,
+    Reference(Arc<str>),
 }
 
 /// Targets a parse resolves to a fixed body rather than to a symbolic `Reference`.
@@ -191,6 +201,7 @@ fn parse_once<'a>(
             needs_dynamic_scope: state.dynamic_scope.needs_tracking(),
         });
     };
+    state.note_parsed_node(value, Some(&root));
     let needs_dynamic_scope = state.dynamic_scope.needs_tracking();
     if pruning == Pruning::Prune {
         prune_unreachable_definitions(&root, &mut state.definitions);
@@ -202,6 +213,8 @@ fn parse_once<'a>(
             definitions: state.definitions,
             has_references: state.facts.has_references,
             pending_choices: state.facts.pending_choices,
+            parsed_nodes: state.parsed_nodes,
+            parsed_definitions: state.parsed_definitions,
         }),
         needs_dynamic_scope,
     })
@@ -220,6 +233,10 @@ struct ParseState<'a> {
     /// Empty on every parse outside the definition fixpoint.
     assumptions: &'a Assumptions,
     dynamic_scope: DynamicScope,
+    /// Entries for [`ParseOutput::parsed_nodes`].
+    parsed_nodes: AHashMap<*const Value, ParsedNode>,
+    /// Entries for [`ParseOutput::parsed_definitions`].
+    parsed_definitions: AHashMap<Arc<str>, ParsedNode>,
 }
 
 /// Flags set anywhere in the document and read after the whole parse.
@@ -277,6 +294,8 @@ impl<'a> ParseState<'a> {
             sources: AHashMap::default(),
             assumptions,
             dynamic_scope: DynamicScope::Tracked,
+            parsed_nodes: AHashMap::default(),
+            parsed_definitions: AHashMap::default(),
         }
     }
 
@@ -289,6 +308,64 @@ impl<'a> ParseState<'a> {
     fn assumes_admits_all(&self, key: &str) -> bool {
         self.assumptions.admits_all.contains(key)
     }
+
+    /// Remember what `value` reduced to, when that decides whether it is unsatisfiable.
+    ///
+    /// A rewritten schema parsed elsewhere is dropped before anything reads this, and a dead
+    /// allocation cannot share an address with a node the document still holds - so an identity
+    /// recorded for one never answers for a document node.
+    fn note_parsed_node(&mut self, value: &Value, parsed: Option<&Schema>) {
+        let entry = match parsed.map(Schema::kind) {
+            Some(SchemaKind::False) => ParsedNode::Unsatisfiable,
+            // A pointer and the body it names accept the same values, and a body proven empty only
+            // after this node was reduced still empties it.
+            Some(SchemaKind::Reference(key)) => ParsedNode::Reference(Arc::clone(key)),
+            None
+            | Some(
+                SchemaKind::MultiType(_)
+                | SchemaKind::TypedGroup { .. }
+                | SchemaKind::String(_)
+                | SchemaKind::Integer(_)
+                | SchemaKind::Number(_)
+                | SchemaKind::Array(_)
+                | SchemaKind::Object(_)
+                | SchemaKind::Const(_)
+                | SchemaKind::Enum(_)
+                | SchemaKind::Not(_)
+                | SchemaKind::AllOf(_)
+                | SchemaKind::AnyOf(_)
+                | SchemaKind::OneOf(_)
+                | SchemaKind::True
+                | SchemaKind::Raw(_),
+            ) => return,
+        };
+        self.parsed_nodes
+            .insert(std::ptr::from_ref(value), entry);
+    }
+
+    /// Remember what the body `key` names reduced to.
+    fn note_parsed_definition(&mut self, key: &Arc<str>, parsed: &Schema) {
+        let entry = match parsed.kind() {
+            SchemaKind::False => ParsedNode::Unsatisfiable,
+            SchemaKind::Reference(names) => ParsedNode::Reference(Arc::clone(names)),
+            SchemaKind::MultiType(_)
+            | SchemaKind::TypedGroup { .. }
+            | SchemaKind::String(_)
+            | SchemaKind::Integer(_)
+            | SchemaKind::Number(_)
+            | SchemaKind::Array(_)
+            | SchemaKind::Object(_)
+            | SchemaKind::Const(_)
+            | SchemaKind::Enum(_)
+            | SchemaKind::Not(_)
+            | SchemaKind::AllOf(_)
+            | SchemaKind::AnyOf(_)
+            | SchemaKind::OneOf(_)
+            | SchemaKind::True
+            | SchemaKind::Raw(_) => return,
+        };
+        self.parsed_definitions.insert(Arc::clone(key), entry);
+    }
 }
 
 fn parse_schema<'a>(
@@ -299,7 +376,9 @@ fn parse_schema<'a>(
     state: &mut ParseState<'a>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(value))?;
-    parse_schema_in_scope(value, ctx, is_root, &resolver, state)
+    let parsed = parse_schema_in_scope(value, ctx, is_root, &resolver, state)?;
+    state.note_parsed_node(value, parsed.as_ref());
+    Ok(parsed)
 }
 
 /// The dynamic-scope facts a target's parse can observe, derived from its resolver: for each
@@ -2537,6 +2616,8 @@ fn ensure_definition<'a>(
     let Some(parsed) = parsed? else {
         return Ok(false);
     };
+    state.note_parsed_node(target, Some(&parsed));
+    state.note_parsed_definition(&key, &parsed);
     let previous = state.definitions.insert(key, parsed);
     debug_assert!(
         previous.is_none(),
