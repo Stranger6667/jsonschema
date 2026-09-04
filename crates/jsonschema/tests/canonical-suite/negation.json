@@ -4769,5 +4769,38 @@
       {"data": {}, "valid": false},
       {"data": {"abc": 1}, "valid": false}
     ]
+  },
+  {
+    "description": "a negated pattern map beside named keys and additionalProperties keeps additionalProperties off the named keys",
+    "schema": {
+      "not": {
+        "type": "object",
+        "properties": {"a": {"type": "integer"}},
+        "patternProperties": {"b$": {"type": "null"}},
+        "additionalProperties": {"type": "null"}
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {
+          "type": "object",
+          "required": ["a"],
+          "properties": {"a": {"anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "number", "not": {"multipleOf": 1}}]}}
+        },
+        {"not": {"type": "object", "properties": {"a": true}, "patternProperties": {"b$": {"type": "null"}}, "additionalProperties": {"type": "null"}}}
+      ]
+    },
+    "tests": [
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": "s"}, "valid": true},
+      {"data": {"ab": null}, "valid": false},
+      {"data": {"ab": 1}, "valid": true},
+      {"data": {"c": null}, "valid": false},
+      {"data": {"c": 1}, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": 1, "valid": true}
+    ]
   }
 ]

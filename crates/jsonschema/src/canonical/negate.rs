@@ -957,11 +957,16 @@ fn negate_object_leaf(
         }
     }
     // A key matching a pattern with a violating value has no facet, so the pattern facet and the
-    // shield whose reach the patterns bound stay under `not`. Nothing in them is resolved, so the
-    // walk's mode does not matter.
+    // shield whose reach the patterns bound stay under `not`, beside the named keys the shield
+    // never reaches. Nothing in them is resolved, so the walk's mode does not matter.
     if !leaf.pattern_properties.is_empty() {
         branches.push(Schema::new(SchemaKind::Not(algebra::object_leaf(
             ObjectLeaf {
+                properties: leaf
+                    .properties
+                    .keys()
+                    .map(|name| (name.clone(), Schema::truthy()))
+                    .collect(),
                 pattern_properties: leaf.pattern_properties.clone(),
                 additional: leaf.additional.clone(),
                 ..ObjectLeaf::default()

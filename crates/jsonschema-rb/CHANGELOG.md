@@ -11,6 +11,10 @@
 - Canonicalization of `unevaluated*` beside `dependentSchemas` or `if`/`then`/`else`, which kept the document `Raw`.
 - Canonicalization of `not` over `patternProperties`, which kept the document `Raw`.
 
+### Fixed
+
+- Canonicalization of `not` over an object with `properties`, `patternProperties` and `additionalProperties`, which applied `additionalProperties` to the keys listed in `properties`.
+
 ## [0.53.0] - 2026-09-02
 
 ### Fixed
