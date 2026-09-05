@@ -1274,6 +1274,10 @@ pub(crate) fn array_shape_fusion<F: Json>(
     }
     for key in ["minItems", "maxItems"] {
         if let Some(value) = parent.get(key) {
+            // A custom keyword owns the bound; the fused validator must not check it too.
+            if ctx.get_keyword_factory(key).is_some() {
+                return false;
+            }
             if accepts_item_count(ctx, value).is_none() {
                 return false;
             }
@@ -1439,6 +1443,33 @@ mod tests {
     fn array_shape_invalid_length_keeps_error() {
         let schema = json!({"type": "array", "minItems": 1.5, "items": {"type": "number"}});
         assert!(crate::validator_for(&schema).is_err());
+    }
+
+    #[test]
+    fn array_shape_yields_to_custom_length_keyword() {
+        struct Accept;
+
+        impl<'i> crate::Keyword<'i> for Accept {
+            fn validate(&self, _: &'i Value) -> Result<(), crate::ValidationError<'i>> {
+                Ok(())
+            }
+
+            fn is_valid(&self, _: &'i Value) -> bool {
+                true
+            }
+        }
+
+        let schema = json!({"type": "array", "minItems": 3, "items": {"type": "number"}});
+        let validator = crate::options()
+            .with_keyword("minItems", |_, _, _| Ok(Box::new(Accept)))
+            .build(&schema)
+            .unwrap();
+
+        // The custom keyword owns `minItems`; the built-in bound must not also reject.
+        assert!(validator.is_valid(&json!([1])));
+        assert_eq!(validator.iter_errors(&json!([1])).count(), 0);
+        // `type` and `items` still apply.
+        assert!(!validator.is_valid(&json!([1, "x"])));
     }
 
     #[test]
