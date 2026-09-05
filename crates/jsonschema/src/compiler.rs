@@ -431,6 +431,10 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory<F>>> {
         self.config.get_keyword_factory(name)
     }
+    /// Whether a custom keyword takes over this keyword.
+    pub(crate) fn is_keyword_overridden(&self, name: &str) -> bool {
+        self.get_keyword_factory(name).is_some()
+    }
     pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
         self.config.get_format(format)
     }

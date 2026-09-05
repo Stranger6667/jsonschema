@@ -1805,7 +1805,10 @@ pub(crate) fn compile<'a, F: Json>(
             Value::Bool(false) => {
                 if let Some(properties) = properties {
                     // Check if we can use fused validator with required
-                    if let Some(Value::Array(required)) = parent.get("required") {
+                    if let Some(Value::Array(required)) = parent
+                        .get("required")
+                        .filter(|_| !ctx.is_keyword_overridden("required"))
+                    {
                         if required.len() == 1 {
                             if let Some(Value::String(req)) = required.first() {
                                 if let Value::Object(map) = properties {

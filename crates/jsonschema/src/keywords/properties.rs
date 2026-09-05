@@ -563,9 +563,22 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
 
 /// Check if we can use fused properties+required validator.
 /// Conditions: properties < threshold, required: [2 strings], no patternProperties.
-fn extract_required2(parent: &Map<String, Value>) -> Option<(String, String)> {
+fn extract_required2<F: Json>(
+    ctx: &compiler::Context<F>,
+    parent: &Map<String, Value>,
+) -> Option<(String, String)> {
     // No patternProperties (uses separate validator paths)
     if parent.contains_key("patternProperties") {
+        return None;
+    }
+    if ctx.is_keyword_overridden("required") {
+        return None;
+    }
+    // `required::compile` keeps its own validator once `additionalProperties` takes this shape
+    if matches!(
+        parent.get("additionalProperties"),
+        Some(Value::Bool(false) | Value::Object(_))
+    ) {
         return None;
     }
     if let Some(Value::Array(items)) = parent.get("required") {
@@ -588,12 +601,16 @@ pub(crate) fn compile<'a, F: Json>(
 ) -> Option<CompilationResult<'a, F>> {
     match parent.get("additionalProperties") {
         // This type of `additionalProperties` validator handles `properties` logic
-        Some(Value::Bool(false) | Value::Object(_)) => None,
+        Some(Value::Bool(false) | Value::Object(_))
+            if !ctx.is_keyword_overridden("additionalProperties") =>
+        {
+            None
+        }
         _ => {
             if let Value::Object(map) = schema {
                 if map.len() < HASHMAP_THRESHOLD {
                     // Try fused validator for properties + required: [2 items]
-                    if let Some((first, second)) = extract_required2(parent) {
+                    if let Some((first, second)) = extract_required2(ctx, parent) {
                         Some(SmallPropertiesWithRequired2Validator::compile(
                             ctx, map, first, second,
                         ))

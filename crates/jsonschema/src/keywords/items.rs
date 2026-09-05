@@ -1272,10 +1272,14 @@ pub(crate) fn array_shape_fusion<F: Json>(
             return false;
         }
     }
+    for key in ["type", "items"] {
+        if ctx.is_keyword_overridden(key) {
+            return false;
+        }
+    }
     for key in ["minItems", "maxItems"] {
         if let Some(value) = parent.get(key) {
-            // A custom keyword owns the bound; the fused validator must not check it too.
-            if ctx.get_keyword_factory(key).is_some() {
+            if ctx.is_keyword_overridden(key) {
                 return false;
             }
             if accepts_item_count(ctx, value).is_none() {
