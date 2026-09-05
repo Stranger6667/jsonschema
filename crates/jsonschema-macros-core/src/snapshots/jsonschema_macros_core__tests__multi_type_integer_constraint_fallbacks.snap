@@ -4,9 +4,7 @@ description: "{\"minimum\":0,\"type\":[\"integer\",\"string\",\"boolean\",\"null
 expression: is_valid_body(schema)
 ---
 match instance {
-            __Value::Number(n) if __types::is_integer(n) => {
-                jsonschema::__private::numeric::ge(n, 0u64)
-            }
+            __Value::Number(n) if __types::is_integer(n) => __num::ge(n, 0u64),
             __Value::String(_)
             | __Value::Array(_)
             | __Value::Object(_)

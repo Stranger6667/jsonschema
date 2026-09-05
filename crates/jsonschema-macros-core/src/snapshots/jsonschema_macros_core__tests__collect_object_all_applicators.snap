@@ -6,9 +6,7 @@ expression: collect_body(schema)
 match instance {
             __Value::Object(obj) => {
                 for key in obj.keys() {
-                    let __key_val: serde_json::Value = serde_json::Value::String(
-                        key.clone(),
-                    );
+                    let __key_val: __sj::Value = __sj::Value::String(key.clone());
                     let mut __key_errors: Vec<__VE<'_>> = Vec::new();
                     {
                         let s = key;

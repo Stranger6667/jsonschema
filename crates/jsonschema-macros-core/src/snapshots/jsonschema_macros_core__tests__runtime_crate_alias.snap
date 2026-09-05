@@ -16,15 +16,25 @@ struct Validator;
 mod __validator_impl {
     use super::*;
     use ::js as jsonschema;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
     use jsonschema::__private::error as __err;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
     use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
     use jsonschema::paths as __paths;
     use jsonschema::JsonType as __JT;
     use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
     use jsonschema::ValidationError as __VE;
-    use serde_json::Value as __Value;
+    use __sj::Value as __Value;
     use std::sync::LazyLock as __Lazy;
-    type __Map = serde_json::Map<String, __Value>;
+    type __Map = __sj::Map<String, __Value>;
     pub(super) fn is_valid(instance: &__Value) -> bool {
         match instance {
             __Value::String(s) => !s.is_empty(),
@@ -78,28 +88,35 @@ mod __validator_impl {
             }
         }
     }
-}
-impl Validator {
-    pub fn is_valid(instance: &serde_json::Value) -> bool {
-        __validator_impl::is_valid(instance)
+    pub(super) fn entry_is_valid(instance: &__Value) -> bool {
+        is_valid(instance)
     }
-    pub fn validate<'__i>(
-        instance: &'__i serde_json::Value,
-    ) -> ::std::result::Result<(), ::js::ValidationError<'__i>> {
-        match __validator_impl::validate(instance, &::js::paths::LazyLocation::new()) {
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Value,
+    ) -> ::std::result::Result<(), __VE<'__i>> {
+        match validate(instance, &__paths::LazyLocation::new()) {
             Some(e) => Err(e),
             None => Ok(()),
         }
     }
-    pub fn iter_errors<'__i>(
-        instance: &'__i serde_json::Value,
-    ) -> ::js::ErrorIterator<'__i> {
+    pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
         let mut errors = Vec::new();
-        __validator_impl::collect_errors(
-            instance,
-            &::js::paths::LazyLocation::new(),
-            &mut errors,
-        );
-        ::js::__private::error::iterator_from(errors)
+        collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
+        __err::iterator_from(errors)
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &::js::__private::serde_json::Value) -> bool {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i ::js::__private::serde_json::Value,
+    ) -> ::std::result::Result<(), ::js::ValidationError<'__i>> {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i ::js::__private::serde_json::Value,
+    ) -> ::js::ErrorIterator<'__i> {
+        __validator_impl::entry_iter_errors(instance)
     }
 }

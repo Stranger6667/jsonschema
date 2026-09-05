@@ -137,12 +137,12 @@ fn compile_equal_bounds<E: ValueEmitter>(
 
 fn equal_bound_check(value: &Value) -> TokenStream {
     if let Some(unsigned) = value.as_u64() {
-        quote! { jsonschema::__private::numeric::eq(n, #unsigned) }
+        quote! { __num::eq(n, #unsigned) }
     } else {
         let signed = value
             .as_i64()
             .expect("equal-bounds fold is restricted to integer limits");
-        quote! { jsonschema::__private::numeric::eq(n, #signed) }
+        quote! { __num::eq(n, #signed) }
     }
 }
 
@@ -197,15 +197,15 @@ fn compile_bound<E: ValueEmitter>(
 /// Build an expression evaluating to the limit as a `serde_json::Value`.
 fn build_limit_value_expr(value: &Value, value_json: &str) -> TokenStream {
     if let Some(unsigned) = value.as_u64() {
-        quote! { serde_json::Value::Number(serde_json::Number::from(#unsigned)) }
+        quote! { __sj::Value::Number(__sj::Number::from(#unsigned)) }
     } else if let Some(signed) = value.as_i64() {
-        quote! { serde_json::Value::Number(serde_json::Number::from(#signed)) }
+        quote! { __sj::Value::Number(__sj::Number::from(#signed)) }
     } else {
         // Float or arbitrary-precision: use LazyLock to parse at runtime.
         quote! {
             {
-                static LIMIT: __Lazy<serde_json::Value> =
-                    __Lazy::new(|| serde_json::from_str(#value_json).expect("limit"));
+                static LIMIT: __Lazy<__sj::Value> =
+                    __Lazy::new(|| __sj::from_str(#value_json).expect("limit"));
                 LIMIT.clone()
             }
         }

@@ -9,24 +9,24 @@ use super::super::{errors::invalid_schema_type_expression, CompileContext, Compi
 fn builtin_encoding_fns(name: &str) -> Option<(TokenStream, TokenStream)> {
     let fns = match name {
         "base64" => (
-            quote! { jsonschema::__private::content::is_base64 },
-            quote! { jsonschema::__private::content::from_base64 },
+            quote! { __content::is_base64 },
+            quote! { __content::from_base64 },
         ),
         "base64url" => (
-            quote! { jsonschema::__private::content::is_base64url },
-            quote! { jsonschema::__private::content::from_base64url },
+            quote! { __content::is_base64url },
+            quote! { __content::from_base64url },
         ),
         "base32" => (
-            quote! { jsonschema::__private::content::is_base32 },
-            quote! { jsonschema::__private::content::from_base32 },
+            quote! { __content::is_base32 },
+            quote! { __content::from_base32 },
         ),
         "base32hex" => (
-            quote! { jsonschema::__private::content::is_base32hex },
-            quote! { jsonschema::__private::content::from_base32hex },
+            quote! { __content::is_base32hex },
+            quote! { __content::from_base32hex },
         ),
         "base16" => (
-            quote! { jsonschema::__private::content::is_base16 },
-            quote! { jsonschema::__private::content::from_base16 },
+            quote! { __content::is_base16 },
+            quote! { __content::from_base16 },
         ),
         _ => return None,
     };
@@ -52,7 +52,7 @@ fn resolve_media_type<E: ValueEmitter>(
     if let Some(check) = ctx.config.content_media_types.get(name) {
         return Some(check.clone());
     }
-    (name == "application/json").then(|| quote! { jsonschema::__private::content::is_json })
+    (name == "application/json").then(|| quote! { __content::is_json })
 }
 
 pub(crate) fn compile<E: ValueEmitter>(

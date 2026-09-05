@@ -26,18 +26,16 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         }
         Value::Number(expected) => {
             let num_json = expected.to_string();
-            let number_arm = E::match_number_arm(
-                quote! { jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED) },
-            );
+            let number_arm = E::match_number_arm(quote! { __cmp::equal_numbers(n, &*EXPECTED) });
             let number_match = E::type_match(
                 format_ident!("instance"),
                 vec![number_arm, quote! { _ => false, }],
             );
             quote! {
                 {
-                    static EXPECTED: __Lazy<serde_json::Number> =
+                    static EXPECTED: __Lazy<__sj::Number> =
                         __Lazy::new(|| {
-                            serde_json::from_str(#num_json)
+                            __sj::from_str(#num_json)
                                 .expect("Failed to parse const number")
                         });
                     #number_match
@@ -48,9 +46,9 @@ pub(in super::super) fn compile<E: ValueEmitter>(
             let equals = E::instance_equals_value(quote! { &*EXPECTED });
             quote! {
                 {
-                    static EXPECTED: __Lazy<serde_json::Value> =
+                    static EXPECTED: __Lazy<__sj::Value> =
                         __Lazy::new(|| {
-                            serde_json::from_str(#const_json)
+                            __sj::from_str(#const_json)
                                 .expect("Failed to parse const value")
                         });
                     #equals
@@ -63,9 +61,9 @@ pub(in super::super) fn compile<E: ValueEmitter>(
     // `serde_json::Value` on the error path.
     let validate_block = quote! {
         if !(#is_valid) {
-            static CONST_EXPECTED: __Lazy<serde_json::Value> =
+            static CONST_EXPECTED: __Lazy<__sj::Value> =
                 __Lazy::new(|| {
-                    serde_json::from_str(#const_json).expect("Failed to parse const value")
+                    __sj::from_str(#const_json).expect("Failed to parse const value")
                 });
             return Some(__err::constant(
                 #schema_path, __path.into(), #err_instance, CONST_EXPECTED.clone(),

@@ -9,17 +9,11 @@ expression: is_valid_body(schema)
         })
             && (match instance {
                 __Value::Number(_) => {
-                    static NUMBER_VARIANTS: __Lazy<Vec<serde_json::Value>> = __Lazy::new(||
-                    {
-                        serde_json::from_str::<Vec<serde_json::Value>>("[1.5]")
+                    static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(|| {
+                        __sj::from_str::<Vec<__sj::Value>>("[1.5]")
                             .expect("Failed to parse number variants")
                     });
-                    NUMBER_VARIANTS
-                        .iter()
-                        .any(|variant| jsonschema::__private::cmp::equal(
-                            variant,
-                            instance,
-                        ))
+                    NUMBER_VARIANTS.iter().any(|variant| __cmp::equal(variant, instance))
                 }
                 _ => false,
             })

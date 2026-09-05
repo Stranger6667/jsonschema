@@ -1,6 +1,5 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 668
 description: "{\"if\":{\"type\":\"integer\"},\"then\":{\"minimum\":10,\"multipleOf\":3}}"
 expression: collect_body(schema)
 ---
@@ -10,28 +9,25 @@ if match instance {
         } {
             match instance {
                 __Value::Number(n) => {
-                    if !(jsonschema::__private::numeric::ge(n, 10u64)) {
+                    if !(__num::ge(n, 10u64)) {
                         __errors
                             .push(
                                 __err::minimum(
                                     "/then/minimum",
                                     __path.into(),
                                     instance,
-                                    serde_json::Value::Number(serde_json::Number::from(10u64)),
+                                    __sj::Value::Number(__sj::Number::from(10u64)),
                                 ),
                             );
                     }
-                    if !(jsonschema::__private::numeric::is_multiple_of_integer(
-                        n,
-                        3f64,
-                    )) {
+                    if !(__num::is_multiple_of_integer(n, 3f64)) {
                         __errors
                             .push(
                                 __err::multiple_of(
                                     "/then/multipleOf",
                                     __path.into(),
                                     instance,
-                                    serde_json::Value::Number(serde_json::Number::from(3u64)),
+                                    __sj::Value::Number(__sj::Number::from(3u64)),
                                 ),
                             );
                     }

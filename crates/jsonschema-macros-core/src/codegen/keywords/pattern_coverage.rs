@@ -52,7 +52,7 @@ pub(super) fn build_pattern_coverage<E: ValueEmitter>(
             }
             Some(jsonschema_regex::PatternAnalysis::Alternation(alts)) => literals.extend(alts),
             Some(jsonschema_regex::PatternAnalysis::NoWhitespace) => predicates.push(quote! {
-                !key_str.chars().any(jsonschema::__private::regex::is_ecma_whitespace)
+                !key_str.chars().any(__re::is_ecma_whitespace)
             }),
             None => {
                 let regex = translate_and_validate_regex(ctx, "patternProperties", pattern)?;

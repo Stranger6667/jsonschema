@@ -3342,6 +3342,8 @@ pub mod draft202012 {
 #[cfg(feature = "macros")]
 #[doc(hidden)]
 pub mod __private {
+    pub use ::serde_json;
+
     pub mod fancy_regex {
         pub use fancy_regex::{Regex, RegexBuilder};
     }

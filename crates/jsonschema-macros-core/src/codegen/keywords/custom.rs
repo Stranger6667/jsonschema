@@ -25,15 +25,15 @@ pub(crate) fn compile<E: ValueEmitter>(
     let lazy = quote! {
         static #static_ident: __Lazy<Box<dyn for<'i> jsonschema::Keyword<'i>>> =
             __Lazy::new(|| {
-                let parent: serde_json::Value = serde_json::from_str(#parent_json)
+                let parent: __sj::Value = __sj::from_str(#parent_json)
                     .expect("Failed to parse parent schema");
                 let parent = parent.as_object().expect("parent schema is an object");
-                let value: serde_json::Value = serde_json::from_str(#value_json)
+                let value: __sj::Value = __sj::from_str(#value_json)
                     .expect("Failed to parse keyword value");
                 match #factory_path(
                     parent,
                     &value,
-                    jsonschema::__private::custom::location(#schema_path),
+                    __custom::location(#schema_path),
                 ) {
                     Ok(keyword) => keyword,
                     Err(error) => {
@@ -52,7 +52,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         },
         quote! {
             #lazy
-            if let Some(__err) = jsonschema::__private::custom::validate(
+            if let Some(__err) = __custom::validate(
                 &**#static_ident,
                 instance,
                 __path.into(),
@@ -65,7 +65,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         quote! {
             #lazy
             let __custom_path: __paths::Location = __path.into();
-            jsonschema::__private::custom::collect_errors(
+            __custom::collect_errors(
                 &**#static_ident,
                 instance,
                 &__custom_path,

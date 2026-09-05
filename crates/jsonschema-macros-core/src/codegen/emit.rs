@@ -58,8 +58,11 @@ pub(crate) trait ValueEmitter {
     fn object_values_iter(object_expr: impl ToTokens) -> TokenStream;
     fn array_iter_ref(array_expr: impl ToTokens) -> TokenStream;
     fn public_value_ty(runtime_crate: &TokenStream, lifetime: impl ToTokens) -> TokenStream;
-    /// The `is_valid`/`validate`/`iter_errors` methods on the validator struct. A representation
-    /// that records unreadable values out of band wraps each one and returns them.
+    /// The bodies behind the validator struct's methods, emitted inside the aliased module. A
+    /// representation that records unreadable values out of band wraps each one and returns them.
+    fn entry_bodies() -> TokenStream;
+    /// The `is_valid`/`validate`/`iter_errors` methods on the validator struct, delegating to
+    /// [`ValueEmitter::entry_bodies`].
     fn entry_points(impl_mod_name: &Ident, runtime_crate: &TokenStream) -> TokenStream;
     fn declare_key(key: &str) -> TokenStream;
     fn key_to_owned(key_expr: impl ToTokens) -> TokenStream;
