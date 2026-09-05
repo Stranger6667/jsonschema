@@ -14,6 +14,7 @@
 
 ### Performance
 
+- A `pattern` of `^\S*$` scans bytes instead of decoding every character.
 - Canonicalization cloning leaves per intersection and the definition map per settled target.
 
 ### Fixed

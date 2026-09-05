@@ -63,7 +63,7 @@ Not all libraries support the same compile-once, validate-many pattern, which af
 | CITM Catalog     | - (1)                          | 17.62 ms (**x23.34**)          | 70.06 ms (**x92.82**)          | 754.81 µs     |
 | Fast (Valid)     | - (1)                          | 66.49 µs (**x277.43**)         | 30.03 µs (**x125.30**)         | 239.67 ns     |
 | Fast (Invalid)   | - (1)                          | - (3)                          | 30.59 µs (**x516.18**)         | 59.26 ns      |
-| FHIR             | 437.54 ms (**x66979.36**)      | 2.10 s (**x320719.22**)        | 8.41 ms (**x1287.26**)         | 6.53 µs       |
+| FHIR             | 437.54 ms (**x78738.64**)      | 2.10 s (**x377910.90**)        | 8.41 ms (**x1513.44**)         | 5.56 µs       |
 | Recursive        | - (1)                          | 3.05 ms (**x238.10**)          | 21.44 s (**x1673140.33**)      | 12.82 µs      |
 
 Notes:

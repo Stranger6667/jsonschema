@@ -8,7 +8,7 @@ use crate::{
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
     regex::{
-        analyze_pattern, is_ecma_whitespace, PatternOptimization, RegexEngine, RegexError,
+        analyze_pattern, contains_ecma_whitespace, PatternOptimization, RegexEngine, RegexError,
         RegexFailureReason,
     },
     types::JsonType,
@@ -146,7 +146,7 @@ pub(crate) struct NoWhitespacePatternValidator {
 impl<F: Json> Validate<F> for NoWhitespacePatternValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
-            !item.chars().any(is_ecma_whitespace)
+            !contains_ecma_whitespace(&item)
         } else {
             true
         }
@@ -160,7 +160,7 @@ impl<F: Json> Validate<F> for NoWhitespacePatternValidator {
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Some(item) = instance.as_string() {
-            if item.chars().any(is_ecma_whitespace) {
+            if contains_ecma_whitespace(&item) {
                 return Err(ValidationError::pattern(
                     self.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.location),

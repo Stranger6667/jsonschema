@@ -103,7 +103,7 @@ pub(crate) fn key_match_expr<E: ValueEmitter>(
             Ok(quote! { matches!(#key_as_str, #(#alts)|*) })
         }
         Some(jsonschema_regex::PatternAnalysis::NoWhitespace) => {
-            Ok(quote! { !#key_as_str.chars().any(__re::is_ecma_whitespace) })
+            Ok(quote! { !__re::contains_ecma_whitespace(#key_as_str) })
         }
         None => match translate_and_validate_regex(ctx, "patternProperties", pattern) {
             Ok(translated) => {

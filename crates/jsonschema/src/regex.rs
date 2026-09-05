@@ -106,7 +106,7 @@ impl RegexEngine for LiteralMatcher {
             Self::Alternation { alternatives } => {
                 Ok(alternatives.iter().any(|a| a.as_str() == text))
             }
-            Self::NoWhitespace => Ok(!text.chars().any(is_ecma_whitespace)),
+            Self::NoWhitespace => Ok(!contains_ecma_whitespace(text)),
         }
     }
 }
@@ -124,7 +124,7 @@ pub(crate) enum PatternOptimization {
     NoWhitespace,
 }
 
-pub(crate) use jsonschema_regex::is_ecma_whitespace;
+pub(crate) use jsonschema_regex::contains_ecma_whitespace;
 
 /// Build a fancy-regex matcher, applying engine limits; `Err(())` on a rejected pattern.
 pub(crate) fn build_fancy_regex(

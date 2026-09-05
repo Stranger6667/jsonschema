@@ -214,6 +214,24 @@ pub fn is_ecma_whitespace(c: char) -> bool {
     )
 }
 
+/// Whether `input` holds any character `\s` matches.
+///
+/// All-ASCII input is scanned as bytes, which vectorizes; anything else is decoded, as before.
+/// `is_ascii` stops at the first non-ASCII byte, so input taking the decode path pays little for
+/// the check.
+#[must_use]
+#[inline]
+pub fn contains_ecma_whitespace(input: &str) -> bool {
+    if input.is_ascii() {
+        input
+            .as_bytes()
+            .iter()
+            .any(|byte| matches!(byte, b'\t' | b'\n' | 0x0b | 0x0c | b'\r' | b' '))
+    } else {
+        input.chars().any(is_ecma_whitespace)
+    }
+}
+
 /// Maps a backslash escape to its literal character, or `None` if the escape requires a regex engine.
 fn safe_escape(escaped: char) -> Option<char> {
     matches!(escaped, '/' | '-' | '_' | '$' | '.').then_some(escaped)
@@ -549,5 +567,100 @@ mod tests {
     #[test_case("((a{64}){64}){64}"; "nested repetitions multiplying past the length cap")]
     fn test_pattern_without_a_witness(pattern: &str) {
         assert_eq!(pattern_witness(pattern), None);
+    }
+    #[test_case("" ; "empty")]
+    #[test_case("plain" ; "ascii without whitespace")]
+    #[test_case("\u{00e9}t\u{00e9}" ; "non-ascii without whitespace")]
+    #[test_case("\u{4e2d}\u{6587}" ; "multi byte without whitespace")]
+    fn no_whitespace(input: &str) {
+        assert!(!contains_ecma_whitespace(input));
+    }
+
+    #[test_case(" " ; "space")]
+    #[test_case("a\tb" ; "tab")]
+    #[test_case("a\nb" ; "newline")]
+    #[test_case("a\u{000b}b" ; "vertical tab")]
+    #[test_case("a\u{000c}b" ; "form feed")]
+    #[test_case("a\rb" ; "carriage return")]
+    #[test_case("a\u{00a0}b" ; "no break space")]
+    #[test_case("a\u{1680}b" ; "ogham space mark")]
+    #[test_case("a\u{2000}b" ; "en quad")]
+    #[test_case("a\u{200a}b" ; "hair space")]
+    #[test_case("a\u{2028}b" ; "line separator")]
+    #[test_case("a\u{2029}b" ; "paragraph separator")]
+    #[test_case("a\u{202f}b" ; "narrow no break space")]
+    #[test_case("a\u{205f}b" ; "medium mathematical space")]
+    #[test_case("a\u{3000}b" ; "ideographic space")]
+    #[test_case("a\u{feff}b" ; "zero width no break space")]
+    fn has_whitespace(input: &str) {
+        assert!(contains_ecma_whitespace(input));
+    }
+
+    // A byte scan must not mistake a continuation byte for whitespace.
+    #[test_case("\u{0a20}" ; "leading byte matches newline value")]
+    #[test_case("\u{2820}" ; "continuation byte matches space value")]
+    fn multi_byte_is_not_whitespace(input: &str) {
+        assert!(!contains_ecma_whitespace(input));
+        assert_eq!(
+            contains_ecma_whitespace(input),
+            input.chars().any(is_ecma_whitespace)
+        );
+    }
+    // The byte scan must agree with a decode for every character there is.
+    #[test]
+    fn agrees_with_decoding_on_every_scalar_value() {
+        let mut buffer = [0_u8; 4];
+        for value in 0..=0x0010_FFFF_u32 {
+            let Some(c) = char::from_u32(value) else {
+                continue;
+            };
+            let text = c.encode_utf8(&mut buffer);
+            assert_eq!(
+                contains_ecma_whitespace(text),
+                text.chars().any(is_ecma_whitespace),
+                "{c:?} (U+{value:04X})"
+            );
+        }
+    }
+
+    // Bytes of a multi-byte encoding are all >= 0x80, so no combination can spell an ASCII
+    // whitespace byte; these sequences check that directly.
+    #[test]
+    fn agrees_with_decoding_on_mixed_sequences() {
+        let alphabet = [
+            'a',
+            ' ',
+            '\t',
+            '\n',
+            '\r',
+            '\u{000b}',
+            '\u{000c}',
+            '\u{00a0}',
+            '\u{0a20}',
+            '\u{2820}',
+            '\u{2000}',
+            '\u{200a}',
+            '\u{2028}',
+            '\u{3000}',
+            '\u{feff}',
+            '\u{4e2d}',
+            '\u{10348}',
+        ];
+        let mut text = String::new();
+        for first in alphabet {
+            for second in alphabet {
+                for third in alphabet {
+                    text.clear();
+                    text.push(first);
+                    text.push(second);
+                    text.push(third);
+                    assert_eq!(
+                        contains_ecma_whitespace(&text),
+                        text.chars().any(is_ecma_whitespace),
+                        "{text:?}"
+                    );
+                }
+            }
+        }
     }
 }

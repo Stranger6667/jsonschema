@@ -4,6 +4,7 @@
 
 ### Performance
 
+- A `pattern` of `^\S*$` scans bytes instead of decoding every character.
 - Faster validating objects against object-heavy schemas.
 - Canonicalization cloning leaves per intersection and the definition map per settled target.
 
