@@ -486,7 +486,12 @@ pub(crate) fn compile<'a, F: Json>(
 
         // Case 1: properties + additionalProperties: false + required: [1 item], no patternProperties
         // Handled by AdditionalPropertiesNotEmptyFalseWithRequired1Validator
-        if items.len() == 1 && additional_props_false && has_properties && !has_pattern_properties {
+        if items.len() == 1
+            && additional_props_false
+            && has_properties
+            && !has_pattern_properties
+            && !ctx.is_keyword_overridden("additionalProperties")
+        {
             return None;
         }
 
@@ -504,6 +509,7 @@ pub(crate) fn compile<'a, F: Json>(
             .is_some_and(|m| m.len() < HASHMAP_THRESHOLD);
         if items.len() == 2
             && has_properties
+            && !ctx.is_keyword_overridden("properties")
             && properties_below_threshold
             && !additional_props_false
             && !additional_props_is_schema

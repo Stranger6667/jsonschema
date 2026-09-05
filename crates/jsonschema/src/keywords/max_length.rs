@@ -70,6 +70,7 @@ pub(crate) fn compile<'a, F: Json>(
 ) -> Option<CompilationResult<'a, F>> {
     // a sibling `minLength` checks both bounds off one measurement
     if size_limit(ctx, schema).is_some()
+        && !ctx.is_keyword_overridden("minLength")
         && parent
             .get("minLength")
             .and_then(|min| size_limit(ctx, min))

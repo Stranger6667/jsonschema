@@ -149,7 +149,11 @@ pub(crate) fn compile<'a, F: Json>(
         return Some(Err(fail_on_non_positive_integer(schema, location)));
     };
     // `max_length::compile` steps aside when it sees this pair
-    if let Some(maximum) = parent.get("maxLength").and_then(|max| size_limit(ctx, max)) {
+    let maximum = parent
+        .get("maxLength")
+        .filter(|_| !ctx.is_keyword_overridden("maxLength"))
+        .and_then(|max| size_limit(ctx, max));
+    if let Some(maximum) = maximum {
         return Some(Ok(Box::new(LengthRangeValidator {
             minimum,
             maximum,

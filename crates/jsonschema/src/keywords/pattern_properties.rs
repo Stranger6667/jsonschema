@@ -212,7 +212,8 @@ pub(crate) fn compile<'a, F: Json>(
     if matches!(
         parent.get("additionalProperties"),
         Some(Value::Bool(false) | Value::Object(_))
-    ) {
+    ) && !ctx.is_keyword_overridden("additionalProperties")
+    {
         // This type of `additionalProperties` validator handles `patternProperties` logic
         return None;
     }
