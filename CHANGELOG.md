@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-09-06
+
 ### Added
 
 - `backend = SerdeJson` on `#[jsonschema::validator]`, generating a validator that reads `serde_json::Value`.
@@ -1781,7 +1783,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.53.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.54.0...HEAD
+[0.54.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.53.0...rust-v0.54.0
 [0.53.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.52.1...rust-v0.53.0
 [0.52.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.52.0...rust-v0.52.1
 [0.52.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.51.0...rust-v0.52.0
