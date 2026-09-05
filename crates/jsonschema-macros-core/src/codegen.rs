@@ -20,6 +20,8 @@ use errors::{invalid_schema_minimum_expression, invalid_schema_type_expression};
 mod dispatch;
 mod draft;
 pub(crate) mod emit;
+#[cfg(feature = "pyo3")]
+pub(crate) mod emit_pyo3;
 mod emit_root;
 pub(crate) mod emit_serde;
 mod errors;

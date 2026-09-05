@@ -66,8 +66,8 @@ def unencodable_string(value):
     return False
 
 
-def maybe_optional(draft, schema, instance, expected, description, filename, is_optional):
-    output = (filename, draft, schema, instance, expected, description, is_optional)
+def maybe_optional(draft, schema, instance, expected, description, filename, is_optional, case_id):
+    output = (filename, draft, schema, instance, expected, description, is_optional, case_id)
     if filename in NOT_SUPPORTED_CASES.get(draft, ()):
         output = pytest.param(*output, marks=pytest.mark.skip(reason=f"{filename} is not supported"))
     elif unencodable_string(instance):
@@ -75,21 +75,35 @@ def maybe_optional(draft, schema, instance, expected, description, filename, is_
     return output
 
 
+def suite_cases():
+    for draft in SUPPORTED_DRAFTS:
+        base = TEST_SUITE_PATH / f"tests/draft{draft}"
+        for path in sorted(base.rglob("*.json")):
+            relative = path.relative_to(base).as_posix()
+            for index, block in enumerate(load_file(path)):
+                # Matches the id the `pyo3_suite!` macro assigns to each compiled validator.
+                case_id = f"draft{draft}|{relative}|{index}"
+                for test in block["tests"]:
+                    yield maybe_optional(
+                        draft,
+                        block["schema"],
+                        test["data"],
+                        test["valid"],
+                        test["description"],
+                        path.name,
+                        "optional" in relative,
+                        case_id,
+                    )
+
+
 def pytest_generate_tests(metafunc):
-    cases = [
-        maybe_optional(
-            draft, block["schema"], test["data"], test["valid"], test["description"], filename, "optional" in str(root)
-        )
-        for draft in SUPPORTED_DRAFTS
-        for root, _, files in os.walk(TEST_SUITE_PATH / f"tests/draft{draft}/")
-        for filename in files
-        for block in load_file(os.path.join(root, filename))
-        for test in block["tests"]
-    ]
-    metafunc.parametrize("filename, draft, schema, instance, expected, description, is_optional", cases)
+    metafunc.parametrize(
+        "filename, draft, schema, instance, expected, description, is_optional, case_id",
+        list(suite_cases()),
+    )
 
 
-def test_draft(filename, draft, schema, instance, expected, description, is_optional):
+def test_draft(filename, draft, schema, instance, expected, description, is_optional, case_id):
     error_message = f"[{filename}] {description}: {schema} | {instance}"
     try:
         cls = {
@@ -123,3 +137,30 @@ def test_draft(filename, draft, schema, instance, expected, description, is_opti
         assert evaluation.flag()["valid"] is expected, f"evaluate mismatch: {error_message}"
     except ValueError:
         pytest.fail(error_message)
+
+
+# The `jsonschema-suite-pyo3` extension holds one macro-generated validator per suite case, so the
+# same instances run through the compile-time path a consumer builds their own wheel around.
+try:
+    import jsonschema_suite_pyo3 as codegen
+
+    COMPILED_CASES = frozenset(codegen.case_ids())
+except ImportError:
+    codegen = None
+    COMPILED_CASES = frozenset()
+
+
+def test_draft_codegen(filename, draft, schema, instance, expected, description, is_optional, case_id):
+    if codegen is None:
+        pytest.skip("jsonschema-suite-pyo3 is not built")
+    if case_id not in COMPILED_CASES:
+        pytest.skip(f"{draft} is outside JSONSCHEMA_SUITE_DRAFTS")
+    error_message = f"[{filename}] {description}: {schema} | {instance}"
+
+    assert codegen.is_valid(case_id, instance) is expected, f"is_valid mismatch: {error_message}"
+
+    error = codegen.validate(case_id, instance)
+    assert (error is None) is expected, f"validate mismatch: {error_message}"
+
+    errors = codegen.iter_errors(case_id, instance)
+    assert (errors == []) is expected, f"iter_errors mismatch: {error_message}"

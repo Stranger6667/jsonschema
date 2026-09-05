@@ -13,7 +13,7 @@ match instance {
                         .iter()
                         .all(|(__key, __value)| {
                             let key_str = __key.as_str();
-                            if !key_str.chars().any(__re::is_ecma_whitespace) {
+                            if !__re::contains_ecma_whitespace(key_str) {
                                 true
                             } else {
                                 false

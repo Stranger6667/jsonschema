@@ -1,0 +1,744 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+expression: "render_config_for::<crate::codegen::emit_pyo3::Pyo3Emitter>(&test_config(schema))"
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use jsonschema::__private::pyo3 as __py3;
+    use jsonschema::json as __json;
+    use jsonschema::json::{
+        Array as __ArrayExt, JsonNumber as __NumberExt, Node as __NodeExt,
+        Object as __ObjectExt,
+    };
+    use std::sync::LazyLock as __Lazy;
+    type __Json = __json::Pyo3;
+    type __Value<'py> = __py3::Borrowed<'py, 'py, __py3::PyAny>;
+    type __Bound<'py> = __py3::Bound<'py, __py3::PyAny>;
+    type __Map<'py> = <__Value<'py> as __NodeExt<'py, __Json>>::Object;
+    type __Array<'py> = <__Value<'py> as __NodeExt<'py, __Json>>::Array;
+    pub(super) fn is_valid(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                __ObjectExt::members(&obj)
+                    .all(|(key, instance)| {
+                        let key_str = (&*key);
+                        match key_str {
+                            "choice" => {
+                                match __NodeExt::json_type(&instance) {
+                                    __JT::String => {
+                                        match __NodeExt::as_string(&instance) {
+                                            Some(__text) => {
+                                                let s: &str = &__text;
+                                                (&*s) == "a"
+                                            }
+                                            None => Default::default(),
+                                        }
+                                    }
+                                    __JT::Number => {
+                                        static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                        {
+                                            __sj::from_str::<Vec<__sj::Value>>("[1]")
+                                                .expect("Failed to parse number variants")
+                                        });
+                                        NUMBER_VARIANTS
+                                            .iter()
+                                            .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                    }
+                                    __JT::Object => {
+                                        static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                        {
+                                            __sj::from_str::<Vec<__sj::Value>>("[{\"o\":true}]")
+                                                .expect("Failed to parse complex variants")
+                                        });
+                                        COMPLEX_VARIANTS
+                                            .iter()
+                                            .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                    }
+                                    _ => false,
+                                }
+                            }
+                            "negated" => !(__NodeExt::is_null(&instance)),
+                            "number" => {
+                                static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                    __sj::from_str("1.5").expect("Failed to parse const number")
+                                });
+                                match __NodeExt::json_type(&instance) {
+                                    __JT::Number => {
+                                        match __NodeExt::as_number(&instance) {
+                                            Some(__number) => {
+                                                let __number = __NumberExt::to_number(&__number);
+                                                let n = &*__number;
+                                                __cmp::equal_numbers(n, &*EXPECTED)
+                                            }
+                                            None => Default::default(),
+                                        }
+                                    }
+                                    _ => false,
+                                }
+                            }
+                            "scalar" => {
+                                __NodeExt::as_string(&instance).as_deref() == Some("a")
+                            }
+                            "step" => {
+                                match __NodeExt::json_type(&instance) {
+                                    __JT::Number => {
+                                        match __NodeExt::as_number(&instance) {
+                                            Some(__number) => {
+                                                let __number = __NumberExt::to_number(&__number);
+                                                let n = &*__number;
+                                                __num::check_compiled_multiple_of(n, "0.1")
+                                            }
+                                            None => Default::default(),
+                                        }
+                                    }
+                                    _ => false,
+                                }
+                            }
+                            "structured" => {
+                                static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("{\"o\":true}")
+                                        .expect("Failed to parse const value")
+                                });
+                                __NodeExt::equals_value(&instance, &*EXPECTED)
+                            }
+                            _ => true,
+                        }
+                    })
+            }
+            None => true,
+        }
+    }
+    pub(super) fn validate<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                for (key, value) in __ObjectExt::members(&obj) {
+                    let key_str = (&*key);
+                    match key_str {
+                        "choice" => {
+                            let instance = value;
+                            let __path = &__path.push("choice");
+                            if !(match __NodeExt::json_type(&instance) {
+                                __JT::String => {
+                                    match __NodeExt::as_string(&instance) {
+                                        Some(__text) => {
+                                            let s: &str = &__text;
+                                            (&*s) == "a"
+                                        }
+                                        None => Default::default(),
+                                    }
+                                }
+                                __JT::Number => {
+                                    static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                    {
+                                        __sj::from_str::<Vec<__sj::Value>>("[1]")
+                                            .expect("Failed to parse number variants")
+                                    });
+                                    NUMBER_VARIANTS
+                                        .iter()
+                                        .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                }
+                                __JT::Object => {
+                                    static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                    {
+                                        __sj::from_str::<Vec<__sj::Value>>("[{\"o\":true}]")
+                                            .expect("Failed to parse complex variants")
+                                    });
+                                    COMPLEX_VARIANTS
+                                        .iter()
+                                        .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                }
+                                _ => false,
+                            }) {
+                                static ENUM_OPTIONS: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("[1,\"a\",{\"o\":true}]")
+                                        .expect("Failed to parse enum options")
+                                });
+                                return Some(
+                                    __err::enumeration(
+                                        "/properties/choice/enum",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        &*ENUM_OPTIONS,
+                                    ),
+                                );
+                            }
+                        }
+                        "negated" => {
+                            let instance = value;
+                            let __path = &__path.push("negated");
+                            if __NodeExt::is_null(&instance) {
+                                static NOT_SCHEMA: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("{\"type\":\"null\"}")
+                                        .expect("Failed to parse not schema")
+                                });
+                                return Some(
+                                    __err::not(
+                                        "/properties/negated/not",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        NOT_SCHEMA.clone(),
+                                    ),
+                                );
+                            }
+                        }
+                        "number" => {
+                            let instance = value;
+                            let __path = &__path.push("number");
+                            if !({
+                                static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                    __sj::from_str("1.5").expect("Failed to parse const number")
+                                });
+                                match __NodeExt::json_type(&instance) {
+                                    __JT::Number => {
+                                        match __NodeExt::as_number(&instance) {
+                                            Some(__number) => {
+                                                let __number = __NumberExt::to_number(&__number);
+                                                let n = &*__number;
+                                                __cmp::equal_numbers(n, &*EXPECTED)
+                                            }
+                                            None => Default::default(),
+                                        }
+                                    }
+                                    _ => false,
+                                }
+                            }) {
+                                static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("1.5").expect("Failed to parse const value")
+                                });
+                                return Some(
+                                    __err::constant(
+                                        "/properties/number/const",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        CONST_EXPECTED.clone(),
+                                    ),
+                                );
+                            }
+                        }
+                        "scalar" => {
+                            let instance = value;
+                            let __path = &__path.push("scalar");
+                            if !(__NodeExt::as_string(&instance).as_deref() == Some("a"))
+                            {
+                                static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("\"a\"")
+                                        .expect("Failed to parse const value")
+                                });
+                                return Some(
+                                    __err::constant(
+                                        "/properties/scalar/const",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        CONST_EXPECTED.clone(),
+                                    ),
+                                );
+                            }
+                        }
+                        "step" => {
+                            let instance = value;
+                            let __path = &__path.push("step");
+                            match __NodeExt::json_type(&instance) {
+                                __JT::Number => {
+                                    match __NodeExt::as_number(&instance) {
+                                        Some(__number) => {
+                                            let __number = __NumberExt::to_number(&__number);
+                                            let n = &*__number;
+                                            if !(__num::check_compiled_multiple_of(n, "0.1")) {
+                                                return Some(
+                                                    __err::multiple_of(
+                                                        "/properties/step/multipleOf",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        {
+                                                            static MULTIPLE_OF: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                                                __sj::from_str("0.1").expect("multipleOf")
+                                                            });
+                                                            MULTIPLE_OF.clone()
+                                                        },
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                        None => Default::default(),
+                                    }
+                                }
+                                _ => {
+                                    return Some(
+                                        __err::single_type(
+                                            "/properties/step/type",
+                                            __path.into(),
+                                            __NodeExt::lazy_value(&instance),
+                                            __JT::Number,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                        "structured" => {
+                            let instance = value;
+                            let __path = &__path.push("structured");
+                            if !({
+                                static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("{\"o\":true}")
+                                        .expect("Failed to parse const value")
+                                });
+                                __NodeExt::equals_value(&instance, &*EXPECTED)
+                            }) {
+                                static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("{\"o\":true}")
+                                        .expect("Failed to parse const value")
+                                });
+                                return Some(
+                                    __err::constant(
+                                        "/properties/structured/const",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        CONST_EXPECTED.clone(),
+                                    ),
+                                );
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            None => {}
+        }
+        None
+    }
+    pub(super) fn collect_errors<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
+    ) {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "choice").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __NodeExt::json_type(&instance) {
+                        __JT::String => {
+                            match __NodeExt::as_string(&instance) {
+                                Some(__text) => {
+                                    let s: &str = &__text;
+                                    (&*s) == "a"
+                                }
+                                None => Default::default(),
+                            }
+                        }
+                        __JT::Number => {
+                            static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                            {
+                                __sj::from_str::<Vec<__sj::Value>>("[1]")
+                                    .expect("Failed to parse number variants")
+                            });
+                            NUMBER_VARIANTS
+                                .iter()
+                                .any(|variant| __NodeExt::equals_value(&instance, variant))
+                        }
+                        __JT::Object => {
+                            static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                            {
+                                __sj::from_str::<Vec<__sj::Value>>("[{\"o\":true}]")
+                                    .expect("Failed to parse complex variants")
+                            });
+                            COMPLEX_VARIANTS
+                                .iter()
+                                .any(|variant| __NodeExt::equals_value(&instance, variant))
+                        }
+                        _ => false,
+                    }) {
+                        let __path = &__path.push("choice");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !(match __NodeExt::json_type(&instance) {
+                                        __JT::String => {
+                                            match __NodeExt::as_string(&instance) {
+                                                Some(__text) => {
+                                                    let s: &str = &__text;
+                                                    (&*s) == "a"
+                                                }
+                                                None => Default::default(),
+                                            }
+                                        }
+                                        __JT::Number => {
+                                            static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                            {
+                                                __sj::from_str::<Vec<__sj::Value>>("[1]")
+                                                    .expect("Failed to parse number variants")
+                                            });
+                                            NUMBER_VARIANTS
+                                                .iter()
+                                                .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                        }
+                                        __JT::Object => {
+                                            static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                            {
+                                                __sj::from_str::<Vec<__sj::Value>>("[{\"o\":true}]")
+                                                    .expect("Failed to parse complex variants")
+                                            });
+                                            COMPLEX_VARIANTS
+                                                .iter()
+                                                .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                        }
+                                        _ => false,
+                                    }) {
+                                        static ENUM_OPTIONS: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("[1,\"a\",{\"o\":true}]")
+                                                .expect("Failed to parse enum options")
+                                        });
+                                        return Some(
+                                            __err::enumeration(
+                                                "/properties/choice/enum",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                &*ENUM_OPTIONS,
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "negated").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(!(__NodeExt::is_null(&instance))) {
+                        let __path = &__path.push("negated");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if __NodeExt::is_null(&instance) {
+                                        static NOT_SCHEMA: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("{\"type\":\"null\"}")
+                                                .expect("Failed to parse not schema")
+                                        });
+                                        return Some(
+                                            __err::not(
+                                                "/properties/negated/not",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                NOT_SCHEMA.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "number").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !({
+                        static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                            __sj::from_str("1.5").expect("Failed to parse const number")
+                        });
+                        match __NodeExt::json_type(&instance) {
+                            __JT::Number => {
+                                match __NodeExt::as_number(&instance) {
+                                    Some(__number) => {
+                                        let __number = __NumberExt::to_number(&__number);
+                                        let n = &*__number;
+                                        __cmp::equal_numbers(n, &*EXPECTED)
+                                    }
+                                    None => Default::default(),
+                                }
+                            }
+                            _ => false,
+                        }
+                    }) {
+                        let __path = &__path.push("number");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !({
+                                        static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                            __sj::from_str("1.5").expect("Failed to parse const number")
+                                        });
+                                        match __NodeExt::json_type(&instance) {
+                                            __JT::Number => {
+                                                match __NodeExt::as_number(&instance) {
+                                                    Some(__number) => {
+                                                        let __number = __NumberExt::to_number(&__number);
+                                                        let n = &*__number;
+                                                        __cmp::equal_numbers(n, &*EXPECTED)
+                                                    }
+                                                    None => Default::default(),
+                                                }
+                                            }
+                                            _ => false,
+                                        }
+                                    }) {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("1.5").expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/number/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "scalar").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(__NodeExt::as_string(&instance).as_deref() == Some("a")) {
+                        let __path = &__path.push("scalar");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !(__NodeExt::as_string(&instance).as_deref()
+                                        == Some("a"))
+                                    {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("\"a\"")
+                                                .expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/scalar/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "step").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __NodeExt::json_type(&instance) {
+                        __JT::Number => {
+                            match __NodeExt::as_number(&instance) {
+                                Some(__number) => {
+                                    let __number = __NumberExt::to_number(&__number);
+                                    let n = &*__number;
+                                    __num::check_compiled_multiple_of(n, "0.1")
+                                }
+                                None => Default::default(),
+                            }
+                        }
+                        _ => false,
+                    }) {
+                        let __path = &__path.push("step");
+                        match __NodeExt::json_type(&instance) {
+                            __JT::Number => {
+                                match __NodeExt::as_number(&instance) {
+                                    Some(__number) => {
+                                        let __number = __NumberExt::to_number(&__number);
+                                        let n = &*__number;
+                                        if !(__num::check_compiled_multiple_of(n, "0.1")) {
+                                            __errors
+                                                .push(
+                                                    __err::multiple_of(
+                                                        "/properties/step/multipleOf",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        {
+                                                            static MULTIPLE_OF: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                                                __sj::from_str("0.1").expect("multipleOf")
+                                                            });
+                                                            MULTIPLE_OF.clone()
+                                                        },
+                                                    ),
+                                                );
+                                        }
+                                    }
+                                    None => Default::default(),
+                                }
+                            }
+                            _ => {
+                                __errors
+                                    .push(
+                                        __err::single_type(
+                                            "/properties/step/type",
+                                            __path.into(),
+                                            __NodeExt::lazy_value(&instance),
+                                            __JT::Number,
+                                        ),
+                                    );
+                            }
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "structured").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !({
+                        static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                            __sj::from_str("{\"o\":true}")
+                                .expect("Failed to parse const value")
+                        });
+                        __NodeExt::equals_value(&instance, &*EXPECTED)
+                    }) {
+                        let __path = &__path.push("structured");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !({
+                                        static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("{\"o\":true}")
+                                                .expect("Failed to parse const value")
+                                        });
+                                        __NodeExt::equals_value(&instance, &*EXPECTED)
+                                    }) {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("{\"o\":true}")
+                                                .expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/structured/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
+        let _scope = __json::PendingErrorScope::enter();
+        __json::probe_root(instance.as_borrowed());
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        let result = is_valid(instance.as_borrowed());
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        Ok(result)
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Bound<'__i>,
+    ) -> __py3::PyResult<::std::result::Result<(), __VE<'__i>>> {
+        let _scope = __json::PendingErrorScope::enter();
+        __json::probe_root(instance.as_borrowed());
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        let result = match validate(
+            instance.as_borrowed(),
+            &__paths::LazyLocation::new(),
+        ) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        };
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        Ok(result)
+    }
+    pub(super) fn entry_iter_errors<'__i>(
+        instance: &'__i __Bound<'__i>,
+    ) -> __py3::PyResult<__EI<'__i>> {
+        let _scope = __json::PendingErrorScope::enter();
+        __json::probe_root(instance.as_borrowed());
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        let mut errors = Vec::new();
+        collect_errors(
+            instance.as_borrowed(),
+            &__paths::LazyLocation::new(),
+            &mut errors,
+        );
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        Ok(__err::iterator_from(errors))
+    }
+}
+impl Validator {
+    pub fn is_valid(
+        instance: &jsonschema::__private::pyo3::Bound<
+            '_,
+            jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> jsonschema::__private::pyo3::PyResult<bool> {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i jsonschema::__private::pyo3::Bound<
+            '__i,
+            jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> jsonschema::__private::pyo3::PyResult<
+        ::std::result::Result<(), jsonschema::ValidationError<'__i>>,
+    > {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i jsonschema::__private::pyo3::Bound<
+            '__i,
+            jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> jsonschema::__private::pyo3::PyResult<jsonschema::ErrorIterator<'__i>> {
+        __validator_impl::entry_iter_errors(instance)
+    }
+}

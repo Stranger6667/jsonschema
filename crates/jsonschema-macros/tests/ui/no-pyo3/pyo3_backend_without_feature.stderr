@@ -1,0 +1,5 @@
+error: `backend = Pyo3` needs the `pyo3` feature of the `jsonschema` crate
+ --> tests/ui/no-pyo3/pyo3_backend_without_feature.rs:1:50
+  |
+1 | #[jsonschema::validator(schema = "{}", backend = Pyo3)]
+  |                                                  ^^^^

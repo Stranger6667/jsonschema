@@ -123,16 +123,15 @@ fn schema_to_code_with_runtime_alias(
 }
 
 fn render_config(config: &CodegenConfig) -> String {
+    render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(config)
+}
+
+fn render_config_for<E: crate::codegen::emit::ValueEmitter>(config: &CodegenConfig) -> String {
     let name = format_ident!("Validator");
     let impl_mod_name = format_ident!("__validator_impl");
     let recompile_trigger: TokenStream = quote! {};
-    let tokens = generate_from_config::<crate::codegen::emit_serde::SerdeEmitter>(
-        config,
-        &recompile_trigger,
-        &name,
-        &impl_mod_name,
-    )
-    .expect("schema should generate");
+    let tokens = generate_from_config::<E>(config, &recompile_trigger, &name, &impl_mod_name)
+        .expect("schema should generate");
 
     // Wrap in a struct declaration so syn can parse as a complete file
     let wrapped: TokenStream = quote! {
@@ -810,4 +809,46 @@ fn discriminator_branch_helper_reduces_only_validity() {
     assert!(!is_valid.contains("circle"));
     assert!(is_valid.contains(">= 8"));
     assert!(collect.contains("circle"));
+}
+
+#[cfg(feature = "pyo3")]
+#[test]
+fn pyo3_object_property() {
+    let schema = json!({"type": "object", "properties": {"a": {"type": "string"}}});
+    insta::assert_snapshot!(
+        "pyo3_object_property",
+        render_config_for::<crate::codegen::emit_pyo3::Pyo3Emitter>(&test_config(schema))
+    );
+}
+
+#[cfg(feature = "pyo3")]
+#[test]
+fn runtime_crate_alias_is_injected_into_generated_module_pyo3() {
+    let schema = json!({"type": "object", "properties": {"a": {"type": "string"}}});
+    let description = serde_json::to_string(&schema).expect("schema serialization");
+    let mut config = test_config(schema);
+    config.runtime_crate_alias = Some(quote! { ::js });
+    let code = render_config_for::<crate::codegen::emit_pyo3::Pyo3Emitter>(&config);
+    insta::with_settings!({ description => &description }, {
+        insta::assert_snapshot!("runtime_crate_alias_pyo3", code);
+    });
+}
+
+#[cfg(feature = "pyo3")]
+#[test]
+fn pyo3_literals() {
+    let schema = json!({
+        "properties": {
+            "scalar": {"const": "a"},
+            "number": {"const": 1.5},
+            "structured": {"const": {"o": true}},
+            "choice": {"enum": [1, "a", {"o": true}]},
+            "step": {"type": "number", "multipleOf": 0.1},
+            "negated": {"not": {"type": "null"}}
+        }
+    });
+    insta::assert_snapshot!(
+        "pyo3_literals",
+        render_config_for::<crate::codegen::emit_pyo3::Pyo3Emitter>(&test_config(schema))
+    );
 }

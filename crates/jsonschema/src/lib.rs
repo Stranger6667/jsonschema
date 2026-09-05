@@ -167,6 +167,9 @@
 //! which documents its behavior and defaults:
 //!
 //! - schema source (exactly one required): `path = "..."` (file) or `schema = r#"..."#` (inline)
+//! - `backend = SerdeJson|Pyo3` (default: `SerdeJson`), the JSON representation the generated
+//!   validator reads; `Pyo3` needs the `pyo3` feature and generates methods taking
+//!   `&Bound<'_, PyAny>` and returning `PyResult<...>`
 //! - `draft = Draft202012` (or another variant) -> [`ValidationOptions::with_draft`]
 //! - `base_uri = "..."` -> [`ValidationOptions::with_base_uri`]
 //! - `resources = { "<uri>" => { schema = r#"..."# } | { path = "..." } }`
@@ -180,11 +183,37 @@
 //! - `pattern_options = { ... }` -> [`PatternOptions`]
 //! - `email_options = { ... }` -> [`EmailOptions`]
 //!
+//! ## Python Extension Modules
+//!
+//! `backend = Pyo3` (needs the `pyo3` feature) generates a validator that reads Python objects in
+//! place, for extension modules that know their schemas at build time:
+//!
+//! ```ignore
+//! use pyo3::prelude::*;
+//! use pyo3::types::PyAny;
+//!
+//! #[jsonschema::validator(path = "event.json", backend = Pyo3)]
+//! struct Event;
+//!
+//! #[pyfunction]
+//! fn is_valid_event(instance: &Bound<'_, PyAny>) -> PyResult<bool> {
+//!     Event::is_valid(instance)
+//! }
+//! ```
+//!
+//! Nothing is parsed or resolved at import time, and the instance is never converted to
+//! `serde_json::Value`.
+//!
+//! Enabling `pyo3/abi3` gives one wheel per platform, at the cost of element access on lists:
+//! the limited API rules out the `PyList_GET_ITEM` fast path, which is the dominant cost on
+//! array-heavy instances. A wheel built per Python version does not pay it.
+//!
 //! ## Limitations
 //!
 //! - `is_valid`, `validate`, and `iter_errors` are generated; `evaluate` is not implemented yet.
 //! - Custom keywords cannot override built-in ones: a `keywords` entry named like a built-in keyword runs in
 //!   addition to the built-in check, not instead of it.
+//! - `backend = Pyo3` rejects `keywords`, since a keyword factory receives a `serde_json::Value`.
 //! - When an instance violates several keywords, the first error reported by `validate()` may differ from the runtime
 //!   validator's, since generated checks are not ordered by keyword priority; `is_valid` and validity are unaffected.
 //!
@@ -1256,7 +1285,10 @@ pub mod json {
         magnus_take_pending_error, Magnus, MagnusPendingErrorScope, PendingError, RbNode,
     };
     #[cfg(feature = "pyo3")]
-    pub use jsonschema_value::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
+    pub use jsonschema_value::{
+        narrow_array, narrow_object, object_values, probe_root, take_pending_error,
+        PendingErrorScope, Pyo3,
+    };
 }
 mod http;
 mod keywords;
@@ -1796,6 +1828,31 @@ pub mod meta {
     };
 
     pub use validator_handle::MetaValidator;
+
+    /// Meta-schema validators that read a schema held as a Python object.
+    ///
+    /// Each function answers with the compile-time validator for the bundled meta-schema of
+    /// `draft`, so a schema already in Python form is checked without being converted to
+    /// [`serde_json::Value`] first. `Draft::Unknown` falls through to Draft 2020-12; a custom
+    /// meta-schema is reached through [`is_valid_for`] / [`validate_for`] instead.
+    #[cfg(all(feature = "macros", feature = "pyo3", not(target_family = "wasm")))]
+    pub mod pyo3 {
+        use crate::Draft;
+        use ::pyo3::{types::PyAny, Borrowed};
+
+        pub use crate::meta_codegen::pyo3::{
+            is_valid_fn, iter_errors_fn, validate_fn, IsValidFn, IterErrorsFn, ValidateFn,
+        };
+
+        /// The draft whose meta-schema a schema held as a Python object names in `$schema`.
+        ///
+        /// `Draft::Unknown` means the URI is outside the bundled drafts, which the functions
+        /// above cannot answer for.
+        #[must_use]
+        pub fn draft_of(schema: Borrowed<'_, '_, PyAny>) -> Draft {
+            super::meta_cache::<crate::json::Pyo3>().draft_of(&schema)
+        }
+    }
 
     /// Create a meta-validation options builder.
     ///
@@ -3348,7 +3405,7 @@ pub mod __private {
         pub use fancy_regex::{Regex, RegexBuilder};
     }
     pub mod regex {
-        pub use jsonschema_regex::is_ecma_whitespace;
+        pub use jsonschema_regex::contains_ecma_whitespace;
         pub use regex::{Regex, RegexBuilder};
     }
     pub mod unique_items {
@@ -3403,6 +3460,11 @@ pub mod __private {
             }
         }
     }
+    #[cfg(feature = "pyo3")]
+    pub mod pyo3 {
+        pub use pyo3::{intern, types::PyString, Borrowed, Bound, PyAny, PyResult};
+    }
+
     pub mod types {
         /// Integer check per drafts 6+: floats with zero fractional part count.
         #[must_use]

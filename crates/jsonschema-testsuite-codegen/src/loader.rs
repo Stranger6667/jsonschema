@@ -41,7 +41,7 @@ pub(crate) fn load_suite(
 
 /// Rewrite unpaired surrogate `\uXXXX` escapes to U+FFFD; `serde_json` cannot decode a
 /// lone surrogate into a Rust string. Valid pairs are untouched.
-fn sanitize_lone_surrogates(input: &str) -> Cow<'_, str> {
+pub(crate) fn sanitize_lone_surrogates(input: &str) -> Cow<'_, str> {
     if !input.contains("\\u") {
         return Cow::Borrowed(input);
     }

@@ -1,0 +1,5 @@
+error: Custom keywords are not supported with `backend = Pyo3`: `even` receives a `serde_json::Value`
+ --> tests/ui/pyo3_backend_with_custom_keyword.rs:9:50
+  |
+9 | #[jsonschema::validator(schema = "{}", backend = Pyo3, keywords = { "even" => crate::even_factory })]
+  |                                                  ^^^^

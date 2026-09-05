@@ -11,6 +11,8 @@ license.workspace = true
 [features]
 arbitrary-precision = ["serde_json/arbitrary_precision"]
 float-roundtrip = ["serde_json/float_roundtrip"]
+# Lets the macro tell `json = Pyo3` apart from the same attribute with the backend unavailable.
+pyo3 = []
 bench = []
 
 [dependencies]

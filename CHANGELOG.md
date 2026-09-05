@@ -4,16 +4,21 @@
 
 ### Added
 
-- `backend = SerdeJson` on `#[jsonschema::validator]`, generating a validator that reads `serde_json::Value`.
 - `PreparedDocument::unsatisfiable_pointers`, listing every subschema no value satisfies.
+- `backend = SerdeJson` on `#[jsonschema::validator]`, generating a validator that reads `serde_json::Value`.
+- `backend = Pyo3`, compiling a schema into a validator that reads Python objects instead of `serde_json::Value`.
+- `jsonschema::meta::pyo3`, the bundled meta-schema validators for a schema held as a Python object.
+- `pyo3-tests` Cargo feature, running the `Pyo3` tests against a linked interpreter.
 
 ### Changed
 
+- The `pyo3` feature takes `pyo3` (`abi3-py310`) as a direct dependency of `jsonschema`.
 - Canonicalization of `unevaluated*` beside `dependentSchemas` or `if`/`then`/`else`, which kept the document `Raw`.
 - Canonicalization of `not` over `patternProperties`, which kept the document `Raw`.
 
 ### Performance
 
+- Generated validators check a `pattern` of `^\S*$` by scanning bytes instead of decoding every character.
 - Canonicalization cloning leaves per intersection and the definition map per settled target.
 
 ### Fixed
