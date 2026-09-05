@@ -13,9 +13,9 @@ pub(crate) fn compile<E: ValueEmitter>(
     let not_schema_json = serde_json::to_string(value).expect("Failed to serialize not schema");
 
     let report_error = quote! {
-        static NOT_SCHEMA: __Lazy<serde_json::Value> =
+        static NOT_SCHEMA: __Lazy<__sj::Value> =
             __Lazy::new(|| {
-                serde_json::from_str(#not_schema_json).expect("Failed to parse not schema")
+                __sj::from_str(#not_schema_json).expect("Failed to parse not schema")
             });
         return Some(__err::not(
             #schema_path, __path.into(), #err_instance, NOT_SCHEMA.clone(),

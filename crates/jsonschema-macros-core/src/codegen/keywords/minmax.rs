@@ -26,7 +26,7 @@ pub(crate) fn generate_numeric_check(op: ComparisonOp, limit: &Value) -> TokenSt
         };
         let limit_literal = number.to_string();
         return quote! {
-            jsonschema::__private::numeric::check_compiled_bound(
+            __num::check_compiled_bound(
                 n,
                 #op_tag,
                 #limit_literal
@@ -42,13 +42,13 @@ pub(crate) fn generate_numeric_check(op: ComparisonOp, limit: &Value) -> TokenSt
     };
 
     if let Some(unsigned) = number.as_u64() {
-        quote! { jsonschema::__private::numeric::#cmp_fn(n, #unsigned) }
+        quote! { __num::#cmp_fn(n, #unsigned) }
     } else if let Some(signed) = number.as_i64() {
-        quote! { jsonschema::__private::numeric::#cmp_fn(n, #signed) }
+        quote! { __num::#cmp_fn(n, #signed) }
     } else {
         let float = number
             .as_f64()
             .expect("JSON number is representable as u64, i64, or f64");
-        quote! { jsonschema::__private::numeric::#cmp_fn(n, #float) }
+        quote! { __num::#cmp_fn(n, #float) }
     }
 }

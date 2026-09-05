@@ -18,6 +18,7 @@
 
 ### Fixed
 
+- `#[jsonschema::validator]` generated code that named `serde_json` directly, so it needed the consumer crate to depend on `serde_json` too.
 - Canonicalization of `not` over an object with `properties`, `patternProperties` and `additionalProperties`, which applied `additionalProperties` to the keys listed in `properties`.
 
 ## [0.53.0] - 2026-09-02

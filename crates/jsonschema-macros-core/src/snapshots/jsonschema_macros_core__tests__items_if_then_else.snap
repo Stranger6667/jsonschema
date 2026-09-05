@@ -11,15 +11,11 @@ match instance {
                             .map_or(
                                 true,
                                 |instance| {
-                                    static EXPECTED: __Lazy<serde_json::Number> = __Lazy::new(||
-                                    {
-                                        serde_json::from_str("0")
-                                            .expect("Failed to parse const number")
+                                    static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                        __sj::from_str("0").expect("Failed to parse const number")
                                     });
                                     match instance {
-                                        __Value::Number(n) => {
-                                            jsonschema::__private::cmp::equal_numbers(n, &*EXPECTED)
-                                        }
+                                        __Value::Number(n) => __cmp::equal_numbers(n, &*EXPECTED),
                                         _ => false,
                                     }
                                 },

@@ -80,55 +80,53 @@ fn compile_builtin_format_check<E: ValueEmitter>(
 ) -> Option<TokenStream> {
     let draft = ctx.draft;
     match format_name {
-        "date" => Some(quote! { jsonschema::__private::format::is_valid_date(s) }),
-        "date-time" => Some(quote! { jsonschema::__private::format::is_valid_datetime(s) }),
+        "date" => Some(quote! { __fmt::is_valid_date(s) }),
+        "date-time" => Some(quote! { __fmt::is_valid_datetime(s) }),
         "duration" if draft.supports_draft201909_plus_formats() => {
-            Some(quote! { jsonschema::__private::format::is_valid_duration(s) })
+            Some(quote! { __fmt::is_valid_duration(s) })
         }
         "email" => {
             let options = compile_email_options_argument(ctx);
             Some(quote! {
-                jsonschema::__private::format::is_valid_email_with_options(s, #options)
+                __fmt::is_valid_email_with_options(s, #options)
             })
         }
         "hostname" if matches!(draft, Draft::Draft4 | Draft::Draft6) => {
-            Some(quote! { jsonschema::__private::format::is_valid_hostname_rfc1034(s) })
+            Some(quote! { __fmt::is_valid_hostname_rfc1034(s) })
         }
-        "hostname" => Some(quote! { jsonschema::__private::format::is_valid_hostname(s) }),
+        "hostname" => Some(quote! { __fmt::is_valid_hostname(s) }),
         "idn-email" => {
             let options = compile_email_options_argument(ctx);
             Some(quote! {
-                jsonschema::__private::format::is_valid_idn_email_with_options(s, #options)
+                __fmt::is_valid_idn_email_with_options(s, #options)
             })
         }
         "idn-hostname" if draft.supports_draft7_plus_formats() => {
-            Some(quote! { jsonschema::__private::format::is_valid_idn_hostname(s) })
+            Some(quote! { __fmt::is_valid_idn_hostname(s) })
         }
-        "ipv4" => Some(quote! { jsonschema::__private::format::is_valid_ipv4(s) }),
-        "ipv6" => Some(quote! { jsonschema::__private::format::is_valid_ipv6(s) }),
-        "iri" if draft.supports_draft7_plus_formats() => {
-            Some(quote! { jsonschema::__private::format::is_valid_iri(s) })
-        }
+        "ipv4" => Some(quote! { __fmt::is_valid_ipv4(s) }),
+        "ipv6" => Some(quote! { __fmt::is_valid_ipv6(s) }),
+        "iri" if draft.supports_draft7_plus_formats() => Some(quote! { __fmt::is_valid_iri(s) }),
         "iri-reference" if draft.supports_draft7_plus_formats() => {
-            Some(quote! { jsonschema::__private::format::is_valid_iri_reference(s) })
+            Some(quote! { __fmt::is_valid_iri_reference(s) })
         }
         "json-pointer" if draft.supports_draft6_plus_formats() => {
-            Some(quote! { jsonschema::__private::format::is_valid_json_pointer(s) })
+            Some(quote! { __fmt::is_valid_json_pointer(s) })
         }
-        "regex" => Some(quote! { jsonschema::__private::format::is_valid_regex(s) }),
+        "regex" => Some(quote! { __fmt::is_valid_regex(s) }),
         "relative-json-pointer" if draft.supports_draft7_plus_formats() => {
-            Some(quote! { jsonschema::__private::format::is_valid_relative_json_pointer(s) })
+            Some(quote! { __fmt::is_valid_relative_json_pointer(s) })
         }
-        "time" => Some(quote! { jsonschema::__private::format::is_valid_time(s) }),
-        "uri" => Some(quote! { jsonschema::__private::format::is_valid_uri(s) }),
+        "time" => Some(quote! { __fmt::is_valid_time(s) }),
+        "uri" => Some(quote! { __fmt::is_valid_uri(s) }),
         "uri-reference" if draft.supports_draft6_plus_formats() => {
-            Some(quote! { jsonschema::__private::format::is_valid_uri_reference(s) })
+            Some(quote! { __fmt::is_valid_uri_reference(s) })
         }
         "uri-template" if draft.supports_draft6_plus_formats() => {
-            Some(quote! { jsonschema::__private::format::is_valid_uri_template(s) })
+            Some(quote! { __fmt::is_valid_uri_template(s) })
         }
         "uuid" if draft.supports_draft201909_plus_formats() => {
-            Some(quote! { jsonschema::__private::format::is_valid_uuid(s) })
+            Some(quote! { __fmt::is_valid_uuid(s) })
         }
         _ => None,
     }

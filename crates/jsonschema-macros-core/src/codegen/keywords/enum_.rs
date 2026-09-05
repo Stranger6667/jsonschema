@@ -92,9 +92,9 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         let variant_equals = E::value_equals_instance(format_ident!("variant"));
         match_arms.push(quote! {
             #number_pattern => {
-            static NUMBER_VARIANTS: __Lazy<Vec<serde_json::Value>> =
+            static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> =
                 __Lazy::new(|| {
-                    serde_json::from_str::<Vec<serde_json::Value>>(#numbers_json)
+                    __sj::from_str::<Vec<__sj::Value>>(#numbers_json)
                         .expect("Failed to parse number variants")
                 });
             NUMBER_VARIANTS.iter().any(|variant| #variant_equals)
@@ -126,9 +126,9 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         };
         match_arms.push(quote! {
             #arm_pattern => {
-                static COMPLEX_VARIANTS: __Lazy<Vec<serde_json::Value>> =
+                static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> =
                     __Lazy::new(|| {
-                        serde_json::from_str::<Vec<serde_json::Value>>(#complex_json)
+                        __sj::from_str::<Vec<__sj::Value>>(#complex_json)
                             .expect("Failed to parse complex variants")
                     });
                 COMPLEX_VARIANTS.iter().any(|variant| #variant_equals)
@@ -145,9 +145,9 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         is_valid.clone(),
         quote! {
             if !(#is_valid) {
-                static ENUM_OPTIONS: __Lazy<serde_json::Value> =
+                static ENUM_OPTIONS: __Lazy<__sj::Value> =
                     __Lazy::new(|| {
-                        serde_json::from_str(#enum_json).expect("Failed to parse enum options")
+                        __sj::from_str(#enum_json).expect("Failed to parse enum options")
                     });
                 return Some(__err::enumeration(
                     #schema_path, __path.into(), #err_instance, &*ENUM_OPTIONS,

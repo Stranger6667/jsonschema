@@ -102,9 +102,9 @@ pub(crate) fn key_match_expr<E: ValueEmitter>(
             let alts: Vec<&str> = alts.iter().map(String::as_str).collect();
             Ok(quote! { matches!(#key_as_str, #(#alts)|*) })
         }
-        Some(jsonschema_regex::PatternAnalysis::NoWhitespace) => Ok(
-            quote! { !#key_as_str.chars().any(jsonschema::__private::regex::is_ecma_whitespace) },
-        ),
+        Some(jsonschema_regex::PatternAnalysis::NoWhitespace) => {
+            Ok(quote! { !#key_as_str.chars().any(__re::is_ecma_whitespace) })
+        }
         None => match translate_and_validate_regex(ctx, "patternProperties", pattern) {
             Ok(translated) => {
                 let regex_check = compile_regex_match(ctx, &translated, &quote! { #key_as_str });

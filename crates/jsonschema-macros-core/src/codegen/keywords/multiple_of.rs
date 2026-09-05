@@ -33,8 +33,8 @@ pub(crate) fn compile<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Valu
             let value_json = serde_json::to_string(value).unwrap();
             quote! {
                 {
-                    static MULTIPLE_OF: __Lazy<serde_json::Value> =
-                        __Lazy::new(|| serde_json::from_str(#value_json).expect("multipleOf"));
+                    static MULTIPLE_OF: __Lazy<__sj::Value> =
+                        __Lazy::new(|| __sj::from_str(#value_json).expect("multipleOf"));
                     MULTIPLE_OF.clone()
                 }
             }
@@ -42,7 +42,7 @@ pub(crate) fn compile<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Valu
             let unsigned = value
                 .as_u64()
                 .expect("multipleOf below the safe-integer bound is a positive u64");
-            quote! { serde_json::Value::Number(serde_json::Number::from(#unsigned)) }
+            quote! { __sj::Value::Number(__sj::Number::from(#unsigned)) }
         };
         quote! { __err::multiple_of(#schema_path, __path.into(), #err_instance, #limit_value) }
     };
@@ -63,7 +63,7 @@ fn generate_multiple_of_check(value: &Value) -> TokenStream {
         if requires_arbitrary_precision_path(number) {
             let limit_literal = number.to_string();
             return quote! {
-                jsonschema::__private::numeric::check_compiled_multiple_of(
+                __num::check_compiled_multiple_of(
                     n,
                     #limit_literal
                 )
@@ -73,9 +73,9 @@ fn generate_multiple_of_check(value: &Value) -> TokenStream {
 
     let divisor = value.as_f64().expect("multipleOf is a finite JSON number");
     if divisor.fract() == 0.0 {
-        quote! { jsonschema::__private::numeric::is_multiple_of_integer(n, #divisor) }
+        quote! { __num::is_multiple_of_integer(n, #divisor) }
     } else {
-        quote! { jsonschema::__private::numeric::is_multiple_of_float(n, #divisor) }
+        quote! { __num::is_multiple_of_float(n, #divisor) }
     }
 }
 

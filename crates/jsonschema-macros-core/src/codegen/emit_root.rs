@@ -47,6 +47,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     let array = E::array_param();
     // Public `impl` methods live outside the aliased module, so they use the full type.
     let entry_points = E::entry_points(impl_mod_name, &runtime_crate);
+    let entry_bodies = E::entry_bodies();
 
     let regex_helpers: Vec<TokenStream> = ctx
         .regex_helpers
@@ -61,16 +62,16 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 } => {
                     let set_backtrack_limit =
                         backtrack_limit.map(|limit| quote! { builder.backtrack_limit(#limit); });
-                    let set_size_limit = size_limit
-                        .map(|limit| quote! { builder.delegate_size_limit(#limit); });
+                    let set_size_limit =
+                        size_limit.map(|limit| quote! { builder.delegate_size_limit(#limit); });
                     let set_dfa_size_limit = dfa_size_limit
                         .map(|limit| quote! { builder.delegate_dfa_size_limit(#limit); });
                     quote! {
                         #[inline]
                         fn #helper_ident(subject: &str) -> bool {
-                            static REGEX: __Lazy<Option<jsonschema::__private::fancy_regex::Regex>> =
+                            static REGEX: __Lazy<Option<__fancy::Regex>> =
                                 __Lazy::new(|| {
-                                    let mut builder = jsonschema::__private::fancy_regex::RegexBuilder::new(#pattern);
+                                    let mut builder = __fancy::RegexBuilder::new(#pattern);
                                     #set_backtrack_limit
                                     #set_size_limit
                                     #set_dfa_size_limit
@@ -93,9 +94,9 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                     quote! {
                         #[inline]
                         fn #helper_ident(subject: &str) -> bool {
-                            static REGEX: __Lazy<Option<jsonschema::__private::regex::Regex>> =
+                            static REGEX: __Lazy<Option<__re::Regex>> =
                                 __Lazy::new(|| {
-                                    let mut builder = jsonschema::__private::regex::RegexBuilder::new(#pattern);
+                                    let mut builder = __re::RegexBuilder::new(#pattern);
                                     #set_size_limit
                                     #set_dfa_size_limit
                                     builder.build().ok()
@@ -117,8 +118,8 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
         let wrapper_ident = format_ident!("__cached_{}", cache.base());
         let format_fn = format_ident!("{}", cache.format_fn());
         uri_cache_statics.push(quote! {
-            static #static_ident: std::cell::RefCell<jsonschema::__private::format::Cache> =
-                std::cell::RefCell::new(jsonschema::__private::format::Cache::default());
+            static #static_ident: std::cell::RefCell<__fmt::Cache> =
+                std::cell::RefCell::new(__fmt::Cache::default());
         });
         uri_cache_wrappers.push(quote! {
             #[inline]
@@ -127,7 +128,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                     if let Some(&valid) = cache.get(s) {
                         return valid;
                     }
-                    let valid = jsonschema::__private::format::#format_fn(s);
+                    let valid = __fmt::#format_fn(s);
                     cache.insert(Box::from(s), valid);
                     valid
                 })
@@ -566,11 +567,21 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
         mod #impl_mod_name {
             use super::*;
             #runtime_crate_use
+            use jsonschema::__private::cmp as __cmp;
+            use jsonschema::__private::content as __content;
+            use jsonschema::__private::custom as __custom;
             use jsonschema::__private::error as __err;
+            use jsonschema::__private::fancy_regex as __fancy;
+            use jsonschema::__private::format as __fmt;
+            use jsonschema::__private::numeric as __num;
+            use jsonschema::__private::regex as __re;
+            use jsonschema::__private::serde_json as __sj;
             use jsonschema::__private::types as __types;
+            use jsonschema::__private::unique_items as __uniq;
             use jsonschema::paths as __paths;
             use jsonschema::JsonType as __JT;
             use jsonschema::JsonTypeSet as __JTS;
+            use jsonschema::ErrorIterator as __EI;
             use jsonschema::ValidationError as __VE;
             #module_prelude
 
@@ -591,6 +602,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
 
             #validate_fns
             #collect_fns
+            #entry_bodies
         }
 
         impl #name {

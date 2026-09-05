@@ -156,7 +156,7 @@ impl ValueEmitter for SerdeEmitter {
 
     // `propertyNames` validates each name as an instance; serde has to build one.
     fn declare_key_node(key_expr: impl ToTokens) -> TokenStream {
-        quote! { let __key_val: serde_json::Value = serde_json::Value::String(#key_expr.clone()); }
+        quote! { let __key_val: __sj::Value = __sj::Value::String(#key_expr.clone()); }
     }
 
     fn key_node_expr(_key_expr: impl ToTokens) -> TokenStream {
@@ -257,8 +257,31 @@ impl ValueEmitter for SerdeEmitter {
         array_expr.into_token_stream()
     }
 
-    fn public_value_ty(_runtime_crate: &TokenStream, _lifetime: impl ToTokens) -> TokenStream {
-        quote! { serde_json::Value }
+    fn public_value_ty(runtime_crate: &TokenStream, _lifetime: impl ToTokens) -> TokenStream {
+        quote! { #runtime_crate::__private::serde_json::Value }
+    }
+
+    fn entry_bodies() -> TokenStream {
+        quote! {
+            pub(super) fn entry_is_valid(instance: &__Value) -> bool {
+                is_valid(instance)
+            }
+
+            pub(super) fn entry_validate<'__i>(
+                instance: &'__i __Value,
+            ) -> ::std::result::Result<(), __VE<'__i>> {
+                match validate(instance, &__paths::LazyLocation::new()) {
+                    Some(e) => Err(e),
+                    None => Ok(()),
+                }
+            }
+
+            pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
+                let mut errors = Vec::new();
+                collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
+                __err::iterator_from(errors)
+            }
+        }
     }
 
     fn entry_points(impl_mod_name: &Ident, runtime_crate: &TokenStream) -> TokenStream {
@@ -266,24 +289,19 @@ impl ValueEmitter for SerdeEmitter {
         let borrowed = Self::public_value_ty(runtime_crate, quote! { '__i });
         quote! {
             pub fn is_valid(instance: &#anonymous) -> bool {
-                #impl_mod_name::is_valid(instance)
+                #impl_mod_name::entry_is_valid(instance)
             }
 
             pub fn validate<'__i>(
                 instance: &'__i #borrowed,
             ) -> ::std::result::Result<(), #runtime_crate::ValidationError<'__i>> {
-                match #impl_mod_name::validate(instance, &#runtime_crate::paths::LazyLocation::new()) {
-                    Some(e) => Err(e),
-                    None => Ok(()),
-                }
+                #impl_mod_name::entry_validate(instance)
             }
 
             pub fn iter_errors<'__i>(
                 instance: &'__i #borrowed,
             ) -> #runtime_crate::ErrorIterator<'__i> {
-                let mut errors = Vec::new();
-                #impl_mod_name::collect_errors(instance, &#runtime_crate::paths::LazyLocation::new(), &mut errors);
-                #runtime_crate::__private::error::iterator_from(errors)
+                #impl_mod_name::entry_iter_errors(instance)
             }
         }
     }
@@ -298,9 +316,9 @@ impl ValueEmitter for SerdeEmitter {
 
     fn module_prelude() -> TokenStream {
         quote! {
-            use serde_json::Value as __Value;
+            use __sj::Value as __Value;
             use std::sync::LazyLock as __Lazy;
-            type __Map = serde_json::Map<String, __Value>;
+            type __Map = __sj::Map<String, __Value>;
         }
     }
 
@@ -335,15 +353,15 @@ impl ValueEmitter for SerdeEmitter {
     }
 
     fn array_is_unique(array_expr: impl ToTokens) -> TokenStream {
-        quote! { jsonschema::__private::unique_items::is_unique(#array_expr) }
+        quote! { __uniq::is_unique(#array_expr) }
     }
 
     fn instance_equals_value(expected_expr: impl ToTokens) -> TokenStream {
-        quote! { jsonschema::__private::cmp::equal(instance, #expected_expr) }
+        quote! { __cmp::equal(instance, #expected_expr) }
     }
 
     fn value_equals_instance(value_expr: impl ToTokens) -> TokenStream {
-        quote! { jsonschema::__private::cmp::equal(#value_expr, instance) }
+        quote! { __cmp::equal(#value_expr, instance) }
     }
 
     fn key_as_string_subject(key_expr: impl ToTokens) -> TokenStream {
