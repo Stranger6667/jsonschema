@@ -10,6 +10,7 @@ mod idents;
 mod loader;
 mod output_generator;
 mod output_loader;
+mod pyo3_generator;
 mod remotes;
 
 /// A procedural macro that generates tests from
@@ -64,7 +65,7 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
     };
     // There are a lot of tests in the test suite
     let mut functions = HashSet::with_capacity(7200);
-    for draft in &config.drafts {
+    for draft in selected_drafts(&config.drafts) {
         let suite_tree = match loader::load_suite(&config.path, draft) {
             Ok(tree) => tree,
             Err(e) => return compile_error_ts(e.to_string()),
@@ -186,4 +187,53 @@ fn compile_error_ts(err: impl quote::ToTokens) -> TokenStream {
     TokenStream::from(quote! {
         compile_error!(#err);
     })
+}
+
+/// Generates a `PyO3` extension module holding one compiled validator per suite case.
+#[proc_macro]
+pub fn pyo3_suite(input: TokenStream) -> TokenStream {
+    let config = parse_macro_input!(input as testsuite::SuiteConfig);
+
+    let remote_data = match remotes::generate(&config.path) {
+        Ok(data) => data,
+        Err(e) => return compile_error_ts(e.to_string()),
+    };
+
+    let mut index = 0;
+    let mut definitions = Vec::new();
+    let mut entries = Vec::new();
+    for draft in selected_drafts(&config.drafts) {
+        let cases = match pyo3_generator::generate_cases(
+            &config.path,
+            draft,
+            &remote_data.resources,
+            &mut index,
+        ) {
+            Ok(cases) => cases,
+            Err(e) => return compile_error_ts(e.to_string()),
+        };
+        for case in cases {
+            definitions.push(case.definition);
+            entries.push(case.entry);
+        }
+    }
+
+    quote! {
+        #(#definitions)*
+
+        pub static SUITE_ENTRIES: &[SuiteEntry] = &[#(#entries),*];
+    }
+    .into()
+}
+
+/// Building every draft costs minutes and gigabytes of peak memory, so a comma-separated
+/// `JSONSCHEMA_SUITE_DRAFTS` narrows what is compiled. The caller's `build.rs` re-runs on it.
+fn selected_drafts(drafts: &[String]) -> Vec<&String> {
+    match std::env::var("JSONSCHEMA_SUITE_DRAFTS") {
+        Ok(filter) => {
+            let wanted: HashSet<String> = filter.split(',').map(|d| d.trim().to_string()).collect();
+            drafts.iter().filter(|d| wanted.contains(*d)).collect()
+        }
+        Err(_) => drafts.iter().collect(),
+    }
 }

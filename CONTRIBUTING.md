@@ -94,6 +94,28 @@ To run the Python tests:
 
 Make sure all Python tests pass before submitting your pull request. If you've added new functionality to the Python bindings, please include appropriate Python tests as well.
 
+### Running the Test Suite Against Compile-Time Validators
+
+`jsonschema-suite-pyo3` holds one macro-generated validator per test-suite case, so the suite also
+runs through `backend = Pyo3` against instances Python itself builds:
+
+   ```console
+   $ cargo build -p jsonschema-suite-pyo3
+   $ mkdir -p .codegen
+   $ cp target/debug/libjsonschema_suite_pyo3.so .codegen/jsonschema_suite_pyo3.so
+   $ cd crates/jsonschema-py
+   $ PYTHONPATH=../../.codegen uv run pytest tests-py/test_suite.py -k test_draft_codegen
+   ```
+
+Building all five drafts takes a while. `JSONSCHEMA_SUITE_DRAFTS` narrows what gets compiled while
+iterating:
+
+   ```console
+   $ JSONSCHEMA_SUITE_DRAFTS=draft2020-12 cargo build -p jsonschema-suite-pyo3
+   ```
+
+Cases outside the selected drafts are skipped by the harness rather than silently passing.
+
 ### Formatting and Linting
 
 Format your code using:

@@ -4,6 +4,6 @@ description: "{\"pattern\":\"^\\\\S*$\",\"type\":\"string\"}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            __Value::String(s) => !s.chars().any(__re::is_ecma_whitespace),
+            __Value::String(s) => !__re::contains_ecma_whitespace(s),
             _ => false,
         }

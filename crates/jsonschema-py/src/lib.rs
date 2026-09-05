@@ -2333,7 +2333,7 @@ mod build {
 /// Meta-schema validation
 mod meta {
     use super::referencing_error_pyerr;
-    use jsonschema::json::Pyo3;
+    use jsonschema::{json::Pyo3, Draft};
     use pyo3::prelude::*;
 
     /// is_valid(schema, registry=None)
@@ -2362,14 +2362,21 @@ mod meta {
         registry: Option<&crate::registry::Registry>,
     ) -> PyResult<bool> {
         let Some(registry) = registry else {
+            // The bundled meta-schemas are compiled into the extension and read the Python object
+            // in place; a `$schema` outside them is resolved through its chain instead.
             return crate::surface_pending_errors(
                 schema,
-                || match jsonschema::meta::is_valid_for::<Pyo3>(schema.as_borrowed()) {
-                    Ok(valid) => Ok(valid),
-                    Err(error) => {
-                        raise_if_unresolvable(py, &error)?;
-                        Ok(false)
+                || match jsonschema::meta::pyo3::draft_of(schema.as_borrowed()) {
+                    Draft::Unknown => {
+                        match jsonschema::meta::is_valid_for::<Pyo3>(schema.as_borrowed()) {
+                            Ok(valid) => Ok(valid),
+                            Err(error) => {
+                                raise_if_unresolvable(py, &error)?;
+                                Ok(false)
+                            }
+                        }
                     }
+                    draft => jsonschema::meta::pyo3::is_valid_fn(draft)(schema),
                 },
             );
         };
@@ -2428,12 +2435,20 @@ mod meta {
         let Some(registry) = registry else {
             return crate::surface_pending_errors(
                 schema,
-                || match jsonschema::meta::validate_for::<Pyo3>(schema.as_borrowed()) {
-                    Ok(()) => Ok(()),
-                    Err(error) => {
-                        raise_if_unresolvable(py, &error)?;
-                        Err(crate::into_py_err(py, error, None)?)
+                || match jsonschema::meta::pyo3::draft_of(schema.as_borrowed()) {
+                    Draft::Unknown => {
+                        match jsonschema::meta::validate_for::<Pyo3>(schema.as_borrowed()) {
+                            Ok(()) => Ok(()),
+                            Err(error) => {
+                                raise_if_unresolvable(py, &error)?;
+                                Err(crate::into_py_err(py, error, None)?)
+                            }
+                        }
                     }
+                    draft => match jsonschema::meta::pyo3::validate_fn(draft)(schema)? {
+                        Ok(()) => Ok(()),
+                        Err(error) => Err(crate::into_py_err(py, error, None)?),
+                    },
                 },
             );
         };

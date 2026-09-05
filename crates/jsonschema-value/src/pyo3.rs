@@ -241,6 +241,74 @@ impl Drop for PendingErrorScope {
     }
 }
 
+/// `PyDict_Next` yielding values only; the key is never typed or decoded.
+pub struct PyValues<'py> {
+    dict: Borrowed<'py, 'py, PyDict>,
+    pos: ffi::Py_ssize_t,
+}
+
+impl<'py> Iterator for PyValues<'py> {
+    type Item = PyNode<'py>;
+
+    // The plain hint is declined at the call sites in generated validators.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn next(&mut self) -> Option<PyNode<'py>> {
+        let mut key: *mut ffi::PyObject = std::ptr::null_mut();
+        let mut value: *mut ffi::PyObject = std::ptr::null_mut();
+        if unsafe {
+            ffi::PyDict_Next(
+                self.dict.as_ptr(),
+                &raw mut self.pos,
+                &raw mut key,
+                &raw mut value,
+            )
+        } == 0
+        {
+            return None;
+        }
+        Some(unsafe { Borrowed::from_ptr(self.dict.py(), value) })
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+#[must_use]
+pub fn object_values<'py>(dict: Borrowed<'py, 'py, PyDict>) -> PyValues<'py> {
+    PyValues { dict, pos: 0 }
+}
+
+/// Narrowing for a node whose `json_type` already reported `Array`.
+///
+/// The exact-type hit skips the ladder `as_array` would walk a second time.
+#[inline]
+#[doc(hidden)]
+#[must_use]
+pub fn narrow_array<'py>(node: PyNode<'py>) -> Option<PyArray<'py>> {
+    let t = types(node.py());
+    let ty = unsafe { ffi::Py_TYPE(node.as_ptr()) };
+    if ty == t.list {
+        return Some(PyArray::new(node, false));
+    }
+    if ty == t.tuple {
+        return Some(PyArray::new(node, true));
+    }
+    node.as_array()
+}
+
+/// Narrowing for a node whose `json_type` already reported `Object`.
+#[inline]
+#[doc(hidden)]
+#[must_use]
+pub fn narrow_object<'py>(node: PyNode<'py>) -> Option<Borrowed<'py, 'py, PyDict>> {
+    let t = types(node.py());
+    let ty = unsafe { ffi::Py_TYPE(node.as_ptr()) };
+    if ty == t.dict {
+        return Some(unsafe { node.cast_unchecked::<PyDict>() });
+    }
+    node.as_object()
+}
+
 /// Record the errors reachable from `node` itself.
 ///
 /// Nested ones surface only when a keyword reads that value; scanning the whole instance would cost
@@ -732,7 +800,8 @@ impl<'py> Object<'py, Pyo3> for Borrowed<'py, 'py, PyDict> {
     }
 }
 
-// Array over a Python `list` or `tuple`.
+// Array over a Python `list` or `tuple`; helpers that take one per element pass it by value.
+#[derive(Clone, Copy)]
 pub struct PyArray<'py> {
     sequence: PyNode<'py>,
     is_tuple: bool,

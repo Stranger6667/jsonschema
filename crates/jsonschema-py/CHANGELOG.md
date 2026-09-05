@@ -5,6 +5,7 @@
 ### Performance
 
 - Faster validating objects against object-heavy schemas.
+- `meta.is_valid` and `meta.validate` are about 2x faster on the bundled drafts.
 - Canonicalization cloning leaves per intersection and the definition map per settled target.
 
 ### Changed

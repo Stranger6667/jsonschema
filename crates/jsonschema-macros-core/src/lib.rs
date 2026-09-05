@@ -114,6 +114,7 @@ struct Config {
 enum Backend {
     #[default]
     SerdeJson,
+    Pyo3,
 }
 
 enum SchemaSource {
@@ -480,6 +481,7 @@ impl Parse for Config {
         let mut schema_source = None;
         let mut draft = None;
         let mut backend = Backend::default();
+        let mut backend_ident: Option<Ident> = None;
         let mut base_uri = None;
         let mut resources: Vec<ResourceEntry> = Vec::new();
         let mut vocabularies: Vec<String> = Vec::new();
@@ -537,6 +539,7 @@ impl Parse for Config {
                     let value: Ident = input.parse()?;
                     backend = match value.to_string().as_str() {
                         "SerdeJson" => Backend::SerdeJson,
+                        "Pyo3" => Backend::Pyo3,
                         other => {
                             return Err(syn::Error::new_spanned(
                                 &value,
@@ -544,6 +547,7 @@ impl Parse for Config {
                             ))
                         }
                     };
+                    backend_ident = Some(value);
                 }
                 "base_uri" => {
                     input.parse::<Token![=]>()?;
@@ -671,6 +675,26 @@ impl Parse for Config {
 
             if input.peek(Token![,]) {
                 input.parse::<Token![,]>()?;
+            }
+        }
+
+        if backend == Backend::Pyo3 {
+            let representation =
+                backend_ident.expect("a non-default representation is named by the attribute");
+            if let Some(entry) = keywords.first() {
+                return Err(syn::Error::new_spanned(
+                    &representation,
+                    format!(
+                        "Custom keywords are not supported with `backend = Pyo3`: `{}` receives a `serde_json::Value`",
+                        entry.name
+                    ),
+                ));
+            }
+            if !cfg!(feature = "pyo3") {
+                return Err(syn::Error::new_spanned(
+                    &representation,
+                    "`backend = Pyo3` needs the `pyo3` feature of the `jsonschema` crate",
+                ));
             }
         }
 
@@ -869,6 +893,12 @@ so the generated methods cannot depend on type parameters",
         Backend::SerdeJson => crate::codegen::generate_from_config::<
             crate::codegen::emit_serde::SerdeEmitter,
         >(&config, &recompile_trigger, name, &impl_mod_name)?,
+        #[cfg(feature = "pyo3")]
+        Backend::Pyo3 => crate::codegen::generate_from_config::<
+            crate::codegen::emit_pyo3::Pyo3Emitter,
+        >(&config, &recompile_trigger, name, &impl_mod_name)?,
+        #[cfg(not(feature = "pyo3"))]
+        Backend::Pyo3 => unreachable!("rejected during attribute parsing"),
     };
 
     Ok(quote! {

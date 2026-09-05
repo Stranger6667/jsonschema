@@ -4841,3 +4841,417 @@ fn codegen_agrees_with_runtime_on_drawn_instances(tc: hegel::TestCase) {
         );
     }
 }
+
+#[cfg(feature = "pyo3-tests")]
+mod pyo3_backend {
+    use jsonschema::{json::SerdeJson, Draft};
+    use pyo3::{
+        types::{PyDict, PyDictMethods, PyList, PyListMethods, PyNone},
+        Bound, IntoPyObject, PyAny, PyResult, Python,
+    };
+    use serde_json::Value;
+    use test_case::test_case;
+
+    type IsValid = for<'py> fn(&Bound<'py, PyAny>) -> PyResult<bool>;
+
+    fn to_py<'py>(py: Python<'py>, value: &Value) -> Bound<'py, PyAny> {
+        match value {
+            Value::Null => PyNone::get(py).to_owned().into_any(),
+            Value::Bool(flag) => flag.into_pyobject(py).expect("bool").to_owned().into_any(),
+            Value::Number(number) => {
+                if let Some(unsigned) = number.as_u64() {
+                    unsigned.into_pyobject(py).expect("int").into_any()
+                } else if let Some(signed) = number.as_i64() {
+                    signed.into_pyobject(py).expect("int").into_any()
+                } else {
+                    number
+                        .as_f64()
+                        .expect("finite number")
+                        .into_pyobject(py)
+                        .expect("float")
+                        .into_any()
+                }
+            }
+            Value::String(string) => string.into_pyobject(py).expect("str").into_any(),
+            Value::Array(items) => {
+                let list = PyList::empty(py);
+                for item in items {
+                    list.append(to_py(py, item)).expect("append");
+                }
+                list.into_any()
+            }
+            Value::Object(members) => {
+                let dict = PyDict::new(py);
+                for (key, member) in members {
+                    dict.set_item(key, to_py(py, member)).expect("set");
+                }
+                dict.into_any()
+            }
+        }
+    }
+
+    // The runtime validator over the same schema is the oracle, so a fixture states only the
+    // instances its keyword family is meant to discriminate.
+    fn assert_parity(schema: &str, is_valid: IsValid, instances: &[&str]) {
+        let schema: Value = serde_json::from_str(schema).expect("schema");
+        let validator = jsonschema::validator_for(&schema).expect("valid schema");
+        for instance in instances {
+            let instance: Value = serde_json::from_str(instance).expect("instance");
+            let expected = validator.is_valid(&instance);
+            let got = Python::attach(|py| {
+                let object = to_py(py, &instance);
+                is_valid(&object).expect("readable instance")
+            });
+            assert_eq!(got, expected, "{instance} against {schema}");
+        }
+    }
+
+    const TYPES: &str = r#"{"type": ["string", "integer", "null"]}"#;
+    #[jsonschema::validator(schema = r#"{"type": ["string", "integer", "null"]}"#, backend = Pyo3)]
+    struct Types;
+
+    const STRING: &str =
+        r#"{"type": "string", "minLength": 2, "maxLength": 5, "pattern": "^[a-z]+$"}"#;
+    #[jsonschema::validator(schema = r#"{"type": "string", "minLength": 2, "maxLength": 5, "pattern": "^[a-z]+$"}"#, backend = Pyo3)]
+    struct StringKeywords;
+
+    const FORMAT: &str = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "string", "format": "date"}"#;
+    #[jsonschema::validator(schema = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "string", "format": "date"}"#, backend = Pyo3)]
+    struct FormatKeyword;
+
+    const NUMBER: &str = r#"{"type": "number", "minimum": 1, "maximum": 100, "multipleOf": 2}"#;
+    #[jsonschema::validator(schema = r#"{"type": "number", "minimum": 1, "maximum": 100, "multipleOf": 2}"#, backend = Pyo3)]
+    struct NumberKeywords;
+
+    const EXCLUSIVE: &str = r#"{"type": "integer", "exclusiveMinimum": 0, "exclusiveMaximum": 10}"#;
+    #[jsonschema::validator(schema = r#"{"type": "integer", "exclusiveMinimum": 0, "exclusiveMaximum": 10}"#, backend = Pyo3)]
+    struct ExclusiveBounds;
+
+    const ARRAY: &str = r#"{"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"type": "integer"}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "array", "minItems": 1, "maxItems": 3, "uniqueItems": true, "items": {"type": "integer"}}"#, backend = Pyo3)]
+    struct ArrayKeywords;
+
+    const PREFIX_ITEMS: &str = r#"{"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}], "items": {"type": "boolean"}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "array", "prefixItems": [{"type": "string"}, {"type": "integer"}], "items": {"type": "boolean"}}"#, backend = Pyo3)]
+    struct PrefixItems;
+
+    const TUPLE_ITEMS: &str = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "array", "items": [{"type": "string"}], "additionalItems": {"type": "integer"}}"#;
+    #[jsonschema::validator(schema = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "array", "items": [{"type": "string"}], "additionalItems": {"type": "integer"}}"#, backend = Pyo3)]
+    struct TupleItems;
+
+    const CONTAINS: &str = r#"{"type": "array", "contains": {"type": "string"}, "minContains": 2}"#;
+    #[jsonschema::validator(schema = r#"{"type": "array", "contains": {"type": "string"}, "minContains": 2}"#, backend = Pyo3)]
+    struct Contains;
+
+    const OBJECT: &str = r#"{"type": "object", "required": ["a"], "minProperties": 1, "maxProperties": 3, "properties": {"a": {"type": "string"}}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "required": ["a"], "minProperties": 1, "maxProperties": 3, "properties": {"a": {"type": "string"}}}"#, backend = Pyo3)]
+    struct ObjectKeywords;
+
+    const ADDITIONAL_FALSE: &str =
+        r#"{"type": "object", "properties": {"a": {}}, "additionalProperties": false}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "properties": {"a": {}}, "additionalProperties": false}"#, backend = Pyo3)]
+    struct AdditionalFalse;
+
+    const ADDITIONAL_SCHEMA: &str = r#"{"type": "object", "properties": {"a": {}}, "additionalProperties": {"type": "integer"}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "properties": {"a": {}}, "additionalProperties": {"type": "integer"}}"#, backend = Pyo3)]
+    struct AdditionalSchema;
+
+    const PATTERN_PROPERTIES: &str =
+        r#"{"type": "object", "patternProperties": {"^x-": {"type": "string"}}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "patternProperties": {"^x-": {"type": "string"}}}"#, backend = Pyo3)]
+    struct PatternProperties;
+
+    const PROPERTY_NAMES: &str = r#"{"type": "object", "propertyNames": {"maxLength": 3}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "propertyNames": {"maxLength": 3}}"#, backend = Pyo3)]
+    struct PropertyNames;
+
+    const PROPERTY_NAMES_PATTERN: &str =
+        r#"{"type": "object", "propertyNames": {"pattern": "^[a-c]+$"}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "propertyNames": {"pattern": "^[a-c]+$"}}"#, backend = Pyo3)]
+    struct PropertyNamesPattern;
+
+    const DEPENDENT_REQUIRED: &str = r#"{"type": "object", "dependentRequired": {"a": ["b"]}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "dependentRequired": {"a": ["b"]}}"#, backend = Pyo3)]
+    struct DependentRequired;
+
+    const DEPENDENT_SCHEMAS: &str =
+        r#"{"type": "object", "dependentSchemas": {"a": {"required": ["b"]}}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "dependentSchemas": {"a": {"required": ["b"]}}}"#, backend = Pyo3)]
+    struct DependentSchemas;
+
+    const CONST: &str = r#"{"const": {"a": [1, 2]}}"#;
+    #[jsonschema::validator(schema = r#"{"const": {"a": [1, 2]}}"#, backend = Pyo3)]
+    struct ConstKeyword;
+
+    const CONST_SCALAR: &str = r#"{"const": 2}"#;
+    #[jsonschema::validator(schema = r#"{"const": 2}"#, backend = Pyo3)]
+    struct ConstScalar;
+
+    const ENUM: &str = r#"{"enum": ["a", 1, true, null, [1], {"b": 2}]}"#;
+    #[jsonschema::validator(schema = r#"{"enum": ["a", 1, true, null, [1], {"b": 2}]}"#, backend = Pyo3)]
+    struct EnumKeyword;
+
+    const COMBINATORS: &str = r#"{"allOf": [{"type": "integer"}], "anyOf": [{"minimum": 0}, {"maximum": -10}], "not": {"const": 3}}"#;
+    #[jsonschema::validator(schema = r#"{"allOf": [{"type": "integer"}], "anyOf": [{"minimum": 0}, {"maximum": -10}], "not": {"const": 3}}"#, backend = Pyo3)]
+    struct Combinators;
+
+    const ONE_OF: &str = r#"{"oneOf": [{"type": "string"}, {"type": "integer"}]}"#;
+    #[jsonschema::validator(schema = r#"{"oneOf": [{"type": "string"}, {"type": "integer"}]}"#, backend = Pyo3)]
+    struct OneOf;
+
+    const DISCRIMINATED: &str = r#"{"oneOf": [{"type": "object", "required": ["kind"], "properties": {"kind": {"const": "circle"}, "radius": {"type": "number"}}}, {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "square"}, "side": {"type": "number"}}}]}"#;
+    #[jsonschema::validator(schema = r#"{"oneOf": [{"type": "object", "required": ["kind"], "properties": {"kind": {"const": "circle"}, "radius": {"type": "number"}}}, {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "square"}, "side": {"type": "number"}}}]}"#, backend = Pyo3)]
+    struct Discriminated;
+
+    const IF_THEN_ELSE: &str =
+        r#"{"if": {"type": "integer"}, "then": {"minimum": 10}, "else": {"type": "string"}}"#;
+    #[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "then": {"minimum": 10}, "else": {"type": "string"}}"#, backend = Pyo3)]
+    struct IfThenElse;
+
+    const REFERENCE: &str = r##"{"$defs": {"leaf": {"type": "integer"}}, "type": "array", "items": {"$ref": "#/$defs/leaf"}}"##;
+    #[jsonschema::validator(schema = r##"{"$defs": {"leaf": {"type": "integer"}}, "type": "array", "items": {"$ref": "#/$defs/leaf"}}"##, backend = Pyo3)]
+    struct Reference;
+
+    const RECURSIVE: &str = r##"{"type": "object", "properties": {"child": {"$ref": "#"}, "leaf": {"type": "integer"}}}"##;
+    #[jsonschema::validator(schema = r##"{"type": "object", "properties": {"child": {"$ref": "#"}, "leaf": {"type": "integer"}}}"##, backend = Pyo3)]
+    struct Recursive;
+
+    const CONTENT: &str = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "string", "contentEncoding": "base64"}"#;
+    #[jsonschema::validator(schema = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "string", "contentEncoding": "base64"}"#, backend = Pyo3)]
+    struct Content;
+
+    const UNEVALUATED_PROPERTIES: &str =
+        r#"{"type": "object", "properties": {"a": {}}, "unevaluatedProperties": false}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "properties": {"a": {}}, "unevaluatedProperties": false}"#, backend = Pyo3)]
+    struct UnevaluatedProperties;
+
+    const UNEVALUATED_ITEMS: &str =
+        r#"{"type": "array", "prefixItems": [{"type": "string"}], "unevaluatedItems": false}"#;
+    #[jsonschema::validator(schema = r#"{"type": "array", "prefixItems": [{"type": "string"}], "unevaluatedItems": false}"#, backend = Pyo3)]
+    struct UnevaluatedItems;
+
+    const DYNAMIC: &str = r##"{"$defs": {"node": {"$dynamicAnchor": "node", "type": "integer"}}, "type": "object", "properties": {"child": {"$dynamicRef": "#node"}}}"##;
+    #[jsonschema::validator(schema = r##"{"$defs": {"node": {"$dynamicAnchor": "node", "type": "integer"}}, "type": "object", "properties": {"child": {"$dynamicRef": "#node"}}}"##, backend = Pyo3)]
+    struct DynamicRef;
+
+    const RECURSIVE_REF: &str = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$recursiveAnchor": true, "type": "object", "properties": {"child": {"$recursiveRef": "#"}}}"##;
+    #[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$recursiveAnchor": true, "type": "object", "properties": {"child": {"$recursiveRef": "#"}}}"##, backend = Pyo3)]
+    struct RecursiveRef;
+
+    const DRAFT4: &str = r#"{"$schema": "http://json-schema.org/draft-04/schema", "type": "integer", "minimum": 0, "exclusiveMinimum": true}"#;
+    #[jsonschema::validator(schema = r#"{"$schema": "http://json-schema.org/draft-04/schema", "type": "integer", "minimum": 0, "exclusiveMinimum": true}"#, backend = Pyo3)]
+    struct Draft4;
+
+    const MULTI_TYPE_INTEGER: &str = r#"{"type": ["integer", "object"], "minimum": 3}"#;
+    #[jsonschema::validator(schema = r#"{"type": ["integer", "object"], "minimum": 3}"#, backend = Pyo3)]
+    struct MultiTypeInteger;
+
+    const ENUM_NUMBERS: &str = r#"{"enum": [1, 2.5]}"#;
+    #[jsonschema::validator(schema = r#"{"enum": [1, 2.5]}"#, backend = Pyo3)]
+    struct EnumNumbers;
+
+    const INT_DISCRIMINATOR: &str = r#"{"oneOf": [{"type": "object", "required": ["code"], "properties": {"code": {"const": 1}, "data": {"type": "string"}}}, {"type": "object", "required": ["code"], "properties": {"code": {"const": 2}, "payload": {"type": "number"}}}]}"#;
+    #[jsonschema::validator(schema = r#"{"oneOf": [{"type": "object", "required": ["code"], "properties": {"code": {"const": 1}, "data": {"type": "string"}}}, {"type": "object", "required": ["code"], "properties": {"code": {"const": 2}, "payload": {"type": "number"}}}]}"#, backend = Pyo3)]
+    struct IntDiscriminator;
+
+    const BOOL_DISCRIMINATOR: &str = r#"{"oneOf": [{"type": "object", "required": ["active"], "properties": {"active": {"const": true}, "name": {"type": "string"}}}, {"type": "object", "required": ["active"], "properties": {"active": {"const": false}, "archived": {"type": "string"}}}]}"#;
+    #[jsonschema::validator(schema = r#"{"oneOf": [{"type": "object", "required": ["active"], "properties": {"active": {"const": true}, "name": {"type": "string"}}}, {"type": "object", "required": ["active"], "properties": {"active": {"const": false}, "archived": {"type": "string"}}}]}"#, backend = Pyo3)]
+    struct BoolDiscriminator;
+
+    const DEPENDENCIES: &str = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "object", "dependencies": {"a": ["b"], "c": {"required": ["d"]}}}"#;
+    #[jsonschema::validator(schema = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "object", "dependencies": {"a": ["b"], "c": {"required": ["d"]}}}"#, backend = Pyo3)]
+    struct Dependencies;
+
+    const ENUM_BOOL: &str = r#"{"enum": [true]}"#;
+    #[jsonschema::validator(schema = r#"{"enum": [true]}"#, backend = Pyo3)]
+    struct EnumBool;
+
+    const CONTENT_MEDIA: &str = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "string", "contentMediaType": "application/json"}"#;
+    #[jsonschema::validator(schema = r#"{"$schema": "http://json-schema.org/draft-07/schema", "type": "string", "contentMediaType": "application/json"}"#, backend = Pyo3)]
+    struct ContentMedia;
+
+    fn is_currency(value: &str) -> bool {
+        value.starts_with('$')
+    }
+
+    #[jsonschema::validator(schema = r#"{"type": "string", "format": "currency"}"#, backend = Pyo3, formats = { "currency" => crate::pyo3_backend::is_currency }, validate_formats = true)]
+    struct CustomFormat;
+
+    const ASTRAL_STRING: &str = r#"{"type": "string", "minLength": 2, "maxLength": 3}"#;
+    #[jsonschema::validator(schema = r#"{"type": "string", "minLength": 2, "maxLength": 3}"#, backend = Pyo3)]
+    struct AstralString;
+
+    const ASTRAL_PROPERTY_NAMES: &str = r#"{"type": "object", "propertyNames": {"maxLength": 2}}"#;
+    #[jsonschema::validator(schema = r#"{"type": "object", "propertyNames": {"maxLength": 2}}"#, backend = Pyo3)]
+    struct AstralPropertyNames;
+
+    const INTEGER_TYPE: &str = r#"{"type": "integer"}"#;
+    #[jsonschema::validator(schema = r#"{"type": "integer"}"#, backend = Pyo3)]
+    struct IntegerType;
+
+    const UNIQUE_ITEMS: &str = r#"{"type": "array", "uniqueItems": true}"#;
+    #[jsonschema::validator(schema = r#"{"type": "array", "uniqueItems": true}"#, backend = Pyo3)]
+    struct UniqueItems;
+
+    #[test_case(TYPES, Types::is_valid, &["\"a\"", "1", "null", "1.5", "[]", "{}", "true"] ; "type keyword")]
+    #[test_case(STRING, StringKeywords::is_valid, &["\"ab\"", "\"a\"", "\"abcdef\"", "\"AB\"", "1"] ; "string keywords")]
+    #[test_case(FORMAT, FormatKeyword::is_valid, &["\"2020-01-01\"", "\"nope\"", "1"] ; "format")]
+    #[test_case(NUMBER, NumberKeywords::is_valid, &["2", "4.0", "1", "3", "102", "\"a\""] ; "number keywords")]
+    #[test_case(EXCLUSIVE, ExclusiveBounds::is_valid, &["1", "0", "10", "9", "5.5"] ; "exclusive bounds")]
+    #[test_case(ARRAY, ArrayKeywords::is_valid, &["[1]", "[]", "[1, 1]", "[1, 2, 3, 4]", "[\"a\"]"] ; "array keywords")]
+    #[test_case(PREFIX_ITEMS, PrefixItems::is_valid, &["[\"a\", 1]", "[\"a\", 1, true]", "[\"a\", 1, 2]", "[1, 1]"] ; "prefix items")]
+    #[test_case(TUPLE_ITEMS, TupleItems::is_valid, &["[\"a\"]", "[\"a\", 1]", "[\"a\", \"b\"]", "[1]"] ; "tuple items")]
+    #[test_case(CONTAINS, Contains::is_valid, &["[\"a\", \"b\"]", "[\"a\"]", "[1, 2]"] ; "contains")]
+    #[test_case(OBJECT, ObjectKeywords::is_valid, &["{\"a\": \"x\"}", "{}", "{\"a\": 1}", "{\"a\": \"x\", \"b\": 1, \"c\": 2, \"d\": 3}"] ; "object keywords")]
+    #[test_case(ADDITIONAL_FALSE, AdditionalFalse::is_valid, &["{\"a\": 1}", "{\"b\": 1}", "{}"] ; "additional properties false")]
+    #[test_case(ADDITIONAL_SCHEMA, AdditionalSchema::is_valid, &["{\"a\": \"x\", \"b\": 1}", "{\"b\": \"x\"}"] ; "additional properties schema")]
+    #[test_case(PATTERN_PROPERTIES, PatternProperties::is_valid, &["{\"x-a\": \"v\"}", "{\"x-a\": 1}", "{\"y\": 1}"] ; "pattern properties")]
+    #[test_case(PROPERTY_NAMES, PropertyNames::is_valid, &["{\"abc\": 1}", "{\"abcd\": 1}", "{}"] ; "property names")]
+    #[test_case(PROPERTY_NAMES_PATTERN, PropertyNamesPattern::is_valid, &["{\"abc\": 1}", "{\"xyz\": 1}", "{}"] ; "property names pattern")]
+    #[test_case(DEPENDENT_REQUIRED, DependentRequired::is_valid, &["{\"a\": 1, \"b\": 2}", "{\"a\": 1}", "{\"b\": 1}"] ; "dependent required")]
+    #[test_case(DEPENDENT_SCHEMAS, DependentSchemas::is_valid, &["{\"a\": 1, \"b\": 2}", "{\"a\": 1}", "{\"b\": 1}"] ; "dependent schemas")]
+    #[test_case(CONST, ConstKeyword::is_valid, &["{\"a\": [1, 2]}", "{\"a\": [1]}", "1"] ; "const keyword")]
+    #[test_case(CONST_SCALAR, ConstScalar::is_valid, &["2", "2.0", "3", "\"2\""] ; "const scalar")]
+    #[test_case(ENUM, EnumKeyword::is_valid, &["\"a\"", "1", "true", "null", "[1]", "{\"b\": 2}", "\"b\"", "2"] ; "enum keyword")]
+    #[test_case(COMBINATORS, Combinators::is_valid, &["1", "3", "-1", "-11", "\"a\""] ; "combinators")]
+    #[test_case(ONE_OF, OneOf::is_valid, &["\"a\"", "1", "1.5", "true"] ; "one of")]
+    #[test_case(DISCRIMINATED, Discriminated::is_valid, &["{\"kind\": \"circle\", \"radius\": 1}", "{\"kind\": \"square\", \"side\": 1}", "{\"kind\": \"circle\", \"radius\": \"x\"}", "{}"] ; "discriminated one of")]
+    #[test_case(IF_THEN_ELSE, IfThenElse::is_valid, &["11", "1", "\"a\"", "true"] ; "if then else")]
+    #[test_case(REFERENCE, Reference::is_valid, &["[1]", "[\"a\"]", "[]"] ; "reference")]
+    #[test_case(RECURSIVE, Recursive::is_valid, &["{\"child\": {\"leaf\": 1}}", "{\"child\": {\"leaf\": \"x\"}}", "{}"] ; "self reference")]
+    #[test_case(CONTENT, Content::is_valid, &["\"aGk=\"", "\"!!!\""] ; "content encoding")]
+    #[test_case(UNEVALUATED_PROPERTIES, UnevaluatedProperties::is_valid, &["{\"a\": 1}", "{\"b\": 1}", "{}"] ; "unevaluated properties")]
+    #[test_case(UNEVALUATED_ITEMS, UnevaluatedItems::is_valid, &["[\"a\"]", "[\"a\", 1]", "[]"] ; "unevaluated items")]
+    #[test_case(DYNAMIC, DynamicRef::is_valid, &["{\"child\": 1}", "{\"child\": \"x\"}", "{}"] ; "dynamic ref")]
+    #[test_case(RECURSIVE_REF, RecursiveRef::is_valid, &["{\"child\": {}}", "{}", "{\"child\": 1}"] ; "recursive ref")]
+    #[test_case(DRAFT4, Draft4::is_valid, &["1", "0", "-1", "1.0"] ; "draft4 exclusive minimum")]
+    #[test_case(MULTI_TYPE_INTEGER, MultiTypeInteger::is_valid, &["3", "2", "{}", "\"a\"", "3.5"] ; "multi type with integer")]
+    #[test_case(ENUM_NUMBERS, EnumNumbers::is_valid, &["1", "1.0", "2.5", "3"] ; "enum of numbers")]
+    #[test_case(ENUM_BOOL, EnumBool::is_valid, &["true", "false", "1"] ; "enum of booleans")]
+    #[test_case(INT_DISCRIMINATOR, IntDiscriminator::is_valid, &["{\"code\": 1, \"data\": \"x\"}", "{\"code\": 2, \"payload\": 1}", "{\"code\": 1, \"data\": 1}", "{\"code\": 3}"] ; "int discriminator")]
+    #[test_case(BOOL_DISCRIMINATOR, BoolDiscriminator::is_valid, &["{\"active\": true, \"name\": \"x\"}", "{\"active\": false, \"archived\": \"x\"}", "{\"active\": true, \"name\": 1}"] ; "bool discriminator")]
+    #[test_case(DEPENDENCIES, Dependencies::is_valid, &["{\"a\": 1, \"b\": 2}", "{\"a\": 1}", "{\"c\": 1}", "{\"c\": 1, \"d\": 2}"] ; "dependencies")]
+    #[test_case(CONTENT_MEDIA, ContentMedia::is_valid, &["\"{}\"", "\"nope\""] ; "content media type")]
+    #[test_case(ASTRAL_STRING, AstralString::is_valid, &["\"\u{1d49c}\u{1d4b7}\"", "\"\u{1d49c}\"", "\"\u{1d49c}\u{1d4b7}\u{1d4b8}\u{1d4b9}\"", "\"\u{e9}\u{e9}\""] ; "astral string length")]
+    #[test_case(ASTRAL_PROPERTY_NAMES, AstralPropertyNames::is_valid, &["{\"\u{1d49c}\u{1d4b7}\": 1}", "{\"\u{1d49c}\u{1d4b7}\u{1d4b8}\": 1}"] ; "astral property names")]
+    #[test_case(INTEGER_TYPE, IntegerType::is_valid, &["3", "3.0", "3.5", "-0.0", "1e2", "true"] ; "integral float is an integer")]
+    #[test_case(UNIQUE_ITEMS, UniqueItems::is_valid, &["[1, 1.0]", "[1, true]", "[true, false]", "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16]", "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1]", "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 1.0]", "[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, true]"] ; "unique items")]
+    fn matches_runtime(schema: &str, is_valid: IsValid, instances: &[&str]) {
+        assert_parity(schema, is_valid, instances);
+    }
+
+    #[test_case("\"$5\"", true ; "accepts a currency string")]
+    #[test_case("\"5\"", false ; "rejects a plain number string")]
+    fn custom_format(instance: &str, expected: bool) {
+        let instance: Value = serde_json::from_str(instance).expect("instance");
+        let got = Python::attach(|py| {
+            let object = to_py(py, &instance);
+            CustomFormat::is_valid(&object).expect("readable instance")
+        });
+        assert_eq!(got, expected);
+    }
+
+    #[test]
+    fn validate_reports_the_first_error() {
+        Python::attach(|py| {
+            let instance = to_py(py, &serde_json::json!({"a": 1}));
+            let error = ObjectKeywords::validate(&instance)
+                .expect("readable instance")
+                .expect_err("a is not a string");
+            assert_eq!(error.schema_path().as_str(), "/properties/a/type");
+            assert_eq!(error.instance_path().as_str(), "/a");
+        });
+    }
+
+    #[test]
+    fn iter_errors_reports_every_error() {
+        Python::attach(|py| {
+            let instance = to_py(py, &serde_json::json!({"a": 1, "b": 2, "c": 3, "d": 4}));
+            let errors: Vec<_> = ObjectKeywords::iter_errors(&instance)
+                .expect("readable instance")
+                .collect();
+            assert_eq!(errors.len(), 2);
+        });
+    }
+
+    // The bundled meta-schemas reading a Python object agree with the same meta-schemas
+    // reading the converted `serde_json::Value`.
+    #[test_case(Draft::Draft4, r#"{"$schema": "http://json-schema.org/draft-04/schema#", "type": "string", "minLength": 2}"#)]
+    #[test_case(
+        Draft::Draft4,
+        r#"{"$schema": "http://json-schema.org/draft-04/schema#", "type": 42}"#
+    )]
+    #[test_case(
+        Draft::Draft6,
+        r#"{"$schema": "http://json-schema.org/draft-06/schema#", "exclusiveMinimum": 3}"#
+    )]
+    #[test_case(
+        Draft::Draft6,
+        r#"{"$schema": "http://json-schema.org/draft-06/schema#", "required": "name"}"#
+    )]
+    #[test_case(Draft::Draft7, r#"{"$schema": "http://json-schema.org/draft-07/schema#", "if": {"type": "string"}, "then": {"maxLength": 1}}"#)]
+    #[test_case(
+        Draft::Draft7,
+        r#"{"$schema": "http://json-schema.org/draft-07/schema#", "format": 7}"#
+    )]
+    #[test_case(Draft::Draft201909, r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$defs": {"a": {"type": "integer"}}, "$ref": "#/$defs/a"}"##)]
+    #[test_case(
+        Draft::Draft201909,
+        r#"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$defs": []}"#
+    )]
+    #[test_case(Draft::Draft202012, r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object", "properties": {"a": {"type": "integer"}}, "required": ["a"]}"#)]
+    #[test_case(Draft::Draft202012, r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "prefixItems": {"type": "string"}}"#)]
+    #[test_case(
+        Draft::Draft202012,
+        r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "multipleOf": -1}"#
+    )]
+    fn meta_schema_reads_a_python_object(draft: Draft, schema: &str) {
+        let schema: Value = serde_json::from_str(schema).expect("schema");
+        let expected = jsonschema::meta::is_valid_for::<SerdeJson>(&schema).expect("resolvable");
+        let got = Python::attach(|py| {
+            let object = to_py(py, &schema);
+            jsonschema::meta::pyo3::is_valid_fn(draft)(&object).expect("readable schema")
+        });
+        assert_eq!(got, expected, "{schema}");
+    }
+
+    #[test]
+    fn meta_schema_validate_reports_the_first_error() {
+        Python::attach(|py| {
+            let object = to_py(py, &serde_json::json!({"type": 42}));
+            let error = jsonschema::meta::pyo3::validate_fn(Draft::Draft202012)(&object)
+                .expect("readable schema")
+                .expect_err("type is not a string");
+            assert_eq!(error.instance_path().as_str(), "/type");
+        });
+    }
+
+    #[test]
+    fn meta_schema_iter_errors_reports_every_error() {
+        Python::attach(|py| {
+            let object = to_py(py, &serde_json::json!({"type": 42, "required": "name"}));
+            let errors: Vec<_> =
+                jsonschema::meta::pyo3::iter_errors_fn(Draft::Draft202012)(&object)
+                    .expect("readable schema")
+                    .collect();
+            assert_eq!(errors.len(), 2);
+        });
+    }
+
+    // A lone surrogate has no UTF-8 form, so reading it records an error the entry point returns.
+    #[test]
+    fn unreadable_string_surfaces_as_an_error() {
+        Python::attach(|py| {
+            let instance = py
+                .eval(
+                    std::ffi::CString::new("'\\ud800'")
+                        .expect("literal")
+                        .as_c_str(),
+                    None,
+                    None,
+                )
+                .expect("surrogate literal");
+            assert!(StringKeywords::is_valid(&instance).is_err());
+        });
+    }
+}

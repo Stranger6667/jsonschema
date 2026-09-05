@@ -806,6 +806,16 @@ On instance["password"]:
 
 For detailed benchmarks, see our [full performance comparison](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/BENCHMARKS.md).
 
+### Compile-Time Validators
+
+If you ship your own extension module and know the schema at build time, the Rust crate's
+`#[jsonschema::validator(..., backend = Pyo3)]` macro compiles it into a validator that reads
+Python objects directly. Nothing is parsed, resolved or compiled when your program starts, and
+validation runs 1.3x to 5.8x faster than building a validator at run time. See the
+[macro documentation](https://docs.rs/jsonschema/latest/jsonschema/#compile-time-validator-macro).
+
+This is not available from the `jsonschema-rs` package on PyPI, which takes its schemas at run time.
+
 ## Python support
 
 `jsonschema-rs` supports CPython 3.10 through 3.14 and PyPy 3.10+.

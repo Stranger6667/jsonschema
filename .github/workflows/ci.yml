@@ -93,10 +93,13 @@ jobs:
       # `jsonschema-value` is excluded here because `--all-features` runs its pyo3 and magnus test
       # binaries, which link an interpreter. They run per-representation instead: pyo3 below, and
       # magnus in the Ruby job, where a matching Ruby is set up.
+      # `jsonschema` stays in this run even though `--all-features` also enables its `pyo3-tests`
+      # feature, pulling in `pyo3/auto-initialize` and linking libpython into its test binaries -
+      # that's how the `Pyo3` codegen fixtures run here.
       # `benchmark-suite` only carries benchmarks for other validators (valico, jsonschema-valid,
       # boon) and has no tests, so building it here costs ~30 extra dependency crates for nothing.
       - if: runner.os != 'Windows'
-        run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite
+        run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite --exclude jsonschema-suite-pyo3 --exclude jsonschema-bench-pyo3
 
       # `rb-sys` builds against the Ruby the host provides, and the MSVC runner has none to link,
       # so `magnus` is named out rather than reached through `--all-features`. The feature carries
@@ -104,7 +107,7 @@ jobs:
       - if: runner.os == 'Windows'
         run: >
           cargo test --no-fail-fast --workspace
-          --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite
+          --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite --exclude jsonschema-suite-pyo3 --exclude jsonschema-bench-pyo3
           --features jsonschema/conformance,jsonschema/resolve-http,jsonschema/resolve-file,jsonschema/resolve-async,jsonschema/tls-aws-lc-rs,jsonschema/tls-ring,jsonschema/arbitrary-precision,jsonschema/macros,jsonschema/pyo3,referencing/retrieve-async,jsonschema-macros/arbitrary-precision,jsonschema-macros/float-roundtrip
 
       - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros"
@@ -276,6 +279,8 @@ jobs:
             --exclude jsonschema-rb \
             --exclude benchmark \
             --exclude benchmark-suite \
+            --exclude jsonschema-bench-pyo3 \
+            --exclude jsonschema-suite-pyo3 \
             --exclude jsonschema-testsuite \
             --exclude jsonschema-testsuite-codegen \
             --exclude jsonschema-testsuite-internal \
@@ -357,6 +362,39 @@ jobs:
 
       - run: uvx --with=".[tests]" --python='${{ matrix.python-version }}' pytest tests-py
         working-directory: crates/jsonschema-py
+
+  test-python-codegen:
+    name: Test Python codegen
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+          key: codegen-suite
+
+      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+
+      - run: uv python install 3.12
+
+      # Holds one macro-generated validator per suite case, so the suite runs through the
+      # compile-time path against instances Python itself builds.
+      - run: cargo build -p jsonschema-suite-pyo3
+
+      - run: |
+          mkdir -p "$RUNNER_TEMP/codegen"
+          cp target/debug/libjsonschema_suite_pyo3.so "$RUNNER_TEMP/codegen/jsonschema_suite_pyo3.so"
+
+      - run: uvx --with=".[tests]" --python=3.12 pytest tests-py/test_suite.py -k test_draft_codegen
+        working-directory: crates/jsonschema-py
+        env:
+          PYTHONPATH: ${{ runner.temp }}/codegen
 
   test-python-freethreaded:
     strategy:
@@ -783,13 +821,13 @@ jobs:
         include:
           - target: x86_64-unknown-linux-gnu
             name: native
-            flags: "--feature-powerset --exclude-features resolve-http,conformance,pyo3,magnus"
+            flags: "--feature-powerset --exclude-features resolve-http,conformance,pyo3,pyo3-tests,magnus"
           - target: wasm32-unknown-unknown
             name: wasm32-unknown-unknown
-            flags: "--feature-powerset --exclude-features default,resolve-http,resolve-file,resolve-async,retrieve-async,pyo3,magnus,conformance"
+            flags: "--feature-powerset --exclude-features default,resolve-http,resolve-file,resolve-async,retrieve-async,pyo3,pyo3-tests,magnus,conformance"
           - target: wasm32-wasip1
             name: wasm32-wasip1
-            flags: "--feature-powerset --exclude-features retrieve-async,pyo3,magnus,conformance"
+            flags: "--feature-powerset --exclude-features retrieve-async,pyo3,pyo3-tests,magnus,conformance"
     name: Check features on ${{ matrix.name }}
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -817,6 +855,12 @@ jobs:
 
       - name: Check features for jsonschema
         run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} $DEPTH -p jsonschema
+
+      # `pyo3` links libpython, so the powerset leaves it out; the macro's PyO3 backend needs it
+      # paired with `macros`, and only a native target can build it.
+      - name: Check the macros and pyo3 combination for jsonschema
+        if: matrix.name == 'native'
+        run: cargo check --target ${{ matrix.target }} --features macros,pyo3 -p jsonschema
 
       - name: Check features for referencing
         run: cargo hack check --target ${{ matrix.target }} ${{ matrix.flags }} $DEPTH -p referencing
