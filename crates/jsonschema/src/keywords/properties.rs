@@ -4,7 +4,9 @@ use std::borrow::Cow;
 use crate::{
     compiler,
     error::ValidationError,
-    evaluation::{format_schema_location, Annotations, ErrorDescription, EvaluationNode},
+    evaluation::{
+        format_schema_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
+    },
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -215,7 +217,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
             return EvaluationResult::valid_empty();
         };
         let mut matched_props = Vec::with_capacity(object.len());
-        let mut children = Vec::new();
+        let mut children = ChildList::default();
         if object.len() <= self.properties.len() {
             for (name, value) in object.members() {
                 let name = name.as_ref();
@@ -224,7 +226,8 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
                     if prop_name.matches(head, name) {
                         let path = location.push(name);
                         matched_props.push(prop_name.as_str().to_owned());
-                        children.push(node.evaluate_instance_below(&value, &path, tracker, ctx));
+                        let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
+                        children.push(&mut ctx.arena, child);
                         break;
                     }
                 }
@@ -234,7 +237,8 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
                 if let Some(prop) = object.get(key) {
                     let path = location.push(prop_name.as_str());
                     matched_props.push(prop_name.as_str().to_owned());
-                    children.push(node.evaluate_instance_below(&prop, &path, tracker, ctx));
+                    let child = node.evaluate_instance_below(&prop, &path, tracker, ctx);
+                    children.push(&mut ctx.arena, child);
                 }
             }
         }
@@ -402,7 +406,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
     ) -> EvaluationResult {
         if let Some(object) = instance.as_object() {
             let mut matched_props = Vec::with_capacity(object.len());
-            let mut children = Vec::new();
+            let mut children = ChildList::default();
             if object.len() <= self.properties.len() {
                 for (name, value) in object.members() {
                     let name = name.as_ref();
@@ -411,8 +415,8 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                         if prop_name.matches(head, name) {
                             let path = location.push(name);
                             matched_props.push(prop_name.as_str().to_owned());
-                            children
-                                .push(node.evaluate_instance_below(&value, &path, tracker, ctx));
+                            let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
+                            children.push(&mut ctx.arena, child);
                             break;
                         }
                     }
@@ -422,7 +426,8 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     if let Some(prop) = object.get(key) {
                         let path = location.push(prop_name.as_str());
                         matched_props.push(prop_name.as_str().to_owned());
-                        children.push(node.evaluate_instance_below(&prop, &path, tracker, ctx));
+                        let child = node.evaluate_instance_below(&prop, &path, tracker, ctx);
+                        children.push(&mut ctx.arena, child);
                     }
                 }
             }
@@ -453,7 +458,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                 ));
             }
             if !required_errors.is_empty() {
-                children.push(EvaluationNode::invalid(
+                let child = EvaluationNode::invalid(
                     crate::paths::evaluation_path(tracker, &self.required_location, ctx),
                     self.required_absolute_location.clone(),
                     format_schema_location(
@@ -463,8 +468,9 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     location.into(),
                     None,
                     required_errors,
-                    Vec::new(),
-                ));
+                    ChildList::default(),
+                );
+                children.push(&mut ctx.arena, child);
             }
             let mut application = EvaluationResult::from_children(children);
             application.annotate(Annotations::new(Value::from(matched_props)));
@@ -537,12 +543,13 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
     ) -> EvaluationResult {
         if let Some(object) = instance.as_object() {
             let mut matched_props = Vec::with_capacity(object.len());
-            let mut children = Vec::new();
+            let mut children = ChildList::default();
             for (prop_name, prop) in object.members() {
                 if let Some(node) = self.properties.get(prop_name.as_ref()) {
                     let path = location.push(prop_name.as_ref());
                     matched_props.push(prop_name.as_ref().to_owned());
-                    children.push(node.evaluate_instance_below(&prop, &path, tracker, ctx));
+                    let child = node.evaluate_instance_below(&prop, &path, tracker, ctx);
+                    children.push(&mut ctx.arena, child);
                 }
             }
             let mut application = EvaluationResult::from_children(children);

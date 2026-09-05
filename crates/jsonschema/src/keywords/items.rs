@@ -1,6 +1,8 @@
 use crate::{
     compiler,
-    evaluation::{format_schema_location, Annotations, ErrorDescription, EvaluationNode},
+    evaluation::{
+        format_schema_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
+    },
     keywords::{BoxedValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -84,14 +86,10 @@ impl<F: Json> Validate<F> for ItemsArrayValidator<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Some(array) = instance.as_array() {
-            let mut children = Vec::with_capacity(self.items.len().min(array.len()));
+            let mut children = ChildList::default();
             for (idx, (item, node)) in array.elements().zip(self.items.iter()).enumerate() {
-                children.push(node.evaluate_instance_below(
-                    &item,
-                    &location.push(idx),
-                    tracker,
-                    ctx,
-                ));
+                let child = node.evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
+                children.push(&mut ctx.arena, child);
             }
             EvaluationResult::from_children(children)
         } else {
@@ -165,14 +163,12 @@ impl<F: Json> Validate<F> for ItemsObjectValidator<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Some(array) = instance.as_array() {
-            let mut children = Vec::with_capacity(array.len());
+            let mut children = ChildList::default();
             for (idx, item) in array.elements().enumerate() {
-                children.push(self.node.evaluate_instance_below(
-                    &item,
-                    &location.push(idx),
-                    tracker,
-                    ctx,
-                ));
+                let child =
+                    self.node
+                        .evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
+                children.push(&mut ctx.arena, child);
             }
             let schema_was_applied = array.len() != 0;
             let mut result = EvaluationResult::from_children(children);
@@ -263,14 +259,12 @@ impl<F: Json> Validate<F> for ItemsObjectSkipPrefixValidator<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Some(array) = instance.as_array() {
-            let mut children = Vec::with_capacity(array.len().saturating_sub(self.skip_prefix));
+            let mut children = ChildList::default();
             for (idx, item) in array.elements().enumerate().skip(self.skip_prefix) {
-                children.push(self.node.evaluate_instance_below(
-                    &item,
-                    &location.push(idx),
-                    tracker,
-                    ctx,
-                ));
+                let child =
+                    self.node
+                        .evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
+                children.push(&mut ctx.arena, child);
             }
             let schema_was_applied = array.len() > self.skip_prefix;
             let mut result = EvaluationResult::from_children(children);
@@ -1018,7 +1012,7 @@ fn absorbed_error_node(
         location.into(),
         None,
         vec![error],
-        Vec::new(),
+        ChildList::default(),
     )
 }
 
@@ -1151,30 +1145,32 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
                 "type",
                 format!(r#"{} is not of type "array""#, instance.to_value()),
             );
-            return EvaluationResult::from_children(vec![absorbed_error_node(
+            let node = absorbed_error_node(
                 location,
                 tracker,
                 &self.type_location,
                 self.type_absolute_location.as_ref(),
                 error,
                 ctx,
-            )]);
+            );
+            return EvaluationResult::from_children(ChildList::of(&mut ctx.arena, node));
         };
         let count = array.len() as u64;
-        let mut children = Vec::with_capacity(array.len());
+        let mut children = ChildList::default();
         if let Some(constraint) = &self.min_items {
             if count < constraint.limit {
                 let error = ErrorDescription::from_validation_error(&min_items_error::<F>(
                     constraint, instance, location, tracker,
                 ));
-                children.push(absorbed_error_node(
+                let child = absorbed_error_node(
                     location,
                     tracker,
                     &constraint.location,
                     constraint.absolute_location.as_ref(),
                     error,
                     ctx,
-                ));
+                );
+                children.push(&mut ctx.arena, child);
             }
         }
         if let Some(constraint) = &self.max_items {
@@ -1182,26 +1178,24 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
                 let error = ErrorDescription::from_validation_error(&max_items_error::<F>(
                     constraint, instance, location, tracker,
                 ));
-                children.push(absorbed_error_node(
+                let child = absorbed_error_node(
                     location,
                     tracker,
                     &constraint.location,
                     constraint.absolute_location.as_ref(),
                     error,
                     ctx,
-                ));
+                );
+                children.push(&mut ctx.arena, child);
             }
         }
         let element_result = match &self.items {
             FusedItems::Generic(node) => {
-                let mut element_children = Vec::with_capacity(array.len());
+                let mut element_children = ChildList::default();
                 for (idx, item) in array.elements().enumerate() {
-                    element_children.push(node.evaluate_instance_below(
-                        &item,
-                        &location.push(idx),
-                        tracker,
-                        ctx,
-                    ));
+                    let child =
+                        node.evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
+                    element_children.push(&mut ctx.arena, child);
                 }
                 let mut result = EvaluationResult::from_children(element_children);
                 result.annotate(Annotations::new(serde_json::json!(array.len() != 0)));
@@ -1215,7 +1209,7 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
         };
         // Fold the element evaluation into this `items` node, keeping the absorbed length nodes
         // ahead of the element children.
-        let (errors, mut element_children, annotations) = match element_result {
+        let (errors, element_children, annotations) = match element_result {
             EvaluationResult::Valid {
                 annotations,
                 children,
@@ -1226,8 +1220,8 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
                 annotations,
             } => (errors, children, annotations),
         };
-        children.append(&mut element_children);
-        if errors.is_empty() && children.iter().all(|node| node.valid) {
+        children.append(&mut ctx.arena, element_children);
+        if errors.is_empty() && children.all_valid() {
             EvaluationResult::Valid {
                 annotations,
                 children,

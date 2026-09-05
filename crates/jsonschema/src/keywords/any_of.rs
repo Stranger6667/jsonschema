@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use crate::{
     compiler,
     error::ValidationError,
+    evaluation::ChildList,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
@@ -138,27 +139,25 @@ impl<F: Json> Validate<F> for AnyOfValidator<F> {
 
         if valid_indices.is_empty() {
             // No valid schemas - evaluate all for error output.
-            let failures: Vec<_> = self
-                .schemas
-                .iter()
-                .map(|node| {
-                    node.evaluate_instance_at(instance, location, instance_location, tracker, ctx)
-                })
-                .collect();
+            let mut failures = ChildList::default();
+            for node in &self.schemas {
+                let child =
+                    node.evaluate_instance_at(instance, location, instance_location, tracker, ctx);
+                failures.push(&mut ctx.arena, child);
+            }
             EvaluationResult::from_children(failures)
         } else {
-            let valid_results: Vec<_> = valid_indices
-                .into_iter()
-                .map(|idx| {
-                    self.schemas[idx].evaluate_instance_at(
-                        instance,
-                        location,
-                        instance_location,
-                        tracker,
-                        ctx,
-                    )
-                })
-                .collect();
+            let mut valid_results = ChildList::default();
+            for idx in valid_indices {
+                let child = self.schemas[idx].evaluate_instance_at(
+                    instance,
+                    location,
+                    instance_location,
+                    tracker,
+                    ctx,
+                );
+                valid_results.push(&mut ctx.arena, child);
+            }
             EvaluationResult::from_children(valid_results)
         }
     }
@@ -257,13 +256,10 @@ impl<F: Json> Validate<F> for SingleAnyOfValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        EvaluationResult::from(self.node.evaluate_instance_at(
-            instance,
-            location,
-            instance_location,
-            tracker,
-            ctx,
-        ))
+        let node =
+            self.node
+                .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
+        EvaluationResult::from_node(&mut ctx.arena, node)
     }
 }
 

@@ -19,7 +19,7 @@ use std::{
 
 use crate::{
     compiler,
-    evaluation::ErrorDescription,
+    evaluation::{ChildList, ErrorDescription},
     node::SchemaNode,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -983,7 +983,7 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
             let mut evaluated = AHashSet::with_capacity(object.len());
             self.validators
                 .mark_evaluated_by_other_keywords(instance, &mut evaluated, ctx);
-            let mut children = Vec::new();
+            let mut children = ChildList::default();
             let mut unevaluated = Vec::new();
             let mut invalid = false;
 
@@ -1002,7 +1002,7 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                         invalid = true;
                         unevaluated.push(property.as_ref().to_owned());
                     }
-                    children.push(child);
+                    children.push(&mut ctx.arena, child);
                 } else {
                     invalid = true;
                     unevaluated.push(property.as_ref().to_owned());

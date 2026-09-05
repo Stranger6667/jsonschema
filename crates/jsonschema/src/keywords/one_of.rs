@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use crate::{
     compiler,
     error::ValidationError,
-    evaluation::ErrorDescription,
+    evaluation::{ChildList, ErrorDescription},
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -151,13 +151,10 @@ impl<F: Json> Validate<F> for SingleOneOfValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        EvaluationResult::from(self.node.evaluate_instance_at(
-            instance,
-            location,
-            instance_location,
-            tracker,
-            ctx,
-        ))
+        let node =
+            self.node
+                .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
+        EvaluationResult::from_node(&mut ctx.arena, node)
     }
 }
 
@@ -233,13 +230,12 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
         let first_valid_idx = self.get_first_valid(instance, ctx);
 
         let Some(first_idx) = first_valid_idx else {
-            let failures: Vec<_> = self
-                .schemas
-                .iter()
-                .map(|node| {
-                    node.evaluate_instance_at(instance, location, instance_location, tracker, ctx)
-                })
-                .collect();
+            let mut failures = ChildList::default();
+            for node in &self.schemas {
+                let child =
+                    node.evaluate_instance_at(instance, location, instance_location, tracker, ctx);
+                failures.push(&mut ctx.arena, child);
+            }
             return EvaluationResult::Invalid {
                 errors: Vec::new(),
                 children: failures,
@@ -248,7 +244,7 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
         };
 
         if self.are_others_valid(instance, first_idx, ctx) {
-            let mut successes = Vec::new();
+            let mut successes = ChildList::default();
             for (idx, node) in self.schemas.iter().enumerate() {
                 if idx == first_idx || node.is_valid(instance, ctx) {
                     let child = node.evaluate_instance_at(
@@ -259,7 +255,7 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
                         ctx,
                     );
                     if child.valid {
-                        successes.push(child);
+                        successes.push(&mut ctx.arena, child);
                     }
                 }
             }
@@ -279,7 +275,7 @@ impl<F: Json> Validate<F> for OneOfValidator<F> {
                 tracker,
                 ctx,
             );
-            EvaluationResult::from(child)
+            EvaluationResult::from_node(&mut ctx.arena, child)
         }
     }
 }

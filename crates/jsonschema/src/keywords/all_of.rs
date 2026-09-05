@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use crate::{
     compiler,
     error::ValidationError,
+    evaluation::ChildList,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
@@ -84,15 +85,11 @@ impl<F: Json> Validate<F> for AllOfValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let mut children = Vec::with_capacity(self.schemas.len());
+        let mut children = ChildList::default();
         for node in &self.schemas {
-            children.push(node.evaluate_instance_at(
-                instance,
-                location,
-                instance_location,
-                tracker,
-                ctx,
-            ));
+            let child =
+                node.evaluate_instance_at(instance, location, instance_location, tracker, ctx);
+            children.push(&mut ctx.arena, child);
         }
         EvaluationResult::from_children(children)
     }
@@ -160,13 +157,10 @@ impl<F: Json> Validate<F> for SingleValueAllOfValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        EvaluationResult::from(self.node.evaluate_instance_at(
-            instance,
-            location,
-            instance_location,
-            tracker,
-            ctx,
-        ))
+        let node =
+            self.node
+                .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
+        EvaluationResult::from_node(&mut ctx.arena, node)
     }
 }
 

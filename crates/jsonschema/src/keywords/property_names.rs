@@ -1,6 +1,7 @@
 use crate::{
     compiler,
     error::ValidationError,
+    evaluation::ChildList,
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -113,12 +114,13 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Some(object) = instance.as_object() {
-            let mut children = Vec::with_capacity(object.len());
+            let mut children = ChildList::default();
             let mut buffer = F::StringBuffer::default();
             for (name, _) in object.members() {
-                children.push(F::with_string_node(&mut buffer, name.as_ref(), |node| {
+                let child = F::with_string_node(&mut buffer, name.as_ref(), |node| {
                     self.node.evaluate_instance(&node, location, tracker, ctx)
-                }));
+                });
+                children.push(&mut ctx.arena, child);
             }
             EvaluationResult::from_children(children)
         } else {

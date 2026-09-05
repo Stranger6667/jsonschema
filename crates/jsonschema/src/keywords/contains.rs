@@ -1,7 +1,7 @@
 use crate::{
     compiler,
     error::ValidationError,
-    evaluation::{Annotations, ErrorDescription},
+    evaluation::{Annotations, ChildList, ErrorDescription},
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -69,7 +69,7 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Some(array) = instance.as_array() {
-            let mut results = Vec::with_capacity(array.len());
+            let mut results = ChildList::default();
             let mut indices = Vec::with_capacity(array.len());
             for (idx, item) in array.elements().enumerate() {
                 let path = location.push(idx);
@@ -78,7 +78,7 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
                     .evaluate_instance_below(&item, &path, tracker, ctx);
                 if result.valid {
                     indices.push(idx);
-                    results.push(result);
+                    results.push(&mut ctx.arena, result);
                 }
             }
             if indices.is_empty() {
@@ -93,7 +93,7 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
                             instance.lazy_value(),
                         ),
                     )],
-                    children: Vec::new(),
+                    children: ChildList::default(),
                     annotations: None,
                 }
             } else {
