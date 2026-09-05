@@ -3,6 +3,7 @@ use crate::{
     error::ValidationError,
     keywords::{CompilationResult, NotNullable, Nullability, Nullable},
     paths::{LazyLocation, Location, RefTracker},
+    properties::{KeyHead, PropertyName},
     types::{JsonType, JsonTypeSet},
     validator::{Validate, ValidationContext},
     Json, LazyInstance, Node,
@@ -127,7 +128,7 @@ impl<F: Json> Validate<F> for SingleValueEnumValidator {
 #[derive(Debug)]
 pub(crate) struct SmallStringEnumValidator<N> {
     options: Value,
-    items: Vec<Box<str>>,
+    items: Vec<PropertyName>,
     location: Location,
     nullability: PhantomData<N>,
 }
@@ -144,7 +145,7 @@ impl<N: Nullability> SmallStringEnumValidator<N> {
             items: items
                 .iter()
                 .filter_map(Value::as_str)
-                .map(Into::into)
+                .map(|item| PropertyName::new(item.to_owned()))
                 .collect(),
             location,
             nullability: PhantomData,
@@ -175,7 +176,9 @@ impl<F: Json, N: Nullability> Validate<F> for SmallStringEnumValidator<N> {
 
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(s) = instance.as_string() {
-            self.items.iter().any(|item| item.as_ref() == s.as_ref())
+            let s = s.as_ref();
+            let head = KeyHead::of(s);
+            self.items.iter().any(|item| item.matches(head, s))
         } else {
             N::ACCEPTS_NULL && instance.is_null()
         }
@@ -448,6 +451,15 @@ mod tests {
     #[test_case(&json!({"enum": [null, 10, 20]}), &json!(15); "integer with null rejects other integer")]
     fn integer_enum_invalid(schema: &Value, instance: &Value) {
         tests_util::is_not_valid(schema, instance);
+    }
+
+    // Options agreeing on length, first and last eight bytes share a head
+    #[test_case("prefix0002suffix00", true)]
+    #[test_case("prefix0003suffix00", false)]
+    #[test_case("prefix0002suffix0", false)]
+    fn colliding_string_options(instance: &str, expected: bool) {
+        let schema = json!({"enum": ["prefix0001suffix00", "prefix0002suffix00"]});
+        assert_eq!(crate::is_valid(&schema, &json!(instance)), expected);
     }
 
     #[test]

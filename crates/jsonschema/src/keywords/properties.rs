@@ -266,6 +266,22 @@ impl<F: Json> SmallPropertiesWithRequired2Validator<F> {
             Value::String(key.as_str().to_owned()),
         )
     }
+
+    fn check_required<'i, O: Object<'i, F>>(
+        &self,
+        instance: &F::Node<'i>,
+        object: &O,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+    ) -> Result<(), ValidationError<'i>> {
+        if object.get(&self.first_key).is_none() {
+            return Err(self.missing(&self.first, instance, location, tracker));
+        }
+        if object.get(&self.second_key).is_none() {
+            return Err(self.missing(&self.second, instance, location, tracker));
+        }
+        Ok(())
+    }
 }
 
 impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
@@ -320,51 +336,45 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Some(object) = instance.as_object() {
-            if object.len() <= self.properties.len() {
-                // Small object: find both required keys by head without a map lookup, so a
-                // missing one is still reported before any property error.
-                let mut seen_first = false;
-                let mut seen_second = false;
-                for (name, _) in object.members() {
-                    let name = name.as_ref();
-                    let head = KeyHead::of(name);
-                    if self.first.matches(head, name) {
-                        seen_first = true;
-                    } else if self.second.matches(head, name) {
-                        seen_second = true;
-                    }
-                    if seen_first && seen_second {
+        let Some(object) = instance.as_object() else {
+            return Ok(());
+        };
+        if object.len() <= self.properties.len() {
+            // One pass validates matching properties and confirms both required keys.
+            let mut seen_first = false;
+            let mut seen_second = false;
+            for (name, value) in object.members() {
+                let name = name.as_ref();
+                let head = KeyHead::of(name);
+                if self.first.matches(head, name) {
+                    seen_first = true;
+                } else if self.second.matches(head, name) {
+                    seen_second = true;
+                }
+                for (prop_name, _, node) in &self.properties {
+                    if prop_name.matches(head, name) {
+                        if let Err(error) =
+                            node.validate(&value, &location.push(name), tracker, ctx)
+                        {
+                            // A missing required name is reported before a property error.
+                            self.check_required(instance, &object, location, tracker)?;
+                            return Err(error);
+                        }
                         break;
                     }
                 }
-                if !seen_first {
-                    return Err(self.missing(&self.first, instance, location, tracker));
-                }
-                if !seen_second {
-                    return Err(self.missing(&self.second, instance, location, tracker));
-                }
-                for (name, value) in object.members() {
-                    let name = name.as_ref();
-                    let head = KeyHead::of(name);
-                    for (prop_name, _, node) in &self.properties {
-                        if prop_name.matches(head, name) {
-                            node.validate(&value, &location.push(name), tracker, ctx)?;
-                            break;
-                        }
-                    }
-                }
-            } else {
-                if object.get(&self.first_key).is_none() {
-                    return Err(self.missing(&self.first, instance, location, tracker));
-                }
-                if object.get(&self.second_key).is_none() {
-                    return Err(self.missing(&self.second, instance, location, tracker));
-                }
-                for (name, key, node) in &self.properties {
-                    if let Some(prop) = object.get(key) {
-                        node.validate(&prop, &location.push(name.as_str()), tracker, ctx)?;
-                    }
+            }
+            if !seen_first {
+                return Err(self.missing(&self.first, instance, location, tracker));
+            }
+            if !seen_second {
+                return Err(self.missing(&self.second, instance, location, tracker));
+            }
+        } else {
+            self.check_required(instance, &object, location, tracker)?;
+            for (name, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
+                    node.validate(&prop, &location.push(name.as_str()), tracker, ctx)?;
                 }
             }
         }
@@ -666,7 +676,7 @@ pub(crate) fn compile<'a, F: Json>(
 #[cfg(test)]
 mod tests {
     use crate::tests_util;
-    use serde_json::{json, Value};
+    use serde_json::{json, Map, Value};
     use test_case::test_case;
 
     #[test]
@@ -729,6 +739,77 @@ mod tests {
             "additionalProperties": {"type": "string"},
         });
         assert_eq!(crate::is_valid(&additional, &json!({key: 1})), matches);
+    }
+
+    // Names agreeing on length, first and last eight bytes share a head
+    fn colliding_name(middle: usize) -> String {
+        format!("prefix00{middle:02}suffix00")
+    }
+
+    #[test_case("plain", 3, 3, true)]
+    #[test_case("plain", 3, 4, false)]
+    #[test_case("plain", 13, 13, true)]
+    #[test_case("plain", 0, 13, false)]
+    #[test_case("plain", 99, 0, true)]
+    #[test_case("fused", 3, 3, true)]
+    #[test_case("fused", 3, 4, false)]
+    #[test_case("fused", 13, 13, true)]
+    #[test_case("additional", 3, 3, true)]
+    #[test_case("additional", 3, 4, false)]
+    #[test_case("additional", 99, 0, false)]
+    fn colliding_heads_select_the_named_property(
+        kind: &str,
+        key: usize,
+        value: usize,
+        expected: bool,
+    ) {
+        let properties: Map<String, Value> = (0..14)
+            .map(|index| (colliding_name(index), json!({"const": index})))
+            .collect();
+        let mut schema = json!({"properties": properties});
+        let mut instance = json!({colliding_name(key): value});
+        match kind {
+            "fused" => {
+                schema["required"] = json!([colliding_name(0), colliding_name(1)]);
+                instance[colliding_name(0)] = json!(0);
+                instance[colliding_name(1)] = json!(1);
+            }
+            "additional" => schema["additionalProperties"] = json!(false),
+            _ => {}
+        }
+        assert_eq!(crate::is_valid(&schema, &instance), expected);
+    }
+
+    // Required names outside `properties`
+    #[test_case(&json!({"a": 1, "z": 2}), true)]
+    #[test_case(&json!({"a": 1}), false)]
+    #[test_case(&json!({"z": 2, "y": 3}), false)]
+    #[test_case(&json!({"a": "x", "z": 2}), false)]
+    fn fused_required_outside_properties(instance: &Value, expected: bool) {
+        let schema = json!({
+            "properties": {"a": {"type": "integer"}, "b": {}},
+            "required": ["a", "z"],
+        });
+        assert_eq!(crate::is_valid(&schema, instance), expected);
+        assert_eq!(
+            crate::validator_for(&schema)
+                .unwrap()
+                .validate(instance)
+                .is_ok(),
+            expected
+        );
+    }
+
+    // A missing required name is reported before an invalid property
+    #[test_case(&json!({"a": "x"}), r#""b" is a required property"#)]
+    #[test_case(&json!({"b": 1}), r#""a" is a required property"#)]
+    #[test_case(&json!({"a": "x", "b": "y"}), r#""x" is not of type "integer""#)]
+    fn fused_error_precedence(instance: &Value, expected: &str) {
+        let validator = crate::validator_for(&fused_schema()).unwrap();
+        assert_eq!(
+            validator.validate(instance).unwrap_err().to_string(),
+            expected
+        );
     }
 
     #[test]
