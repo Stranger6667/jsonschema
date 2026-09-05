@@ -277,6 +277,17 @@ pub(crate) fn keyword_priority(keyword: &Keyword) -> u8 {
     }
 }
 
+/// Whether the keyword asserts on the instance itself rather than applying subschemas.
+///
+/// Only such a keyword may be checked with `is_valid` before `validate`: re-running it on
+/// failure repeats one cheap check, while re-running an applicator would walk its subtree twice.
+pub(crate) fn keyword_is_leaf(keyword: &Keyword) -> bool {
+    match keyword {
+        Keyword::Builtin(BuiltinKeyword::ContentSchema) | Keyword::Custom(_) => false,
+        Keyword::Builtin(_) => keyword_priority(keyword) < 40,
+    }
+}
+
 pub(crate) fn get_for_draft<'a, F: Json>(
     ctx: &compiler::Context<'a, F>,
     keyword: &'a str,

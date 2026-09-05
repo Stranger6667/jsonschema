@@ -248,6 +248,26 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
     }
 }
 
+impl<F: Json> SmallPropertiesWithRequired2Validator<F> {
+    #[cold]
+    #[inline(never)]
+    fn missing<'i>(
+        &self,
+        key: &PropertyName,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+    ) -> ValidationError<'i> {
+        ValidationError::required(
+            self.required_location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &self.required_location),
+            location.into(),
+            instance.lazy_value(),
+            Value::String(key.as_str().to_owned()),
+        )
+    }
+}
+
 impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let Some(object) = instance.as_object() else {
@@ -301,26 +321,29 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Some(object) = instance.as_object() {
-            // Check required first
-            if object.get(&self.first_key).is_none() {
-                return Err(ValidationError::required(
-                    self.required_location.clone(),
-                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
-                    location.into(),
-                    instance.lazy_value(),
-                    Value::String(self.first.as_str().to_owned()),
-                ));
-            }
-            if object.get(&self.second_key).is_none() {
-                return Err(ValidationError::required(
-                    self.required_location.clone(),
-                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
-                    location.into(),
-                    instance.lazy_value(),
-                    Value::String(self.second.as_str().to_owned()),
-                ));
-            }
             if object.len() <= self.properties.len() {
+                // Small object: find both required keys by head without a map lookup, so a
+                // missing one is still reported before any property error.
+                let mut seen_first = false;
+                let mut seen_second = false;
+                for (name, _) in object.members() {
+                    let name = name.as_ref();
+                    let head = KeyHead::of(name);
+                    if self.first.matches(head, name) {
+                        seen_first = true;
+                    } else if self.second.matches(head, name) {
+                        seen_second = true;
+                    }
+                    if seen_first && seen_second {
+                        break;
+                    }
+                }
+                if !seen_first {
+                    return Err(self.missing(&self.first, instance, location, tracker));
+                }
+                if !seen_second {
+                    return Err(self.missing(&self.second, instance, location, tracker));
+                }
                 for (name, value) in object.members() {
                     let name = name.as_ref();
                     let head = KeyHead::of(name);
@@ -332,6 +355,12 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     }
                 }
             } else {
+                if object.get(&self.first_key).is_none() {
+                    return Err(self.missing(&self.first, instance, location, tracker));
+                }
+                if object.get(&self.second_key).is_none() {
+                    return Err(self.missing(&self.second, instance, location, tracker));
+                }
                 for (name, key, node) in &self.properties {
                     if let Some(prop) = object.get(key) {
                         node.validate(&prop, &location.push(name.as_str()), tracker, ctx)?;
