@@ -20,6 +20,7 @@
 
 ### Fixed
 
+- `type: array` with `items` and `minItems`/`maxItems` checking the built-in length bound even when a custom keyword overrides `minItems` or `maxItems`, so the bound was evaluated twice.
 - `#[jsonschema::validator]` generated code that named `serde_json` directly, so it needed the consumer crate to depend on `serde_json` too.
 - Canonicalization of `not` over an object with `properties`, `patternProperties` and `additionalProperties`, which applied `additionalProperties` to the keys listed in `properties`.
 
