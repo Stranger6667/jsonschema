@@ -17,6 +17,9 @@
 - `validate` and `iter_errors` check each assertion keyword with the `is_valid` path and build an error only for a failing one.
 - `evaluate` holds its output tree in one allocation instead of one per node.
 - A `pattern` of `^\S*$` scans bytes instead of decoding every character.
+- `validate` on `properties` beside a two-name `required` confirms both names in the pass that checks the properties, instead of looking each up first.
+- A string `enum` compares an option's length and first and last eight bytes before its full text.
+- A JSON Pointer segment is scanned for `~` and `/` eight bytes at a time before it is copied.
 - Canonicalization cloning leaves per intersection and the definition map per settled target.
 
 ### Fixed
