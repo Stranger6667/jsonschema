@@ -5,7 +5,9 @@ use std::collections::hash_map::Entry;
 
 use crate::{
     error::ErrorIterator,
-    evaluation::{Annotations, ErrorDescription, Evaluation, EvaluationNode},
+    evaluation::{
+        Annotations, ChildList, ErrorDescription, Evaluation, EvaluationArena, EvaluationNode,
+    },
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     Draft, Json, NodeIdentity, SerdeJson, ValidationError, ValidationOptions,
@@ -73,6 +75,8 @@ pub struct ValidationContext {
     evaluation_path_calls: u32,
     /// Instance location of the node being evaluated; only the `evaluate` path sets it.
     instance_location: Option<Location>,
+    /// Holds every node of the tree the `evaluate` path builds.
+    pub(crate) arena: EvaluationArena,
 }
 
 /// Evaluation paths are only cached once this many have been built.
@@ -318,13 +322,13 @@ pub(crate) enum EvaluationResult {
         /// Annotations produced by this validator
         annotations: Option<Annotations>,
         /// Children evaluation nodes
-        children: Vec<EvaluationNode>,
+        children: ChildList,
     },
     Invalid {
         /// Errors which caused this schema to be invalid
         errors: Vec<ErrorDescription>,
         /// Children evaluation nodes
-        children: Vec<EvaluationNode>,
+        children: ChildList,
         /// Potential annotations that should be reported as dropped on failure
         annotations: Option<Annotations>,
     },
@@ -335,7 +339,7 @@ impl EvaluationResult {
     pub(crate) fn valid_empty() -> EvaluationResult {
         EvaluationResult::Valid {
             annotations: None,
-            children: Vec::new(),
+            children: ChildList::default(),
         }
     }
 
@@ -343,7 +347,7 @@ impl EvaluationResult {
     pub(crate) fn invalid_empty(errors: Vec<ErrorDescription>) -> EvaluationResult {
         EvaluationResult::Invalid {
             errors,
-            children: Vec::new(),
+            children: ChildList::default(),
             annotations: None,
         }
     }
@@ -377,33 +381,35 @@ impl EvaluationResult {
         }
     }
 
-    pub(crate) fn from_children(children: Vec<EvaluationNode>) -> EvaluationResult {
-        if children.iter().any(|node| !node.valid) {
+    pub(crate) fn from_children(children: ChildList) -> EvaluationResult {
+        if children.all_valid() {
+            EvaluationResult::Valid {
+                annotations: None,
+                children,
+            }
+        } else {
             EvaluationResult::Invalid {
                 errors: Vec::new(),
                 children,
                 annotations: None,
-            }
-        } else {
-            EvaluationResult::Valid {
-                annotations: None,
-                children,
             }
         }
     }
 }
 
-impl From<EvaluationNode> for EvaluationResult {
-    fn from(node: EvaluationNode) -> Self {
-        if node.valid {
+impl EvaluationResult {
+    pub(crate) fn from_node(arena: &mut EvaluationArena, node: EvaluationNode) -> Self {
+        let valid = node.valid;
+        let children = ChildList::of(arena, node);
+        if valid {
             EvaluationResult::Valid {
                 annotations: None,
-                children: vec![node],
+                children,
             }
         } else {
             EvaluationResult::Invalid {
                 errors: Vec::new(),
-                children: vec![node],
+                children,
                 annotations: None,
             }
         }
@@ -547,7 +553,8 @@ impl<F: Json> Validator<F> {
         let root = self
             .root
             .evaluate_instance(&instance, &LazyLocation::new(), None, &mut ctx);
-        Evaluation::new(root)
+        let root = ctx.arena.push(root);
+        Evaluation::new(std::mem::take(&mut ctx.arena), root)
     }
     /// The [`Draft`] which was used to build this validator.
     #[must_use]

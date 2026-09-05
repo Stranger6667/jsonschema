@@ -4,6 +4,7 @@
 
 ### Performance
 
+- `evaluate` holds its output tree in one allocation instead of one per node.
 - A `pattern` of `^\S*$` scans bytes instead of decoding every character.
 - Faster validating objects against object-heavy schemas.
 - Canonicalization cloning leaves per intersection and the definition map per settled target.

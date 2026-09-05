@@ -1,7 +1,7 @@
 use crate::{
     compiler,
     error::ValidationError,
-    evaluation::Annotations,
+    evaluation::{Annotations, ChildList},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
@@ -88,17 +88,18 @@ impl<F: Json> Validate<F> for PrefixItemsValidator<F> {
     ) -> EvaluationResult {
         if let Some(array) = instance.as_array() {
             if array.len() != 0 {
-                let mut children = Vec::with_capacity(self.schemas.len().min(array.len()));
+                let mut children = ChildList::default();
                 let mut max_index_applied = 0usize;
                 for (idx, (schema_node, item)) in
                     self.schemas.iter().zip(array.elements()).enumerate()
                 {
-                    children.push(schema_node.evaluate_instance_below(
+                    let child = schema_node.evaluate_instance_below(
                         &item,
                         &location.push(idx),
                         tracker,
                         ctx,
-                    ));
+                    );
+                    children.push(&mut ctx.arena, child);
                     max_index_applied = idx;
                 }
                 let annotation = if children.len() == array.len() {

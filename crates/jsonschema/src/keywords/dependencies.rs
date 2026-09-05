@@ -4,6 +4,7 @@ use std::borrow::Cow;
 use crate::{
     compiler,
     error::ValidationError,
+    evaluation::ChildList,
     keywords::{required, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -124,16 +125,17 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Some(object) = instance.as_object() {
-            let mut children = Vec::new();
+            let mut children = ChildList::default();
             for (property, dependency) in &self.dependencies {
                 if object.get(property).is_some() {
-                    children.push(dependency.evaluate_instance_at(
+                    let child = dependency.evaluate_instance_at(
                         instance,
                         location,
                         instance_location,
                         tracker,
                         ctx,
-                    ));
+                    );
+                    children.push(&mut ctx.arena, child);
                 }
             }
             EvaluationResult::from_children(children)
@@ -271,16 +273,17 @@ impl<F: Json> Validate<F> for DependentRequiredValidator<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Some(object) = instance.as_object() {
-            let mut children = Vec::new();
+            let mut children = ChildList::default();
             for (property, dependency) in &self.dependencies {
                 if object.get(property).is_some() {
-                    children.push(dependency.evaluate_instance_at(
+                    let child = dependency.evaluate_instance_at(
                         instance,
                         location,
                         instance_location,
                         tracker,
                         ctx,
-                    ));
+                    );
+                    children.push(&mut ctx.arena, child);
                 }
             }
             EvaluationResult::from_children(children)
@@ -388,16 +391,17 @@ impl<F: Json> Validate<F> for DependentSchemasValidator<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Some(object) = instance.as_object() {
-            let mut children = Vec::new();
+            let mut children = ChildList::default();
             for (property, dependency) in &self.dependencies {
                 if object.get(property).is_some() {
-                    children.push(dependency.evaluate_instance_at(
+                    let child = dependency.evaluate_instance_at(
                         instance,
                         location,
                         instance_location,
                         tracker,
                         ctx,
-                    ));
+                    );
+                    children.push(&mut ctx.arena, child);
                 }
             }
             EvaluationResult::from_children(children)

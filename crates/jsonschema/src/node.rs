@@ -1,6 +1,6 @@
 use crate::{
     compiler::Context,
-    evaluation::{Annotations, EvaluationNode},
+    evaluation::{Annotations, ChildList, EvaluationNode},
     keywords::{BoxedValidator, Keyword},
     paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -466,8 +466,7 @@ impl<F: Json> SchemaNode<F> {
                 ),
             > + 'a,
     {
-        let (lower_bound, _) = subschemas.size_hint();
-        let mut children: Vec<EvaluationNode> = Vec::with_capacity(lower_bound);
+        let mut children = ChildList::default();
         let mut invalid = false;
 
         for (child_location, absolute_location, cached_schema_location, validator) in subschemas {
@@ -519,7 +518,7 @@ impl<F: Json> SchemaNode<F> {
                     )
                 }
             };
-            children.push(child_node);
+            children.push(&mut ctx.arena, child_node);
         }
         if invalid {
             EvaluationResult::Invalid {
@@ -716,7 +715,7 @@ impl<F: Json> SchemaNode<F> {
                 } else {
                     EvaluationResult::Valid {
                         annotations: None,
-                        children: Vec::new(),
+                        children: ChildList::default(),
                     }
                 }
             }

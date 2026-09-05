@@ -15,7 +15,7 @@ use std::{
 
 use crate::{
     compiler,
-    evaluation::ErrorDescription,
+    evaluation::{ChildList, ErrorDescription},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -821,7 +821,7 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
             let mut indexes = vec![false; array.len()];
             self.validators
                 .mark_evaluated_indexes_by_other_keywords(instance, &mut indexes, ctx);
-            let mut children = Vec::new();
+            let mut children = ChildList::default();
             let mut unevaluated = Vec::new();
             let mut invalid = false;
 
@@ -836,7 +836,7 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
                         invalid = true;
                         unevaluated.push(item.to_value().to_string());
                     }
-                    children.push(child);
+                    children.push(&mut ctx.arena, child);
                 } else {
                     invalid = true;
                     unevaluated.push(item.to_value().to_string());

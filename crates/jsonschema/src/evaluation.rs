@@ -105,6 +105,8 @@ impl fmt::Display for ErrorDescription {
     }
 }
 
+pub(crate) const NO_NODE: u32 = u32::MAX;
+
 #[derive(Debug, PartialEq)]
 pub(crate) struct EvaluationNode {
     pub(crate) keyword_location: Location,
@@ -115,7 +117,154 @@ pub(crate) struct EvaluationNode {
     pub(crate) annotations: Option<Annotations>,
     pub(crate) dropped_annotations: Option<Annotations>,
     pub(crate) errors: Vec<ErrorDescription>,
-    pub(crate) children: Vec<EvaluationNode>,
+    pub(crate) first_child: u32,
+    pub(crate) next_sibling: u32,
+}
+
+/// Nodes per chunk. A power of two so the index split is a shift and a mask.
+const CHUNK: usize = 32;
+
+/// Every node of one evaluation, in chunks that are never resized, so growth copies nothing.
+///
+/// Children are a sibling chain rather than a `Vec` per node: subtrees are finished in the order
+/// they are evaluated, so a parent cannot know where its children sit until they all exist.
+#[derive(Debug, Default)]
+pub(crate) struct EvaluationArena {
+    chunks: Vec<Vec<EvaluationNode>>,
+    len: usize,
+}
+
+impl EvaluationArena {
+    #[inline]
+    pub(crate) fn push(&mut self, node: EvaluationNode) -> u32 {
+        let index = u32::try_from(self.len).expect("evaluation exceeded u32 nodes");
+        if self.len % CHUNK == 0 {
+            self.chunks.push(Vec::with_capacity(CHUNK));
+        }
+        self.chunks
+            .last_mut()
+            .expect("a chunk was just reserved")
+            .push(node);
+        self.len += 1;
+        index
+    }
+
+    #[inline]
+    pub(crate) fn node(&self, index: u32) -> &EvaluationNode {
+        let index = index as usize;
+        &self.chunks[index / CHUNK][index % CHUNK]
+    }
+
+    #[inline]
+    fn node_mut(&mut self, index: u32) -> &mut EvaluationNode {
+        let index = index as usize;
+        &mut self.chunks[index / CHUNK][index % CHUNK]
+    }
+
+    pub(crate) fn child_indices(&self, index: u32) -> ChildIndices<'_> {
+        ChildIndices {
+            arena: self,
+            current: self.node(index).first_child,
+        }
+    }
+}
+
+pub(crate) struct ChildIndices<'a> {
+    arena: &'a EvaluationArena,
+    current: u32,
+}
+
+impl Iterator for ChildIndices<'_> {
+    type Item = u32;
+
+    fn next(&mut self) -> Option<u32> {
+        if self.current == NO_NODE {
+            return None;
+        }
+        let index = self.current;
+        self.current = self.arena.node(index).next_sibling;
+        Some(index)
+    }
+}
+
+/// The children collected for one node, as a chain into [`EvaluationArena`].
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct ChildList {
+    first: u32,
+    last: u32,
+    len: u32,
+    /// Whether every child pushed so far is valid.
+    valid: bool,
+}
+
+impl Default for ChildList {
+    fn default() -> Self {
+        ChildList {
+            first: NO_NODE,
+            last: NO_NODE,
+            len: 0,
+            valid: true,
+        }
+    }
+}
+
+impl ChildList {
+    #[inline]
+    pub(crate) fn push(&mut self, arena: &mut EvaluationArena, node: EvaluationNode) {
+        self.valid &= node.valid;
+        let index = arena.push(node);
+        if self.last == NO_NODE {
+            self.first = index;
+        } else {
+            arena.node_mut(self.last).next_sibling = index;
+        }
+        self.last = index;
+        self.len += 1;
+    }
+
+    pub(crate) fn len(self) -> usize {
+        self.len as usize
+    }
+
+    pub(crate) fn all_valid(self) -> bool {
+        self.valid
+    }
+
+    /// Move `other`'s children onto the end of this list.
+    pub(crate) fn append(&mut self, arena: &mut EvaluationArena, other: ChildList) {
+        if other.first == NO_NODE {
+            return;
+        }
+        if self.last == NO_NODE {
+            self.first = other.first;
+        } else {
+            arena.node_mut(self.last).next_sibling = other.first;
+        }
+        self.last = other.last;
+        self.len += other.len;
+        self.valid &= other.valid;
+    }
+
+    /// A list of nodes that were collected before the arena was reachable.
+    #[cfg(test)]
+    pub(crate) fn from_nodes(
+        arena: &mut EvaluationArena,
+        nodes: impl IntoIterator<Item = EvaluationNode>,
+    ) -> Self {
+        let mut list = ChildList::default();
+        for node in nodes {
+            list.push(arena, node);
+        }
+        list
+    }
+
+    /// A list holding `node` alone.
+    #[inline]
+    pub(crate) fn of(arena: &mut EvaluationArena, node: EvaluationNode) -> Self {
+        let mut list = ChildList::default();
+        list.push(arena, node);
+        list
+    }
 }
 
 impl EvaluationNode {
@@ -125,7 +274,7 @@ impl EvaluationNode {
         schema_location: impl Into<Arc<str>>,
         instance_location: Location,
         annotations: Option<Annotations>,
-        children: Vec<EvaluationNode>,
+        children: ChildList,
     ) -> Self {
         let schema_location = schema_location.into();
         EvaluationNode {
@@ -137,7 +286,8 @@ impl EvaluationNode {
             annotations,
             dropped_annotations: None,
             errors: Vec::new(),
-            children,
+            first_child: children.first,
+            next_sibling: NO_NODE,
         }
     }
 
@@ -148,7 +298,7 @@ impl EvaluationNode {
         instance_location: Location,
         annotations: Option<Annotations>,
         errors: Vec<ErrorDescription>,
-        children: Vec<EvaluationNode>,
+        children: ChildList,
     ) -> Self {
         let schema_location = schema_location.into();
         EvaluationNode {
@@ -160,7 +310,8 @@ impl EvaluationNode {
             annotations: None,
             dropped_annotations: annotations,
             errors,
-            children,
+            first_child: children.first,
+            next_sibling: NO_NODE,
         }
     }
 }
@@ -210,12 +361,23 @@ impl EvaluationNode {
 /// ```
 #[derive(Debug)]
 pub struct Evaluation {
-    root: EvaluationNode,
+    arena: EvaluationArena,
+    root: u32,
 }
 
 impl Evaluation {
-    pub(crate) fn new(root: EvaluationNode) -> Self {
-        Evaluation { root }
+    pub(crate) fn new(arena: EvaluationArena, root: u32) -> Self {
+        Evaluation { arena, root }
+    }
+
+    #[cfg(test)]
+    fn with_root(mut arena: EvaluationArena, root: EvaluationNode) -> Self {
+        let root = arena.push(root);
+        Evaluation::new(arena, root)
+    }
+
+    fn root(&self) -> &EvaluationNode {
+        self.arena.node(self.root)
     }
     /// Returns the flag output format.
     ///
@@ -244,7 +406,7 @@ impl Evaluation {
     #[must_use]
     pub fn flag(&self) -> FlagOutput {
         FlagOutput {
-            valid: self.root.valid,
+            valid: self.root().valid,
         }
     }
     /// Whether the instance is valid against the schema.
@@ -264,7 +426,7 @@ impl Evaluation {
     /// ```
     #[must_use]
     pub fn is_valid(&self) -> bool {
-        self.root.valid
+        self.root().valid
     }
     /// Returns the list output format.
     ///
@@ -345,7 +507,10 @@ impl Evaluation {
     /// ```
     #[must_use]
     pub fn list(&self) -> ListOutput<'_> {
-        ListOutput { root: &self.root }
+        ListOutput {
+            arena: &self.arena,
+            root: self.root,
+        }
     }
     /// Returns the hierarchical output format.
     ///
@@ -436,7 +601,10 @@ impl Evaluation {
     /// ```
     #[must_use]
     pub fn hierarchical(&self) -> HierarchicalOutput<'_> {
-        HierarchicalOutput { root: &self.root }
+        HierarchicalOutput {
+            arena: &self.arena,
+            root: self.root,
+        }
     }
     /// Returns an iterator over all annotations produced during evaluation.
     ///
@@ -478,7 +646,7 @@ impl Evaluation {
     /// ```
     #[must_use]
     pub fn iter_annotations(&self) -> AnnotationIter<'_> {
-        AnnotationIter::new(&self.root)
+        AnnotationIter::new(&self.arena, self.root)
     }
     /// Returns an iterator over all errors produced during evaluation.
     ///
@@ -511,7 +679,7 @@ impl Evaluation {
     /// ```
     #[must_use]
     pub fn iter_errors(&self) -> ErrorIter<'_> {
-        ErrorIter::new(&self.root)
+        ErrorIter::new(&self.arena, self.root)
     }
 }
 
@@ -561,7 +729,8 @@ pub struct FlagOutput {
 /// See [`Evaluation::list`] for an example JSON payload produced by this type.
 #[derive(Debug)]
 pub struct ListOutput<'a> {
-    root: &'a EvaluationNode,
+    arena: &'a EvaluationArena,
+    root: u32,
 }
 
 /// Hierarchical output format providing a tree structure of evaluation results.
@@ -573,7 +742,8 @@ pub struct ListOutput<'a> {
 /// See [`Evaluation::hierarchical`] for an example JSON payload produced by this type.
 #[derive(Debug)]
 pub struct HierarchicalOutput<'a> {
-    root: &'a EvaluationNode,
+    arena: &'a EvaluationArena,
+    root: u32,
 }
 
 impl Serialize for ListOutput<'_> {
@@ -581,7 +751,7 @@ impl Serialize for ListOutput<'_> {
     where
         S: serde::Serializer,
     {
-        serialize_list(self.root, serializer)
+        serialize_list(self.arena, self.root, serializer)
     }
 }
 
@@ -590,47 +760,53 @@ impl Serialize for HierarchicalOutput<'_> {
     where
         S: serde::Serializer,
     {
-        serialize_hierarchical(self.root, serializer)
+        serialize_hierarchical(self.arena, self.root, serializer)
     }
 }
 
-fn serialize_list<S>(root: &EvaluationNode, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_list<S>(arena: &EvaluationArena, root: u32, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
     let mut state = serializer.serialize_struct("ListOutput", 2)?;
-    state.serialize_field("valid", &root.valid)?;
+    state.serialize_field("valid", &arena.node(root).valid)?;
     let mut entries = Vec::new();
-    collect_list_entries(root, &mut entries);
+    collect_list_entries(arena, root, &mut entries);
     state.serialize_field("details", &entries)?;
     state.end()
 }
 
-fn serialize_hierarchical<S>(root: &EvaluationNode, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_hierarchical<S>(
+    arena: &EvaluationArena,
+    root: u32,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    serialize_unit(root, serializer, true)
+    serialize_unit(arena, root, serializer, true)
 }
 
-fn collect_list_entries<'a>(node: &'a EvaluationNode, out: &mut Vec<ListEntry<'a>>) {
+fn collect_list_entries<'a>(arena: &'a EvaluationArena, index: u32, out: &mut Vec<ListEntry<'a>>) {
     // Note: The spec says "Output units which do not contain errors or annotations SHOULD be
     // excluded" but the official test suite includes all nodes. We include all nodes to match
     // the reference implementation and test suite expectations.
-    out.push(ListEntry::new(node));
-    for child in &node.children {
-        collect_list_entries(child, out);
+    out.push(ListEntry::new(arena, index));
+    for child in arena.child_indices(index) {
+        collect_list_entries(arena, child, out);
     }
 }
 
 fn serialize_unit<S>(
-    node: &EvaluationNode,
+    arena: &EvaluationArena,
+    index: u32,
     serializer: S,
     include_children: bool,
 ) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
+    let node = arena.node(index);
     let mut state = serializer.serialize_struct("OutputUnit", 7)?;
     state.serialize_field("valid", &node.valid)?;
     state.serialize_field("evaluationPath", node.keyword_location.as_str())?;
@@ -645,13 +821,8 @@ where
     if !node.errors.is_empty() {
         state.serialize_field("errors", &ErrorEntriesSerializer(&node.errors))?;
     }
-    if include_children && !node.children.is_empty() {
-        state.serialize_field(
-            "details",
-            &DetailsSerializer {
-                children: &node.children,
-            },
-        )?;
+    if include_children && node.first_child != NO_NODE {
+        state.serialize_field("details", &DetailsSerializer { arena, index })?;
     }
     state.end()
 }
@@ -672,12 +843,13 @@ pub(crate) fn format_schema_location(
 }
 
 struct ListEntry<'a> {
-    node: &'a EvaluationNode,
+    arena: &'a EvaluationArena,
+    index: u32,
 }
 
 impl<'a> ListEntry<'a> {
-    fn new(node: &'a EvaluationNode) -> Self {
-        ListEntry { node }
+    fn new(arena: &'a EvaluationArena, index: u32) -> Self {
+        ListEntry { arena, index }
     }
 }
 
@@ -686,12 +858,13 @@ impl Serialize for ListEntry<'_> {
     where
         S: serde::Serializer,
     {
-        serialize_unit(self.node, serializer, false)
+        serialize_unit(self.arena, self.index, serializer, false)
     }
 }
 
 struct DetailsSerializer<'a> {
-    children: &'a [EvaluationNode],
+    arena: &'a EvaluationArena,
+    index: u32,
 }
 
 impl Serialize for DetailsSerializer<'_> {
@@ -699,16 +872,20 @@ impl Serialize for DetailsSerializer<'_> {
     where
         S: serde::Serializer,
     {
-        let mut seq = serializer.serialize_seq(Some(self.children.len()))?;
-        for child in self.children {
-            seq.serialize_element(&SeqEntry { node: child })?;
+        let mut seq = serializer.serialize_seq(None)?;
+        for child in self.arena.child_indices(self.index) {
+            seq.serialize_element(&SeqEntry {
+                arena: self.arena,
+                index: child,
+            })?;
         }
         seq.end()
     }
 }
 
 struct SeqEntry<'a> {
-    node: &'a EvaluationNode,
+    arena: &'a EvaluationArena,
+    index: u32,
 }
 
 impl Serialize for SeqEntry<'_> {
@@ -716,7 +893,7 @@ impl Serialize for SeqEntry<'_> {
     where
         S: serde::Serializer,
     {
-        serialize_unit(self.node, serializer, true)
+        serialize_unit(self.arena, self.index, serializer, true)
     }
 }
 
@@ -822,12 +999,16 @@ impl fmt::Display for ErrorEntry<'_> {
 }
 
 struct NodeIter<'a> {
-    stack: Vec<&'a EvaluationNode>,
+    arena: &'a EvaluationArena,
+    stack: Vec<u32>,
 }
 
 impl<'a> NodeIter<'a> {
-    fn new(root: &'a EvaluationNode) -> Self {
-        NodeIter { stack: vec![root] }
+    fn new(arena: &'a EvaluationArena, root: u32) -> Self {
+        NodeIter {
+            arena,
+            stack: vec![root],
+        }
     }
 }
 
@@ -835,11 +1016,11 @@ impl<'a> Iterator for NodeIter<'a> {
     type Item = &'a EvaluationNode;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let node = self.stack.pop()?;
-        for child in node.children.iter().rev() {
-            self.stack.push(child);
-        }
-        Some(node)
+        let index = self.stack.pop()?;
+        let start = self.stack.len();
+        self.stack.extend(self.arena.child_indices(index));
+        self.stack[start..].reverse();
+        Some(self.arena.node(index))
     }
 }
 
@@ -888,9 +1069,9 @@ pub struct AnnotationIter<'a> {
 }
 
 impl<'a> AnnotationIter<'a> {
-    fn new(root: &'a EvaluationNode) -> Self {
+    fn new(arena: &'a EvaluationArena, root: u32) -> Self {
         AnnotationIter {
-            nodes: NodeIter::new(root),
+            nodes: NodeIter::new(arena, root),
         }
     }
 }
@@ -953,9 +1134,9 @@ pub struct ErrorIter<'a> {
 }
 
 impl<'a> ErrorIter<'a> {
-    fn new(root: &'a EvaluationNode) -> Self {
+    fn new(arena: &'a EvaluationArena, root: u32) -> Self {
         ErrorIter {
-            nodes: NodeIter::new(root),
+            nodes: NodeIter::new(arena, root),
             current: None,
         }
     }
@@ -1055,7 +1236,7 @@ mod tests {
             schema.to_string(),
             loc(),
             Some(annotation(ann)),
-            Vec::new(),
+            ChildList::default(),
         )
     }
 
@@ -1067,12 +1248,13 @@ mod tests {
             loc(),
             None,
             vec![ErrorDescription::from_string(msg)],
-            Vec::new(),
+            ChildList::default(),
         )
     }
 
     #[test]
     fn iter_annotations_visits_all_nodes() {
+        let mut arena = EvaluationArena::default();
         let child = leaf_with_annotation("/child", json!({"k": "v"}));
         let root = EvaluationNode::valid(
             loc(),
@@ -1080,9 +1262,9 @@ mod tests {
             "/root".to_string(),
             loc(),
             Some(annotation(json!({"root": true}))),
-            vec![child],
+            ChildList::from_nodes(&mut arena, vec![child]),
         );
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let entries: Vec<_> = evaluation.iter_annotations().collect();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].schema_location, "/root");
@@ -1091,6 +1273,7 @@ mod tests {
 
     #[test]
     fn iter_errors_visits_all_nodes() {
+        let mut arena = EvaluationArena::default();
         let child = leaf_with_error("/child", "boom");
         let root = EvaluationNode::invalid(
             loc(),
@@ -1099,9 +1282,9 @@ mod tests {
             loc(),
             None,
             vec![ErrorDescription::from_string("root error")],
-            vec![child],
+            ChildList::from_nodes(&mut arena, vec![child]),
         );
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let entries: Vec<_> = evaluation.iter_errors().collect();
         assert_eq!(entries.len(), 2);
         assert_eq!(entries[0].error.to_string(), "root error");
@@ -1110,14 +1293,23 @@ mod tests {
 
     #[test]
     fn flag_output_valid() {
-        let root = EvaluationNode::valid(loc(), None, "/root".to_string(), loc(), None, Vec::new());
-        let evaluation = Evaluation::new(root);
+        let arena = EvaluationArena::default();
+        let root = EvaluationNode::valid(
+            loc(),
+            None,
+            "/root".to_string(),
+            loc(),
+            None,
+            ChildList::default(),
+        );
+        let evaluation = Evaluation::with_root(arena, root);
         let flag = evaluation.flag();
         assert!(flag.valid);
     }
 
     #[test]
     fn flag_output_invalid() {
+        let arena = EvaluationArena::default();
         let root = EvaluationNode::invalid(
             loc(),
             None,
@@ -1125,17 +1317,25 @@ mod tests {
             loc(),
             None,
             vec![ErrorDescription::from_string("error")],
-            Vec::new(),
+            ChildList::default(),
         );
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let flag = evaluation.flag();
         assert!(!flag.valid);
     }
 
     #[test]
     fn flag_output_serialization() {
-        let root = EvaluationNode::valid(loc(), None, "/root".to_string(), loc(), None, Vec::new());
-        let evaluation = Evaluation::new(root);
+        let arena = EvaluationArena::default();
+        let root = EvaluationNode::valid(
+            loc(),
+            None,
+            "/root".to_string(),
+            loc(),
+            None,
+            ChildList::default(),
+        );
+        let evaluation = Evaluation::with_root(arena, root);
         let flag = evaluation.flag();
         let serialized = serde_json::to_value(flag).expect("serialization succeeds");
         assert_eq!(serialized, json!({"valid": true}));
@@ -1143,8 +1343,16 @@ mod tests {
 
     #[test]
     fn list_output_serialization_valid() {
-        let root = EvaluationNode::valid(loc(), None, "#".to_string(), loc(), None, Vec::new());
-        let evaluation = Evaluation::new(root);
+        let arena = EvaluationArena::default();
+        let root = EvaluationNode::valid(
+            loc(),
+            None,
+            "#".to_string(),
+            loc(),
+            None,
+            ChildList::default(),
+        );
+        let evaluation = Evaluation::with_root(arena, root);
         let list = evaluation.list();
         let serialized = serde_json::to_value(list).expect("serialization succeeds");
         assert_eq!(
@@ -1165,6 +1373,7 @@ mod tests {
 
     #[test]
     fn list_output_serialization_with_children() {
+        let mut arena = EvaluationArena::default();
         let child1 = leaf_with_annotation("/child1", json!({"key": "value"}));
         let child2 = leaf_with_error("/child2", "child error");
         let root = EvaluationNode::valid(
@@ -1173,9 +1382,9 @@ mod tests {
             "/root".to_string(),
             loc(),
             Some(annotation(json!({"root": true}))),
-            vec![child1, child2],
+            ChildList::from_nodes(&mut arena, vec![child1, child2]),
         );
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let list = evaluation.list();
         let serialized = serde_json::to_value(list).expect("serialization succeeds");
         assert_eq!(
@@ -1211,6 +1420,7 @@ mod tests {
 
     #[test]
     fn hierarchical_output_serialization() {
+        let mut arena = EvaluationArena::default();
         let child = leaf_with_annotation("/child", json!({"nested": "data"}));
         let root = EvaluationNode::valid(
             loc(),
@@ -1218,9 +1428,9 @@ mod tests {
             "/root".to_string(),
             loc(),
             Some(annotation(json!({"root": "annotation"}))),
-            vec![child],
+            ChildList::from_nodes(&mut arena, vec![child]),
         );
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let hierarchical = evaluation.hierarchical();
         let serialized = serde_json::to_value(hierarchical).expect("serialization succeeds");
         assert_eq!(
@@ -1246,6 +1456,7 @@ mod tests {
 
     #[test]
     fn outputs_include_errors_and_dropped_annotations() {
+        let mut arena = EvaluationArena::default();
         let invalid_child = EvaluationNode::invalid(
             loc(),
             None,
@@ -1253,7 +1464,7 @@ mod tests {
             Location::new().join(1usize),
             None,
             vec![ErrorDescription::from_string("child error")],
-            Vec::new(),
+            ChildList::default(),
         );
         let prefix_child = leaf_with_annotation("/prefix", json!(0));
         let root = EvaluationNode::invalid(
@@ -1263,9 +1474,9 @@ mod tests {
             loc(),
             Some(annotation(json!({"dropped": true}))),
             vec![ErrorDescription::from_string("root failure")],
-            vec![invalid_child, prefix_child],
+            ChildList::from_nodes(&mut arena, vec![invalid_child, prefix_child]),
         );
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let list = serde_json::to_value(evaluation.list()).expect("serialization succeeds");
         assert_eq!(
             list,
@@ -1330,8 +1541,16 @@ mod tests {
 
     #[test]
     fn empty_evaluation_tree() {
-        let root = EvaluationNode::valid(loc(), None, "/root".to_string(), loc(), None, Vec::new());
-        let evaluation = Evaluation::new(root);
+        let arena = EvaluationArena::default();
+        let root = EvaluationNode::valid(
+            loc(),
+            None,
+            "/root".to_string(),
+            loc(),
+            None,
+            ChildList::default(),
+        );
+        let evaluation = Evaluation::with_root(arena, root);
 
         // No annotations
         assert_eq!(evaluation.iter_annotations().count(), 0);
@@ -1344,6 +1563,7 @@ mod tests {
 
     #[test]
     fn deep_nesting() {
+        let mut arena = EvaluationArena::default();
         // Create a deeply nested tree: root -> level1 -> level2 -> level3
         let level3 = leaf_with_annotation("/level3", json!({"level": 3}));
         let level2 = EvaluationNode::valid(
@@ -1352,7 +1572,7 @@ mod tests {
             "/level2".to_string(),
             loc(),
             Some(annotation(json!({"level": 2}))),
-            vec![level3],
+            ChildList::from_nodes(&mut arena, vec![level3]),
         );
         let level1 = EvaluationNode::valid(
             loc(),
@@ -1360,7 +1580,7 @@ mod tests {
             "/level1".to_string(),
             loc(),
             Some(annotation(json!({"level": 1}))),
-            vec![level2],
+            ChildList::from_nodes(&mut arena, vec![level2]),
         );
         let root = EvaluationNode::valid(
             loc(),
@@ -1368,10 +1588,10 @@ mod tests {
             "/root".to_string(),
             loc(),
             Some(annotation(json!({"level": 0}))),
-            vec![level1],
+            ChildList::from_nodes(&mut arena, vec![level1]),
         );
 
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let annotations: Vec<_> = evaluation.iter_annotations().collect();
         assert_eq!(annotations.len(), 4);
 
@@ -1384,10 +1604,12 @@ mod tests {
 
     #[test]
     fn wide_tree() {
+        let mut arena = EvaluationArena::default();
         // Create a wide tree with many siblings
-        let children: Vec<_> = (0..10)
-            .map(|i| leaf_with_annotation(&format!("/child{i}"), json!({"index": i})))
-            .collect();
+        let children = ChildList::from_nodes(
+            &mut arena,
+            (0..10).map(|i| leaf_with_annotation(&format!("/child{i}"), json!({"index": i}))),
+        );
 
         let root = EvaluationNode::valid(
             loc(),
@@ -1398,13 +1620,14 @@ mod tests {
             children,
         );
 
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let annotations: Vec<_> = evaluation.iter_annotations().collect();
         assert_eq!(annotations.len(), 11); // root + 10 children
     }
 
     #[test]
     fn multiple_errors_per_node() {
+        let arena = EvaluationArena::default();
         let errors = vec![
             ErrorDescription::from_string("error 1"),
             ErrorDescription::from_string("error 2"),
@@ -1417,10 +1640,10 @@ mod tests {
             loc(),
             None,
             errors,
-            Vec::new(),
+            ChildList::default(),
         );
 
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let error_entries: Vec<_> = evaluation.iter_errors().collect();
         assert_eq!(error_entries.len(), 3);
         assert_eq!(error_entries[0].error.to_string(), "error 1");
@@ -1430,6 +1653,7 @@ mod tests {
 
     #[test]
     fn mixed_valid_and_invalid_nodes() {
+        let mut arena = EvaluationArena::default();
         let valid_child = leaf_with_annotation("/valid", json!({"ok": true}));
         let invalid_child = leaf_with_error("/invalid", "failed");
 
@@ -1440,10 +1664,10 @@ mod tests {
             loc(),
             Some(annotation(json!({"attempted": true}))),
             vec![ErrorDescription::from_string("root failed")],
-            vec![valid_child, invalid_child],
+            ChildList::from_nodes(&mut arena, vec![valid_child, invalid_child]),
         );
 
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
 
         // Should have 1 annotation (from valid child only; root has dropped annotations)
         let annotations: Vec<_> = evaluation.iter_annotations().collect();
@@ -1457,8 +1681,15 @@ mod tests {
 
     #[test]
     fn annotations_iterator_skips_nodes_without_annotations() {
-        let no_annotation =
-            EvaluationNode::valid(loc(), None, "/no_ann".to_string(), loc(), None, Vec::new());
+        let mut arena = EvaluationArena::default();
+        let no_annotation = EvaluationNode::valid(
+            loc(),
+            None,
+            "/no_ann".to_string(),
+            loc(),
+            None,
+            ChildList::default(),
+        );
         let with_annotation = leaf_with_annotation("/with_ann", json!({"present": true}));
 
         let root = EvaluationNode::valid(
@@ -1467,10 +1698,10 @@ mod tests {
             "/root".to_string(),
             loc(),
             None,
-            vec![no_annotation, with_annotation],
+            ChildList::from_nodes(&mut arena, vec![no_annotation, with_annotation]),
         );
 
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let annotations: Vec<_> = evaluation.iter_annotations().collect();
         assert_eq!(annotations.len(), 1);
         assert_eq!(annotations[0].schema_location, "/with_ann");
@@ -1478,13 +1709,14 @@ mod tests {
 
     #[test]
     fn errors_iterator_skips_nodes_without_errors() {
+        let mut arena = EvaluationArena::default();
         let no_error = EvaluationNode::valid(
             loc(),
             None,
             "/no_error".to_string(),
             loc(),
             Some(annotation(json!({"ok": true}))),
-            Vec::new(),
+            ChildList::default(),
         );
         let with_error = leaf_with_error("/with_error", "failed");
 
@@ -1494,10 +1726,10 @@ mod tests {
             "/root".to_string(),
             loc(),
             None,
-            vec![no_error, with_error],
+            ChildList::from_nodes(&mut arena, vec![no_error, with_error]),
         );
 
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let errors: Vec<_> = evaluation.iter_errors().collect();
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].schema_location, "/with_error");
@@ -1556,6 +1788,7 @@ mod tests {
 
     #[test]
     fn list_output_preserves_multiple_errors_per_keyword() {
+        let arena = EvaluationArena::default();
         let errors = vec![
             ErrorDescription::new("required", "\"foo\" is required".to_string()),
             ErrorDescription::new("required", "\"bar\" is required".to_string()),
@@ -1567,10 +1800,10 @@ mod tests {
             loc(),
             None,
             errors,
-            Vec::new(),
+            ChildList::default(),
         );
 
-        let evaluation = Evaluation::new(root);
+        let evaluation = Evaluation::with_root(arena, root);
         let list = serde_json::to_value(evaluation.list()).expect("serialization succeeds");
         let root_unit = list
             .get("details")
@@ -1647,7 +1880,7 @@ mod tests {
             loc(),
             annotations.clone(),
             vec![ErrorDescription::from_string("failed")],
-            Vec::new(),
+            ChildList::default(),
         );
 
         assert!(!root.valid);
@@ -1668,7 +1901,7 @@ mod tests {
             "/root".to_string(),
             loc(),
             annotations.clone(),
-            Vec::new(),
+            ChildList::default(),
         );
 
         assert!(root.valid);
@@ -1772,5 +2005,19 @@ mod tests {
                 "/age: \"oops\" is not of type \"number\"".to_string(),
             ]
         );
+    }
+}
+
+#[cfg(test)]
+mod public_api {
+    use super::{Evaluation, HierarchicalOutput, ListOutput};
+
+    // These are returned from the public API, so dropping a derive breaks downstream `{:?}`.
+    #[test]
+    fn output_types_are_debug() {
+        fn assert_debug<T: std::fmt::Debug>() {}
+        assert_debug::<Evaluation>();
+        assert_debug::<ListOutput<'_>>();
+        assert_debug::<HierarchicalOutput<'_>>();
     }
 }
