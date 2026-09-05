@@ -3348,7 +3348,7 @@ pub mod __private {
         pub use fancy_regex::{Regex, RegexBuilder};
     }
     pub mod regex {
-        pub use jsonschema_regex::is_ecma_whitespace;
+        pub use jsonschema_regex::contains_ecma_whitespace;
         pub use regex::{Regex, RegexBuilder};
     }
     pub mod unique_items {

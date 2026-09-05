@@ -54,7 +54,7 @@ Sources:
 | CITM Catalog  | 4.62 ms (**x8.06**) | 78.94 ms (**x137.60**) | 0.57 ms |
 | Fast (Valid)  | 2.09 µs (**x6.89**) | 33.78 µs (**x111.45**) | 303.10 ns |
 | Fast (Invalid)| 977.92 ns (**x0.91**) | 5.23 µs (**x4.86**) | 1.08 µs |
-| FHIR          | 2.04 ms (**x470.16**) | 12.34 ms (**x2,840.53**) | 4.34 µs |
+| FHIR          | 2.04 ms (**x552.36**) | 12.34 ms (**x3,341.25**) | 3.69 µs |
 | Recursive     | 1.03 ms (**x114.37**) | 1.20 s (**x133,784**) | 9.00 µs |
 
 You can find benchmark code in [benches/](benches/), Python version `3.14.7`, Rust version `1.98.0`.

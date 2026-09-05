@@ -9,7 +9,7 @@ match instance {
                     .iter()
                     .all(|(key, instance)| {
                         let mut covered = false;
-                        if !key.as_str().chars().any(__re::is_ecma_whitespace) {
+                        if !__re::contains_ecma_whitespace(key.as_str()) {
                             if !(instance.is_string()) {
                                 return false;
                             }

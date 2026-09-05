@@ -52,7 +52,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         Some(jsonschema_regex::PatternAnalysis::NoWhitespace) => pattern_check::<E>(
             &schema_path,
             pattern,
-            quote! { !s.chars().any(__re::is_ecma_whitespace) },
+            quote! { !__re::contains_ecma_whitespace(s) },
         ),
         None => match translate_and_validate_regex(ctx, "pattern", pattern) {
             Ok(regex) => {

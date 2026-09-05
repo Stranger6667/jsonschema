@@ -49,7 +49,7 @@ Sources:
 | CITM      | 346.39 µs           | 131.13 µs          | **2.64x** |
 | Fast (Valid) | 64.854 ns        | 10.815 ns          | **6.00x** |
 | Fast (Invalid) | 6.0212 ns      | 2.5233 ns          | **2.39x** |
-| FHIR      | 3.82 µs             | 315.64 ns          | **12.10x** |
+| FHIR      | 3.25 µs             | 248.38 ns          | **13.09x** |
 | Recursive | 6.47 µs             | 638.05 ns          | **10.14x** |
 
 ### Comparison with Other Libraries

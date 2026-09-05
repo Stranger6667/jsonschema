@@ -5,7 +5,7 @@ use crate::{
     compiler,
     node::SchemaNode,
     paths::{LazyEvaluationPath, Location},
-    regex::{analyze_pattern, is_ecma_whitespace, LiteralMatchError, PatternOptimization},
+    regex::{analyze_pattern, contains_ecma_whitespace, LiteralMatchError, PatternOptimization},
     validator::Validate as _,
     Json, Object, SerdeJson, ValidationContext,
 };
@@ -38,7 +38,7 @@ impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern
             CompiledPattern::Prefix(prefix) => Ok(text.starts_with(prefix.as_ref())),
             CompiledPattern::Exact(exact) => Ok(text == exact.as_ref()),
             CompiledPattern::Alternation(alts) => Ok(alts.iter().any(|a| a.as_str() == text)),
-            CompiledPattern::NoWhitespace => Ok(!text.chars().any(is_ecma_whitespace)),
+            CompiledPattern::NoWhitespace => Ok(!contains_ecma_whitespace(text)),
             // Treat regex errors as non-match for compatibility
             CompiledPattern::Regex(re) => Ok(re.is_match(text).unwrap_or(false)),
         }
