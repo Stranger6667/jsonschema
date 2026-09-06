@@ -3905,14 +3905,21 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
         leaf.properties
             .retain(|key, _| required.binary_search(key).is_ok());
     }
-    // A required key already demands a property, so a minimum it covers says nothing more.
+    // A required key already demands a property, and so does a demand that some key break a
+    // rule, so a minimum they cover says nothing more.
     // e.g.  {"type": "object", "required": ["a", "b"], "minProperties": 2}
     //       =>  {"type": "object", "required": ["a", "b"]}
+    // e.g.  {"type": "object", "minProperties": 1, "not": {"propertyNames": {"pattern": "^a"}}}
+    //       =>  {"type": "object", "not": {"propertyNames": {"pattern": "^a"}}}
+    let mut demanded = leaf.required_count();
+    if !leaf.violations.is_empty() && demanded.is_zero() {
+        demanded = BoundCardinality::from(1);
+    }
     if leaf
         .sizes
         .minimum
         .as_ref()
-        .is_some_and(|min| *min <= leaf.required_count())
+        .is_some_and(|min| *min <= demanded)
     {
         leaf.sizes.minimum = None;
     }
