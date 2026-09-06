@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-09-06
+
 ### Changed
 
 - **BREAKING**: `canonical::ObjectViolationView` gained the `PatternValueFails` variant, which negation records for a `patternProperties` entry.
@@ -1800,7 +1802,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.54.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.55.0...HEAD
+[0.55.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.54.0...rust-v0.55.0
 [0.54.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.53.0...rust-v0.54.0
 [0.53.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.52.1...rust-v0.53.0
 [0.52.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.52.0...rust-v0.52.1
