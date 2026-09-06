@@ -12,6 +12,7 @@
 - Canonicalization of an `anyOf` over objects sharing a `properties` key under `patternProperties`, which settled only on a second pass.
 - Canonicalization of `not` over an `allOf` folded through a reference, which settled only on a second pass.
 - Canonicalization of a `multipleOf` divisor past `f64` precision, which was not taken to divide itself.
+- Canonicalization of an `anyOf` over a value beside a window pinned to it, which settled only on a second pass.
 
 ### Fixed
 

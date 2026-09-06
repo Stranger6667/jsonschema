@@ -3761,8 +3761,7 @@
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [
       {"type": ["null", "boolean", "number", "array", "object"]},
       {"type": "string", "allOf": [{"not": {"pattern": "^a"}}]},
-      {"type": "string", "minLength": 9},
-      {"enum": [""]}
+      {"type": "string", "minLength": 9}
     ]},
     "tests": [
       {"data": "b", "valid": true},
