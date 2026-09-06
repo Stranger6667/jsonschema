@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-09-06
+
 ### Added
 
 - `canonical.PatternValueFailsView`, which `ObjectView.violations` records for a `patternProperties` entry.
@@ -1474,7 +1476,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.54.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.0...HEAD
+[0.55.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.54.0...python-v0.55.0
 [0.54.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.53.0...python-v0.54.0
 [0.53.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.1...python-v0.53.0
 [0.52.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.0...python-v0.52.1
