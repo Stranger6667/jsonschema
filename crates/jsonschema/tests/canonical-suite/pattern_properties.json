@@ -1027,5 +1027,49 @@
       {"data": {"a": 1}, "valid": false},
       {"data": {"a": "x"}, "valid": false}
     ]
+  },
+  {
+    "description": "an entry a matching pattern already narrows to the sibling's values does not widen vacuously; the sibling's entry widens instead",
+    "schema": {
+      "anyOf": [
+        {"type": "object", "additionalProperties": false, "required": ["a"],
+         "properties": {"a": {"type": "null"}}},
+        {"type": "object", "additionalProperties": false,
+         "properties": {"a": {"type": "string"}},
+         "patternProperties": {"^a": {"type": "string"}, "b$": {}}}
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "properties": {"a": {"type": ["null", "string"]}},
+          "propertyNames": {"const": "a"},
+          "type": "object"
+        },
+        {
+          "patternProperties": {"^a": {"type": "string"}},
+          "properties": {"a": {"type": "string"}},
+          "propertyNames": {
+            "anyOf": [
+              {"pattern": "^a", "type": "string"},
+              {"pattern": "b$", "type": "string"}
+            ]
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": null}, "valid": true},
+      {"data": {"a": "x"}, "valid": true},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"ab": "x"}, "valid": true},
+      {"data": {"ab": 1}, "valid": false},
+      {"data": {"b": 1}, "valid": true},
+      {"data": {"a": "x", "b": 1}, "valid": true},
+      {"data": {"a": null, "b": 1}, "valid": false}
+    ]
   }
 ]

@@ -2310,23 +2310,48 @@ fn widen_entry_covered_by_sibling(
                     .get(&key)
                     .expect("the key came from this leaf");
                 let sibling_entry = leaves[sibling].properties.get(&key);
-                // `None` means the sibling admits anything at the key, lifting the union to `True`.
-                let widened_entry = match sibling_entry {
+                let mut widened = leaves[index].clone();
+                match sibling_entry {
                     Some(other) if other == entry => continue,
                     Some(other) => {
-                        let united = union(vec![entry.clone(), other.clone()], ctx);
-                        if &united == entry {
+                        // Every pattern matching the key checks it too, and the constructor keeps
+                        // a named entry intersected with those. The union is narrowed the same
+                        // way before it is compared or written: otherwise values the leaf's own
+                        // pattern rejects would count as a widening, and the leaf would carry the
+                        // wider entry until assembly while its siblings were weighed against it.
+                        // e.g.  anyOf [
+                        //         {"type": "object", "properties": {"a": {"type": "string"}},
+                        //          "patternProperties": {"^a": {"type": "string"}}},
+                        //         {"type": "object", "properties": {"a": {"type": "null"}}}
+                        //       ]  =>  unchanged: the pattern rejects `null`, so the first entry
+                        //                         gains nothing
+                        let narrowed = computed_exactly(ctx, || {
+                            let united = union(vec![entry.clone(), other.clone()], ctx);
+                            widened.properties.insert(Arc::clone(&key), united);
+                            merge_matching_patterns(
+                                &mut widened.properties,
+                                &leaves[index].pattern_properties,
+                                &key,
+                                ctx,
+                            );
+                        });
+                        if narrowed.is_none() {
                             continue;
                         }
-                        Some(united).filter(|united| !matches!(united.kind(), SchemaKind::True))
+                        let united = widened
+                            .properties
+                            .get(&key)
+                            .expect("the entry was just written");
+                        if united == entry {
+                            continue;
+                        }
+                        // A union lifted to `True` says nothing about the key: the entry goes.
+                        if matches!(united.kind(), SchemaKind::True) {
+                            widened.properties.remove(&key);
+                        }
                     }
-                    None => None,
-                };
-                let mut widened = leaves[index].clone();
-                match widened_entry {
-                    Some(united) => {
-                        widened.properties.insert(Arc::clone(&key), united);
-                    }
+                    // `None` means the sibling admits anything at the key, lifting the union to
+                    // `True`: the entry goes.
                     None => {
                         widened.properties.remove(&key);
                     }

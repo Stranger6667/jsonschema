@@ -9,6 +9,7 @@
 ### Changed
 
 - Canonicalization of `not` over `patternProperties`, which kept the entry under `not` instead of recording the demand a key breaks.
+- Canonicalization of an `anyOf` over objects sharing a `properties` key under `patternProperties`, which settled only on a second pass.
 
 ### Fixed
 
