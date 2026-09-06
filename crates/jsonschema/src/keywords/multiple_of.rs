@@ -76,6 +76,12 @@ impl<F: Json> Validate<F> for MultipleOfFloatValidator {
         }
         Ok(())
     }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_number()
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct MultipleOfIntegerValidator {
@@ -140,6 +146,12 @@ impl<F: Json> Validate<F> for MultipleOfIntegerValidator {
             }
         }
         Ok(())
+    }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_number()
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -215,7 +227,7 @@ impl<F: Json> Validate<F> for MultipleOfBigIntValidator {
                         }
                     }
                 }
-                // If we made it here we encountered scientific notation that can’t be normalized, or
+                // If we made it here we encountered scientific notation that can't be normalized, or
                 // a decimal with a fractional part. Either way it cannot be an integer multiple.
                 false
             }
@@ -241,6 +253,14 @@ impl<F: Json> Validate<F> for MultipleOfBigIntValidator {
             ));
         }
         Ok(())
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_number()
+    }
+
+    fn schema_path(&self) -> &crate::paths::Location {
+        &self.location
     }
 }
 
@@ -315,6 +335,14 @@ impl<F: Json> Validate<F> for MultipleOfBigFracValidator {
             ));
         }
         Ok(())
+    }
+
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.is_number()
+    }
+
+    fn schema_path(&self) -> &crate::paths::Location {
+        &self.location
     }
 }
 

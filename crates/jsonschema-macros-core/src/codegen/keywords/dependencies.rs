@@ -23,7 +23,6 @@ pub(crate) fn compile<E: ValueEmitter>(
     if dependencies.is_empty() {
         return None;
     }
-    let schema_path = ctx.schema_path_for_keyword("dependencies");
     let checks: Vec<CompiledExpr> = dependencies
         .iter()
         .map(|(prop, dependency)| match dependency {
@@ -43,6 +42,11 @@ pub(crate) fn compile<E: ValueEmitter>(
                         .iter()
                         .map(|prop| E::object_contains_key(format_ident!("obj"), prop))
                         .collect();
+                    let schema_path = ctx.with_schema_path_segment("dependencies", |ctx| {
+                        ctx.with_schema_path_segment(prop, |ctx| {
+                            ctx.current_schema_path().to_string()
+                        })
+                    });
                     CompiledExpr::with_validate_and_collect_blocks(
                         quote! {
                             if #guard {
@@ -112,7 +116,6 @@ pub(crate) fn compile_dependent_required<E: ValueEmitter>(
     if dependencies.is_empty() {
         return None;
     }
-    let schema_path = ctx.schema_path_for_keyword("dependentRequired");
     let checks: Vec<CompiledExpr> = dependencies
         .iter()
         .map(|(prop, required)| {
@@ -140,6 +143,9 @@ pub(crate) fn compile_dependent_required<E: ValueEmitter>(
                 .iter()
                 .map(|required_prop| E::object_contains_key(format_ident!("obj"), required_prop))
                 .collect();
+            let schema_path = ctx.with_schema_path_segment("dependentRequired", |ctx| {
+                ctx.with_schema_path_segment(prop, |ctx| ctx.current_schema_path().to_string())
+            });
             CompiledExpr::with_validate_and_collect_blocks(
                 quote! {
                     if #guard {
