@@ -1,6 +1,6 @@
 use crate::{
     compiler,
-    keywords::{minmax, CompilationResult},
+    keywords::{legacy::Draft4ExclusiveValidator, minmax, BoxedValidator, CompilationResult},
     Json,
 };
 use serde_json::{Map, Value};
@@ -12,8 +12,23 @@ pub(crate) fn compile<'a, F: Json>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
     if let Some(Value::Bool(true)) = parent.get("exclusiveMaximum") {
-        minmax::compile_exclusive_maximum(ctx, parent, schema)
+        compile_exclusive(ctx, parent, schema)
     } else {
         minmax::compile_maximum(ctx, parent, schema)
     }
+}
+
+#[inline]
+fn compile_exclusive<'a, F: Json>(
+    ctx: &compiler::Context<F>,
+    parent: &'a Map<String, Value>,
+    schema: &'a Value,
+) -> Option<CompilationResult<'a, F>> {
+    let inner = minmax::compile_exclusive_maximum(ctx, parent, schema)?;
+    Some(inner.map(|inner| {
+        Box::new(Draft4ExclusiveValidator::new(
+            inner,
+            ctx.location().join("maximum"),
+        )) as BoxedValidator<F>
+    }))
 }

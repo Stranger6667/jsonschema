@@ -63,6 +63,12 @@ macro_rules! define_numeric_keywords {
                         true
                     }
                 }
+                fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+                    instance.is_number()
+                }
+                fn schema_path(&self) -> &Location {
+                    &self.location
+                }
             }
         )*
     };
@@ -160,6 +166,14 @@ pub(crate) mod bigint_validators {
                     } else {
                         true
                     }
+                }
+
+                fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+                    instance.is_number()
+                }
+
+                fn schema_path(&self) -> &Location {
+                    &self.location
                 }
             }
         };
@@ -267,6 +281,14 @@ pub(crate) mod bigint_validators {
                     } else {
                         true
                     }
+                }
+
+                fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+                    instance.is_number()
+                }
+
+                fn schema_path(&self) -> &Location {
+                    &self.location
                 }
             }
         };

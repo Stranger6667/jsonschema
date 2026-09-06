@@ -3,6 +3,7 @@ use crate::{
     error::ValidationError,
     keywords::CompilationResult,
     paths::{LazyLocation, Location, RefTracker},
+    types::JsonType,
     validator::{Validate, ValidationContext},
     Array, Json, Node,
 };
@@ -48,6 +49,12 @@ impl<F: Json> Validate<F> for UniqueItemsValidator {
                 instance.lazy_value(),
             ))
         }
+    }
+    fn matches_type(&self, instance: &F::Node<'_>) -> bool {
+        instance.json_type() == JsonType::Array
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 

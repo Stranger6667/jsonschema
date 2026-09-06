@@ -59,6 +59,12 @@ impl<F: Json> Validate<F> for ConstArrayValidator {
             false
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 struct ConstBooleanValidator {
@@ -99,6 +105,12 @@ impl<F: Json> Validate<F> for ConstBooleanValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.as_boolean() == Some(self.value)
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 struct ConstNullValidator {
@@ -132,6 +144,12 @@ impl<F: Json> Validate<F> for ConstNullValidator {
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.is_null()
+    }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -183,6 +201,12 @@ impl<F: Json> Validate<F> for ConstNumberValidator {
             false
         }
     }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
+    }
 }
 
 pub(crate) struct ConstObjectValidator {
@@ -227,6 +251,12 @@ impl<F: Json> Validate<F> for ConstObjectValidator {
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.equals_value(&self.value)
+    }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
@@ -273,6 +303,12 @@ impl<F: Json> Validate<F> for ConstStringValidator {
         } else {
             false
         }
+    }
+    fn matches_type(&self, _: &F::Node<'_>) -> bool {
+        true
+    }
+    fn schema_path(&self) -> &Location {
+        &self.location
     }
 }
 
