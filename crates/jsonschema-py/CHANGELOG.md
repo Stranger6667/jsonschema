@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.54.0] - 2026-09-06
+
 ### Performance
 
 - `validate` and `iter_errors` check each assertion keyword with the `is_valid` path and build an error only for a failing one.
@@ -1454,7 +1456,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.53.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.54.0...HEAD
+[0.54.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.53.0...python-v0.54.0
 [0.53.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.1...python-v0.53.0
 [0.52.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.0...python-v0.52.1
 [0.52.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.51.0...python-v0.52.0
