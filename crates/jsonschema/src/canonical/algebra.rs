@@ -1217,6 +1217,46 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
         });
     }
 
+    // A window the pool leaves standing on one value is that value written longhand: it goes back
+    // among the loose values, or it would stand as its own branch beside the set they pack into.
+    // e.g.  Draft 4, anyOf [
+    //         {"enum": [null, 5]},
+    //         {"type": "number", "minimum": 5, "maximum": 5, "not": {"type": "integer"}}
+    //       ]  =>  {"enum": [null, 5]}
+    numbers.retain(|leaf| {
+        let pinned = matches!((&leaf.minimum, &leaf.maximum), (Some(low), Some(high))
+            if low.is_inclusive() && high.is_inclusive() && low.to_number() == high.to_number());
+        !(pinned && lowers_to_value(number_leaf(leaf.clone(), ctx), &mut members))
+    });
+    integers.retain(|leaf| {
+        let pinned = leaf.bounds.minimum.is_some() && leaf.bounds.minimum == leaf.bounds.maximum;
+        !(pinned && lowers_to_value(integer_leaf(leaf.clone(), ctx), &mut members))
+    });
+    strings.retain(|leaf| {
+        let pinned = leaf
+            .lengths
+            .maximum
+            .as_ref()
+            .is_some_and(BoundCardinality::is_zero);
+        !(pinned && lowers_to_value(string_leaf(leaf.clone(), ctx), &mut members))
+    });
+    arrays.retain(|leaf| {
+        let pinned = leaf
+            .lengths
+            .maximum
+            .as_ref()
+            .is_some_and(BoundCardinality::is_zero);
+        !(pinned && lowers_to_value(array_leaf(leaf.clone(), ctx), &mut members))
+    });
+    objects.retain(|leaf| {
+        let pinned = leaf
+            .effective_sizes()
+            .maximum
+            .as_ref()
+            .is_some_and(BoundCardinality::is_zero);
+        !(pinned && lowers_to_value(object_leaf(leaf.clone(), ctx), &mut members))
+    });
+
     // A value one of the surviving windows already accepts adds nothing beside it.
     // e.g.  anyOf [
     //         {"type": "string", "minLength": 1},
@@ -1475,6 +1515,15 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
             None => Schema::falsy(),
         },
     }
+}
+
+/// Whether the node built from a window is one value, moved into `members` when it is.
+fn lowers_to_value(built: Schema, members: &mut Vec<CanonicalJson>) -> bool {
+    if let SchemaKind::Const(value) = built.into_kind() {
+        members.push(value);
+        return true;
+    }
+    false
 }
 
 /// Move a value in beside the windows of its own type when a one-value window says the same thing.
