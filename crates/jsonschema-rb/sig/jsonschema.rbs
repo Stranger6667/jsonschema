@@ -207,7 +207,7 @@ module JSONSchema
       def properties: () -> Hash[String, CanonicalSchema]
       def pattern_properties: () -> Hash[String, CanonicalSchema]
       def additional_properties: () -> CanonicalSchema?
-      def violations: () -> Array[NameFailsView | UndeclaredValueFailsView]
+      def violations: () -> Array[NameFailsView | UndeclaredValueFailsView | PatternValueFailsView]
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
@@ -224,6 +224,14 @@ module JSONSchema
       def names: () -> Array[String]
       def patterns: () -> Array[String]
       def additional: () -> CanonicalSchema
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # Some key matching `pattern` has a value failing `schema`.
+    class PatternValueFailsView
+      def pattern: () -> String
+      def schema: () -> CanonicalSchema
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

@@ -197,7 +197,9 @@ class ObjectView:
     @property
     def additional_properties(self) -> CanonicalSchema | None: ...
     @property
-    def violations(self) -> list[NameFailsView | UndeclaredValueFailsView]: ...
+    def violations(
+        self,
+    ) -> list[NameFailsView | UndeclaredValueFailsView | PatternValueFailsView]: ...
 
 @final
 class NameFailsView:
@@ -218,6 +220,16 @@ class UndeclaredValueFailsView:
     def patterns(self) -> list[str]: ...
     @property
     def additional(self) -> CanonicalSchema: ...
+
+@final
+class PatternValueFailsView:
+    """Some key matching `pattern` has a value failing `schema`."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def pattern(self) -> str: ...
+    @property
+    def schema(self) -> CanonicalSchema: ...
 
 @final
 class NotView:

@@ -846,6 +846,12 @@ fn object_violation_to_ruby(ruby: &Ruby, violation: &CoreObjectViolationView) ->
                 additional: additional.clone(),
             })
             .as_value(),
+        CoreObjectViolationView::PatternValueFails { pattern, schema } => ruby
+            .obj_wrap(PatternValueFailsView {
+                pattern: pattern.clone(),
+                schema: schema.clone(),
+            })
+            .as_value(),
     }
 }
 
@@ -932,6 +938,47 @@ impl UndeclaredValueFailsView {
         hash.aset(ruby.sym_new("names"), Self::names(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("patterns"), Self::patterns(ruby, rb_self)?)?;
         hash.aset(ruby.sym_new("additional"), Self::additional(ruby, rb_self))?;
+        Ok(hash)
+    }
+}
+
+/// Some key matching `pattern` has a value failing `schema`.
+#[derive(magnus::TypedData)]
+#[magnus(
+    class = "JSONSchema::Canonical::PatternValueFailsView",
+    free_immediately
+)]
+pub struct PatternValueFailsView {
+    pattern: String,
+    schema: CanonicalSchema,
+}
+
+impl DataTypeFunctions for PatternValueFailsView {}
+
+impl PatternValueFailsView {
+    fn pattern(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.str_new(&rb_self.pattern).as_value()
+    }
+
+    fn schema(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.obj_wrap(RbCanonicalSchema {
+            inner: rb_self.schema.clone(),
+        })
+        .as_value()
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> String {
+        format!(
+            "#<JSONSchema::Canonical::PatternValueFailsView pattern={} schema={}>",
+            Self::pattern(ruby, rb_self).inspect(),
+            Self::schema(ruby, rb_self).inspect()
+        )
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("pattern"), Self::pattern(ruby, rb_self))?;
+        hash.aset(ruby.sym_new("schema"), Self::schema(ruby, rb_self))?;
         Ok(hash)
     }
 }
@@ -1578,6 +1625,18 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     undeclared_value_fails_view.define_method(
         "deconstruct_keys",
         method!(UndeclaredValueFailsView::deconstruct_keys, 1),
+    )?;
+
+    let pattern_value_fails_view =
+        canonical_module.define_class("PatternValueFailsView", ruby.class_object())?;
+    pattern_value_fails_view
+        .define_method("pattern", method!(PatternValueFailsView::pattern, 0))?;
+    pattern_value_fails_view.define_method("schema", method!(PatternValueFailsView::schema, 0))?;
+    pattern_value_fails_view
+        .define_method("inspect", method!(PatternValueFailsView::inspect, 0))?;
+    pattern_value_fails_view.define_method(
+        "deconstruct_keys",
+        method!(PatternValueFailsView::deconstruct_keys, 1),
     )?;
 
     let object_view = canonical_module.define_class("ObjectView", ruby.class_object())?;

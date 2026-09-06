@@ -591,12 +591,6 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
                 patterns,
                 additional,
             } => {
-                // A leaf carrying pattern entries has no negation, so the demand negation records
-                // beside an `additionalProperties` names keys and nothing else.
-                debug_assert!(
-                    patterns.is_empty(),
-                    "an undeclared-value demand names a pattern"
-                );
                 let mut inner = Map::new();
                 if !names.is_empty() {
                     inner.insert(
@@ -611,14 +605,36 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
                         ),
                     );
                 }
+                if !patterns.is_empty() {
+                    inner.insert(
+                        "patternProperties".into(),
+                        Value::Object(
+                            patterns
+                                .iter()
+                                .map(|pattern| {
+                                    (pattern.as_ref().to_owned(), emit(&SchemaKind::True, draft))
+                                })
+                                .collect(),
+                        ),
+                    );
+                }
                 inner.insert(
                     "additionalProperties".into(),
                     emit(additional.kind(), draft),
                 );
-                let mut wrapper = Map::new();
-                wrapper.insert("not".into(), Value::Object(inner));
-                Value::Object(wrapper)
+                keyed("not", Value::Object(inner))
             }
+            ObjectViolation::PatternValueFails { pattern, schema } => keyed(
+                "not",
+                keyed(
+                    "patternProperties",
+                    Value::Object(
+                        [(pattern.as_ref().to_owned(), emit(schema.kind(), draft))]
+                            .into_iter()
+                            .collect(),
+                    ),
+                ),
+            ),
         })
         .collect();
     if violated.len() == 1 {

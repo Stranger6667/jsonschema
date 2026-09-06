@@ -195,6 +195,12 @@ fn rename_object(
                         patterns: patterns.clone(),
                         additional: rename_references(additional, renames),
                     },
+                    ObjectViolation::PatternValueFails { pattern, schema } => {
+                        ObjectViolation::PatternValueFails {
+                            pattern: pattern.clone(),
+                            schema: rename_references(schema, renames),
+                        }
+                    }
                 })
                 .collect(),
         ),

@@ -18,6 +18,7 @@ ContainsView = _canonical.ContainsView
 ObjectView = _canonical.ObjectView
 NameFailsView = _canonical.NameFailsView
 UndeclaredValueFailsView = _canonical.UndeclaredValueFailsView
+PatternValueFailsView = _canonical.PatternValueFailsView
 NotView = _canonical.NotView
 AllOfView = _canonical.AllOfView
 AnyOfView = _canonical.AnyOfView
@@ -111,6 +112,7 @@ __all__ = [
     "Satisfiability",
     "StringView",
     "NumberView",
+    "PatternValueFailsView",
     "TrueView",
     "TypedGroupView",
     "UndeclaredValueFailsView",

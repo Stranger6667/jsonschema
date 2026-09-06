@@ -83,7 +83,8 @@ pub(crate) fn collect_classified_references<'a>(
             }
             for violation in &leaf.violations {
                 match violation {
-                    ObjectViolation::NameFails(schema) => {
+                    ObjectViolation::NameFails(schema)
+                    | ObjectViolation::PatternValueFails { schema, .. } => {
                         collect_classified_references(schema, Position::Consuming, out);
                     }
                     ObjectViolation::UndeclaredValueFails { additional, .. } => {
@@ -661,10 +662,11 @@ fn may_fold(schema: &Schema, assumed: &AHashSet<Arc<str>>) -> bool {
                     .property_names
                     .as_ref()
                     .is_some_and(|schema| may_fold(schema, assumed))
-                    // A violation records a rule the object must break, never a key it must carry.
+                    // A violation is a rule some key must break, not a constraint every key must satisfy.
                     || leaf.violations.iter().any(|violation| match violation {
                         ObjectViolation::NameFails(_)
-                        | ObjectViolation::UndeclaredValueFails { .. } => false,
+                        | ObjectViolation::UndeclaredValueFails { .. }
+                        | ObjectViolation::PatternValueFails { .. } => false,
                     }));
             // A key must come from the catch-all when nothing names one, so `minProperties` alone
             // demands it. Deciding which pattern claims a key needs the pattern engine, so any of

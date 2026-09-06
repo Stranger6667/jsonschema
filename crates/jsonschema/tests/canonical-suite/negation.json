@@ -3922,7 +3922,7 @@
     ]
   },
   {
-    "description": "a negated choice whose branch carries a pattern map keeps that map under not",
+    "description": "a negated choice whose branch carries a pattern map bars that map on the object branch",
     "schema": {
       "$defs": {"a": {"type": "string"}},
       "not": {"oneOf": [
@@ -3934,10 +3934,7 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {"type": ["null", "boolean", "number", "array"]},
-        {"allOf": [
-          {"type": ["null", "boolean", "number", "array", "object"]},
-          {"not": {"type": "object", "patternProperties": {"^a": {"type": "string"}}}}
-        ]}
+        {"type": "object", "not": {"patternProperties": {"^a": {"type": "string"}}}}
       ]
     },
     "tests": [
@@ -4620,8 +4617,8 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {"type": ["null", "boolean", "number", "string", "array"]},
-        {"type": "object", "properties": {"id": false}},
-        {"not": {"type": "object", "patternProperties": {"^x-": {"type": "string"}}}}
+        {"type": "object", "not": {"patternProperties": {"^x-": {"type": "string"}}}},
+        {"type": "object", "properties": {"id": false}}
       ]
     },
     "tests": [
@@ -4640,7 +4637,7 @@
       "anyOf": [
         {"type": ["null", "boolean", "number", "string", "array"]},
         {"type": "object", "not": {"propertyNames": {"pattern": "^x-", "type": "string"}}},
-        {"not": {"type": "object", "patternProperties": {"^x-": {"type": "string"}}}}
+        {"type": "object", "not": {"patternProperties": {"^x-": {"type": "string"}}}}
       ]
     },
     "tests": [
@@ -4659,7 +4656,7 @@
       "$defs": {"ext": true},
       "anyOf": [
         {"type": ["null", "boolean", "number", "string", "array"]},
-        {"not": {"type": "object", "patternProperties": {"^x-": {"$ref": "#/$defs/ext"}}}}
+        {"type": "object", "not": {"patternProperties": {"^x-": {"$ref": "#/$defs/ext"}}}}
       ]
     },
     "tests": [
@@ -4670,7 +4667,7 @@
     ]
   },
   {
-    "description": "a pattern map beside its own negated closed pattern map intersects the barred pattern facet in an allOf",
+    "description": "a pattern map beside its own negated closed pattern map folds the barred pattern facet into the leaf",
     "schema": {
       "type": "object",
       "additionalProperties": false,
@@ -4687,14 +4684,10 @@
           "not": {"propertyNames": {"type": "string", "pattern": "^x-"}}
         },
         {
-          "allOf": [
-            {
-              "type": "object",
-              "patternProperties": {"^[0-9]{3}$": {"type": "object"}},
-              "propertyNames": {"anyOf": [{"type": "string", "pattern": "^[0-9]{3}$"}, {"type": "string", "pattern": "^x-"}]}
-            },
-            {"not": {"type": "object", "patternProperties": {"^x-": {"type": "string"}}}}
-          ]
+          "type": "object",
+          "patternProperties": {"^[0-9]{3}$": {"type": "object"}},
+          "propertyNames": {"anyOf": [{"type": "string", "pattern": "^[0-9]{3}$"}, {"type": "string", "pattern": "^x-"}]},
+          "not": {"patternProperties": {"^x-": {"type": "string"}}}
         }
       ]
     },
@@ -4708,7 +4701,7 @@
     ]
   },
   {
-    "description": "a negated closed pattern map under draft 4 whose values are references keeps the map under not",
+    "description": "a negated closed pattern map under draft 4 whose values are references bars the map on the object branch",
     "draft": "draft4",
     "schema": {
       "definitions": {"ext": {}},
@@ -4720,7 +4713,7 @@
       "anyOf": [
         {"type": ["null", "boolean", "number", "string", "array"]},
         {"type": "object", "not": {"additionalProperties": false, "patternProperties": {"^x-": {}}}},
-        {"not": {"type": "object", "patternProperties": {"^x-": {"$ref": "#/definitions/ext"}}}}
+        {"type": "object", "not": {"patternProperties": {"^x-": {"$ref": "#/definitions/ext"}}}}
       ]
     },
     "tests": [
@@ -4731,7 +4724,7 @@
     ]
   },
   {
-    "description": "a draft 4 pattern map beside its own negated closed pattern map with reference values intersects it in an allOf",
+    "description": "a draft 4 pattern map beside its own negated closed pattern map with reference values folds it into the leaf",
     "draft": "draft4",
     "schema": {
       "definitions": {"ext": {}, "value": {"type": "object"}},
@@ -4751,15 +4744,12 @@
           "patternProperties": {"^[0-9]{3}$": {"$ref": "#/definitions/value"}, "^x-": {"$ref": "#/definitions/ext"}},
           "not": {"additionalProperties": false, "patternProperties": {"^x-": {}}}
         },
-        {"allOf": [
-          {
-            "type": "object",
-            "minProperties": 1,
-            "additionalProperties": false,
-            "patternProperties": {"^[0-9]{3}$": {"$ref": "#/definitions/value"}, "^x-": {"$ref": "#/definitions/ext"}}
-          },
-          {"not": {"type": "object", "patternProperties": {"^x-": {"$ref": "#/definitions/ext"}}}}
-        ]}
+        {
+          "type": "object",
+          "additionalProperties": false,
+          "patternProperties": {"^[0-9]{3}$": {"$ref": "#/definitions/value"}, "^x-": {"$ref": "#/definitions/ext"}},
+          "not": {"patternProperties": {"^x-": {"$ref": "#/definitions/ext"}}}
+        }
       ]
     },
     "tests": [
@@ -4784,12 +4774,13 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
         {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"properties": {"a": true}, "patternProperties": {"b$": true}, "additionalProperties": {"type": "null"}}},
+        {"type": "object", "not": {"patternProperties": {"b$": {"type": "null"}}}},
         {
           "type": "object",
           "required": ["a"],
           "properties": {"a": {"anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "number", "not": {"multipleOf": 1}}]}}
-        },
-        {"not": {"type": "object", "properties": {"a": true}, "patternProperties": {"b$": {"type": "null"}}, "additionalProperties": {"type": "null"}}}
+        }
       ]
     },
     "tests": [
@@ -4800,6 +4791,58 @@
       {"data": {"c": null}, "valid": false},
       {"data": {"c": 1}, "valid": true},
       {"data": {}, "valid": false},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated pattern map bars the pattern facet on the object branch",
+    "schema": {"not": {"type": "object", "patternProperties": {"^a": {"type": "integer"}}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"patternProperties": {"^a": {"type": "integer"}}}}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": "s"}, "valid": true},
+      {"data": {"b": "s"}, "valid": false},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated pattern map bars each pattern on its own branch",
+    "schema": {"not": {"type": "object", "patternProperties": {"^a": {"type": "integer"}, "b$": {"type": "string"}}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {"type": ["null", "boolean", "number", "string", "array"]},
+        {"type": "object", "not": {"patternProperties": {"^a": {"type": "integer"}}}},
+        {"type": "object", "not": {"patternProperties": {"b$": {"type": "string"}}}}
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"a": 1}, "valid": false},
+      {"data": {"a": "s"}, "valid": true},
+      {"data": {"zb": "s"}, "valid": false},
+      {"data": {"zb": 1}, "valid": true},
+      {"data": {"ab": 1}, "valid": true},
+      {"data": 1, "valid": true}
+    ]
+  },
+  {
+    "description": "a negated pattern map admitting every value drops its branch",
+    "schema": {"not": {"type": "object", "patternProperties": {"^a": true}}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": ["null", "boolean", "number", "string", "array"]
+    },
+    "tests": [
+      {"data": {}, "valid": false},
+      {"data": {"a": 1}, "valid": false},
       {"data": 1, "valid": true}
     ]
   }

@@ -3679,6 +3679,9 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
             ObjectViolation::UndeclaredValueFails { additional, .. } => {
                 matches!(additional.kind(), SchemaKind::True)
             }
+            ObjectViolation::PatternValueFails { schema, .. } => {
+                matches!(schema.kind(), SchemaKind::True)
+            }
         }),
         "a demand no key can break survived construction"
     );
@@ -3758,6 +3761,9 @@ pub(crate) fn object_leaf(mut leaf: ObjectLeaf, ctx: &CanonicalizationContext) -
                         .iter()
                         .any(|pattern| matches_key(pattern, key, ctx))
             }),
+            ObjectViolation::PatternValueFails { pattern, .. } => {
+                required.iter().all(|key| !matches_key(pattern, key, ctx))
+            }
         })
     {
         return Schema::falsy();
@@ -4348,7 +4354,8 @@ fn unreadable_reference(
                 .chain(leaf.pattern_properties.values())
                 .chain(&leaf.additional)
                 .chain(leaf.violations.iter().map(|violation| match violation {
-                    ObjectViolation::NameFails(schema) => schema,
+                    ObjectViolation::NameFails(schema)
+                    | ObjectViolation::PatternValueFails { schema, .. } => schema,
                     ObjectViolation::UndeclaredValueFails { additional, .. } => additional,
                 }))
                 .any(|schema| unreadable_reference(schema, ctx, walked))
@@ -4429,7 +4436,8 @@ pub(crate) fn contains_reference(schema: &Schema) -> bool {
                 }
             }
             leaf.violations.iter().any(|violation| match violation {
-                ObjectViolation::NameFails(schema) => contains_reference(schema),
+                ObjectViolation::NameFails(schema)
+                | ObjectViolation::PatternValueFails { schema, .. } => contains_reference(schema),
                 ObjectViolation::UndeclaredValueFails { additional, .. } => {
                     contains_reference(additional)
                 }
@@ -4531,7 +4539,10 @@ fn collect_uncheckable_string_facets(
             }
             for violation in &leaf.violations {
                 match violation {
-                    ObjectViolation::NameFails(schema) => walk(schema, walked, found),
+                    ObjectViolation::NameFails(schema)
+                    | ObjectViolation::PatternValueFails { schema, .. } => {
+                        walk(schema, walked, found);
+                    }
                     ObjectViolation::UndeclaredValueFails { additional, .. } => {
                         walk(additional, walked, found);
                     }
@@ -4886,6 +4897,33 @@ fn restrict_object_member(
                     }
                 }
             }
+            ObjectViolation::PatternValueFails { pattern, schema } => {
+                let mut satisfied = Verdict::Rejects;
+                for (key, value) in map {
+                    if !matches_key(pattern, key, ctx) {
+                        continue;
+                    }
+                    if rejects_value(schema, value, ctx) {
+                        satisfied = Verdict::Admits;
+                        break;
+                    }
+                    if admits_value(schema, value, UncheckableFacet::Undecided, ctx)
+                        != Verdict::Admits
+                    {
+                        satisfied = Verdict::Unknown;
+                    }
+                }
+                match satisfied {
+                    Verdict::Admits => {}
+                    Verdict::Rejects => return MemberRestriction::Empty,
+                    Verdict::Unknown => {
+                        restricted_violations.push(ObjectViolation::PatternValueFails {
+                            pattern: pattern.clone(),
+                            schema: schema.clone(),
+                        });
+                    }
+                }
+            }
         }
     }
     let mut full = restricted_property_names.is_none() && restricted_violations.is_empty();
@@ -4977,6 +5015,20 @@ fn object_leaf_admits(
                     continue;
                 }
                 match admits_value(additional, value, UncheckableFacet::Undecided, ctx) {
+                    Verdict::Rejects => return Verdict::Admits,
+                    Verdict::Unknown => satisfied = Verdict::Unknown,
+                    Verdict::Admits => {}
+                }
+            }
+            satisfied
+        }
+        ObjectViolation::PatternValueFails { pattern, schema } => {
+            let mut satisfied = Verdict::Rejects;
+            for (key, value) in map {
+                if !matches_key(pattern, key, ctx) {
+                    continue;
+                }
+                match admits_value(schema, value, UncheckableFacet::Undecided, ctx) {
                     Verdict::Rejects => return Verdict::Admits,
                     Verdict::Unknown => satisfied = Verdict::Unknown,
                     Verdict::Admits => {}

@@ -852,7 +852,7 @@ fn negate_array_leaf(
 /// The leaf demands every one of its facets over objects, so its negation is the union of the
 /// per-facet negations beside the non-object types: a size window flips into its outer rays, a
 /// required key into its absence, a property schema into the key held with a violating value, and a
-/// key constraint into a demand for a key that breaks it.
+/// key constraint or pattern entry into a demand for a key that breaks it.
 /// ```text
 /// e.g.  {"not": {"type": "object", "required": ["a"], "minProperties": 2}}
 ///       =>  anyOf: [<non-object types>,
@@ -862,8 +862,8 @@ fn negate_array_leaf(
 ///       =>  anyOf: [<non-object types>, {"type": "object", "not": {"propertyNames": {"enum": ["a", "b"]}}}]
 /// e.g.  {"not": {"type": "object", "required": ["id"], "patternProperties": {"^x-": {"type": "string"}}}}
 ///       =>  anyOf: [<non-object types>,
-///                   {"type": "object", "properties": {"id": false}},
-///                   {"not": {"type": "object", "patternProperties": {"^x-": {"type": "string"}}}}]
+///                   {"type": "object", "not": {"patternProperties": {"^x-": {"type": "string"}}}},
+///                   {"type": "object", "properties": {"id": false}}]
 /// ```
 fn negate_object_leaf(
     leaf: &ObjectLeaf,
@@ -911,9 +911,8 @@ fn negate_object_leaf(
     }
     // An `additionalProperties` schema fails on an object exactly when some key outside
     // `properties` and `patternProperties` holds a value it rejects: the demand records that
-    // declared key set so which keys it applies to stays exact once reinstated. Beside patterns it
-    // stays under `not` below.
-    if let (Some(additional), true) = (&leaf.additional, leaf.pattern_properties.is_empty()) {
+    // declared key set so which keys it applies to stays exact once reinstated.
+    if let Some(additional) = &leaf.additional {
         branches.push(algebra::object_leaf(
             ObjectLeaf {
                 violations: vec![ObjectViolation::UndeclaredValueFails {
@@ -958,25 +957,38 @@ fn negate_object_leaf(
                     ctx,
                 ));
             }
+            ObjectViolation::PatternValueFails { pattern, schema } => {
+                branches.push(algebra::object_leaf(
+                    ObjectLeaf {
+                        pattern_properties: PropertyMap::from_iter([(
+                            pattern.clone(),
+                            schema.clone(),
+                        )]),
+                        ..ObjectLeaf::default()
+                    },
+                    ctx,
+                ));
+            }
         }
     }
-    // A key matching a pattern with a violating value has no facet, so the pattern facet and the
-    // `additionalProperties` whose keys the patterns bound stay under `not`, beside the named keys
-    // it never applies to. Nothing in them is resolved, so the walk's mode does not matter.
-    if !leaf.pattern_properties.is_empty() {
-        branches.push(Schema::new(SchemaKind::Not(algebra::object_leaf(
+    // A pattern entry fails on an object exactly when some key it matches holds a value it
+    // rejects, and one pattern breaking is enough, so each records its own demand.
+    for (pattern, schema) in &leaf.pattern_properties {
+        // An entry admitting every value constrains nothing, so no key can break it. It stays on
+        // the leaf to say which keys `additionalProperties` skips.
+        if matches!(schema.kind(), SchemaKind::True) {
+            continue;
+        }
+        branches.push(algebra::object_leaf(
             ObjectLeaf {
-                properties: leaf
-                    .properties
-                    .keys()
-                    .map(|name| (name.clone(), Schema::truthy()))
-                    .collect(),
-                pattern_properties: leaf.pattern_properties.clone(),
-                additional: leaf.additional.clone(),
+                violations: vec![ObjectViolation::PatternValueFails {
+                    pattern: pattern.clone(),
+                    schema: schema.clone(),
+                }],
                 ..ObjectLeaf::default()
             },
             ctx,
-        ))));
+        ));
     }
     Some(algebra::union(branches, ctx))
 }
