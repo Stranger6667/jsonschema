@@ -1,8 +1,6 @@
 use crate::{
     compiler,
-    evaluation::{
-        format_schema_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
-    },
+    evaluation::{absorbed_error_node, Annotations, ChildList, ErrorDescription},
     keywords::{BoxedValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -962,6 +960,7 @@ impl<F: Json> ArrayShapeValidator<F> {
             instance.lazy_value(),
             JsonType::Array,
         )
+        .with_absolute_keyword_location(self.type_absolute_location.clone())
     }
 }
 
@@ -978,6 +977,7 @@ fn min_items_error<'i, F: Json>(
         instance.lazy_value(),
         constraint.limit,
     )
+    .with_absolute_keyword_location(constraint.absolute_location.clone())
 }
 
 fn max_items_error<'i, F: Json>(
@@ -993,27 +993,7 @@ fn max_items_error<'i, F: Json>(
         instance.lazy_value(),
         constraint.limit,
     )
-}
-
-/// Wraps an absorbed keyword's failure as a child node at that keyword's own schema location,
-/// so structured output keeps the correct `schemaLocation`.
-fn absorbed_error_node(
-    location: &LazyLocation,
-    tracker: Option<&RefTracker>,
-    keyword_location: &Location,
-    absolute_location: Option<&Arc<Uri<String>>>,
-    error: ErrorDescription,
-    ctx: &mut ValidationContext,
-) -> EvaluationNode {
-    EvaluationNode::invalid(
-        crate::paths::evaluation_path(tracker, keyword_location, ctx),
-        absolute_location.cloned(),
-        format_schema_location(keyword_location, absolute_location),
-        location.into(),
-        None,
-        vec![error],
-        ChildList::default(),
-    )
+    .with_absolute_keyword_location(constraint.absolute_location.clone())
 }
 
 impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
@@ -1673,5 +1653,38 @@ mod tests {
                 tests_util::is_not_valid(&schema, &instance);
             }
         }
+    }
+
+    #[test]
+    fn array_shape_absolute_keyword_locations() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/s.json",
+            "type": "array",
+            "minItems": 5,
+            "maxItems": 1,
+            "items": {"type": "string"}
+        });
+        tests_util::assert_absolute_keyword_locations(
+            &schema,
+            &json!([1]),
+            &[
+                ("minItems", "https://example.com/s.json#/minItems"),
+                ("type", "https://example.com/s.json#/items"),
+            ],
+        );
+        tests_util::assert_absolute_keyword_locations(
+            &schema,
+            &json!(["a", "b"]),
+            &[
+                ("minItems", "https://example.com/s.json#/minItems"),
+                ("maxItems", "https://example.com/s.json#/maxItems"),
+            ],
+        );
+        tests_util::assert_absolute_keyword_locations(
+            &schema,
+            &json!(1),
+            &[("type", "https://example.com/s.json#/type")],
+        );
     }
 }

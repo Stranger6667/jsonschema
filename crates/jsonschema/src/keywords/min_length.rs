@@ -1,15 +1,18 @@
 use crate::{
     compiler,
     error::ValidationError,
+    evaluation::{absorbed_error_node, ChildList, ErrorDescription},
     keywords::{
         helpers::{fail_on_non_positive_integer, size_limit},
         CompilationResult,
     },
     paths::{LazyLocation, Location, RefTracker},
-    validator::{Validate, ValidationContext},
+    validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node,
 };
+use referencing::Uri;
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 pub(crate) struct MinLengthValidator {
     limit: u64,
@@ -55,6 +58,7 @@ pub(crate) struct LengthRangeValidator {
     maximum: u64,
     min_location: Location,
     max_location: Location,
+    max_absolute_location: Option<Arc<Uri<String>>>,
 }
 
 impl LengthRangeValidator {
@@ -86,6 +90,7 @@ impl LengthRangeValidator {
             instance.lazy_value(),
             self.maximum,
         )
+        .with_absolute_keyword_location(self.max_absolute_location.clone())
     }
 }
 
@@ -136,6 +141,41 @@ impl<F: Json> Validate<F> for LengthRangeValidator {
             }
         }
     }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let Some(length) = instance.string_length() else {
+            return EvaluationResult::valid_empty();
+        };
+        // This node sits at the `minLength` location, so only `maxLength` needs its own node.
+        let mut children = ChildList::default();
+        if length > self.maximum {
+            let error = ErrorDescription::from_validation_error(
+                &self.max_error::<F>(instance, location, tracker),
+            );
+            let child = absorbed_error_node(
+                location,
+                tracker,
+                &self.max_location,
+                self.max_absolute_location.as_ref(),
+                error,
+                ctx,
+            );
+            children.push(&mut ctx.arena, child);
+        }
+        let mut result = EvaluationResult::from_children(children);
+        if length < self.minimum {
+            result.mark_errored(ErrorDescription::from_validation_error(
+                &self.min_error::<F>(instance, location, tracker),
+            ));
+        }
+        result
+    }
 }
 
 #[inline]
@@ -154,11 +194,13 @@ pub(crate) fn compile<'a, F: Json>(
         .filter(|_| !ctx.is_keyword_overridden("maxLength"))
         .and_then(|max| size_limit(ctx, max));
     if let Some(maximum) = maximum {
+        let max_location = ctx.location().join("maxLength");
         return Some(Ok(Box::new(LengthRangeValidator {
             minimum,
             maximum,
+            max_absolute_location: ctx.absolute_location(&max_location),
             min_location: location,
-            max_location: ctx.location().join("maxLength"),
+            max_location,
         })));
     }
     Some(Ok(Box::new(MinLengthValidator {
@@ -227,5 +269,31 @@ mod tests {
         // An unusable bound keeps its own error instead of being folded away.
         assert!(crate::validator_for(&json!({"minLength": 1, "maxLength": -1})).is_err());
         assert!(crate::validator_for(&json!({"minLength": -1, "maxLength": 1})).is_err());
+    }
+
+    #[test]
+    fn fused_absolute_keyword_locations() {
+        tests_util::assert_absolute_keyword_locations(
+            &json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://example.com/s.json",
+                "minLength": 20,
+                "maxLength": 5
+            }),
+            &json!("secretvalue"),
+            &[
+                ("minLength", "https://example.com/s.json#/minLength"),
+                ("maxLength", "https://example.com/s.json#/maxLength"),
+            ],
+        );
+    }
+
+    #[test]
+    fn fused_evaluate_keyword_locations() {
+        let validator = crate::validator_for(&json!({"minLength": 20, "maxLength": 5}))
+            .expect("Invalid schema");
+        let instance = json!("secretvalue");
+        tests_util::assert_keyword_location(&validator, &instance, "", "/minLength");
+        tests_util::assert_keyword_location(&validator, &instance, "", "/maxLength");
     }
 }

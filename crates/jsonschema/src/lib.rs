@@ -4276,6 +4276,32 @@ pub(crate) mod tests_util {
     }
 
     #[track_caller]
+    pub(crate) fn assert_absolute_keyword_locations(
+        schema: &Value,
+        instance: &Value,
+        expected: &[(&str, &str)],
+    ) {
+        let validator = crate::validator_for(schema).expect("Invalid schema");
+        let actual: Vec<(String, String)> = validator
+            .iter_errors(instance)
+            .map(|error| {
+                (
+                    error.kind().keyword().to_string(),
+                    error
+                        .absolute_keyword_location()
+                        .expect("Absolute keyword location")
+                        .to_string(),
+                )
+            })
+            .collect();
+        let expected: Vec<(String, String)> = expected
+            .iter()
+            .map(|(keyword, location)| ((*keyword).to_string(), (*location).to_string()))
+            .collect();
+        assert_eq!(actual, expected);
+    }
+
+    #[track_caller]
     pub(crate) fn assert_evaluation_path(schema: &Value, instance: &Value, expected: &str) {
         let error = validate(schema, instance);
         assert_eq!(error.evaluation_path().as_str(), expected);

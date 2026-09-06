@@ -7,6 +7,11 @@
 - **BREAKING**: `canonical::ObjectViolationView` gained the `PatternValueFails` variant, which negation records for a `patternProperties` entry.
 - Canonicalization of `not` over `patternProperties`, which kept the entry under `not` instead of recording the demand a key breaks.
 
+### Fixed
+
+- `absolute_keyword_location` naming the sibling keyword whose validator carries the check: `maxLength` beside `minLength`, `minItems`, `maxItems` or `type` beside `items`, and a two-name `required` beside `properties`. [#1579](https://github.com/Stranger6667/jsonschema/issues/1579)
+- `schemaLocation` in `evaluate` output naming `minLength` for a `maxLength` failure. [#1579](https://github.com/Stranger6667/jsonschema/issues/1579)
+
 ## [0.54.0] - 2026-09-06
 
 ### Added

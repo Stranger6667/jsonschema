@@ -265,6 +265,7 @@ impl<F: Json> SmallPropertiesWithRequired2Validator<F> {
             instance.lazy_value(),
             Value::String(key.as_str().to_owned()),
         )
+        .with_absolute_keyword_location(self.required_absolute_location.clone())
     }
 
     fn check_required<'i, O: Object<'i, F>>(
@@ -394,24 +395,11 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         };
         {
             // Check required
-            let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
             if object.get(&self.first_key).is_none() {
-                errors.push(ValidationError::required(
-                    self.required_location.clone(),
-                    eval_path.clone(),
-                    location.into(),
-                    instance.lazy_value(),
-                    Value::String(self.first.as_str().to_owned()),
-                ));
+                errors.push(self.missing(&self.first, instance, location, tracker));
             }
             if object.get(&self.second_key).is_none() {
-                errors.push(ValidationError::required(
-                    self.required_location.clone(),
-                    eval_path,
-                    location.into(),
-                    instance.lazy_value(),
-                    Value::String(self.second.as_str().to_owned()),
-                ));
+                errors.push(self.missing(&self.second, instance, location, tracker));
             }
             if object.len() <= self.properties.len() {
                 for (name, value) in object.members() {
@@ -948,5 +936,22 @@ mod tests {
         // wide instance, required "a" absent -> get branch early fast-fail
         let wide = with_extra_keys(json!({"b": "x"}), 300);
         assert!(!validator.is_valid(&wide));
+    }
+
+    #[test]
+    fn fused_required_absolute_keyword_locations() {
+        tests_util::assert_absolute_keyword_locations(
+            &json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://example.com/s.json",
+                "properties": {"a": {"type": "string"}},
+                "required": ["a", "b"]
+            }),
+            &json!({}),
+            &[
+                ("required", "https://example.com/s.json#/required"),
+                ("required", "https://example.com/s.json#/required"),
+            ],
+        );
     }
 }
