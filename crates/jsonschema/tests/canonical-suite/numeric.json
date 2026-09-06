@@ -1692,5 +1692,43 @@
       {"data": 2.0, "valid": false},
       {"data": 3, "valid": true}
     ]
+  },
+  {
+    "description": "ir: Draft 4, a branch barring the integers folds into its sibling under a divisor no f64 writes",
+    "draft": "draft4",
+    "schema": {
+      "anyOf": [
+        {"type": "number", "minimum": 0, "maximum": 1, "multipleOf": 9007199254740993},
+        {"allOf": [
+          {"type": "number", "minimum": 0, "maximum": 1, "multipleOf": 9007199254740993},
+          {"not": {"type": "integer"}}
+        ]}
+      ]
+    },
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "type": "number",
+      "minimum": 0,
+      "maximum": 1,
+      "multipleOf": 9007199254740993
+    },
+    "expected_arbitrary_precision": {"$schema": "http://json-schema.org/draft-04/schema#", "enum": [0]},
+    "tests": [
+      {"data": 0, "valid": true},
+      {"data": 0.0, "valid": true},
+      {"data": 1, "valid": false},
+      {"data": 0.5, "valid": false}
+    ]
+  },
+  {
+    "description": "a divisor barred beside itself admits nothing, even one no f64 writes",
+    "schema": {"type": "number", "multipleOf": 9007199254740993, "not": {"multipleOf": 9007199254740993}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": 0, "valid": false},
+      {"data": 9007199254740993, "valid": false},
+      {"data": 1, "valid": false}
+    ]
   }
 ]

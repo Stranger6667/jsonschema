@@ -63,6 +63,11 @@ impl BoundRational {
     /// Whether every multiple of `other` is also a multiple of this divisor. Only meaningful for
     /// divisors taking the same arithmetic, which callers check.
     pub(crate) fn divides_divisor(&self, other: &Self) -> bool {
+        // A divisor divides itself however the validator reads it, so the same text needs no
+        // rational - which one no f64 writes back to does not have.
+        if self == other {
+            return true;
+        }
         let (Some(mine), Some(theirs)) = (self.exact_value(), other.exact_value()) else {
             return false;
         };
