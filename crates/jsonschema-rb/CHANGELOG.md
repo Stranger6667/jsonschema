@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.55.0] - 2026-09-06
+
 ### Added
 
 - `JSONSchema::Canonical::PatternValueFailsView`, which `ObjectView#violations` records for a `patternProperties` entry.
@@ -543,7 +545,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.54.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.55.0...HEAD
+[0.55.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.54.0...ruby-v0.55.0
 [0.54.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.53.0...ruby-v0.54.0
 [0.53.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.52.1...ruby-v0.53.0
 [0.52.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.52.0...ruby-v0.52.1
