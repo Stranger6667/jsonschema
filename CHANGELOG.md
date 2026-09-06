@@ -6,6 +6,8 @@
 
 - **BREAKING**: `canonical::ObjectViolationView` gained the `PatternValueFails` variant, which negation records for a `patternProperties` entry.
 - Canonicalization of `not` over `patternProperties`, which kept the entry under `not` instead of recording the demand a key breaks.
+- Canonicalization of `unevaluated*` beside a conditional reaching no key or index the node already evaluates, which spent a case on it.
+- Canonicalization of a conditional split outgrowing its per-node case budget, which kept documents like the Open API 3.2 meta-schema `Raw`.
 
 ## [0.54.0] - 2026-09-06
 

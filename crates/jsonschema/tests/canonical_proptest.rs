@@ -2932,10 +2932,96 @@ fn exclusive_groups_converge_with_the_plain_forks(tc: TestCase) {
     );
 }
 
-// Two-way forks double the cases: six conditions on distinct keys outgrow the per-node budget.
+/// A body declaring no key and no index, so it reaches nothing a node does not already.
+fn draw_neutral_body(tc: &TestCase) -> Value {
+    tc.draw(gs::sampled_from(vec![
+        json!({}),
+        json!({ "maxLength": 1 }),
+        json!({ "minItems": 1 }),
+        json!({ "maxProperties": 4 }),
+        json!({ "required": ["k"] }),
+    ]))
+}
+
+/// A conditional whose condition and every body reach only keys the node declares.
+fn draw_neutral_conditional(tc: &TestCase) -> Value {
+    let key = tc.draw(gs::sampled_from(vec!["k", "p", "q"]));
+    if tc.draw(gs::booleans()) {
+        return json!({ "dependentSchemas": { key: draw_neutral_body(tc) } });
+    }
+    let condition = if tc.draw(gs::booleans()) {
+        json!({ "required": [key] })
+    } else {
+        json!({ "properties": { key: { "const": "a" } }, "required": [key] })
+    };
+    json!({ "if": condition, "then": draw_neutral_body(tc), "else": draw_neutral_body(tc) })
+}
+
+// One reaching nothing the node does not already evaluate keeps no case, so a document built only
+// from those canonicalizes wherever they sit - on the node, in a branch, or behind a reference.
+#[hegel::test(test_cases = 5_000)]
+fn neutral_conditionals_never_keep_the_document_raw(tc: TestCase) {
+    let mut node = Map::new();
+    node.insert("type".into(), json!("object"));
+    node.insert("properties".into(), json!({ "k": {}, "p": {}, "q": {} }));
+    let mut branches = Vec::new();
+    for _ in 0..tc.draw(gs::integers::<u8>().min_value(1).max_value(3)) {
+        match tc.draw(gs::integers::<u8>().min_value(0).max_value(2)) {
+            0 if !node.contains_key("if") && !node.contains_key("dependentSchemas") => {
+                if let Value::Object(conditional) = draw_neutral_conditional(&tc) {
+                    node.extend(conditional);
+                }
+            }
+            1 => branches.push(json!({ "$ref": "#/$defs/neutral" })),
+            _ => branches.push(draw_neutral_conditional(&tc)),
+        }
+    }
+    if !branches.is_empty() {
+        node.insert("allOf".into(), Value::Array(branches));
+    }
+    let keyword = if tc.draw(gs::integers::<u8>().min_value(0).max_value(4)) == 0 {
+        "unevaluatedItems"
+    } else {
+        "unevaluatedProperties"
+    };
+    node.insert(keyword.into(), json!(false));
+    node.insert(
+        "$defs".into(),
+        json!({ "neutral": { "if": { "required": ["k"] }, "then": { "maxProperties": 4 } } }),
+    );
+    let schema = Value::Object(node);
+    let canonical = canonicalize_or_panic(&schema, Draft::Draft202012);
+    assert_ne!(
+        canonical.kind(),
+        jsonschema::canonical::CanonicalKind::Raw,
+        "schema = {schema}"
+    );
+    let build = |value: &Value| {
+        jsonschema::options()
+            .with_draft(Draft::Draft202012)
+            .build(value)
+            .unwrap_or_else(|error| panic!("build failed: {error}\n  schema = {value}"))
+    };
+    let emitted = canonical.to_json_schema();
+    let (raw, modeled) = (build(&schema), build(&emitted));
+    let mut instances = vec![tc.draw(arbitrary_instance())];
+    for _ in 0..6 {
+        instances.push(draw_conditional_instance(&tc));
+    }
+    for instance in &instances {
+        assert_eq!(
+            raw.is_valid(instance),
+            modeled.is_valid(instance),
+            "{schema} vs {emitted} on {instance}"
+        );
+    }
+}
+
+// Two-way forks double the cases: eight conditions on distinct keys outgrow the per-node budget.
+// Each `then` names a key of its own, so every one of them keeps its case.
 #[hegel::test(test_cases = 200)]
 fn conditions_past_the_case_budget_stay_raw(tc: TestCase) {
-    let count = tc.draw(gs::integers::<u32>().min_value(1).max_value(8));
+    let count = tc.draw(gs::integers::<u32>().min_value(1).max_value(10));
     let branches: Vec<Value> = (0..count)
         .map(|index| {
             let key = format!("k{index}");
@@ -2945,7 +3031,7 @@ fn conditions_past_the_case_budget_stay_raw(tc: TestCase) {
         .collect();
     let schema = json!({ "type": "object", "allOf": branches, "unevaluatedProperties": false });
     let canonical = canonicalize_or_panic(&schema, Draft::Draft202012);
-    let past_budget = 2u64.pow(count) > 32;
+    let past_budget = 2u64.pow(count) > 128;
     assert_eq!(
         canonical.kind() == jsonschema::canonical::CanonicalKind::Raw,
         past_budget,
