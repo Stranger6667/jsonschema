@@ -1019,8 +1019,18 @@
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
-        {"type": ["null", "boolean", "number", "string", "object"]},
-        {"const": []}
+        {
+          "type": [
+            "null",
+            "boolean",
+            "number",
+            "string",
+            "object"
+          ]
+        },
+        {
+          "const": []
+        }
       ]
     },
     "tests": [
@@ -2081,16 +2091,95 @@
     ]
   },
   {
+    "description": "a conditional reaching no key of its own inside a branch still leaves the covers readable",
+    "schema": {
+      "type": "object",
+      "properties": {"a": {}, "b": {}},
+      "allOf": [{"dependentSchemas": {"a": {"maxProperties": 2}}}],
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "type": "object",
+      "propertyNames": {"enum": ["a", "b"]}
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2}, "valid": true},
+      {"data": {"z": 1}, "valid": false},
+      {"data": 1, "valid": false}
+    ]
+  },
+  {
+    "description": "conditionals reaching no key of their own do not fork the cases",
+    "schema": {
+      "type": "object",
+      "properties": {"a": {}, "b": {}, "c": {}, "d": {}, "e": {}, "f": {}},
+      "allOf": [
+        {"if": {"required": ["a"]}, "then": {"maxProperties": 9}},
+        {"if": {"required": ["b"]}, "then": {"maxProperties": 8}},
+        {"if": {"required": ["c"]}, "then": {"maxProperties": 7}},
+        {"if": {"required": ["d"]}, "then": {"maxProperties": 6}},
+        {"if": {"required": ["e"]}, "then": {"maxProperties": 5}},
+        {"if": {"required": ["f"]}, "then": {"maxProperties": 4}}
+      ],
+      "unevaluatedProperties": false
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "anyOf": [
+        {
+          "properties": {
+            "f": false
+          },
+          "propertyNames": {
+            "enum": [
+              "a",
+              "b",
+              "c",
+              "d",
+              "e",
+              "f"
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "maxProperties": 4,
+          "propertyNames": {
+            "enum": [
+              "a",
+              "b",
+              "c",
+              "d",
+              "e",
+              "f"
+            ]
+          },
+          "type": "object"
+        }
+      ]
+    },
+    "tests": [
+      {"data": {}, "valid": true},
+      {"data": {"a": 1}, "valid": true},
+      {"data": {"a": 1, "b": 2, "c": 3, "d": 4, "e": 5, "f": 6}, "valid": false},
+      {"data": {"z": 1}, "valid": false},
+      {"data": "s", "valid": false}
+    ]
+  },
+  {
     "description": "raw: a conditional split outgrowing its case budget keeps the document raw",
     "schema": {
       "type": "object",
-      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}, "f": {"properties": {"f1": {}}}},
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}, "f": {"properties": {"f1": {}}}, "g": {"properties": {"g1": {}}}, "h": {"properties": {"h1": {}}}},
       "unevaluatedProperties": false
     },
     "kind": "raw",
     "expected": {
       "type": "object",
-      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}, "f": {"properties": {"f1": {}}}},
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}, "f": {"properties": {"f1": {}}}, "g": {"properties": {"g1": {}}}, "h": {"properties": {"h1": {}}}},
       "unevaluatedProperties": false
     },
     "tests": [
@@ -2173,7 +2262,7 @@
     "description": "raw: a condition doubling the dependent cases past the budget keeps the document raw",
     "schema": {
       "type": "object",
-      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}},
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}, "f": {"properties": {"f1": {}}}, "g": {"properties": {"g1": {}}}, "h": {"properties": {"h1": {}}}},
       "if": {"required": ["a"]},
       "then": {"properties": {"t": {}}},
       "unevaluatedProperties": false
@@ -2181,7 +2270,7 @@
     "kind": "raw",
     "expected": {
       "type": "object",
-      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}},
+      "dependentSchemas": {"a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}}, "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}}, "e": {"properties": {"e1": {}}}, "f": {"properties": {"f1": {}}}, "g": {"properties": {"g1": {}}}, "h": {"properties": {"h1": {}}}},
       "if": {"required": ["a"]},
       "then": {"properties": {"t": {}}},
       "unevaluatedProperties": false
@@ -2307,10 +2396,138 @@
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "anyOf": [
-        {"type": "object", "properties": {"scheme": {"anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "not": {"enum": ["bearer"]}}]}, "type": {"anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "not": {"enum": ["apiKey", "http"]}}, {"enum": ["apiKey", "http"]}]}}, "propertyNames": {"enum": ["scheme", "type"]}},
-        {"type": "object", "properties": {"type": {"anyOf": [{"type": ["null", "boolean", "number", "array", "object"]}, {"type": "string", "not": {"enum": ["apiKey", "http"]}}, {"const": "apiKey"}]}}, "propertyNames": {"enum": ["scheme", "type"]}},
-        {"type": "object", "required": ["scheme", "type"], "properties": {"scheme": {"const": "bearer"}, "type": {"const": "http"}}, "propertyNames": {"enum": ["bearerFormat", "scheme", "type"]}},
-        {"type": "object", "required": ["type"], "properties": {"type": {"const": "apiKey"}}, "propertyNames": {"enum": ["name", "scheme", "type"]}}
+        {
+          "properties": {
+            "scheme": {
+              "anyOf": [
+                {
+                  "type": [
+                    "null",
+                    "boolean",
+                    "number",
+                    "array",
+                    "object"
+                  ]
+                },
+                {
+                  "not": {
+                    "enum": [
+                      "bearer"
+                    ]
+                  },
+                  "type": "string"
+                }
+              ]
+            },
+            "type": {
+              "anyOf": [
+                {
+                  "type": [
+                    "null",
+                    "boolean",
+                    "number",
+                    "array",
+                    "object"
+                  ]
+                },
+                {
+                  "not": {
+                    "enum": [
+                      "apiKey"
+                    ]
+                  },
+                  "type": "string"
+                },
+                {
+                  "const": "apiKey"
+                }
+              ]
+            }
+          },
+          "propertyNames": {
+            "enum": [
+              "scheme",
+              "type"
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "anyOf": [
+                {
+                  "type": [
+                    "null",
+                    "boolean",
+                    "number",
+                    "array",
+                    "object"
+                  ]
+                },
+                {
+                  "not": {
+                    "enum": [
+                      "apiKey",
+                      "http"
+                    ]
+                  },
+                  "type": "string"
+                },
+                {
+                  "const": "apiKey"
+                }
+              ]
+            }
+          },
+          "propertyNames": {
+            "enum": [
+              "scheme",
+              "type"
+            ]
+          },
+          "type": "object"
+        },
+        {
+          "properties": {
+            "scheme": {
+              "const": "bearer"
+            },
+            "type": {
+              "const": "http"
+            }
+          },
+          "propertyNames": {
+            "enum": [
+              "bearerFormat",
+              "scheme",
+              "type"
+            ]
+          },
+          "required": [
+            "scheme",
+            "type"
+          ],
+          "type": "object"
+        },
+        {
+          "properties": {
+            "type": {
+              "const": "apiKey"
+            }
+          },
+          "propertyNames": {
+            "enum": [
+              "name",
+              "scheme",
+              "type"
+            ]
+          },
+          "required": [
+            "type"
+          ],
+          "type": "object"
+        }
       ]
     },
     "tests": [
@@ -2333,7 +2550,9 @@
         {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
         {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
         {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}},
-        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}}
+        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}},
+        {"if": {"required": ["k7"]}, "then": {"properties": {"p7": {}}}},
+        {"if": {"required": ["k8"]}, "then": {"properties": {"p8": {}}}}
       ],
       "unevaluatedProperties": false
     },
@@ -2346,7 +2565,9 @@
         {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
         {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
         {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}},
-        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}}
+        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}},
+        {"if": {"required": ["k7"]}, "then": {"properties": {"p7": {}}}},
+        {"if": {"required": ["k8"]}, "then": {"properties": {"p8": {}}}}
       ],
       "unevaluatedProperties": false
     },
@@ -2686,7 +2907,10 @@
         {"if": {"required": ["k2"]}, "then": {"properties": {"p2": {}}}},
         {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
         {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
-        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}}
+        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}},
+        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}},
+        {"if": {"required": ["k7"]}, "then": {"properties": {"p7": {}}}},
+        {"if": {"required": ["k8"]}, "then": {"properties": {"p8": {}}}}
       ],
       "unevaluatedProperties": false
     },
@@ -2700,7 +2924,10 @@
         {"if": {"required": ["k2"]}, "then": {"properties": {"p2": {}}}},
         {"if": {"required": ["k3"]}, "then": {"properties": {"p3": {}}}},
         {"if": {"required": ["k4"]}, "then": {"properties": {"p4": {}}}},
-        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}}
+        {"if": {"required": ["k5"]}, "then": {"properties": {"p5": {}}}},
+        {"if": {"required": ["k6"]}, "then": {"properties": {"p6": {}}}},
+        {"if": {"required": ["k7"]}, "then": {"properties": {"p7": {}}}},
+        {"if": {"required": ["k8"]}, "then": {"properties": {"p8": {}}}}
       ],
       "unevaluatedProperties": false
     },

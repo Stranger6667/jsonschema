@@ -1447,15 +1447,17 @@ fn has_unresolved_applicator(map: &Map<String, Value>) -> bool {
 }
 
 /// Cases one conditional split may spread an `unevaluated*` over before the document stays raw.
-const CONDITIONAL_CASE_BUDGET: usize = 32;
+/// The Open API 3.2 meta-schema needs 98 for its parameter object, the widest real document known.
+const CONDITIONAL_CASE_BUDGET: usize = 128;
 
 /// Subschemas one case may collect before the document stays raw: a body referring back to its
 /// own conditional would otherwise nest without end.
 const CASE_SUBSCHEMA_BUDGET: usize = 64;
 
 enum Split {
-    /// No conditional applicator to split on.
-    Untouched,
+    /// Nothing left to split on. `neutralized` where a conditional was left in place for reaching
+    /// no further than the node, so the covers still have to read past it.
+    Untouched { neutralized: bool },
     /// Past a budget, or a branch or target could not be read.
     Declined,
     /// The document-scoped keywords, and one variant per case.
@@ -1520,20 +1522,96 @@ fn hoistable(value: &Value, scoped: bool, draft: Draft) -> bool {
         .all(|subresource| hoistable(subresource, scoped, draft))
 }
 
+/// The conditionals the split left alone: whether there were any, and the node's own, which the
+/// variants carry because the node's conditional keywords are stripped from them.
+#[derive(Default)]
+struct Skipped {
+    any: bool,
+    carried: Vec<Value>,
+}
+
+/// What the node evaluates without its conditionals; a conditional reaching no further keeps no case.
+struct Covers {
+    property: PropertyCover,
+    item: ItemCover,
+}
+
+impl Covers {
+    /// Whether a body reaching `property` and `item` evaluates nothing this node does not already.
+    fn already_reaches(&self, property: &PropertyCover, item: &ItemCover) -> bool {
+        let properties = self.property.everything
+            || (!property.everything
+                && property
+                    .keys
+                    .iter()
+                    .all(|key| self.property.keys.contains(key))
+                && property
+                    .patterns
+                    .iter()
+                    .all(|pattern| self.property.patterns.contains(pattern)));
+        let items = self.item.everything || (!item.everything && item.prefix <= self.item.prefix);
+        properties && items
+    }
+}
+
+/// Whether `body` running leaves the evaluated keys and indices exactly as they were.
+///
+/// A body carrying conditionals of its own has no cover to read, so it never answers yes.
+fn reaches_nothing_new(
+    body: &Value,
+    base: &Covers,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'_>,
+    walk: &mut ReferenceWalk,
+) -> Result<bool, CanonicalizationError> {
+    let hoisted = walk.hoisted;
+    walk.hoisted = false;
+    let mut property = PropertyCover::default();
+    let mut item = ItemCover::default();
+    let properties = property_cover(body, ctx, resolver, walk, &mut property);
+    let items = match &properties {
+        Ok(Some(())) => item_cover(body, ctx.draft(), ctx, resolver, walk, &mut item),
+        _ => Ok(None),
+    };
+    walk.hoisted = hoisted;
+    if properties?.is_none() || items?.is_none() {
+        return Ok(false);
+    }
+    property.normalize();
+    Ok(base.already_reaches(&property, &item))
+}
+
 /// The conditionals on `map`, its `allOf` branches and its `$ref` target, recursively; `scoped`
-/// marks a base other than the split node's. `None` where one cannot be copied or read.
+/// marks a base other than the split node's and `node_level` the split node itself, whose own
+/// conditional keywords the variants lose. One reaching no further than `base` is left out and
+/// recorded in `skipped` instead. `None` where one cannot be copied or read.
 fn applied_conditionals(
     map: &Map<String, Value>,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'_>,
     walk: &mut ReferenceWalk,
     scoped: bool,
+    base: &Covers,
+    node_level: bool,
+    skipped: &mut Skipped,
     out: &mut Vec<Conditional>,
 ) -> Result<Option<()>, CanonicalizationError> {
     if let Some(Value::Object(entries)) = map.get("dependentSchemas") {
         for (key, consequent) in entries {
             if !hoistable(consequent, scoped, ctx.draft()) {
                 return Ok(None);
+            }
+            // Whether it ran cannot change the cover, so it needs no case of its own.
+            if reaches_nothing_new(consequent, base, ctx, resolver, walk)? {
+                skipped.any = true;
+                // Only the node's own conditionals are stripped from the variants; one inside a
+                // branch or a target stays where it is.
+                if node_level {
+                    skipped
+                        .carried
+                        .push(json!({ "dependentSchemas": { key.clone(): consequent.clone() } }));
+                }
+                continue;
             }
             out.push(Conditional::Dependency {
                 key: key.clone(),
@@ -1550,24 +1628,48 @@ fn applied_conditionals(
         {
             return Ok(None);
         }
-        out.push(Conditional::Condition(IfThenElse {
-            condition: condition.clone(),
-            then: map.get("then").cloned(),
-            otherwise: map.get("else").cloned(),
-        }));
+        // The condition annotates too where it holds, so it is judged beside the bodies. Where
+        // every way it can go reaches what the node already does, it needs no case of its own.
+        let mut neutral = true;
+        for body in bodies.into_iter().flatten() {
+            if !reaches_nothing_new(body, base, ctx, resolver, walk)? {
+                neutral = false;
+                break;
+            }
+        }
+        if neutral {
+            skipped.any = true;
+            if node_level {
+                let mut kept = Map::new();
+                for keyword in ["if", "then", "else"] {
+                    if let Some(value) = map.get(keyword) {
+                        kept.insert(keyword.to_string(), value.clone());
+                    }
+                }
+                skipped.carried.push(Value::Object(kept));
+            }
+        } else {
+            out.push(Conditional::Condition(IfThenElse {
+                condition: condition.clone(),
+                then: map.get("then").cloned(),
+                otherwise: map.get("else").cloned(),
+            }));
+        }
     }
     if let Some(Value::Array(branches)) = map.get("allOf") {
         for branch in branches {
-            let Some(()) = branch_conditionals(branch, ctx, resolver, walk, scoped, out)? else {
+            let Some(()) =
+                branch_conditionals(branch, ctx, resolver, walk, scoped, base, skipped, out)?
+            else {
                 return Ok(None);
             };
         }
     }
     if let Some(Value::String(reference)) = map.get("$ref") {
-        let base = resolver.base_uri();
+        let document_base = resolver.base_uri();
         let Some(()) = fold_reference(reference, ctx, resolver, walk, |map, target, walk| {
-            let scoped = scoped || target.base_uri().as_str() != base.as_str();
-            applied_conditionals(map, ctx, target, walk, scoped, out)
+            let scoped = scoped || target.base_uri().as_str() != document_base.as_str();
+            applied_conditionals(map, ctx, target, walk, scoped, base, false, skipped, out)
         })?
         else {
             return Ok(None);
@@ -1583,6 +1685,8 @@ fn branch_conditionals(
     resolver: &Resolver<'_>,
     walk: &mut ReferenceWalk,
     scoped: bool,
+    base: &Covers,
+    skipped: &mut Skipped,
     out: &mut Vec<Conditional>,
 ) -> Result<Option<()>, CanonicalizationError> {
     let map = match branch {
@@ -1592,7 +1696,7 @@ fn branch_conditionals(
     };
     let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(branch))?;
     let scoped = scoped || map.contains_key("$id");
-    applied_conditionals(map, ctx, &resolver, walk, scoped, out)
+    applied_conditionals(map, ctx, &resolver, walk, scoped, base, false, skipped, out)
 }
 
 /// A body that ran: the subschema it contributes and the conditionals inside it.
@@ -1614,6 +1718,8 @@ fn run_once(
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'_>,
     walk: &mut ReferenceWalk,
+    base: &Covers,
+    skipped: &mut Skipped,
 ) -> Result<Option<Ran>, CanonicalizationError> {
     let Some(body) = body else {
         return Ok(Some(Ran {
@@ -1626,7 +1732,9 @@ fn run_once(
         "a body reaching a case carries no identity keyword"
     );
     let mut nested = Vec::new();
-    let Some(()) = branch_conditionals(body, ctx, resolver, walk, false, &mut nested)? else {
+    let Some(()) =
+        branch_conditionals(body, ctx, resolver, walk, false, base, skipped, &mut nested)?
+    else {
         return Ok(None);
     };
     Ok(Some(Ran {
@@ -1643,6 +1751,8 @@ fn expand_cases(
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'_>,
     walk: &mut ReferenceWalk,
+    base: &Covers,
+    skipped: &mut Skipped,
     out: &mut Vec<Vec<Value>>,
 ) -> Result<Option<()>, CanonicalizationError> {
     if pending.is_empty() {
@@ -1661,10 +1771,20 @@ fn expand_cases(
             let trigger = json!({"type": "object", "required": [key]});
             let mut absent = case.clone();
             absent.push(json!({"not": trigger}));
-            let Some(()) = expand_cases(absent, pending.clone(), ctx, resolver, walk, out)? else {
+            let Some(()) = expand_cases(
+                absent,
+                pending.clone(),
+                ctx,
+                resolver,
+                walk,
+                base,
+                skipped,
+                out,
+            )?
+            else {
                 return Ok(None);
             };
-            let Some(ran) = run_once(Some(&consequent), ctx, resolver, walk)? else {
+            let Some(ran) = run_once(Some(&consequent), ctx, resolver, walk, base, skipped)? else {
                 return Ok(None);
             };
             let mut held = case;
@@ -1672,14 +1792,16 @@ fn expand_cases(
             let mut nested = Vec::new();
             ran.add_to(&mut held, &mut nested);
             nested.extend(pending);
-            expand_cases(held, nested, ctx, resolver, walk, out)
+            expand_cases(held, nested, ctx, resolver, walk, base, skipped, out)
         }
         Conditional::Condition(first) => {
             let Some((key, _)) = discriminator(&first.condition) else {
-                let Some(then) = run_once(first.then.as_ref(), ctx, resolver, walk)? else {
+                let Some(then) = run_once(first.then.as_ref(), ctx, resolver, walk, base, skipped)?
+                else {
                     return Ok(None);
                 };
-                let Some(otherwise) = run_once(first.otherwise.as_ref(), ctx, resolver, walk)?
+                let Some(otherwise) =
+                    run_once(first.otherwise.as_ref(), ctx, resolver, walk, base, skipped)?
                 else {
                     return Ok(None);
                 };
@@ -1688,7 +1810,9 @@ fn expand_cases(
                 let mut nested = Vec::new();
                 then.add_to(&mut passed, &mut nested);
                 nested.extend(pending.iter().map(Conditional::clone));
-                let Some(()) = expand_cases(passed, nested, ctx, resolver, walk, out)? else {
+                let Some(()) =
+                    expand_cases(passed, nested, ctx, resolver, walk, base, skipped, out)?
+                else {
                     return Ok(None);
                 };
                 let mut failed = case;
@@ -1696,7 +1820,7 @@ fn expand_cases(
                 let mut nested = Vec::new();
                 otherwise.add_to(&mut failed, &mut nested);
                 nested.extend(pending);
-                return expand_cases(failed, nested, ctx, resolver, walk, out);
+                return expand_cases(failed, nested, ctx, resolver, walk, base, skipped, out);
             };
             let key = key.to_owned();
             let mut members = vec![first];
@@ -1722,10 +1846,19 @@ fn expand_cases(
             );
             let mut ran = Vec::with_capacity(members.len());
             for member in &members {
-                let Some(then) = run_once(member.then.as_ref(), ctx, resolver, walk)? else {
+                let Some(then) =
+                    run_once(member.then.as_ref(), ctx, resolver, walk, base, skipped)?
+                else {
                     return Ok(None);
                 };
-                let Some(otherwise) = run_once(member.otherwise.as_ref(), ctx, resolver, walk)?
+                let Some(otherwise) = run_once(
+                    member.otherwise.as_ref(),
+                    ctx,
+                    resolver,
+                    walk,
+                    base,
+                    skipped,
+                )?
                 else {
                     return Ok(None);
                 };
@@ -1757,7 +1890,9 @@ fn expand_cases(
                     body.add_to(&mut passed, &mut nested);
                 }
                 nested.extend(pending.iter().map(Conditional::clone));
-                let Some(()) = expand_cases(passed, nested, ctx, resolver, walk, out)? else {
+                let Some(()) =
+                    expand_cases(passed, nested, ctx, resolver, walk, base, skipped, out)?
+                else {
                     return Ok(None);
                 };
             }
@@ -1768,7 +1903,8 @@ fn expand_cases(
                 otherwise.add_to(&mut failed, &mut nested);
             }
             nested.extend(pending.iter().map(Conditional::clone));
-            let Some(()) = expand_cases(failed, nested, ctx, resolver, walk, out)? else {
+            let Some(()) = expand_cases(failed, nested, ctx, resolver, walk, base, skipped, out)?
+            else {
                 return Ok(None);
             };
             // A non-object, where `properties` and `required` assert nothing: every member is met.
@@ -1779,7 +1915,7 @@ fn expand_cases(
                 then.add_to(&mut other, &mut nested);
             }
             nested.extend(pending);
-            expand_cases(other, nested, ctx, resolver, walk, out)
+            expand_cases(other, nested, ctx, resolver, walk, base, skipped, out)
         }
     }
 }
@@ -1799,15 +1935,74 @@ fn split_conditionals(
     resolver: &Resolver<'_>,
     walk: &mut ReferenceWalk,
 ) -> Result<Split, CanonicalizationError> {
+    // Read off the node's own keywords and its siblings - never off the `unevaluated*` being split,
+    // which reaches everything only once the split has decided what ran. Reading less than the node
+    // truly reaches only keeps a case that was not needed.
+    let mut base = Covers {
+        property: PropertyCover::default(),
+        item: ItemCover::default(),
+    };
+    if let Some(Value::Object(properties)) = map.get("properties") {
+        base.property.keys.extend(properties.keys().cloned());
+    }
+    if let Some(Value::Object(patterns)) = map.get("patternProperties") {
+        base.property.patterns.extend(patterns.keys().cloned());
+    }
+    base.property.everything = map.contains_key("additionalProperties");
+    match map.get("items") {
+        Some(Value::Array(tuple)) => base.item.prefix = tuple.len(),
+        Some(Value::Object(_) | Value::Bool(_)) => base.item.everything = true,
+        _ => {}
+    }
+    if let Some(Value::Array(tuple)) = map.get("prefixItems") {
+        base.item.prefix = base.item.prefix.max(tuple.len());
+    }
+    {
+        let mut reading = ReferenceWalk::hoisted();
+        if let Some(cover) = sibling_property_cover(map, ctx, resolver, &mut reading)? {
+            base.property.everything |= cover.everything;
+            base.property.keys.extend(cover.keys);
+            base.property.patterns.extend(cover.patterns);
+        }
+        let mut reading = ReferenceWalk::hoisted();
+        if let Some(cover) = sibling_item_cover(map, ctx.draft(), ctx, resolver, &mut reading)? {
+            base.item.absorb(&cover);
+        }
+    }
+    base.property.normalize();
     let mut conditionals = Vec::new();
-    let Some(()) = applied_conditionals(map, ctx, resolver, walk, false, &mut conditionals)? else {
+    let mut skipped = Skipped::default();
+    let Some(()) = applied_conditionals(
+        map,
+        ctx,
+        resolver,
+        walk,
+        false,
+        &base,
+        true,
+        &mut skipped,
+        &mut conditionals,
+    )?
+    else {
         return Ok(Split::Declined);
     };
     if conditionals.is_empty() {
-        return Ok(Split::Untouched);
+        return Ok(Split::Untouched {
+            neutralized: skipped.any,
+        });
     }
     let mut cases = Vec::new();
-    let Some(()) = expand_cases(Vec::new(), conditionals, ctx, resolver, walk, &mut cases)? else {
+    let Some(()) = expand_cases(
+        Vec::new(),
+        conditionals,
+        ctx,
+        resolver,
+        walk,
+        &base,
+        &mut skipped,
+        &mut cases,
+    )?
+    else {
         return Ok(Split::Declined);
     };
     debug_assert!(
@@ -1844,6 +2039,7 @@ fn split_conditionals(
         .map(|subschemas| {
             let mut variant = base.clone();
             let mut branches = shared.cloned().unwrap_or_default();
+            branches.extend(skipped.carried.iter().cloned());
             branches.extend(subschemas);
             variant.insert("allOf".to_string(), Value::Array(branches));
             variant
@@ -2331,7 +2527,14 @@ fn degrade_unevaluated(
         "every reference fold leaves the walk as it found it"
     );
     match split {
-        Split::Untouched => degrade_plain(map, draft, ctx, resolver, &mut ReferenceWalk::new()),
+        Split::Untouched { neutralized } => {
+            let mut walk = if neutralized {
+                ReferenceWalk::hoisted()
+            } else {
+                ReferenceWalk::new()
+            };
+            degrade_plain(map, draft, ctx, resolver, &mut walk)
+        }
         Split::Declined => Ok(None),
         Split::Variants {
             mut wrapper,
