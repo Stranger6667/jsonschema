@@ -4844,5 +4844,20 @@
       {"data": {"a": 1}, "valid": false},
       {"data": 1, "valid": true}
     ]
+  },
+  {
+    "description": "ir: a floor of one beside a demand that some key break a rule says nothing, even where a reference keeps the allOf",
+    "draft": "draft6",
+    "schema": {"allOf": [{"allOf": [{"anyOf": [{"not": {"propertyNames": {"pattern": "^a"}, "type": "object"}}, {"type": "string"}]}, {"$ref": "#"}]}, {"minProperties": 1, "type": "object"}]},
+    "expected": {
+      "$schema": "http://json-schema.org/draft-06/schema#",
+      "allOf": [{"not": {"propertyNames": {"pattern": "^a", "type": "string"}}, "type": "object"}, {"$ref": "#"}]
+    },
+    "tests": [
+      {"data": {"b": 1}, "valid": true},
+      {"data": {}, "valid": false},
+      {"data": {"a": 1}, "valid": false},
+      {"data": "s", "valid": false}
+    ]
   }
 ]
