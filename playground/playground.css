@@ -45,8 +45,10 @@ kbd {
   padding: 2px 7px; border-radius: 999px; letter-spacing: 0.01em;
 }
 .nav-links { display: flex; align-items: center; gap: 22px; }
-.gh-star { display: inline-flex; align-items: center; height: 20px; line-height: 0; }
+.gh-star { display: inline-flex; align-items: center; height: 20px; line-height: 0; color: var(--color-text-secondary); }
+.gh-star:hover { color: var(--color-text-primary); }
 .gh-star img { display: block; height: 20px; }
+.gh-mark { display: none; }
 .nav-links a {
   color: var(--color-text-secondary); text-decoration: none;
   font-size: var(--font-size-sm); font-weight: 500; transition: color 0.15s;
@@ -440,12 +442,67 @@ kbd {
 /* Responsive */
 @media (max-width: 900px) {
   .inputs { grid-template-columns: 1fr; height: auto; }
-  .editor { min-height: 240px; }
+  .inputs .editor { min-height: 200px; }
   .head h1 { font-size: 2rem; }
   .nav-inner, .head-inner, .pg { padding-left: 18px; padding-right: 18px; }
 }
+
 @media (max-width: 620px) {
-  .toolbar { flex-direction: column; align-items: stretch; }
-  .toolbar-right { justify-content: space-between; }
+  /* nav: brand + compact GitHub mark, no shields badge */
+  .nav-inner { padding: 11px 16px; gap: 10px; }
+  .nav-name { font-size: 0.92rem; }
+  .nav-links { gap: 16px; }
+  .nav-links a { font-size: 0.8rem; padding: 8px 0; margin: -8px 0; }
+  .gh-star img { display: none; }
+  .gh-mark { display: block; }
+
+  .head { padding: 32px 16px 24px; }
+  .head h1 { font-size: 1.65rem; }
+  .head-sub { font-size: 0.95rem; }
+  .pg { padding-left: 16px; padding-right: 16px; }
+
+  /* action tabs: 2x2 grid of full-width targets */
+  .actions { display: grid; grid-template-columns: 1fr 1fr; gap: 16px 8px; }
+  .action { padding: 10px 12px; min-height: 46px; }
   .action-meta { display: none; }
+  .exp-badge { top: -7px; right: 4px; }
+
+  /* toolbar: one control per row, label left / control right */
+  .toolbar { padding: 12px; gap: 12px; flex-direction: column; align-items: stretch; }
+  .toolbar-left { flex-direction: column; align-items: stretch; gap: 12px; }
+  .ctl { justify-content: space-between; min-height: 36px; }
+  .ctl-toggle { flex-direction: row-reverse; }
+  .ctl-select { padding: 8px 28px 8px 10px; }
+  .action-hint {
+    white-space: normal; border-left: none; margin-left: 0; padding-left: 0;
+    border-top: 1px solid var(--color-border-dark); padding-top: 10px;
+  }
+  .toolbar-right { gap: 8px; }
+  .toolbar-right > * { flex: 1; }
+  .toolbar-right .btn-soft { width: 100%; justify-content: center; padding: 10px 12px; }
+  .ex-menu { left: 0; right: auto; min-width: 240px; max-width: calc(100vw - 36px); }
+  .ex-item { padding: 12px; }
+
+  /* 16px keeps iOS from zooming the page when the textarea takes focus */
+  .editor, .ed-gutter, .ed-highlight, .ed-area { font-size: 16px; }
+
+  .icon-btn { width: 32px; height: 32px; }
+  .status-bar { flex-wrap: wrap; gap: 8px; padding: 12px 14px; }
+  .out-valid { padding: 32px 18px; }
+  .err-row { padding: 12px 14px; }
+  .out-json { padding: 12px 14px; }
+  .site-foot { margin-top: 28px; }
+}
+
+@media (max-width: 400px) {
+  .nav-inner { padding: 11px 14px; }
+  .nav-links { gap: 14px; }
+  .head { padding: 28px 14px 22px; }
+  .head h1 { font-size: 1.5rem; }
+  .pg { padding-left: 14px; padding-right: 14px; }
+}
+
+@media (max-width: 360px) {
+  /* the version pill is the first thing to go when the nav runs out of room */
+  .nav-version { display: none; }
 }

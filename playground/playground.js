@@ -531,7 +531,7 @@
       const index = +row.dataset.idx;
       row.addEventListener("mouseenter", () => focusErrors([index], null));
       row.addEventListener("mouseleave", clearTrace);
-      row.addEventListener("click", () => focusErrors([index], null));
+      row.addEventListener("click", () => { focusErrors([index], null); revealTracedEditor(index); });
     });
 
     // ambient: pre-mark every error's line(s) on the relevant editor(s)
@@ -592,6 +592,15 @@
 
     if (trace.instanceEditor && trace.instanceEditor !== originEditor) trace.instanceEditor.scrollToLine(firstInstanceLine);
     if (trace.schemaEditor !== originEditor) trace.schemaEditor.scrollToLine(firstSchemaLine);
+  }
+  // stacked layout puts the editors above the output, so a tapped error would
+  // otherwise highlight a line that is off-screen
+  function revealTracedEditor(index) {
+    if (!window.matchMedia("(max-width: 900px)").matches) return;
+    const entry = trace && trace.perError[index];
+    if (!entry) return;
+    const panel = entry.instanceLine && trace.instanceEditor ? $("#instancePanel") : $("#schemaPanel");
+    panel.scrollIntoView({ behavior: "smooth", block: "center" });
   }
   function clearTrace() {
     if (!trace) return;
