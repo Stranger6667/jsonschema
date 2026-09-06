@@ -165,6 +165,11 @@ pub enum ObjectViolationView {
         patterns: Vec<String>,
         additional: CanonicalSchema,
     },
+    /// Some key matching `pattern` has a value failing `schema`.
+    PatternValueFails {
+        pattern: String,
+        schema: CanonicalSchema,
+    },
 }
 
 /// Payload of [`CanonicalView::Integer`]: the interval bounds and divisor on an integer value.
@@ -247,6 +252,12 @@ impl CanonicalSchema {
                             patterns: patterns.iter().map(ToString::to_string).collect(),
                             additional: self.wrap_child(additional),
                         },
+                        ObjectViolation::PatternValueFails { pattern, schema } => {
+                            ObjectViolationView::PatternValueFails {
+                                pattern: pattern.to_string(),
+                                schema: self.wrap_child(schema),
+                            }
+                        }
                     })
                     .collect(),
             )),

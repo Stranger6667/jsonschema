@@ -430,6 +430,8 @@ impl MaybeEmpty for ArrayLeaf {
 
 /// One demand produced by negation: the object must hold at least one entry that breaks the
 /// stored rule.
+// Each variant names the rule an object has to break, which is what the shared suffix says.
+#[allow(clippy::enum_variant_names)]
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) enum ObjectViolation {
     /// Some key's name fails the schema.
@@ -440,6 +442,8 @@ pub(crate) enum ObjectViolation {
         patterns: Vec<Arc<str>>,
         additional: Schema,
     },
+    /// Some key matching `pattern` has a value failing `schema`.
+    PatternValueFails { pattern: Arc<str>, schema: Schema },
 }
 
 /// The constraints a [`SchemaKind::Object`] places on an object value. A required key implies a

@@ -144,6 +144,9 @@ fn settled(schema: &Schema) -> bool {
                     ObjectViolation::UndeclaredValueFails { additional, .. } => {
                         !algebra::contains_reference(additional)
                     }
+                    ObjectViolation::PatternValueFails { schema, .. } => {
+                        !algebra::contains_reference(schema)
+                    }
                 })
                 && leaf
                     .properties

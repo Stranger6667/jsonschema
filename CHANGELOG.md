@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Changed
+
+- **BREAKING**: `canonical::ObjectViolationView` gained the `PatternValueFails` variant, which negation records for a `patternProperties` entry.
+- Canonicalization of `not` over `patternProperties`, which kept the entry under `not` instead of recording the demand a key breaks.
+
 ## [0.54.0] - 2026-09-06
 
 ### Added
