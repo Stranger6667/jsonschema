@@ -13,6 +13,7 @@ use crate::canonical::{
     context::CanonicalizationContext,
     emptiness,
     ir::{ArrayLeaf, ContainsFacet, ObjectLeaf, ObjectViolation, PropertyMap, Schema, SchemaKind},
+    negate,
     parse::{self, ParseOutput},
     DefinitionMap, ROOT_DEFINITION_KEY,
 };
@@ -229,11 +230,14 @@ fn folded(
             Schema::new(SchemaKind::OneOf(choice))
         }
         SchemaKind::Not(inner) => {
-            let negated = folded(inner, definitions, ctx, plain);
-            if negated == *inner {
+            let body = folded(inner, definitions, ctx, plain);
+            if body == *inner {
                 return schema.clone();
             }
-            Schema::new(SchemaKind::Not(negated))
+            // The folded body may be one negation expresses, or nothing at all: wrapping it raw
+            // would leave a `not` the parse never builds, such as `not: false`. Where negation
+            // still declines, the node stands unfolded.
+            negate::negate_in_place(&body, definitions, plain).unwrap_or_else(|| schema.clone())
         }
         SchemaKind::Array(leaf) => {
             let leaf = leaf.get();

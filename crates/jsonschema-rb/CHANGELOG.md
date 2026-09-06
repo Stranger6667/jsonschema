@@ -10,6 +10,7 @@
 
 - Canonicalization of `not` over `patternProperties`, which kept the entry under `not` instead of recording the demand a key breaks.
 - Canonicalization of an `anyOf` over objects sharing a `properties` key under `patternProperties`, which settled only on a second pass.
+- Canonicalization of `not` over an `allOf` folded through a reference, which settled only on a second pass.
 - Canonicalization of a `multipleOf` divisor past `f64` precision, which was not taken to divide itself.
 
 ### Fixed

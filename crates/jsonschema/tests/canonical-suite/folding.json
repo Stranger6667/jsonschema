@@ -592,5 +592,29 @@
       {"data": {"r": [1]}, "valid": false},
       {"data": {"r": [{"u": "http://x"}]}, "valid": false}
     ]
+  },
+  {
+    "description": "ir: a not whose body folds through its target to nothing accepts everything",
+    "schema": {"$defs": {"i": {"type": "integer"}}, "not": {"allOf": [{"const": {"a": 0}}, {"$ref": "#/$defs/i"}]}},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
+    "tests": [
+      {"data": {"a": 0}, "valid": true},
+      {"data": 1, "valid": true},
+      {"data": null, "valid": true}
+    ]
+  },
+  {
+    "description": "ir: a not whose body folds to a value negation cannot express keeps the unfolded body",
+    "schema": {"$defs": {"o": {"type": "object", "properties": {"a": {"type": "integer"}}}}, "not": {"allOf": [{"const": {"a": 0}}, {"$ref": "#/$defs/o"}]}},
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {"o": {"type": "object", "properties": {"a": {"type": "integer"}}}},
+      "not": {"allOf": [{"const": {"a": 0}}, {"$ref": "#/$defs/o"}]}
+    },
+    "tests": [
+      {"data": {"a": 0}, "valid": false},
+      {"data": {"a": 1}, "valid": true},
+      {"data": 1, "valid": true}
+    ]
   }
 ]
