@@ -9,6 +9,7 @@
 - Canonicalization of `unevaluated*` beside a conditional reaching no key or index the node already evaluates, which spent a case on it.
 - Canonicalization of a conditional split outgrowing its per-node case budget, which kept documents like the Open API 3.2 meta-schema `Raw`.
 - Canonicalization of an `anyOf` over objects sharing a `properties` key under `patternProperties`, which settled only on a second pass.
+- Canonicalization of a `multipleOf` divisor past `f64` precision, which was not taken to divide itself.
 
 ### Fixed
 
