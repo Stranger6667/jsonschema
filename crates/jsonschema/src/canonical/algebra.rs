@@ -1487,12 +1487,14 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     drop_covered_all_ofs(&mut out, ctx);
     drop_property_alternatives_covered_by_sibling(&mut out, ctx);
     // A narrowed branch is rebuilt through `intersect`, which distributes over a union the target
-    // of a resolved `$ref` holds, so the branch can come back as a union of its own. Running the
-    // branches again flattens it into this one and weighs what it held against the siblings. Every
-    // narrowing spends exact intersections, which the run's budget bounds.
+    // of a resolved `$ref` holds, and answers everything once the run has no intersection left to
+    // spend, so the branch can come back as a union of its own or as `true`. Running the branches
+    // again flattens a union into this one and weighs what it held against the siblings, and a
+    // `true` branch makes this union `true`. Every narrowing spends exact intersections, which the
+    // run's budget bounds.
     if out
         .iter()
-        .any(|branch| matches!(branch.kind(), SchemaKind::AnyOf(_)))
+        .any(|branch| matches!(branch.kind(), SchemaKind::AnyOf(_) | SchemaKind::True))
     {
         return union(out, ctx);
     }

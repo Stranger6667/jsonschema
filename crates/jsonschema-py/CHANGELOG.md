@@ -5,6 +5,7 @@
 ### Changed
 
 - Canonicalization of an `anyOf` over an `allOf` through a `$ref` to a union, which left that union nested inside the outer one.
+- Canonicalization of an `anyOf` whose branch narrowing runs out of intersections, which left `true` as a branch inside the union.
 
 ## [0.55.0] - 2026-09-06
 
