@@ -2332,6 +2332,43 @@ fn a_result_carries_exactly_the_targets_it_still_names() {
     validator_for(&emitted).expect("the result resolves its own pointers");
 }
 
+// The cycle keeps the document's own fold from reading `#/$defs/r`; the intersection reads it,
+// proves the `null` alternative covered by the first branch, and rebuilding the narrowed branch
+// distributes over the union `r` holds.
+#[test]
+fn intersect_flattens_a_narrowed_branch_that_distributes_over_a_reference() {
+    let left = canonicalize(&json!({
+        "anyOf": [
+            {"type": "object", "properties": {"a": {"type": "null"}}},
+            {"allOf": [
+                {"type": "object", "properties": {"a": {"anyOf": [{"type": "integer"}, {"$ref": "#/$defs/null"}]}}},
+                {"$ref": "#/$defs/r"}
+            ]},
+            {"$ref": "#/$defs/loop"}
+        ],
+        "$defs": {
+            "loop": {"type": "array", "items": {"$ref": "#/$defs/loop"}},
+            "null": {"type": "null"},
+            "r": {"anyOf": [{"type": "object", "required": ["p"]}, {"type": "object", "required": ["q"]}]}
+        }
+    }))
+    .expect("canonicalizes");
+    let right = canonicalize(&json!({"type": "object"})).expect("canonicalizes");
+    assert_eq!(
+        left.intersect(&right).expect("intersects").to_json_schema(),
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {"loop": {"type": "array", "items": {"$ref": "#/$defs/loop"}}},
+            "anyOf": [
+                {"type": "object", "properties": {"a": {"type": "null"}}},
+                {"type": "object", "properties": {"a": {"type": ["null", "integer"]}}, "required": ["p"]},
+                {"type": "object", "properties": {"a": {"type": ["null", "integer"]}}, "required": ["q"]},
+                {"allOf": [{"type": "object"}, {"$ref": "#/$defs/loop"}]}
+            ]
+        })
+    );
+}
+
 #[test]
 fn intersect_rejects_operands_from_different_drafts() {
     let draft7 = options()

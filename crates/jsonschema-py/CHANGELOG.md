@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Canonicalization of an `anyOf` over an `allOf` through a `$ref` to a union, which left that union nested inside the outer one.
+
 ## [0.55.0] - 2026-09-06
 
 ### Added

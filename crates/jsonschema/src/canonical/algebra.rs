@@ -1486,6 +1486,16 @@ pub(crate) fn union(branches: Vec<Schema>, ctx: &CanonicalizationContext) -> Sch
     });
     drop_covered_all_ofs(&mut out, ctx);
     drop_property_alternatives_covered_by_sibling(&mut out, ctx);
+    // A narrowed branch is rebuilt through `intersect`, which distributes over a union the target
+    // of a resolved `$ref` holds, so the branch can come back as a union of its own. Running the
+    // branches again flattens it into this one and weighs what it held against the siblings. Every
+    // narrowing spends exact intersections, which the run's budget bounds.
+    if out
+        .iter()
+        .any(|branch| matches!(branch.kind(), SchemaKind::AnyOf(_)))
+    {
+        return union(out, ctx);
+    }
 
     // A leaf can fold to nothing as it is built, which contributes nothing to the union. None folds
     // to everything: only the type set could, and a set grown to every type returned above - the
