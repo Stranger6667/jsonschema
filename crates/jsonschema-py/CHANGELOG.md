@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.55.1] - 2026-09-08
+
 ### Changed
 
 - Canonicalization of an `anyOf` over an `allOf` through a `$ref` to a union, which left that union nested inside the outer one.
@@ -1481,7 +1483,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.1...HEAD
+[0.55.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.0...python-v0.55.1
 [0.55.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.54.0...python-v0.55.0
 [0.54.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.53.0...python-v0.54.0
 [0.53.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.52.1...python-v0.53.0
