@@ -2367,5 +2367,306 @@
         "valid": true
       }
     ]
+  },
+  {
+    "description": "a choice whose expansion outruns its intersection allowance stays symbolic",
+    "schema": {
+      "oneOf": [
+        {
+          "properties": {
+            "m": {
+              "properties": {
+                "k0": {
+                  "type": "boolean"
+                },
+                "k1": {
+                  "type": "boolean"
+                },
+                "k2": {
+                  "type": "boolean"
+                },
+                "k3": {
+                  "type": "boolean"
+                },
+                "k4": {
+                  "type": "boolean"
+                },
+                "k5": {
+                  "type": "boolean"
+                },
+                "k6": {
+                  "type": "boolean"
+                },
+                "k7": {
+                  "type": "boolean"
+                },
+                "k8": {
+                  "type": "boolean"
+                },
+                "k9": {
+                  "type": "boolean"
+                },
+                "k10": {
+                  "type": "boolean"
+                },
+                "k11": {
+                  "type": "boolean"
+                },
+                "k12": {
+                  "type": "boolean"
+                },
+                "k13": {
+                  "type": "boolean"
+                },
+                "k14": {
+                  "type": "boolean"
+                },
+                "k15": {
+                  "type": "boolean"
+                },
+                "k16": {
+                  "type": "boolean"
+                },
+                "k17": {
+                  "type": "boolean"
+                },
+                "k18": {
+                  "type": "boolean"
+                },
+                "k19": {
+                  "type": "boolean"
+                },
+                "k20": {
+                  "type": "boolean"
+                },
+                "k21": {
+                  "type": "boolean"
+                },
+                "k22": {
+                  "type": "boolean"
+                }
+              },
+              "type": "object"
+            }
+          }
+        },
+        {
+          "oneOf": [
+            {
+              "properties": {
+                "x": {
+                  "type": "boolean"
+                }
+              }
+            },
+            {
+              "properties": {
+                "y": {
+                  "type": "object"
+                },
+                "z": {
+                  "type": "boolean"
+                }
+              }
+            }
+          ]
+        }
+      ]
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "oneOf": [
+        {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "string",
+                "array"
+              ]
+            },
+            {
+              "properties": {
+                "m": {
+                  "properties": {
+                    "k0": {
+                      "type": "boolean"
+                    },
+                    "k1": {
+                      "type": "boolean"
+                    },
+                    "k10": {
+                      "type": "boolean"
+                    },
+                    "k11": {
+                      "type": "boolean"
+                    },
+                    "k12": {
+                      "type": "boolean"
+                    },
+                    "k13": {
+                      "type": "boolean"
+                    },
+                    "k14": {
+                      "type": "boolean"
+                    },
+                    "k15": {
+                      "type": "boolean"
+                    },
+                    "k16": {
+                      "type": "boolean"
+                    },
+                    "k17": {
+                      "type": "boolean"
+                    },
+                    "k18": {
+                      "type": "boolean"
+                    },
+                    "k19": {
+                      "type": "boolean"
+                    },
+                    "k2": {
+                      "type": "boolean"
+                    },
+                    "k20": {
+                      "type": "boolean"
+                    },
+                    "k21": {
+                      "type": "boolean"
+                    },
+                    "k22": {
+                      "type": "boolean"
+                    },
+                    "k3": {
+                      "type": "boolean"
+                    },
+                    "k4": {
+                      "type": "boolean"
+                    },
+                    "k5": {
+                      "type": "boolean"
+                    },
+                    "k6": {
+                      "type": "boolean"
+                    },
+                    "k7": {
+                      "type": "boolean"
+                    },
+                    "k8": {
+                      "type": "boolean"
+                    },
+                    "k9": {
+                      "type": "boolean"
+                    }
+                  },
+                  "type": "object"
+                }
+              },
+              "type": "object"
+            }
+          ]
+        },
+        {
+          "anyOf": [
+            {
+              "properties": {
+                "x": {
+                  "type": [
+                    "null",
+                    "number",
+                    "string",
+                    "array",
+                    "object"
+                  ]
+                },
+                "y": {
+                  "type": "object"
+                },
+                "z": {
+                  "type": "boolean"
+                }
+              },
+              "required": [
+                "x"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "x": {
+                  "type": "boolean"
+                },
+                "y": {
+                  "type": [
+                    "null",
+                    "boolean",
+                    "number",
+                    "string",
+                    "array"
+                  ]
+                }
+              },
+              "required": [
+                "y"
+              ],
+              "type": "object"
+            },
+            {
+              "properties": {
+                "x": {
+                  "type": "boolean"
+                },
+                "z": {
+                  "type": [
+                    "null",
+                    "number",
+                    "string",
+                    "array",
+                    "object"
+                  ]
+                }
+              },
+              "required": [
+                "z"
+              ],
+              "type": "object"
+            }
+          ]
+        }
+      ]
+    },
+    "kind": "one_of",
+    "tests": [
+      {
+        "data": {},
+        "valid": true
+      },
+      {
+        "data": {
+          "x": true
+        },
+        "valid": true
+      },
+      {
+        "data": 5,
+        "valid": true
+      },
+      {
+        "data": {
+          "m": 1
+        },
+        "valid": false
+      },
+      {
+        "data": {
+          "m": {
+            "k0": 1
+          }
+        },
+        "valid": false
+      }
+    ]
   }
 ]
