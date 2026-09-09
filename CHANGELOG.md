@@ -5,6 +5,7 @@
 ### Added
 
 - `canonical::RawReason`, what stopped a run from modeling a document, and `canonical::RawView`, carrying it beside the document and a pointer to the subschema the run stopped on.
+- `ValidationOptions::is_known_format`, whether a `format` of that name is checked under a draft.
 
 ### Changed
 
