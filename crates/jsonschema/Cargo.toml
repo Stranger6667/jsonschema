@@ -157,3 +157,8 @@ harness = false
 name = "canonicalize"
 required-features = ["macros"]
 
+[[bench]]
+harness = false
+name = "canonicalize_many"
+required-features = ["macros"]
+

@@ -9,6 +9,8 @@ pub static FAST_SCHEMA: &[u8] = include_bytes!("../data/fast_schema.json");
 pub static FHIR_SCHEMA: &[u8] = include_bytes!("../data/fhir.schema.json");
 pub static RECURSIVE_SCHEMA: &[u8] = include_bytes!("../data/recursive_schema.json");
 pub static OPEN_API_31: &[u8] = include_bytes!("../data/openapi31.json");
+/// Parameter, property and branch schemas of the size a data generator canonicalizes.
+pub static SMALL_SCHEMAS: &[u8] = include_bytes!("../data/small_schemas.json");
 
 static ZUORA: &[u8] = include_bytes!("../data/zuora.json");
 pub static KUBERNETES: &[u8] = include_bytes!("../data/kubernetes.json");
