@@ -39,6 +39,19 @@ class Distinctness:
     def __str__(self) -> str: ...
 
 @final
+class RawReason:
+    """What stopped a run from modeling a document."""
+
+    UNKNOWN_DIALECT: RawReason
+    UNMODELED: RawReason
+    OUTGREW_INTERSECTIONS: RawReason
+    OUTGREW_CASES: RawReason
+    INEXACT_INTERSECTION: RawReason
+    @property
+    def value(self) -> str: ...
+    def __str__(self) -> str: ...
+
+@final
 class CanonicalKind:
     """Structural discriminant of a canonical node, one member per view class."""
 
@@ -294,6 +307,10 @@ class RawView:
     __match_args__: tuple[str, ...]
     @property
     def schema(self) -> JsonValue: ...
+    @property
+    def reason(self) -> RawReason: ...
+    @property
+    def pointer(self) -> str | None: ...
 
 CanonicalViewType: TypeAlias = (
     TrueView

@@ -453,10 +453,26 @@ def test_view_not_with_symbolic_reference():
 
 def test_view_raw():
     match canonicalize(UNSUPPORTED).view():
-        case canonical.RawView(schema=payload):
+        case canonical.RawView(schema=payload, reason=reason, pointer=pointer):
             assert payload == UNSUPPORTED
+            assert reason == canonical.RawReason.UNMODELED
+            assert pointer == ""
         case other:
             pytest.fail(f"unexpected view: {other!r}")
+
+
+def test_view_raw_names_the_subschema_that_stopped_it():
+    view = canonicalize({"oneOf": [UNSUPPORTED, {"type": "string"}]}).view()
+    assert isinstance(view, canonical.RawView)
+    assert view.reason == canonical.RawReason.UNMODELED
+    assert view.pointer == "/oneOf/0"
+
+
+def test_view_raw_reports_an_unknown_dialect():
+    view = canonicalize({"$schema": "https://example.com/not-a-dialect"}).view()
+    assert isinstance(view, canonical.RawView)
+    assert view.reason == canonical.RawReason.UNKNOWN_DIALECT
+    assert view.pointer is None
 
 
 def test_contains_view_is_public():

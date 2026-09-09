@@ -63,6 +63,11 @@ pub(crate) struct CanonicalizationContext {
     intersections_left: Cell<u64>,
     /// Variants the conditional splits of this run may still produce. Nesting multiplies them.
     variants_left: Cell<u64>,
+    /// Set where a conditional split asked for more cases than were left.
+    outgrew_cases: Cell<bool>,
+    /// Address of the first subschema whose parse declined, for the pointer naming it. Compared
+    /// against the document's nodes, never read through.
+    declined_at: Cell<Option<usize>>,
 }
 
 /// Intersections one run may take before giving up and leaving the document `Raw`. Above what the
@@ -90,6 +95,8 @@ impl CanonicalizationContext {
             inexact_intersection: Cell::new(false),
             intersections_left: Cell::new(INTERSECTION_BUDGET),
             variants_left: Cell::new(VARIANT_BUDGET),
+            outgrew_cases: Cell::new(false),
+            declined_at: Cell::new(None),
             definitions: None,
             cyclic: BTreeSet::new(),
         }
@@ -192,6 +199,7 @@ impl CanonicalizationContext {
     pub(crate) fn take_variants(&self, count: u64) -> bool {
         let left = self.variants_left.get();
         if left < count {
+            self.note_outgrew_cases();
             return false;
         }
         self.variants_left.set(left - count);
@@ -212,6 +220,40 @@ impl CanonicalizationContext {
 
     pub(crate) fn outgrew_distribution(&self) -> bool {
         self.intersections_left.get() == 0
+    }
+
+    pub(crate) fn note_outgrew_cases(&self) {
+        self.outgrew_cases.set(true);
+    }
+
+    pub(crate) fn outgrew_cases(&self) -> bool {
+        self.outgrew_cases.get()
+    }
+
+    /// Remember the subschema whose parse declined, unless one is already remembered: the walk is
+    /// depth first and every caller passes a decline on, so the first is the one that caused it.
+    pub(crate) fn note_declined(&self, address: usize) {
+        if self.declined_at.get().is_none() {
+            self.declined_at.set(Some(address));
+        }
+    }
+
+    /// Forget the decline of an earlier parse attempt, whose nodes this one re-reads.
+    pub(crate) fn forget_decline(&self) {
+        self.declined_at.set(None);
+    }
+
+    pub(crate) fn declined_at(&self) -> Option<usize> {
+        self.declined_at.get()
+    }
+
+    /// Parse a schema this run wrote itself, keeping what it declines on off the record: those
+    /// nodes are not the document's, and the node standing in for them is the one being rewritten.
+    pub(crate) fn over_rewritten<T>(&self, parse: impl FnOnce() -> T) -> T {
+        let before = self.declined_at.replace(None);
+        let parsed = parse();
+        self.declined_at.set(before);
+        parsed
     }
 
     pub(crate) fn validate_formats(&self) -> bool {

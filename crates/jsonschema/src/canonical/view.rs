@@ -14,7 +14,7 @@ use crate::{
     JsonType, JsonTypeSet,
 };
 
-pub use crate::canonical::ir::{CanonicalKind, Distinctness};
+pub use crate::canonical::ir::{CanonicalKind, Distinctness, RawReason};
 
 impl CanonicalKind {
     /// Stable `snake_case` label of this kind (e.g. `"multi_type"`, `"raw"`).
@@ -26,6 +26,14 @@ impl CanonicalKind {
 
 impl Distinctness {
     /// Stable `snake_case` label of this state (e.g. `"all_distinct"`).
+    #[must_use]
+    pub fn as_str(self) -> &'static str {
+        self.into()
+    }
+}
+
+impl RawReason {
+    /// Stable `snake_case` label of this reason (e.g. `"unknown_dialect"`).
     #[must_use]
     pub fn as_str(self) -> &'static str {
         self.into()
@@ -65,7 +73,17 @@ pub enum CanonicalView {
     Reference(String),
     True,
     False,
-    Raw(Value),
+    Raw(RawView),
+}
+
+/// Payload of [`CanonicalView::Raw`]: the document kept verbatim, what stopped the run, and the
+/// subschema it stopped on.
+#[derive(Debug, Clone, PartialEq)]
+pub struct RawView {
+    pub schema: Value,
+    pub reason: RawReason,
+    /// JSON Pointer into the document this node was read against; the empty string names its root.
+    pub pointer: Option<String>,
 }
 
 /// Payload of [`CanonicalView::TypedGroup`]: JSON type `ty` and a `body` schema constraining its values.
@@ -293,7 +311,11 @@ impl CanonicalSchema {
             SchemaKind::Reference(uri) => CanonicalView::Reference(uri.to_string()),
             SchemaKind::True => CanonicalView::True,
             SchemaKind::False => CanonicalView::False,
-            SchemaKind::Raw(_) => CanonicalView::Raw(self.to_json_schema()),
+            SchemaKind::Raw(raw) => CanonicalView::Raw(RawView {
+                schema: self.to_json_schema(),
+                reason: raw.reason(),
+                pointer: raw.pointer().map(ToOwned::to_owned),
+            }),
         }
     }
 

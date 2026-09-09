@@ -23,6 +23,10 @@ module JSONSchema
     # What an array requires of its elements: all distinct, some repeated, or neither.
     type distinctness = :unconstrained | :all_distinct | :some_repeated
 
+    # What stopped a run from modeling a document.
+    type raw_reason = :unknown_dialect | :unmodeled | :outgrew_intersections
+                    | :outgrew_cases | :inexact_intersection
+
     # Whether one schema admits every value another does. Only `:yes` proves containment: test
     # for `:yes`, and treat `:unknown` like `:no`.
     type containment = :yes | :no | :unknown
@@ -55,6 +59,15 @@ module JSONSchema
       ALL_DISTINCT: :all_distinct
       SOME_REPEATED: :some_repeated
       ALL: Array[distinctness]
+    end
+
+    module RawReason
+      UNKNOWN_DIALECT: :unknown_dialect
+      UNMODELED: :unmodeled
+      OUTGREW_INTERSECTIONS: :outgrew_intersections
+      OUTGREW_CASES: :outgrew_cases
+      INEXACT_INTERSECTION: :inexact_intersection
+      ALL: Array[raw_reason]
     end
 
     module Kind
@@ -288,6 +301,8 @@ module JSONSchema
     # A schema the canonical form does not support structurally, kept verbatim.
     class RawView
       def schema: () -> untyped
+      def reason: () -> raw_reason
+      def pointer: () -> String?
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end

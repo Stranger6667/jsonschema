@@ -221,6 +221,7 @@ fn parse_once<'a>(
     tracks_dynamic_scope: bool,
     recording: Recording,
 ) -> Result<DocumentParse, CanonicalizationError> {
+    ctx.forget_decline();
     let mut state = ParseState::new(value, resolver.base_uri().as_str(), assumptions, recording);
     if !tracks_dynamic_scope {
         state.dynamic_scope = DynamicScope::Untracked {
@@ -238,6 +239,7 @@ fn parse_once<'a>(
         });
     }
     let Some(root) = parsed else {
+        ctx.note_declined(std::ptr::from_ref(value) as usize);
         return Ok(DocumentParse {
             output: None,
             needs_dynamic_scope: state.dynamic_scope.needs_tracking(),
@@ -430,6 +432,9 @@ fn parse_schema<'a>(
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(value))?;
     let parsed = parse_schema_in_scope(value, ctx, is_root, &resolver, state)?;
+    if parsed.is_none() {
+        ctx.note_declined(std::ptr::from_ref(value) as usize);
+    }
     state.note_parsed_node(value, parsed.as_ref());
     Ok(parsed)
 }
@@ -607,7 +612,8 @@ fn parse_schema_in_scope<'a>(
         let Some(degraded) = degrade_unevaluated(map, ctx.draft(), ctx, resolver)? else {
             return Ok(None);
         };
-        return parse_schema_in_scope(&degraded, ctx, is_root, resolver, state);
+        return ctx
+            .over_rewritten(|| parse_schema_in_scope(&degraded, ctx, is_root, resolver, state));
     }
 
     // An untracked attempt stops before resolving a dynamic reference. Re-running it with the
@@ -674,10 +680,11 @@ fn parse_schema_in_scope<'a>(
         // the base a second time when the clone re-enters below.
         siblings.remove("$id");
         siblings.remove("id");
-        return Ok(
-            parse_schema(&Value::Object(siblings), ctx, is_root, resolver, state)?
-                .map(|siblings| algebra::intersect(combined, siblings, ctx)),
-        );
+        return Ok(ctx
+            .over_rewritten(|| {
+                parse_schema(&Value::Object(siblings), ctx, is_root, resolver, state)
+            })?
+            .map(|siblings| algebra::intersect(combined, siblings, ctx)));
     }
 
     let mut type_set = None;
@@ -1757,11 +1764,14 @@ fn expand_cases(
 ) -> Result<Option<()>, CanonicalizationError> {
     if pending.is_empty() {
         if out.len() >= CONDITIONAL_CASE_BUDGET {
+            ctx.note_outgrew_cases();
             return Ok(None);
         }
         out.push(case);
         return Ok(Some(()));
     }
+    // Not a count this document could come under: a body reaching its own conditional spreads
+    // without end, so the node stands as the construct the form does not model.
     if case.len() > CASE_SUBSCHEMA_BUDGET {
         return Ok(None);
     }

@@ -39,6 +39,7 @@ pub(crate) use number_leaves::NumberLeaves;
 pub(crate) use object_leaves::ObjectLeaves;
 pub(crate) use property_map::PropertyMap;
 pub(crate) use raw::RawJson;
+pub use raw::RawReason;
 pub(crate) use string_leaves::StringLeaves;
 pub(crate) use verdict::{UncheckableFacet, Verdict};
 

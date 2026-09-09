@@ -4,7 +4,7 @@ use std::hash::{Hash, Hasher};
 
 use jsonschema::canonical::{
     CanonicalKind, CanonicalSchema, CanonicalView, Containment, Distinctness, ObjectViolationView,
-    Satisfiability,
+    RawReason, Satisfiability,
 };
 
 use pyo3::prelude::*;
@@ -90,6 +90,17 @@ label_enum! {
         Unconstrained = "UNCONSTRAINED",
         AllDistinct = "ALL_DISTINCT",
         SomeRepeated = "SOME_REPEATED",
+    }
+}
+
+label_enum! {
+    /// What stopped a run from modeling a document.
+    PyRawReason => RawReason as "RawReason" {
+        UnknownDialect = "UNKNOWN_DIALECT",
+        Unmodeled = "UNMODELED",
+        OutgrewIntersections = "OUTGREW_INTERSECTIONS",
+        OutgrewCases = "OUTGREW_CASES",
+        InexactIntersection = "INEXACT_INTERSECTION",
     }
 }
 
@@ -406,10 +417,12 @@ impl PyCanonicalSchema {
             .into_any(),
             CanonicalView::True => Py::new(py, TrueView)?.into_any(),
             CanonicalView::False => Py::new(py, FalseView)?.into_any(),
-            CanonicalView::Raw(schema) => Py::new(
+            CanonicalView::Raw(raw) => Py::new(
                 py,
                 RawView {
-                    schema: crate::value_to_python(py, &schema)?,
+                    schema: crate::value_to_python(py, &raw.schema)?,
+                    reason: raw.reason.into(),
+                    pointer: raw.pointer,
                 },
             )?
             .into_any(),
@@ -512,13 +525,17 @@ impl PyCanonicalSchema {
 pub(crate) struct RawView {
     #[pyo3(get)]
     schema: Py<PyAny>,
+    #[pyo3(get)]
+    reason: PyRawReason,
+    #[pyo3(get)]
+    pointer: Option<String>,
 }
 
 #[pymethods]
 impl RawView {
     #[classattr]
-    fn __match_args__() -> (&'static str,) {
-        ("schema",)
+    fn __match_args__() -> (&'static str, &'static str, &'static str) {
+        ("schema", "reason", "pointer")
     }
 }
 
@@ -1073,6 +1090,7 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<PyContainment>()?;
     canonical_module.add_class::<PySatisfiability>()?;
     canonical_module.add_class::<PyDistinctness>()?;
+    canonical_module.add_class::<PyRawReason>()?;
     canonical_module.add_class::<PyCanonicalKind>()?;
 
     let canonical_json_module = PyModule::new(py, "json")?;

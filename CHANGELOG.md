@@ -2,8 +2,13 @@
 
 ## [Unreleased]
 
+### Added
+
+- `canonical::RawReason`, what stopped a run from modeling a document, and `canonical::RawView`, carrying it beside the document and a pointer to the subschema the run stopped on.
+
 ### Changed
 
+- **BREAKING**: `canonical::CanonicalView::Raw` carries a `canonical::RawView` in place of the document alone.
 - Canonicalization of a `oneOf` whose branches share a region too wide to expand, which spent the document's whole intersection allowance on that choice and kept the document `Raw`.
 
 ### Performance

@@ -5,27 +5,76 @@ use std::{
 };
 
 use serde_json::{Number, Value};
+use strum::{IntoStaticStr, VariantArray};
+
+/// What stopped a run from modeling a document.
+///
+/// Exhaustive on purpose: a new reason must break every consumer that reads it, the bindings
+/// included, rather than reaching a runtime fallback.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, IntoStaticStr, VariantArray)]
+#[strum(serialize_all = "snake_case")]
+pub enum RawReason {
+    /// The `$schema` names a dialect this build does not know.
+    UnknownDialect,
+    /// A subschema holds a construct the canonical form does not model.
+    Unmodeled,
+    /// The run took every intersection it was allowed.
+    OutgrewIntersections,
+    /// A conditional split asked for more cases than the run was allowed.
+    OutgrewCases,
+    /// An intersection the canonical form cannot write exactly.
+    InexactIntersection,
+}
 
 /// Verbatim schema document with document-identity Eq/Ord/Hash: `1` and `1.0` are distinct, unlike
 /// JSON value equality.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub(crate) struct RawJson(Arc<Value>);
+///
+/// The reason and pointer ride along for a caller to read; a node is told apart by its document
+/// alone, since two runs that gave up differently on the same document accept the same values.
+#[derive(Debug, Clone)]
+pub(crate) struct RawJson {
+    value: Arc<Value>,
+    reason: RawReason,
+    pointer: Option<Arc<str>>,
+}
 
 impl RawJson {
     #[must_use]
-    pub(crate) fn new(value: Value) -> Self {
-        Self(Arc::new(value))
+    pub(crate) fn new(value: Value, reason: RawReason, pointer: Option<Arc<str>>) -> Self {
+        Self {
+            value: Arc::new(value),
+            reason,
+            pointer,
+        }
     }
 
     #[must_use]
     pub(crate) fn get(&self) -> &Value {
-        &self.0
+        &self.value
+    }
+
+    #[must_use]
+    pub(crate) fn reason(&self) -> RawReason {
+        self.reason
+    }
+
+    #[must_use]
+    pub(crate) fn pointer(&self) -> Option<&str> {
+        self.pointer.as_deref()
     }
 }
 
+impl PartialEq for RawJson {
+    fn eq(&self, other: &Self) -> bool {
+        self.value == other.value
+    }
+}
+
+impl Eq for RawJson {}
+
 impl Hash for RawJson {
     fn hash<H: Hasher>(&self, state: &mut H) {
-        hash_value(&self.0, state);
+        hash_value(&self.value, state);
     }
 }
 
@@ -37,7 +86,7 @@ impl PartialOrd for RawJson {
 
 impl Ord for RawJson {
     fn cmp(&self, other: &Self) -> Ordering {
-        compare_values(&self.0, &other.0)
+        compare_values(&self.value, &other.value)
     }
 }
 
