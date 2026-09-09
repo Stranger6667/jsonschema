@@ -12,6 +12,7 @@
 
 ### Performance
 
+- Preparing or building a schema that names no base URI parses the default one once for the process instead of once per schema.
 - Canonicalization reads the facets no checker covers once per node instead of once per containment query.
 
 ## [0.55.1] - 2026-09-08
