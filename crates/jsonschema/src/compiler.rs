@@ -22,7 +22,13 @@ use referencing::{
     Vocabulary, VocabularySet,
 };
 use serde_json::{Map, Value};
-use std::{borrow::Cow, cell::RefCell, fmt, rc::Rc, sync::Arc};
+use std::{
+    borrow::Cow,
+    cell::RefCell,
+    fmt,
+    rc::Rc,
+    sync::{Arc, LazyLock},
+};
 
 const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
@@ -1008,14 +1014,19 @@ pub(crate) fn normalize_base_uri(registry: &Registry<'_>, base_uri: &Uri<String>
     panic!("generated registry is missing root URI '{base_uri}'");
 }
 
+/// Parsed once: a document naming no base and carrying no `$id` takes this, and re-parsing the
+/// same constant is work every document would otherwise repeat.
+static DEFAULT_BASE: LazyLock<Uri<String>> =
+    LazyLock::new(|| uri::from_str(DEFAULT_BASE_URI).expect("the default base URI is valid"));
+
 pub(crate) fn resolve_base_uri(
     base_uri: Option<&String>,
     schema_id: Option<&str>,
 ) -> Result<Uri<String>, referencing::Error> {
-    if let Some(base_uri) = base_uri {
-        uri::from_str(base_uri)
-    } else {
-        uri::from_str(schema_id.unwrap_or(DEFAULT_BASE_URI))
+    match (base_uri, schema_id) {
+        (Some(base_uri), _) => uri::from_str(base_uri),
+        (None, Some(schema_id)) => uri::from_str(schema_id),
+        (None, None) => Ok(DEFAULT_BASE.clone()),
     }
 }
 
