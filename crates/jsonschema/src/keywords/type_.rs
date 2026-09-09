@@ -466,6 +466,8 @@ impl<F: Json> Validate<F> for IntegerTypeValidator {
     }
 }
 
+// The representation's own answer: `jsonschema_value::types::number_is_integer` behind it holds
+// the same arbitrary-precision handling, and a representation keeping exact decimals overrides it.
 pub(crate) fn is_integer<N: jsonschema_value::JsonNumber>(num: &N) -> bool {
     num.is_integer()
 }

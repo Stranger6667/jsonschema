@@ -80,6 +80,7 @@
 - **CLI**: the `--at POINTER` flag of `jsonschema canonicalize`, canonicalizing only the subschema at that pointer without breaking its references into the rest of the document.
 - **CLI**: `jsonschema canonicalize` reads YAML schemas (`.yaml`/`.yml`) as well as JSON.
 - `canonical::{ArrayView, IntegerView, NumberView, ObjectView, StringView, TypedGroupView}`, the payload types of `CanonicalView`, so consumers can name them in signatures.
+- `json::Jsonb` instance representation, reading a Postgres `jsonb` datum without an intermediate document.
 
 ### Fixed
 

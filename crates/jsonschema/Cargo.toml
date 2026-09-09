@@ -38,6 +38,8 @@ macros = ["dep:jsonschema-macros", "jsonschema-macros/float-roundtrip", "jsonsch
 magnus = ["jsonschema-value/magnus"]
 # The `json::Pyo3` instance representation used by the Python bindings.
 pyo3 = ["jsonschema-value/pyo3"]
+# The `json::Jsonb` instance representation for Postgres `jsonb` datums.
+jsonb = ["jsonschema-value/jsonb"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Use rustls-no-provider to allow manual selection of crypto backend
@@ -87,6 +89,7 @@ unicode-general-category = "1.1"
 uuid-simd = { version = "0.8", default-features = false, features = ["std", "detect"] }
 
 [dev-dependencies]
+jsonschema-value = { path = "../jsonschema-value", features = ["jsonb-testkit"] }
 test-case = "3"
 futures = { version = "0.3", default-features = false, features = ["std"] }
 testsuite = { package = "jsonschema-testsuite", path = "../jsonschema-testsuite" }
@@ -156,4 +159,9 @@ required-features = ["macros"]
 harness = false
 name = "canonicalize"
 required-features = ["macros"]
+
+[[bench]]
+harness = false
+name = "jsonb"
+required-features = ["jsonb"]
 
