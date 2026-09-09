@@ -810,6 +810,33 @@ pub(crate) fn concrete_one_of(
     definitions: &DefinitionMap,
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
+    let mut as_one_of = branches.clone();
+    // Bounded: branches sharing a wide region take an expansion whose cost has nothing to do with
+    // the rest of the document, and spending the document's whole allowance on it leaves every
+    // later node approximate. Out of allowance the choice keeps the form it was written in, which
+    // accepts the same values, and what the expansion approximated on the way decides nothing.
+    let ((expanded, inexact), outgrew) = ctx.capped(EXCLUSIVITY_BUDGET, || {
+        ctx.probe(|| expand_exclusivity(branches, definitions, ctx))
+    });
+    if outgrew {
+        as_one_of.sort();
+        return Some(Schema::new(SchemaKind::OneOf(as_one_of)));
+    }
+    if inexact {
+        ctx.record_inexact_intersection();
+    }
+    expanded
+}
+
+/// Intersections one choice's exclusivity expansion may take before the choice stays as written.
+const EXCLUSIVITY_BUDGET: u64 = 10_000;
+
+/// The exclusivity written out: the union of the branches, less every region two of them share.
+fn expand_exclusivity(
+    branches: Vec<Schema>,
+    definitions: &DefinitionMap,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
     let overlaps = pairwise_overlaps(&branches, ctx);
     let mut as_one_of = branches.clone();
     let mut result = union(branches, ctx);
@@ -4554,10 +4581,12 @@ pub(crate) fn contains_reference(schema: &Schema) -> bool {
 pub(crate) fn uncheckable_string_facets(
     schema: &Schema,
     ctx: &CanonicalizationContext,
-) -> BTreeSet<Arc<str>> {
-    let mut found = BTreeSet::new();
-    collect_uncheckable_string_facets(schema, ctx, &mut AHashSet::new(), &mut found);
-    found
+) -> Arc<BTreeSet<Arc<str>>> {
+    ctx.uncheckable_facets(schema, || {
+        let mut found = BTreeSet::new();
+        collect_uncheckable_string_facets(schema, ctx, &mut AHashSet::new(), &mut found);
+        found
+    })
 }
 
 /// Whether `schema` demands or bars any facet this draft cannot check.

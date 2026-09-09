@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Canonicalization of a `oneOf` whose branches share a region too wide to expand, which spent the document's whole intersection allowance on that choice and kept the document `Raw`.
+
+### Performance
+
+- Canonicalization reads the facets no checker covers once per node instead of once per containment query.
+
 ## [0.55.1] - 2026-09-08
 
 ### Changed

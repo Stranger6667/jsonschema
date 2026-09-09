@@ -18,6 +18,9 @@ use crate::{
 /// Past this many remembered pairs a run keeps recomputing rather than grow without end.
 const INTERSECTION_CACHE_CAPACITY: usize = 1 << 20;
 
+/// Past this many remembered nodes a run walks them again rather than grow without end.
+const FACET_CACHE_CAPACITY: usize = 1 << 16;
+
 pub(crate) enum CompiledMatcher {
     Regex(regex::Regex),
     FancyRegex(fancy_regex::Regex),
@@ -44,6 +47,9 @@ pub(crate) struct CanonicalizationContext {
     /// An `allOf` over unions takes the product of their branches, which reaches the same pair
     /// of nodes over and over - on a schema of five such `allOf`s, 431 times per distinct pair.
     intersections: RefCell<AHashMap<(Schema, Schema), Remembered>>,
+    /// Every containment query reads the facets of the node it asks about, and the object walks ask
+    /// about the same handful of nodes once per piece they cut out.
+    uncheckable_facets: RefCell<AHashMap<Schema, Arc<BTreeSet<Arc<str>>>>>,
     /// An intersection reached during this run that the canonical form cannot express exactly.
     /// Nodes built around it may already be wrong, so the whole run is discarded rather than the site.
     inexact_intersection: Cell<bool>,
@@ -80,6 +86,7 @@ impl CanonicalizationContext {
             validate_formats,
             regex_cache: RefCell::new(AHashMap::new()),
             intersections: RefCell::new(AHashMap::new()),
+            uncheckable_facets: RefCell::new(AHashMap::new()),
             inexact_intersection: Cell::new(false),
             intersections_left: Cell::new(INTERSECTION_BUDGET),
             variants_left: Cell::new(VARIANT_BUDGET),
@@ -222,6 +229,23 @@ impl CanonicalizationContext {
             .borrow_mut()
             .insert(Arc::clone(pattern), compiled.clone());
         compiled
+    }
+
+    /// The facets of `schema` no checker covers, walking the node the first time it is asked about.
+    pub(crate) fn uncheckable_facets(
+        &self,
+        schema: &Schema,
+        walk: impl FnOnce() -> BTreeSet<Arc<str>>,
+    ) -> Arc<BTreeSet<Arc<str>>> {
+        if let Some(cached) = self.uncheckable_facets.borrow().get(schema) {
+            return Arc::clone(cached);
+        }
+        let found = Arc::new(walk());
+        let mut cache = self.uncheckable_facets.borrow_mut();
+        if cache.len() < FACET_CACHE_CAPACITY {
+            cache.insert(schema.clone(), Arc::clone(&found));
+        }
+        found
     }
 
     /// The intersection of these two, from an earlier run of the same pair. One the form could only
