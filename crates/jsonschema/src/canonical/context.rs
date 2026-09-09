@@ -3,7 +3,7 @@ use std::{
     cell::{Cell, RefCell},
     cmp::Ordering,
     collections::BTreeSet,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use ahash::AHashMap;
@@ -20,6 +20,9 @@ const INTERSECTION_CACHE_CAPACITY: usize = 1 << 20;
 
 /// Past this many remembered nodes a run walks them again rather than grow without end.
 const FACET_CACHE_CAPACITY: usize = 1 << 16;
+
+/// Patterns compiled under one document's engine, shared by every run over it.
+pub(crate) type SharedRegexes = Arc<Mutex<AHashMap<Arc<str>, Option<Arc<CompiledMatcher>>>>>;
 
 pub(crate) enum CompiledMatcher {
     Regex(regex::Regex),
@@ -44,6 +47,9 @@ pub(crate) struct CanonicalizationContext {
     validate_formats: bool,
     /// `None` caches a rejected pattern so callers don't recompile it.
     regex_cache: RefCell<AHashMap<Arc<str>, Option<Arc<CompiledMatcher>>>>,
+    /// The compiled patterns of the document this run reads, which outlive it: every run over that
+    /// document translates and compiles the same texts under the same engine.
+    shared_regexes: Option<SharedRegexes>,
     /// An `allOf` over unions takes the product of their branches, which reaches the same pair
     /// of nodes over and over - on a schema of five such `allOf`s, 431 times per distinct pair.
     intersections: RefCell<AHashMap<(Schema, Schema), Remembered>>,
@@ -90,6 +96,7 @@ impl CanonicalizationContext {
             pattern_options,
             validate_formats,
             regex_cache: RefCell::new(AHashMap::new()),
+            shared_regexes: None,
             intersections: RefCell::new(AHashMap::new()),
             uncheckable_facets: RefCell::new(AHashMap::new()),
             inexact_intersection: Cell::new(false),
@@ -100,6 +107,12 @@ impl CanonicalizationContext {
             definitions: None,
             cyclic: BTreeSet::new(),
         }
+    }
+
+    /// The same context, keeping what it compiles for the next run over the same document.
+    pub(crate) fn sharing_regexes(mut self, regexes: SharedRegexes) -> Self {
+        self.shared_regexes = Some(regexes);
+        self
     }
 
     /// The same context, reading intersections through `definitions`. The caller passes a map only
@@ -266,7 +279,24 @@ impl CanonicalizationContext {
         if let Some(cached) = self.regex_cache.borrow().get(pattern) {
             return cached.clone();
         }
-        let compiled = compile(self.pattern_options, pattern).map(Arc::new);
+        // Reached once per pattern per run, so the shared map is locked that often rather than
+        // once per use. The document fixes the engine, so its text alone names the matcher.
+        let shared = self.shared_regexes.as_ref();
+        let held = shared.and_then(|shared| {
+            let shared = shared.lock().ok()?;
+            shared.get(pattern).cloned()
+        });
+        let compiled = if let Some(compiled) = held {
+            compiled
+        } else {
+            // Compiled outside the lock: holding it across a translation would serialize every
+            // other run over the document, and a panic there would poison the cache.
+            let compiled = compile(self.pattern_options, pattern).map(Arc::new);
+            if let Some(mut shared) = shared.and_then(|shared| shared.lock().ok()) {
+                shared.insert(Arc::clone(pattern), compiled.clone());
+            }
+            compiled
+        };
         self.regex_cache
             .borrow_mut()
             .insert(Arc::clone(pattern), compiled.clone());

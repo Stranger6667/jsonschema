@@ -14,6 +14,7 @@
 
 ### Performance
 
+- Canonicalizing several subschemas of one prepared document compiles each pattern once for the document instead of once per call.
 - Canonicalization reads the facets no checker covers once per node instead of once per containment query.
 
 ## [0.55.1] - 2026-09-08

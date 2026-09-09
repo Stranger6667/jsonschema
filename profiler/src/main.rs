@@ -104,6 +104,12 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
                 let _ = jsonschema::canonicalize(&schema)?;
             }
         }
+        "canonicalize-prepared" => {
+            let prepared = jsonschema::canonical::options().prepare(&schema)?;
+            for _ in 0..args.iterations {
+                let _ = prepared.canonicalize()?;
+            }
+        }
         "registry" => {
             for _ in 0..args.iterations {
                 let _ = Registry::new()
