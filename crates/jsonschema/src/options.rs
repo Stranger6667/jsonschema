@@ -5,7 +5,10 @@ use crate::{
         DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS,
     },
     content_media_type::{ContentMediaTypeCheckType, DEFAULT_CONTENT_MEDIA_TYPE_CHECKS},
-    keywords::{custom::KeywordFactory, format::Format},
+    keywords::{
+        custom::KeywordFactory,
+        format::{builtin_format, Format},
+    },
     paths::Location,
     retriever::DefaultRetriever,
     Json, Keyword, SerdeJson, ValidationError, Validator,
@@ -362,6 +365,16 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     }
     pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
         self.formats.get_key_value(format)
+    }
+
+    /// Whether a `format` of this name is checked under `draft`, by a check registered here or by
+    /// a built-in one.
+    ///
+    /// A name this answers `false` for is an annotation: it constrains no value and reports no
+    /// error. Whether a known one asserts is separate, and the dialect can decide it.
+    #[must_use]
+    pub fn is_known_format(&self, draft: Draft, name: &str) -> bool {
+        self.get_format(name).is_some() || builtin_format(draft, name).is_some()
     }
     /// Disable schema validation during compilation.
     ///
@@ -1241,6 +1254,35 @@ mod tests {
         assert!(!validator.is_valid(&json!(42)));
         assert!(!validator.is_valid(&json!("ab")));
         assert!(validator.is_valid(&json!("abcde")));
+    }
+
+    #[test_case(Draft::Draft7, "duration", false; "a format the draft does not carry")]
+    #[test_case(Draft::Draft201909, "duration", true; "a format the draft carries")]
+    #[test_case(Draft::Draft4, "json-pointer", false; "a pointer format below the draft that added it")]
+    #[test_case(Draft::Draft202012, "date-time", true; "a format every draft carries")]
+    #[test_case(Draft::Draft4, "hostname", true; "the draft 4 hostname check")]
+    #[test_case(Draft::Draft202012, "unix-time", false; "a name no check answers to")]
+    fn test_known_builtin_format(draft: Draft, name: &str, known: bool) {
+        assert_eq!(crate::options().is_known_format(draft, name), known);
+    }
+
+    #[test]
+    fn test_a_registered_format_is_known() {
+        let options = crate::options().with_format("ends-with-42", custom);
+        assert!(options.is_known_format(Draft::Draft202012, "ends-with-42"));
+        assert!(!crate::options().is_known_format(Draft::Draft202012, "ends-with-42"));
+    }
+
+    #[cfg(feature = "idna")]
+    #[test]
+    fn test_an_international_format_is_known_with_its_feature() {
+        assert!(crate::options().is_known_format(Draft::Draft7, "idn-email"));
+    }
+
+    #[cfg(not(feature = "idna"))]
+    #[test]
+    fn test_an_international_format_is_unknown_without_its_feature() {
+        assert!(!crate::options().is_known_format(Draft::Draft7, "idn-email"));
     }
 
     #[test]
