@@ -10,7 +10,7 @@ use serde_json::Value;
 
 use crate::{
     canonical::{
-        context::CanonicalizationContext,
+        context::{CanonicalizationContext, SharedRegexes},
         emptiness,
         ir::{RawJson, RawReason, Schema, SchemaKind},
         parse, refold,
@@ -165,6 +165,7 @@ pub struct PreparedDocument<'a> {
     validate_formats: bool,
     // `None` when the draft is unknown: nothing resolves, and every selection stays verbatim.
     resolution: Option<(Registry<'a>, Uri<String>)>,
+    regexes: SharedRegexes,
 }
 
 impl PreparedDocument<'_> {
@@ -214,7 +215,8 @@ impl PreparedDocument<'_> {
         };
         let resolver = registry.resolver(base_uri.clone());
         let context =
-            CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
+            CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats)
+                .sharing_regexes(Arc::clone(&self.regexes));
         let Some(parsed) = parse::parse_tracking_nodes(self.document, &context, &resolver)? else {
             return Ok(HashSet::new());
         };
@@ -243,7 +245,8 @@ impl PreparedDocument<'_> {
         };
         let resolver = registry.resolver(base_uri.clone());
         let context =
-            CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
+            CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats)
+                .sharing_regexes(Arc::clone(&self.regexes));
         let Some(parsed) = parse::parse(target, &context, &resolver)? else {
             let reason = raw_reason(&context);
             // Only an unmodeled construct sits at one node; a run out of allowance gave up on the
@@ -294,6 +297,7 @@ fn prepare<'a, 'r: 'a>(
             pattern_options,
             validate_formats: options.validate_formats.unwrap_or(false),
             resolution: None,
+            regexes: SharedRegexes::default(),
         });
     }
     let validate_formats = options
@@ -317,6 +321,7 @@ fn prepare<'a, 'r: 'a>(
         pattern_options,
         validate_formats,
         resolution: Some((registry, base_uri)),
+        regexes: SharedRegexes::default(),
     })
 }
 
