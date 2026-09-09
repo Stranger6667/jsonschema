@@ -12,7 +12,7 @@ use crate::{
     canonical::{
         context::CanonicalizationContext,
         emptiness,
-        ir::{RawJson, Schema, SchemaKind},
+        ir::{RawJson, RawReason, Schema, SchemaKind},
         parse, refold,
         schema::CanonicalSchema,
         CanonicalizationError, DefinitionMap, ROOT_DEFINITION_KEY,
@@ -224,9 +224,13 @@ impl PreparedDocument<'_> {
     }
 
     fn reduce(&self, target: &Value) -> Result<CanonicalSchema, CanonicalizationError> {
-        let opaque = |target: &Value| {
+        let opaque = |target: &Value, reason: RawReason, pointer: Option<Arc<str>>| {
             CanonicalSchema::new(
-                Schema::new(SchemaKind::Raw(RawJson::new(target.clone()))),
+                Schema::new(SchemaKind::Raw(RawJson::new(
+                    target.clone(),
+                    reason,
+                    pointer,
+                ))),
                 self.draft,
                 self.pattern_options,
                 self.validate_formats,
@@ -235,24 +239,29 @@ impl PreparedDocument<'_> {
             )
         };
         let Some((registry, base_uri)) = &self.resolution else {
-            return Ok(opaque(target));
+            return Ok(opaque(target, RawReason::UnknownDialect, None));
         };
         let resolver = registry.resolver(base_uri.clone());
         let context =
             CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats);
-        let (inner, definitions, local) = match parse::parse(target, &context, &resolver)? {
-            Some(parsed) => {
-                let parsed = emptiness::fold_definitions(parsed, target, &context, &resolver)?;
-                // Folded now every body is known, so this entry point and the set operations agree.
-                let parsed = refold::through_targets(parsed, &context);
-                (
-                    parsed.root,
-                    Arc::new(parsed.definitions),
-                    Arc::new(parsed.local_definitions),
-                )
-            }
-            None => return Ok(opaque(target)),
+        let Some(parsed) = parse::parse(target, &context, &resolver)? else {
+            let reason = raw_reason(&context);
+            // Only an unmodeled construct sits at one node; a run out of allowance gave up on the
+            // document as a whole.
+            let pointer = (reason == RawReason::Unmodeled)
+                .then(|| context.declined_at())
+                .flatten()
+                .and_then(|address| pointer_to(target, &mut String::new(), address));
+            return Ok(opaque(target, reason, pointer));
         };
+        let parsed = emptiness::fold_definitions(parsed, target, &context, &resolver)?;
+        // Folded now every body is known, so this entry point and the set operations agree.
+        let parsed = refold::through_targets(parsed, &context);
+        let (inner, definitions, local) = (
+            parsed.root,
+            Arc::new(parsed.definitions),
+            Arc::new(parsed.local_definitions),
+        );
         Ok(CanonicalSchema::new(
             inner,
             self.draft,
@@ -378,6 +387,54 @@ fn names_unsatisfiable_body(parsed: &parse::ParseOutput, key: &str) -> bool {
 }
 
 /// Walk `value` alongside what the parse made of each node, naming the unsatisfiable ones by pointer.
+/// What stopped the run, read off the context the parse left behind. An exhausted allowance also
+/// records an approximation, so it is asked about first.
+fn raw_reason(context: &CanonicalizationContext) -> RawReason {
+    if context.outgrew_distribution() {
+        RawReason::OutgrewIntersections
+    } else if context.saw_inexact_intersection() {
+        RawReason::InexactIntersection
+    } else if context.outgrew_cases() {
+        RawReason::OutgrewCases
+    } else {
+        RawReason::Unmodeled
+    }
+}
+
+/// The pointer naming the node at `address`, or `None` where the parse declined on a schema it
+/// rewrote, which the document no longer holds.
+fn pointer_to(value: &Value, pointer: &mut String, address: usize) -> Option<Arc<str>> {
+    if std::ptr::from_ref(value) as usize == address {
+        return Some(Arc::from(pointer.as_str()));
+    }
+    let restore = pointer.len();
+    let mut children = |children: Box<dyn Iterator<Item = (String, &Value)> + '_>| {
+        for (segment, child) in children {
+            pointer.push('/');
+            pointer.push_str(&segment);
+            if let Some(found) = pointer_to(child, pointer, address) {
+                return Some(found);
+            }
+            pointer.truncate(restore);
+        }
+        None
+    };
+    match value {
+        Value::Object(map) => children(Box::new(map.iter().map(|(key, child)| {
+            let mut segment = String::new();
+            referencing::write_escaped_str(&mut segment, key);
+            (segment, child)
+        }))),
+        Value::Array(items) => children(Box::new(
+            items
+                .iter()
+                .enumerate()
+                .map(|(index, child)| (index.to_string(), child)),
+        )),
+        Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => None,
+    }
+}
+
 fn collect_unsatisfiable_pointers(
     value: &Value,
     pointer: &mut String,

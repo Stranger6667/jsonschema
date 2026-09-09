@@ -5,6 +5,7 @@ from ..jsonschema_rs import canonical as _canonical
 Containment = _canonical.Containment
 Satisfiability = _canonical.Satisfiability
 Distinctness = _canonical.Distinctness
+RawReason = _canonical.RawReason
 CanonicalKind = _canonical.CanonicalKind
 TrueView = _canonical.TrueView
 FalseView = _canonical.FalseView
@@ -107,6 +108,7 @@ __all__ = [
     "NotView",
     "ObjectView",
     "OneOfView",
+    "RawReason",
     "RawView",
     "ReferenceView",
     "Satisfiability",

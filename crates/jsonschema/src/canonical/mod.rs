@@ -125,9 +125,11 @@
 //! # Unsupported schemas
 //!
 //! When exact normalization is unavailable, canonicalization succeeds with
-//! [`CanonicalKind::Raw`] and preserves the original document unchanged. Unresolved references
-//! remain errors. A reference whose target uses a different draft than the referring document is
-//! also not yet modeled and falls back to `Raw` (future work).
+//! [`CanonicalKind::Raw`] and preserves the original document unchanged. [`CanonicalView::Raw`]
+//! carries a [`RawReason`] saying what stopped the run, and a pointer to the subschema it stopped
+//! on where one node is at fault. Unresolved references remain errors. A reference whose target
+//! uses a different draft than the referring document is also not yet modeled and falls back to
+//! `Raw` (future work).
 //!
 //! # Recursive schemas
 //!
@@ -184,7 +186,7 @@ pub use options::{options, CanonicalizeOptions, PreparedDocument};
 pub use schema::{CanonicalSchema, Containment, Satisfiability};
 pub use view::{
     ArrayView, CanonicalKind, CanonicalView, ContainsView, Distinctness, IntegerView, NumberView,
-    ObjectView, ObjectViolationView, StringView, TypedGroupView,
+    ObjectView, ObjectViolationView, RawReason, RawView, StringView, TypedGroupView,
 };
 
 pub(crate) const CANONICAL_REFERENCE_PREFIX: &str = "urn:jsonschema:canonical:";

@@ -2,7 +2,7 @@ use jsonschema::{
     canonical::{
         CanonicalKind, CanonicalSchema, CanonicalView, CanonicalizationError, Containment,
         ContainsView as CoreContainsView, Distinctness,
-        ObjectViolationView as CoreObjectViolationView, Satisfiability,
+        ObjectViolationView as CoreObjectViolationView, RawReason, Satisfiability,
     },
     JsonType,
 };
@@ -226,7 +226,13 @@ impl RbCanonicalSchema {
             CanonicalView::AnyOf(branches) => ruby.obj_wrap(AnyOfView { branches }).as_value(),
             CanonicalView::OneOf(branches) => ruby.obj_wrap(OneOfView { branches }).as_value(),
             CanonicalView::Reference(uri) => ruby.obj_wrap(ReferenceView { uri }).as_value(),
-            CanonicalView::Raw(schema) => ruby.obj_wrap(RawView { schema }).as_value(),
+            CanonicalView::Raw(raw) => ruby
+                .obj_wrap(RawView {
+                    schema: raw.schema,
+                    reason: raw.reason,
+                    pointer: raw.pointer,
+                })
+                .as_value(),
         }
     }
 
@@ -293,6 +299,8 @@ impl RbCanonicalSchema {
 #[magnus(class = "JSONSchema::Canonical::RawView", free_immediately)]
 pub struct RawView {
     schema: serde_json::Value,
+    reason: RawReason,
+    pointer: Option<String>,
 }
 
 impl DataTypeFunctions for RawView {}
@@ -302,10 +310,23 @@ impl RawView {
         value_to_ruby(ruby, &rb_self.schema)
     }
 
+    fn reason(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.sym_new(rb_self.reason.as_str()).as_value()
+    }
+
+    fn pointer(ruby: &Ruby, rb_self: &Self) -> Value {
+        rb_self.pointer.as_ref().map_or_else(
+            || ruby.qnil().as_value(),
+            |pointer| ruby.str_new(pointer).as_value(),
+        )
+    }
+
     fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
         Ok(format!(
-            "#<JSONSchema::Canonical::RawView schema={}>",
-            Self::schema(ruby, rb_self)?.inspect()
+            "#<JSONSchema::Canonical::RawView schema={} reason={} pointer={}>",
+            Self::schema(ruby, rb_self)?.inspect(),
+            Self::reason(ruby, rb_self).inspect(),
+            Self::pointer(ruby, rb_self).inspect()
         ))
     }
 
@@ -315,6 +336,8 @@ impl RawView {
             ruby.sym_new("schema"),
             value_to_ruby(ruby, &rb_self.schema)?,
         )?;
+        hash.aset(ruby.sym_new("reason"), Self::reason(ruby, rb_self))?;
+        hash.aset(ruby.sym_new("pointer"), Self::pointer(ruby, rb_self))?;
         Ok(hash)
     }
 }
@@ -1467,6 +1490,7 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
         Distinctness::VARIANTS,
     )?;
     define_labels(ruby, &canonical_module, "Kind", CanonicalKind::VARIANTS)?;
+    define_labels(ruby, &canonical_module, "RawReason", RawReason::VARIANTS)?;
 
     let canonical_schema = canonical_module.define_class("CanonicalSchema", ruby.class_object())?;
     canonical_schema.define_method(
@@ -1687,6 +1711,8 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
 
     let raw_view = canonical_module.define_class("RawView", ruby.class_object())?;
     raw_view.define_method("schema", method!(RawView::schema, 0))?;
+    raw_view.define_method("reason", method!(RawView::reason, 0))?;
+    raw_view.define_method("pointer", method!(RawView::pointer, 0))?;
     raw_view.define_method("inspect", method!(RawView::inspect, 0))?;
     raw_view.define_method("deconstruct_keys", method!(RawView::deconstruct_keys, 1))?;
 

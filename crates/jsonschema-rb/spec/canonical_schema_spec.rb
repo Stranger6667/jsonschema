@@ -354,7 +354,7 @@ RSpec.describe "JSONSchema.canonicalize" do
                      %i[min_properties max_properties required property_names properties pattern_properties]],
     "ConstView" => [{ "const" => nil }, %i[value]],
     "EnumView" => [{ "enum" => [1, 2] }, %i[values]],
-    "RawView" => [UNSUPPORTED, %i[schema]]
+    "RawView" => [UNSUPPORTED, %i[schema reason pointer]]
   }.each do |name, (schema, readers)|
     it "inspect renders #{name} readers" do
       draft = name == "TypedGroupView" ? :draft4 : :draft202012
@@ -374,9 +374,23 @@ RSpec.describe "JSONSchema.canonicalize" do
 
   it "view returns RawView with the document payload" do
     case JSONSchema.canonicalize(UNSUPPORTED).view
-    in JSONSchema::Canonical::RawView[schema:]
+    in JSONSchema::Canonical::RawView[schema:, reason:, pointer:]
       expect(schema).to eq(UNSUPPORTED)
+      expect(reason).to eq(JSONSchema::Canonical::RawReason::UNMODELED)
+      expect(pointer).to eq("")
     end
+  end
+
+  it "view names the subschema that stopped the run" do
+    view = JSONSchema.canonicalize({ "oneOf" => [UNSUPPORTED, { "type" => "string" }] }).view
+    expect(view.reason).to eq(JSONSchema::Canonical::RawReason::UNMODELED)
+    expect(view.pointer).to eq("/oneOf/0")
+  end
+
+  it "view reports a dialect it does not know" do
+    view = JSONSchema.canonicalize({ "$schema" => "https://example.com/not-a-dialect" }).view
+    expect(view.reason).to eq(JSONSchema::Canonical::RawReason::UNKNOWN_DIALECT)
+    expect(view.pointer).to be_nil
   end
 
   [

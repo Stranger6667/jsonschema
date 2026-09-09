@@ -7,7 +7,7 @@ use std::{
 use jsonschema::{
     canonical::{
         options, CanonicalKind, CanonicalSchema, CanonicalView, Containment, Distinctness,
-        ObjectViolationView, OperandMismatch, Satisfiability,
+        ObjectViolationView, OperandMismatch, RawReason, Satisfiability,
     },
     canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
     Retrieve, Uri,
@@ -20,6 +20,99 @@ fn unsupported_document_round_trips_verbatim(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(&canonical.to_json_schema(), schema);
     assert!(matches!(canonical.view(), CanonicalView::Raw(_)));
+}
+
+#[test_case(
+    &json!({"$schema": "https://example.com/not-a-dialect", "type": "string"}),
+    RawReason::UnknownDialect,
+    None;
+    "a $schema no dialect answers to"
+)]
+#[test_case(
+    &json!({"dependencies": {}, "unevaluatedProperties": false}),
+    RawReason::Unmodeled,
+    Some("");
+    "an unmodeled root names the root"
+)]
+#[test_case(
+    &json!({"oneOf": [{"dependencies": {}, "unevaluatedProperties": false}, {"type": "string"}]}),
+    RawReason::Unmodeled,
+    Some("/oneOf/0");
+    "an unmodeled branch names the branch"
+)]
+#[test_case(
+    &json!({"allOf": [
+        {"additionalProperties": {"type": "string"}, "patternProperties": {"^a": {"minLength": 2}}},
+        {"additionalProperties": {"type": "string"}, "patternProperties": {"^b": {"maxLength": 5}}}
+    ]}),
+    RawReason::InexactIntersection,
+    None;
+    "an intersection the form cannot write exactly"
+)]
+#[test_case(
+    &json!({
+        "type": "object",
+        "dependentSchemas": {
+            "a": {"properties": {"a1": {}}}, "b": {"properties": {"b1": {}}},
+            "c": {"properties": {"c1": {}}}, "d": {"properties": {"d1": {}}},
+            "e": {"properties": {"e1": {}}}, "f": {"properties": {"f1": {}}},
+            "g": {"properties": {"g1": {}}}, "h": {"properties": {"h1": {}}}
+        },
+        "unevaluatedProperties": false
+    }),
+    RawReason::OutgrewCases,
+    None;
+    "a conditional split past its case budget"
+)]
+#[test_case(
+    &json!({"properties": {"a": {
+        "if": {"required": ["x"]},
+        "then": {"properties": {"b": {"$schema": "http://json-schema.org/draft-06/schema#"}}},
+        "unevaluatedProperties": false
+    }}}),
+    RawReason::Unmodeled,
+    Some("/properties/a");
+    "a node the run rewrote names itself, not the rewrite"
+)]
+fn a_raw_document_reports_what_stopped_it(
+    schema: &Value,
+    reason: RawReason,
+    pointer: Option<&str>,
+) {
+    let canonical = canonicalize(schema).expect("canonicalizes");
+    let CanonicalView::Raw(raw) = canonical.view() else {
+        panic!("expected a raw document, got {:?}", canonical.kind());
+    };
+    assert_eq!(&raw.schema, schema);
+    assert_eq!(raw.reason, reason);
+    assert_eq!(raw.pointer.as_deref(), pointer);
+}
+
+#[test]
+fn a_product_past_the_intersection_allowance_reports_it() {
+    let branches: Vec<Value> = (0..20)
+        .map(|index| {
+            let mut then_properties = Map::new();
+            then_properties.insert(format!("f{index}"), json!({"type": "string"}));
+            json!({
+                "if": {
+                    "type": "object",
+                    "properties": {"kind": {"const": format!("k{index}")}},
+                    "required": ["kind"]
+                },
+                "then": {"type": "object", "properties": then_properties}
+            })
+        })
+        .collect();
+    let schema = json!({"allOf": branches});
+
+    let canonical = canonicalize(&schema).expect("canonicalizes");
+
+    let CanonicalView::Raw(raw) = canonical.view() else {
+        panic!("expected a raw document, got {:?}", canonical.kind());
+    };
+    assert_eq!(raw.reason, RawReason::OutgrewIntersections);
+    assert_eq!(raw.pointer, None);
 }
 
 const PET_DOCUMENT: &str = r##"{
