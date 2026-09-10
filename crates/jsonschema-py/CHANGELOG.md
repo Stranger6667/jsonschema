@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-09-10
+
 ### Added
 
 - `canonical.RawReason`, what stopped a run from modeling a document, and `RawView.reason` and `RawView.pointer`, carrying it beside the subschema the run stopped on.
@@ -1496,7 +1498,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.56.0...HEAD
+[0.56.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.1...python-v0.56.0
 [0.55.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.0...python-v0.55.1
 [0.55.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.54.0...python-v0.55.0
 [0.54.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.53.0...python-v0.54.0
