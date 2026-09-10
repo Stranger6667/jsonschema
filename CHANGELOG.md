@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.56.0] - 2026-09-10
+
 ### Added
 
 - `canonical::RawReason`, what stopped a run from modeling a document, and `canonical::RawView`, carrying it beside the document and a pointer to the subschema the run stopped on.
@@ -1825,7 +1827,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.55.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.56.0...HEAD
+[0.56.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.55.1...rust-v0.56.0
 [0.55.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.55.0...rust-v0.55.1
 [0.55.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.54.0...rust-v0.55.0
 [0.54.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.53.0...rust-v0.54.0
