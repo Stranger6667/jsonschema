@@ -1,5 +1,5 @@
 #![cfg(not(target_arch = "wasm32"))]
-use hegel::{extras::serde_json as json_gs, generators as gs, TestCase};
+use hegel::{extras::serde_json as json_gs, generators as gs, generators::Generator, TestCase};
 use jsonschema::{
     canonical::{CanonicalSchema, CanonicalView, Containment, Satisfiability},
     Draft, JsonType,
@@ -11,13 +11,16 @@ mod generation;
 use generation::*;
 
 fn draw_draft(tc: &TestCase) -> Draft {
-    tc.draw(gs::sampled_from(vec![
-        Draft::Draft4,
-        Draft::Draft6,
-        Draft::Draft7,
-        Draft::Draft201909,
-        Draft::Draft202012,
-    ]))
+    tc.draw(
+        gs::sampled_from(vec![
+            Draft::Draft4,
+            Draft::Draft6,
+            Draft::Draft7,
+            Draft::Draft201909,
+            Draft::Draft202012,
+        ])
+        .print_as_debug(),
+    )
 }
 
 fn draw_type(tc: &TestCase) -> &'static str {
@@ -1775,7 +1778,7 @@ fn definition_graph(tc: &TestCase, links: &'static [Link]) -> Value {
         }
     };
     let body = |tc: &TestCase| {
-        let link = tc.draw(gs::sampled_from(links.to_vec()));
+        let link = tc.draw(gs::sampled_from(links.to_vec()).print_as_debug());
         definition_body(link, &target(tc), &target(tc))
     };
     let mut definitions = serde_json::Map::new();
@@ -2848,10 +2851,7 @@ fn draw_conditional_instance(tc: &TestCase) -> Value {
 }
 
 fn draw_unevaluated_draft(tc: &TestCase) -> Draft {
-    tc.draw(gs::sampled_from(vec![
-        Draft::Draft201909,
-        Draft::Draft202012,
-    ]))
+    tc.draw(gs::sampled_from(vec![Draft::Draft201909, Draft::Draft202012]).print_as_debug())
 }
 
 fn canonicalize_or_panic(schema: &Value, draft: Draft) -> CanonicalSchema {
