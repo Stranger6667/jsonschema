@@ -13,7 +13,7 @@ mod fraction;
 mod pool;
 mod scalar;
 
-use hegel::{generators as gs, TestCase};
+use hegel::{generators as gs, generators::Generator, TestCase};
 use jsonschema::{
     canonical::{CanonicalSchema, CanonicalView},
     JsonType,
@@ -99,7 +99,7 @@ impl Sampler<'_> {
             }
             CanonicalView::MultiType(set) => {
                 let types: Vec<JsonType> = set.iter().collect();
-                let ty = self.tc.draw(gs::sampled_from(types));
+                let ty = self.tc.draw(gs::sampled_from(types).print_as_debug());
                 Some(pool::draw_unconstrained(self.tc, ty))
             }
             CanonicalView::TypedGroup(group) => {
