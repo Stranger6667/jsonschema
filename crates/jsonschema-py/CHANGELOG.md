@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- The instance path of a schema build error, which was empty instead of naming the keyword location that failed to compile.
+
 ## [0.56.0] - 2026-09-10
 
 ### Added
