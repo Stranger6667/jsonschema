@@ -43,6 +43,17 @@ pub(crate) struct ParseOutput {
     pub(crate) parsed_definitions: AHashMap<Arc<str>, ParsedNode>,
 }
 
+/// The definition bodies a document parsed to, for reuse by a parse of one of its subschemas.
+///
+/// A body follows from the document, so selecting a different subschema out of the same document
+/// reaches the same bodies; without this each selection parses every one of them again.
+pub(crate) struct Seed {
+    definitions: DefinitionMap,
+    /// Addresses, never read through: a source is only ever compared for identity, and keeping
+    /// them as references would tie the seed to the borrow that produced it.
+    sources: AHashMap<Arc<str>, usize>,
+}
+
 /// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
 /// Keywords the draft does not define are annotations the validator ignores, so they never block
 /// modeling - except an unknown `$schema`, whose dialect semantics are unknowable.
@@ -58,6 +69,7 @@ pub(crate) fn parse<'a>(
         &Assumptions::default(),
         Pruning::Prune,
         Recording::Skip,
+        None,
     )
 }
 
@@ -76,6 +88,50 @@ pub(crate) fn parse_tracking_nodes<'a>(
         &Assumptions::default(),
         Pruning::Prune,
         Recording::Record,
+        None,
+    )
+}
+
+/// The definition bodies `value` parses to, for seeding a parse of one of its subschemas.
+///
+/// `Ok(None)` where the document itself stays `Raw`: nothing was modeled, so nothing is reusable.
+pub(crate) fn parse_seed<'a>(
+    value: &'a Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'a>,
+) -> Result<Option<Seed>, CanonicalizationError> {
+    let (output, sources) = parse_capturing(
+        value,
+        ctx,
+        resolver,
+        &Assumptions::default(),
+        // Kept: a body the document's own root stopped referencing is still one a subschema can
+        // reach on its own.
+        Pruning::Keep,
+        Recording::Skip,
+        None,
+    )?;
+    Ok(output.map(|output| Seed {
+        definitions: output.definitions,
+        sources,
+    }))
+}
+
+/// [`parse`] reusing the bodies `seed` already holds.
+pub(crate) fn parse_seeded<'a>(
+    value: &'a Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'a>,
+    seed: &Seed,
+) -> Result<Option<ParseOutput>, CanonicalizationError> {
+    parse_inner(
+        value,
+        ctx,
+        resolver,
+        &Assumptions::default(),
+        Pruning::Prune,
+        Recording::Skip,
+        Some(seed),
     )
 }
 
@@ -114,6 +170,7 @@ pub(crate) fn parse_with<'a>(
         assumptions,
         Pruning::Prune,
         Recording::Skip,
+        None,
     )
 }
 
@@ -134,6 +191,7 @@ pub(crate) fn parse_hypothesis<'a>(
         assumptions,
         Pruning::Keep,
         Recording::Skip,
+        None,
     )
 }
 
@@ -158,7 +216,25 @@ fn parse_inner<'a>(
     assumptions: &Assumptions,
     pruning: Pruning,
     recording: Recording,
+    seed: Option<&Seed>,
 ) -> Result<Option<ParseOutput>, CanonicalizationError> {
+    Ok(parse_capturing(value, ctx, resolver, assumptions, pruning, recording, seed)?.0)
+}
+
+/// A parse attempt beside the definition sources it generated.
+type CapturedParse = (Option<ParseOutput>, AHashMap<Arc<str>, usize>);
+
+/// [`parse_inner`], handing back the definition sources so a document parse can seed later ones.
+#[allow(clippy::too_many_arguments)]
+fn parse_capturing<'a>(
+    value: &'a Value,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'a>,
+    assumptions: &Assumptions,
+    pruning: Pruning,
+    recording: Recording,
+    seed: Option<&Seed>,
+) -> Result<CapturedParse, CanonicalizationError> {
     // A body that came out `false` denotes the empty set, so every reference to it folds as well -
     // but `resolve_reference` can only fold a target whose body already finished parsing, which
     // makes that dependent on the order definitions were registered in. Re-parsing with the folded
@@ -167,7 +243,9 @@ fn parse_inner<'a>(
     let mut tracks = false;
     let mut reparsed_for_bodies = false;
     loop {
-        let attempt = parse_once(value, ctx, resolver, &folded, pruning, tracks, recording)?;
+        let attempt = parse_once(
+            value, ctx, resolver, &folded, pruning, tracks, recording, seed,
+        )?;
         if attempt.needs_dynamic_scope {
             debug_assert!(!tracks, "a tracked parse never requests tracking");
             // A referenced resource carries a dynamic reference the root document does not, so the
@@ -177,8 +255,9 @@ fn parse_inner<'a>(
             tracks = true;
             continue;
         }
+        let sources = attempt.sources;
         let Some(parsed) = attempt.output else {
-            return Ok(None);
+            return Ok((None, sources));
         };
         let mut grew = false;
         for (key, body) in &parsed.definitions {
@@ -201,7 +280,7 @@ fn parse_inner<'a>(
                 folded.finished = parsed.definitions.clone();
                 continue;
             }
-            return Ok(Some(parsed));
+            return Ok((Some(parsed), sources));
         }
     }
 }
@@ -210,19 +289,27 @@ fn parse_inner<'a>(
 struct DocumentParse {
     output: Option<ParseOutput>,
     needs_dynamic_scope: bool,
+    sources: AHashMap<Arc<str>, usize>,
 }
 
 fn parse_once<'a>(
     value: &'a Value,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-    assumptions: &'a Assumptions,
+    assumptions: &Assumptions,
     pruning: Pruning,
     tracks_dynamic_scope: bool,
     recording: Recording,
+    seed: Option<&Seed>,
 ) -> Result<DocumentParse, CanonicalizationError> {
     ctx.forget_decline();
-    let mut state = ParseState::new(value, resolver.base_uri().as_str(), assumptions, recording);
+    let mut state = ParseState::new(
+        value,
+        resolver.base_uri().as_str(),
+        assumptions,
+        recording,
+        seed,
+    );
     if !tracks_dynamic_scope {
         state.dynamic_scope = DynamicScope::Untracked {
             needs_tracking: false,
@@ -236,6 +323,7 @@ fn parse_once<'a>(
         return Ok(DocumentParse {
             output: None,
             needs_dynamic_scope: state.dynamic_scope.needs_tracking(),
+            sources: state.sources,
         });
     }
     let Some(root) = parsed else {
@@ -243,6 +331,7 @@ fn parse_once<'a>(
         return Ok(DocumentParse {
             output: None,
             needs_dynamic_scope: state.dynamic_scope.needs_tracking(),
+            sources: state.sources,
         });
     };
     state.note_parsed_node(value, Some(&root));
@@ -250,10 +339,11 @@ fn parse_once<'a>(
     if pruning == Pruning::Prune {
         prune_unreachable_definitions(&root, &mut state.definitions);
     }
+    let local_definitions = local_definitions(&state);
     Ok(DocumentParse {
         output: Some(ParseOutput {
             root,
-            local_definitions: local_definitions(&state),
+            local_definitions,
             definitions: state.definitions,
             has_references: state.facts.has_references,
             pending_choices: state.facts.pending_choices,
@@ -261,11 +351,12 @@ fn parse_once<'a>(
             parsed_definitions: state.parsed_definitions,
         }),
         needs_dynamic_scope,
+        sources: state.sources,
     })
 }
 
 /// Canonical reference graph plus facts whose interaction is decided only after parsing the root.
-struct ParseState<'a> {
+struct ParseState<'a, 'b> {
     root: &'a Value,
     root_base_uri: Arc<str>,
     /// Whole-document facts whose interaction is only decided once the root is complete.
@@ -273,9 +364,9 @@ struct ParseState<'a> {
     definitions: DefinitionMap,
     in_progress: AHashSet<Arc<str>>,
     /// The target each definition key was generated for, so a key cannot be reused for another one.
-    sources: AHashMap<Arc<str>, &'a Value>,
+    sources: AHashMap<Arc<str>, usize>,
     /// Empty on every parse outside the definition fixpoint.
-    assumptions: &'a Assumptions,
+    assumptions: &'b Assumptions,
     dynamic_scope: DynamicScope,
     /// Entries for [`ParseOutput::parsed_nodes`].
     parsed_nodes: AHashMap<*const Value, ParsedNode>,
@@ -328,20 +419,25 @@ impl DynamicScope {
     }
 }
 
-impl<'a> ParseState<'a> {
+impl<'a, 'b> ParseState<'a, 'b> {
     fn new(
         root: &'a Value,
         root_base_uri: &str,
-        assumptions: &'a Assumptions,
+        assumptions: &'b Assumptions,
         recording: Recording,
+        seed: Option<&Seed>,
     ) -> Self {
+        let (definitions, sources) = match seed {
+            Some(seed) => (seed.definitions.clone(), seed.sources.clone()),
+            None => (DefinitionMap::new(), AHashMap::default()),
+        };
         Self {
             root,
             root_base_uri: Arc::from(root_base_uri),
             facts: DocumentFacts::default(),
-            definitions: DefinitionMap::new(),
+            definitions,
             in_progress: AHashSet::new(),
-            sources: AHashMap::default(),
+            sources,
             assumptions,
             dynamic_scope: DynamicScope::Tracked,
             parsed_nodes: AHashMap::default(),
@@ -428,7 +524,7 @@ fn parse_schema<'a>(
     ctx: &CanonicalizationContext,
     is_root: bool,
     resolver: &Resolver<'a>,
-    state: &mut ParseState<'a>,
+    state: &mut ParseState<'a, '_>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(value))?;
     let parsed = parse_schema_in_scope(value, ctx, is_root, &resolver, state)?;
@@ -597,7 +693,7 @@ fn parse_schema_in_scope<'a>(
     ctx: &CanonicalizationContext,
     is_root: bool,
     resolver: &Resolver<'a>,
-    state: &mut ParseState<'a>,
+    state: &mut ParseState<'a, '_>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let map = match value {
         Value::Bool(true) => return Ok(Some(Schema::truthy())),
@@ -2682,7 +2778,7 @@ fn combine_references(references: Vec<Schema>, ctx: &CanonicalizationContext) ->
 fn resolve_recursive_reference<'a>(
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-    state: &mut ParseState<'a>,
+    state: &mut ParseState<'a, '_>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let base_uri = resolver.base_uri();
     let location = resolver.resolve_uri(&base_uri.borrow(), "#")?;
@@ -2694,7 +2790,7 @@ fn resolve_reference<'a>(
     reference: &str,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-    state: &mut ParseState<'a>,
+    state: &mut ParseState<'a, '_>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     let base_uri = resolver.base_uri();
     let location = resolver.resolve_uri(&base_uri.borrow(), reference)?;
@@ -2711,7 +2807,7 @@ fn reference_to_definition<'a>(
     location: &str,
     resolved: referencing::Resolved<'a>,
     ctx: &CanonicalizationContext,
-    state: &mut ParseState<'a>,
+    state: &mut ParseState<'a, '_>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
     state.facts.has_references = true;
     let (target, target_resolver, target_draft) = resolved.into_inner();
@@ -2822,11 +2918,11 @@ fn canonical_reference_uri(reference: &str, location: &str, root_base_uri: &str)
 /// The keys whose body was written inside the document, found by walking it once and asking which
 /// targets it holds. A nested `$id` puts a body under a generated URI rather than a `#/$defs/` name,
 /// so the name alone cannot tell a private body from a retrieved one.
-fn local_definitions(state: &ParseState<'_>) -> BTreeSet<Arc<str>> {
+fn local_definitions(state: &ParseState<'_, '_>) -> BTreeSet<Arc<str>> {
     let mut held = AHashSet::new();
     let mut stack = vec![state.root];
     while let Some(value) = stack.pop() {
-        held.insert(std::ptr::from_ref(value));
+        held.insert(std::ptr::from_ref(value) as usize);
         match value {
             Value::Object(map) => stack.extend(map.values()),
             Value::Array(items) => stack.extend(items),
@@ -2836,7 +2932,7 @@ fn local_definitions(state: &ParseState<'_>) -> BTreeSet<Arc<str>> {
     state
         .sources
         .iter()
-        .filter(|(_, target)| held.contains(&std::ptr::from_ref(**target)))
+        .filter(|(_, target)| held.contains(*target))
         .map(|(key, _)| Arc::clone(key))
         .collect()
 }
@@ -2851,7 +2947,7 @@ fn ensure_definition<'a>(
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
     env: &DynamicEnv,
-    state: &mut ParseState<'a>,
+    state: &mut ParseState<'a, '_>,
 ) -> Result<bool, CanonicalizationError> {
     debug_assert!(
         state.dynamic_scope.tracked() || env.is_empty(),
@@ -2863,14 +2959,16 @@ fn ensure_definition<'a>(
     // A `$defs` name written as a canonical URI keys the same string that a reference to the resource
     // it encodes generates, so without this the early return below would alias the two targets.
     if let Some(existing) = state.sources.get(&key) {
-        if !std::ptr::eq(*existing, target) {
+        if *existing != std::ptr::from_ref(target) as usize {
             return Ok(false);
         }
     }
     if state.definitions.contains_key(&key) || state.in_progress.contains(&key) {
         return Ok(true);
     }
-    state.sources.insert(Arc::clone(&key), target);
+    state
+        .sources
+        .insert(Arc::clone(&key), std::ptr::from_ref(target) as usize);
     state.in_progress.insert(Arc::clone(&key));
     let parsed = parse_schema_in_scope(target, ctx, false, resolver, state);
     // Removed before the `?`, keeping the restore-on-error contract.
@@ -3106,7 +3204,7 @@ fn parse_prefix<'a>(
     schemas: &[Value],
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-    state: &mut ParseState<'a>,
+    state: &mut ParseState<'a, '_>,
 ) -> Result<Option<Vec<Schema>>, CanonicalizationError> {
     let mut prefix = Vec::with_capacity(schemas.len());
     for schema in schemas {
