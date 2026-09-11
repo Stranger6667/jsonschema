@@ -43,10 +43,11 @@ pub(crate) struct ParseOutput {
     pub(crate) parsed_definitions: AHashMap<Arc<str>, ParsedNode>,
 }
 
-/// The definition bodies a document parsed to, for reuse by a parse of one of its subschemas.
+/// The definition bodies the reads of one document have parsed, for reuse by its later reads.
 ///
 /// A body follows from the document, so selecting a different subschema out of the same document
-/// reaches the same bodies; without this each selection parses every one of them again.
+/// reaches the same bodies; without this each selection parses every one of them again. Grown out
+/// of the reads a caller asks for, so holding it costs no parse of its own.
 pub(crate) struct Seed {
     definitions: DefinitionMap,
     /// Addresses, never read through: a source is only ever compared for identity, and keeping
@@ -54,23 +55,68 @@ pub(crate) struct Seed {
     sources: AHashMap<Arc<str>, usize>,
 }
 
-/// Parse a document into structural IR when every construct is modeled; `Ok(None)` keeps it `Raw`.
-/// Keywords the draft does not define are annotations the validator ignores, so they never block
-/// modeling - except an unknown `$schema`, whose dialect semantics are unknowable.
+impl Seed {
+    /// What `seed` becomes once a parse that reached `definitions` is folded in; `None` when that
+    /// parse reached no body the seed does not already hold.
+    fn grown(
+        seed: Option<&Seed>,
+        definitions: &DefinitionMap,
+        sources: AHashMap<Arc<str>, usize>,
+    ) -> Option<Seed> {
+        let Some(seed) = seed else {
+            return Some(Seed {
+                definitions: definitions.clone(),
+                sources,
+            });
+        };
+        // A seeded parse carries the seed's own keys back out, so equal counts mean nothing new.
+        let grew = sources.len() > seed.sources.len()
+            || definitions
+                .keys()
+                .any(|key| !seed.definitions.contains_key(key));
+        if !grew {
+            return None;
+        }
+        let mut merged = seed.definitions.clone();
+        for (key, body) in definitions {
+            merged
+                .entry(Arc::clone(key))
+                .or_insert_with(|| body.clone());
+        }
+        Some(Seed {
+            definitions: merged,
+            sources,
+        })
+    }
+}
+
+/// Parse a document into structural IR when every construct is modeled; `Ok((None, _))` keeps it
+/// `Raw`. Keywords the draft does not define are annotations the validator ignores, so they never
+/// block modeling - except an unknown `$schema`, whose dialect semantics are unknowable.
+///
+/// Reuses the bodies `seed` holds and hands back the seed this parse leaves behind, for the reads
+/// of the same document that follow. The bodies come from a read a caller asked for rather than
+/// from a pass of their own: a read that finished parsed each body it reached exactly, or it would
+/// have declined as a whole. The seed comes back `None` where the parse reached no body it lacks.
 pub(crate) fn parse<'a>(
     value: &'a Value,
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,
-) -> Result<Option<ParseOutput>, CanonicalizationError> {
-    parse_inner(
+    seed: Option<&Seed>,
+) -> Result<(Option<ParseOutput>, Option<Seed>), CanonicalizationError> {
+    let (output, sources) = parse_capturing(
         value,
         ctx,
         resolver,
         &Assumptions::default(),
         Pruning::Prune,
         Recording::Skip,
-        None,
-    )
+        seed,
+    )?;
+    let grown = output
+        .as_ref()
+        .and_then(|output| Seed::grown(seed, &output.definitions, sources));
+    Ok((output, grown))
 }
 
 /// [`parse`] also noting what each document node parsed to, which only
@@ -89,49 +135,6 @@ pub(crate) fn parse_tracking_nodes<'a>(
         Pruning::Prune,
         Recording::Record,
         None,
-    )
-}
-
-/// The definition bodies `value` parses to, for seeding a parse of one of its subschemas.
-///
-/// `Ok(None)` where the document itself stays `Raw`: nothing was modeled, so nothing is reusable.
-pub(crate) fn parse_seed<'a>(
-    value: &'a Value,
-    ctx: &CanonicalizationContext,
-    resolver: &Resolver<'a>,
-) -> Result<Option<Seed>, CanonicalizationError> {
-    let (output, sources) = parse_capturing(
-        value,
-        ctx,
-        resolver,
-        &Assumptions::default(),
-        // Kept: a body the document's own root stopped referencing is still one a subschema can
-        // reach on its own.
-        Pruning::Keep,
-        Recording::Skip,
-        None,
-    )?;
-    Ok(output.map(|output| Seed {
-        definitions: output.definitions,
-        sources,
-    }))
-}
-
-/// [`parse`] reusing the bodies `seed` already holds.
-pub(crate) fn parse_seeded<'a>(
-    value: &'a Value,
-    ctx: &CanonicalizationContext,
-    resolver: &Resolver<'a>,
-    seed: &Seed,
-) -> Result<Option<ParseOutput>, CanonicalizationError> {
-    parse_inner(
-        value,
-        ctx,
-        resolver,
-        &Assumptions::default(),
-        Pruning::Prune,
-        Recording::Skip,
-        Some(seed),
     )
 }
 

@@ -2,7 +2,7 @@
 
 use std::{
     collections::{BTreeSet, HashSet},
-    sync::{Arc, OnceLock},
+    sync::{Arc, Mutex},
 };
 
 use referencing::{Draft, Registry, Retrieve, Uri};
@@ -167,9 +167,9 @@ pub struct PreparedDocument<'a> {
     // `None` when the draft is unknown: nothing resolves, and every selection stays verbatim.
     resolution: Option<(Registry<'a>, Uri<String>)>,
     regexes: SharedRegexes,
-    /// The document's definition bodies, parsed on first use. `None` once a pass over the whole
-    /// document declined it, which leaves each selection to parse its own.
-    seed: OnceLock<Option<Seed>>,
+    /// The definition bodies the reads of this document have parsed so far, which its later reads
+    /// reuse. Grown out of those reads, so a document read once pays nothing for it.
+    seed: Mutex<Option<Arc<Seed>>>,
 }
 
 impl PreparedDocument<'_> {
@@ -229,24 +229,18 @@ impl PreparedDocument<'_> {
         Ok(pointers)
     }
 
-    /// The document's definition bodies, parsed once however many subschemas are selected.
-    ///
-    /// Reading the whole document burns its own allowance, so it runs under a context of its own:
-    /// a selection must not inherit what that pass spent or approximated.
-    fn seed(&self, resolver: &referencing::Resolver<'_>) -> Option<&Seed> {
-        self.seed
-            .get_or_init(|| {
-                let context = CanonicalizationContext::new(
-                    self.draft,
-                    self.pattern_options,
-                    self.validate_formats,
-                )
-                .sharing_regexes(Arc::clone(&self.regexes));
-                parse::parse_seed(self.document, &context, resolver)
-                    .ok()
-                    .flatten()
-            })
-            .as_ref()
+    /// The definition bodies earlier reads of this document parsed. A poisoned cache reads as
+    /// empty: a body is only ever a parse this document would repeat.
+    fn seed(&self) -> Option<Arc<Seed>> {
+        self.seed.lock().ok()?.clone()
+    }
+
+    /// Keep the bodies a read reached, so however many subschemas are selected next, each body is
+    /// parsed once for the document rather than once per read.
+    fn grow_seed(&self, grown: Seed) {
+        if let Ok(mut seed) = self.seed.lock() {
+            *seed = Some(Arc::new(grown));
+        }
     }
 
     fn reduce(&self, target: &Value) -> Result<CanonicalSchema, CanonicalizationError> {
@@ -271,10 +265,11 @@ impl PreparedDocument<'_> {
         let context =
             CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats)
                 .sharing_regexes(Arc::clone(&self.regexes));
-        let parsed = match self.seed(&resolver) {
-            Some(seed) => parse::parse_seeded(target, &context, &resolver, seed)?,
-            None => parse::parse(target, &context, &resolver)?,
-        };
+        let seed = self.seed();
+        let (parsed, grown) = parse::parse(target, &context, &resolver, seed.as_deref())?;
+        if let Some(grown) = grown {
+            self.grow_seed(grown);
+        }
         let Some(parsed) = parsed else {
             let reason = raw_reason(&context);
             // Only an unmodeled construct sits at one node; a run out of allowance gave up on the
@@ -326,7 +321,7 @@ fn prepare<'a, 'r: 'a>(
             validate_formats: options.validate_formats.unwrap_or(false),
             resolution: None,
             regexes: SharedRegexes::default(),
-            seed: OnceLock::new(),
+            seed: Mutex::new(None),
         });
     }
     let validate_formats = options
@@ -351,7 +346,7 @@ fn prepare<'a, 'r: 'a>(
         validate_formats,
         resolution: Some((registry, base_uri)),
         regexes: SharedRegexes::default(),
-        seed: OnceLock::new(),
+        seed: Mutex::new(None),
     })
 }
 
@@ -535,11 +530,9 @@ mod tests {
         out
     }
 
-    /// A prepared document that parses every definition itself, as one without a usable seed does.
+    /// A prepared document holding no bodies yet, whose first read parses every definition itself.
     fn unseeded(document: &Value) -> PreparedDocument<'_> {
-        let prepared = options().prepare(document).expect("prepares");
-        prepared.seed.set(None).ok().expect("nothing settled yet");
-        prepared
+        options().prepare(document).expect("prepares")
     }
 
     fn documents() -> Vec<Value> {
@@ -595,10 +588,14 @@ mod tests {
     fn a_seeded_selection_reads_the_same_as_one_that_parses_its_own_definitions() {
         for document in documents() {
             let seeded = options().prepare(&document).expect("prepares");
-            let plain = unseeded(&document);
+            // Primed by reading the whole document, which leaves every body it reached behind.
+            let _ = seeded.canonicalize();
             for pointer in every_pointer(&document) {
                 let left = seeded.canonicalize_at(&pointer).map(|s| s.to_json_schema());
-                let right = plain.canonicalize_at(&pointer).map(|s| s.to_json_schema());
+                // Prepared afresh, so this read holds no body and parses each one it reaches.
+                let right = unseeded(&document)
+                    .canonicalize_at(&pointer)
+                    .map(|s| s.to_json_schema());
                 assert_eq!(
                     left.as_ref().ok(),
                     right.as_ref().ok(),
@@ -612,10 +609,14 @@ mod tests {
     #[test]
     fn a_seeded_document_reads_the_same_as_one_that_parses_it_alone() {
         for document in documents() {
+            let seeded = options().prepare(&document).expect("prepares");
+            // Primed by reading every subschema, so the bodies the document read reuses were
+            // parsed for another target.
+            for pointer in every_pointer(&document) {
+                let _ = seeded.canonicalize_at(&pointer);
+            }
             assert_eq!(
-                options()
-                    .prepare(&document)
-                    .expect("prepares")
+                seeded
                     .canonicalize()
                     .expect("canonicalizes")
                     .to_json_schema(),
@@ -625,6 +626,22 @@ mod tests {
                     .to_json_schema(),
                 "{document}"
             );
+        }
+    }
+
+    #[test]
+    fn reading_the_same_subschema_again_reads_the_same() {
+        for document in documents() {
+            let prepared = options().prepare(&document).expect("prepares");
+            for pointer in every_pointer(&document) {
+                let first = prepared
+                    .canonicalize_at(&pointer)
+                    .map(|s| s.to_json_schema());
+                let again = prepared
+                    .canonicalize_at(&pointer)
+                    .map(|s| s.to_json_schema());
+                assert_eq!(first.ok(), again.ok(), "{pointer} of {document}");
+            }
         }
     }
 }
