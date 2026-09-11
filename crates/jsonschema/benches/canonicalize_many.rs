@@ -1,6 +1,6 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod bench {
-    use benchmark::{read_json, SMALL_SCHEMAS};
+    use benchmark::{read_json, FHIR_SCHEMA, SMALL_SCHEMAS};
     use codspeed_criterion_compat::{criterion_group, Criterion};
     use jsonschema::{
         canonical::{self, CanonicalSchema, CanonicalizeOptions},
@@ -114,11 +114,49 @@ mod bench {
         });
     }
 
+    /// Selection counts worth separating: a few reads cannot amortize work done for the whole
+    /// document, many reads can.
+    const DEFINITION_COUNTS: [usize; 2] = [3, 40];
+
+    /// Selecting subschemas from one reference-heavy document, which is what a generator walking
+    /// an `OpenAPI` document does. Each selection reads the definitions it references, and in
+    /// FHIR nearly every definition reaches nearly every other.
+    pub(crate) fn bench_canonicalize_definitions(c: &mut Criterion) {
+        let document = read_json(FHIR_SCHEMA);
+        let names: Vec<&String> = document["definitions"]
+            .as_object()
+            .expect("the fixture holds definitions")
+            .keys()
+            .collect();
+        for count in DEFINITION_COUNTS {
+            let pointers: Vec<String> = names
+                .iter()
+                .take(count)
+                .map(|name| format!("/definitions/{name}"))
+                .collect();
+            c.bench_function(&format!("canonicalize_many/definitions/{count}"), |b| {
+                // Prepared inside: what a document's definitions denote is settled as its
+                // subschemas are read, so reusing one across iterations would measure only the
+                // reads after the first.
+                b.iter_with_large_drop(|| {
+                    let Ok(prepared) = options().prepare(&document) else {
+                        return 0;
+                    };
+                    pointers
+                        .iter()
+                        .filter(|pointer| prepared.canonicalize_at(pointer).is_ok())
+                        .count()
+                });
+            });
+        }
+    }
+
     criterion_group!(
         benches,
         bench_canonicalize_many,
         bench_canonicalize_branches,
-        bench_constraint_intersect
+        bench_constraint_intersect,
+        bench_canonicalize_definitions
     );
 }
 
