@@ -557,6 +557,20 @@ impl<'a> ValidationError<'a> {
         .with_absolute_keyword_location(parts.absolute_keyword_location)
     }
 
+    /// Restates a compile-time failure as a judgement on the schema: the location that failed
+    /// to compile is where the problem sits in it.
+    pub(crate) fn into_build_error(self) -> ValidationError<'static> {
+        let parts = self.into_parts();
+        ValidationError::new(
+            LazyInstance::Ready(Cow::Owned(parts.instance.into_owned())),
+            parts.kind,
+            parts.schema_path.clone(),
+            parts.schema_path,
+            parts.evaluation_path,
+        )
+        .with_absolute_keyword_location(parts.absolute_keyword_location)
+    }
+
     pub(crate) fn additional_items(
         schema_path: Location,
         tracker: impl Into<LazyEvaluationPath>,

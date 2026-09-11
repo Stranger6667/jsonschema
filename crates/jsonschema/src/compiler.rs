@@ -979,7 +979,7 @@ fn compile_root_with_registry<R, F: Json>(
         Location::new(),
         capacity,
     );
-    compile(&ctx, resource).map_err(ValidationError::to_owned)
+    compile(&ctx, resource).map_err(ValidationError::into_build_error)
 }
 fn build_validator_with_registry<R, F: Json>(
     config: &ValidationOptions<'_, R, F>,
