@@ -796,8 +796,9 @@ mod tests {
             crate::options::PatternEngineOptions::default(),
             false,
         );
-        parse::parse(schema, &ctx, &resolver)
+        parse::parse(schema, &ctx, &resolver, None)
             .expect("the fixture parses")
+            .0
             .expect("the fixture is modeled")
     }
 
