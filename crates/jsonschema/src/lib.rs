@@ -4396,6 +4396,15 @@ mod tests {
     use serde_json::{json, Value};
     use test_case::test_case;
 
+    // A build error judges the schema itself, so its instance path is the location that failed
+    // to compile.
+    #[test_case(&json!({"type": "object", "properties": {"sku": {"type": "string", "pattern": "([unclosed"}}}), "/properties/sku/pattern")]
+    #[test_case(&json!({"patternProperties": {"([unclosed": {"type": "string"}}}), "/patternProperties/([unclosed")]
+    fn build_error_instance_path(schema: &Value, expected: &str) {
+        let error = validator_for(schema).expect_err("Should fail to compile");
+        assert_eq!(error.instance_path().as_str(), expected);
+    }
+
     #[test_case(crate::is_valid ; "autodetect")]
     #[test_case(crate::draft4::is_valid ; "draft4")]
     #[test_case(crate::draft6::is_valid ; "draft6")]

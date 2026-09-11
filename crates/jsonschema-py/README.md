@@ -201,7 +201,7 @@ except jsonschema_rs.ValidationError as exc:
 
 Failed validating "format" in schema
 
-On instance:
+On instance["format"]:
     "unknown"'''
 ```
 
