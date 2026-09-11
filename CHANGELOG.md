@@ -6,6 +6,10 @@
 
 - The instance path of a schema build error, which was empty instead of naming the keyword location that failed to compile.
 
+### Performance
+
+- Canonicalizing several subschemas of one prepared document parses each definition body once for the document instead of once per call.
+
 ## [0.56.0] - 2026-09-10
 
 ### Added

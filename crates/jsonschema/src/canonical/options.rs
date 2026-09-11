@@ -2,7 +2,7 @@
 
 use std::{
     collections::{BTreeSet, HashSet},
-    sync::Arc,
+    sync::{Arc, OnceLock},
 };
 
 use referencing::{Draft, Registry, Retrieve, Uri};
@@ -13,7 +13,8 @@ use crate::{
         context::{CanonicalizationContext, SharedRegexes},
         emptiness,
         ir::{RawJson, RawReason, Schema, SchemaKind},
-        parse, refold,
+        parse::{self, Seed},
+        refold,
         schema::CanonicalSchema,
         CanonicalizationError, DefinitionMap, ROOT_DEFINITION_KEY,
     },
@@ -166,6 +167,9 @@ pub struct PreparedDocument<'a> {
     // `None` when the draft is unknown: nothing resolves, and every selection stays verbatim.
     resolution: Option<(Registry<'a>, Uri<String>)>,
     regexes: SharedRegexes,
+    /// The document's definition bodies, parsed on first use. `None` once a pass over the whole
+    /// document declined it, which leaves each selection to parse its own.
+    seed: OnceLock<Option<Seed>>,
 }
 
 impl PreparedDocument<'_> {
@@ -225,6 +229,26 @@ impl PreparedDocument<'_> {
         Ok(pointers)
     }
 
+    /// The document's definition bodies, parsed once however many subschemas are selected.
+    ///
+    /// Reading the whole document burns its own allowance, so it runs under a context of its own:
+    /// a selection must not inherit what that pass spent or approximated.
+    fn seed(&self, resolver: &referencing::Resolver<'_>) -> Option<&Seed> {
+        self.seed
+            .get_or_init(|| {
+                let context = CanonicalizationContext::new(
+                    self.draft,
+                    self.pattern_options,
+                    self.validate_formats,
+                )
+                .sharing_regexes(Arc::clone(&self.regexes));
+                parse::parse_seed(self.document, &context, resolver)
+                    .ok()
+                    .flatten()
+            })
+            .as_ref()
+    }
+
     fn reduce(&self, target: &Value) -> Result<CanonicalSchema, CanonicalizationError> {
         let opaque = |target: &Value, reason: RawReason, pointer: Option<Arc<str>>| {
             CanonicalSchema::new(
@@ -247,7 +271,11 @@ impl PreparedDocument<'_> {
         let context =
             CanonicalizationContext::new(self.draft, self.pattern_options, self.validate_formats)
                 .sharing_regexes(Arc::clone(&self.regexes));
-        let Some(parsed) = parse::parse(target, &context, &resolver)? else {
+        let parsed = match self.seed(&resolver) {
+            Some(seed) => parse::parse_seeded(target, &context, &resolver, seed)?,
+            None => parse::parse(target, &context, &resolver)?,
+        };
+        let Some(parsed) = parsed else {
             let reason = raw_reason(&context);
             // Only an unmodeled construct sits at one node; a run out of allowance gave up on the
             // document as a whole.
@@ -298,6 +326,7 @@ fn prepare<'a, 'r: 'a>(
             validate_formats: options.validate_formats.unwrap_or(false),
             resolution: None,
             regexes: SharedRegexes::default(),
+            seed: OnceLock::new(),
         });
     }
     let validate_formats = options
@@ -322,6 +351,7 @@ fn prepare<'a, 'r: 'a>(
         validate_formats,
         resolution: Some((registry, base_uri)),
         regexes: SharedRegexes::default(),
+        seed: OnceLock::new(),
     })
 }
 
@@ -474,5 +504,127 @@ fn collect_unsatisfiable_pointers(
             }
         }
         Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{options, PreparedDocument};
+    use serde_json::{json, Value};
+
+    /// Every pointer in `document`, deepest first.
+    fn every_pointer(document: &Value) -> Vec<String> {
+        fn walk(value: &Value, pointer: &str, out: &mut Vec<String>) {
+            match value {
+                Value::Object(map) => {
+                    for (key, child) in map {
+                        walk(child, &format!("{pointer}/{key}"), out);
+                    }
+                }
+                Value::Array(items) => {
+                    for (index, child) in items.iter().enumerate() {
+                        walk(child, &format!("{pointer}/{index}"), out);
+                    }
+                }
+                Value::Null | Value::Bool(_) | Value::Number(_) | Value::String(_) => {}
+            }
+            out.push(pointer.to_string());
+        }
+        let mut out = Vec::new();
+        walk(document, "", &mut out);
+        out
+    }
+
+    /// A prepared document that parses every definition itself, as one without a usable seed does.
+    fn unseeded(document: &Value) -> PreparedDocument<'_> {
+        let prepared = options().prepare(document).expect("prepares");
+        prepared.seed.set(None).ok().expect("nothing settled yet");
+        prepared
+    }
+
+    fn documents() -> Vec<Value> {
+        vec![
+            json!({
+                "$defs": {"Named": {"type": "object", "required": ["name"]}},
+                "properties": {"a": {"$ref": "#/$defs/Named"}},
+                "allOf": [{"$ref": "#/$defs/Named"}]
+            }),
+            // A body reached only through another body.
+            json!({
+                "$defs": {
+                    "Inner": {"type": "integer", "minimum": 5},
+                    "Outer": {"allOf": [{"$ref": "#/$defs/Inner"}, {"maximum": 3}]}
+                },
+                "properties": {"a": {"$ref": "#/$defs/Outer"}}
+            }),
+            // A cycle, which the definition fixpoint has to settle.
+            json!({
+                "$defs": {"Node": {
+                    "type": "object",
+                    "properties": {"next": {"$ref": "#/$defs/Node"}}
+                }},
+                "$ref": "#/$defs/Node"
+            }),
+            // A subresource carrying its own `$id`, so keys are generated against another base.
+            json!({
+                "$defs": {"Sub": {
+                    "$id": "https://example.com/sub",
+                    "$defs": {"Leaf": {"type": "string"}},
+                    "properties": {"leaf": {"$ref": "#/$defs/Leaf"}}
+                }},
+                "properties": {"s": {"$ref": "https://example.com/sub"}}
+            }),
+            // A dynamic reference, where a key is specialized by the scope it was reached through.
+            json!({
+                "$defs": {"Items": {
+                    "$dynamicAnchor": "T",
+                    "type": "array",
+                    "items": {"$dynamicRef": "#T"}
+                }},
+                "properties": {"a": {"$ref": "#/$defs/Items"}}
+            }),
+            // A definition the document's own root stops referencing once it folds.
+            json!({
+                "$defs": {"Dead": {"allOf": [{"type": "string"}, {"type": "integer"}]}},
+                "properties": {"a": {"$ref": "#/$defs/Dead"}}
+            }),
+        ]
+    }
+
+    #[test]
+    fn a_seeded_selection_reads_the_same_as_one_that_parses_its_own_definitions() {
+        for document in documents() {
+            let seeded = options().prepare(&document).expect("prepares");
+            let plain = unseeded(&document);
+            for pointer in every_pointer(&document) {
+                let left = seeded.canonicalize_at(&pointer).map(|s| s.to_json_schema());
+                let right = plain.canonicalize_at(&pointer).map(|s| s.to_json_schema());
+                assert_eq!(
+                    left.as_ref().ok(),
+                    right.as_ref().ok(),
+                    "{pointer} of {document}"
+                );
+                assert_eq!(left.is_err(), right.is_err(), "{pointer} of {document}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_seeded_document_reads_the_same_as_one_that_parses_it_alone() {
+        for document in documents() {
+            assert_eq!(
+                options()
+                    .prepare(&document)
+                    .expect("prepares")
+                    .canonicalize()
+                    .expect("canonicalizes")
+                    .to_json_schema(),
+                unseeded(&document)
+                    .canonicalize()
+                    .expect("canonicalizes")
+                    .to_json_schema(),
+                "{document}"
+            );
+        }
     }
 }
