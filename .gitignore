@@ -2,6 +2,7 @@
 /crates/*/target
 /target/
 /profiler/target
+crates/jsonschema-rb/ext/jsonschema/target
 .hypothesis
 .benchmarks
 crates/jsonschema-wasm/pkg/
