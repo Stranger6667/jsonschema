@@ -132,7 +132,7 @@ jobs:
           cache-all-crates: "true"
           key: ${{ matrix.target }}
 
-      - uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cross
 
@@ -196,7 +196,7 @@ jobs:
 
       - name: Install wasm-bindgen
         if: ${{ matrix.needs_wasm_bindgen }}
-        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: 'wasm-bindgen@${{ steps.wasm-bindgen-version.outputs.version }}'
 
@@ -265,7 +265,7 @@ jobs:
           cache-all-crates: "true"
 
       - name: Install cargo-llvm-cov
-        uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+        uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-llvm-cov
 
@@ -682,7 +682,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
-      - uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: wasm-pack
 
@@ -811,7 +811,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
           key: ${{ matrix.target }}
 
-      - uses: taiki-e/install-action@d438492cf8a250514fa2d34b30bc3c0dc37c65ff # v2.87.8
+      - uses: taiki-e/install-action@9534c84618278caac52cb373bb164ed464dbd8af # v2.87.11
         with:
           tool: cargo-hack
 
