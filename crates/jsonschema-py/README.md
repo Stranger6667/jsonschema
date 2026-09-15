@@ -814,7 +814,7 @@ Pre-built wheels are available for:
 
 - **Linux**: `x86_64`, `i686`, `aarch64` (glibc and musl)
 - **macOS**: `x86_64`, `aarch64`, `universal2`
-- **Windows**: `x64`, `x86`
+- **Windows**: `x64`, `x86`, `arm64`
 
 ## Troubleshooting
 

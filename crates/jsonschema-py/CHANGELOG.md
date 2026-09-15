@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- Pre-built wheels for Windows on `arm64`.
+
 ### Fixed
 
 - The instance path of a schema build error, which was empty instead of naming the keyword location that failed to compile.

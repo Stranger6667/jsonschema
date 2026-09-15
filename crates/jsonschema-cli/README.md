@@ -30,6 +30,7 @@ Download the latest binary for your platform from the [releases page](https://gi
 **Windows:**
 - `jsonschema-cli-x86_64-pc-windows-msvc.zip` - MSVC runtime
 - `jsonschema-cli-x86_64-pc-windows-gnu.zip` - MinGW, no Visual Studio required
+- `jsonschema-cli-aarch64-pc-windows-msvc.zip` - ARM64, MSVC runtime
 
 > **Note:** MUSL variants are statically linked and work across all Linux distributions, including Alpine.
 

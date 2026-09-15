@@ -124,6 +124,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        id: python
         with:
           python-version: ${{ matrix.python || env.PYTHON_ABI_VERSION }}
           architecture: ${{ matrix.architecture }}
@@ -132,11 +133,11 @@ jobs:
         uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python || env.PYTHON_ABI_VERSION }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ steps.python.outputs.python-path }}
       - name: Install built wheel
         shell: bash
         run: |
-          uv venv --python ${{ matrix.python || env.PYTHON_ABI_VERSION }}
+          uv venv --python '${{ steps.python.outputs.python-path }}'
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
