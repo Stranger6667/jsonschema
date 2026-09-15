@@ -69,7 +69,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025]
+        os: [ubuntu-24.04, macos-15, windows-2025, windows-11-arm]
 
     name: Test on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -338,8 +338,14 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025]
+        os: [ubuntu-24.04, macos-15, windows-2025, windows-11-arm]
         python-version: ['3.10', '3.11', '3.12', '3.13', '3.14', 'pypy3.11']
+        exclude:
+          # CPython does not have a Windows ARM64 release before 3.11, and PyPy has none.
+          - os: windows-11-arm
+            python-version: '3.10'
+          - os: windows-11-arm
+            python-version: 'pypy3.11'
 
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -353,16 +359,19 @@ jobs:
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
-      - run: uv python install ${{ matrix.python-version }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        id: python
+        with:
+          python-version: ${{ matrix.python-version }}
 
-      - run: uvx --with=".[tests]" --python='${{ matrix.python-version }}' pytest tests-py
+      - run: uvx --with=".[tests]" --python='${{ steps.python.outputs.python-path }}' pytest tests-py
         working-directory: crates/jsonschema-py
 
   test-python-freethreaded:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025]
+        os: [ubuntu-24.04, macos-15, windows-2025, windows-11-arm]
         python-version: ['3.14t', '3.15t']
 
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
@@ -377,30 +386,21 @@ jobs:
 
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
 
-      - run: uv python install ${{ matrix.python-version }}
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        id: python
+        with:
+          python-version: ${{ matrix.python-version }}
+          allow-prereleases: true
 
-      - name: Find Python path (Windows)
-        if: runner.os == 'Windows'
-        id: python-path-windows
-        shell: bash
-        run: echo "path=$(uv python find ${{ matrix.python-version }})" >> "$GITHUB_OUTPUT"
-
-      - name: Build wheel (Windows)
-        if: runner.os == 'Windows'
+      - name: Build wheel
         uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
-          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ steps.python-path-windows.outputs.path }}
-
-      - name: Build wheel (Unix)
-        if: runner.os != 'Windows'
-        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
-        with:
-          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ matrix.python-version }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out crates/jsonschema-py/dist --interpreter ${{ steps.python.outputs.python-path }}
 
       - name: Test wheel
         shell: bash
         run: |
-          uv venv --python ${{ matrix.python-version }}
+          uv venv --python '${{ steps.python.outputs.python-path }}'
           uv pip install crates/jsonschema-py/dist/*.whl
           uv run --with pytest --with hypothesis pytest crates/jsonschema-py/tests-py
 
