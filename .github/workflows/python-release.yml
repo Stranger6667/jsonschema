@@ -101,32 +101,47 @@ jobs:
           path: dist
 
   windows:
-    runs-on: windows-2025
+    runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
-        target: [ x64, x86 ]
+        include:
+          - label: x64
+            os: windows-2025
+            target: x64
+            architecture: x64
+          - label: x86
+            os: windows-2025
+            target: x86
+            architecture: x86
+          # CPython does not have a Windows ARM64 release before 3.11.
+          - label: arm64
+            os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            architecture: arm64
+            python: "3.11"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         with:
-          python-version: ${{ env.PYTHON_ABI_VERSION }}
-          architecture: ${{ matrix.target }}
+          python-version: ${{ matrix.python || env.PYTHON_ABI_VERSION }}
+          architecture: ${{ matrix.architecture }}
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels
         uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
           target: ${{ matrix.target }}
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ matrix.python || env.PYTHON_ABI_VERSION }}
       - name: Install built wheel
         shell: bash
         run: |
-          uv venv --python ${{ env.PYTHON_ABI_VERSION }}
+          uv venv --python ${{ matrix.python || env.PYTHON_ABI_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
       - name: Upload wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: wheel-windows-${{ matrix.target }}
+          name: wheel-windows-${{ matrix.label }}
           path: dist
 
   linux:
@@ -298,30 +313,35 @@ jobs:
           path: dist
 
   windows-freethreaded:
-    runs-on: windows-2025
+    runs-on: ${{ matrix.platform.os }}
     strategy:
       fail-fast: false
       matrix:
         python_version: ["3.14t", "3.15t"]
+        platform:
+          - os: windows-2025
+            target: x64
+            label: x64
+          - os: windows-11-arm
+            target: aarch64-pc-windows-msvc
+            label: arm64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
-      - name: Install Python
-        run: uv python install ${{ matrix.python_version }}
-      - name: Find Python path
-        id: python-paths
-        shell: bash
-        run: echo "py=$(uv python find ${{ matrix.python_version }})" >> "$GITHUB_OUTPUT"
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        id: python
+        with:
+          python-version: ${{ matrix.python_version }}
+          allow-prereleases: true
       - uses: dtolnay/rust-toolchain@stable
       - name: Build wheels
         uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
         with:
-          target: x64
-          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ steps.python-paths.outputs.py }}
+          target: ${{ matrix.platform.target }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ steps.python.outputs.python-path }}
       - name: Upload wheels
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
-          name: wheel-windows-freethreaded-${{ matrix.python_version }}
+          name: wheel-windows-freethreaded-${{ matrix.python_version }}-${{ matrix.platform.label }}
           path: dist
 
   pypy:
