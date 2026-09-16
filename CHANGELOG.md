@@ -2,9 +2,18 @@
 
 ## [Unreleased]
 
+### Added
+
+- `PreparedDocument::unsatisfiable`, naming the keywords that leave each unsatisfiable subschema empty and where they are.
+
+### Changed
+
+- `PreparedDocument::unsatisfiable_pointers` is replaced by `PreparedDocument::unsatisfiable`.
+
 ### Fixed
 
 - The instance path of a schema build error, which was empty instead of naming the keyword location that failed to compile.
+- `PreparedDocument::unsatisfiable_pointers` passed over a subschema that admits no value only once its references resolve, such as an `allOf` over two `$ref`s.
 
 ### Performance
 

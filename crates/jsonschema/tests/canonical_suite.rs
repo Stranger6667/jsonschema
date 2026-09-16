@@ -41,10 +41,10 @@ fn run_case(case: CanonicalCase) {
         let Ok(prepared) = case.options().prepare(input) else {
             continue;
         };
-        for pointer in prepared.unsatisfiable_pointers().expect("reports") {
+        for pointer in prepared.unsatisfiable().expect("reports").keys() {
             assert_eq!(
                 prepared
-                    .canonicalize_at(&pointer)
+                    .canonicalize_at(pointer)
                     .expect("canonicalizes")
                     .satisfiability(),
                 Satisfiability::No,

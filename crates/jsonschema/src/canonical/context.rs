@@ -231,6 +231,17 @@ impl CanonicalizationContext {
         (answer, left == 0)
     }
 
+    /// Run `work` without letting it change the run: the budget it spends is given back and the
+    /// inexactness it reaches is forgotten. A recording parse must spend exactly what the plain
+    /// parse spends. What it remembers stays: a pair the probe could only approximate had less
+    /// budget than any later computation of the same pair, so the run reads the same answer.
+    pub(crate) fn speculate<T>(&self, work: impl FnOnce() -> T) -> T {
+        let budget = self.intersections_left.get();
+        let (answer, _) = self.probe(work);
+        self.intersections_left.set(budget);
+        answer
+    }
+
     pub(crate) fn outgrew_distribution(&self) -> bool {
         self.intersections_left.get() == 0
     }

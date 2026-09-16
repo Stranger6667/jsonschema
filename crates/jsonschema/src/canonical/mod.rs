@@ -182,7 +182,7 @@ pub(crate) mod schema;
 pub(crate) mod view;
 
 pub use error::{CanonicalizationError, OperandMismatch};
-pub use options::{options, CanonicalizeOptions, PreparedDocument};
+pub use options::{options, CanonicalizeOptions, Cause, PreparedDocument, UnsatisfiableReason};
 pub use schema::{CanonicalSchema, Containment, Satisfiability};
 pub use view::{
     ArrayView, CanonicalKind, CanonicalView, ContainsView, Distinctness, IntegerView, NumberView,
