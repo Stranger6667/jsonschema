@@ -32,47 +32,90 @@ pub(crate) fn through_targets(
     mut parsed: ParseOutput,
     ctx: &CanonicalizationContext,
 ) -> ParseOutput {
-    if !parsed.has_references || !foldable(&parsed) {
-        return parsed;
-    }
-    // Bails on a cycle: a partly-folded cycle is meaningless, and an acyclic map is what lets
-    // `algebra::resolved` walk without a visited set. The order puts each body after the bodies it
-    // references, so one pass suffices instead of one round per level of the chain.
-    let Some(order) = emptiness::settling_order(&parsed.definitions) else {
+    let Some(settled) = Settled::of(&parsed, ctx) else {
         return parsed;
     };
-    // Normalization must not read targets, or it would produce forms the parse cannot.
-    let plain =
-        CanonicalizationContext::new(ctx.draft(), ctx.pattern_options(), ctx.validate_formats());
-    // One context for the whole pass, so the intersection cache and the budget are shared. It
-    // holds the map alone, so a settled body lands in place and later bodies read it.
-    let mut resolving = reading(&parsed.definitions, ctx);
-    for uri in order {
-        let body = resolving
-            .targets()
-            .get(&uri)
-            .cloned()
-            .expect("the order names the map's own keys");
-        let settled = settle(&body, resolving.targets(), &resolving, &plain);
-        // An approximated result is not a canonical form; keep what the parse built. Both contexts
-        // answer, since the union folds run against `plain`.
-        if approximated(&resolving) || approximated(&plain) {
-            return parsed;
-        }
-        if settled == body {
-            continue;
-        }
-        resolving.targets_mut().insert(uri, settled);
-    }
-    let root = settle(&parsed.root, resolving.targets(), &resolving, &plain);
-    if approximated(&resolving) || approximated(&plain) {
+    let Some(root) = settled.settle(&parsed.root) else {
         return parsed;
-    }
+    };
     parsed.root = root;
-    parsed.definitions = resolving.into_targets();
+    parsed.definitions = settled.into_definitions();
     // Folding inlines targets, which can leave definitions unreferenced.
     parse::prune_unreachable_definitions(&parsed.root, &mut parsed.definitions);
     parsed
+}
+
+/// A document's bodies folded through what they reference, for settling the schemas read
+/// against them the same way.
+pub(crate) struct Settled {
+    /// One context for the whole pass, so the intersection cache and the budget are shared. It
+    /// holds the map alone, so a settled body lands in place and later bodies read it.
+    resolving: CanonicalizationContext,
+    /// Normalization must not read targets, or it would produce forms the parse cannot.
+    plain: CanonicalizationContext,
+}
+
+impl Settled {
+    /// `None` where the document cannot be folded: it holds no reference, a shape `foldable`
+    /// refuses, a reference cycle, or a body the pass could only approximate.
+    pub(crate) fn of(parsed: &ParseOutput, ctx: &CanonicalizationContext) -> Option<Self> {
+        if !parsed.has_references || !foldable(parsed) {
+            return None;
+        }
+        // Bails on a cycle: a partly-folded cycle is meaningless, and an acyclic map is what lets
+        // `algebra::resolved` walk without a visited set. The order puts each body after the
+        // bodies it references, so one pass suffices instead of one round per level of the chain.
+        let order = emptiness::settling_order(&parsed.definitions)?;
+        let plain = CanonicalizationContext::new(
+            ctx.draft(),
+            ctx.pattern_options(),
+            ctx.validate_formats(),
+        );
+        let mut resolving = reading(&parsed.definitions, ctx);
+        for uri in order {
+            let body = resolving
+                .targets()
+                .get(&uri)
+                .cloned()
+                .expect("the order names the map's own keys");
+            let settled = settle(&body, resolving.targets(), &resolving, &plain);
+            // An approximated result is not a canonical form; keep what the parse built. Both
+            // contexts answer, since the union folds run against `plain`.
+            if approximated(&resolving) || approximated(&plain) {
+                return None;
+            }
+            if settled == body {
+                continue;
+            }
+            resolving.targets_mut().insert(uri, settled);
+        }
+        Some(Self { resolving, plain })
+    }
+
+    /// `schema` folded through the settled bodies, or `None` where the pass could only
+    /// approximate it.
+    pub(crate) fn settle(&self, schema: &Schema) -> Option<Schema> {
+        let settled = settle(
+            schema,
+            self.resolving.targets(),
+            &self.resolving,
+            &self.plain,
+        );
+        (!approximated(&self.resolving) && !approximated(&self.plain)).then_some(settled)
+    }
+
+    pub(crate) fn definitions(&self) -> &DefinitionMap {
+        self.resolving.targets()
+    }
+
+    /// The context reading through the settled bodies.
+    pub(crate) fn context(&self) -> &CanonicalizationContext {
+        &self.resolving
+    }
+
+    fn into_definitions(self) -> DefinitionMap {
+        self.resolving.into_targets()
+    }
 }
 
 /// `folded` until it stops changing, since one round's rebuilt leaves can hold `allOf`s the next

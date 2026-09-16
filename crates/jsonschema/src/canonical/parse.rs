@@ -40,7 +40,23 @@ pub(crate) struct ParseOutput {
     /// What this parse made of each node it read, for the nodes that can be unsatisfiable.
     pub(crate) parsed_nodes: AHashMap<*const Value, ParsedNode>,
     /// The same for each definition body, kept whether or not the final IR still reads it.
-    pub(crate) parsed_definitions: AHashMap<Arc<str>, ParsedNode>,
+    pub(crate) parsed_definitions: AHashMap<Arc<str>, ParsedBody>,
+    /// The sides of the nodes drill may look into, `base` first. Filled only when recording.
+    pub(crate) kept_parts: AHashMap<usize, Vec<(PartKind, Schema)>>,
+    /// The target each definition key was generated for. Filled only when recording.
+    pub(crate) sources: AHashMap<Arc<str>, usize>,
+    /// Nodes whose form holds a reference, with that form: once every body is known they may
+    /// still fold to nothing. Filled only when recording.
+    pub(crate) unsettled: Vec<(usize, Schema)>,
+}
+
+impl ParseOutput {
+    pub(crate) fn kept(&self) -> Kept<'_> {
+        Kept {
+            parts: &self.kept_parts,
+            sources: &self.sources,
+        }
+    }
 }
 
 /// The definition bodies the reads of one document have parsed, for reuse by its later reads.
@@ -120,7 +136,7 @@ pub(crate) fn parse<'a>(
 }
 
 /// [`parse`] also noting what each document node parsed to, which only
-/// [`PreparedDocument::unsatisfiable_pointers`](crate::canonical::PreparedDocument::unsatisfiable_pointers)
+/// [`PreparedDocument::unsatisfiable`](crate::canonical::PreparedDocument::unsatisfiable)
 /// reads. Recording allocates two maps per parse, so every other caller skips it.
 pub(crate) fn parse_tracking_nodes<'a>(
     value: &'a Value,
@@ -138,10 +154,175 @@ pub(crate) fn parse_tracking_nodes<'a>(
     )
 }
 
-/// What a parse made of one document node: unsatisfiable outright, or a pointer to another node.
+/// What a parse made of one document node: unsatisfiable, with why, or a pointer to another node.
 pub(crate) enum ParsedNode {
+    Unsatisfiable(RecordedReason),
+    Reference(Arc<str>),
+}
+
+/// What a parse made of one definition body.
+pub(crate) enum ParsedBody {
     Unsatisfiable,
     Reference(Arc<str>),
+}
+
+/// One part of a schema object's keyword fold, by the keyword family that produced it.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum PartKind {
+    Base,
+    String,
+    Number,
+    Array,
+    Object,
+    AnyOf,
+    OneOf,
+    Not,
+    Conditional,
+    Dependencies,
+    DependentRequired,
+    DependentSchemas,
+    Reference,
+    /// One `allOf` element; the i-th `Branch` tag of a fold is `allOf[i]`.
+    Branch,
+}
+
+impl PartKind {
+    /// The keywords of the family, in the order a cause lists them. A branch that cannot be
+    /// pointed at is named by the keyword holding it.
+    pub(crate) fn keywords(self) -> &'static [&'static str] {
+        match self {
+            PartKind::Base => &["type", "enum", "const"],
+            PartKind::String => &[
+                "minLength",
+                "maxLength",
+                "pattern",
+                "format",
+                "contentEncoding",
+                "contentMediaType",
+                "contentSchema",
+            ],
+            PartKind::Number => &[
+                "minimum",
+                "maximum",
+                "exclusiveMinimum",
+                "exclusiveMaximum",
+                "multipleOf",
+            ],
+            PartKind::Array => &[
+                "items",
+                "prefixItems",
+                "additionalItems",
+                "contains",
+                "minContains",
+                "maxContains",
+                "minItems",
+                "maxItems",
+                "uniqueItems",
+                "unevaluatedItems",
+            ],
+            PartKind::Object => &[
+                "properties",
+                "patternProperties",
+                "additionalProperties",
+                "required",
+                "propertyNames",
+                "minProperties",
+                "maxProperties",
+                "unevaluatedProperties",
+            ],
+            PartKind::AnyOf => &["anyOf"],
+            PartKind::OneOf => &["oneOf"],
+            PartKind::Not => &["not"],
+            PartKind::Conditional => &["if", "then", "else"],
+            PartKind::Dependencies => &["dependencies"],
+            PartKind::DependentRequired => &["dependentRequired"],
+            PartKind::DependentSchemas => &["dependentSchemas"],
+            PartKind::Reference => &["$ref", "$dynamicRef", "$recursiveRef"],
+            PartKind::Branch => &["allOf"],
+        }
+    }
+}
+
+/// A cause as the parse records it, by node address; the document walk turns it into a pointer.
+#[derive(Clone)]
+pub(crate) struct RecordedCause {
+    pub(crate) node: usize,
+    /// `None` names the whole subschema at `node`.
+    pub(crate) kind: Option<PartKind>,
+    /// What this cause was narrowed from, reported instead when `node` has no pointer.
+    pub(crate) origin: Option<Box<RecordedCause>>,
+}
+
+impl RecordedCause {
+    fn family(node: usize, kind: PartKind) -> Self {
+        Self {
+            node,
+            kind: Some(kind),
+            origin: None,
+        }
+    }
+
+    fn whole(node: usize) -> Self {
+        Self {
+            node,
+            kind: None,
+            origin: None,
+        }
+    }
+
+    pub(crate) fn for_each_node(&self, visit: &mut impl FnMut(usize)) {
+        visit(self.node);
+        if let Some(origin) = &self.origin {
+            origin.for_each_node(visit);
+        }
+    }
+
+    fn relabel(&mut self, from: usize, to: usize) {
+        if self.node == from {
+            self.node = to;
+        }
+        if let Some(origin) = &mut self.origin {
+            origin.relabel(from, to);
+        }
+    }
+}
+
+#[derive(Clone)]
+pub(crate) enum RecordedReason {
+    Literal,
+    Empty(RecordedCause),
+    Conflict(Vec<RecordedCause>),
+}
+
+impl RecordedReason {
+    /// Every address a cause names.
+    pub(crate) fn for_each_node(&self, visit: &mut impl FnMut(usize)) {
+        match self {
+            RecordedReason::Literal => {}
+            RecordedReason::Empty(cause) => cause.for_each_node(visit),
+            RecordedReason::Conflict(causes) => {
+                for cause in causes {
+                    cause.for_each_node(visit);
+                }
+            }
+        }
+    }
+
+    fn relabel(&mut self, from: usize, to: usize) {
+        match self {
+            RecordedReason::Literal => {}
+            RecordedReason::Empty(cause) => cause.relabel(from, to),
+            RecordedReason::Conflict(causes) => {
+                for cause in causes {
+                    cause.relabel(from, to);
+                }
+            }
+        }
+    }
+}
+
+fn address(value: &Value) -> usize {
+    std::ptr::from_ref(value) as usize
 }
 
 /// Targets a parse resolves to a fixed body rather than to a symbolic `Reference`.
@@ -343,6 +524,11 @@ fn parse_once<'a>(
         prune_unreachable_definitions(&root, &mut state.definitions);
     }
     let local_definitions = local_definitions(&state);
+    let sources = if recording == Recording::Record {
+        state.sources.clone()
+    } else {
+        AHashMap::default()
+    };
     Ok(DocumentParse {
         output: Some(ParseOutput {
             root,
@@ -352,6 +538,9 @@ fn parse_once<'a>(
             pending_choices: state.facts.pending_choices,
             parsed_nodes: state.parsed_nodes,
             parsed_definitions: state.parsed_definitions,
+            kept_parts: state.kept_parts,
+            sources,
+            unsettled: state.unsettled,
         }),
         needs_dynamic_scope,
         sources: state.sources,
@@ -374,8 +563,16 @@ struct ParseState<'a, 'b> {
     /// Entries for [`ParseOutput::parsed_nodes`].
     parsed_nodes: AHashMap<*const Value, ParsedNode>,
     /// Entries for [`ParseOutput::parsed_definitions`].
-    parsed_definitions: AHashMap<Arc<str>, ParsedNode>,
+    parsed_definitions: AHashMap<Arc<str>, ParsedBody>,
     recording: Recording,
+    /// The reason the node being parsed came out empty, taken by `note_parsed_node`.
+    pending_reason: Option<RecordedReason>,
+    /// Set by a caller about to parse a node drill may look into; taken on entry.
+    keep_next_parts: bool,
+    /// The parts of the nodes drill may look into, `base` first.
+    kept_parts: AHashMap<usize, Vec<(PartKind, Schema)>>,
+    /// Nodes whose form holds a reference, with that form.
+    unsettled: Vec<(usize, Schema)>,
 }
 
 /// Flags set anywhere in the document and read after the whole parse.
@@ -446,6 +643,10 @@ impl<'a, 'b> ParseState<'a, 'b> {
             parsed_nodes: AHashMap::default(),
             parsed_definitions: AHashMap::default(),
             recording,
+            pending_reason: None,
+            keep_next_parts: false,
+            kept_parts: AHashMap::default(),
+            unsettled: Vec::new(),
         }
     }
 
@@ -468,7 +669,11 @@ impl<'a, 'b> ParseState<'a, 'b> {
             return;
         }
         let entry = match parsed.map(Schema::kind) {
-            Some(SchemaKind::False) => ParsedNode::Unsatisfiable,
+            Some(SchemaKind::False) => ParsedNode::Unsatisfiable(
+                self.pending_reason
+                    .take()
+                    .expect("an empty parse names its reason"),
+            ),
             // A pointer and the body it names accept the same values, so a body proven unsatisfiable
             // after this node was read still makes it unsatisfiable.
             Some(SchemaKind::Reference(key)) => ParsedNode::Reference(Arc::clone(key)),
@@ -500,8 +705,8 @@ impl<'a, 'b> ParseState<'a, 'b> {
             return;
         }
         let entry = match parsed.kind() {
-            SchemaKind::False => ParsedNode::Unsatisfiable,
-            SchemaKind::Reference(names) => ParsedNode::Reference(Arc::clone(names)),
+            SchemaKind::False => ParsedBody::Unsatisfiable,
+            SchemaKind::Reference(names) => ParsedBody::Reference(Arc::clone(names)),
             SchemaKind::MultiType(_)
             | SchemaKind::TypedGroup { .. }
             | SchemaKind::String(_)
@@ -520,6 +725,76 @@ impl<'a, 'b> ParseState<'a, 'b> {
         };
         self.parsed_definitions.insert(Arc::clone(key), entry);
     }
+
+    /// The entries a rewritten object recorded under its own address belong to the document node.
+    fn move_recorded(&mut self, from: usize, to: usize) {
+        if let Some(reason) = &mut self.pending_reason {
+            reason.relabel(from, to);
+        }
+        if let Some(parts) = self.kept_parts.remove(&from) {
+            self.kept_parts.insert(to, parts);
+        }
+    }
+
+    fn kept(&self) -> Kept<'_> {
+        Kept {
+            parts: &self.kept_parts,
+            sources: &self.sources,
+        }
+    }
+
+    /// Keep the sides a caller asked for, and those holding a reference: every body known, the
+    /// node may still fold to nothing, and is then settled and named through them.
+    fn record_sides(
+        &mut self,
+        node: usize,
+        sides: Vec<(PartKind, Schema)>,
+        result: &Schema,
+        keep: bool,
+    ) {
+        let unsettled =
+            !matches!(result.kind(), SchemaKind::False) && algebra::contains_reference(result);
+        if unsettled {
+            self.unsettled.push((node, result.clone()));
+        }
+        if keep || unsettled {
+            self.kept_parts.insert(node, sides);
+        }
+    }
+
+    /// The sides of a `$ref` beside assertion siblings: the reference, then the parts of the
+    /// siblings, which were parsed as an object of their own that the document does not hold.
+    fn record_reference_siblings(
+        &mut self,
+        node: usize,
+        map: &Map<String, Value>,
+        siblings: &Value,
+        combined: Schema,
+        result: &Schema,
+        keep: bool,
+        ctx: &CanonicalizationContext,
+    ) {
+        // Whatever the sibling object recorded under its own address is read through the node.
+        self.parsed_nodes.remove(&std::ptr::from_ref(siblings));
+        let mut sides = vec![(PartKind::Reference, combined)];
+        sides.extend(
+            self.kept_parts
+                .remove(&address(siblings))
+                .expect("the sibling parse kept its parts"),
+        );
+        if matches!(result.kind(), SchemaKind::False) {
+            let reason = attribute(node, map, &sides, ctx, &self.kept());
+            self.pending_reason = Some(reason);
+        }
+        self.record_sides(node, sides, result, keep);
+    }
+}
+
+/// What drill reads: the parts kept for the nodes it may look into, and the target each
+/// definition key names.
+pub(crate) struct Kept<'k> {
+    pub(crate) parts: &'k AHashMap<usize, Vec<(PartKind, Schema)>>,
+    pub(crate) sources: &'k AHashMap<Arc<str>, usize>,
 }
 
 fn parse_schema<'a>(
@@ -698,9 +973,16 @@ fn parse_schema_in_scope<'a>(
     resolver: &Resolver<'a>,
     state: &mut ParseState<'a, '_>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
+    let recording = state.recording == Recording::Record;
+    let keep = recording && std::mem::take(&mut state.keep_next_parts);
     let map = match value {
         Value::Bool(true) => return Ok(Some(Schema::truthy())),
-        Value::Bool(false) => return Ok(Some(Schema::falsy())),
+        Value::Bool(false) => {
+            if recording {
+                state.pending_reason = Some(RecordedReason::Literal);
+            }
+            return Ok(Some(Schema::falsy()));
+        }
         Value::Object(map) => map,
         // Not a schema document; the root is rejected earlier, a nested one keeps the document raw.
         Value::Null | Value::Number(_) | Value::String(_) | Value::Array(_) => return Ok(None),
@@ -711,8 +993,13 @@ fn parse_schema_in_scope<'a>(
         let Some(degraded) = degrade_unevaluated(map, ctx.draft(), ctx, resolver)? else {
             return Ok(None);
         };
-        return ctx
-            .over_rewritten(|| parse_schema_in_scope(&degraded, ctx, is_root, resolver, state));
+        state.keep_next_parts = keep;
+        let parsed =
+            ctx.over_rewritten(|| parse_schema_in_scope(&degraded, ctx, is_root, resolver, state))?;
+        if recording {
+            state.move_recorded(address(&degraded), address(value));
+        }
+        return Ok(parsed);
     }
 
     // An untracked attempt stops before resolving a dynamic reference. Re-running it with the
@@ -765,10 +1052,15 @@ fn parse_schema_in_scope<'a>(
         }
     }
     if let Some(combined) = combine_references(references, ctx) {
-        if matches!(ctx.draft(), Draft::Draft4 | Draft::Draft6 | Draft::Draft7) {
-            return Ok(Some(combined));
-        }
-        if !ref_has_assertion_siblings(map, ctx.draft()) {
+        if matches!(ctx.draft(), Draft::Draft4 | Draft::Draft6 | Draft::Draft7)
+            || !ref_has_assertion_siblings(map, ctx.draft())
+        {
+            if recording && matches!(combined.kind(), SchemaKind::False) {
+                state.pending_reason = Some(RecordedReason::Empty(RecordedCause::family(
+                    address(value),
+                    PartKind::Reference,
+                )));
+            }
             return Ok(Some(combined));
         }
         let mut siblings = map.clone();
@@ -779,11 +1071,26 @@ fn parse_schema_in_scope<'a>(
         // the base a second time when the clone re-enters below.
         siblings.remove("$id");
         siblings.remove("id");
-        return Ok(ctx
-            .over_rewritten(|| {
-                parse_schema(&Value::Object(siblings), ctx, is_root, resolver, state)
-            })?
-            .map(|siblings| algebra::intersect(combined, siblings, ctx)));
+        let siblings = Value::Object(siblings);
+        state.keep_next_parts = recording;
+        let Some(parsed) =
+            ctx.over_rewritten(|| parse_schema(&siblings, ctx, is_root, resolver, state))?
+        else {
+            return Ok(None);
+        };
+        let result = algebra::intersect(combined.clone(), parsed, ctx);
+        if recording {
+            state.record_reference_siblings(
+                address(value),
+                map,
+                &siblings,
+                combined,
+                &result,
+                keep,
+                ctx,
+            );
+        }
+        return Ok(Some(result));
     }
 
     let mut type_set = None;
@@ -824,7 +1131,7 @@ fn parse_schema_in_scope<'a>(
     let mut if_schema: Option<Schema> = None;
     let mut then_schema: Option<Schema> = None;
     let mut else_schema: Option<Schema> = None;
-    let mut parts: Vec<Schema> = Vec::new();
+    let mut parts: Vec<(PartKind, Schema)> = Vec::new();
     for (key, entry) in map {
         match (key.as_str(), entry) {
             ("$schema", Value::String(uri)) => {
@@ -846,8 +1153,9 @@ fn parse_schema_in_scope<'a>(
             | ("$defs" | "definitions", Value::Object(_)) => {}
             ("allOf", Value::Array(branches)) => {
                 for branch in branches {
+                    state.keep_next_parts = recording;
                     match parse_schema(branch, ctx, false, resolver, state)? {
-                        Some(schema) => parts.push(schema),
+                        Some(schema) => parts.push((PartKind::Branch, schema)),
                         None => return Ok(None),
                     }
                 }
@@ -860,7 +1168,7 @@ fn parse_schema_in_scope<'a>(
                         None => return Ok(None),
                     }
                 }
-                parts.push(algebra::union(branches, ctx));
+                parts.push((PartKind::AnyOf, algebra::union(branches, ctx)));
             }
             ("oneOf", Value::Array(items)) => {
                 let mut branches = Vec::new();
@@ -877,7 +1185,7 @@ fn parse_schema_in_scope<'a>(
                     &mut state.facts.pending_choices,
                     ctx,
                 ) {
-                    Some(schema) => parts.push(schema),
+                    Some(schema) => parts.push((PartKind::OneOf, schema)),
                     None => return Ok(None),
                 }
             }
@@ -1164,12 +1472,18 @@ fn parse_schema_in_scope<'a>(
                 for (key, entry) in entries {
                     match entry {
                         Value::Array(names) if names.iter().all(Value::is_string) => {
-                            parts.push(required_dependency(key, names, ctx));
+                            parts.push((
+                                PartKind::Dependencies,
+                                required_dependency(key, names, ctx),
+                            ));
                         }
                         value @ (Value::Object(_) | Value::Bool(_)) => {
                             match parse_schema(value, ctx, false, resolver, state)? {
                                 Some(schema) => {
-                                    parts.push(schema_dependency(key, schema, ctx));
+                                    parts.push((
+                                        PartKind::Dependencies,
+                                        schema_dependency(key, schema, ctx),
+                                    ));
                                 }
                                 None => return Ok(None),
                             }
@@ -1186,7 +1500,10 @@ fn parse_schema_in_scope<'a>(
                 for (key, entry) in entries {
                     match entry {
                         Value::Array(names) if names.iter().all(Value::is_string) => {
-                            parts.push(required_dependency(key, names, ctx));
+                            parts.push((
+                                PartKind::DependentRequired,
+                                required_dependency(key, names, ctx),
+                            ));
                         }
                         Value::Null
                         | Value::Bool(_)
@@ -1205,7 +1522,10 @@ fn parse_schema_in_scope<'a>(
                         value @ (Value::Object(_) | Value::Bool(_)) => {
                             match parse_schema(value, ctx, false, resolver, state)? {
                                 Some(schema) => {
-                                    parts.push(schema_dependency(key, schema, ctx));
+                                    parts.push((
+                                        PartKind::DependentSchemas,
+                                        schema_dependency(key, schema, ctx),
+                                    ));
                                 }
                                 None => return Ok(None),
                             }
@@ -1227,7 +1547,7 @@ fn parse_schema_in_scope<'a>(
                     .get("not")
                     .expect("the double-negation guard found its body");
                 match parse_schema(body, ctx, false, resolver, state)? {
-                    Some(schema) => parts.push(schema),
+                    Some(schema) => parts.push((PartKind::Not, schema)),
                     None => return Ok(None),
                 }
             }
@@ -1236,7 +1556,7 @@ fn parse_schema_in_scope<'a>(
             ("not", value) if ctx.draft().is_known_keyword("not") => {
                 match parse_schema(value, ctx, false, resolver, state)? {
                     Some(child) => match negate::negate_in_place(&child, &state.definitions, ctx) {
-                        Some(negation) => parts.push(negation),
+                        Some(negation) => parts.push((PartKind::Not, negation)),
                         None => return Ok(None),
                     },
                     None => return Ok(None),
@@ -1287,7 +1607,7 @@ fn parse_schema_in_scope<'a>(
             content_encodings,
             excluded: Vec::new(),
         };
-        parts.push(string_facet_schema(leaf, ctx));
+        parts.push((PartKind::String, string_facet_schema(leaf, ctx)));
     }
 
     // `minItems: 0` is the type-default, so drop it: the window then compares equal to one without it.
@@ -1344,18 +1664,21 @@ fn parse_schema_in_scope<'a>(
         || tail.is_some()
         || !contains.is_empty()
     {
-        parts.push(array_facet_schema(
-            ArrayLeaf {
-                lengths: LengthBounds {
-                    minimum: min_items,
-                    maximum: max_items,
+        parts.push((
+            PartKind::Array,
+            array_facet_schema(
+                ArrayLeaf {
+                    lengths: LengthBounds {
+                        minimum: min_items,
+                        maximum: max_items,
+                    },
+                    distinctness,
+                    prefix,
+                    items: tail,
+                    contains,
                 },
-                distinctness,
-                prefix,
-                items: tail,
-                contains,
-            },
-            ctx,
+                ctx,
+            ),
         ));
     }
 
@@ -1420,20 +1743,23 @@ fn parse_schema_in_scope<'a>(
     {
         // Every draft marks `required` as unique, so the meta-validated list only needs ordering.
         required.sort();
-        parts.push(object_facet_schema(
-            ObjectLeaf {
-                sizes: LengthBounds {
-                    minimum: min_properties,
-                    maximum: max_properties,
+        parts.push((
+            PartKind::Object,
+            object_facet_schema(
+                ObjectLeaf {
+                    sizes: LengthBounds {
+                        minimum: min_properties,
+                        maximum: max_properties,
+                    },
+                    required,
+                    property_names,
+                    properties,
+                    pattern_properties,
+                    additional: additional_schema,
+                    violations: Vec::new(),
                 },
-                required,
-                property_names,
-                properties,
-                pattern_properties,
-                additional: additional_schema,
-                violations: Vec::new(),
-            },
-            ctx,
+                ctx,
+            ),
         ));
     }
 
@@ -1452,16 +1778,19 @@ fn parse_schema_in_scope<'a>(
             return Ok(None);
         };
         if type_set == Some(JsonTypeSet::from(JsonType::Integer)) {
-            parts.push(algebra::integer_leaf(
-                IntegerLeaf {
-                    bounds,
-                    multiple_of: leaf.multiple_of,
-                    not_multiple_of: ExcludedDivisors::default(),
-                },
-                ctx,
+            parts.push((
+                PartKind::Number,
+                algebra::integer_leaf(
+                    IntegerLeaf {
+                        bounds,
+                        multiple_of: leaf.multiple_of,
+                        not_multiple_of: ExcludedDivisors::default(),
+                    },
+                    ctx,
+                ),
             ));
         } else {
-            parts.push(number_facet_schema(leaf, ctx));
+            parts.push((PartKind::Number, number_facet_schema(leaf, ctx)));
         }
     }
 
@@ -1471,14 +1800,20 @@ fn parse_schema_in_scope<'a>(
         // ¬if ∨ then: a value the condition rejects needs nothing further.
         (Some(condition), Some(then), None) => {
             match negate::negate_in_place(&condition, &state.definitions, ctx) {
-                Some(negation) => parts.push(algebra::union(vec![negation, then], ctx)),
+                Some(negation) => parts.push((
+                    PartKind::Conditional,
+                    algebra::union(vec![negation, then], ctx),
+                )),
                 None => return Ok(None),
             }
         }
         // if ∨ else: a value the condition admits needs nothing further, so the negation is
         // never needed - unlike every other arm here, this one cannot force the document raw.
         (Some(condition), None, Some(else_branch)) => {
-            parts.push(algebra::union(vec![condition, else_branch], ctx));
+            parts.push((
+                PartKind::Conditional,
+                algebra::union(vec![condition, else_branch], ctx),
+            ));
         }
         // (if ∧ then) ∨ (¬if ∧ else)
         (Some(condition), Some(then), Some(else_branch)) => {
@@ -1486,7 +1821,10 @@ fn parse_schema_in_scope<'a>(
                 Some(negation) => {
                     let holds = algebra::intersect(condition, then, ctx);
                     let fails = algebra::intersect(negation, else_branch, ctx);
-                    parts.push(algebra::union(vec![holds, fails], ctx));
+                    parts.push((
+                        PartKind::Conditional,
+                        algebra::union(vec![holds, fails], ctx),
+                    ));
                 }
                 None => return Ok(None),
             }
@@ -1500,9 +1838,196 @@ fn parse_schema_in_scope<'a>(
         (Some(set), Some(values)) => restrict_values_to_types(values, set, ctx),
     };
     // A schema object's keywords all apply to the same value at once, so combine them by intersection.
-    Ok(Some(parts.into_iter().fold(base, |result, part| {
-        algebra::intersect(result, part, ctx)
-    })))
+    if !recording {
+        return Ok(Some(parts.into_iter().fold(base, |result, (_, part)| {
+            algebra::intersect(result, part, ctx)
+        })));
+    }
+    Ok(Some(fold_recorded(
+        value, map, base, parts, keep, ctx, state,
+    )))
+}
+
+/// The fold under `Record`: names why the first `False` was reached, and keeps the parts a caller
+/// asked for. Takes every intersection the plain fold takes, so both parses spend the same budget.
+fn fold_recorded(
+    value: &Value,
+    map: &Map<String, Value>,
+    base: Schema,
+    parts: Vec<(PartKind, Schema)>,
+    keep: bool,
+    ctx: &CanonicalizationContext,
+    state: &mut ParseState<'_, '_>,
+) -> Schema {
+    let node = address(value);
+    let mut sides: Vec<(PartKind, Schema)> = Vec::with_capacity(parts.len() + 1);
+    sides.push((PartKind::Base, base.clone()));
+    let mut result = base;
+    let mut attributed = matches!(result.kind(), SchemaKind::False);
+    if attributed {
+        state.pending_reason = Some(RecordedReason::Empty(RecordedCause::family(
+            node,
+            PartKind::Base,
+        )));
+    }
+    for (kind, part) in parts {
+        result = algebra::intersect(result, part.clone(), ctx);
+        sides.push((kind, part));
+        if !attributed && matches!(result.kind(), SchemaKind::False) {
+            attributed = true;
+            let reason = attribute(node, map, &sides, ctx, &state.kept());
+            state.pending_reason = Some(reason);
+        }
+    }
+    state.record_sides(node, sides, &result, keep);
+    result
+}
+
+/// Why no value satisfies every one of `sides` together, on the node `map` at `node`: the first
+/// side admitting nothing by itself, else the first pair with nothing in common, else all of them.
+pub(crate) fn attribute(
+    node: usize,
+    map: &Map<String, Value>,
+    sides: &[(PartKind, Schema)],
+    ctx: &CanonicalizationContext,
+    kept: &Kept<'_>,
+) -> RecordedReason {
+    let branches = map.get("allOf").and_then(Value::as_array);
+    let mut branch = 0;
+    let mut named: Vec<(&Schema, RecordedCause)> = Vec::with_capacity(sides.len());
+    for (kind, schema) in sides {
+        let cause = if *kind == PartKind::Branch {
+            let element = &branches.expect("a branch part comes from `allOf`")[branch];
+            branch += 1;
+            RecordedCause::whole(address(element))
+        } else {
+            RecordedCause::family(node, *kind)
+        };
+        if matches!(schema.kind(), SchemaKind::False) {
+            return RecordedReason::Empty(cause);
+        }
+        if !matches!(schema.kind(), SchemaKind::True) {
+            named.push((schema, cause));
+        }
+    }
+    // Pairs ending on the latest side first: at parse time that is the side the fold stopped on.
+    for later in (1..named.len()).rev() {
+        for earlier in 0..later {
+            let (first_schema, first_cause) = &named[earlier];
+            let (second_schema, second_cause) = &named[later];
+            if !collides(first_schema, second_schema, ctx) {
+                continue;
+            }
+            let first = Operand {
+                schema: first_schema,
+                cause: first_cause.clone(),
+                parts: kept_parts_for(first_cause, first_schema, kept),
+            };
+            let second = Operand {
+                schema: second_schema,
+                cause: second_cause.clone(),
+                parts: kept_parts_for(second_cause, second_schema, kept),
+            };
+            let pair = drill(&first, &second, ctx)
+                .unwrap_or_else(|| [first.cause.clone(), second.cause.clone()]);
+            return RecordedReason::Conflict(pair.into());
+        }
+    }
+    RecordedReason::Conflict(named.into_iter().map(|(_, cause)| cause).collect())
+}
+
+/// Whether no value satisfies both, decided as a side question the run never sees.
+fn collides(left: &Schema, right: &Schema, ctx: &CanonicalizationContext) -> bool {
+    ctx.speculate(|| {
+        matches!(
+            algebra::intersect(left.clone(), right.clone(), ctx).kind(),
+            SchemaKind::False
+        )
+    })
+}
+
+/// One side of a colliding pair: what it admits, how it is named, and the parts inside it when
+/// drill may look.
+struct Operand<'p> {
+    schema: &'p Schema,
+    cause: RecordedCause,
+    parts: Option<(usize, &'p [(PartKind, Schema)])>,
+}
+
+impl Operand<'_> {
+    /// The parts drill probes, each named by its family inside the side; a branch inside a side
+    /// stays the side, since drill goes one level down.
+    fn expanded(&self) -> Vec<(&Schema, RecordedCause)> {
+        let Some((node, parts)) = self.parts else {
+            return vec![(self.schema, self.cause.clone())];
+        };
+        parts
+            .iter()
+            .filter(|(_, schema)| !matches!(schema.kind(), SchemaKind::True))
+            .map(|(kind, schema)| {
+                let cause = if *kind == PartKind::Branch {
+                    self.cause.clone()
+                } else {
+                    RecordedCause {
+                        node,
+                        kind: Some(*kind),
+                        origin: Some(Box::new(self.cause.clone())),
+                    }
+                };
+                (schema, cause)
+            })
+            .collect()
+    }
+}
+
+/// The pair of parts inside two colliding sides that collide on their own.
+fn drill(
+    left: &Operand<'_>,
+    right: &Operand<'_>,
+    ctx: &CanonicalizationContext,
+) -> Option<[RecordedCause; 2]> {
+    let lefts = left.expanded();
+    let rights = right.expanded();
+    for (left_schema, left_cause) in &lefts {
+        for (right_schema, right_cause) in &rights {
+            if collides(left_schema, right_schema, ctx) {
+                return Some([left_cause.clone(), right_cause.clone()]);
+            }
+        }
+    }
+    None
+}
+
+/// The parts inside a side drill may look into: a whole branch's own, or the target's where the
+/// branch or the side is a bare reference.
+fn kept_parts_for<'k>(
+    cause: &RecordedCause,
+    schema: &Schema,
+    kept: &Kept<'k>,
+) -> Option<(usize, &'k [(PartKind, Schema)])> {
+    if cause.kind.is_none() {
+        if let Some(parts) = kept.parts.get(&cause.node) {
+            return Some((cause.node, parts.as_slice()));
+        }
+    } else if cause.kind != Some(PartKind::Reference) {
+        return None;
+    }
+    kept_parts_for_reference(schema, kept)
+}
+
+/// The kept parts of the target a reference names. A target still being parsed, or one the run
+/// never read, has none.
+fn kept_parts_for_reference<'k>(
+    schema: &Schema,
+    kept: &Kept<'k>,
+) -> Option<(usize, &'k [(PartKind, Schema)])> {
+    let SchemaKind::Reference(key) = schema.kind() else {
+        return None;
+    };
+    let target = *kept.sources.get(key)?;
+    kept.parts
+        .get(&target)
+        .map(|parts| (target, parts.as_slice()))
 }
 
 /// Move every pattern matching finitely many keys onto those keys, intersected into whatever the property
@@ -2973,6 +3498,7 @@ fn ensure_definition<'a>(
         .sources
         .insert(Arc::clone(&key), std::ptr::from_ref(target) as usize);
     state.in_progress.insert(Arc::clone(&key));
+    state.keep_next_parts = state.recording == Recording::Record;
     let parsed = parse_schema_in_scope(target, ctx, false, resolver, state);
     // Removed before the `?`, keeping the restore-on-error contract.
     let was_in_progress = state.in_progress.remove(&key);

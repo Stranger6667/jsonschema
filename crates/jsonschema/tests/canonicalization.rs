@@ -1,13 +1,13 @@
 use std::{
     cmp::Ordering,
-    collections::{hash_map::DefaultHasher, HashSet},
+    collections::{hash_map::DefaultHasher, BTreeMap, HashSet},
     hash::{Hash, Hasher},
 };
 
 use jsonschema::{
     canonical::{
-        options, CanonicalKind, CanonicalSchema, CanonicalView, Containment, Distinctness,
-        ObjectViolationView, OperandMismatch, RawReason, Satisfiability,
+        options, CanonicalKind, CanonicalSchema, CanonicalView, Cause, Containment, Distinctness,
+        ObjectViolationView, OperandMismatch, RawReason, Satisfiability, UnsatisfiableReason,
     },
     canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
     Retrieve, Uri,
@@ -218,6 +218,356 @@ fn every_pointer(document: &Value) -> Vec<String> {
     out
 }
 
+fn cause(pointer: &str, keywords: &[&str]) -> Cause {
+    Cause {
+        pointer: pointer.to_string(),
+        keywords: keywords
+            .iter()
+            .map(|keyword| (*keyword).to_string())
+            .collect(),
+    }
+}
+
+#[test_case(
+    &json!({"properties": {"a": false}}),
+    &[("/properties/a", UnsatisfiableReason::Literal)];
+    "written as false"
+)]
+#[test_case(
+    &json!({"properties": {"total": {"type": "integer", "minimum": 10, "maximum": 5}}}),
+    &[("/properties/total", UnsatisfiableReason::Empty(cause("/properties/total", &["minimum", "maximum"])))];
+    "crossed integer bounds"
+)]
+#[test_case(
+    &json!({"properties": {"total": {"type": "number", "minimum": 10, "maximum": 5}}}),
+    &[("/properties/total", UnsatisfiableReason::Conflict(vec![
+        cause("/properties/total", &["type"]),
+        cause("/properties/total", &["minimum", "maximum"]),
+    ]))];
+    "crossed number bounds"
+)]
+#[test_case(
+    &json!({"properties": {"a": {"enum": []}}}),
+    &[("/properties/a", UnsatisfiableReason::Empty(cause("/properties/a", &["enum"])))];
+    "an empty enum"
+)]
+#[test_case(
+    &json!({"properties": {"a": {"type": "string", "enum": [1]}}}),
+    &[("/properties/a", UnsatisfiableReason::Empty(cause("/properties/a", &["type", "enum"])))];
+    "an enum disjoint from its type"
+)]
+#[test_case(
+    &json!({"properties": {"a": {"not": {}}}}),
+    &[("/properties/a", UnsatisfiableReason::Empty(cause("/properties/a", &["not"])))];
+    "the negation of everything"
+)]
+#[test_case(
+    &json!({"$defs": {"E": false}, "properties": {"a": {"$ref": "#/$defs/E"}}}),
+    &[
+        ("/$defs/E", UnsatisfiableReason::Literal),
+        ("/properties/a", UnsatisfiableReason::Empty(cause("/properties/a", &["$ref"]))),
+    ];
+    "a reference to an empty definition"
+)]
+#[test_case(
+    &json!({"properties": {"a": {"anyOf": [false, false]}}}),
+    &[
+        ("/properties/a", UnsatisfiableReason::Empty(cause("/properties/a", &["anyOf"]))),
+        ("/properties/a/anyOf/0", UnsatisfiableReason::Literal),
+        ("/properties/a/anyOf/1", UnsatisfiableReason::Literal),
+    ];
+    "a union of empty branches"
+)]
+#[test_case(
+    &json!({"allOf": [
+        {"anyOf": [{"type": "string"}, {"type": "integer"}]},
+        {"not": {"type": "string"}},
+        {"not": {"type": "integer"}}
+    ]}),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("/allOf/0", &[]),
+        cause("/allOf/1", &[]),
+        cause("/allOf/2", &[]),
+    ]))];
+    "branches that admit values pairwise but not together"
+)]
+#[test_case(
+    &json!({"allOf": [{"type": "string"}, {"type": "integer"}]}),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("/allOf/0", &["type"]),
+        cause("/allOf/1", &["type"]),
+    ]))];
+    "two branches whose types collide"
+)]
+#[test_case(
+    &json!({"type": "string", "allOf": [{"type": "integer"}]}),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("", &["type"]),
+        cause("/allOf/0", &["type"]),
+    ]))];
+    "a keyword against a branch"
+)]
+#[test_case(
+    &json!({"allOf": [{"minLength": 1}, {"type": "integer"}], "type": "string"}),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("", &["type"]),
+        cause("/allOf/1", &["type"]),
+    ]))];
+    "the nearest pair rather than the whole prefix"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"S": {"type": "string"}, "I": {"type": "integer"}},
+        "allOf": [{"$ref": "#/$defs/S"}, {"$ref": "#/$defs/I"}]
+    }),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("/$defs/S", &["type"]),
+        cause("/$defs/I", &["type"]),
+    ]))];
+    "two referenced definitions whose types collide"
+)]
+#[test_case(
+    &json!({"$defs": {"I": {"type": "integer"}}, "$ref": "#/$defs/I", "type": "string"}),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("/$defs/I", &["type"]),
+        cause("", &["type"]),
+    ]))];
+    "a reference against its sibling keyword"
+)]
+#[test_case(
+    &json!({
+        "$defs": {
+            "S": {"type": "string"},
+            "I": {"type": "integer"},
+            "T": {"allOf": [{"$ref": "#/$defs/S"}, {"$ref": "#/$defs/I"}]}
+        },
+        "properties": {"a": {"$ref": "#/$defs/T"}}
+    }),
+    &[
+        ("/$defs/T", UnsatisfiableReason::Conflict(vec![
+            cause("/$defs/S", &["type"]),
+            cause("/$defs/I", &["type"]),
+        ])),
+        ("/properties/a", UnsatisfiableReason::Empty(cause("/properties/a", &["$ref"]))),
+    ];
+    "a definition empty only once its references resolve"
+)]
+#[test_case(
+    &json!({"type": "string", "allOf": [{"type": "integer", "unevaluatedProperties": true}]}),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("", &["type"]),
+        cause("/allOf/0", &["type"]),
+    ]))];
+    "a branch the parse rewrites"
+)]
+#[test_case(
+    &json!({"properties": {"a": {"type": "object", "required": ["x"], "unevaluatedProperties": false}}}),
+    &[("/properties/a", UnsatisfiableReason::Conflict(vec![
+        cause("/properties/a", &["type"]),
+        cause("/properties/a", &["required", "unevaluatedProperties"]),
+    ]))];
+    "a required key nothing evaluates"
+)]
+// The rewritten object's branches are clones the document does not hold, so the branch is named
+// by the keyword holding it.
+#[test_case(
+    &json!({"type": "string", "unevaluatedProperties": true, "allOf": [{"type": "integer"}]}),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("", &["type"]),
+        cause("", &["allOf"]),
+    ]))];
+    "a branch inside a node the parse rewrites"
+)]
+#[test_case(
+    &json!({"properties": {"a": {"enum": [], "unevaluatedProperties": true}}}),
+    &[("/properties/a", UnsatisfiableReason::Empty(cause("/properties/a", &["enum"])))];
+    "a part empty by itself inside a node the parse rewrites"
+)]
+#[test_case(
+    &json!({"properties": {"a": {"if": {"type": "string"}, "then": false, "else": false}}}),
+    &[
+        ("/properties/a", UnsatisfiableReason::Empty(cause("/properties/a", &["if", "then", "else"]))),
+        ("/properties/a/then", UnsatisfiableReason::Literal),
+        ("/properties/a/else", UnsatisfiableReason::Literal),
+    ];
+    "a conditional with nothing on either side"
+)]
+#[test_case(
+    &json!({"properties": {"a": {"oneOf": [{"type": "string"}, {"type": "string"}]}}}),
+    &[("/properties/a", UnsatisfiableReason::Empty(cause("/properties/a", &["oneOf"])))];
+    "a oneOf no value matches exactly once"
+)]
+#[test_case(
+    &json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "type": "object",
+        "required": ["a"],
+        "dependencies": {"a": false}
+    }),
+    &[
+        ("", UnsatisfiableReason::Conflict(vec![
+            cause("", &["type"]),
+            cause("", &["dependencies"]),
+            cause("", &["required"]),
+        ])),
+        ("/dependencies/a", UnsatisfiableReason::Literal),
+    ];
+    "a required key whose dependency admits nothing"
+)]
+#[test_case(
+    &json!({
+        "type": "object",
+        "required": ["a"],
+        "dependentRequired": {"a": ["b"]},
+        "properties": {"b": false}
+    }),
+    &[
+        ("", UnsatisfiableReason::Conflict(vec![
+            cause("", &["type"]),
+            cause("", &["dependentRequired"]),
+            cause("", &["properties", "required"]),
+        ])),
+        ("/properties/b", UnsatisfiableReason::Literal),
+    ];
+    "a required key demanding a key that admits nothing"
+)]
+#[test_case(
+    &json!({"type": "object", "required": ["a"], "dependentSchemas": {"a": false}}),
+    &[
+        ("", UnsatisfiableReason::Conflict(vec![
+            cause("", &["type"]),
+            cause("", &["dependentSchemas"]),
+            cause("", &["required"]),
+        ])),
+        ("/dependentSchemas/a", UnsatisfiableReason::Literal),
+    ];
+    "a required key whose dependent schema admits nothing"
+)]
+#[test_case(
+    &json!({"properties": {"a": {"type": "array", "minItems": 1, "items": false}}}),
+    &[
+        ("/properties/a", UnsatisfiableReason::Conflict(vec![
+            cause("/properties/a", &["type"]),
+            cause("/properties/a", &["items", "minItems"]),
+        ])),
+        ("/properties/a/items", UnsatisfiableReason::Literal),
+    ];
+    "an array that must hold an element no schema admits"
+)]
+#[test_case(
+    &json!({"$defs": {"E": false}, "$ref": "#/$defs/E", "type": "string"}),
+    &[
+        ("", UnsatisfiableReason::Empty(cause("", &["$ref"]))),
+        ("/$defs/E", UnsatisfiableReason::Literal),
+    ];
+    "a reference to an empty definition beside a sibling"
+)]
+#[test_case(
+    &json!({"$defs": {"I": {"type": "integer"}}, "$ref": "#/$defs/I", "type": "string", "enum": [1]}),
+    &[("", UnsatisfiableReason::Empty(cause("", &["type", "enum"])))];
+    "siblings empty by themselves beside a reference"
+)]
+#[test_case(
+    &json!({"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A", "not": {"$ref": "#/$defs/A"}}),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("/$defs/A", &["type"]),
+        cause("", &["not"]),
+    ]))];
+    "a reference beside its own negation"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"A": {"type": "integer"}, "B": {"minimum": 0}},
+        "$ref": "#/$defs/A",
+        "$dynamicRef": "#/$defs/B",
+        "type": "string"
+    }),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("", &["$ref", "$dynamicRef"]),
+        cause("", &["type"]),
+    ]))];
+    "two reference keywords named together"
+)]
+// Drill goes one level down: a branch inside the colliding branch stays the branch.
+#[test_case(
+    &json!({"allOf": [{"allOf": [{"type": "string"}]}, {"type": "integer"}]}),
+    &[("", UnsatisfiableReason::Conflict(vec![
+        cause("/allOf/0", &[]),
+        cause("/allOf/1", &["type"]),
+    ]))];
+    "a nested branch inside a colliding branch"
+)]
+#[test_case(
+    &json!({"type": "string", "allOf": [{"$ref": "#"}, {"type": "integer"}]}),
+    &[
+        ("", UnsatisfiableReason::Conflict(vec![
+            cause("", &["type"]),
+            cause("/allOf/1", &["type"]),
+        ])),
+        ("/allOf/0", UnsatisfiableReason::Empty(cause("/allOf/0", &["$ref"]))),
+    ];
+    "a reference to the empty document root"
+)]
+// Siblings the canonical form does not model leave the document raw, which reports nothing.
+#[test_case(
+    &json!({
+        "$defs": {"I": {"type": "integer"}},
+        "$ref": "#/$defs/I",
+        "dependencies": {},
+        "unevaluatedProperties": false
+    }),
+    &[];
+    "an unmodeled document"
+)]
+#[test_case(
+    &json!({
+        "$defs": {"I": {"type": "integer"}},
+        "properties": {"a": {
+            "$ref": "#/$defs/I",
+            "type": "string",
+            "$schema": "http://json-schema.org/draft-07/schema#"
+        }}
+    }),
+    &[];
+    "siblings switching the dialect"
+)]
+fn unsatisfiable_names_its_reason(document: &Value, expected: &[(&str, UnsatisfiableReason)]) {
+    let prepared = options().prepare(document).expect("prepares");
+    let expected: BTreeMap<String, UnsatisfiableReason> = expected
+        .iter()
+        .map(|(pointer, reason)| ((*pointer).to_string(), reason.clone()))
+        .collect();
+
+    assert_eq!(prepared.unsatisfiable().expect("reports"), expected);
+}
+
+// A target outside the document has no pointer, so the branch reading it stays whole.
+#[test]
+fn unsatisfiable_keeps_a_branch_whole_when_its_target_is_outside_the_document() {
+    let external = json!({"type": "integer"});
+    let registry = Registry::new()
+        .add("https://example.com/int", &external)
+        .expect("resource URI is valid")
+        .prepare()
+        .expect("registry prepares");
+    let document = json!({"allOf": [{"$ref": "https://example.com/int"}, {"type": "string"}]});
+    let prepared = options()
+        .with_registry(&registry)
+        .prepare(&document)
+        .expect("prepares");
+
+    assert_eq!(
+        prepared.unsatisfiable().expect("reports"),
+        BTreeMap::from([(
+            String::new(),
+            UnsatisfiableReason::Conflict(vec![
+                cause("/allOf/0", &[]),
+                cause("/allOf/1", &["type"])
+            ])
+        )])
+    );
+}
+
 #[test_case(&json!({
     "$defs": {"dead": {"allOf": [{"type": "integer", "minimum": 5}, {"maximum": 3}]}},
     "type": "object",
@@ -265,16 +615,24 @@ fn every_pointer(document: &Value) -> Vec<String> {
     "allOf": [{"type": "string"}, {"type": "integer"}],
     "properties": {"a": {"$ref": "#"}}
 }) ; "a reference to an unsatisfiable document root")]
-fn unsatisfiable_pointers_agree_with_selecting_each_pointer(document: &Value) {
+#[test_case(&json!({
+    "$defs": {
+        "S": {"type": "string"},
+        "I": {"type": "integer"},
+        "T": {"allOf": [{"$ref": "#/$defs/S"}, {"$ref": "#/$defs/I"}]}
+    },
+    "properties": {"a": {"$ref": "#/$defs/T"}, "b": {"$ref": "#/$defs/I", "type": "string"}}
+}) ; "emptiness reached only once references resolve")]
+fn unsatisfiable_agrees_with_selecting_each_pointer(document: &Value) {
     let prepared = options().prepare(document).expect("prepares");
-    let reported = prepared.unsatisfiable_pointers().expect("reports");
+    let reported = prepared.unsatisfiable().expect("reports");
 
     for pointer in every_pointer(document) {
         let Ok(selected) = prepared.canonicalize_at(&pointer) else {
             continue;
         };
         assert_eq!(
-            reported.contains(pointer.as_str()),
+            reported.contains_key(pointer.as_str()),
             selected.satisfiability() == Satisfiability::No,
             "{pointer}"
         );
@@ -283,14 +641,14 @@ fn unsatisfiable_pointers_agree_with_selecting_each_pointer(document: &Value) {
 
 // Everything reported is empty, whatever the document leaves unread.
 #[test]
-fn unsatisfiable_pointers_reports_only_empty_subschemas() {
+fn unsatisfiable_reports_only_empty_subschemas() {
     let document = pet_document();
     let prepared = options().prepare(&document).expect("prepares");
 
-    for pointer in prepared.unsatisfiable_pointers().expect("reports") {
+    for pointer in prepared.unsatisfiable().expect("reports").keys() {
         assert_eq!(
             prepared
-                .canonicalize_at(&pointer)
+                .canonicalize_at(pointer)
                 .expect("canonicalizes")
                 .satisfiability(),
             Satisfiability::No,
@@ -301,7 +659,7 @@ fn unsatisfiable_pointers_reports_only_empty_subschemas() {
 
 // A definition nothing reads is never parsed, so it is not reported - `Dead` is unsatisfiable and unread.
 #[test]
-fn unsatisfiable_pointers_passes_over_a_definition_the_document_never_reads() {
+fn unsatisfiable_passes_over_a_definition_the_document_never_reads() {
     let document = pet_document();
     let prepared = options().prepare(&document).expect("prepares");
 
@@ -313,9 +671,9 @@ fn unsatisfiable_pointers_passes_over_a_definition_the_document_never_reads() {
         Satisfiability::No
     );
     assert!(!prepared
-        .unsatisfiable_pointers()
+        .unsatisfiable()
         .expect("reports")
-        .contains("/$defs/Dead"));
+        .contains_key("/$defs/Dead"));
 }
 
 // An unknown draft leaves the document unresolvable, and every selection verbatim.
