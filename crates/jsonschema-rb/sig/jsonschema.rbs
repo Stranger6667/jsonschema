@@ -306,6 +306,55 @@ module JSONSchema
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
+
+    # One part of a schema object, as a reason names it.
+    class Cause
+      # JSON Pointer of the schema object holding `keywords`, or of the subschema itself.
+      def pointer: () -> String
+      # Keywords of one family present at `pointer`; empty for a whole subschema.
+      def keywords: () -> Array[String]
+      def ==: (untyped other) -> bool
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # The subschema is written as `false`.
+    class LiteralReason
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # One part every value must satisfy admits nothing by itself. A subschema part has a reason
+    # of its own under its pointer.
+    class EmptyReason
+      def cause: () -> Cause
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # Each part admits values; no value satisfies all of them together.
+    class ConflictReason
+      def causes: () -> Array[Cause]
+      def inspect: () -> String
+      def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
+    end
+
+    # Why a subschema admits no value.
+    type unsatisfiable_reason = LiteralReason | EmptyReason | ConflictReason
+
+    # The subschemas that admit no value, by JSON Pointer, each with why.
+    #
+    # A pointer left out is not proven satisfiable: a document the canonical form does not model
+    # reports nothing, as `satisfiability` answers `:unknown`.
+    def self.find_unsatisfiable: (
+      untyped schema,
+      ?draft: JSONSchema::draft?,
+      ?validate_formats: bool?,
+      ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+      ?retriever: (^(String) -> untyped)?,
+      ?registry: Registry?,
+      ?base_uri: String?
+    ) -> Hash[String, unsatisfiable_reason]
   end
 
   # Reduce a schema to its canonical form.

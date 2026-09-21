@@ -371,6 +371,33 @@ Compare a request schema new-against-old and a response schema old-against-new: 
 
 Both operands must share one setup - the same draft, format policy, regular-expression engine and definitions - or `IncompatibleOperands` is raised. `UnsupportedOperand` means an operand is a `Raw` pass-through, and `UnsupportedResult` that the canonical form does not support the result. All three live under `JSONSchema::Canonical`.
 
+### Finding the dead subschemas of a document
+
+`JSONSchema::Canonical.find_unsatisfiable` walks a whole document and answers which of its subschemas admit no value, and why - the keywords at fault and where they sit:
+
+```ruby
+reasons = JSONSchema::Canonical.find_unsatisfiable(
+  {
+    "properties" => {
+      "tag" => { "type" => "string", "minLength" => 5, "maxLength" => 2 },
+      "name" => { "type" => "string" }
+    }
+  }
+)
+
+case reasons["/properties/tag"]
+in JSONSchema::Canonical::ConflictReason[causes:]
+  causes.map { |cause| [cause.pointer, cause.keywords] }
+  # => [["/properties/tag", ["type"]], ["/properties/tag", ["minLength", "maxLength"]]]
+end
+
+# A live subschema is not reported
+reasons.key?("/properties/name")
+# => false
+```
+
+A reason is a `LiteralReason` (written as `false`), an `EmptyReason` (one part admits nothing by itself) or a `ConflictReason` (each part admits values, together they admit none). A pointer left out is not proven satisfiable: a document canonicalization cannot model reports nothing, as `satisfiability` answers `:unknown`.
+
 ## Schema Bundling and Dereferencing
 
 Produce a Compound Schema Document ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)) by embedding all external `$ref` targets into a draft-appropriate container. The result validates identically to the original.
