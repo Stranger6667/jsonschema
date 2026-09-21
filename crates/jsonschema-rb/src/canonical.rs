@@ -1,8 +1,9 @@
 use jsonschema::{
     canonical::{
-        CanonicalKind, CanonicalSchema, CanonicalView, CanonicalizationError, Containment,
-        ContainsView as CoreContainsView, Distinctness,
+        CanonicalKind, CanonicalSchema, CanonicalView, CanonicalizationError, Cause as CoreCause,
+        Containment, ContainsView as CoreContainsView, Distinctness,
         ObjectViolationView as CoreObjectViolationView, RawReason, Satisfiability,
+        UnsatisfiableReason as CoreUnsatisfiableReason,
     },
     JsonType,
 };
@@ -1374,10 +1375,154 @@ impl EnumView {
     }
 }
 
-fn canonicalize(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
-    let parsed = scan_args::<(Value,), (), (), (), _, ()>(args)?;
-    let (schema_arg,) = parsed.required;
-    let keywords: RHash = parsed.keywords;
+/// One part of a schema object, as a reason names it.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::Cause", free_immediately)]
+pub struct Cause {
+    pointer: String,
+    keywords: Vec<String>,
+}
+
+impl DataTypeFunctions for Cause {}
+
+impl Cause {
+    fn pointer(ruby: &Ruby, rb_self: &Self) -> Value {
+        ruby.str_new(&rb_self.pointer).as_value()
+    }
+
+    fn keywords(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.keywords.len());
+        for keyword in &rb_self.keywords {
+            array.push(ruby.str_new(keyword))?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn eq(rb_self: &Self, other: Value) -> bool {
+        let Ok(other_ref) = <&Cause>::try_convert(other) else {
+            return false;
+        };
+        rb_self.pointer == other_ref.pointer && rb_self.keywords == other_ref.keywords
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::Cause pointer={} keywords={}>",
+            Self::pointer(ruby, rb_self).inspect(),
+            Self::keywords(ruby, rb_self)?.inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("pointer"), Self::pointer(ruby, rb_self))?;
+        hash.aset(ruby.sym_new("keywords"), Self::keywords(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+/// The subschema is written as `false`.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::LiteralReason", free_immediately)]
+pub struct LiteralReason;
+
+impl DataTypeFunctions for LiteralReason {}
+
+impl LiteralReason {
+    fn inspect(_rb_self: &Self) -> &'static str {
+        "#<JSONSchema::Canonical::LiteralReason>"
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, _rb_self: &Self, _keys: Value) -> RHash {
+        ruby.hash_new()
+    }
+}
+
+/// One part every value must satisfy admits nothing by itself. A subschema part has a reason of
+/// its own under its pointer.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::EmptyReason", free_immediately)]
+pub struct EmptyReason {
+    cause: CoreCause,
+}
+
+impl DataTypeFunctions for EmptyReason {}
+
+impl EmptyReason {
+    fn cause(ruby: &Ruby, rb_self: &Self) -> Value {
+        cause_to_ruby(ruby, rb_self.cause.clone())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> String {
+        format!(
+            "#<JSONSchema::Canonical::EmptyReason cause={}>",
+            Self::cause(ruby, rb_self).inspect()
+        )
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("cause"), Self::cause(ruby, rb_self))?;
+        Ok(hash)
+    }
+}
+
+/// Each part admits values; no value satisfies all of them together.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::Canonical::ConflictReason", free_immediately)]
+pub struct ConflictReason {
+    causes: Vec<CoreCause>,
+}
+
+impl DataTypeFunctions for ConflictReason {}
+
+impl ConflictReason {
+    fn causes(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
+        let array = ruby.ary_new_capa(rb_self.causes.len());
+        for cause in &rb_self.causes {
+            array.push(cause_to_ruby(ruby, cause.clone()))?;
+        }
+        Ok(array.as_value())
+    }
+
+    fn inspect(ruby: &Ruby, rb_self: &Self) -> Result<String, Error> {
+        Ok(format!(
+            "#<JSONSchema::Canonical::ConflictReason causes={}>",
+            Self::causes(ruby, rb_self)?.inspect()
+        ))
+    }
+
+    fn deconstruct_keys(ruby: &Ruby, rb_self: &Self, _keys: Value) -> Result<RHash, Error> {
+        let hash = ruby.hash_new();
+        hash.aset(ruby.sym_new("causes"), Self::causes(ruby, rb_self)?)?;
+        Ok(hash)
+    }
+}
+
+fn cause_to_ruby(ruby: &Ruby, cause: CoreCause) -> Value {
+    ruby.obj_wrap(Cause {
+        pointer: cause.pointer,
+        keywords: cause.keywords,
+    })
+    .as_value()
+}
+
+fn reason_to_ruby(ruby: &Ruby, reason: CoreUnsatisfiableReason) -> Value {
+    match reason {
+        CoreUnsatisfiableReason::Literal => ruby.obj_wrap(LiteralReason).as_value(),
+        CoreUnsatisfiableReason::Empty(cause) => ruby.obj_wrap(EmptyReason { cause }).as_value(),
+        CoreUnsatisfiableReason::Conflict(causes) => {
+            ruby.obj_wrap(ConflictReason { causes }).as_value()
+        }
+    }
+}
+
+/// Read the keyword arguments every canonicalization entry point takes, and run `call` with them.
+fn with_canonical_options<R>(
+    ruby: &Ruby,
+    keywords: RHash,
+    call: impl FnOnce(jsonschema::canonical::CanonicalizeOptions<'_>) -> Result<R, Error>,
+) -> Result<R, Error> {
     let base_kwargs: CanonicalKwArgs = get_kwargs(
         keywords,
         &[],
@@ -1393,7 +1538,6 @@ fn canonicalize(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     let (draft_val, validate_formats, pattern_options, retriever_val, registry_val, base_uri) =
         base_kwargs.optional;
 
-    let schema_value = to_schema_value(ruby, schema_arg)?;
     let mut options = jsonschema::canonical::options();
     if let Some(draft) = draft_val {
         options = options.with_draft(parse_draft_symbol(ruby, draft)?);
@@ -1414,31 +1558,61 @@ fn canonicalize(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
             has_retriever = true;
         }
     }
-    if let Some(val) = registry_val {
-        if !val.is_nil() {
-            let registry: &Registry = TryConvert::try_convert(val).map_err(|_| {
-                Error::new(
-                    ruby.exception_type_error(),
-                    "registry must be a JSONSchema::Registry instance",
-                )
-            })?;
-            if !has_retriever {
-                if let Some(value) = registry.retriever_value(ruby) {
-                    if let Some(retriever) = make_retriever(ruby, value)? {
-                        options = options.with_retriever(retriever);
-                    }
-                }
-            }
-            options = options.with_registry(registry.inner.as_ref());
-        }
-    }
     if let Some(base_uri) = base_uri {
         options = options.with_base_uri(base_uri);
     }
-    options
-        .canonicalize(&schema_value)
-        .map(|inner| ruby.obj_wrap(RbCanonicalSchema { inner }).as_value())
-        .map_err(|error| canonicalization_error(ruby, error))
+    let Some(val) = registry_val else {
+        return call(options);
+    };
+    if val.is_nil() {
+        return call(options);
+    }
+    let registry: &Registry = TryConvert::try_convert(val).map_err(|_| {
+        Error::new(
+            ruby.exception_type_error(),
+            "registry must be a JSONSchema::Registry instance",
+        )
+    })?;
+    if !has_retriever {
+        if let Some(value) = registry.retriever_value(ruby) {
+            if let Some(retriever) = make_retriever(ruby, value)? {
+                options = options.with_retriever(retriever);
+            }
+        }
+    }
+    call(options.with_registry(registry.inner.as_ref()))
+}
+
+/// The subschemas of `schema` that admit no value, by JSON Pointer, each with why.
+fn find_unsatisfiable(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
+    let parsed = scan_args::<(Value,), (), (), (), _, ()>(args)?;
+    let (schema_arg,) = parsed.required;
+    let schema_value = to_schema_value(ruby, schema_arg)?;
+    with_canonical_options(ruby, parsed.keywords, |options| {
+        let prepared = options
+            .prepare(&schema_value)
+            .map_err(|error| canonicalization_error(ruby, error))?;
+        let reasons = prepared
+            .unsatisfiable()
+            .map_err(|error| canonicalization_error(ruby, error))?;
+        let hash = ruby.hash_new();
+        for (pointer, reason) in reasons {
+            hash.aset(ruby.str_new(&pointer), reason_to_ruby(ruby, reason))?;
+        }
+        Ok(hash.as_value())
+    })
+}
+
+fn canonicalize(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
+    let parsed = scan_args::<(Value,), (), (), (), _, ()>(args)?;
+    let (schema_arg,) = parsed.required;
+    let schema_value = to_schema_value(ruby, schema_arg)?;
+    with_canonical_options(ruby, parsed.keywords, |options| {
+        options
+            .canonicalize(&schema_value)
+            .map(|inner| ruby.obj_wrap(RbCanonicalSchema { inner }).as_value())
+            .map_err(|error| canonicalization_error(ruby, error))
+    })
 }
 
 fn define_labels<Label: Copy + Into<&'static str>>(
@@ -1715,6 +1889,39 @@ pub(crate) fn init_canonical(ruby: &Ruby, module: &RModule) -> Result<(), Error>
     raw_view.define_method("pointer", method!(RawView::pointer, 0))?;
     raw_view.define_method("inspect", method!(RawView::inspect, 0))?;
     raw_view.define_method("deconstruct_keys", method!(RawView::deconstruct_keys, 1))?;
+
+    let cause = canonical_module.define_class("Cause", ruby.class_object())?;
+    cause.define_method("pointer", method!(Cause::pointer, 0))?;
+    cause.define_method("keywords", method!(Cause::keywords, 0))?;
+    cause.define_method("==", method!(Cause::eq, 1))?;
+    cause.define_method("inspect", method!(Cause::inspect, 0))?;
+    cause.define_method("deconstruct_keys", method!(Cause::deconstruct_keys, 1))?;
+
+    let literal_reason = canonical_module.define_class("LiteralReason", ruby.class_object())?;
+    literal_reason.define_method("inspect", method!(LiteralReason::inspect, 0))?;
+    literal_reason.define_method(
+        "deconstruct_keys",
+        method!(LiteralReason::deconstruct_keys, 1),
+    )?;
+
+    let empty_reason = canonical_module.define_class("EmptyReason", ruby.class_object())?;
+    empty_reason.define_method("cause", method!(EmptyReason::cause, 0))?;
+    empty_reason.define_method("inspect", method!(EmptyReason::inspect, 0))?;
+    empty_reason.define_method(
+        "deconstruct_keys",
+        method!(EmptyReason::deconstruct_keys, 1),
+    )?;
+
+    let conflict_reason = canonical_module.define_class("ConflictReason", ruby.class_object())?;
+    conflict_reason.define_method("causes", method!(ConflictReason::causes, 0))?;
+    conflict_reason.define_method("inspect", method!(ConflictReason::inspect, 0))?;
+    conflict_reason.define_method(
+        "deconstruct_keys",
+        method!(ConflictReason::deconstruct_keys, 1),
+    )?;
+
+    canonical_module
+        .define_singleton_method("find_unsatisfiable", function!(find_unsatisfiable, -1))?;
 
     let json_module = canonical_module.define_module("JSON")?;
     json_module

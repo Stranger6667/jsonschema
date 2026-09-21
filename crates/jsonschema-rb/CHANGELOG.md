@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Canonical.find_unsatisfiable`, naming every subschema of a document that admits no value, and the keywords that leave it empty.
+
 ### Fixed
 
 - The instance path of a schema build error, which was empty instead of naming the keyword location that failed to compile.
