@@ -28,6 +28,9 @@ ReferenceView = _canonical.ReferenceView
 ConstView = _canonical.ConstView
 EnumView = _canonical.EnumView
 RawView = _canonical.RawView
+Cause = _canonical.Cause
+UnsatisfiableReason = _canonical.UnsatisfiableReason
+find_unsatisfiable = _canonical.find_unsatisfiable
 
 CanonicalViewType = (
     TrueView
@@ -93,6 +96,7 @@ __all__ = [
     "CanonicalViewType",
     "CanonicalKind",
     "CanonicalizationError",
+    "Cause",
     "Containment",
     "ConstView",
     "ContainsView",
@@ -118,8 +122,10 @@ __all__ = [
     "TrueView",
     "TypedGroupView",
     "UndeclaredValueFailsView",
+    "UnsatisfiableReason",
     "UnsupportedOperand",
     "UnsupportedResult",
+    "find_unsatisfiable",
     "json",
     "schema",
 ]

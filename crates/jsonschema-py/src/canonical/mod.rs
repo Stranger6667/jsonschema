@@ -1,10 +1,13 @@
 pub(crate) mod json;
 
-use std::hash::{Hash, Hasher};
+use std::{
+    collections::BTreeMap,
+    hash::{Hash, Hasher},
+};
 
 use jsonschema::canonical::{
-    CanonicalKind, CanonicalSchema, CanonicalView, Containment, Distinctness, ObjectViolationView,
-    RawReason, Satisfiability,
+    CanonicalKind, CanonicalSchema, CanonicalView, Cause, Containment, Distinctness,
+    ObjectViolationView, RawReason, Satisfiability, UnsatisfiableReason,
 };
 
 use pyo3::prelude::*;
@@ -967,30 +970,98 @@ impl EnumView {
     }
 }
 
-/// canonicalize(schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None)
-///
-/// Parse and normalize a JSON Schema to its canonical form.
-///
-/// Returns a :class:`CanonicalSchema` that is semantically equivalent to the input.
-#[pyfunction]
-#[pyo3(signature = (schema, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None))]
-pub(crate) fn canonicalize(
-    schema: &Bound<'_, PyAny>,
+/// One part of a schema object, as a reason names it.
+#[pyclass(
+    eq,
+    frozen,
+    hash,
+    from_py_object,
+    name = "Cause",
+    module = "jsonschema_rs.canonical"
+)]
+#[derive(Clone, PartialEq, Eq, Hash)]
+pub(crate) struct PyCause {
+    /// JSON Pointer of the schema object holding `keywords`, or of the subschema itself.
+    #[pyo3(get)]
+    pointer: String,
+    /// Keywords of one family present at `pointer`; empty for a whole subschema.
+    #[pyo3(get)]
+    keywords: Vec<String>,
+}
+
+#[pymethods]
+impl PyCause {
+    #[classattr]
+    fn __match_args__() -> (&'static str, &'static str) {
+        ("pointer", "keywords")
+    }
+
+    fn __repr__(&self, py: Python<'_>) -> PyResult<String> {
+        // Through Python's own `repr`, so a pointer holding a quote reads back as it was written.
+        let pointer = pyo3::types::PyString::new(py, &self.pointer).repr()?;
+        let keywords = pyo3::types::PyList::new(py, &self.keywords)?.repr()?;
+        Ok(format!("Cause(pointer={pointer}, keywords={keywords})"))
+    }
+}
+
+impl From<Cause> for PyCause {
+    fn from(cause: Cause) -> Self {
+        Self {
+            pointer: cause.pointer,
+            keywords: cause.keywords,
+        }
+    }
+}
+
+/// Why a subschema admits no value.
+#[pyclass(
+    eq,
+    skip_from_py_object,
+    name = "UnsatisfiableReason",
+    module = "jsonschema_rs.canonical"
+)]
+#[derive(Clone, PartialEq)]
+pub(crate) enum PyUnsatisfiableReason {
+    /// Written as `false`.
+    Literal {},
+    /// One part every value must satisfy admits nothing by itself. A subschema part has a reason
+    /// of its own under its pointer.
+    Empty { cause: PyCause },
+    /// Each part admits values; no value satisfies all of them together.
+    Conflict { causes: Vec<PyCause> },
+}
+
+impl From<UnsatisfiableReason> for PyUnsatisfiableReason {
+    fn from(reason: UnsatisfiableReason) -> Self {
+        match reason {
+            UnsatisfiableReason::Literal => Self::Literal {},
+            UnsatisfiableReason::Empty(cause) => Self::Empty {
+                cause: cause.into(),
+            },
+            UnsatisfiableReason::Conflict(causes) => Self::Conflict {
+                causes: causes.into_iter().map(Into::into).collect(),
+            },
+        }
+    }
+}
+
+/// Read the keyword arguments every canonicalization entry point takes.
+fn build_options<'r>(
+    py: Python<'_>,
     draft: Option<u8>,
     validate_formats: Option<bool>,
     pattern_options: Option<&Bound<'_, PyAny>>,
     retriever: Option<&Bound<'_, PyAny>>,
-    registry: Option<&crate::registry::Registry>,
+    registry: Option<&'r crate::registry::Registry>,
     base_uri: Option<String>,
     offline: Option<bool>,
-) -> PyResult<PyCanonicalSchema> {
+) -> PyResult<jsonschema::canonical::CanonicalizeOptions<'r>> {
     let offline = offline.unwrap_or(false);
     if offline && retriever.is_some() {
         return Err(pyo3::exceptions::PyValueError::new_err(
             "`offline` cannot be used together with `retriever`",
         ));
     }
-    let schema_value = crate::ser::to_value(schema)?;
     let mut options = jsonschema::canonical::options();
     if let Some(draft) = draft {
         options = options.with_draft(crate::get_draft(draft)?);
@@ -1005,7 +1076,7 @@ pub(crate) fn canonicalize(
     if let Some(registry) = registry {
         if retriever.is_none() && !offline {
             if let Some(registry_retriever) = registry.retriever() {
-                let func = crate::retriever::into_retriever(registry_retriever.bind(schema.py()))?;
+                let func = crate::retriever::into_retriever(registry_retriever.bind(py))?;
                 options = options.with_retriever(crate::retriever::Retriever { func });
             }
         }
@@ -1027,6 +1098,80 @@ pub(crate) fn canonicalize(
             }
         }
     }
+    Ok(options)
+}
+
+/// find_unsatisfiable(schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None)
+///
+/// The subschemas of `schema` that admit no value, by JSON Pointer, each with why.
+///
+/// A pointer left out is not proven satisfiable: a document the canonical form does not model
+/// reports nothing, as :class:`Satisfiability` answers `UNKNOWN`.
+#[pyfunction]
+#[pyo3(signature = (schema, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None))]
+pub(crate) fn find_unsatisfiable(
+    schema: &Bound<'_, PyAny>,
+    draft: Option<u8>,
+    validate_formats: Option<bool>,
+    pattern_options: Option<&Bound<'_, PyAny>>,
+    retriever: Option<&Bound<'_, PyAny>>,
+    registry: Option<&crate::registry::Registry>,
+    base_uri: Option<String>,
+    offline: Option<bool>,
+) -> PyResult<BTreeMap<String, PyUnsatisfiableReason>> {
+    let schema_value = crate::ser::to_value(schema)?;
+    let options = build_options(
+        schema.py(),
+        draft,
+        validate_formats,
+        pattern_options,
+        retriever,
+        registry,
+        base_uri,
+        offline,
+    )?;
+    let prepared = options
+        .prepare(&schema_value)
+        .map_err(|error| canonicalization_error(schema.py(), error))?;
+    prepared
+        .unsatisfiable()
+        .map(|reasons| {
+            reasons
+                .into_iter()
+                .map(|(pointer, reason)| (pointer, reason.into()))
+                .collect()
+        })
+        .map_err(|error| canonicalization_error(schema.py(), error))
+}
+
+/// canonicalize(schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None)
+///
+/// Parse and normalize a JSON Schema to its canonical form.
+///
+/// Returns a :class:`CanonicalSchema` that is semantically equivalent to the input.
+#[pyfunction]
+#[pyo3(signature = (schema, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None))]
+pub(crate) fn canonicalize(
+    schema: &Bound<'_, PyAny>,
+    draft: Option<u8>,
+    validate_formats: Option<bool>,
+    pattern_options: Option<&Bound<'_, PyAny>>,
+    retriever: Option<&Bound<'_, PyAny>>,
+    registry: Option<&crate::registry::Registry>,
+    base_uri: Option<String>,
+    offline: Option<bool>,
+) -> PyResult<PyCanonicalSchema> {
+    let schema_value = crate::ser::to_value(schema)?;
+    let options = build_options(
+        schema.py(),
+        draft,
+        validate_formats,
+        pattern_options,
+        retriever,
+        registry,
+        base_uri,
+        offline,
+    )?;
     options
         .canonicalize(&schema_value)
         .map(|inner| PyCanonicalSchema { inner })
@@ -1092,6 +1237,12 @@ pub(crate) fn init_module(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyRes
     canonical_module.add_class::<PyDistinctness>()?;
     canonical_module.add_class::<PyRawReason>()?;
     canonical_module.add_class::<PyCanonicalKind>()?;
+    canonical_module.add_class::<PyCause>()?;
+    canonical_module.add_class::<PyUnsatisfiableReason>()?;
+    canonical_module.add_function(pyo3::wrap_pyfunction!(
+        find_unsatisfiable,
+        &canonical_module
+    )?)?;
 
     let canonical_json_module = PyModule::new(py, "json")?;
     canonical_json_module.add_function(pyo3::wrap_pyfunction!(
