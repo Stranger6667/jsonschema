@@ -61,7 +61,7 @@ jobs:
       - name: Expose Gemfile.lock for rb-sys-dock version detection
         run: cp crates/jsonschema-rb/Gemfile.lock Gemfile.lock
 
-      - uses: oxidize-rb/actions/cross-gem@e5f9a49a7812a078584072f6e3f657ad247c8771 # v1.4.4
+      - uses: oxidize-rb/actions/cross-gem@ec90b4aa48795518d79be3f5cc478d1d7ccd02a8 # v1.5.0
         id: cross-gem
         with:
           platform: ${{ matrix.platform }}

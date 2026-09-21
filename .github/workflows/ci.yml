@@ -574,7 +574,7 @@ jobs:
       # A single version stages the extension at `lib/jsonschema/jsonschema_rb.so`, which the gem
       # task then satisfies with a host build against the cross target. Two or more versions stage
       # under per-ABI directories instead, so nothing pulls the host Ruby in.
-      - uses: oxidize-rb/actions/cross-gem@e5f9a49a7812a078584072f6e3f657ad247c8771 # v1.4.4
+      - uses: oxidize-rb/actions/cross-gem@ec90b4aa48795518d79be3f5cc478d1d7ccd02a8 # v1.5.0
         with:
           platform: x64-mingw-ucrt
           ruby-versions: "3.4,4.0"
