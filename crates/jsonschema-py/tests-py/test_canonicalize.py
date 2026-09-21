@@ -4,7 +4,14 @@ import pytest
 
 import jsonschema_rs
 from jsonschema_rs import CanonicalSchema, ValidationError, canonical, canonicalize
-from jsonschema_rs.canonical import CanonicalKind, Containment, Distinctness, Satisfiability
+from jsonschema_rs.canonical import (
+    CanonicalKind,
+    Containment,
+    Distinctness,
+    Satisfiability,
+    UnsatisfiableReason,
+    find_unsatisfiable,
+)
 
 DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 # `dependencies` is the one conditional applicator canonicalization does not split beside an
@@ -1022,3 +1029,106 @@ def test_offline_rejects_a_retriever():
 
     with pytest.raises(ValueError, match="`offline` cannot be used together with `retriever`"):
         canonicalize({"$ref": "https://example.com/schema.json"}, offline=True, retriever=retrieve)
+
+
+def reason_data(reason):
+    if isinstance(reason, UnsatisfiableReason.Literal):
+        return "literal"
+    if isinstance(reason, UnsatisfiableReason.Empty):
+        return ("empty", (reason.cause.pointer, reason.cause.keywords))
+    return ("conflict", [(cause.pointer, cause.keywords) for cause in reason.causes])
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        ({"type": "object", "properties": {"a": {"type": "string"}}}, {}),
+        ({"$defs": {"I": {"type": "integer"}}, "$ref": "#/$defs/I", **UNSUPPORTED}, {}),
+        ({"properties": {"a": False}}, {"/properties/a": "literal"}),
+        (
+            {"properties": {"a": {"type": "integer", "minimum": 5, "maximum": 3}}},
+            {"/properties/a": ("empty", ("/properties/a", ["minimum", "maximum"]))},
+        ),
+        (
+            {"$defs": {"I": {"type": "integer"}}, "$ref": "#/$defs/I", "type": "string", "enum": [1]},
+            {"": ("empty", ("", ["type", "enum"]))},
+        ),
+        (
+            {"properties": {"a": {"type": "array", "minItems": 1, "items": False}}},
+            {
+                "/properties/a": (
+                    "conflict",
+                    [("/properties/a", ["type"]), ("/properties/a", ["items", "minItems"])],
+                ),
+                "/properties/a/items": "literal",
+            },
+        ),
+        (
+            {"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A", "not": {"$ref": "#/$defs/A"}},
+            {"": ("conflict", [("/$defs/A", ["type"]), ("", ["not"])])},
+        ),
+    ],
+    ids=[
+        "a live document",
+        "an unmodeled document",
+        "a literal false",
+        "a numeric window nothing falls in",
+        "siblings empty beside a reference",
+        "an array element no schema admits",
+        "a reference beside its own negation",
+    ],
+)
+def test_find_unsatisfiable_names_its_reason(schema, expected):
+    assert {pointer: reason_data(reason) for pointer, reason in find_unsatisfiable(schema).items()} == expected
+
+
+def test_find_unsatisfiable_reasons_match_by_pattern():
+    reasons = find_unsatisfiable({"properties": {"a": {"type": "string", "minLength": 5, "maxLength": 2}}})
+
+    match reasons["/properties/a"]:
+        case UnsatisfiableReason.Conflict(causes):
+            assert [(cause.pointer, cause.keywords) for cause in causes] == [
+                ("/properties/a", ["type"]),
+                ("/properties/a", ["minLength", "maxLength"]),
+            ]
+        case other:
+            pytest.fail(f"expected a conflict, got {other!r}")
+
+
+def test_cause_compares_and_hashes_by_value():
+    schema = {"properties": {"a": {"type": "string", "minLength": 5, "maxLength": 2}}}
+    left = find_unsatisfiable(schema)["/properties/a"].causes
+    right = find_unsatisfiable(schema)["/properties/a"].causes
+
+    assert left == right
+    assert len(set(left + right)) == len(left)
+
+
+def test_cause_reads_as_itself():
+    reason = find_unsatisfiable({"properties": {"a": {"enum": [], "unevaluatedProperties": True}}})["/properties/a"]
+
+    assert repr(reason.cause) == "Cause(pointer='/properties/a', keywords=['enum'])"
+
+
+def test_find_unsatisfiable_reads_the_registry():
+    registry = jsonschema_rs.Registry([("https://example.com/int", {"type": "integer"})])
+
+    reasons = find_unsatisfiable(
+        {"allOf": [{"$ref": "https://example.com/int"}, {"type": "string"}]},
+        registry=registry,
+    )
+
+    assert reason_data(reasons[""]) == ("conflict", [("/allOf/0", []), ("/allOf/1", ["type"])])
+
+
+def test_find_unsatisfiable_rejects_offline_with_a_retriever():
+    def retrieve(uri: str):
+        return {}
+
+    with pytest.raises(ValueError, match="`offline` cannot be used together with `retriever`"):
+        find_unsatisfiable({"$ref": "https://example.com/schema.json"}, offline=True, retriever=retrieve)
+
+
+def test_find_unsatisfiable_reports_a_schema_that_fails_meta_validation():
+    with pytest.raises(ValidationError):
+        find_unsatisfiable({"type": 1})

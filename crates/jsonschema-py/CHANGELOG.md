@@ -4,6 +4,7 @@
 
 ### Added
 
+- `canonical.find_unsatisfiable`, naming every subschema of a document that admits no value, and the keywords that leave it empty.
 - Pre-built wheels for Windows on `arm64`.
 
 ### Fixed

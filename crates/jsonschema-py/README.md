@@ -497,9 +497,36 @@ Compare a request schema new-against-old and a response schema old-against-new: 
 
 `UNKNOWN` is undecided, not negative, so the two questions have opposite safe tests: only `satisfiability() == Satisfiability.NO` proves a schema admits nothing, and only `covers() == Containment.YES` proves containment.
 
-`Containment`, `Satisfiability`, `Distinctness` and `CanonicalKind` live in `jsonschema_rs.canonical`.
+`Containment`, `Satisfiability`, `Distinctness`, `CanonicalKind`, `UnsatisfiableReason` and `Cause` live in `jsonschema_rs.canonical`.
 
 Both operands must share one setup - the same draft, format policy, regular-expression engine and definitions - or `IncompatibleOperands` is raised. `UnsupportedOperand` means an operand is a `Raw` pass-through, and `UnsupportedResult` that the canonical form does not support the result.
+
+### Finding the dead subschemas of a document
+
+`find_unsatisfiable` walks a whole document and answers which of its subschemas admit no value, and why - the keywords at fault and where they sit:
+
+```python
+from jsonschema_rs.canonical import UnsatisfiableReason, find_unsatisfiable
+
+reasons = find_unsatisfiable({
+    "properties": {
+        "tag": {"type": "string", "minLength": 5, "maxLength": 2},
+        "name": {"type": "string"},
+    }
+})
+
+match reasons["/properties/tag"]:
+    case UnsatisfiableReason.Conflict(causes):
+        assert [(cause.pointer, cause.keywords) for cause in causes] == [
+            ("/properties/tag", ["type"]),
+            ("/properties/tag", ["minLength", "maxLength"]),
+        ]
+
+# A live subschema is not reported
+assert "/properties/name" not in reasons
+```
+
+A reason is `Literal` (written as `false`), `Empty` (one part admits nothing by itself) or `Conflict` (each part admits values, together they admit none). A pointer left out is not proven satisfiable: a document canonicalization cannot model reports nothing, as `Satisfiability` answers `UNKNOWN`.
 
 ## Meta-Schema Validation
 

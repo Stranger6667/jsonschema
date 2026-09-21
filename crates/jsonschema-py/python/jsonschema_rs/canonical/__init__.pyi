@@ -1,9 +1,9 @@
 from decimal import Decimal
-from typing import TypeAlias, final
+from typing import Any, TypeAlias, final
 
+from .. import CanonicalSchema, JsonValue, PatternOptionsType, Registry, RetrieverProtocol
 from . import json as json
 from . import schema as schema
-from .. import CanonicalSchema, JsonValue
 
 @final
 class Containment:
@@ -311,6 +311,70 @@ class RawView:
     def reason(self) -> RawReason: ...
     @property
     def pointer(self) -> str | None: ...
+
+@final
+class Cause:
+    """One part of a schema object, as a reason names it."""
+
+    __match_args__: tuple[str, ...]
+    @property
+    def pointer(self) -> str:
+        """JSON Pointer of the schema object holding ``keywords``, or of the subschema itself."""
+        ...
+    @property
+    def keywords(self) -> list[str]:
+        """Keywords of one family present at ``pointer``; empty for a whole subschema."""
+        ...
+
+class UnsatisfiableReason:
+    """Why a subschema admits no value."""
+
+    @final
+    class Literal(UnsatisfiableReason):
+        """Written as ``false``."""
+
+        __match_args__: tuple[str, ...]
+
+    @final
+    class Empty(UnsatisfiableReason):
+        """One part every value must satisfy admits nothing by itself.
+
+        A subschema part has a reason of its own under its pointer.
+        """
+
+        __match_args__: tuple[str, ...]
+        @property
+        def cause(self) -> Cause: ...
+
+    @final
+    class Conflict(UnsatisfiableReason):
+        """Each part admits values; no value satisfies all of them together."""
+
+        __match_args__: tuple[str, ...]
+        @property
+        def causes(self) -> list[Cause]: ...
+
+def find_unsatisfiable(
+    schema: bool | dict[str, Any],
+    /,
+    *,
+    draft: int | None = None,
+    validate_formats: bool | None = None,
+    pattern_options: PatternOptionsType | None = None,
+    retriever: RetrieverProtocol | None = None,
+    registry: Registry | None = None,
+    base_uri: str | None = None,
+    offline: bool | None = None,
+) -> dict[str, UnsatisfiableReason]:
+    """The subschemas that admit no value, by JSON Pointer, each with why.
+
+    A pointer left out is not proven satisfiable: a document the canonical form does not
+    model reports nothing, as :class:`Satisfiability` answers ``UNKNOWN``.
+
+    Raises :class:`ValidationError` when the schema fails meta-schema validation and
+    :class:`CanonicalizationError` when the root is not a boolean or an object.
+    """
+    ...
 
 CanonicalViewType: TypeAlias = (
     TrueView
