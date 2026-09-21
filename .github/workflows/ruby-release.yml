@@ -22,7 +22,7 @@ jobs:
       stable-ruby-versions: ${{ steps.parse.outputs.stable-ruby-versions }}
     steps:
       - id: fetch
-        uses: oxidize-rb/actions/fetch-ci-data@e5f9a49a7812a078584072f6e3f657ad247c8771 # v1.4.4
+        uses: oxidize-rb/actions/fetch-ci-data@ec90b4aa48795518d79be3f5cc478d1d7ccd02a8 # v1.5.0
         with:
           supported-ruby-platforms: |
             exclude:
