@@ -4,6 +4,12 @@
 
 ## [0.57.0] - 2026-09-22
 
+### Fixed
+
+- Packaging issue.
+
+## [0.57.0] - 2026-09-22
+
 ### Added
 
 - `canonical.find_unsatisfiable`, naming every subschema of a document that admits no value, and the keywords that leave it empty.
