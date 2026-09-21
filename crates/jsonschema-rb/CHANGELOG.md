@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-09-22
+
 ### Added
 
 - `Canonical.find_unsatisfiable`, naming every subschema of a document that admits no value, and the keywords that leave it empty.
@@ -575,7 +577,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.56.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.57.0...HEAD
+[0.57.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.56.0...ruby-v0.57.0
 [0.56.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.55.1...ruby-v0.56.0
 [0.55.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.55.0...ruby-v0.55.1
 [0.55.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.54.0...ruby-v0.55.0
