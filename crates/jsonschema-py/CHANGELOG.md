@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.57.0] - 2026-09-22
+
 ### Added
 
 - `canonical.find_unsatisfiable`, naming every subschema of a document that admits no value, and the keywords that leave it empty.
@@ -1507,7 +1509,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.56.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.57.0...HEAD
+[0.57.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.56.0...python-v0.57.0
 [0.56.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.1...python-v0.56.0
 [0.55.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.0...python-v0.55.1
 [0.55.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.54.0...python-v0.55.0
