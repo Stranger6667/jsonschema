@@ -1,8 +1,9 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-expression: "prettyplease::unparse(&file)"
+expression: rendered
 ---
 struct Validator;
+::jsonschema::__private::pyo3_backend! {
 #[doc(hidden)]
 #[allow(
     non_snake_case,
@@ -3033,4 +3034,5 @@ impl Validator {
     ) -> ::jsonschema::__private::pyo3::PyResult<::jsonschema::ErrorIterator<'__i>> {
         __validator_impl::entry_iter_errors(instance)
     }
+}
 }

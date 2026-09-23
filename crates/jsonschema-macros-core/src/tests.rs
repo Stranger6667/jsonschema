@@ -865,7 +865,24 @@ fn pyo3_emitter(snapshot: &str, schema: &Value) {
     .expect("Item should parse");
     let tokens = crate::validator_impl(&config, &item).expect("schema should generate");
     let file: syn::File = syn::parse2(tokens).expect("valid token stream");
-    insta::assert_snapshot!(snapshot, prettyplease::unparse(&file));
+    let [syn::Item::Struct(declaration), syn::Item::Macro(wrapper)] = file.items.as_slice() else {
+        panic!("expected the struct followed by the backend wrapper");
+    };
+    // `prettyplease` leaves macro bodies unformatted, so the wrapped items are rendered on their own.
+    let wrapped: syn::File = syn::parse2(wrapper.mac.tokens.clone()).expect("wrapped items");
+    let declaration = syn::File {
+        shebang: None,
+        attrs: Vec::new(),
+        items: vec![syn::Item::Struct(declaration.clone())],
+    };
+    let path = &wrapper.mac.path;
+    let rendered = format!(
+        "{}{}! {{\n{}}}\n",
+        prettyplease::unparse(&declaration),
+        quote!(#path).to_string().replace(' ', ""),
+        prettyplease::unparse(&wrapped)
+    );
+    insta::assert_snapshot!(snapshot, rendered);
 }
 
 #[test_case(quote! { schema = "{}", backend = Pyo3 }, None ; "plain")]

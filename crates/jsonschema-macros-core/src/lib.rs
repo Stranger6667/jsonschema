@@ -887,9 +887,13 @@ so the generated methods cannot depend on type parameters",
         Backend::SerdeJson => crate::codegen::generate_from_config::<
             crate::codegen::emit_serde::SerdeEmitter,
         >(&config, &recompile_trigger, name, &impl_mod_name)?,
-        Backend::Pyo3 => crate::codegen::generate_from_config::<
-            crate::codegen::emit_pyo3::Pyo3Emitter,
-        >(&config, &recompile_trigger, name, &impl_mod_name)?,
+        Backend::Pyo3 => {
+            let generated = crate::codegen::generate_from_config::<
+                crate::codegen::emit_pyo3::Pyo3Emitter,
+            >(&config, &recompile_trigger, name, &impl_mod_name)?;
+            let runtime_crate = config.runtime_crate_alias.as_ref();
+            quote! { #runtime_crate::__private::pyo3_backend! { #generated } }
+        }
     };
 
     Ok(quote! {
