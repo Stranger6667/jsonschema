@@ -854,6 +854,48 @@ fn test_required_before_properties_validate_parity(instance: serde_json::Value) 
     );
 }
 
+#[jsonschema::validator(
+    schema = r#"{"properties":{"a":{"type":"integer"},"b":{"properties":{"c":{"type":"string"}}}},"required":["a","z"],"additionalProperties":{"type":"boolean"}}"#
+)]
+struct RequiredWithAdditionalSchemaParityValidator;
+
+#[test_case(serde_json::json!({"a":1,"z":true}) ; "valid")]
+#[test_case(serde_json::json!({"a":1,"z":0}) ; "required_key_checked_by_additional_properties")]
+#[test_case(serde_json::json!({"a":"x","z":true}) ; "bad_value")]
+#[test_case(serde_json::json!({"a":1,"b":{"c":1},"z":true}) ; "nested_bad_value")]
+#[test_case(serde_json::json!({"b":{"c":1},"a":"x","z":true}) ; "first_bad_value_in_instance_order")]
+#[test_case(serde_json::json!({"a":1,"y":1,"z":true}) ; "bad_additional_value")]
+#[test_case(serde_json::json!({"a":"x","y":1}) ; "missing_required_not_in_properties")]
+#[test_case(serde_json::json!({"z":0,"y":1}) ; "missing_required_in_properties")]
+fn test_required_with_additional_schema_validate_parity(instance: serde_json::Value) {
+    let schema = serde_json::json!({"properties":{"a":{"type":"integer"},"b":{"properties":{"c":{"type":"string"}}}},"required":["a","z"],"additionalProperties":{"type":"boolean"}});
+    assert_validate_parity_for(
+        &schema,
+        RequiredWithAdditionalSchemaParityValidator::is_valid(&instance),
+        RequiredWithAdditionalSchemaParityValidator::validate(&instance),
+        &instance,
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"],"additionalProperties":false}"#
+)]
+struct RequiredWithAdditionalFalseParityValidator;
+
+#[test_case(serde_json::json!({"a":1,"b":2}) ; "valid")]
+#[test_case(serde_json::json!({"a":1,"b":2,"x":0}) ; "unexpected_key")]
+#[test_case(serde_json::json!({"a":1,"x":0}) ; "missing_required_and_unexpected_key")]
+#[test_case(serde_json::json!({"x":0,"a":"y","b":2}) ; "unexpected_key_before_bad_value")]
+fn test_required_with_additional_false_validate_parity(instance: serde_json::Value) {
+    let schema = serde_json::json!({"properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"],"additionalProperties":false});
+    assert_validate_parity_for(
+        &schema,
+        RequiredWithAdditionalFalseParityValidator::is_valid(&instance),
+        RequiredWithAdditionalFalseParityValidator::validate(&instance),
+        &instance,
+    );
+}
+
 // patternProperties value errors and additionalProperties errors interleave in instance order for
 // additionalProperties:false; property values come before pattern values otherwise.
 #[jsonschema::validator(

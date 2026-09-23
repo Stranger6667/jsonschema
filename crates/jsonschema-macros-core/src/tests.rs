@@ -745,6 +745,7 @@ fn codegen_is_valid_body_snapshot(schema_json: &str, snap_name: &str) {
 #[test_case(r#"{"oneOf":[{"type":"string"},{"type":"number"}]}"#, "one_of_no_discriminator_validate" ; "one_of_no_discriminator_validate")]
 #[test_case(r#"{"type":"object","required":["a"],"properties":{"a":{"type":"string"}},"additionalProperties":false}"#, "properties_validate_uses_bound_obj" ; "properties_validate_uses_bound_obj")]
 #[test_case(r#"{"type":"object","properties":{"a":{"type":"integer"}},"patternProperties":{"^x":{"type":"string"}},"additionalProperties":false}"#, "object_pass_validate_uses_bound_obj" ; "object_pass_validate_uses_bound_obj")]
+#[test_case(r#"{"type":"object","required":["a","z"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}}}"#, "properties_validate_tracks_required" ; "properties_validate_tracks_required")]
 fn codegen_validate_body_snapshot(schema_json: &str, snap_name: &str) {
     let schema: Value = serde_json::from_str(schema_json).expect("valid schema json");
     let description = serde_json::to_string(&schema).expect("schema serialization");

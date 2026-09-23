@@ -1,0 +1,82 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"properties\":{\"a\":{\"type\":\"string\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"z\"],\"type\":\"object\"}"
+expression: validate_body(schema)
+---
+match instance {
+            __Value::Object(obj) => {
+                let mut __req_0 = false;
+                let mut __req_1 = false;
+                let mut __first = None;
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "a" => {
+                            __req_0 = true;
+                            if __first.is_none() {
+                                __first = (|| {
+                                    let instance = value;
+                                    let __path = &__path.push("a");
+                                    if !(instance.is_string()) {
+                                        return Some(
+                                            __err::single_type(
+                                                "/properties/a/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::String,
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })();
+                            }
+                        }
+                        "b" => {
+                            if __first.is_none() {
+                                __first = (|| {
+                                    let instance = value;
+                                    let __path = &__path.push("b");
+                                    if !(match instance {
+                                        __Value::Number(n) => __types::is_integer(n),
+                                        _ => false,
+                                    }) {
+                                        return Some(
+                                            __err::single_type(
+                                                "/properties/b/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })();
+                            }
+                        }
+                        "z" => {
+                            __req_1 = true;
+                        }
+                        _ => {}
+                    }
+                }
+                if !__req_0 {
+                    return Some(
+                        __err::required("/required", __path.into(), instance, "a"),
+                    );
+                }
+                if !__req_1 {
+                    return Some(
+                        __err::required("/required", __path.into(), instance, "z"),
+                    );
+                }
+                if __first.is_some() {
+                    return __first;
+                }
+            }
+            _ => {
+                return Some(
+                    __err::single_type("/type", __path.into(), instance, __JT::Object),
+                );
+            }
+        }
+        None

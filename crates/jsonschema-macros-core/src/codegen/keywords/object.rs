@@ -134,17 +134,17 @@ pub(in super::super) fn compile<E: ValueEmitter>(
             && properties_map.is_some()
             && !has_pattern_properties;
 
-    let required_checks = required_fields
-        .iter()
-        .map(|name| required::compile_single(ctx, name));
     let required_after_checks: Vec<CompiledExpr> = if required_after_properties {
-        required_checks.collect()
+        required_fields
+            .iter()
+            .map(|name| required::compile_single(ctx, name))
+            .collect()
     } else {
-        for check in required_checks {
-            checks.push((check, true));
-        }
         Vec::new()
     };
+    // `required` goes here unless the properties pass takes it over, which needs nothing checked
+    // in between.
+    let required_slot = checks.len();
 
     if applicator_vocab_enabled {
         if let Some(value) = schema.get("dependencies") {
@@ -197,6 +197,24 @@ pub(in super::super) fn compile<E: ValueEmitter>(
 
     // Every cluster subschema is compiled exactly once and shared by the
     // per-keyword and unified-pass emitters below.
+    let required_in_properties_pass = !required_after_properties
+        && !required_fields.is_empty()
+        && checks.len() == required_slot
+        && properties_map.is_some()
+        && !(pattern_properties_value.is_some() && additional_properties_fused);
+    if !required_after_properties && !required_in_properties_pass {
+        let required_checks: Vec<(CompiledExpr, bool)> = required_fields
+            .iter()
+            .map(|name| (required::compile_single(ctx, name), true))
+            .collect();
+        checks.splice(required_slot..required_slot, required_checks);
+    }
+    let properties_required: &[&str] = if required_in_properties_pass {
+        &required_fields
+    } else {
+        &[]
+    };
+
     let cluster = object_pass::compile_cluster_subschemas(
         ctx,
         properties_map.filter(|m| !m.is_empty()),
@@ -230,7 +248,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
             // Invalid pattern regex: fall back to per-keyword checks so the diagnostic surfaces.
             if let Some(props) = properties_map {
                 checks.push((
-                    properties::compile(ctx, props, additional_properties_schema, &cluster),
+                    properties::compile(ctx, props, additional_properties_schema, &cluster, &[]),
                     true,
                 ));
             }
@@ -253,7 +271,13 @@ pub(in super::super) fn compile<E: ValueEmitter>(
     } else if let Some(props) = properties_map {
         // Sequential: property values, then pattern values (additionalProperties true/absent).
         checks.push((
-            properties::compile(ctx, props, additional_properties_schema, &cluster),
+            properties::compile(
+                ctx,
+                props,
+                additional_properties_schema,
+                &cluster,
+                properties_required,
+            ),
             true,
         ));
         if let Some(value) = pattern_properties_schema {
