@@ -202,3 +202,14 @@ pub fn pyo3_suite(input: TokenStream) -> TokenStream {
         Err(e) => compile_error_ts(e.to_string()),
     }
 }
+
+/// Generates one `backend = Pyo3` validator per schema in a JSON array file, reachable through
+/// `SCHEMA_ENTRIES`.
+#[proc_macro]
+pub fn pyo3_schemas(input: TokenStream) -> TokenStream {
+    let path = parse_macro_input!(input as syn::LitStr);
+    match pyo3_generator::generate_schemas(&path.value()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => compile_error_ts(e.to_string()),
+    }
+}

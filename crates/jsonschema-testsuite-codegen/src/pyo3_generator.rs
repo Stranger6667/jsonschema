@@ -1,7 +1,8 @@
 use std::{fs, path::Path};
 
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
+use serde_json::Value;
 use testsuite_internal::Case;
 
 use crate::{files, loader};
@@ -59,18 +60,7 @@ pub(crate) fn generate(
                     )]
                     struct #ident;
                 });
-                entries.push(quote! {
-                    SuiteEntry {
-                        id: #id,
-                        is_valid: |instance| #ident::is_valid(instance),
-                        validate: |instance| {
-                            Ok(#ident::validate(instance)?.err().map(|error| error.to_string()))
-                        },
-                        iter_errors: |instance| {
-                            Ok(#ident::iter_errors(instance)?.map(|error| error.to_string()).collect())
-                        },
-                    }
-                });
+                entries.push(entry(&ident, &id));
             }
         }
     }
@@ -79,4 +69,61 @@ pub(crate) fn generate(
 
         pub static SUITE_ENTRIES: &[SuiteEntry] = &[#(#entries),*];
     })
+}
+
+/// One `backend = Pyo3` validator per schema in a JSON array, found by the schema's JSON with
+/// sorted keys.
+pub(crate) fn generate_schemas(path: &str) -> Result<TokenStream, Box<dyn std::error::Error>> {
+    let schemas: Vec<Value> = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let mut definitions = Vec::new();
+    let mut entries = Vec::new();
+    for (index, schema) in schemas.iter().enumerate() {
+        let schema = serde_json::to_string(&sorted(schema))?;
+        let ident = format_ident!("SchemaValidator{index}");
+        definitions.push(quote! {
+            #[jsonschema::validator(schema = #schema, backend = Pyo3)]
+            struct #ident;
+        });
+        entries.push(entry(&ident, &schema));
+    }
+    Ok(quote! {
+        // Rebuilds when the schema list changes.
+        const _: &str = include_str!(concat!(env!("CARGO_MANIFEST_DIR"), "/../../", #path));
+
+        #(#definitions)*
+
+        pub static SCHEMA_ENTRIES: &[SuiteEntry] = &[#(#entries),*];
+    })
+}
+
+fn sorted(value: &Value) -> Value {
+    match value {
+        Value::Object(object) => {
+            let mut members: Vec<_> = object.iter().collect();
+            members.sort_by_key(|(key, _)| *key);
+            Value::Object(
+                members
+                    .into_iter()
+                    .map(|(key, member)| (key.clone(), sorted(member)))
+                    .collect(),
+            )
+        }
+        Value::Array(items) => Value::Array(items.iter().map(sorted).collect()),
+        other => other.clone(),
+    }
+}
+
+fn entry(ident: &Ident, id: &str) -> TokenStream {
+    quote! {
+        SuiteEntry {
+            id: #id,
+            is_valid: |instance| #ident::is_valid(instance),
+            validate: |instance| {
+                Ok(#ident::validate(instance)?.err().map(|error| error.to_string()))
+            },
+            iter_errors: |instance| {
+                Ok(#ident::iter_errors(instance)?.map(|error| error.to_string()).collect())
+            },
+        }
+    }
 }

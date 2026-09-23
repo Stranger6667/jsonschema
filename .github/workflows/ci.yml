@@ -324,7 +324,7 @@ jobs:
       # expansions and the validators Python calls into all count toward coverage.
       - name: Run tests
         run: |
-          source <(cargo llvm-cov show-env --export-prefix)
+          source <(cargo llvm-cov show-env --sh)
           export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
           cargo llvm-cov clean --workspace
           just test-py-coverage
