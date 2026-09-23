@@ -71,6 +71,16 @@ else:
     variants = ["jsonschema", "fastjsonschema"]
 
 
+SCHEMAS = (
+    "openapi.json",
+    "swagger.json",
+    "geojson.json",
+    "citm_catalog_schema.json",
+    "fast_schema.json",
+    "fhir.schema.json",
+    "recursive_schema.json",
+)
+
 DEFAULT_BENCHMARK_CONFIG = {"iterations": 10, "rounds": 10, "warmup_rounds": 10}
 
 
@@ -94,18 +104,7 @@ def args(request, variant):
 
 if jsonschema_rs is not None:
 
-    @pytest.mark.parametrize(
-        "name",
-        (
-            "openapi.json",
-            "swagger.json",
-            "geojson.json",
-            "citm_catalog_schema.json",
-            "fast_schema.json",
-            "fhir.schema.json",
-            "recursive_schema.json",
-        ),
-    )
+    @pytest.mark.parametrize("name", SCHEMAS)
     @pytest.mark.parametrize(
         "func",
         (
@@ -122,6 +121,16 @@ if jsonschema_rs is not None:
             benchmark.group = f"{name}: {benchmark.group}"
         schema = load_from_benches(name, loader=load_json_str)
         benchmark(func, schema)
+
+    @pytest.mark.parametrize("name", SCHEMAS)
+    @pytest.mark.parametrize(
+        "func", (jsonschema_rs.meta.is_valid, jsonschema_rs.meta.validate), ids=["is-valid", "validate"]
+    )
+    @pytest.mark.benchmark(group="meta-schema")
+    def test_meta_schema(benchmark, func, name):
+        if hasattr(benchmark, "group"):
+            benchmark.group = f"{name}: {benchmark.group}"
+        benchmark(func, load_from_benches(name))
 
 
 # Small schemas
