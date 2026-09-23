@@ -3345,6 +3345,30 @@ pub mod draft202012 {
 #[cfg(feature = "macros")]
 #[doc(hidden)]
 pub mod __private {
+    #[cfg(feature = "pyo3")]
+    pub mod pyo3 {
+        pub use pyo3::{intern, types::PyString, Borrowed, Bound, PyAny, PyResult};
+    }
+
+    // Wraps a `backend = Pyo3` validator, so a build without the feature reports that alone.
+    #[cfg(feature = "pyo3")]
+    #[doc(hidden)]
+    #[macro_export]
+    macro_rules! __pyo3_backend {
+        ($($generated:tt)*) => { $($generated)* };
+    }
+
+    #[cfg(not(feature = "pyo3"))]
+    #[doc(hidden)]
+    #[macro_export]
+    macro_rules! __pyo3_backend {
+        ($($generated:tt)*) => {
+            ::core::compile_error!("`backend = Pyo3` needs the `pyo3` feature of `jsonschema`");
+        };
+    }
+
+    pub use crate::__pyo3_backend as pyo3_backend;
+
     pub use ::serde_json;
 
     pub mod fancy_regex {

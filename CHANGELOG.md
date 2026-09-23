@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `backend = Pyo3` on `#[jsonschema::validator]`, generating a validator that reads Python objects in place.
+
 ## [0.57.0] - 2026-09-22
 
 ### Added
