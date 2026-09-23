@@ -75,18 +75,30 @@ def maybe_optional(draft, schema, instance, expected, description, filename, is_
     return output
 
 
+def suite_cases():
+    for draft in SUPPORTED_DRAFTS:
+        base = TEST_SUITE_PATH / f"tests/draft{draft}"
+        for path in sorted(base.rglob("*.json")):
+            relative = path.relative_to(base).as_posix()
+            is_optional = "optional" in relative
+            for block in load_file(path):
+                for test in block["tests"]:
+                    yield maybe_optional(
+                        draft,
+                        block["schema"],
+                        test["data"],
+                        test["valid"],
+                        test["description"],
+                        path.name,
+                        is_optional,
+                    )
+
+
 def pytest_generate_tests(metafunc):
-    cases = [
-        maybe_optional(
-            draft, block["schema"], test["data"], test["valid"], test["description"], filename, "optional" in str(root)
-        )
-        for draft in SUPPORTED_DRAFTS
-        for root, _, files in os.walk(TEST_SUITE_PATH / f"tests/draft{draft}/")
-        for filename in files
-        for block in load_file(os.path.join(root, filename))
-        for test in block["tests"]
-    ]
-    metafunc.parametrize("filename, draft, schema, instance, expected, description, is_optional", cases)
+    metafunc.parametrize(
+        "filename, draft, schema, instance, expected, description, is_optional",
+        list(suite_cases()),
+    )
 
 
 def test_draft(filename, draft, schema, instance, expected, description, is_optional):
