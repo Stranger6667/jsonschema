@@ -7,6 +7,10 @@
 - `backend = Pyo3` on `#[jsonschema::validator]`, generating a validator that reads Python objects in place.
 - `jsonschema::meta::pyo3`, the bundled meta-schema validators for a schema held as a Python object.
 
+### Performance
+
+- Generated `validate` checks `required` in the same pass over an object as `properties`, instead of looking up each required name.
+
 ## [0.57.0] - 2026-09-22
 
 ### Added

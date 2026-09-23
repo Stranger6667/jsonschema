@@ -1,7 +1,8 @@
 use super::{
-    super::{CompileContext, CompiledExpr},
+    super::{expr::ValidateBlock, CompileContext, CompiledExpr},
     additional_properties::{compile_first_unexpected_check, compile_wildcard_arm},
     object_pass::ClusterSubschemas,
+    required,
 };
 use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
@@ -30,12 +31,17 @@ fn compile_known_keys_precheck<E: ValueEmitter>(
 
 /// Compile `properties` together with the `additionalProperties` wildcard arm. This integrated
 /// form emits a single `obj.iter().all(...)` pass with a match on each key.
+///
+/// `required` names are checked ahead of the property values, as the runtime does; `validate`
+/// tracks them in the same pass and reports a missing one before the first value error.
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     properties: &Map<String, Value>,
     additional_properties: Option<&Value>,
     cluster: &ClusterSubschemas<'_>,
+    required: &[&str],
 ) -> CompiledExpr {
+    let required_path = ctx.schema_path_for_keyword("required");
     let additional_properties_path = ctx.schema_path_for_keyword("additionalProperties");
     let use_known_keys_precheck = matches!(additional_properties, Some(Value::Bool(false)));
 
@@ -51,6 +57,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     };
 
     let compiled_props = &cluster.properties;
+    let mut single_pass_validate = None;
 
     let mut is_valid_match_arms = Vec::new();
     let mut all_arms_trivially_true = true;
@@ -103,6 +110,14 @@ pub(crate) fn compile<E: ValueEmitter>(
             wildcard_arm_body.validate.as_token_stream()
         };
         let validate = build_validate_block::<E>(compiled_props, &wildcard_validate);
+        if !required.is_empty() {
+            single_pass_validate = Some(build_validate_with_required_block::<E>(
+                compiled_props,
+                &wildcard_validate,
+                required,
+                &required_path,
+            ));
+        }
         let collect = build_collect_block::<E>(
             compiled_props,
             use_known_keys_precheck,
@@ -119,7 +134,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         CompiledExpr::always_true()
     };
 
-    if base_iter_check.is_trivially_true() {
+    let compiled = if base_iter_check.is_trivially_true() {
         if known_keys_precheck.is_trivially_true() {
             CompiledExpr::always_true()
         } else {
@@ -141,7 +156,19 @@ pub(crate) fn compile<E: ValueEmitter>(
         }
     } else {
         base_iter_check
+    };
+    if required.is_empty() {
+        return compiled;
     }
+    let required_checks: Vec<CompiledExpr> = required
+        .iter()
+        .map(|name| required::compile_single(ctx, name))
+        .collect();
+    let mut combined = CompiledExpr::combine_and(required_checks.into_iter().chain([compiled]));
+    if let Some(validate) = single_pass_validate {
+        combined.validate = ValidateBlock::Expr(validate);
+    }
+    combined
 }
 
 /// Build the `collect` block. Pure `properties` iterates schema order (`obj.get`); fused
@@ -256,6 +283,89 @@ fn build_validate_block<E: ValueEmitter>(
                 #(#validate_arms,)*
                 #wildcard_validate_arm
             }
+        }
+    }
+}
+
+/// `validate` for the properties pass with `required` folded in: a flag per required name is set
+/// as its key goes by, and the first value error is held until the pass ends, so a missing
+/// required name is still reported first.
+fn build_validate_with_required_block<E: ValueEmitter>(
+    compiled_props: &[(&str, CompiledExpr)],
+    wildcard_validate: &TokenStream,
+    required: &[&str],
+    required_path: &str,
+) -> TokenStream {
+    let key_as_str = E::key_as_str(format_ident!("key"));
+    let entries = E::object_iter_entries(format_ident!("obj"));
+    let err_instance = E::err_instance(format_ident!("instance"));
+    let flags: Vec<_> = (0..required.len())
+        .map(|index| format_ident!("__req_{}", index))
+        .collect();
+    let flag_for = |name: &str| {
+        required
+            .iter()
+            .position(|required_name| *required_name == name)
+            .map(|index| &flags[index])
+    };
+
+    let mut arms = Vec::new();
+    for (name, compiled) in compiled_props {
+        let set_flag = flag_for(name).map(|flag| quote! { #flag = true; });
+        let hold_error = match &compiled.validate {
+            ValidateBlock::AlwaysValid => quote! {},
+            ValidateBlock::Expr(validate) => quote! {
+                if __first.is_none() {
+                    __first = (|| {
+                        let instance = value;
+                        let __path = &__path.push(#name);
+                        #validate
+                        None
+                    })();
+                }
+            },
+        };
+        arms.push(quote! { #name => { #set_flag #hold_error } });
+    }
+    let wildcard = if wildcard_validate.is_empty() {
+        quote! {}
+    } else {
+        quote! {
+            if __first.is_none() {
+                __first = (|| {
+                    #wildcard_validate
+                    None
+                })();
+            }
+        }
+    };
+    // A required name outside `properties` is still an additional property.
+    for (name, flag) in required.iter().zip(&flags) {
+        if !compiled_props.iter().any(|(property, _)| property == name) {
+            arms.push(quote! { #name => { #flag = true; #wildcard } });
+        }
+    }
+    let missing = required.iter().zip(&flags).map(|(name, flag)| {
+        quote! {
+            if !#flag {
+                return Some(__err::required(#required_path, __path.into(), #err_instance, #name));
+            }
+        }
+    });
+
+    quote! {
+        #(let mut #flags = false;)*
+        let mut __first = None;
+        for (key, value) in #entries {
+            let key_str = #key_as_str;
+            match key_str {
+                #(#arms,)*
+                _ => { #wildcard }
+            }
+        }
+        #(#missing)*
+        if __first.is_some() {
+            return __first;
         }
     }
 }
