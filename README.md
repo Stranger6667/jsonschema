@@ -76,6 +76,7 @@ If you'd like to try `jsonschema`, you can check the WebAssembly-powered [playgr
 
 - 📚 Full support for popular JSON Schema drafts
 - 🔧 Custom keywords and format validators
+- ⚡ Compile-time validators for maximum performance, reading `serde_json` values or Python objects in extension modules
 - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 - 📦 Schema bundling into Compound Schema Documents, and `$ref` dereferencing
 - 🎨 Structured Output v1 reports (flag/list/hierarchical)
@@ -127,6 +128,7 @@ For detailed benchmarks, see our [full performance comparison](https://github.co
 | `resolve-async` | | Non-blocking reference resolution |
 | `arbitrary-precision` | | Arbitrarily large integers and exact decimal values |
 | `macros` | | The `#[jsonschema::validator]` compile-time validator |
+| `pyo3` | | Validating Python objects in place, and `backend = Pyo3` for the macro |
 
 Turning off `idna` drops the IDNA and ICU dependencies; `idn-hostname` and `idn-email` are then
 treated as unknown formats.
