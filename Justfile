@@ -34,11 +34,11 @@ test-py-no-rebuild *FLAGS:
   uvx --with="crates/jsonschema-py[tests]" --with=crates/jsonschema-testsuite-pyo3 pytest crates/jsonschema-py/tests-py -rs {{FLAGS}}
 
 test-py-coverage *FLAGS:
-  uv venv --quiet --allow-existing target/py-coverage-venv
-  uv pip install --quiet --python target/py-coverage-venv maturin
-  VIRTUAL_ENV="$PWD/target/py-coverage-venv" target/py-coverage-venv/bin/maturin develop --uv --extras tests -m crates/jsonschema-py/Cargo.toml
-  VIRTUAL_ENV="$PWD/target/py-coverage-venv" target/py-coverage-venv/bin/maturin develop --uv -m crates/jsonschema-testsuite-pyo3/Cargo.toml
-  target/py-coverage-venv/bin/pytest crates/jsonschema-py/tests-py {{FLAGS}}
+  uv venv --quiet --clear .venv-coverage
+  uv pip install --quiet --python .venv-coverage maturin
+  VIRTUAL_ENV="$PWD/.venv-coverage" .venv-coverage/bin/maturin develop --uv --extras tests -m crates/jsonschema-py/Cargo.toml
+  VIRTUAL_ENV="$PWD/.venv-coverage" .venv-coverage/bin/maturin develop --uv -m crates/jsonschema-testsuite-pyo3/Cargo.toml
+  .venv-coverage/bin/pytest crates/jsonschema-py/tests-py {{FLAGS}}
 
 bench-py *FLAGS:
   uvx --with="crates/jsonschema-py[bench]" --refresh pytest crates/jsonschema-py/benches/bench.py --benchmark-columns=min {{FLAGS}}

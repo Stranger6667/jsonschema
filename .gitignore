@@ -11,6 +11,7 @@ crates/jsonschema-wasm/pkg/
 
 # Python
 __pycache__/
+.venv-coverage/
 
 # IDEs
 /.idea

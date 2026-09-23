@@ -1,0 +1,21 @@
+[
+  true,
+  {"properties": {"n": {"const": "x"}}},
+  {"type": "array", "items": {"type": "string"}},
+  {"uniqueItems": true},
+  {"properties": {"a": {"const": 1}}},
+  {"properties": {"a": {"enum": [1, 2]}}},
+  {"items": {"const": 1}},
+  {"type": "null"},
+  {"const": null},
+  {"properties": {"a": {"type": "null"}}},
+  {"properties": {"a": {"const": null}}},
+  {"type": "integer"},
+  {"properties": {"foo": {"type": "number"}}},
+  {"properties": {"foo": {"type": "string"}}},
+  {"type": "object"},
+  {"type": "object", "properties": {"foo": {"type": "integer"}}},
+  {"properties": {"a": {"type": "string"}}, "additionalProperties": false},
+  {"properties": {"a": {"type": "string"}, "b": {"type": "number"}}, "additionalProperties": false},
+  {"properties": {"a": {"type": "string"}}}
+]

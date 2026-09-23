@@ -13,10 +13,12 @@ testsuite::pyo3_suite!(
     path = "crates/jsonschema/tests/suite",
     drafts = ["draft4", "draft6", "draft7", "draft2019-09", "draft2020-12"]
 );
+testsuite::pyo3_schemas!("crates/jsonschema-py/tests-py/codegen_schemas.json");
 
 static BY_ID: LazyLock<HashMap<&'static str, &'static SuiteEntry>> = LazyLock::new(|| {
     SUITE_ENTRIES
         .iter()
+        .chain(SCHEMA_ENTRIES)
         .map(|entry| (entry.id, entry))
         .collect()
 });

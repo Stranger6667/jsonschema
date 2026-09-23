@@ -59,14 +59,20 @@ def test_invalid_type(func):
         func(set(), True)
 
 
-def test_lone_surrogate_instance_raises():
-    with pytest.raises(ValueError, match="surrogates not allowed"):
-        is_valid(True, "\ud800")
+@pytest.mark.parametrize("method", ("is_valid", "validate"))
+def test_invalid_instance_type(backend, method):
+    with pytest.raises(ValueError, match="Unsupported type: 'set'"):
+        getattr(backend, method)(True, set())
 
 
-def test_lone_surrogate_nested_raises():
+def test_lone_surrogate_instance_raises(backend):
     with pytest.raises(ValueError, match="surrogates not allowed"):
-        is_valid({"properties": {"n": {"const": "x"}}}, {"n": "\ud800"})
+        backend.is_valid(True, "\ud800")
+
+
+def test_lone_surrogate_nested_raises(backend):
+    with pytest.raises(ValueError, match="surrogates not allowed"):
+        backend.is_valid({"properties": {"n": {"const": "x"}}}, {"n": "\ud800"})
 
 
 def test_repr():
@@ -100,27 +106,27 @@ def test_from_str_error():
         ["A", "B", "C"],
     ),
 )
-def test_array_tuple(val):
+def test_array_tuple(backend, val):
     schema = {"type": "array", "items": {"type": "string"}}
-    validate(schema, val)
+    backend.validate(schema, val)
 
 
 @pytest.mark.parametrize(
     "val",
     ((1, 2, 3), [1, 2, 3], {"foo": 1}),
 )
-def test_array_tuple_invalid(val):
+def test_array_tuple_invalid(backend, val):
     schema = {"type": "array", "items": {"type": "string"}}
     with pytest.raises(ValueError):
-        validate(schema, val)
+        backend.validate(schema, val)
 
 
-def test_named_tuple():
+def test_named_tuple(backend):
     Person = namedtuple("Person", "first_name last_name")
     person_a = Person("Joe", "Smith")
     schema = {"type": "array", "items": {"type": "string"}}
     with pytest.raises(ValueError):
-        validate(schema, person_a)
+        backend.validate(schema, person_a)
 
 
 RECURSIVE_OBJECT_SCHEMA = {
@@ -222,26 +228,26 @@ class Opaque:
         ({"items": {"const": 1}}, [Opaque()]),
     ),
 )
-def test_unsupported_type_raises(schema, instance):
+def test_unsupported_type_raises(backend, schema, instance):
     with pytest.raises(ValueError, match="Unsupported type: 'Opaque'"):
-        is_valid(schema, instance)
+        backend.is_valid(schema, instance)
 
 
 @pytest.mark.parametrize("schema", ({"type": "null"}, {"const": None}))
-def test_enum_member_wrapping_none_is_null(schema):
+def test_enum_member_wrapping_none_is_null(backend, schema):
     class Nothing(E.Enum):
         NOTHING = None
 
-    assert is_valid(schema, Nothing.NOTHING)
+    assert backend.is_valid(schema, Nothing.NOTHING)
 
 
 @pytest.mark.parametrize("schema", ({"type": "null"}, {"const": None}))
-def test_unsupported_type_against_null_schema_raises(schema):
+def test_unsupported_type_against_null_schema_raises(backend, schema):
     with pytest.raises(ValueError, match="Unsupported type: 'Opaque'"):
-        is_valid({"properties": {"a": schema}}, {"a": Opaque()})
+        backend.is_valid({"properties": {"a": schema}}, {"a": Opaque()})
 
 
-def test_self_referential_enum_value_raises():
+def test_self_referential_enum_value_raises(backend):
     class Weird(E.Enum):
         A = 1
 
@@ -250,7 +256,7 @@ def test_self_referential_enum_value_raises():
             return self
 
     with pytest.raises(ValueError):
-        is_valid({"type": "integer"}, Weird.A)
+        backend.is_valid({"type": "integer"}, Weird.A)
 
 
 def test_nested_validation_keeps_outer_error():
@@ -687,17 +693,17 @@ class IntEnum(E.Enum):
         ("string", StrEnum.bar, True),
     ),
 )
-def test_enums(type_, value, expected):
+def test_enums(backend, type_, value, expected):
     schema = {"properties": {"foo": {"type": type_}}}
     instance = {"foo": value}
-    assert is_valid(schema, instance) is expected
+    assert backend.is_valid(schema, instance) is expected
 
 
-def test_dict_with_non_str_keys():
+def test_dict_with_non_str_keys(backend):
     schema = {"type": "object"}
     instance = {uuid.uuid4(): "foo"}
     with pytest.raises(ValueError, match="Dict key must be str or str enum. Got 'UUID'"):
-        validate(schema, instance)
+        backend.validate(schema, instance)
 
 
 class MyDict(dict):
@@ -721,10 +727,10 @@ class MyDict2(MyDict):
         (MyDict2, "bar", False),
     ),
 )
-def test_dict_subclasses(type_, value, expected):
+def test_dict_subclasses(backend, type_, value, expected):
     schema = {"type": "object", "properties": {"foo": {"type": "integer"}}}
     document = type_({"foo": value})
-    assert is_valid(schema, document) is expected
+    assert backend.is_valid(schema, document) is expected
 
 
 def test_custom_format():
@@ -840,7 +846,7 @@ enum_type_dec = pytest.mark.parametrize(
 
 @enum_type_dec
 @pytest.mark.parametrize("valid", (True, False))
-def test_enum_as_keys(enum_type, valid):
+def test_enum_as_keys(backend, enum_type, valid):
     if enum_type == "old":
         bases = (str, E.Enum)
     else:
@@ -859,11 +865,11 @@ def test_enum_as_keys(enum_type, valid):
     if valid:
         schema["properties"]["b"] = {"type": "number"}
 
-    assert is_valid(schema, {EnumCls.A: "xyz", EnumCls.B: 42}) is valid
+    assert backend.is_valid(schema, {EnumCls.A: "xyz", EnumCls.B: 42}) is valid
 
 
 @enum_type_dec
-def test_enum_as_keys_invalid(enum_type):
+def test_enum_as_keys_invalid(backend, enum_type):
     if enum_type == "old":
 
         class EnumCls(E.IntEnum):
@@ -875,7 +881,7 @@ def test_enum_as_keys_invalid(enum_type):
 
     schema = {"properties": {"a": {"type": "string"}}}
     with pytest.raises(ValueError, match=f"Dict key must be str or str enum. Got '{EnumCls.__name__}'"):
-        is_valid(schema, {EnumCls.A: "xyz"})
+        backend.is_valid(schema, {EnumCls.A: "xyz"})
 
 
 class BrokenValueStrEnum(str, E.Enum):
@@ -887,15 +893,15 @@ class BrokenValueStrEnum(str, E.Enum):
         return super().__getattribute__(name)
 
 
-def test_enum_key_value_lookup_error():
+def test_enum_key_value_lookup_error(backend):
     schema = {"properties": {"a": {"type": "string"}}}
     with pytest.raises(ValueError, match="boom from value"):
-        is_valid(schema, {BrokenValueStrEnum.A: "xyz"})
+        backend.is_valid(schema, {BrokenValueStrEnum.A: "xyz"})
 
 
-def test_enum_value_lookup_error():
+def test_enum_value_lookup_error(backend):
     with pytest.raises(ValueError, match="boom from value"):
-        is_valid(True, BrokenValueStrEnum.A)
+        backend.is_valid(True, BrokenValueStrEnum.A)
 
 
 @pytest.mark.skipif(not hasattr(sys, "getrefcount"), reason="PyPy does not have sys.getrefcount")
