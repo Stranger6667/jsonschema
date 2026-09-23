@@ -28,10 +28,17 @@ test-rs *FLAGS:
   cargo llvm-cov --html test {{FLAGS}}
 
 test-py *FLAGS:
-  uvx --with="crates/jsonschema-py[tests]" --refresh pytest crates/jsonschema-py/tests-py -rs {{FLAGS}}
+  uvx --with="crates/jsonschema-py[tests]" --with=crates/jsonschema-testsuite-pyo3 --refresh pytest crates/jsonschema-py/tests-py -rs {{FLAGS}}
 
 test-py-no-rebuild *FLAGS:
-  uvx --with="crates/jsonschema-py[tests]" pytest crates/jsonschema-py/tests-py -rs {{FLAGS}}
+  uvx --with="crates/jsonschema-py[tests]" --with=crates/jsonschema-testsuite-pyo3 pytest crates/jsonschema-py/tests-py -rs {{FLAGS}}
+
+test-py-coverage *FLAGS:
+  uv venv --quiet --allow-existing target/py-coverage-venv
+  uv pip install --quiet --python target/py-coverage-venv maturin
+  VIRTUAL_ENV="$PWD/target/py-coverage-venv" target/py-coverage-venv/bin/maturin develop --uv --extras tests -m crates/jsonschema-py/Cargo.toml
+  VIRTUAL_ENV="$PWD/target/py-coverage-venv" target/py-coverage-venv/bin/maturin develop --uv -m crates/jsonschema-testsuite-pyo3/Cargo.toml
+  target/py-coverage-venv/bin/pytest crates/jsonschema-py/tests-py {{FLAGS}}
 
 bench-py *FLAGS:
   uvx --with="crates/jsonschema-py[bench]" --refresh pytest crates/jsonschema-py/benches/bench.py --benchmark-columns=min {{FLAGS}}

@@ -9,6 +9,9 @@ crates/jsonschema-wasm/pkg/
 
 /profiler/dhat-heap.json
 
+# Python
+__pycache__/
+
 # IDEs
 /.idea
 /.vscode
