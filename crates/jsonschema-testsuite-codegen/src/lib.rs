@@ -10,6 +10,7 @@ mod idents;
 mod loader;
 mod output_generator;
 mod output_loader;
+mod pyo3_generator;
 mod remotes;
 
 /// A procedural macro that generates tests from
@@ -186,4 +187,18 @@ fn compile_error_ts(err: impl quote::ToTokens) -> TokenStream {
     TokenStream::from(quote! {
         compile_error!(#err);
     })
+}
+
+/// Generates one `backend = Pyo3` validator per suite case, reachable through `SUITE_ENTRIES`.
+#[proc_macro]
+pub fn pyo3_suite(input: TokenStream) -> TokenStream {
+    let config = parse_macro_input!(input as testsuite::SuiteConfig);
+    let remote_data = match remotes::generate(&config.path) {
+        Ok(data) => data,
+        Err(e) => return compile_error_ts(e.to_string()),
+    };
+    match pyo3_generator::generate(&config.path, &config.drafts, &remote_data.resources) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => compile_error_ts(e.to_string()),
+    }
 }

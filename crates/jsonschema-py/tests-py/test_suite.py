@@ -2,6 +2,7 @@ import json
 import os
 from pathlib import Path
 
+import jsonschema_testsuite_pyo3
 import pytest
 
 import jsonschema_rs
@@ -66,8 +67,8 @@ def unencodable_string(value):
     return False
 
 
-def maybe_optional(draft, schema, instance, expected, description, filename, is_optional):
-    output = (filename, draft, schema, instance, expected, description, is_optional)
+def maybe_optional(draft, schema, instance, expected, description, filename, is_optional, case_id):
+    output = (filename, draft, schema, instance, expected, description, is_optional, case_id)
     if filename in NOT_SUPPORTED_CASES.get(draft, ()):
         output = pytest.param(*output, marks=pytest.mark.skip(reason=f"{filename} is not supported"))
     elif unencodable_string(instance):
@@ -81,7 +82,9 @@ def suite_cases():
         for path in sorted(base.rglob("*.json")):
             relative = path.relative_to(base).as_posix()
             is_optional = "optional" in relative
-            for block in load_file(path):
+            for index, block in enumerate(load_file(path)):
+                # Matches the id `pyo3_suite!` gives the validator compiled for this block.
+                case_id = f"draft{draft}|{relative}|{index}"
                 for test in block["tests"]:
                     yield maybe_optional(
                         draft,
@@ -91,17 +94,18 @@ def suite_cases():
                         test["description"],
                         path.name,
                         is_optional,
+                        case_id,
                     )
 
 
 def pytest_generate_tests(metafunc):
     metafunc.parametrize(
-        "filename, draft, schema, instance, expected, description, is_optional",
+        "filename, draft, schema, instance, expected, description, is_optional, case_id",
         list(suite_cases()),
     )
 
 
-def test_draft(filename, draft, schema, instance, expected, description, is_optional):
+def test_draft(filename, draft, schema, instance, expected, description, is_optional, case_id):
     error_message = f"[{filename}] {description}: {schema} | {instance}"
     try:
         cls = {
@@ -135,3 +139,15 @@ def test_draft(filename, draft, schema, instance, expected, description, is_opti
         assert evaluation.flag()["valid"] is expected, f"evaluate mismatch: {error_message}"
     except ValueError:
         pytest.fail(error_message)
+
+
+# `jsonschema_testsuite_pyo3` holds one `backend = Pyo3` validator per suite case.
+def test_draft_codegen(filename, draft, schema, instance, expected, description, is_optional, case_id):
+    error_message = f"[{filename}] {description}: {schema} | {instance}"
+    assert jsonschema_testsuite_pyo3.is_valid(case_id, instance) is expected, f"is_valid mismatch: {error_message}"
+    assert (jsonschema_testsuite_pyo3.validate(case_id, instance) is None) is expected, (
+        f"validate mismatch: {error_message}"
+    )
+    assert (jsonschema_testsuite_pyo3.iter_errors(case_id, instance) == []) is expected, (
+        f"iter_errors mismatch: {error_message}"
+    )

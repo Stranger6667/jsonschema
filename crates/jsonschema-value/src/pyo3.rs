@@ -241,11 +241,61 @@ impl Drop for PendingErrorScope {
     }
 }
 
-/// `PyDict_Next` yielding values only; the key is never typed or decoded.
-pub struct PyValues<'py> {
+// PyPy runs `PyDict_Next` over one key snapshot per dict and drops it when any loop over that dict
+// finishes, so a loop nested over the same dict ends the outer one. There each cursor walks its own.
+struct DictCursor<'py> {
     dict: Borrowed<'py, 'py, PyDict>,
     pos: ffi::Py_ssize_t,
+    #[cfg(PyPy)]
+    keys: Option<Bound<'py, PyAny>>,
 }
+
+impl<'py> DictCursor<'py> {
+    fn new(dict: Borrowed<'py, 'py, PyDict>) -> Self {
+        Self {
+            dict,
+            pos: 0,
+            #[cfg(PyPy)]
+            keys: None,
+        }
+    }
+
+    // Borrowed key and value of the next member.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn next(&mut self) -> Option<(*mut ffi::PyObject, *mut ffi::PyObject)> {
+        #[cfg(not(PyPy))]
+        {
+            let mut key: *mut ffi::PyObject = std::ptr::null_mut();
+            let mut value: *mut ffi::PyObject = std::ptr::null_mut();
+            (unsafe {
+                ffi::PyDict_Next(
+                    self.dict.as_ptr(),
+                    &raw mut self.pos,
+                    &raw mut key,
+                    &raw mut value,
+                )
+            } != 0)
+                .then_some((key, value))
+        }
+        #[cfg(PyPy)]
+        {
+            let py = self.dict.py();
+            let keys = self.keys.get_or_insert_with(|| unsafe {
+                Bound::from_owned_ptr(py, ffi::PyDict_Keys(self.dict.as_ptr()))
+            });
+            if self.pos >= unsafe { ffi::PyList_Size(keys.as_ptr()) } {
+                return None;
+            }
+            let key = unsafe { ffi::PyList_GetItem(keys.as_ptr(), self.pos) };
+            self.pos += 1;
+            Some((key, unsafe { ffi::PyDict_GetItem(self.dict.as_ptr(), key) }))
+        }
+    }
+}
+
+/// Dict iteration yielding values only; the key is never typed or decoded.
+pub struct PyValues<'py>(DictCursor<'py>);
 
 impl<'py> Iterator for PyValues<'py> {
     type Item = PyNode<'py>;
@@ -254,20 +304,8 @@ impl<'py> Iterator for PyValues<'py> {
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn next(&mut self) -> Option<PyNode<'py>> {
-        let mut key: *mut ffi::PyObject = std::ptr::null_mut();
-        let mut value: *mut ffi::PyObject = std::ptr::null_mut();
-        if unsafe {
-            ffi::PyDict_Next(
-                self.dict.as_ptr(),
-                &raw mut self.pos,
-                &raw mut key,
-                &raw mut value,
-            )
-        } == 0
-        {
-            return None;
-        }
-        Some(unsafe { Borrowed::from_ptr(self.dict.py(), value) })
+        let (_, value) = self.0.next()?;
+        Some(unsafe { Borrowed::from_ptr(self.0.dict.py(), value) })
     }
 }
 
@@ -275,7 +313,7 @@ impl<'py> Iterator for PyValues<'py> {
 #[inline]
 #[must_use]
 pub fn object_values<'py>(dict: Borrowed<'py, 'py, PyDict>) -> PyValues<'py> {
-    PyValues { dict, pos: 0 }
+    PyValues(DictCursor::new(dict))
 }
 
 /// Narrowing for a node whose `json_type` already reported `Array`.
@@ -320,17 +358,8 @@ pub fn probe_root(node: Borrowed<'_, '_, PyAny>) {
         ObjType::Unknown => record_unsupported(node),
         // Key types only.
         ObjType::Dict => {
-            let mut position: ffi::Py_ssize_t = 0;
-            let mut key: *mut ffi::PyObject = std::ptr::null_mut();
-            let mut value: *mut ffi::PyObject = std::ptr::null_mut();
-            while unsafe {
-                ffi::PyDict_Next(
-                    node.as_ptr(),
-                    &raw mut position,
-                    &raw mut key,
-                    &raw mut value,
-                ) != 0
-            } {
+            let mut cursor = DictCursor::new(unsafe { node.cast_unchecked::<PyDict>() });
+            while let Some((key, _)) = cursor.next() {
                 let key = unsafe { Borrowed::from_ptr(node.py(), key) };
                 if !key_is_usable(key) {
                     record_unusable_key(key);
@@ -735,11 +764,8 @@ impl JsonNumber for PyNumber<'_> {
     }
 }
 
-// Lazy `PyDict_Next` iteration; keys and values are borrowed.
-pub struct PyMembers<'py> {
-    dict: Borrowed<'py, 'py, PyDict>,
-    pos: ffi::Py_ssize_t,
-}
+// Lazy dict iteration; keys and values are borrowed.
+pub struct PyMembers<'py>(DictCursor<'py>);
 
 impl<'py> Iterator for PyMembers<'py> {
     type Item = (Cow<'py, str>, PyNode<'py>);
@@ -748,20 +774,8 @@ impl<'py> Iterator for PyMembers<'py> {
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn next(&mut self) -> Option<Self::Item> {
-        let mut key: *mut ffi::PyObject = std::ptr::null_mut();
-        let mut value: *mut ffi::PyObject = std::ptr::null_mut();
-        if unsafe {
-            ffi::PyDict_Next(
-                self.dict.as_ptr(),
-                &raw mut self.pos,
-                &raw mut key,
-                &raw mut value,
-            )
-        } == 0
-        {
-            return None;
-        }
-        let py = self.dict.py();
+        let (key, value) = self.0.next()?;
+        let py = self.0.dict.py();
         let name = if unsafe { ffi::Py_TYPE(key) } == types(py).str_ {
             Cow::Borrowed(unsafe { str_ref_ptr(key) }.unwrap_or(""))
         } else {
@@ -793,14 +807,12 @@ impl<'py> Object<'py, Pyo3> for Borrowed<'py, 'py, PyDict> {
     }
 
     fn members(&self) -> PyMembers<'py> {
-        PyMembers {
-            dict: *self,
-            pos: 0,
-        }
+        PyMembers(DictCursor::new(*self))
     }
 }
 
-// Array over a Python `list` or `tuple`.
+// Array over a Python `list` or `tuple`; helpers that take one per element pass it by value.
+#[derive(Clone, Copy)]
 pub struct PyArray<'py> {
     sequence: PyNode<'py>,
     is_tuple: bool,
@@ -942,12 +954,8 @@ fn equal_typed(
             if unsafe { ffi::PyDict_Size(left_ptr) != ffi::PyDict_Size(right_ptr) } {
                 return false;
             }
-            let mut position: ffi::Py_ssize_t = 0;
-            let mut key: *mut ffi::PyObject = std::ptr::null_mut();
-            let mut value: *mut ffi::PyObject = std::ptr::null_mut();
-            while unsafe {
-                ffi::PyDict_Next(left_ptr, &raw mut position, &raw mut key, &raw mut value) != 0
-            } {
+            let mut cursor = DictCursor::new(unsafe { left.cast_unchecked::<PyDict>() });
+            while let Some((key, value)) = cursor.next() {
                 let key_node = unsafe { Borrowed::from_ptr(left.py(), key) };
                 // Legal keys hash as their JSON name, so lookup agrees with `key_to_string`.
                 if !key_is_usable(key_node) {

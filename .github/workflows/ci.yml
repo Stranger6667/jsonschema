@@ -96,7 +96,7 @@ jobs:
       # `benchmark-suite` only carries benchmarks for other validators (valico, jsonschema-valid,
       # boon) and has no tests, so building it here costs ~30 extra dependency crates for nothing.
       - if: runner.os != 'Windows'
-        run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite
+        run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite --exclude jsonschema-testsuite-pyo3
 
       # `rb-sys` builds against the Ruby the host provides, and the MSVC runner has none to link,
       # so `magnus` is named out rather than reached through `--all-features`. The feature carries
@@ -104,7 +104,7 @@ jobs:
       - if: runner.os == 'Windows'
         run: >
           cargo test --no-fail-fast --workspace
-          --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite
+          --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite --exclude jsonschema-testsuite-pyo3
           --features jsonschema/conformance,jsonschema/resolve-http,jsonschema/resolve-file,jsonschema/resolve-async,jsonschema/tls-aws-lc-rs,jsonschema/tls-ring,jsonschema/arbitrary-precision,jsonschema/macros,jsonschema/pyo3,referencing/retrieve-async,jsonschema-macros/arbitrary-precision,jsonschema-macros/float-roundtrip
 
       - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros"
@@ -274,6 +274,7 @@ jobs:
           cargo llvm-cov --no-report --all-features --workspace \
             --exclude jsonschema-py \
             --exclude jsonschema-rb \
+            --exclude jsonschema-testsuite-pyo3 \
             --exclude benchmark \
             --exclude benchmark-suite \
             --exclude jsonschema-testsuite \
@@ -295,6 +296,45 @@ jobs:
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
           name: coverage
+          files: lcov.info
+          fail_ci_if_error: true
+
+  test-python-coverage:
+    name: Test Python coverage
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+
+      - uses: taiki-e/install-action@4076c08d76dba979c11a7285295b0716c1d67908 # v2.87.15
+        with:
+          tool: cargo-llvm-cov,just
+
+      - uses: astral-sh/setup-uv@bec219d24cd3e171d82865faccec33120bb574f4 # v10.1.0
+
+      # The extensions are built instrumented, so the bindings, the `backend = Pyo3` macro
+      # expansions and the validators Python calls into all count toward coverage.
+      - name: Run tests
+        run: |
+          source <(cargo llvm-cov show-env --export-prefix)
+          export CARGO_TARGET_DIR="$CARGO_LLVM_COV_TARGET_DIR"
+          cargo llvm-cov clean --workspace
+          just test-py-coverage
+          cargo llvm-cov report --lcov --output-path lcov.info
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@fb8b3582c8e4def4969c97caa2f19720cb33a72f # v7.0.0
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          name: python
           files: lcov.info
           fail_ci_if_error: true
 
@@ -364,7 +404,7 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - run: uvx --with=".[tests]" --python='${{ steps.python.outputs.python-path }}' pytest tests-py
+      - run: uvx --with=".[tests]" --with=../jsonschema-testsuite-pyo3 --python='${{ steps.python.outputs.python-path }}' pytest tests-py
         working-directory: crates/jsonschema-py
 
   test-python-freethreaded:
@@ -402,7 +442,7 @@ jobs:
         run: |
           uv venv --python '${{ steps.python.outputs.python-path }}'
           uv pip install crates/jsonschema-py/dist/*.whl
-          uv run --with pytest --with hypothesis pytest crates/jsonschema-py/tests-py
+          uv run --with pytest --with hypothesis --with crates/jsonschema-testsuite-pyo3 pytest crates/jsonschema-py/tests-py
 
   test-ruby:
     env:
@@ -904,7 +944,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
-      - run: cargo doc --workspace --no-deps --all-features --document-private-items
+      - run: cargo doc --workspace --exclude jsonschema-testsuite-pyo3 --no-deps --all-features --document-private-items
         env:
           RUSTDOCFLAGS: "-D warnings"
 
