@@ -2668,5 +2668,219 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "a sibling type no branch of a symbolic oneOf admits",
+    "schema": {
+      "type": "string",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/A"
+        },
+        {
+          "$ref": "#/$defs/B"
+        }
+      ],
+      "$defs": {
+        "A": {
+          "type": "object",
+          "properties": {
+            "street": {
+              "type": "string"
+            }
+          }
+        },
+        "B": {
+          "type": "object",
+          "properties": {
+            "lat": {
+              "type": "number"
+            }
+          }
+        }
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a sibling type no branch of a oneOf mixing a pointer with an inline branch admits",
+    "schema": {
+      "type": "string",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/A"
+        },
+        {
+          "type": "object"
+        }
+      ],
+      "$defs": {
+        "A": {
+          "type": "object",
+          "properties": {
+            "street": {
+              "type": "string"
+            }
+          }
+        }
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a sibling window no branch of a symbolic oneOf admits",
+    "schema": {
+      "type": "integer",
+      "minimum": 10,
+      "oneOf": [
+        {
+          "$ref": "#/$defs/low"
+        },
+        {
+          "$ref": "#/$defs/lower"
+        }
+      ],
+      "$defs": {
+        "low": {
+          "maximum": 2
+        },
+        "lower": {
+          "maximum": 1
+        }
+      }
+    },
+    "kind": "false",
+    "satisfiable": false,
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "not": {}
+    },
+    "tests": [
+      {
+        "data": 10,
+        "valid": false
+      },
+      {
+        "data": 1,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "a sibling type one branch of a symbolic oneOf admits keeps the choice",
+    "schema": {
+      "type": "string",
+      "oneOf": [
+        {
+          "$ref": "#/$defs/A"
+        },
+        {
+          "$ref": "#/$defs/S"
+        }
+      ],
+      "$defs": {
+        "A": {
+          "type": "object",
+          "properties": {
+            "street": {
+              "type": "string"
+            }
+          }
+        },
+        "S": {
+          "minLength": 1
+        }
+      }
+    },
+    "kind": "all_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "A": {
+          "type": "object",
+          "properties": {
+            "street": {
+              "type": "string"
+            }
+          }
+        },
+        "S": {
+          "anyOf": [
+            {
+              "type": [
+                "null",
+                "boolean",
+                "number",
+                "array",
+                "object"
+              ]
+            },
+            {
+              "type": "string",
+              "minLength": 1
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "type": "string"
+        },
+        {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/A"
+            },
+            {
+              "$ref": "#/$defs/S"
+            }
+          ]
+        }
+      ]
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": "",
+        "valid": false
+      },
+      {
+        "data": {},
+        "valid": false
+      }
+    ]
   }
 ]
