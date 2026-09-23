@@ -259,6 +259,22 @@ def test_self_referential_enum_value_raises(backend):
         backend.is_valid({"type": "integer"}, Weird.A)
 
 
+def test_list_resized_during_validation_raises(backend):
+    items = []
+
+    class Shrinking(E.Enum):
+        A = 1
+
+        @property
+        def value(self):
+            items.clear()
+            return 1
+
+    items.extend([Shrinking.A, 1, 2])
+    with pytest.raises(ValueError, match="Sequence changed size during validation"):
+        backend.is_valid({"items": {"type": "integer"}}, items)
+
+
 def test_nested_validation_keeps_outer_error():
     calls = []
 

@@ -14,7 +14,7 @@ test = false
 [dependencies]
 jsonschema = { path = "../jsonschema", features = ["macros", "pyo3"] }
 serde_json.workspace = true
-pyo3 = { version = "0.29", features = ["abi3-py310", "extension-module"] }
+pyo3 = { version = "0.29", features = ["extension-module"] }
 testsuite = { package = "jsonschema-testsuite", path = "../jsonschema-testsuite" }
 
 [lints]

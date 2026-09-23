@@ -13,7 +13,7 @@ test = false
 
 [dependencies]
 jsonschema = { path = "../jsonschema", features = ["macros", "pyo3"] }
-pyo3 = { version = "0.29", features = ["abi3-py310", "extension-module"] }
+pyo3 = { version = "0.29", features = ["extension-module"] }
 
 [lints]
 workspace = true
