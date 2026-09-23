@@ -884,16 +884,3 @@ fn pyo3_emitter(snapshot: &str, schema: &Value) {
     );
     insta::assert_snapshot!(snapshot, rendered);
 }
-
-#[test_case(quote! { schema = "{}", backend = Pyo3 }, None ; "plain")]
-#[test_case(
-    quote! { schema = "{}", backend = Pyo3, keywords = { "even" => crate::even } },
-    Some("Custom keywords are not supported with `backend = Pyo3`: the generated code passes `even` a `serde_json::Value` instance")
-    ; "with keywords"
-)]
-fn pyo3_backend_attribute(attr: TokenStream, expected: Option<&str>) {
-    let error = syn::parse2::<crate::Config>(attr)
-        .err()
-        .map(|error| error.to_string());
-    assert_eq!(error.as_deref(), expected);
-}

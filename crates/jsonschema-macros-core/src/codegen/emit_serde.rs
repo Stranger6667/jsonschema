@@ -387,4 +387,8 @@ impl ValueEmitter for SerdeEmitter {
     fn err_instance(instance_expr: impl ToTokens) -> TokenStream {
         instance_expr.into_token_stream()
     }
+
+    fn json_representation() -> TokenStream {
+        quote! { jsonschema::json::SerdeJson }
+    }
 }

@@ -3385,7 +3385,10 @@ pub mod __private {
         pub use crate::cmp::{equal, equal_numbers};
     }
     pub mod custom {
-        use crate::paths::Location;
+        use crate::{
+            json::{Json, Node},
+            paths::Location,
+        };
 
         #[must_use]
         pub fn location(pointer: &str) -> Location {
@@ -3393,17 +3396,17 @@ pub mod __private {
         }
 
         /// Run a custom keyword and fill in error context exactly like the runtime validator's `CustomKeyword` wrapper.
-        pub fn validate<'i>(
-            keyword: &dyn crate::Keyword<'i>,
-            instance: &'i serde_json::Value,
+        pub fn validate<'i, F: Json>(
+            keyword: &dyn crate::Keyword<'i, F>,
+            instance: &F::Node<'i>,
             instance_path: Location,
             schema_path: &str,
             keyword_name: &str,
         ) -> Option<crate::ValidationError<'i>> {
-            match keyword.validate(instance) {
+            match keyword.validate(instance.clone()) {
                 Ok(()) => None,
                 Err(error) => Some(error.with_generated_context(
-                    instance,
+                    instance.to_value(),
                     instance_path,
                     Location::from_escaped(schema_path),
                     keyword_name,
@@ -3412,17 +3415,22 @@ pub mod __private {
         }
 
         /// Run a custom keyword's `iter_errors`, filling in context exactly like [`validate`] does.
-        pub fn collect_errors<'i>(
-            keyword: &dyn crate::Keyword<'i>,
-            instance: &'i serde_json::Value,
+        pub fn collect_errors<'i, F: Json>(
+            keyword: &dyn crate::Keyword<'i, F>,
+            instance: &F::Node<'i>,
             instance_path: &Location,
             schema_path: &str,
             keyword_name: &str,
             errors: &mut Vec<crate::ValidationError<'i>>,
         ) {
-            for error in keyword.iter_errors(instance) {
+            let mut found = keyword.iter_errors(instance.clone()).peekable();
+            if found.peek().is_none() {
+                return;
+            }
+            let value = instance.to_value();
+            for error in found {
                 errors.push(error.with_generated_context(
-                    instance,
+                    value.clone(),
                     instance_path.clone(),
                     Location::from_escaped(schema_path),
                     keyword_name,
