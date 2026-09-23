@@ -1300,7 +1300,7 @@ impl<'a> ValidationError<'a> {
     #[cfg(feature = "macros")]
     pub(crate) fn with_generated_context<'i>(
         self,
-        instance: &'i Value,
+        instance: Cow<'i, Value>,
         instance_path: Location,
         schema_path: Location,
         keyword: &str,
@@ -1313,7 +1313,7 @@ impl<'a> ValidationError<'a> {
             other => other,
         };
         ValidationError::new(
-            LazyInstance::Ready(Cow::Borrowed(instance)),
+            LazyInstance::Ready(instance),
             kind,
             instance_path,
             schema_path,

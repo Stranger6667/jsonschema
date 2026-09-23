@@ -95,4 +95,6 @@ pub(crate) trait ValueEmitter {
     /// What tells one live node from another, for the `$ref` cycle marks.
     fn node_address(instance_expr: impl ToTokens) -> TokenStream;
     fn err_instance(instance_expr: impl ToTokens) -> TokenStream;
+    /// The representation a custom keyword receives instances in.
+    fn json_representation() -> TokenStream;
 }

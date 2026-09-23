@@ -69,12 +69,8 @@ class AllPositiveValidator:
         ("not a number", True),
     ],
 )
-def test_is_valid(instance, expected):
-    validator = jsonschema_rs.validator_for(
-        {"even": True},
-        keywords={"even": EvenValidator},
-    )
-    assert validator.is_valid(instance) == expected
+def test_is_valid(backend, instance, expected):
+    assert backend.is_valid({"even": True}, instance, keywords={"even": EvenValidator}) == expected
 
 
 @pytest.mark.parametrize(
@@ -97,14 +93,9 @@ def test_validate(instance, should_raise):
         validator.validate(instance)
 
 
-def test_error_message():
-    validator = jsonschema_rs.validator_for(
-        {"even": True},
-        keywords={"even": EvenValidator},
-    )
-    with pytest.raises(jsonschema_rs.ValidationError) as exc_info:
-        validator.validate(3)
-    assert "3 is not even" in str(exc_info.value)
+def test_error_message(backend):
+    with pytest.raises(ValueError, match="^3 is not even"):
+        backend.validate({"even": True}, 3, keywords={"even": EvenValidator})
 
 
 def test_iter_errors():
@@ -117,18 +108,24 @@ def test_iter_errors():
     assert isinstance(errors[0], jsonschema_rs.ValidationError)
 
 
-def test_iter_errors_multiple():
+def test_iter_errors_multiple(backend):
     # A keyword that reports every offending item at once via `iter_errors`.
-    validator = jsonschema_rs.validator_for(
-        {"all-positive": True},
-        keywords={"all-positive": AllPositiveValidator},
+    errors = backend.iter_errors(
+        {"all-positive": True}, [-1, 2, -3, -4], keywords={"all-positive": AllPositiveValidator}
     )
-    errors = list(validator.iter_errors([-1, 2, -3, -4]))
     assert [error.message for error in errors] == [
         "item 0 is negative",
         "item 2 is negative",
         "item 3 is negative",
     ]
+
+
+def test_iter_errors_multiple_causes():
+    validator = jsonschema_rs.validator_for(
+        {"all-positive": True},
+        keywords={"all-positive": AllPositiveValidator},
+    )
+    errors = list(validator.iter_errors([-1, 2, -3, -4]))
     # Each yielded exception is preserved as the error's cause, like `validate`.
     causes = [error.__cause__ for error in errors]
     assert all(isinstance(cause, ValueError) for cause in causes)
@@ -175,16 +172,19 @@ def test_iter_errors_cause_not_leaked_by_evaluate():
     assert errors[0].__cause__.args[0] == "5 is not even"
 
 
-def test_with_standard_keywords():
-    validator = jsonschema_rs.validator_for(
-        {"type": "integer", "minimum": 0, "even": True},
-        keywords={"even": EvenValidator},
-    )
-    assert validator.is_valid(2)
-    assert validator.is_valid(100)
-    assert not validator.is_valid(3)
-    assert not validator.is_valid(-2)
-    assert not validator.is_valid("hello")
+@pytest.mark.parametrize(
+    "instance, expected",
+    [
+        (2, True),
+        (100, True),
+        (3, False),
+        (-2, False),
+        ("hello", False),
+    ],
+)
+def test_with_standard_keywords(backend, instance, expected):
+    schema = {"type": "integer", "minimum": 0, "even": True}
+    assert backend.is_valid(schema, instance, keywords={"even": EvenValidator}) is expected
 
 
 def test_multiple_custom_keywords():
@@ -202,19 +202,17 @@ def test_multiple_custom_keywords():
     assert not validator.is_valid(-3)
 
 
-def test_nested_schema():
-    validator = jsonschema_rs.validator_for(
-        {
-            "type": "object",
-            "properties": {
-                "count": {"type": "integer", "even": True},
-            },
-        },
-        keywords={"even": EvenValidator},
-    )
-    assert validator.is_valid({"count": 2})
-    assert validator.is_valid({"count": 100})
-    assert not validator.is_valid({"count": 3})
+@pytest.mark.parametrize(
+    "instance, expected",
+    [
+        ({"count": 2}, True),
+        ({"count": 100}, True),
+        ({"count": 3}, False),
+    ],
+)
+def test_nested_schema(backend, instance, expected):
+    schema = {"type": "object", "properties": {"count": {"type": "integer", "even": True}}}
+    assert backend.is_valid(schema, instance, keywords={"even": EvenValidator}) is expected
 
 
 @pytest.mark.parametrize(

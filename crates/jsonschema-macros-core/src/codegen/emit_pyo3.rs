@@ -489,4 +489,8 @@ impl ValueEmitter for Pyo3Emitter {
     fn err_instance(instance_expr: impl ToTokens) -> TokenStream {
         quote! { __NodeExt::lazy_value(&#instance_expr) }
     }
+
+    fn json_representation() -> TokenStream {
+        quote! { __Json }
+    }
 }

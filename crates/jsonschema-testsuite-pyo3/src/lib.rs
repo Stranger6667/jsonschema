@@ -1,12 +1,102 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use pyo3::{exceptions::PyKeyError, prelude::*, types::PyAny};
+use jsonschema::{json::Pyo3, paths::Location, Keyword, ValidationError};
+use pyo3::{
+    exceptions::PyKeyError,
+    prelude::*,
+    types::{PyAny, PyInt, PyList},
+    Borrowed,
+};
+use serde_json::{Map, Value};
 
 pub struct SuiteEntry {
     pub id: &'static str,
     pub is_valid: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<bool>,
     pub validate: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Option<String>>,
     pub iter_errors: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Vec<String>>,
+}
+
+type KeywordResult<'a> = Result<Box<dyn for<'i> Keyword<'i, Pyo3>>, ValidationError<'a>>;
+
+// Mirror `EvenValidator` and `AllPositiveValidator` in `tests-py/test_keywords.py`.
+struct Even(bool);
+
+impl<'i> Keyword<'i, Pyo3> for Even {
+    fn validate(&self, instance: Borrowed<'i, 'i, PyAny>) -> Result<(), ValidationError<'i>> {
+        if self.is_valid(instance) {
+            Ok(())
+        } else {
+            Err(ValidationError::custom(format!(
+                "{} is not even",
+                instance.as_any()
+            )))
+        }
+    }
+
+    fn is_valid(&self, instance: Borrowed<'i, 'i, PyAny>) -> bool {
+        !self.0
+            || !instance.is_instance_of::<PyInt>()
+            || !instance
+                .rem(2)
+                .and_then(|remainder| remainder.is_truthy())
+                .unwrap_or(false)
+    }
+}
+
+// The keyword factory signature returns a `Result`.
+#[allow(clippy::unnecessary_wraps)]
+pub(crate) fn even<'a>(
+    _: &'a Map<String, Value>,
+    value: &'a Value,
+    _: Location,
+) -> KeywordResult<'a> {
+    Ok(Box::new(Even(value.as_bool() == Some(true))))
+}
+
+struct AllPositive;
+
+impl AllPositive {
+    fn negative_items<'i>(instance: Borrowed<'i, 'i, PyAny>) -> Vec<ValidationError<'i>> {
+        let Ok(items) = instance.cast::<PyList>() else {
+            return Vec::new();
+        };
+        items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| item.lt(0).unwrap_or(false))
+            .map(|(index, _)| ValidationError::custom(format!("item {index} is negative")))
+            .collect()
+    }
+}
+
+impl<'i> Keyword<'i, Pyo3> for AllPositive {
+    fn validate(&self, instance: Borrowed<'i, 'i, PyAny>) -> Result<(), ValidationError<'i>> {
+        Self::negative_items(instance)
+            .into_iter()
+            .next()
+            .map_or(Ok(()), Err)
+    }
+
+    fn is_valid(&self, instance: Borrowed<'i, 'i, PyAny>) -> bool {
+        Self::negative_items(instance).is_empty()
+    }
+
+    fn iter_errors(
+        &self,
+        instance: Borrowed<'i, 'i, PyAny>,
+    ) -> Box<dyn Iterator<Item = ValidationError<'i>> + 'i> {
+        Box::new(Self::negative_items(instance).into_iter())
+    }
+}
+
+// The keyword factory signature returns a `Result`.
+#[allow(clippy::unnecessary_wraps)]
+pub(crate) fn all_positive<'a>(
+    _: &'a Map<String, Value>,
+    _: &'a Value,
+    _: Location,
+) -> KeywordResult<'a> {
+    Ok(Box::new(AllPositive))
 }
 
 testsuite::pyo3_suite!(

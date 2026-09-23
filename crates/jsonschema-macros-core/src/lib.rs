@@ -481,7 +481,6 @@ impl Parse for Config {
         let mut schema_source = None;
         let mut draft = None;
         let mut backend = Backend::default();
-        let mut backend_ident: Option<Ident> = None;
         let mut base_uri = None;
         let mut resources: Vec<ResourceEntry> = Vec::new();
         let mut vocabularies: Vec<String> = Vec::new();
@@ -547,7 +546,6 @@ impl Parse for Config {
                             ))
                         }
                     };
-                    backend_ident = Some(value);
                 }
                 "base_uri" => {
                     input.parse::<Token![=]>()?;
@@ -675,20 +673,6 @@ impl Parse for Config {
 
             if input.peek(Token![,]) {
                 input.parse::<Token![,]>()?;
-            }
-        }
-
-        if backend == Backend::Pyo3 {
-            let representation =
-                backend_ident.expect("a non-default representation is named by the attribute");
-            if let Some(entry) = keywords.first() {
-                return Err(syn::Error::new_spanned(
-                    &representation,
-                    format!(
-                        "Custom keywords are not supported with `backend = Pyo3`: the generated code passes `{}` a `serde_json::Value` instance",
-                        entry.name
-                    ),
-                ));
             }
         }
 

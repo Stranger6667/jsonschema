@@ -203,7 +203,7 @@ pub fn pyo3_suite(input: TokenStream) -> TokenStream {
     }
 }
 
-/// Generates one `backend = Pyo3` validator per schema in a JSON array file, reachable through
+/// Generates one `backend = Pyo3` validator per schema in a JSON file, reachable through
 /// `SCHEMA_ENTRIES`.
 #[proc_macro]
 pub fn pyo3_schemas(input: TokenStream) -> TokenStream {

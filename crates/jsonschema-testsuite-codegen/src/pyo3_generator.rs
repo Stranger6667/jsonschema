@@ -71,17 +71,32 @@ pub(crate) fn generate(
     })
 }
 
-/// One `backend = Pyo3` validator per schema in a JSON array, found by the schema's JSON with
-/// sorted keys.
+/// One `backend = Pyo3` validator per schema in `{"keywords": {name: path}, "schemas": [...]}`,
+/// found by the schema's JSON with sorted keys. Every schema gets every listed custom keyword.
 pub(crate) fn generate_schemas(path: &str) -> Result<TokenStream, Box<dyn std::error::Error>> {
-    let schemas: Vec<Value> = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let file: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
+    let keywords = file["keywords"]
+        .as_object()
+        .ok_or("`keywords` must be an object")?
+        .iter()
+        .map(|(name, factory)| {
+            let factory: syn::Path =
+                syn::parse_str(factory.as_str().ok_or("factory must be a path")?)?;
+            Ok(quote! { #name => #factory })
+        })
+        .collect::<Result<Vec<_>, Box<dyn std::error::Error>>>()?;
     let mut definitions = Vec::new();
     let mut entries = Vec::new();
-    for (index, schema) in schemas.iter().enumerate() {
+    for (index, schema) in file["schemas"]
+        .as_array()
+        .ok_or("`schemas` must be an array")?
+        .iter()
+        .enumerate()
+    {
         let schema = serde_json::to_string(&sorted(schema))?;
         let ident = format_ident!("SchemaValidator{index}");
         definitions.push(quote! {
-            #[jsonschema::validator(schema = #schema, backend = Pyo3)]
+            #[jsonschema::validator(schema = #schema, backend = Pyo3, keywords = { #(#keywords),* })]
             struct #ident;
         });
         entries.push(entry(&ident, &schema));
