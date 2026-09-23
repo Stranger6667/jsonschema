@@ -241,6 +241,74 @@ impl Drop for PendingErrorScope {
     }
 }
 
+/// `PyDict_Next` yielding values only; the key is never typed or decoded.
+pub struct PyValues<'py> {
+    dict: Borrowed<'py, 'py, PyDict>,
+    pos: ffi::Py_ssize_t,
+}
+
+impl<'py> Iterator for PyValues<'py> {
+    type Item = PyNode<'py>;
+
+    // The plain hint is declined at the call sites in generated validators.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn next(&mut self) -> Option<PyNode<'py>> {
+        let mut key: *mut ffi::PyObject = std::ptr::null_mut();
+        let mut value: *mut ffi::PyObject = std::ptr::null_mut();
+        if unsafe {
+            ffi::PyDict_Next(
+                self.dict.as_ptr(),
+                &raw mut self.pos,
+                &raw mut key,
+                &raw mut value,
+            )
+        } == 0
+        {
+            return None;
+        }
+        Some(unsafe { Borrowed::from_ptr(self.dict.py(), value) })
+    }
+}
+
+#[doc(hidden)]
+#[inline]
+#[must_use]
+pub fn object_values<'py>(dict: Borrowed<'py, 'py, PyDict>) -> PyValues<'py> {
+    PyValues { dict, pos: 0 }
+}
+
+/// Narrowing for a node whose `json_type` already reported `Array`.
+///
+/// The exact-type hit skips the ladder `as_array` would walk a second time.
+#[inline]
+#[doc(hidden)]
+#[must_use]
+pub fn narrow_array<'py>(node: PyNode<'py>) -> Option<PyArray<'py>> {
+    let t = types(node.py());
+    let ty = unsafe { ffi::Py_TYPE(node.as_ptr()) };
+    if ty == t.list {
+        return Some(PyArray::new(node, false));
+    }
+    if ty == t.tuple {
+        return Some(PyArray::new(node, true));
+    }
+    node.as_array()
+}
+
+/// Narrowing for a node whose `json_type` already reported `Object`.
+#[inline]
+#[doc(hidden)]
+#[must_use]
+pub fn narrow_object<'py>(node: PyNode<'py>) -> Option<Borrowed<'py, 'py, PyDict>> {
+    let t = types(node.py());
+    let ty = unsafe { ffi::Py_TYPE(node.as_ptr()) };
+    if ty == t.dict {
+        return Some(unsafe { node.cast_unchecked::<PyDict>() });
+    }
+    node.as_object()
+}
+
 /// Record the errors reachable from `node` itself.
 ///
 /// Nested ones surface only when a keyword reads that value; scanning the whole instance would cost
@@ -1014,6 +1082,7 @@ impl<'py> Iterator for PyElements<'py> {
 mod tests {
     use super::*;
     use serde_json::json;
+    use std::ffi::CString;
     use test_case::test_case;
 
     fn to_py<'py>(py: Python<'py>, value: &Value) -> Bound<'py, PyAny> {
@@ -1302,6 +1371,78 @@ mod tests {
             let decimal = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
             assert_eq!(decimal.json_type(), JsonType::Number);
             assert_eq!(decimal.as_number().expect("number").as_f64(), Some(1.5));
+        });
+    }
+
+    #[test_case("{'a': 1, 'b': [2], 'c': None}", &json!([1, [2], null]); "every value")]
+    #[test_case("{}", &json!([]); "empty")]
+    fn object_values_yields_values(expr: &str, expected: &Value) {
+        Python::attach(|py| {
+            let owned = py
+                .eval(CString::new(expr).unwrap().as_c_str(), None, None)
+                .expect("eval");
+            let dict = owned.cast::<PyDict>().expect("dict").as_borrowed();
+            let values: Vec<Value> = object_values(dict)
+                .map(|value| value.to_value().into_owned())
+                .collect();
+            assert_eq!(Value::Array(values), *expected);
+        });
+    }
+
+    #[test_case("[1, 'a']", false; "list")]
+    #[test_case("(1, 'a')", true; "tuple")]
+    #[test_case("type('L', (list,), {})([1, 'a'])", false; "list subclass")]
+    fn narrow_array_accepts_sequences(expr: &str, is_tuple: bool) {
+        Python::attach(|py| {
+            let owned = py
+                .eval(CString::new(expr).unwrap().as_c_str(), None, None)
+                .expect("eval");
+            let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
+            let array = narrow_array(node).expect("array");
+            assert_eq!(array.sequence.as_ptr(), node.as_ptr());
+            assert_eq!(array.is_tuple, is_tuple);
+            let values: Vec<Value> = array
+                .elements()
+                .map(|item| item.to_value().into_owned())
+                .collect();
+            assert_eq!(values, [json!(1), json!("a")]);
+        });
+    }
+
+    #[test_case("{'a': 1}"; "dict")]
+    #[test_case("type('D', (dict,), {})(a=1)"; "dict subclass")]
+    fn narrow_object_accepts_dicts(expr: &str) {
+        Python::attach(|py| {
+            let owned = py
+                .eval(CString::new(expr).unwrap().as_c_str(), None, None)
+                .expect("eval");
+            let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
+            let dict = narrow_object(node).expect("object");
+            assert_eq!(dict.as_ptr(), node.as_ptr());
+            let values: Vec<Value> = object_values(dict)
+                .map(|value| value.to_value().into_owned())
+                .collect();
+            assert_eq!(values, [json!(1)]);
+        });
+    }
+
+    #[test_case("{'a': 1}", "[1]"; "dict and list")]
+    #[test_case("1", "1"; "int")]
+    #[test_case("'a'", "'a'"; "string")]
+    fn narrow_rejects_other_types(not_array: &str, not_object: &str) {
+        Python::attach(|py| {
+            let _ = take_pending_error();
+            let eval = |expr: &str| {
+                py.eval(CString::new(expr).unwrap().as_c_str(), None, None)
+                    .expect("eval")
+            };
+            let owned = eval(not_array);
+            let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
+            assert!(narrow_array(node).is_none());
+            let owned = eval(not_object);
+            let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
+            assert!(narrow_object(node).is_none());
+            assert!(take_pending_error().is_none());
         });
     }
 }

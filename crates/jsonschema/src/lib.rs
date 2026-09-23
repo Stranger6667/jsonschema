@@ -1256,7 +1256,10 @@ pub mod json {
         magnus_take_pending_error, Magnus, MagnusPendingErrorScope, PendingError, RbNode,
     };
     #[cfg(feature = "pyo3")]
-    pub use jsonschema_value::{probe_root, take_pending_error, PendingErrorScope, Pyo3};
+    pub use jsonschema_value::{
+        narrow_array, narrow_object, object_values, probe_root, take_pending_error,
+        PendingErrorScope, Pyo3,
+    };
 }
 mod http;
 mod keywords;
