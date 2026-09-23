@@ -46,16 +46,39 @@ Sources:
 
 ### Comparison with Other Libraries
 
-| Benchmark     | fastjsonschema | jsonschema    | jsonschema-rs (validate) |
-|---------------|----------------|---------------|--------------------------|
-| OpenAPI       | 118.01 ms (**x58.36**) | 570.63 ms (**x282.20**) | 2.02 ms |
-| Swagger       | 73.67 ms (**x29.18**) | 985.98 ms (**x390.58**) | 2.52 ms |
-| Canada (GeoJSON) | 10.01 ms (**x15.28**) | 687.54 ms (**x1,049.85**) | 0.65 ms |
-| CITM Catalog  | 4.62 ms (**x8.06**) | 78.94 ms (**x137.60**) | 0.57 ms |
-| Fast (Valid)  | 2.09 µs (**x6.89**) | 33.78 µs (**x111.45**) | 303.10 ns |
-| Fast (Invalid)| 977.92 ns (**x0.91**) | 5.23 µs (**x4.86**) | 1.08 µs |
-| FHIR          | 2.04 ms (**x552.36**) | 12.34 ms (**x3,341.25**) | 3.69 µs |
-| Recursive     | 1.03 ms (**x114.37**) | 1.20 s (**x133,784**) | 9.00 µs |
+| Benchmark     | fastjsonschema | jsonschema    | jsonschema-rs (validate) | jsonschema-rs codegen (validate) |
+|---------------|----------------|---------------|--------------------------|----------------------------------|
+| OpenAPI       | 117.50 ms (**x62.96**) | 562.77 ms (**x301.55**) | 1.87 ms | 938.89 µs |
+| Swagger       | 73.74 ms (**x31.79**) | 991.43 ms (**x427.43**) | 2.32 ms | 1.29 ms |
+| Canada (GeoJSON) | 9.81 ms (**x15.62**) | 755.65 ms (**x1,203.08**) | 628.09 µs | 457.91 µs |
+| CITM Catalog  | 4.43 ms (**x11.30**) | 77.74 ms (**x198.28**) | 392.07 µs | 373.87 µs |
+| Fast (Valid)  | 2.00 µs (**x11.34**) | 32.39 µs (**x183.38**) | 176.63 ns | 170.00 ns |
+| Fast (Invalid) | 871.00 ns (**x0.87**) | 4.98 µs (**x4.97**) | 1.00 µs | 501.00 ns |
+| FHIR          | 2.02 ms (**x510.04**) | 12.09 ms (**x3,047.50**) | 3.97 µs | 577.05 ns |
+| Recursive     | 1.01 ms (**x123.50**) | 1.19 s (**x145,948**) | 8.18 µs | 1.87 µs |
+
+The codegen column is a validator compiled into an extension module at build time; see
+[Compile-time Validators](#compile-time-validators).
+
+### Compile-time Validators
+
+`#[jsonschema::validator(path = ..., backend = Pyo3)]` compiles a schema into a validator when the
+extension is built, so nothing is resolved or compiled at run time. The schema is fixed at build
+time, which is the trade for the numbers below.
+
+| Benchmark     | `is_valid` (runtime) | `is_valid` (codegen) | `validate` (runtime) | `validate` (codegen) |
+|---------------|----------------------|----------------------|----------------------|----------------------|
+| OpenAPI       | 1.84 ms | 934.32 µs (**x1.97**) | 1.87 ms | 938.89 µs (**x1.99**) |
+| Swagger       | 2.29 ms | 1.28 ms (**x1.79**) | 2.32 ms | 1.29 ms (**x1.80**) |
+| Canada (GeoJSON) | 650.88 µs | 430.19 µs (**x1.51**) | 628.09 µs | 457.91 µs (**x1.37**) |
+| CITM Catalog  | 386.04 µs | 191.38 µs (**x2.02**) | 392.07 µs | 373.87 µs (**x1.05**) |
+| Fast (Valid)  | 220.00 ns | 149.99 ns (**x1.47**) | 176.63 ns | 170.00 ns (**x1.04**) |
+| Fast (Invalid) | 231.00 ns | 147.13 ns (**x1.57**) | 1.00 µs | 501.00 ns (**x2.00**) |
+| FHIR          | 3.88 µs | 611.00 ns (**x6.35**) | 3.97 µs | 577.05 ns (**x6.87**) |
+| Recursive     | 8.11 µs | 1.85 µs (**x4.38**) | 8.18 µs | 1.87 µs (**x4.36**) |
+
+Compiled validators also skip schema preparation, where `validator_for` takes from 11.38 µs (Fast)
+to 23.23 ms (FHIR).
 
 You can find benchmark code in [benches/](benches/), Python version `3.14.7`, Rust version `1.98.0`.
 

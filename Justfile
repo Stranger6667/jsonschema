@@ -41,7 +41,7 @@ test-py-coverage *FLAGS:
   .venv-coverage/bin/pytest crates/jsonschema-py/tests-py {{FLAGS}}
 
 bench-py *FLAGS:
-  uvx --with="crates/jsonschema-py[bench]" --refresh pytest crates/jsonschema-py/benches/bench.py --benchmark-columns=min {{FLAGS}}
+  uvx --with="crates/jsonschema-py[bench]" --with=crates/jsonschema-bench-pyo3 --refresh pytest crates/jsonschema-py/benches/bench.py --benchmark-columns=min {{FLAGS}}
 
 miri:
   cargo +nightly miri test -p referencing
