@@ -11,6 +11,10 @@
 
 - Generated `validate` checks `required` in the same pass over an object as `properties`, instead of looking up each required name.
 
+### Fixed
+
+- A `oneOf` over `$ref` branches beside a sibling none of them admits, which canonicalized to an `allOf` instead of `false`.
+
 ## [0.57.0] - 2026-09-22
 
 ### Added

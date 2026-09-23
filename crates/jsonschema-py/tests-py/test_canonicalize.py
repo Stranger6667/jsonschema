@@ -1067,6 +1067,14 @@ def reason_data(reason):
             {"$defs": {"A": {"type": "string"}}, "$ref": "#/$defs/A", "not": {"$ref": "#/$defs/A"}},
             {"": ("conflict", [("/$defs/A", ["type"]), ("", ["not"])])},
         ),
+        (
+            {
+                "$defs": {"A": {"type": "object"}, "B": {"type": "object", "required": ["b"]}},
+                "type": "string",
+                "oneOf": [{"$ref": "#/$defs/A"}, {"$ref": "#/$defs/B"}],
+            },
+            {"": ("conflict", [("", ["type"]), ("", ["oneOf"])])},
+        ),
     ],
     ids=[
         "a live document",
@@ -1076,6 +1084,7 @@ def reason_data(reason):
         "siblings empty beside a reference",
         "an array element no schema admits",
         "a reference beside its own negation",
+        "a choice of references beside a type none of them admits",
     ],
 )
 def test_find_unsatisfiable_names_its_reason(schema, expected):

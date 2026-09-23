@@ -431,6 +431,18 @@ fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContex
         !symbolic.is_empty(),
         "opaque intersection retains at least one symbolic branch"
     );
+    // Exactly one branch matching a value the structural side admits is exactly one of the branches
+    // met with that side matching it, so a choice every branch of which conflicts with the
+    // structural side admits nothing.
+    // e.g.  allOf [{"type": "string"}, {"oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}]}]
+    //       with `a` and `b` both objects  =>  {"not": {}}
+    if !matches!(structural.kind(), SchemaKind::True)
+        && symbolic
+            .iter()
+            .any(|branch| choice_conflicts(branch, &structural, ctx))
+    {
+        return Schema::falsy();
+    }
     match structural.kind() {
         SchemaKind::AnyOf(branches) => union(
             branches
@@ -465,6 +477,21 @@ fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContex
             opaque_all_of(symbolic)
         }
     }
+}
+
+/// Whether `schema` is a choice none of whose branches shares a value with `other`.
+fn choice_conflicts(schema: &Schema, other: &Schema, ctx: &CanonicalizationContext) -> bool {
+    let SchemaKind::OneOf(branches) = schema.kind() else {
+        return false;
+    };
+    holds_exactly(ctx, || {
+        branches.iter().all(|branch| {
+            matches!(
+                intersect(branch.clone(), other.clone(), ctx).kind(),
+                SchemaKind::False
+            )
+        })
+    })
 }
 
 fn opaque_all_of(branches: Vec<Schema>) -> Schema {

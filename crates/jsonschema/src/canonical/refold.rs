@@ -376,7 +376,10 @@ fn each(
         .collect()
 }
 
-/// Whether this branch is a reference the run can resolve.
+/// Whether this branch is a reference the run can resolve, or a choice over one.
 fn names_a_body(schema: &Schema, ctx: &CanonicalizationContext) -> bool {
+    if let SchemaKind::OneOf(branches) = schema.kind() {
+        return branches.iter().any(|branch| names_a_body(branch, ctx));
+    }
     matches!(schema.kind(), SchemaKind::Reference(uri) if ctx.definition(uri).is_some())
 }
