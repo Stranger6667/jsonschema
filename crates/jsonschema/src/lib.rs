@@ -5,6 +5,8 @@
 //!
 //! - 📚 Support for popular JSON Schema drafts
 //! - 🔧 Custom keywords and format validators
+//! - ⚡ [Compile-time validators](#compile-time-validator-macro) for maximum performance, reading
+//!   `serde_json` values or [Python objects](#python-extension-modules) in extension modules
 //! - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 //! - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 //! - ✨ Meta-schema validation for schema documents
@@ -167,6 +169,8 @@
 //! which documents its behavior and defaults:
 //!
 //! - schema source (exactly one required): `path = "..."` (file) or `schema = r#"..."#` (inline)
+//! - `backend = SerdeJson|Pyo3` (default: `SerdeJson`), the representation the generated validator
+//!   reads; `Pyo3` needs the `pyo3` feature (see [Python Extension Modules](#python-extension-modules))
 //! - `draft = Draft202012` (or another variant) -> [`ValidationOptions::with_draft`]
 //! - `base_uri = "..."` -> [`ValidationOptions::with_base_uri`]
 //! - `resources = { "<uri>" => { schema = r#"..."# } | { path = "..." } }`
@@ -179,6 +183,27 @@
 //! - `content_encodings = { "name" => { check = ..., convert = ... } }` -> [`ValidationOptions::with_content_encoding`]
 //! - `pattern_options = { ... }` -> [`PatternOptions`]
 //! - `email_options = { ... }` -> [`EmailOptions`]
+//!
+//! ## Python Extension Modules
+//!
+//! With `backend = Pyo3`, the generated validator reads Python objects in place, for extension
+//! modules that know their schemas at build time. The methods take `&Bound<'_, PyAny>` and return
+//! `PyResult<...>`, which is an error when the instance holds a value with no JSON counterpart,
+//! such as a `set`:
+//!
+//! ```ignore
+//! use pyo3::prelude::*;
+//!
+//! #[jsonschema::validator(path = "event.json", backend = Pyo3)]
+//! struct Event;
+//!
+//! #[pyfunction]
+//! fn is_valid_event(instance: &Bound<'_, PyAny>) -> PyResult<bool> {
+//!     Event::is_valid(instance)
+//! }
+//! ```
+//!
+//! A `keywords` factory for this backend returns `Box<dyn for<'i> Keyword<'i, json::Pyo3>>`.
 //!
 //! ## Limitations
 //!
