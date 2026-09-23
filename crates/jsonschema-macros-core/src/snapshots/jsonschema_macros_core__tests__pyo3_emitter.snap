@@ -1,0 +1,3036 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+expression: "prettyplease::unparse(&file)"
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use ::jsonschema as jsonschema;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use jsonschema::__private::pyo3 as __py3;
+    use jsonschema::json as __json;
+    use jsonschema::json::{
+        Array as __ArrayExt, JsonNumber as __NumberExt, Node as __NodeExt,
+        Object as __ObjectExt,
+    };
+    use std::sync::LazyLock as __Lazy;
+    type __Json = __json::Pyo3;
+    type __Value<'py> = __py3::Borrowed<'py, 'py, __py3::PyAny>;
+    type __Bound<'py> = __py3::Bound<'py, __py3::PyAny>;
+    type __Map<'py> = <__Value<'py> as __NodeExt<'py, __Json>>::Object;
+    type __Array<'py> = <__Value<'py> as __NodeExt<'py, __Json>>::Array;
+    #[inline]
+    fn is_branch_valid_0(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                let __object_pass = __ObjectExt::members(&obj)
+                    .all(|(key, instance)| {
+                        match (&*key) {
+                            "code" => {}
+                            _ => {}
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            None => true,
+        }
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_0<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
+    ) {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                __errors
+                    .extend(
+                        (|| -> Option<__VE<'_>> {
+                            if !(__ObjectExt::get(
+                                    &obj,
+                                    __py3::intern!(__py, "code").as_unbound(),
+                                )
+                                .is_some())
+                            {
+                                return Some(
+                                    __err::required(
+                                        "/properties/code/oneOf/0/required",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        "code",
+                                    ),
+                                );
+                            }
+                            None
+                        })(),
+                    );
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "code").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !({
+                        static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                            __sj::from_str("1").expect("Failed to parse const number")
+                        });
+                        match __NodeExt::json_type(&instance) {
+                            __JT::Number => {
+                                match __NodeExt::as_number(&instance) {
+                                    Some(__number) => {
+                                        let __number = __NumberExt::to_number(&__number);
+                                        let n = &*__number;
+                                        __cmp::equal_numbers(n, &*EXPECTED)
+                                    }
+                                    None => Default::default(),
+                                }
+                            }
+                            _ => false,
+                        }
+                    }) {
+                        let __path = &__path.push("code");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !({
+                                        static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                            __sj::from_str("1").expect("Failed to parse const number")
+                                        });
+                                        match __NodeExt::json_type(&instance) {
+                                            __JT::Number => {
+                                                match __NodeExt::as_number(&instance) {
+                                                    Some(__number) => {
+                                                        let __number = __NumberExt::to_number(&__number);
+                                                        let n = &*__number;
+                                                        __cmp::equal_numbers(n, &*EXPECTED)
+                                                    }
+                                                    None => Default::default(),
+                                                }
+                                            }
+                                            _ => false,
+                                        }
+                                    }) {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("1").expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/code/oneOf/0/properties/code/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    #[inline]
+    fn is_branch_valid_1(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                let __object_pass = __ObjectExt::members(&obj)
+                    .all(|(key, instance)| {
+                        match (&*key) {
+                            "code" => {}
+                            _ => {}
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            None => true,
+        }
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_1<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
+    ) {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                __errors
+                    .extend(
+                        (|| -> Option<__VE<'_>> {
+                            if !(__ObjectExt::get(
+                                    &obj,
+                                    __py3::intern!(__py, "code").as_unbound(),
+                                )
+                                .is_some())
+                            {
+                                return Some(
+                                    __err::required(
+                                        "/properties/code/oneOf/1/required",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        "code",
+                                    ),
+                                );
+                            }
+                            None
+                        })(),
+                    );
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "code").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !({
+                        static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                            __sj::from_str("2").expect("Failed to parse const number")
+                        });
+                        match __NodeExt::json_type(&instance) {
+                            __JT::Number => {
+                                match __NodeExt::as_number(&instance) {
+                                    Some(__number) => {
+                                        let __number = __NumberExt::to_number(&__number);
+                                        let n = &*__number;
+                                        __cmp::equal_numbers(n, &*EXPECTED)
+                                    }
+                                    None => Default::default(),
+                                }
+                            }
+                            _ => false,
+                        }
+                    }) {
+                        let __path = &__path.push("code");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !({
+                                        static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                            __sj::from_str("2").expect("Failed to parse const number")
+                                        });
+                                        match __NodeExt::json_type(&instance) {
+                                            __JT::Number => {
+                                                match __NodeExt::as_number(&instance) {
+                                                    Some(__number) => {
+                                                        let __number = __NumberExt::to_number(&__number);
+                                                        let n = &*__number;
+                                                        __cmp::equal_numbers(n, &*EXPECTED)
+                                                    }
+                                                    None => Default::default(),
+                                                }
+                                            }
+                                            _ => false,
+                                        }
+                                    }) {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("2").expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/code/oneOf/1/properties/code/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    #[inline]
+    fn is_branch_valid_2(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                let __object_pass = __ObjectExt::members(&obj)
+                    .all(|(key, instance)| {
+                        match (&*key) {
+                            "on" => {}
+                            _ => {}
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            None => true,
+        }
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_2<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
+    ) {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                __errors
+                    .extend(
+                        (|| -> Option<__VE<'_>> {
+                            if !(__ObjectExt::get(
+                                    &obj,
+                                    __py3::intern!(__py, "on").as_unbound(),
+                                )
+                                .is_some())
+                            {
+                                return Some(
+                                    __err::required(
+                                        "/properties/flag/oneOf/0/required",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        "on",
+                                    ),
+                                );
+                            }
+                            None
+                        })(),
+                    );
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "on").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(__NodeExt::as_boolean(&instance) == Some(true)) {
+                        let __path = &__path.push("on");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !(__NodeExt::as_boolean(&instance) == Some(true)) {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("true").expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/flag/oneOf/0/properties/on/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    #[inline]
+    fn is_branch_valid_3(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                let __object_pass = __ObjectExt::members(&obj)
+                    .all(|(key, instance)| {
+                        match (&*key) {
+                            "on" => {}
+                            _ => {}
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            None => true,
+        }
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_3<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
+    ) {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                __errors
+                    .extend(
+                        (|| -> Option<__VE<'_>> {
+                            if !(__ObjectExt::get(
+                                    &obj,
+                                    __py3::intern!(__py, "on").as_unbound(),
+                                )
+                                .is_some())
+                            {
+                                return Some(
+                                    __err::required(
+                                        "/properties/flag/oneOf/1/required",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        "on",
+                                    ),
+                                );
+                            }
+                            None
+                        })(),
+                    );
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "on").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(__NodeExt::as_boolean(&instance) == Some(false)) {
+                        let __path = &__path.push("on");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !(__NodeExt::as_boolean(&instance) == Some(false)) {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("false")
+                                                .expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/flag/oneOf/1/properties/on/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    #[inline]
+    fn is_branch_valid_4(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                let __object_pass = __ObjectExt::members(&obj)
+                    .all(|(key, instance)| {
+                        match (&*key) {
+                            "kind" => {}
+                            "r" => {
+                                if !(__NodeExt::is_number(&instance)) {
+                                    return false;
+                                }
+                            }
+                            _ => {}
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            None => true,
+        }
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_4<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
+    ) {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                __errors
+                    .extend(
+                        (|| -> Option<__VE<'_>> {
+                            if !(__ObjectExt::get(
+                                    &obj,
+                                    __py3::intern!(__py, "kind").as_unbound(),
+                                )
+                                .is_some())
+                            {
+                                return Some(
+                                    __err::required(
+                                        "/properties/shape/oneOf/0/required",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        "kind",
+                                    ),
+                                );
+                            }
+                            None
+                        })(),
+                    );
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "kind").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(__NodeExt::as_string(&instance).as_deref() == Some("circle")) {
+                        let __path = &__path.push("kind");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !(__NodeExt::as_string(&instance).as_deref()
+                                        == Some("circle"))
+                                    {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("\"circle\"")
+                                                .expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/shape/oneOf/0/properties/kind/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "r").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(__NodeExt::is_number(&instance)) {
+                        let __path = &__path.push("r");
+                        if !(__NodeExt::is_number(&instance)) {
+                            __errors
+                                .push(
+                                    __err::single_type(
+                                        "/properties/shape/oneOf/0/properties/r/type",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        __JT::Number,
+                                    ),
+                                );
+                        }
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    #[inline]
+    fn is_branch_valid_5(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                let __object_pass = __ObjectExt::members(&obj)
+                    .all(|(key, instance)| {
+                        match (&*key) {
+                            "kind" => {}
+                            "s" => {
+                                if !(__NodeExt::is_number(&instance)) {
+                                    return false;
+                                }
+                            }
+                            _ => {}
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            None => true,
+        }
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_5<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
+    ) {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                __errors
+                    .extend(
+                        (|| -> Option<__VE<'_>> {
+                            if !(__ObjectExt::get(
+                                    &obj,
+                                    __py3::intern!(__py, "kind").as_unbound(),
+                                )
+                                .is_some())
+                            {
+                                return Some(
+                                    __err::required(
+                                        "/properties/shape/oneOf/1/required",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        "kind",
+                                    ),
+                                );
+                            }
+                            None
+                        })(),
+                    );
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "kind").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(__NodeExt::as_string(&instance).as_deref() == Some("square")) {
+                        let __path = &__path.push("kind");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !(__NodeExt::as_string(&instance).as_deref()
+                                        == Some("square"))
+                                    {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("\"square\"")
+                                                .expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/shape/oneOf/1/properties/kind/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "s").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(__NodeExt::is_number(&instance)) {
+                        let __path = &__path.push("s");
+                        if !(__NodeExt::is_number(&instance)) {
+                            __errors
+                                .push(
+                                    __err::single_type(
+                                        "/properties/shape/oneOf/1/properties/s/type",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        __JT::Number,
+                                    ),
+                                );
+                        }
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    #[inline]
+    fn validate_ref_0(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                __ObjectExt::members(&obj)
+                    .all(|(key, instance)| {
+                        let key_str = (&*key);
+                        match key_str {
+                            "child" => validate_ref_0(instance),
+                            _ => true,
+                        }
+                    })
+            }
+            None => true,
+        }
+    }
+    #[inline]
+    fn validate_ref_0_validate<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                for (key, value) in __ObjectExt::members(&obj) {
+                    let key_str = (&*key);
+                    match key_str {
+                        "child" => {
+                            let instance = value;
+                            let __path = &__path.push("child");
+                            if let Some(__err) = validate_ref_0_validate(
+                                instance,
+                                __path,
+                            ) {
+                                return Some(__err);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            None => {}
+        }
+        None
+    }
+    #[cold]
+    #[inline(never)]
+    fn validate_ref_0_collect_errors<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
+    ) {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "child").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(validate_ref_0(instance)) {
+                        let __path = &__path.push("child");
+                        validate_ref_0_collect_errors(instance, __path, __errors);
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    pub(super) fn is_valid(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                __ObjectExt::members(&obj)
+                    .all(|(key, instance)| {
+                        let key_str = (&*key);
+                        match key_str {
+                            "choice" => {
+                                match __NodeExt::json_type(&instance) {
+                                    __JT::Null => true,
+                                    __JT::Boolean => {
+                                        match __NodeExt::as_boolean(&instance) {
+                                            Some(__boolean) => {
+                                                let b = &__boolean;
+                                                *b
+                                            }
+                                            None => Default::default(),
+                                        }
+                                    }
+                                    __JT::String => {
+                                        match __NodeExt::as_string(&instance) {
+                                            Some(__text) => {
+                                                let s: &str = &__text;
+                                                (&*s) == "a"
+                                            }
+                                            None => Default::default(),
+                                        }
+                                    }
+                                    __JT::Number => {
+                                        static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                        {
+                                            __sj::from_str::<Vec<__sj::Value>>("[1]")
+                                                .expect("Failed to parse number variants")
+                                        });
+                                        NUMBER_VARIANTS
+                                            .iter()
+                                            .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                    }
+                                    __JT::Object => {
+                                        static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                        {
+                                            __sj::from_str::<Vec<__sj::Value>>("[{\"o\":[1]}]")
+                                                .expect("Failed to parse complex variants")
+                                        });
+                                        COMPLEX_VARIANTS
+                                            .iter()
+                                            .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                    }
+                                    _ => false,
+                                }
+                            }
+                            "code" => {
+                                let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                    .and_then(|__object| __ObjectExt::get(
+                                        &__object,
+                                        __py3::intern!(__py, "code").as_unbound(),
+                                    ))
+                                    .and_then(|__value| __NodeExt::as_number(&__value))
+                                    .and_then(|__number| {
+                                        __NumberExt::as_i64(&__number)
+                                            .or_else(|| {
+                                                __NumberExt::as_f64(&__number)
+                                                    .and_then(|float| {
+                                                        (float.fract() == 0.0
+                                                            && float >= -9_223_372_036_854_775_808.0_f64
+                                                            && float < 9_223_372_036_854_775_808.0_f64)
+                                                            .then_some(float as i64)
+                                                    })
+                                            })
+                                    });
+                                let mut matched = (matches!(
+                                    __one_of_discriminator, Some(1i64)
+                                ) && { is_branch_valid_0(instance) });
+                                (if (matches!(__one_of_discriminator, Some(2i64))
+                                    && { is_branch_valid_1(instance) })
+                                {
+                                    if matched {
+                                        false
+                                    } else {
+                                        matched = true;
+                                        true
+                                    }
+                                } else {
+                                    true
+                                }) && matched
+                            }
+                            "empty" => {
+                                match __json::narrow_object(instance) {
+                                    Some(obj) => __ObjectExt::is_empty(&obj),
+                                    None => true,
+                                }
+                            }
+                            "fallbacks" => {
+                                match __NodeExt::json_type(&instance) {
+                                    __JT::Object => {
+                                        match __json::narrow_object(instance) {
+                                            Some(obj) => (__ObjectExt::len(&obj) as u64) >= 1,
+                                            None => Default::default(),
+                                        }
+                                    }
+                                    __JT::String
+                                    | __JT::Number if __NodeExt::as_number(&instance)
+                                        .is_some_and(|__number| __NumberExt::is_integer(&__number))
+                                        | __JT::Array => true,
+                                    _ => false,
+                                }
+                            }
+                            "flag" => {
+                                let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                    .and_then(|__object| __ObjectExt::get(
+                                        &__object,
+                                        __py3::intern!(__py, "on").as_unbound(),
+                                    ))
+                                    .and_then(|__value| __NodeExt::as_boolean(&__value));
+                                let mut matched = (matches!(
+                                    __one_of_discriminator, Some(true)
+                                ) && { is_branch_valid_2(instance) });
+                                (if (matches!(__one_of_discriminator, Some(false))
+                                    && { is_branch_valid_3(instance) })
+                                {
+                                    if matched {
+                                        false
+                                    } else {
+                                        matched = true;
+                                        true
+                                    }
+                                } else {
+                                    true
+                                }) && matched
+                            }
+                            "flags" => {
+                                matches!(
+                                    __NodeExt::json_type(& instance), __JT::Boolean | __JT::Null
+                                    | __JT::Array
+                                )
+                            }
+                            "integer" => {
+                                match __NodeExt::json_type(&instance) {
+                                    __JT::Number if __NodeExt::as_number(&instance)
+                                        .is_some_and(|__number| __NumberExt::is_integer(
+                                            &__number,
+                                        )) => {
+                                        match __NodeExt::as_number(&instance) {
+                                            Some(__number) => {
+                                                let __number = __NumberExt::to_number(&__number);
+                                                let n = &*__number;
+                                                __num::ge(n, 1u64)
+                                            }
+                                            None => Default::default(),
+                                        }
+                                    }
+                                    _ => false,
+                                }
+                            }
+                            "items" => {
+                                match __json::narrow_array(instance) {
+                                    Some(arr) => {
+                                        __ArrayExt::elements(&arr)
+                                            .enumerate()
+                                            .all(|(idx, item)| { if false { true } else { false } })
+                                    }
+                                    None => true,
+                                }
+                            }
+                            "list" => (__NodeExt::json_type(&instance) == __JT::Array),
+                            "nested" => {
+                                (match __json::narrow_object(instance) {
+                                    Some(obj) => {
+                                        __ObjectExt::members(&obj)
+                                            .all(|(__key, __value)| {
+                                                let key_str = (&*__key);
+                                                if (false)
+                                                    || {
+                                                        __ObjectExt::members(&obj)
+                                                            .find(|(__name, _)| &**__name == key_str)
+                                                            .map(|(_, __value)| __value)
+                                                            .is_some_and(|instance| { __NodeExt::is_string(&instance) })
+                                                    }
+                                                {
+                                                    true
+                                                } else {
+                                                    false
+                                                }
+                                            })
+                                    }
+                                    None => true,
+                                })
+                                    && (match __json::narrow_object(instance) {
+                                        Some(obj) => {
+                                            __ObjectExt::members(&obj)
+                                                .all(|(__key, __value)| {
+                                                    let key_str = (&*__key);
+                                                    if false {
+                                                        true
+                                                    } else {
+                                                        (|instance: __Value<'_>| __NodeExt::is_string(
+                                                            &instance,
+                                                        ))(__value)
+                                                    }
+                                                })
+                                        }
+                                        None => true,
+                                    })
+                            }
+                            "nothing" => __NodeExt::is_null(&instance),
+                            "open" => {
+                                match __json::narrow_object(instance) {
+                                    Some(obj) => {
+                                        __json::object_values(obj)
+                                            .all(|instance| {
+                                                (__NodeExt::json_type(&instance) == __JT::Boolean)
+                                            })
+                                    }
+                                    None => true,
+                                }
+                            }
+                            "record" => {
+                                match __json::narrow_object(instance) {
+                                    Some(obj) => {
+                                        ({
+                                            let __object_pass = __ObjectExt::members(&obj)
+                                                .all(|(key, instance)| {
+                                                    if (&*key).starts_with("x-") {
+                                                        if !(__NodeExt::as_number(&instance)
+                                                            .is_some_and(|__number| __NumberExt::is_integer(&__number)))
+                                                        {
+                                                            return false;
+                                                        }
+                                                    }
+                                                    true
+                                                });
+                                            __object_pass
+                                        })
+                                            && (__ObjectExt::members(&obj)
+                                                .map(|(__name, _)| __name)
+                                                .all(|__name| {
+                                                    let s: &str = &__name;
+                                                    (s.chars().count() as u64) <= 5
+                                                }))
+                                    }
+                                    None => true,
+                                }
+                            }
+                            "rest" => {
+                                match __json::narrow_object(instance) {
+                                    Some(obj) => {
+                                        __ObjectExt::members(&obj)
+                                            .all(|(__key, __value)| {
+                                                let key_str = (&*__key);
+                                                if false {
+                                                    true
+                                                } else {
+                                                    (|instance: __Value<'_>| __NodeExt::is_string(
+                                                        &instance,
+                                                    ))(__value)
+                                                }
+                                            })
+                                    }
+                                    None => true,
+                                }
+                            }
+                            "shape" => {
+                                let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                    .and_then(|__object| __ObjectExt::get(
+                                        &__object,
+                                        __py3::intern!(__py, "kind").as_unbound(),
+                                    ))
+                                    .and_then(|__value| match __NodeExt::as_string(&__value) {
+                                        Some(::std::borrow::Cow::Borrowed(__text)) => Some(__text),
+                                        _ => None,
+                                    });
+                                let mut matched = (matches!(
+                                    __one_of_discriminator, Some("circle")
+                                ) && { is_branch_valid_4(instance) });
+                                (if (matches!(__one_of_discriminator, Some("square"))
+                                    && { is_branch_valid_5(instance) })
+                                {
+                                    if matched {
+                                        false
+                                    } else {
+                                        matched = true;
+                                        true
+                                    }
+                                } else {
+                                    true
+                                }) && matched
+                            }
+                            "structured" => {
+                                static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("{\"o\":true}")
+                                        .expect("Failed to parse const value")
+                                });
+                                __NodeExt::equals_value(&instance, &*EXPECTED)
+                            }
+                            "tree" => validate_ref_0(instance),
+                            "tuple" => {
+                                match __json::narrow_array(instance) {
+                                    Some(arr) => {
+                                        ((__ArrayExt::is_unique(&arr))
+                                            && (__ArrayExt::elements(&arr)
+                                                .nth(0usize)
+                                                .map_or(true, |instance| __NodeExt::is_string(&instance))))
+                                            && (__ArrayExt::elements(&arr)
+                                                .any(|instance| {
+                                                    static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                                        __sj::from_str("1").expect("Failed to parse const number")
+                                                    });
+                                                    match __NodeExt::json_type(&instance) {
+                                                        __JT::Number => {
+                                                            match __NodeExt::as_number(&instance) {
+                                                                Some(__number) => {
+                                                                    let __number = __NumberExt::to_number(&__number);
+                                                                    let n = &*__number;
+                                                                    __cmp::equal_numbers(n, &*EXPECTED)
+                                                                }
+                                                                None => Default::default(),
+                                                            }
+                                                        }
+                                                        _ => false,
+                                                    }
+                                                }))
+                                    }
+                                    None => true,
+                                }
+                            }
+                            _ => true,
+                        }
+                    })
+            }
+            None => true,
+        }
+    }
+    pub(super) fn validate<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+    ) -> Option<__VE<'__i>> {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                for (key, value) in __ObjectExt::members(&obj) {
+                    let key_str = (&*key);
+                    match key_str {
+                        "choice" => {
+                            let instance = value;
+                            let __path = &__path.push("choice");
+                            if !(match __NodeExt::json_type(&instance) {
+                                __JT::Null => true,
+                                __JT::Boolean => {
+                                    match __NodeExt::as_boolean(&instance) {
+                                        Some(__boolean) => {
+                                            let b = &__boolean;
+                                            *b
+                                        }
+                                        None => Default::default(),
+                                    }
+                                }
+                                __JT::String => {
+                                    match __NodeExt::as_string(&instance) {
+                                        Some(__text) => {
+                                            let s: &str = &__text;
+                                            (&*s) == "a"
+                                        }
+                                        None => Default::default(),
+                                    }
+                                }
+                                __JT::Number => {
+                                    static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                    {
+                                        __sj::from_str::<Vec<__sj::Value>>("[1]")
+                                            .expect("Failed to parse number variants")
+                                    });
+                                    NUMBER_VARIANTS
+                                        .iter()
+                                        .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                }
+                                __JT::Object => {
+                                    static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                    {
+                                        __sj::from_str::<Vec<__sj::Value>>("[{\"o\":[1]}]")
+                                            .expect("Failed to parse complex variants")
+                                    });
+                                    COMPLEX_VARIANTS
+                                        .iter()
+                                        .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                }
+                                _ => false,
+                            }) {
+                                static ENUM_OPTIONS: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("[1,\"a\",true,null,{\"o\":[1]}]")
+                                        .expect("Failed to parse enum options")
+                                });
+                                return Some(
+                                    __err::enumeration(
+                                        "/properties/choice/enum",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        &*ENUM_OPTIONS,
+                                    ),
+                                );
+                            }
+                        }
+                        "code" => {
+                            let instance = value;
+                            let __path = &__path.push("code");
+                            {
+                                let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                    .and_then(|__object| __ObjectExt::get(
+                                        &__object,
+                                        __py3::intern!(__py, "code").as_unbound(),
+                                    ))
+                                    .and_then(|__value| __NodeExt::as_number(&__value))
+                                    .and_then(|__number| {
+                                        __NumberExt::as_i64(&__number)
+                                            .or_else(|| {
+                                                __NumberExt::as_f64(&__number)
+                                                    .and_then(|float| {
+                                                        (float.fract() == 0.0
+                                                            && float >= -9_223_372_036_854_775_808.0_f64
+                                                            && float < 9_223_372_036_854_775_808.0_f64)
+                                                            .then_some(float as i64)
+                                                    })
+                                            })
+                                    });
+                                let mut __count = 0usize;
+                                if (matches!(__one_of_discriminator, Some(1i64))
+                                    && { is_branch_valid_0(instance) })
+                                {
+                                    __count += 1;
+                                }
+                                if (matches!(__one_of_discriminator, Some(2i64))
+                                    && { is_branch_valid_1(instance) })
+                                {
+                                    __count += 1;
+                                }
+                                if !((__NodeExt::json_type(&instance) == __JT::Object)) {
+                                    __count += 2usize;
+                                }
+                                if __count != 1 {
+                                    let mut __context = Vec::with_capacity(2usize);
+                                    {
+                                        let mut __branch_errors = Vec::new();
+                                        collect_branch_errors_0(
+                                            instance,
+                                            __path,
+                                            &mut __branch_errors,
+                                        );
+                                        __context.push(__branch_errors);
+                                    }
+                                    {
+                                        let mut __branch_errors = Vec::new();
+                                        collect_branch_errors_1(
+                                            instance,
+                                            __path,
+                                            &mut __branch_errors,
+                                        );
+                                        __context.push(__branch_errors);
+                                    }
+                                    return Some(
+                                        if __count == 0 {
+                                            __err::one_of_not_valid(
+                                                "/properties/code/oneOf",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                __context,
+                                            )
+                                        } else {
+                                            __err::one_of_multiple_valid(
+                                                "/properties/code/oneOf",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                __context,
+                                            )
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                        "empty" => {
+                            let instance = value;
+                            let __path = &__path.push("empty");
+                            match __json::narrow_object(instance) {
+                                Some(obj) => {
+                                    if !(__ObjectExt::is_empty(&obj)) {
+                                        return Some(
+                                            __err::false_schema(
+                                                "/properties/empty/additionalProperties",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                            ),
+                                        );
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                        "fallbacks" => {
+                            let instance = value;
+                            let __path = &__path.push("fallbacks");
+                            match __NodeExt::json_type(&instance) {
+                                __JT::Object => {
+                                    match __json::narrow_object(instance) {
+                                        Some(obj) => {
+                                            if !((__ObjectExt::len(&obj) as u64) >= 1) {
+                                                return Some(
+                                                    __err::min_properties(
+                                                        "/properties/fallbacks/minProperties",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        1,
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                        None => Default::default(),
+                                    }
+                                }
+                                __JT::String => {}
+                                __JT::Number if __NodeExt::as_number(&instance)
+                                    .is_some_and(|__number| __NumberExt::is_integer(
+                                        &__number,
+                                    )) => {}
+                                __JT::Array => {}
+                                _ => {
+                                    return Some(
+                                        __err::multiple_types(
+                                            "/properties/fallbacks/type",
+                                            __path.into(),
+                                            __NodeExt::lazy_value(&instance),
+                                            __JTS::empty()
+                                                .insert(__JT::String)
+                                                .insert(__JT::Integer)
+                                                .insert(__JT::Array)
+                                                .insert(__JT::Object),
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                        "flag" => {
+                            let instance = value;
+                            let __path = &__path.push("flag");
+                            {
+                                let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                    .and_then(|__object| __ObjectExt::get(
+                                        &__object,
+                                        __py3::intern!(__py, "on").as_unbound(),
+                                    ))
+                                    .and_then(|__value| __NodeExt::as_boolean(&__value));
+                                let mut __count = 0usize;
+                                if (matches!(__one_of_discriminator, Some(true))
+                                    && { is_branch_valid_2(instance) })
+                                {
+                                    __count += 1;
+                                }
+                                if (matches!(__one_of_discriminator, Some(false))
+                                    && { is_branch_valid_3(instance) })
+                                {
+                                    __count += 1;
+                                }
+                                if !((__NodeExt::json_type(&instance) == __JT::Object)) {
+                                    __count += 2usize;
+                                }
+                                if __count != 1 {
+                                    let mut __context = Vec::with_capacity(2usize);
+                                    {
+                                        let mut __branch_errors = Vec::new();
+                                        collect_branch_errors_2(
+                                            instance,
+                                            __path,
+                                            &mut __branch_errors,
+                                        );
+                                        __context.push(__branch_errors);
+                                    }
+                                    {
+                                        let mut __branch_errors = Vec::new();
+                                        collect_branch_errors_3(
+                                            instance,
+                                            __path,
+                                            &mut __branch_errors,
+                                        );
+                                        __context.push(__branch_errors);
+                                    }
+                                    return Some(
+                                        if __count == 0 {
+                                            __err::one_of_not_valid(
+                                                "/properties/flag/oneOf",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                __context,
+                                            )
+                                        } else {
+                                            __err::one_of_multiple_valid(
+                                                "/properties/flag/oneOf",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                __context,
+                                            )
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                        "flags" => {
+                            let instance = value;
+                            let __path = &__path.push("flags");
+                            if !(matches!(
+                                __NodeExt::json_type(& instance), __JT::Boolean | __JT::Null
+                                | __JT::Array
+                            )) {
+                                return Some(
+                                    __err::multiple_types(
+                                        "/properties/flags/type",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        __JTS::empty()
+                                            .insert(__JT::Boolean)
+                                            .insert(__JT::Null)
+                                            .insert(__JT::Array),
+                                    ),
+                                );
+                            }
+                        }
+                        "integer" => {
+                            let instance = value;
+                            let __path = &__path.push("integer");
+                            match __NodeExt::json_type(&instance) {
+                                __JT::Number if __NodeExt::as_number(&instance)
+                                    .is_some_and(|__number| __NumberExt::is_integer(
+                                        &__number,
+                                    )) => {
+                                    match __NodeExt::as_number(&instance) {
+                                        Some(__number) => {
+                                            let __number = __NumberExt::to_number(&__number);
+                                            let n = &*__number;
+                                            if !(__num::ge(n, 1u64)) {
+                                                return Some(
+                                                    __err::minimum(
+                                                        "/properties/integer/minimum",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __sj::Value::Number(__sj::Number::from(1u64)),
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                        None => Default::default(),
+                                    }
+                                }
+                                _ => {
+                                    return Some(
+                                        __err::single_type(
+                                            "/properties/integer/type",
+                                            __path.into(),
+                                            __NodeExt::lazy_value(&instance),
+                                            __JT::Integer,
+                                        ),
+                                    );
+                                }
+                            }
+                        }
+                        "items" => {
+                            let instance = value;
+                            let __path = &__path.push("items");
+                            match __json::narrow_array(instance) {
+                                Some(arr) => {
+                                    if let Some(arr) = __NodeExt::as_array(&instance) {
+                                        let mut __unexpected: Vec<String> = Vec::new();
+                                        for (idx, item) in __ArrayExt::elements(&arr).enumerate() {
+                                            if !(false) && !(false) {
+                                                __unexpected.push(__NodeExt::to_value(&item).to_string());
+                                            }
+                                        }
+                                        if !__unexpected.is_empty() {
+                                            return Some(
+                                                __err::unevaluated_items(
+                                                    "/properties/items/unevaluatedItems",
+                                                    __path.into(),
+                                                    __NodeExt::lazy_value(&instance),
+                                                    __unexpected,
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                        "list" => {
+                            let instance = value;
+                            let __path = &__path.push("list");
+                            if !((__NodeExt::json_type(&instance) == __JT::Array)) {
+                                return Some(
+                                    __err::single_type(
+                                        "/properties/list/type",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        __JT::Array,
+                                    ),
+                                );
+                            }
+                        }
+                        "nested" => {
+                            let instance = value;
+                            let __path = &__path.push("nested");
+                            match __json::narrow_object(instance) {
+                                Some(obj) => {
+                                    if let Some(obj) = __NodeExt::as_object(&instance) {
+                                        let mut __unexpected: Vec<String> = Vec::new();
+                                        for (__key, __value) in __ObjectExt::members(&obj) {
+                                            let key_str = (&*__key);
+                                            if !(false)
+                                                && !((|instance: __Value<'_>| __NodeExt::is_string(
+                                                    &instance,
+                                                ))(__value))
+                                            {
+                                                __unexpected.push(__key.to_string());
+                                            }
+                                        }
+                                        if !__unexpected.is_empty() {
+                                            return Some(
+                                                __err::unevaluated_properties(
+                                                    "/properties/nested/allOf/0/unevaluatedProperties",
+                                                    __path.into(),
+                                                    __NodeExt::lazy_value(&instance),
+                                                    __unexpected,
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                                None => {}
+                            }
+                            match __json::narrow_object(instance) {
+                                Some(obj) => {
+                                    if let Some(obj) = __NodeExt::as_object(&instance) {
+                                        let mut __unexpected: Vec<String> = Vec::new();
+                                        for (__key, __value) in __ObjectExt::members(&obj) {
+                                            let key_str = (&*__key);
+                                            if !((false)
+                                                || {
+                                                    __ObjectExt::members(&obj)
+                                                        .find(|(__name, _)| &**__name == key_str)
+                                                        .map(|(_, __value)| __value)
+                                                        .is_some_and(|instance| { __NodeExt::is_string(&instance) })
+                                                }) && !(false)
+                                            {
+                                                __unexpected.push(__key.to_string());
+                                            }
+                                        }
+                                        if !__unexpected.is_empty() {
+                                            return Some(
+                                                __err::unevaluated_properties(
+                                                    "/properties/nested/unevaluatedProperties",
+                                                    __path.into(),
+                                                    __NodeExt::lazy_value(&instance),
+                                                    __unexpected,
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                        "nothing" => {
+                            let instance = value;
+                            let __path = &__path.push("nothing");
+                            if !(__NodeExt::is_null(&instance)) {
+                                return Some(
+                                    __err::single_type(
+                                        "/properties/nothing/type",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        __JT::Null,
+                                    ),
+                                );
+                            }
+                        }
+                        "open" => {
+                            let instance = value;
+                            let __path = &__path.push("open");
+                            match __json::narrow_object(instance) {
+                                Some(obj) => {
+                                    for (key, value) in __ObjectExt::members(&obj) {
+                                        let instance = value;
+                                        let __path = &__path.push((&*key));
+                                        if !((__NodeExt::json_type(&instance) == __JT::Boolean)) {
+                                            return Some(
+                                                __err::single_type(
+                                                    "/properties/open/additionalProperties/type",
+                                                    __path.into(),
+                                                    __NodeExt::lazy_value(&instance),
+                                                    __JT::Boolean,
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                        "record" => {
+                            let instance = value;
+                            let __path = &__path.push("record");
+                            match __json::narrow_object(instance) {
+                                Some(obj) => {
+                                    for key in __ObjectExt::members(&obj)
+                                        .map(|(__name, _)| __name)
+                                    {
+                                        let s = (&*key);
+                                        if !((s.chars().count() as u64) <= 5) {
+                                            let __key_val = __py3::PyString::new(__py, &key).into_any();
+                                            let instance = __key_val.as_borrowed();
+                                            if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                                if !((s.chars().count() as u64) <= 5) {
+                                                    return Some(
+                                                        __err::max_length(
+                                                            "/properties/record/propertyNames/maxLength",
+                                                            __path.into(),
+                                                            __NodeExt::lazy_value(&instance),
+                                                            5,
+                                                        ),
+                                                    );
+                                                }
+                                                None
+                                            })()
+                                                .map(|e| e.to_owned())
+                                            {
+                                                return Some(__e);
+                                            }
+                                        }
+                                    }
+                                    for (key, value) in __ObjectExt::members(&obj) {
+                                        if (&*key).starts_with("x-") {
+                                            let instance = value;
+                                            let __path = &__path.push((&*key));
+                                            if !(__NodeExt::as_number(&instance)
+                                                .is_some_and(|__number| __NumberExt::is_integer(&__number)))
+                                            {
+                                                return Some(
+                                                    __err::single_type(
+                                                        "/properties/record/patternProperties/^x-/type",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __JT::Integer,
+                                                    ),
+                                                );
+                                            }
+                                        }
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                        "rest" => {
+                            let instance = value;
+                            let __path = &__path.push("rest");
+                            match __json::narrow_object(instance) {
+                                Some(obj) => {
+                                    if let Some(obj) = __NodeExt::as_object(&instance) {
+                                        let mut __unexpected: Vec<String> = Vec::new();
+                                        for (__key, __value) in __ObjectExt::members(&obj) {
+                                            let key_str = (&*__key);
+                                            if !(false)
+                                                && !((|instance: __Value<'_>| __NodeExt::is_string(
+                                                    &instance,
+                                                ))(__value))
+                                            {
+                                                __unexpected.push(__key.to_string());
+                                            }
+                                        }
+                                        if !__unexpected.is_empty() {
+                                            return Some(
+                                                __err::unevaluated_properties(
+                                                    "/properties/rest/unevaluatedProperties",
+                                                    __path.into(),
+                                                    __NodeExt::lazy_value(&instance),
+                                                    __unexpected,
+                                                ),
+                                            );
+                                        }
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                        "shape" => {
+                            let instance = value;
+                            let __path = &__path.push("shape");
+                            {
+                                let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                    .and_then(|__object| __ObjectExt::get(
+                                        &__object,
+                                        __py3::intern!(__py, "kind").as_unbound(),
+                                    ))
+                                    .and_then(|__value| match __NodeExt::as_string(&__value) {
+                                        Some(::std::borrow::Cow::Borrowed(__text)) => Some(__text),
+                                        _ => None,
+                                    });
+                                let mut __count = 0usize;
+                                if (matches!(__one_of_discriminator, Some("circle"))
+                                    && { is_branch_valid_4(instance) })
+                                {
+                                    __count += 1;
+                                }
+                                if (matches!(__one_of_discriminator, Some("square"))
+                                    && { is_branch_valid_5(instance) })
+                                {
+                                    __count += 1;
+                                }
+                                if !((__NodeExt::json_type(&instance) == __JT::Object)) {
+                                    __count += 2usize;
+                                }
+                                if __count != 1 {
+                                    let mut __context = Vec::with_capacity(2usize);
+                                    {
+                                        let mut __branch_errors = Vec::new();
+                                        collect_branch_errors_4(
+                                            instance,
+                                            __path,
+                                            &mut __branch_errors,
+                                        );
+                                        __context.push(__branch_errors);
+                                    }
+                                    {
+                                        let mut __branch_errors = Vec::new();
+                                        collect_branch_errors_5(
+                                            instance,
+                                            __path,
+                                            &mut __branch_errors,
+                                        );
+                                        __context.push(__branch_errors);
+                                    }
+                                    return Some(
+                                        if __count == 0 {
+                                            __err::one_of_not_valid(
+                                                "/properties/shape/oneOf",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                __context,
+                                            )
+                                        } else {
+                                            __err::one_of_multiple_valid(
+                                                "/properties/shape/oneOf",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                __context,
+                                            )
+                                        },
+                                    );
+                                }
+                            }
+                        }
+                        "structured" => {
+                            let instance = value;
+                            let __path = &__path.push("structured");
+                            if !({
+                                static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("{\"o\":true}")
+                                        .expect("Failed to parse const value")
+                                });
+                                __NodeExt::equals_value(&instance, &*EXPECTED)
+                            }) {
+                                static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                    __sj::from_str("{\"o\":true}")
+                                        .expect("Failed to parse const value")
+                                });
+                                return Some(
+                                    __err::constant(
+                                        "/properties/structured/const",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        CONST_EXPECTED.clone(),
+                                    ),
+                                );
+                            }
+                        }
+                        "tree" => {
+                            let instance = value;
+                            let __path = &__path.push("tree");
+                            if let Some(__err) = validate_ref_0_validate(
+                                instance,
+                                __path,
+                            ) {
+                                return Some(__err);
+                            }
+                        }
+                        "tuple" => {
+                            let instance = value;
+                            let __path = &__path.push("tuple");
+                            match __json::narrow_array(instance) {
+                                Some(arr) => {
+                                    if !__ArrayExt::is_unique(&arr) {
+                                        return Some(
+                                            __err::unique_items(
+                                                "/properties/tuple/uniqueItems",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                            ),
+                                        );
+                                    }
+                                    if let Some(instance) = __ArrayExt::elements(&arr)
+                                        .nth(0usize)
+                                    {
+                                        let __path = &__path.push(0usize);
+                                        if !(__NodeExt::is_string(&instance)) {
+                                            return Some(
+                                                __err::single_type(
+                                                    "/properties/tuple/prefixItems/0/type",
+                                                    __path.into(),
+                                                    __NodeExt::lazy_value(&instance),
+                                                    __JT::String,
+                                                ),
+                                            );
+                                        }
+                                    }
+                                    if !(__ArrayExt::elements(&arr)
+                                        .any(|instance| {
+                                            static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                                __sj::from_str("1").expect("Failed to parse const number")
+                                            });
+                                            match __NodeExt::json_type(&instance) {
+                                                __JT::Number => {
+                                                    match __NodeExt::as_number(&instance) {
+                                                        Some(__number) => {
+                                                            let __number = __NumberExt::to_number(&__number);
+                                                            let n = &*__number;
+                                                            __cmp::equal_numbers(n, &*EXPECTED)
+                                                        }
+                                                        None => Default::default(),
+                                                    }
+                                                }
+                                                _ => false,
+                                            }
+                                        }))
+                                    {
+                                        return Some(
+                                            __err::contains(
+                                                "/properties/tuple/contains",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                            ),
+                                        );
+                                    }
+                                }
+                                None => {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            None => {}
+        }
+        None
+    }
+    pub(super) fn collect_errors<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut Vec<__VE<'__i>>,
+    ) {
+        let __py = instance.py();
+        match __json::narrow_object(instance) {
+            Some(obj) => {
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "choice").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __NodeExt::json_type(&instance) {
+                        __JT::Null => true,
+                        __JT::Boolean => {
+                            match __NodeExt::as_boolean(&instance) {
+                                Some(__boolean) => {
+                                    let b = &__boolean;
+                                    *b
+                                }
+                                None => Default::default(),
+                            }
+                        }
+                        __JT::String => {
+                            match __NodeExt::as_string(&instance) {
+                                Some(__text) => {
+                                    let s: &str = &__text;
+                                    (&*s) == "a"
+                                }
+                                None => Default::default(),
+                            }
+                        }
+                        __JT::Number => {
+                            static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                            {
+                                __sj::from_str::<Vec<__sj::Value>>("[1]")
+                                    .expect("Failed to parse number variants")
+                            });
+                            NUMBER_VARIANTS
+                                .iter()
+                                .any(|variant| __NodeExt::equals_value(&instance, variant))
+                        }
+                        __JT::Object => {
+                            static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                            {
+                                __sj::from_str::<Vec<__sj::Value>>("[{\"o\":[1]}]")
+                                    .expect("Failed to parse complex variants")
+                            });
+                            COMPLEX_VARIANTS
+                                .iter()
+                                .any(|variant| __NodeExt::equals_value(&instance, variant))
+                        }
+                        _ => false,
+                    }) {
+                        let __path = &__path.push("choice");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !(match __NodeExt::json_type(&instance) {
+                                        __JT::Null => true,
+                                        __JT::Boolean => {
+                                            match __NodeExt::as_boolean(&instance) {
+                                                Some(__boolean) => {
+                                                    let b = &__boolean;
+                                                    *b
+                                                }
+                                                None => Default::default(),
+                                            }
+                                        }
+                                        __JT::String => {
+                                            match __NodeExt::as_string(&instance) {
+                                                Some(__text) => {
+                                                    let s: &str = &__text;
+                                                    (&*s) == "a"
+                                                }
+                                                None => Default::default(),
+                                            }
+                                        }
+                                        __JT::Number => {
+                                            static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                            {
+                                                __sj::from_str::<Vec<__sj::Value>>("[1]")
+                                                    .expect("Failed to parse number variants")
+                                            });
+                                            NUMBER_VARIANTS
+                                                .iter()
+                                                .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                        }
+                                        __JT::Object => {
+                                            static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                            {
+                                                __sj::from_str::<Vec<__sj::Value>>("[{\"o\":[1]}]")
+                                                    .expect("Failed to parse complex variants")
+                                            });
+                                            COMPLEX_VARIANTS
+                                                .iter()
+                                                .any(|variant| __NodeExt::equals_value(&instance, variant))
+                                        }
+                                        _ => false,
+                                    }) {
+                                        static ENUM_OPTIONS: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("[1,\"a\",true,null,{\"o\":[1]}]")
+                                                .expect("Failed to parse enum options")
+                                        });
+                                        return Some(
+                                            __err::enumeration(
+                                                "/properties/choice/enum",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                &*ENUM_OPTIONS,
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "code").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !({
+                        let __one_of_discriminator = __NodeExt::as_object(&instance)
+                            .and_then(|__object| __ObjectExt::get(
+                                &__object,
+                                __py3::intern!(__py, "code").as_unbound(),
+                            ))
+                            .and_then(|__value| __NodeExt::as_number(&__value))
+                            .and_then(|__number| {
+                                __NumberExt::as_i64(&__number)
+                                    .or_else(|| {
+                                        __NumberExt::as_f64(&__number)
+                                            .and_then(|float| {
+                                                (float.fract() == 0.0
+                                                    && float >= -9_223_372_036_854_775_808.0_f64
+                                                    && float < 9_223_372_036_854_775_808.0_f64)
+                                                    .then_some(float as i64)
+                                            })
+                                    })
+                            });
+                        let mut matched = (matches!(__one_of_discriminator, Some(1i64))
+                            && { is_branch_valid_0(instance) });
+                        (if (matches!(__one_of_discriminator, Some(2i64))
+                            && { is_branch_valid_1(instance) })
+                        {
+                            if matched {
+                                false
+                            } else {
+                                matched = true;
+                                true
+                            }
+                        } else {
+                            true
+                        }) && matched
+                    }) {
+                        let __path = &__path.push("code");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    {
+                                        let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                            .and_then(|__object| __ObjectExt::get(
+                                                &__object,
+                                                __py3::intern!(__py, "code").as_unbound(),
+                                            ))
+                                            .and_then(|__value| __NodeExt::as_number(&__value))
+                                            .and_then(|__number| {
+                                                __NumberExt::as_i64(&__number)
+                                                    .or_else(|| {
+                                                        __NumberExt::as_f64(&__number)
+                                                            .and_then(|float| {
+                                                                (float.fract() == 0.0
+                                                                    && float >= -9_223_372_036_854_775_808.0_f64
+                                                                    && float < 9_223_372_036_854_775_808.0_f64)
+                                                                    .then_some(float as i64)
+                                                            })
+                                                    })
+                                            });
+                                        let mut __count = 0usize;
+                                        if (matches!(__one_of_discriminator, Some(1i64))
+                                            && { is_branch_valid_0(instance) })
+                                        {
+                                            __count += 1;
+                                        }
+                                        if (matches!(__one_of_discriminator, Some(2i64))
+                                            && { is_branch_valid_1(instance) })
+                                        {
+                                            __count += 1;
+                                        }
+                                        if !((__NodeExt::json_type(&instance) == __JT::Object)) {
+                                            __count += 2usize;
+                                        }
+                                        if __count != 1 {
+                                            let mut __context = Vec::with_capacity(2usize);
+                                            {
+                                                let mut __branch_errors = Vec::new();
+                                                collect_branch_errors_0(
+                                                    instance,
+                                                    __path,
+                                                    &mut __branch_errors,
+                                                );
+                                                __context.push(__branch_errors);
+                                            }
+                                            {
+                                                let mut __branch_errors = Vec::new();
+                                                collect_branch_errors_1(
+                                                    instance,
+                                                    __path,
+                                                    &mut __branch_errors,
+                                                );
+                                                __context.push(__branch_errors);
+                                            }
+                                            return Some(
+                                                if __count == 0 {
+                                                    __err::one_of_not_valid(
+                                                        "/properties/code/oneOf",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __context,
+                                                    )
+                                                } else {
+                                                    __err::one_of_multiple_valid(
+                                                        "/properties/code/oneOf",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __context,
+                                                    )
+                                                },
+                                            );
+                                        }
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "empty").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __json::narrow_object(instance) {
+                        Some(obj) => __ObjectExt::is_empty(&obj),
+                        None => true,
+                    }) {
+                        let __path = &__path.push("empty");
+                        match __json::narrow_object(instance) {
+                            Some(obj) => {
+                                __errors
+                                    .extend(
+                                        (|| -> Option<__VE<'_>> {
+                                            if !(__ObjectExt::is_empty(&obj)) {
+                                                return Some(
+                                                    __err::false_schema(
+                                                        "/properties/empty/additionalProperties",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                    ),
+                                                );
+                                            }
+                                            None
+                                        })(),
+                                    );
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "fallbacks").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __NodeExt::json_type(&instance) {
+                        __JT::Object => {
+                            match __json::narrow_object(instance) {
+                                Some(obj) => (__ObjectExt::len(&obj) as u64) >= 1,
+                                None => Default::default(),
+                            }
+                        }
+                        __JT::String
+                        | __JT::Number if __NodeExt::as_number(&instance)
+                            .is_some_and(|__number| __NumberExt::is_integer(&__number))
+                            | __JT::Array => true,
+                        _ => false,
+                    }) {
+                        let __path = &__path.push("fallbacks");
+                        match __NodeExt::json_type(&instance) {
+                            __JT::Object => {
+                                match __json::narrow_object(instance) {
+                                    Some(obj) => {
+                                        if !((__ObjectExt::len(&obj) as u64) >= 1) {
+                                            __errors
+                                                .push(
+                                                    __err::min_properties(
+                                                        "/properties/fallbacks/minProperties",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        1,
+                                                    ),
+                                                );
+                                        }
+                                    }
+                                    None => Default::default(),
+                                }
+                            }
+                            __JT::String => {}
+                            __JT::Number if __NodeExt::as_number(&instance)
+                                .is_some_and(|__number| __NumberExt::is_integer(
+                                    &__number,
+                                )) => {}
+                            __JT::Array => {}
+                            _ => {
+                                __errors
+                                    .push(
+                                        __err::multiple_types(
+                                            "/properties/fallbacks/type",
+                                            __path.into(),
+                                            __NodeExt::lazy_value(&instance),
+                                            __JTS::empty()
+                                                .insert(__JT::String)
+                                                .insert(__JT::Integer)
+                                                .insert(__JT::Array)
+                                                .insert(__JT::Object),
+                                        ),
+                                    );
+                            }
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "flag").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !({
+                        let __one_of_discriminator = __NodeExt::as_object(&instance)
+                            .and_then(|__object| __ObjectExt::get(
+                                &__object,
+                                __py3::intern!(__py, "on").as_unbound(),
+                            ))
+                            .and_then(|__value| __NodeExt::as_boolean(&__value));
+                        let mut matched = (matches!(__one_of_discriminator, Some(true))
+                            && { is_branch_valid_2(instance) });
+                        (if (matches!(__one_of_discriminator, Some(false))
+                            && { is_branch_valid_3(instance) })
+                        {
+                            if matched {
+                                false
+                            } else {
+                                matched = true;
+                                true
+                            }
+                        } else {
+                            true
+                        }) && matched
+                    }) {
+                        let __path = &__path.push("flag");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    {
+                                        let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                            .and_then(|__object| __ObjectExt::get(
+                                                &__object,
+                                                __py3::intern!(__py, "on").as_unbound(),
+                                            ))
+                                            .and_then(|__value| __NodeExt::as_boolean(&__value));
+                                        let mut __count = 0usize;
+                                        if (matches!(__one_of_discriminator, Some(true))
+                                            && { is_branch_valid_2(instance) })
+                                        {
+                                            __count += 1;
+                                        }
+                                        if (matches!(__one_of_discriminator, Some(false))
+                                            && { is_branch_valid_3(instance) })
+                                        {
+                                            __count += 1;
+                                        }
+                                        if !((__NodeExt::json_type(&instance) == __JT::Object)) {
+                                            __count += 2usize;
+                                        }
+                                        if __count != 1 {
+                                            let mut __context = Vec::with_capacity(2usize);
+                                            {
+                                                let mut __branch_errors = Vec::new();
+                                                collect_branch_errors_2(
+                                                    instance,
+                                                    __path,
+                                                    &mut __branch_errors,
+                                                );
+                                                __context.push(__branch_errors);
+                                            }
+                                            {
+                                                let mut __branch_errors = Vec::new();
+                                                collect_branch_errors_3(
+                                                    instance,
+                                                    __path,
+                                                    &mut __branch_errors,
+                                                );
+                                                __context.push(__branch_errors);
+                                            }
+                                            return Some(
+                                                if __count == 0 {
+                                                    __err::one_of_not_valid(
+                                                        "/properties/flag/oneOf",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __context,
+                                                    )
+                                                } else {
+                                                    __err::one_of_multiple_valid(
+                                                        "/properties/flag/oneOf",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __context,
+                                                    )
+                                                },
+                                            );
+                                        }
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "flags").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(matches!(
+                        __NodeExt::json_type(& instance), __JT::Boolean | __JT::Null |
+                        __JT::Array
+                    )) {
+                        let __path = &__path.push("flags");
+                        if !(matches!(
+                            __NodeExt::json_type(& instance), __JT::Boolean | __JT::Null
+                            | __JT::Array
+                        )) {
+                            __errors
+                                .push(
+                                    __err::multiple_types(
+                                        "/properties/flags/type",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        __JTS::empty()
+                                            .insert(__JT::Boolean)
+                                            .insert(__JT::Null)
+                                            .insert(__JT::Array),
+                                    ),
+                                );
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "integer").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __NodeExt::json_type(&instance) {
+                        __JT::Number if __NodeExt::as_number(&instance)
+                            .is_some_and(|__number| __NumberExt::is_integer(
+                                &__number,
+                            )) => {
+                            match __NodeExt::as_number(&instance) {
+                                Some(__number) => {
+                                    let __number = __NumberExt::to_number(&__number);
+                                    let n = &*__number;
+                                    __num::ge(n, 1u64)
+                                }
+                                None => Default::default(),
+                            }
+                        }
+                        _ => false,
+                    }) {
+                        let __path = &__path.push("integer");
+                        match __NodeExt::json_type(&instance) {
+                            __JT::Number => {
+                                match __NodeExt::as_number(&instance) {
+                                    Some(__number) => {
+                                        let __number = __NumberExt::to_number(&__number);
+                                        let n = &*__number;
+                                        if !(__NodeExt::as_number(&instance)
+                                            .is_some_and(|__number| __NumberExt::is_integer(&__number)))
+                                        {
+                                            __errors
+                                                .push(
+                                                    __err::single_type(
+                                                        "/properties/integer/type",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __JT::Integer,
+                                                    ),
+                                                );
+                                        }
+                                        if !(__num::ge(n, 1u64)) {
+                                            __errors
+                                                .push(
+                                                    __err::minimum(
+                                                        "/properties/integer/minimum",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __sj::Value::Number(__sj::Number::from(1u64)),
+                                                    ),
+                                                );
+                                        }
+                                    }
+                                    None => Default::default(),
+                                }
+                            }
+                            _ => {
+                                __errors
+                                    .push(
+                                        __err::single_type(
+                                            "/properties/integer/type",
+                                            __path.into(),
+                                            __NodeExt::lazy_value(&instance),
+                                            __JT::Integer,
+                                        ),
+                                    );
+                            }
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "items").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __json::narrow_array(instance) {
+                        Some(arr) => {
+                            __ArrayExt::elements(&arr)
+                                .enumerate()
+                                .all(|(idx, item)| { if false { true } else { false } })
+                        }
+                        None => true,
+                    }) {
+                        let __path = &__path.push("items");
+                        match __json::narrow_array(instance) {
+                            Some(arr) => {
+                                __errors
+                                    .extend(
+                                        (|| -> Option<__VE<'_>> {
+                                            if let Some(arr) = __NodeExt::as_array(&instance) {
+                                                let mut __unexpected: Vec<String> = Vec::new();
+                                                for (idx, item) in __ArrayExt::elements(&arr).enumerate() {
+                                                    if !(false) && !(false) {
+                                                        __unexpected.push(__NodeExt::to_value(&item).to_string());
+                                                    }
+                                                }
+                                                if !__unexpected.is_empty() {
+                                                    return Some(
+                                                        __err::unevaluated_items(
+                                                            "/properties/items/unevaluatedItems",
+                                                            __path.into(),
+                                                            __NodeExt::lazy_value(&instance),
+                                                            __unexpected,
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                            None
+                                        })(),
+                                    );
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "list").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !((__NodeExt::json_type(&instance) == __JT::Array)) {
+                        let __path = &__path.push("list");
+                        if !((__NodeExt::json_type(&instance) == __JT::Array)) {
+                            __errors
+                                .push(
+                                    __err::single_type(
+                                        "/properties/list/type",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        __JT::Array,
+                                    ),
+                                );
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "nested").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !((match __json::narrow_object(instance) {
+                        Some(obj) => {
+                            __ObjectExt::members(&obj)
+                                .all(|(__key, __value)| {
+                                    let key_str = (&*__key);
+                                    if (false)
+                                        || {
+                                            __ObjectExt::members(&obj)
+                                                .find(|(__name, _)| &**__name == key_str)
+                                                .map(|(_, __value)| __value)
+                                                .is_some_and(|instance| { __NodeExt::is_string(&instance) })
+                                        }
+                                    {
+                                        true
+                                    } else {
+                                        false
+                                    }
+                                })
+                        }
+                        None => true,
+                    })
+                        && (match __json::narrow_object(instance) {
+                            Some(obj) => {
+                                __ObjectExt::members(&obj)
+                                    .all(|(__key, __value)| {
+                                        let key_str = (&*__key);
+                                        if false {
+                                            true
+                                        } else {
+                                            (|instance: __Value<'_>| __NodeExt::is_string(
+                                                &instance,
+                                            ))(__value)
+                                        }
+                                    })
+                            }
+                            None => true,
+                        }))
+                    {
+                        let __path = &__path.push("nested");
+                        match __json::narrow_object(instance) {
+                            Some(obj) => {
+                                __errors
+                                    .extend(
+                                        (|| -> Option<__VE<'_>> {
+                                            if let Some(obj) = __NodeExt::as_object(&instance) {
+                                                let mut __unexpected: Vec<String> = Vec::new();
+                                                for (__key, __value) in __ObjectExt::members(&obj) {
+                                                    let key_str = (&*__key);
+                                                    if !(false)
+                                                        && !((|instance: __Value<'_>| __NodeExt::is_string(
+                                                            &instance,
+                                                        ))(__value))
+                                                    {
+                                                        __unexpected.push(__key.to_string());
+                                                    }
+                                                }
+                                                if !__unexpected.is_empty() {
+                                                    return Some(
+                                                        __err::unevaluated_properties(
+                                                            "/properties/nested/allOf/0/unevaluatedProperties",
+                                                            __path.into(),
+                                                            __NodeExt::lazy_value(&instance),
+                                                            __unexpected,
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                            None
+                                        })(),
+                                    );
+                            }
+                            None => {}
+                        }
+                        match __json::narrow_object(instance) {
+                            Some(obj) => {
+                                __errors
+                                    .extend(
+                                        (|| -> Option<__VE<'_>> {
+                                            if let Some(obj) = __NodeExt::as_object(&instance) {
+                                                let mut __unexpected: Vec<String> = Vec::new();
+                                                for (__key, __value) in __ObjectExt::members(&obj) {
+                                                    let key_str = (&*__key);
+                                                    if !((false)
+                                                        || {
+                                                            __ObjectExt::members(&obj)
+                                                                .find(|(__name, _)| &**__name == key_str)
+                                                                .map(|(_, __value)| __value)
+                                                                .is_some_and(|instance| { __NodeExt::is_string(&instance) })
+                                                        }) && !(false)
+                                                    {
+                                                        __unexpected.push(__key.to_string());
+                                                    }
+                                                }
+                                                if !__unexpected.is_empty() {
+                                                    return Some(
+                                                        __err::unevaluated_properties(
+                                                            "/properties/nested/unevaluatedProperties",
+                                                            __path.into(),
+                                                            __NodeExt::lazy_value(&instance),
+                                                            __unexpected,
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                            None
+                                        })(),
+                                    );
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "nothing").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(__NodeExt::is_null(&instance)) {
+                        let __path = &__path.push("nothing");
+                        if !(__NodeExt::is_null(&instance)) {
+                            __errors
+                                .push(
+                                    __err::single_type(
+                                        "/properties/nothing/type",
+                                        __path.into(),
+                                        __NodeExt::lazy_value(&instance),
+                                        __JT::Null,
+                                    ),
+                                );
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "open").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __json::narrow_object(instance) {
+                        Some(obj) => {
+                            __json::object_values(obj)
+                                .all(|instance| {
+                                    (__NodeExt::json_type(&instance) == __JT::Boolean)
+                                })
+                        }
+                        None => true,
+                    }) {
+                        let __path = &__path.push("open");
+                        match __json::narrow_object(instance) {
+                            Some(obj) => {
+                                for (key, value) in __ObjectExt::members(&obj) {
+                                    let instance = value;
+                                    let __path = &__path.push((&*key));
+                                    if !((__NodeExt::json_type(&instance) == __JT::Boolean)) {
+                                        __errors
+                                            .push(
+                                                __err::single_type(
+                                                    "/properties/open/additionalProperties/type",
+                                                    __path.into(),
+                                                    __NodeExt::lazy_value(&instance),
+                                                    __JT::Boolean,
+                                                ),
+                                            );
+                                    }
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "record").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __json::narrow_object(instance) {
+                        Some(obj) => {
+                            ({
+                                let __object_pass = __ObjectExt::members(&obj)
+                                    .all(|(key, instance)| {
+                                        if (&*key).starts_with("x-") {
+                                            if !(__NodeExt::as_number(&instance)
+                                                .is_some_and(|__number| __NumberExt::is_integer(&__number)))
+                                            {
+                                                return false;
+                                            }
+                                        }
+                                        true
+                                    });
+                                __object_pass
+                            })
+                                && (__ObjectExt::members(&obj)
+                                    .map(|(__name, _)| __name)
+                                    .all(|__name| {
+                                        let s: &str = &__name;
+                                        (s.chars().count() as u64) <= 5
+                                    }))
+                        }
+                        None => true,
+                    }) {
+                        let __path = &__path.push("record");
+                        match __json::narrow_object(instance) {
+                            Some(obj) => {
+                                for key in __ObjectExt::members(&obj)
+                                    .map(|(__name, _)| __name)
+                                {
+                                    let __key_val = __py3::PyString::new(__py, &key).into_any();
+                                    let mut __key_errors: Vec<__VE<'_>> = Vec::new();
+                                    {
+                                        let s = (&*key);
+                                        let instance = __key_val.as_borrowed();
+                                        let __errors = &mut __key_errors;
+                                        if !((s.chars().count() as u64) <= 5) {
+                                            __errors
+                                                .push(
+                                                    __err::max_length(
+                                                        "/properties/record/propertyNames/maxLength",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        5,
+                                                    ),
+                                                );
+                                        }
+                                    }
+                                    for __e in __key_errors {
+                                        __errors.push(__e.to_owned());
+                                    }
+                                }
+                                for (key, value) in __ObjectExt::members(&obj) {
+                                    if (&*key).starts_with("x-") {
+                                        let instance = value;
+                                        let __path = &__path.push((&*key));
+                                        if !(__NodeExt::as_number(&instance)
+                                            .is_some_and(|__number| __NumberExt::is_integer(&__number)))
+                                        {
+                                            __errors
+                                                .push(
+                                                    __err::single_type(
+                                                        "/properties/record/patternProperties/^x-/type",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __JT::Integer,
+                                                    ),
+                                                );
+                                        }
+                                    }
+                                }
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "rest").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __json::narrow_object(instance) {
+                        Some(obj) => {
+                            __ObjectExt::members(&obj)
+                                .all(|(__key, __value)| {
+                                    let key_str = (&*__key);
+                                    if false {
+                                        true
+                                    } else {
+                                        (|instance: __Value<'_>| __NodeExt::is_string(
+                                            &instance,
+                                        ))(__value)
+                                    }
+                                })
+                        }
+                        None => true,
+                    }) {
+                        let __path = &__path.push("rest");
+                        match __json::narrow_object(instance) {
+                            Some(obj) => {
+                                __errors
+                                    .extend(
+                                        (|| -> Option<__VE<'_>> {
+                                            if let Some(obj) = __NodeExt::as_object(&instance) {
+                                                let mut __unexpected: Vec<String> = Vec::new();
+                                                for (__key, __value) in __ObjectExt::members(&obj) {
+                                                    let key_str = (&*__key);
+                                                    if !(false)
+                                                        && !((|instance: __Value<'_>| __NodeExt::is_string(
+                                                            &instance,
+                                                        ))(__value))
+                                                    {
+                                                        __unexpected.push(__key.to_string());
+                                                    }
+                                                }
+                                                if !__unexpected.is_empty() {
+                                                    return Some(
+                                                        __err::unevaluated_properties(
+                                                            "/properties/rest/unevaluatedProperties",
+                                                            __path.into(),
+                                                            __NodeExt::lazy_value(&instance),
+                                                            __unexpected,
+                                                        ),
+                                                    );
+                                                }
+                                            }
+                                            None
+                                        })(),
+                                    );
+                            }
+                            None => {}
+                        }
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "shape").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !({
+                        let __one_of_discriminator = __NodeExt::as_object(&instance)
+                            .and_then(|__object| __ObjectExt::get(
+                                &__object,
+                                __py3::intern!(__py, "kind").as_unbound(),
+                            ))
+                            .and_then(|__value| match __NodeExt::as_string(&__value) {
+                                Some(::std::borrow::Cow::Borrowed(__text)) => Some(__text),
+                                _ => None,
+                            });
+                        let mut matched = (matches!(
+                            __one_of_discriminator, Some("circle")
+                        ) && { is_branch_valid_4(instance) });
+                        (if (matches!(__one_of_discriminator, Some("square"))
+                            && { is_branch_valid_5(instance) })
+                        {
+                            if matched {
+                                false
+                            } else {
+                                matched = true;
+                                true
+                            }
+                        } else {
+                            true
+                        }) && matched
+                    }) {
+                        let __path = &__path.push("shape");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    {
+                                        let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                            .and_then(|__object| __ObjectExt::get(
+                                                &__object,
+                                                __py3::intern!(__py, "kind").as_unbound(),
+                                            ))
+                                            .and_then(|__value| match __NodeExt::as_string(&__value) {
+                                                Some(::std::borrow::Cow::Borrowed(__text)) => Some(__text),
+                                                _ => None,
+                                            });
+                                        let mut __count = 0usize;
+                                        if (matches!(__one_of_discriminator, Some("circle"))
+                                            && { is_branch_valid_4(instance) })
+                                        {
+                                            __count += 1;
+                                        }
+                                        if (matches!(__one_of_discriminator, Some("square"))
+                                            && { is_branch_valid_5(instance) })
+                                        {
+                                            __count += 1;
+                                        }
+                                        if !((__NodeExt::json_type(&instance) == __JT::Object)) {
+                                            __count += 2usize;
+                                        }
+                                        if __count != 1 {
+                                            let mut __context = Vec::with_capacity(2usize);
+                                            {
+                                                let mut __branch_errors = Vec::new();
+                                                collect_branch_errors_4(
+                                                    instance,
+                                                    __path,
+                                                    &mut __branch_errors,
+                                                );
+                                                __context.push(__branch_errors);
+                                            }
+                                            {
+                                                let mut __branch_errors = Vec::new();
+                                                collect_branch_errors_5(
+                                                    instance,
+                                                    __path,
+                                                    &mut __branch_errors,
+                                                );
+                                                __context.push(__branch_errors);
+                                            }
+                                            return Some(
+                                                if __count == 0 {
+                                                    __err::one_of_not_valid(
+                                                        "/properties/shape/oneOf",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __context,
+                                                    )
+                                                } else {
+                                                    __err::one_of_multiple_valid(
+                                                        "/properties/shape/oneOf",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __context,
+                                                    )
+                                                },
+                                            );
+                                        }
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "structured").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !({
+                        static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                            __sj::from_str("{\"o\":true}")
+                                .expect("Failed to parse const value")
+                        });
+                        __NodeExt::equals_value(&instance, &*EXPECTED)
+                    }) {
+                        let __path = &__path.push("structured");
+                        __errors
+                            .extend(
+                                (|| -> Option<__VE<'_>> {
+                                    if !({
+                                        static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("{\"o\":true}")
+                                                .expect("Failed to parse const value")
+                                        });
+                                        __NodeExt::equals_value(&instance, &*EXPECTED)
+                                    }) {
+                                        static CONST_EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                            __sj::from_str("{\"o\":true}")
+                                                .expect("Failed to parse const value")
+                                        });
+                                        return Some(
+                                            __err::constant(
+                                                "/properties/structured/const",
+                                                __path.into(),
+                                                __NodeExt::lazy_value(&instance),
+                                                CONST_EXPECTED.clone(),
+                                            ),
+                                        );
+                                    }
+                                    None
+                                })(),
+                            );
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "tree").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(validate_ref_0(instance)) {
+                        let __path = &__path.push("tree");
+                        validate_ref_0_collect_errors(instance, __path, __errors);
+                    }
+                }
+                if let Some(value) = __ObjectExt::get(
+                    &obj,
+                    __py3::intern!(__py, "tuple").as_unbound(),
+                ) {
+                    let instance = value;
+                    if !(match __json::narrow_array(instance) {
+                        Some(arr) => {
+                            ((__ArrayExt::is_unique(&arr))
+                                && (__ArrayExt::elements(&arr)
+                                    .nth(0usize)
+                                    .map_or(true, |instance| __NodeExt::is_string(&instance))))
+                                && (__ArrayExt::elements(&arr)
+                                    .any(|instance| {
+                                        static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                            __sj::from_str("1").expect("Failed to parse const number")
+                                        });
+                                        match __NodeExt::json_type(&instance) {
+                                            __JT::Number => {
+                                                match __NodeExt::as_number(&instance) {
+                                                    Some(__number) => {
+                                                        let __number = __NumberExt::to_number(&__number);
+                                                        let n = &*__number;
+                                                        __cmp::equal_numbers(n, &*EXPECTED)
+                                                    }
+                                                    None => Default::default(),
+                                                }
+                                            }
+                                            _ => false,
+                                        }
+                                    }))
+                        }
+                        None => true,
+                    }) {
+                        let __path = &__path.push("tuple");
+                        match __json::narrow_array(instance) {
+                            Some(arr) => {
+                                __errors
+                                    .extend(
+                                        (|| -> Option<__VE<'_>> {
+                                            if !__ArrayExt::is_unique(&arr) {
+                                                return Some(
+                                                    __err::unique_items(
+                                                        "/properties/tuple/uniqueItems",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                    ),
+                                                );
+                                            }
+                                            None
+                                        })(),
+                                    );
+                                if let Some(instance) = __ArrayExt::elements(&arr)
+                                    .nth(0usize)
+                                {
+                                    if !(__NodeExt::is_string(&instance)) {
+                                        let __path = &__path.push(0usize);
+                                        if !(__NodeExt::is_string(&instance)) {
+                                            __errors
+                                                .push(
+                                                    __err::single_type(
+                                                        "/properties/tuple/prefixItems/0/type",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                        __JT::String,
+                                                    ),
+                                                );
+                                        }
+                                    }
+                                }
+                                __errors
+                                    .extend(
+                                        (|| -> Option<__VE<'_>> {
+                                            if !(__ArrayExt::elements(&arr)
+                                                .any(|instance| {
+                                                    static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                                        __sj::from_str("1").expect("Failed to parse const number")
+                                                    });
+                                                    match __NodeExt::json_type(&instance) {
+                                                        __JT::Number => {
+                                                            match __NodeExt::as_number(&instance) {
+                                                                Some(__number) => {
+                                                                    let __number = __NumberExt::to_number(&__number);
+                                                                    let n = &*__number;
+                                                                    __cmp::equal_numbers(n, &*EXPECTED)
+                                                                }
+                                                                None => Default::default(),
+                                                            }
+                                                        }
+                                                        _ => false,
+                                                    }
+                                                }))
+                                            {
+                                                return Some(
+                                                    __err::contains(
+                                                        "/properties/tuple/contains",
+                                                        __path.into(),
+                                                        __NodeExt::lazy_value(&instance),
+                                                    ),
+                                                );
+                                            }
+                                            None
+                                        })(),
+                                    );
+                            }
+                            None => {}
+                        }
+                    }
+                }
+            }
+            None => {}
+        }
+    }
+    pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
+        let _scope = __json::PendingErrorScope::enter();
+        __json::probe_root(instance.as_borrowed());
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        let result = is_valid(instance.as_borrowed());
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        Ok(result)
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Bound<'__i>,
+    ) -> __py3::PyResult<::std::result::Result<(), __VE<'__i>>> {
+        let _scope = __json::PendingErrorScope::enter();
+        __json::probe_root(instance.as_borrowed());
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        let result = match validate(
+            instance.as_borrowed(),
+            &__paths::LazyLocation::new(),
+        ) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        };
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        Ok(result)
+    }
+    pub(super) fn entry_iter_errors<'__i>(
+        instance: &'__i __Bound<'__i>,
+    ) -> __py3::PyResult<__EI<'__i>> {
+        let _scope = __json::PendingErrorScope::enter();
+        __json::probe_root(instance.as_borrowed());
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        let mut errors = Vec::new();
+        collect_errors(
+            instance.as_borrowed(),
+            &__paths::LazyLocation::new(),
+            &mut errors,
+        );
+        if let Some(error) = __json::take_pending_error() {
+            return Err(error);
+        }
+        Ok(__err::iterator_from(errors))
+    }
+}
+impl Validator {
+    pub fn is_valid(
+        instance: &::jsonschema::__private::pyo3::Bound<
+            '_,
+            ::jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> ::jsonschema::__private::pyo3::PyResult<bool> {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i ::jsonschema::__private::pyo3::Bound<
+            '__i,
+            ::jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> ::jsonschema::__private::pyo3::PyResult<
+        ::std::result::Result<(), ::jsonschema::ValidationError<'__i>>,
+    > {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i ::jsonschema::__private::pyo3::Bound<
+            '__i,
+            ::jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> ::jsonschema::__private::pyo3::PyResult<::jsonschema::ErrorIterator<'__i>> {
+        __validator_impl::entry_iter_errors(instance)
+    }
+}
