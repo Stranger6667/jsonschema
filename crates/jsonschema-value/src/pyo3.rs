@@ -1066,7 +1066,8 @@ impl<'py> Iterator for PyElements<'py> {
         let index = self.index as ffi::Py_ssize_t;
         self.index += 1;
         let ptr = self.sequence.as_ptr();
-        // `*_GetItem` return borrowed references; keep them borrowed for `'py`.
+        // Borrowed references; keep them borrowed for `'py`.
+        #[cfg(any(Py_LIMITED_API, PyPy, GraalPy))]
         let borrowed = unsafe {
             if self.is_tuple {
                 ffi::PyTuple_GetItem(ptr, index)
@@ -1074,8 +1075,19 @@ impl<'py> Iterator for PyElements<'py> {
                 ffi::PyList_GetItem(ptr, index)
             }
         };
+        // Direct reads skip the call and bounds check; a list can still shrink under a callback.
+        #[cfg(not(any(Py_LIMITED_API, PyPy, GraalPy)))]
+        let borrowed = unsafe {
+            if self.is_tuple {
+                ffi::PyTuple_GET_ITEM(ptr, index)
+            } else if index < ffi::PyList_GET_SIZE(ptr) {
+                ffi::PyList_GET_ITEM(ptr, index)
+            } else {
+                std::ptr::null_mut()
+            }
+        };
         if borrowed.is_null() {
-            // Resized by a callback since `len` was read; clear the IndexError CPython just set.
+            // Resized by a callback since `len` was read; `*_GetItem` also set an IndexError to clear.
             unsafe { ffi::PyErr_Clear() };
             record_value_error("Sequence changed size during validation");
             self.index = self.len;

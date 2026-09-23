@@ -23,6 +23,7 @@
     {"even": true},
     {"all-positive": true},
     {"type": "integer", "minimum": 0, "even": true},
-    {"type": "object", "properties": {"count": {"type": "integer", "even": true}}}
+    {"type": "object", "properties": {"count": {"type": "integer", "even": true}}},
+    {"items": {"type": "integer"}}
   ]
 }
