@@ -39,6 +39,7 @@ pub struct ValidationOptions<'i, R = Arc<dyn Retrieve>, F: Json = SerdeJson> {
     vocabularies: AHashSet<String>,
     pattern_options: PatternEngineOptions,
     email_options: Option<EmailAddressOptions>,
+    deny_unknown_keywords: bool,
     representation: PhantomData<F>,
 }
 
@@ -62,6 +63,7 @@ impl<R: Clone, F: Json> Clone for ValidationOptions<'_, R, F> {
             vocabularies: self.vocabularies.clone(),
             pattern_options: self.pattern_options,
             email_options: self.email_options,
+            deny_unknown_keywords: self.deny_unknown_keywords,
             representation: PhantomData,
         }
     }
@@ -84,6 +86,7 @@ impl<F: Json> Default for ValidationOptions<'_, Arc<dyn Retrieve>, F> {
             vocabularies: AHashSet::default(),
             pattern_options: PatternEngineOptions::default(),
             email_options: None,
+            deny_unknown_keywords: false,
             representation: PhantomData,
         }
     }
@@ -107,6 +110,7 @@ impl<F: Json> Default for ValidationOptions<'_, Arc<dyn referencing::AsyncRetrie
             vocabularies: AHashSet::default(),
             pattern_options: PatternEngineOptions::default(),
             email_options: None,
+            deny_unknown_keywords: false,
             representation: PhantomData,
         }
     }
@@ -496,6 +500,50 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     pub(crate) fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory<F>>> {
         self.keywords.get(name)
     }
+
+    /// Set whether to reject schemas that contain unknown keywords.
+    ///
+    /// By default, keywords that are not defined by the current draft are collected as
+    /// annotations and otherwise ignored, which silently accepts typos like `"reqired"`.
+    /// Set to `true` to fail schema compilation instead.
+    ///
+    /// Standard annotation keywords (`title`, `description`, `default`, `examples`,
+    /// `$comment`, `readOnly`, `writeOnly`, `deprecated`, `$vocabulary`) stay allowed for
+    /// the drafts that define them, as do keywords registered via
+    /// [`ValidationOptions::with_keyword`].
+    ///
+    /// Every subschema of the schema itself is checked, including the ones nothing references.
+    /// Resources it reaches through `$ref` are left alone, as are values that are not
+    /// subschemas, such as `const` bodies and `enum` members. Under Draft 2020-12, which
+    /// dropped `additionalItems` and `dependencies`, the subschemas those two hold are left
+    /// alone as well.
+    ///
+    /// The keywords a custom dialect adds count as unknown, since this crate reads a schema
+    /// against the draft its dialect builds on. Register them with
+    /// [`ValidationOptions::with_keyword`] to keep such a schema buildable.
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    ///
+    /// let error = jsonschema::options()
+    ///     .should_deny_unknown_keywords(true)
+    ///     .build(&json!({"reqired": ["a"]}))
+    ///     .expect_err("Should reject unknown keyword");
+    ///
+    /// assert_eq!(
+    ///     error.to_string(),
+    ///     "Unknown keyword: 'reqired'. Adjust configuration to ignore unrecognized keywords"
+    /// );
+    /// ```
+    #[inline]
+    #[must_use]
+    pub fn should_deny_unknown_keywords(mut self, yes: bool) -> Self {
+        self.deny_unknown_keywords = yes;
+        self
+    }
+    pub(crate) fn deny_unknown_keywords(&self) -> bool {
+        self.deny_unknown_keywords
+    }
 }
 
 impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
@@ -823,6 +871,7 @@ impl<'i, F: Json> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> 
             vocabularies: self.vocabularies,
             pattern_options: self.pattern_options,
             email_options: self.email_options,
+            deny_unknown_keywords: self.deny_unknown_keywords,
             representation: PhantomData,
         }
     }
@@ -1297,6 +1346,338 @@ mod tests {
             "Resource 'https://example.com/schema.json' is not present in a registry \
              and retrieving it failed: Retrieval is disabled, cannot fetch \
              https://example.com/schema.json"
+        );
+    }
+
+    #[test_case(&json!({"reqired": ["a"]}), "reqired"; "a misspelled keyword")]
+    #[test_case(&json!({"properties": {"a": {"exclusiveMinimun": 1}}}), "exclusiveMinimun"; "a misspelled keyword in a subschema")]
+    #[test_case(&json!({"x-vendor": true}), "x-vendor"; "a vendor extension")]
+    fn test_denied_unknown_keywords(schema: &Value, keyword: &str) {
+        // The default keeps them as annotations
+        crate::options()
+            .build(schema)
+            .expect("Should ignore unknown keywords");
+        crate::options()
+            .should_deny_unknown_keywords(false)
+            .build(schema)
+            .expect("Should ignore unknown keywords");
+
+        let error = crate::options()
+            .should_deny_unknown_keywords(true)
+            .build(schema)
+            .expect_err("Should reject an unknown keyword");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Unknown keyword: '{keyword}'. Adjust configuration to ignore unrecognized keywords"
+            )
+        );
+    }
+
+    #[test_case(Draft::Draft4, &json!({"title": "a", "description": "b", "default": 1}); "draft 4 annotations")]
+    #[test_case(Draft::Draft6, &json!({"examples": [1]}); "draft 6 annotations")]
+    #[test_case(Draft::Draft7, &json!({"$comment": "a", "readOnly": true, "writeOnly": false}); "draft 7 annotations")]
+    #[test_case(Draft::Draft201909, &json!({"deprecated": true}); "draft 2019-09 annotations")]
+    #[test_case(Draft::Draft202012, &json!({"$defs": {"a": true}, "$anchor": "a"}); "keywords the draft defines")]
+    fn test_denied_unknown_keywords_allows_annotations(draft: Draft, schema: &Value) {
+        crate::options()
+            .with_draft(draft)
+            .should_deny_unknown_keywords(true)
+            .build(schema)
+            .expect("Should accept annotations the draft defines");
+    }
+
+    // An annotation the draft in use does not define is still unknown
+    #[test_case(Draft::Draft4, &json!({"$comment": "a"}), "$comment")]
+    #[test_case(Draft::Draft4, &json!({"examples": [1]}), "examples")]
+    #[test_case(Draft::Draft7, &json!({"deprecated": true}), "deprecated")]
+    fn test_denied_unknown_keywords_is_draft_specific(draft: Draft, schema: &Value, keyword: &str) {
+        let error = crate::options()
+            .with_draft(draft)
+            .should_deny_unknown_keywords(true)
+            .build(schema)
+            .expect_err("Should reject an unknown keyword");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Unknown keyword: '{keyword}'. Adjust configuration to ignore unrecognized keywords"
+            )
+        );
+    }
+
+    #[test]
+    fn test_denied_unknown_keywords_allows_registered_keywords() {
+        struct ObjectValidator;
+
+        impl<'i> crate::Keyword<'i> for ObjectValidator {
+            fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+                if instance.is_object() {
+                    Ok(())
+                } else {
+                    Err(ValidationError::custom("expected an object"))
+                }
+            }
+
+            fn is_valid(&self, instance: &'i Value) -> bool {
+                instance.is_object()
+            }
+        }
+
+        let validator = crate::options()
+            .should_deny_unknown_keywords(true)
+            .with_keyword("my-type", |_, _, _| Ok(Box::new(ObjectValidator)))
+            .build(&json!({"my-type": "my-schema"}))
+            .expect("Should accept a registered keyword");
+        assert!(validator.is_valid(&json!({})));
+        assert!(!validator.is_valid(&json!(1)));
+    }
+
+    // Compilation follows references, so these subschemas are never compiled; the document
+    // walk is what reports them
+    #[test_case(&json!({"$defs": {"a": {"reqired": ["x"]}}}); "an entry nothing references")]
+    #[test_case(&json!({"if": {"reqired": ["x"]}}); "an `if` without `then` or `else`")]
+    #[test_case(&json!({"properties": {"a": {"not": {"exclusiveMinimun": 1}}}}); "a subschema behind several keywords")]
+    fn test_denied_unknown_keywords_reaches_uncompiled_subschemas(schema: &Value) {
+        crate::options()
+            .build(schema)
+            .expect("Should ignore unknown keywords");
+
+        let error = crate::options()
+            .should_deny_unknown_keywords(true)
+            .build(schema)
+            .expect_err("Should reject an unknown keyword");
+        assert!(
+            error.to_string().starts_with("Unknown keyword: '"),
+            "{error}"
+        );
+    }
+
+    // Positions that hold data rather than subschemas are not schemas to check
+    #[test_case(&json!({"const": {"reqired": ["x"]}}); "a `const` body")]
+    #[test_case(&json!({"enum": [{"reqired": ["x"]}]}); "an `enum` member")]
+    #[test_case(&json!({"default": {"reqired": ["x"]}}); "a `default` body")]
+    #[test_case(&json!({"properties": {"reqired": true}}); "a property name")]
+    fn test_denied_unknown_keywords_skips_non_schema_values(schema: &Value) {
+        crate::options()
+            .should_deny_unknown_keywords(true)
+            .build(schema)
+            .expect("Should look at subschemas only");
+    }
+
+    // A `$schema` takes effect where a resource begins, which `$id` marks. Without one it is
+    // inert, and the compiler honors `unevaluatedProperties` despite the Draft 7 declaration.
+    #[test]
+    fn test_denied_unknown_keywords_ignores_a_schema_off_a_resource_root() {
+        let schema = json!({
+            "$ref": "#/$defs/a",
+            "$defs": {"a": {"$schema": "http://json-schema.org/draft-07/schema#",
+                            "unevaluatedProperties": false}}
+        });
+        let validator = crate::options()
+            .should_deny_unknown_keywords(true)
+            .build(&schema)
+            .expect("Should accept a keyword the document's draft defines");
+        assert!(!validator.is_valid(&json!({"x": 1})));
+
+        // A keyword the document's draft does not define is still reported
+        let error = crate::options()
+            .should_deny_unknown_keywords(true)
+            .build(&json!({
+                "$defs": {"a": {"$schema": "http://json-schema.org/draft-07/schema#",
+                                "reqired": ["x"]}}
+            }))
+            .expect_err("Should reject an unknown keyword");
+        assert_eq!(
+            error.to_string(),
+            "Unknown keyword: 'reqired'. Adjust configuration to ignore unrecognized keywords"
+        );
+    }
+
+    // An inert `$schema` cannot hide a subtree from the walk either
+    #[test]
+    fn test_denied_unknown_keywords_descends_past_an_inert_schema() {
+        let error = crate::options()
+            .should_deny_unknown_keywords(true)
+            .build(&json!({
+                "$defs": {"a": {"$schema": "http://json-schema.org/draft-07/schema#",
+                                "prefixItems": [{"reqired": ["x"]}]}}
+            }))
+            .expect_err("Should reject an unknown keyword");
+        assert_eq!(
+            error.to_string(),
+            "Unknown keyword: 'reqired'. Adjust configuration to ignore unrecognized keywords"
+        );
+    }
+
+    // An explicitly configured draft replaces what the document declares, so the declaration
+    // cannot buy back a keyword that draft does not define
+    #[test]
+    fn test_denied_unknown_keywords_keeps_the_configured_draft() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "prefixItems": [{"type": "string"}]
+        });
+        // The validator built from it ignores `prefixItems` entirely
+        let validator = crate::options()
+            .with_draft(Draft::Draft7)
+            .build(&schema)
+            .expect("Should ignore unknown keywords");
+        assert!(validator.is_valid(&json!([1])));
+
+        let error = crate::options()
+            .with_draft(Draft::Draft7)
+            .should_deny_unknown_keywords(true)
+            .build(&schema)
+            .expect_err("Should reject an unknown keyword");
+        assert_eq!(
+            error.to_string(),
+            "Unknown keyword: 'prefixItems'. Adjust configuration to ignore unrecognized keywords"
+        );
+    }
+
+    // A meta-schema this crate does not know reports as `Draft::Unknown`, which defines every
+    // keyword of every draft. Taking it for an answer would let any subschema waive the check.
+    #[test]
+    fn test_denied_unknown_keywords_ignores_an_unknown_dialect() {
+        let error = crate::options()
+            .with_draft(Draft::Draft4)
+            .should_deny_unknown_keywords(true)
+            .build(&json!({
+                "properties": {"a": {"id": "https://example.com/a",
+                                     "$schema": "urn:example:dialect",
+                                     "unevaluatedProperties": false}}
+            }))
+            .expect_err("Should reject an unknown keyword");
+        assert_eq!(
+            error.to_string(),
+            "Unknown keyword: 'unevaluatedProperties'. Adjust configuration to ignore unrecognized keywords"
+        );
+    }
+
+    // A resource of its own follows the draft it declares, for what its keywords mean and for
+    // where its subschemas sit
+    #[test]
+    fn test_denied_unknown_keywords_follows_an_embedded_resource() {
+        let embedded = |inner| {
+            json!({"definitions": {"a": {"$id": "https://example.com/a",
+                                         "$schema": "https://json-schema.org/draft/2020-12/schema",
+                                         "prefixItems": [inner]}}})
+        };
+        crate::options()
+            .with_draft(Draft::Draft7)
+            .should_deny_unknown_keywords(true)
+            .build(&embedded(json!(true)))
+            .expect("Should accept a keyword the embedded resource's draft defines");
+
+        let error = crate::options()
+            .with_draft(Draft::Draft7)
+            .should_deny_unknown_keywords(true)
+            .build(&embedded(json!({"reqired": ["x"]})))
+            .expect_err("Should reject an unknown keyword");
+        assert_eq!(
+            error.to_string(),
+            "Unknown keyword: 'reqired'. Adjust configuration to ignore unrecognized keywords"
+        );
+    }
+
+    // `additionalItems` and `dependencies` hold subschemas up to Draft 2019-09; Draft 2020-12
+    // dropped both. Nothing reads them as subschema positions there, so nothing walks into
+    // them either, and a typo one of them buries goes unreported. They are the only two
+    // positions of any draft the walk does not reach.
+    #[test_case(Draft::Draft7, &json!({"additionalItems": {"reqired": ["x"]}}), true; "additionalItems where the draft holds a subschema")]
+    #[test_case(Draft::Draft202012, &json!({"additionalItems": {"reqired": ["x"]}}), false; "additionalItems where the draft dropped it")]
+    #[test_case(Draft::Draft7, &json!({"dependencies": {"a": {"reqired": ["x"]}}}), true; "dependencies where the draft holds a subschema")]
+    #[test_case(Draft::Draft202012, &json!({"dependencies": {"a": {"reqired": ["x"]}}}), false; "dependencies where the draft dropped it")]
+    fn test_denied_unknown_keywords_walks_the_positions_of_the_draft(
+        draft: Draft,
+        schema: &Value,
+        reported: bool,
+    ) {
+        let error = crate::options()
+            .with_draft(draft)
+            .should_deny_unknown_keywords(true)
+            .build(schema)
+            .err();
+        assert_eq!(error.is_some(), reported);
+    }
+
+    // A validator map compiles every value of the document, including the ones that are not
+    // subschemas, and drops what fails to compile. Denial runs over the document beforehand,
+    // so it must not also run there and take entries out of the map.
+    #[test]
+    fn test_denied_unknown_keywords_keeps_validator_map_entries() {
+        let schema = json!({"enum": [{"reqired": []}], "properties": {"p": true}});
+        let lax = crate::options()
+            .build_map(&schema)
+            .expect("Should ignore unknown keywords");
+        let strict = crate::options()
+            .should_deny_unknown_keywords(true)
+            .build_map(&schema)
+            .expect("Should look at subschemas only");
+        assert_eq!(strict.len(), lax.len());
+        assert!(strict.get("#").is_some());
+    }
+
+    #[test]
+    fn test_denied_unknown_keywords_applies_to_validator_maps() {
+        let schema = json!({"$defs": {"a": {"reqired": ["x"]}}});
+        crate::options()
+            .build_map(&schema)
+            .expect("Should ignore unknown keywords");
+
+        let error = crate::options()
+            .should_deny_unknown_keywords(true)
+            .build_map(&schema)
+            .expect_err("Should reject an unknown keyword");
+        assert_eq!(
+            error.to_string(),
+            "Unknown keyword: 'reqired'. Adjust configuration to ignore unrecognized keywords"
+        );
+    }
+
+    // Only the schema at hand is checked. A resource it pulls in from a registry belongs to
+    // whoever wrote it, and the keywords it carries are theirs to name.
+    #[test]
+    fn test_denied_unknown_keywords_leaves_referenced_resources_alone() {
+        let registry = Registry::new()
+            .add(
+                "https://example.com/remote",
+                json!({"$id": "https://example.com/remote", "vendor-rule": ["x"]}),
+            )
+            .expect("Should accept the resource")
+            .prepare()
+            .expect("Should create registry");
+
+        crate::options()
+            .with_registry(&registry)
+            .should_deny_unknown_keywords(true)
+            .build(&json!({"$ref": "https://example.com/remote"}))
+            .expect("Should leave a referenced resource alone");
+    }
+
+    // Below Draft 2019-09 the siblings of `$ref` are ignored, but a typo among them is still
+    // worth reporting
+    #[test]
+    fn test_denied_unknown_keywords_checks_ref_siblings() {
+        let schema = json!({
+            "$ref": "#/definitions/a",
+            "title": "allowed",
+            "reqired": ["b"],
+            "definitions": {"a": true}
+        });
+        crate::options()
+            .with_draft(Draft::Draft7)
+            .build(&schema)
+            .expect("Should ignore unknown keywords");
+
+        let error = crate::options()
+            .with_draft(Draft::Draft7)
+            .should_deny_unknown_keywords(true)
+            .build(&schema)
+            .expect_err("Should reject an unknown keyword");
+        assert_eq!(
+            error.to_string(),
+            "Unknown keyword: 'reqired'. Adjust configuration to ignore unrecognized keywords"
         );
     }
 

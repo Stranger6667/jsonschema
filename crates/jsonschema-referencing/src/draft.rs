@@ -130,7 +130,24 @@ impl Draft {
             Draft::Draft202012 | Draft::Unknown => spec::analyze_object_modern(contents, true),
         }
     }
-    pub(crate) fn walk_children<'a>(
+    /// Call `f` for every subschema this object holds directly.
+    ///
+    /// Each call names the keyword the subschema sits under, the segment below it for the
+    /// keywords that hold several (`None` for the ones that hold a single subschema), the
+    /// subschema itself, and the draft it follows, which an embedded `$schema` may change.
+    /// Descending further is up to the caller.
+    ///
+    /// Values that hold data rather than subschemas, such as `const` bodies or `enum` items,
+    /// are never visited. The keywords that are visited are those this crate indexes
+    /// subresources under, which is close to the draft's own set but not equal to it: a draft
+    /// is read leniently, so positions a later draft added are visited as well, while
+    /// `additionalItems` and `dependencies`, which Draft 2020-12 dropped, are visited only
+    /// below it.
+    ///
+    /// # Errors
+    ///
+    /// `f` returns one.
+    pub fn walk_children<'a>(
         self,
         contents: &'a Map<String, Value>,
         f: &mut impl FnMut(
