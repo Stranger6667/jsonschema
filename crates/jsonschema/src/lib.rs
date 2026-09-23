@@ -1825,6 +1825,31 @@ pub mod meta {
 
     pub use validator_handle::MetaValidator;
 
+    /// Meta-schema validators that read a schema held as a Python object.
+    ///
+    /// The bundled drafts are compiled in, so a schema already in Python form is checked without
+    /// being converted to [`serde_json::Value`]. A `$schema` outside them is reached through
+    /// [`is_valid_for`] / [`validate_for`] instead.
+    ///
+    /// Needs the `macros` feature; without it, use [`is_valid_for`] / [`validate_for`] with
+    /// [`json::Pyo3`](crate::json::Pyo3).
+    #[cfg(all(feature = "macros", feature = "pyo3", not(target_family = "wasm")))]
+    pub mod pyo3 {
+        use crate::Draft;
+        use ::pyo3::{types::PyAny, Borrowed};
+
+        pub use crate::meta_codegen::pyo3::{is_valid_fn, validate_fn, IsValidFn, ValidateFn};
+
+        /// The draft whose meta-schema `schema` names in `$schema`.
+        ///
+        /// `Draft::Unknown` means a URI outside the bundled drafts, which the functions above
+        /// cannot answer for.
+        #[must_use]
+        pub fn draft_of(schema: Borrowed<'_, '_, PyAny>) -> Draft {
+            super::meta_cache::<crate::json::Pyo3>().draft_of(&schema)
+        }
+    }
+
     /// Create a meta-validation options builder.
     ///
     /// # Examples

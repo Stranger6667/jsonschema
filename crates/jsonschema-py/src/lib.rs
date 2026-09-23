@@ -2336,6 +2336,38 @@ mod meta {
     use jsonschema::json::Pyo3;
     use pyo3::prelude::*;
 
+    // The bundled meta-schemas are compiled in and read the Python object in place. `None` sends a
+    // `$schema` outside them through its chain, and every schema on wasm, where they are not built.
+    #[cfg(not(target_family = "wasm"))]
+    fn compiled_is_valid(schema: &Bound<'_, PyAny>) -> Option<PyResult<bool>> {
+        match jsonschema::meta::pyo3::draft_of(schema.as_borrowed()) {
+            jsonschema::Draft::Unknown => None,
+            draft => Some(jsonschema::meta::pyo3::is_valid_fn(draft)(schema)),
+        }
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn compiled_is_valid(_: &Bound<'_, PyAny>) -> Option<PyResult<bool>> {
+        None
+    }
+
+    #[cfg(not(target_family = "wasm"))]
+    fn compiled_validate<'i>(
+        schema: &'i Bound<'i, PyAny>,
+    ) -> Option<PyResult<Result<(), jsonschema::ValidationError<'i>>>> {
+        match jsonschema::meta::pyo3::draft_of(schema.as_borrowed()) {
+            jsonschema::Draft::Unknown => None,
+            draft => Some(jsonschema::meta::pyo3::validate_fn(draft)(schema)),
+        }
+    }
+
+    #[cfg(target_family = "wasm")]
+    fn compiled_validate<'i>(
+        _: &'i Bound<'i, PyAny>,
+    ) -> Option<PyResult<Result<(), jsonschema::ValidationError<'i>>>> {
+        None
+    }
+
     /// is_valid(schema, registry=None)
     ///
     /// Validate a JSON Schema document against its meta-schema. Draft version is detected automatically.
@@ -2362,16 +2394,18 @@ mod meta {
         registry: Option<&crate::registry::Registry>,
     ) -> PyResult<bool> {
         let Some(registry) = registry else {
-            return crate::surface_pending_errors(
-                schema,
-                || match jsonschema::meta::is_valid_for::<Pyo3>(schema.as_borrowed()) {
+            return crate::surface_pending_errors(schema, || {
+                if let Some(result) = compiled_is_valid(schema) {
+                    return result;
+                }
+                match jsonschema::meta::is_valid_for::<Pyo3>(schema.as_borrowed()) {
                     Ok(valid) => Ok(valid),
                     Err(error) => {
                         raise_if_unresolvable(py, &error)?;
                         Ok(false)
                     }
-                },
-            );
+                }
+            });
         };
         let schema = crate::ser::to_value(schema)?;
         match jsonschema::meta::options()
@@ -2426,16 +2460,21 @@ mod meta {
         registry: Option<&crate::registry::Registry>,
     ) -> PyResult<()> {
         let Some(registry) = registry else {
-            return crate::surface_pending_errors(
-                schema,
-                || match jsonschema::meta::validate_for::<Pyo3>(schema.as_borrowed()) {
+            return crate::surface_pending_errors(schema, || {
+                if let Some(result) = compiled_validate(schema) {
+                    return match result? {
+                        Ok(()) => Ok(()),
+                        Err(error) => Err(crate::into_py_err(py, error, None)?),
+                    };
+                }
+                match jsonschema::meta::validate_for::<Pyo3>(schema.as_borrowed()) {
                     Ok(()) => Ok(()),
                     Err(error) => {
                         raise_if_unresolvable(py, &error)?;
                         Err(crate::into_py_err(py, error, None)?)
                     }
-                },
-            );
+                }
+            });
         };
         let schema = crate::ser::to_value(schema)?;
         match jsonschema::meta::options()

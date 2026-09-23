@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `meta.is_valid` and `meta.validate` check a schema against the bundled drafts without converting it first, about 2x faster on the benchmarked schemas.
+
 ## [0.57.1] - 2026-09-22
 
 ## [0.57.0] - 2026-09-22
