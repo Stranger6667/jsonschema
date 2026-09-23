@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ValidationOptions::should_deny_unknown_keywords`, rejecting schemas that contain keywords the draft in use does not define, instead of collecting them as annotations.
+- `referencing::Draft::walk_children`, calling a closure for every subschema an object holds directly.
+
 ## [0.57.0] - 2026-09-22
 
 ### Added

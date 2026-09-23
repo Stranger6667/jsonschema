@@ -18,8 +18,8 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use referencing::{
-    uri, write_escaped_str, Draft, List, Registry, Resolved, Resolver, ResourceRef, Uri,
-    Vocabulary, VocabularySet,
+    uri, write_escaped_str, Draft, JsonPointerSegment, List, Registry, Resolved, Resolver,
+    ResourceRef, Uri, Vocabulary, VocabularySet,
 };
 use serde_json::{Map, Value};
 use std::{
@@ -867,6 +867,7 @@ pub(crate) fn build_validator<F: Json>(
     if config.validate_schema {
         validate_schema(draft, schema)?;
     }
+    ensure_no_unknown_keywords(config, draft, schema)?;
 
     if let Some(registry) = config.registry {
         let base_uri = resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
@@ -909,6 +910,7 @@ pub(crate) async fn build_validator_async<F: Json>(
     if config.validate_schema {
         validate_schema(draft, schema)?;
     }
+    ensure_no_unknown_keywords(config, draft, schema)?;
 
     if let Some(registry) = config.registry {
         let base_uri = resolve_base_uri(config.base_uri.as_ref(), resource_ref.id())?;
@@ -1213,6 +1215,107 @@ fn compile_without_cache<'a, F: Json>(
     }
 }
 
+/// Reject every keyword the draft in use does not define, anywhere in the document.
+///
+/// Compilation is no place for this check: it follows references, so a subschema nothing
+/// points at, such as an unused `$defs` entry, is never visited, and building a
+/// [`ValidatorMap`] compiles every value of the document and drops what fails. This walks the
+/// subschema positions [`Draft::walk_children`] names instead, so a typo is reported wherever
+/// it sits, bar the two positions that method leaves out under Draft 2020-12. Only this
+/// document is walked: a resource it pulls in from a registry belongs to whoever wrote it,
+/// and the keywords it carries are theirs to name.
+///
+/// A `$schema` only takes effect where a resource begins, which `$id` marks, so that is the
+/// only place the walk reads one. A `$schema` anywhere else is as inert here as it is during
+/// compilation, and the draft the document follows keeps its say over that subschema.
+///
+/// # Errors
+///
+/// The document holds a keyword the draft does not define, which is not an annotation keyword
+/// and was not registered via [`crate::ValidationOptions::with_keyword`].
+fn ensure_no_unknown_keywords<R, F: Json>(
+    config: &ValidationOptions<'_, R, F>,
+    draft: Draft,
+    schema: &Value,
+) -> Result<(), ValidationError<'static>> {
+    if !config.deny_unknown_keywords() {
+        return Ok(());
+    }
+    // The document's own draft is settled: an explicitly configured one has replaced whatever
+    // the root declares. Below it, each resource may pick its own.
+    let mut stack = vec![(schema, Location::new(), draft)];
+    while let Some((current, location, draft)) = stack.pop() {
+        let Some(object) = current.as_object() else {
+            continue;
+        };
+        for (keyword, value) in object {
+            if defines_keyword(draft, keyword) || config.get_keyword_factory(keyword).is_some() {
+                continue;
+            }
+            let location = location.join(keyword);
+            return Err(ValidationError::compile_error(
+                location.clone(),
+                location,
+                Location::new(),
+                LazyInstance::Ready(Cow::Owned(value.clone())),
+                format!(
+                    "Unknown keyword: '{keyword}'. Adjust configuration to ignore unrecognized keywords"
+                ),
+            ));
+        }
+        draft.walk_children(object, &mut |keyword, segment, value, _| {
+            let location = location.join(keyword);
+            let location = match segment {
+                Some(JsonPointerSegment::Key(key)) => location.join(key.as_ref()),
+                Some(JsonPointerSegment::Index(index)) => location.join(index),
+                None => location,
+            };
+            stack.push((value, location, draft_of(draft, value)));
+            Ok(())
+        })?;
+    }
+    Ok(())
+}
+
+/// The draft a subschema follows, given the one its parent follows.
+///
+/// `$schema` only takes effect where a resource begins, which `$id` marks, so anywhere else it
+/// is as inert here as it is during compilation.
+fn draft_of(parent: Draft, subschema: &Value) -> Draft {
+    let Some(object) = subschema.as_object() else {
+        return parent;
+    };
+    if !object.contains_key(parent.id_keyword()) {
+        return parent;
+    }
+    match parent.detect(subschema) {
+        // A meta-schema this crate does not know reports as `Draft::Unknown`, which defines
+        // every keyword of every draft. Taking it for an answer would waive the check.
+        Draft::Unknown => parent,
+        declared => declared,
+    }
+}
+
+/// Whether a draft gives the keyword a meaning, as validation or as an annotation.
+fn defines_keyword(draft: Draft, keyword: &str) -> bool {
+    draft.is_known_keyword(keyword) || is_annotation_keyword(draft, keyword)
+}
+
+/// Keywords that only produce annotations, per draft that defines them.
+fn is_annotation_keyword(draft: Draft, keyword: &str) -> bool {
+    match keyword {
+        "default" | "description" | "title" => true,
+
+        "examples" if draft >= Draft::Draft6 => true,
+
+        "$comment" | "readOnly" | "writeOnly" if draft >= Draft::Draft7 => true,
+
+        "$vocabulary" | "deprecated" if draft >= Draft::Draft201909 => true,
+
+        _ => false,
+    }
+}
+
 /// Iteratively traverse a schema document and compile a [`Validator`] for every
 /// reachable subschema, keyed by URI-fragment JSON pointer.
 ///
@@ -1286,6 +1389,7 @@ pub(crate) fn build_validator_map<F: Json>(
     let draft = config.draft_for(schema)?;
     let resource = draft.create_resource_ref(schema);
     validate_schema(draft, schema)?;
+    ensure_no_unknown_keywords(config, draft, schema)?;
 
     if let Some(registry) = config.registry {
         let base_uri = resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
@@ -1310,6 +1414,7 @@ pub(crate) async fn build_validator_map_async<F: Json>(
     let resource = draft.create_resource_ref(schema);
 
     validate_schema(draft, schema)?;
+    ensure_no_unknown_keywords(config, draft, schema)?;
 
     if let Some(registry) = config.registry {
         let base_uri = resolve_base_uri(config.base_uri.as_ref(), resource.id())?;
