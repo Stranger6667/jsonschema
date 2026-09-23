@@ -123,16 +123,15 @@ fn schema_to_code_with_runtime_alias(
 }
 
 fn render_config(config: &CodegenConfig) -> String {
+    render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(config)
+}
+
+fn render_config_for<E: crate::codegen::emit::ValueEmitter>(config: &CodegenConfig) -> String {
     let name = format_ident!("Validator");
     let impl_mod_name = format_ident!("__validator_impl");
     let recompile_trigger: TokenStream = quote! {};
-    let tokens = generate_from_config::<crate::codegen::emit_serde::SerdeEmitter>(
-        config,
-        &recompile_trigger,
-        &name,
-        &impl_mod_name,
-    )
-    .expect("schema should generate");
+    let tokens = generate_from_config::<E>(config, &recompile_trigger, &name, &impl_mod_name)
+        .expect("schema should generate");
 
     // Wrap in a struct declaration so syn can parse as a complete file
     let wrapped: TokenStream = quote! {
@@ -810,4 +809,74 @@ fn discriminator_branch_helper_reduces_only_validity() {
     assert!(!is_valid.contains("circle"));
     assert!(is_valid.contains(">= 8"));
     assert!(collect.contains("circle"));
+}
+
+#[test_case("pyo3_emitter", &json!({
+    "properties": {
+        "structured": {"const": {"o": true}},
+        "integer": {"type": "integer", "minimum": 1},
+        "choice": {"enum": [1, "a", true, null, {"o": [1]}]},
+        "tuple": {
+            "prefixItems": [{"type": "string"}],
+            "contains": {"const": 1},
+            "uniqueItems": true
+        },
+        "record": {
+            "patternProperties": {"^x-": {"type": "integer"}},
+            "propertyNames": {"maxLength": 5}
+        },
+        "open": {"additionalProperties": {"type": "boolean"}},
+        "shape": {
+            "oneOf": [{"properties": {"kind": {"const": "circle"}, "r": {"type": "number"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "square"}, "s": {"type": "number"}}, "required": ["kind"]}]
+        },
+        "code": {
+            "oneOf": [{"properties": {"code": {"const": 1}}, "required": ["code"]}, {"properties": {"code": {"const": 2}}, "required": ["code"]}]
+        },
+        "flag": {
+            "oneOf": [{"properties": {"on": {"const": true}}, "required": ["on"]}, {"properties": {"on": {"const": false}}, "required": ["on"]}]
+        },
+        "nothing": {"type": "null"},
+        "list": {"type": "array"},
+        "flags": {"type": ["boolean", "null", "array"]},
+        "fallbacks": {"type": ["string", "integer", "array", "object"], "minProperties": 1},
+        "empty": {"additionalProperties": false},
+        "rest": {"unevaluatedProperties": {"type": "string"}},
+        "items": {"unevaluatedItems": false},
+        "tree": {"$ref": "#/$defs/tree"},
+        "nested": {
+            "allOf": [{"unevaluatedProperties": {"type": "string"}}],
+            "unevaluatedProperties": false
+        }
+    },
+    "$defs": {"tree": {"properties": {"child": {"$ref": "#/$defs/tree"}}}}
+}) ; "keyword families")]
+#[test_case(
+    "pyo3_emitter_draft4",
+    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": ["integer", "string"]})
+    ; "draft4 integer"
+)]
+fn pyo3_emitter(snapshot: &str, schema: &Value) {
+    let schema = serde_json::to_string(schema).expect("schema serializes");
+    let config: crate::Config =
+        syn::parse2(quote! { schema = #schema, backend = Pyo3 }).expect("Config should parse");
+    let item: syn::ItemStruct = syn::parse2(quote! {
+        struct Validator;
+    })
+    .expect("Item should parse");
+    let tokens = crate::validator_impl(&config, &item).expect("schema should generate");
+    let file: syn::File = syn::parse2(tokens).expect("valid token stream");
+    insta::assert_snapshot!(snapshot, prettyplease::unparse(&file));
+}
+
+#[test_case(quote! { schema = "{}", backend = Pyo3 }, None ; "plain")]
+#[test_case(
+    quote! { schema = "{}", backend = Pyo3, keywords = { "even" => crate::even } },
+    Some("Custom keywords are not supported with `backend = Pyo3`: the generated code passes `even` a `serde_json::Value` instance")
+    ; "with keywords"
+)]
+fn pyo3_backend_attribute(attr: TokenStream, expected: Option<&str>) {
+    let error = syn::parse2::<crate::Config>(attr)
+        .err()
+        .map(|error| error.to_string());
+    assert_eq!(error.as_deref(), expected);
 }
