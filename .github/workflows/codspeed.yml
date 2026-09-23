@@ -82,7 +82,7 @@ jobs:
           CARGO_PROFILE_RELEASE_DEBUG: line-tables-only
         run: |
           uv venv --python 3.14
-          uv pip install ".[bench]"
+          uv pip install ".[bench]" ../jsonschema-bench-pyo3
 
       - uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
