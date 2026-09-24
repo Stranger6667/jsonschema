@@ -4,9 +4,29 @@ require "json"
 require_relative "jsonschema_testsuite_magnus"
 
 # `JSONSchemaTestSuite` holds a `backend = Magnus` validator for every schema in
-# `spec/codegen_schemas.json`, keyed by the schema's JSON with sorted keys.
+# `spec/codegen_schemas.json`, keyed by the schema's JSON with sorted keys. Custom keywords are
+# compiled in, so the `keywords:` option only the runtime reads is accepted and ignored.
 module CodegenBackend
   class ValidationError < StandardError; end
+
+  class Validator
+    def initialize(schema)
+      @key = CodegenBackend.schema_key(schema)
+    end
+
+    def valid?(instance)
+      JSONSchemaTestSuite.valid?(@key, instance)
+    end
+
+    def validate!(instance)
+      message = JSONSchemaTestSuite.validate(@key, instance)
+      raise ValidationError, message unless message.nil?
+    end
+
+    def each_error(instance)
+      JSONSchemaTestSuite.each_error(@key, instance).map { |message| ValidationError.new(message) }
+    end
+  end
 
   def self.schema_key(schema)
     JSON.generate(sorted(schema))
@@ -20,17 +40,20 @@ module CodegenBackend
     end
   end
 
-  def self.valid?(schema, instance)
-    JSONSchemaTestSuite.valid?(schema_key(schema), instance)
+  def self.validator_for(schema, **)
+    Validator.new(schema)
   end
 
-  def self.validate!(schema, instance)
-    message = JSONSchemaTestSuite.validate(schema_key(schema), instance)
-    raise ValidationError, message unless message.nil?
+  def self.valid?(schema, instance, **)
+    validator_for(schema).valid?(instance)
   end
 
-  def self.each_error(schema, instance)
-    JSONSchemaTestSuite.each_error(schema_key(schema), instance)
+  def self.validate!(schema, instance, **)
+    validator_for(schema).validate!(instance)
+  end
+
+  def self.each_error(schema, instance, **)
+    validator_for(schema).each_error(instance)
   end
 end
 

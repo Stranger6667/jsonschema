@@ -672,90 +672,123 @@ RSpec.describe "Custom keywords" do
     end
   end
 
-  describe "with validator_for" do
-    it "validates with custom even keyword" do
-      validator = JSONSchema.validator_for(
-        { "even" => true },
-        keywords: { "even" => even_validator_class }
-      )
-      expect(validator.valid?(2)).to be true
-      expect(validator.valid?(4)).to be true
-      expect(validator.valid?(1)).to be false
-      expect(validator.valid?(3)).to be false
-      expect(validator.valid?("not a number")).to be true
-    end
+  BACKENDS.each do |backend_name, backend|
+    context "with the #{backend_name} backend" do
+      describe "with validator_for" do
+        it "validates with custom even keyword" do
+          validator = backend.validator_for(
+            { "even" => true },
+            keywords: { "even" => even_validator_class }
+          )
+          expect(validator.valid?(2)).to be true
+          expect(validator.valid?(4)).to be true
+          expect(validator.valid?(1)).to be false
+          expect(validator.valid?(3)).to be false
+          expect(validator.valid?("not a number")).to be true
+        end
 
-    it "can be disabled by setting value to false" do
-      validator = JSONSchema.validator_for(
-        { "even" => false },
-        keywords: { "even" => even_validator_class }
-      )
-      expect(validator.valid?(1)).to be true
-      expect(validator.valid?(3)).to be true
-    end
+        it "can be disabled by setting value to false" do
+          validator = backend.validator_for(
+            { "even" => false },
+            keywords: { "even" => even_validator_class }
+          )
+          expect(validator.valid?(1)).to be true
+          expect(validator.valid?(3)).to be true
+        end
 
-    it "works with standard keywords" do
-      validator = JSONSchema.validator_for(
-        { "type" => "integer", "minimum" => 0, "even" => true },
-        keywords: { "even" => even_validator_class }
-      )
-      expect(validator.valid?(2)).to be true
-      expect(validator.valid?(100)).to be true
-      expect(validator.valid?(3)).to be false
-      expect(validator.valid?(-2)).to be false
-      expect(validator.valid?("hello")).to be false
-    end
+        it "works with standard keywords" do
+          validator = backend.validator_for(
+            { "type" => "integer", "minimum" => 0, "even" => true },
+            keywords: { "even" => even_validator_class }
+          )
+          expect(validator.valid?(2)).to be true
+          expect(validator.valid?(100)).to be true
+          expect(validator.valid?(3)).to be false
+          expect(validator.valid?(-2)).to be false
+          expect(validator.valid?("hello")).to be false
+        end
 
-    it "supports nested schemas" do
-      validator = JSONSchema.validator_for(
-        {
-          "type" => "object",
-          "properties" => {
-            "count" => { "type" => "integer", "even" => true }
-          }
-        },
-        keywords: { "even" => even_validator_class }
-      )
-      expect(validator.valid?({ "count" => 2 })).to be true
-      expect(validator.valid?({ "count" => 3 })).to be false
-    end
+        it "supports nested schemas" do
+          validator = backend.validator_for(
+            {
+              "type" => "object",
+              "properties" => {
+                "count" => { "type" => "integer", "even" => true }
+              }
+            },
+            keywords: { "even" => even_validator_class }
+          )
+          expect(validator.valid?({ "count" => 2 })).to be true
+          expect(validator.valid?({ "count" => 3 })).to be false
+        end
 
-    it "supports range validator with object value" do
-      validator = JSONSchema.validator_for(
-        { "customRange" => { "min" => 0, "max" => 10 } },
-        keywords: { "customRange" => range_validator_class }
-      )
-      expect(validator.valid?(5)).to be true
-      expect(validator.valid?(0)).to be true
-      expect(validator.valid?(10)).to be true
-      expect(validator.valid?(-1)).to be false
-      expect(validator.valid?(11)).to be false
-    end
-  end
+        it "supports range validator with object value" do
+          validator = backend.validator_for(
+            { "customRange" => { "min" => 0, "max" => 10 } },
+            keywords: { "customRange" => range_validator_class }
+          )
+          expect(validator.valid?(5)).to be true
+          expect(validator.valid?(0)).to be true
+          expect(validator.valid?(10)).to be true
+          expect(validator.valid?(-1)).to be false
+          expect(validator.valid?(11)).to be false
+        end
+      end
 
-  describe "with validate!" do
-    it "raises on validation error" do
-      validator = JSONSchema.validator_for(
-        { "even" => true },
-        keywords: { "even" => even_validator_class }
-      )
-      expect { validator.validate!(3) }.to raise_error(JSONSchema::ValidationError) do |error|
-        expect(error.message).to include("3 is not even")
+      describe "with validate!" do
+        it "raises on validation error" do
+          validator = backend.validator_for(
+            { "even" => true },
+            keywords: { "even" => even_validator_class }
+          )
+          expect { validator.validate!(3) }.to raise_error(backend::ValidationError) do |error|
+            expect(error.message).to include("3 is not even")
+          end
+        end
+      end
+
+      describe "with each_error" do
+        it "returns errors for invalid instance" do
+          validator = backend.validator_for(
+            { "even" => true },
+            keywords: { "even" => even_validator_class }
+          )
+          errors = validator.each_error(3).to_a
+          expect(errors.size).to eq(1)
+          expect(errors.first).to be_a(backend::ValidationError)
+        end
+
+        it "collects every error message from a keyword's iter_errors" do
+          validator = backend.validator_for(
+            { "all-positive" => true },
+            keywords: { "all-positive" => all_positive_validator_class }
+          )
+          expect(validator.each_error([-1, 2, -3, -4]).map(&:message))
+            .to eq(["item 0 is negative", "item 2 is negative", "item 3 is negative"])
+        end
+      end
+
+      describe "with module-level functions" do
+        it "works with valid?" do
+          expect(backend.valid?({ "even" => true }, 2, keywords: { "even" => even_validator_class })).to be true
+          expect(backend.valid?({ "even" => true }, 3, keywords: { "even" => even_validator_class })).to be false
+        end
+
+        it "works with validate!" do
+          backend.validate!({ "even" => true }, 2, keywords: { "even" => even_validator_class })
+          expect { backend.validate!({ "even" => true }, 3, keywords: { "even" => even_validator_class }) }
+            .to raise_error(backend::ValidationError)
+        end
+
+        it "works with each_error" do
+          errors = backend.each_error({ "even" => true }, 3, keywords: { "even" => even_validator_class }).to_a
+          expect(errors.size).to eq(1)
+        end
       end
     end
   end
 
   describe "with each_error" do
-    it "returns errors for invalid instance" do
-      validator = JSONSchema.validator_for(
-        { "even" => true },
-        keywords: { "even" => even_validator_class }
-      )
-      errors = validator.each_error(3).to_a
-      expect(errors.size).to eq(1)
-      expect(errors.first).to be_a(JSONSchema::ValidationError)
-    end
-
     it "collects every error from a keyword's iter_errors" do
       validator = JSONSchema.validator_for(
         { "all-positive" => true },
@@ -833,24 +866,6 @@ RSpec.describe "Custom keywords" do
       )
       errors = validator.each_error(0).to_a
       expect(errors.map { |error| error.cause&.message }).to eq(["a error", "b error"])
-    end
-  end
-
-  describe "with module-level functions" do
-    it "works with valid?" do
-      expect(JSONSchema.valid?({ "even" => true }, 2, keywords: { "even" => even_validator_class })).to be true
-      expect(JSONSchema.valid?({ "even" => true }, 3, keywords: { "even" => even_validator_class })).to be false
-    end
-
-    it "works with validate!" do
-      JSONSchema.validate!({ "even" => true }, 2, keywords: { "even" => even_validator_class })
-      expect { JSONSchema.validate!({ "even" => true }, 3, keywords: { "even" => even_validator_class }) }
-        .to raise_error(JSONSchema::ValidationError)
-    end
-
-    it "works with each_error" do
-      errors = JSONSchema.each_error({ "even" => true }, 3, keywords: { "even" => even_validator_class }).to_a
-      expect(errors.size).to eq(1)
     end
   end
 
