@@ -27,5 +27,12 @@ RbSys::ExtensionTask.new("jsonschema-rb", GEMSPEC) do |ext|
   ]
 end
 
+# `backend = Magnus` validators for the JSON Schema Test Suite, loaded by the specs only.
+if ENV["JSONSCHEMA_RB_CODEGEN_SUITE"]
+  RbSys::ExtensionTask.new("jsonschema-testsuite-magnus") do |ext|
+    ext.lib_dir = "spec/support"
+  end
+end
+
 task build: :compile
 task default: %i[compile spec]
