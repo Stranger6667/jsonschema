@@ -5,8 +5,8 @@
 //!
 //! - 📚 Support for popular JSON Schema drafts
 //! - 🔧 Custom keywords and format validators
-//! - ⚡ [Compile-time validators](#compile-time-validator-macro) for maximum performance, reading
-//!   `serde_json` values or [Python objects](#python-extension-modules) in extension modules
+//! - ⚡ [Compile-time validators](#compile-time-validator-macro), also for
+//!   [Python extension modules](#python-extension-modules)
 //! - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 //! - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 //! - ✨ Meta-schema validation for schema documents
