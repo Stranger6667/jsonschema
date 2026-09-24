@@ -10,6 +10,8 @@ pub mod numeric_check;
 pub mod types;
 pub mod unique;
 
+#[cfg(feature = "jsonb")]
+pub mod jsonb;
 #[cfg(feature = "magnus")]
 mod magnus;
 #[cfg(feature = "pyo3")]
@@ -18,6 +20,8 @@ mod pyo3;
 mod serde_json;
 mod serde_number;
 
+#[cfg(feature = "jsonb")]
+pub use jsonb::{Jsonb, JsonbNode};
 #[cfg(feature = "magnus")]
 pub use magnus::{
     child as magnus_child, invalidate_members_cache as magnus_invalidate_members_cache,

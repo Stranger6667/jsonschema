@@ -18,6 +18,10 @@ pyo3-tests = ["pyo3", "pyo3/auto-initialize"]
 magnus = ["dep:magnus", "dep:rb-sys"]
 # Runs the magnus tests: links libruby, so it is not implied by `magnus`.
 magnus-tests = ["magnus", "magnus/embed"]
+# The `json::Jsonb` instance representation for Postgres `jsonb` datums.
+jsonb = ["serde_json"]
+# Builds `jsonb` bytes; for tests and fixture generation, not for validation.
+jsonb-testkit = ["jsonb"]
 macros = []
 conformance = []
 arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint"]
@@ -45,6 +49,7 @@ serde_json = { workspace = true, features = ["float_roundtrip"] }
 pyo3-build-config = { version = "0.29", optional = true }
 
 [dev-dependencies]
+hegeltest = { version = "0.46", features = ["serde_json"] }
 test-case = "3"
 
 [lints]
