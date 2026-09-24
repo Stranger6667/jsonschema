@@ -6,6 +6,7 @@ use quote::{quote, ToTokens};
 use referencing::Draft;
 
 use super::emit::ValueEmitter;
+use crate::context::MethodGates;
 
 pub(crate) struct SerdeEmitter;
 
@@ -261,48 +262,78 @@ impl ValueEmitter for SerdeEmitter {
         quote! { #runtime_crate::__private::serde_json::Value }
     }
 
-    fn entry_bodies() -> TokenStream {
-        quote! {
-            pub(super) fn entry_is_valid(instance: &__Value) -> bool {
-                is_valid(instance)
-            }
-
-            pub(super) fn entry_validate<'__i>(
-                instance: &'__i __Value,
-            ) -> ::std::result::Result<(), __VE<'__i>> {
-                match validate(instance, &__paths::LazyLocation::new()) {
-                    Some(e) => Err(e),
-                    None => Ok(()),
+    fn entry_bodies(methods: MethodGates) -> TokenStream {
+        let is_valid = methods.is_valid.then(|| {
+            quote! {
+                pub(super) fn entry_is_valid(instance: &__Value) -> bool {
+                    is_valid(instance)
                 }
             }
-
-            pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
-                let mut errors = Vec::new();
-                collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
-                __err::iterator_from(errors)
+        });
+        let validate = methods.validate.then(|| {
+            quote! {
+                pub(super) fn entry_validate<'__i>(
+                    instance: &'__i __Value,
+                ) -> ::std::result::Result<(), __VE<'__i>> {
+                    match validate(instance, &__paths::LazyLocation::new()) {
+                        Some(e) => Err(e),
+                        None => Ok(()),
+                    }
+                }
             }
+        });
+        let iter_errors = methods.iter_errors.then(|| {
+            quote! {
+                pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
+                    let mut errors = Vec::new();
+                    collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
+                    __err::iterator_from(errors)
+                }
+            }
+        });
+        quote! {
+            #is_valid
+            #validate
+            #iter_errors
         }
     }
 
-    fn entry_points(impl_mod_name: &Ident, runtime_crate: &TokenStream) -> TokenStream {
+    fn entry_points(
+        impl_mod_name: &Ident,
+        runtime_crate: &TokenStream,
+        methods: MethodGates,
+    ) -> TokenStream {
         let anonymous = Self::public_value_ty(runtime_crate, quote! { '_ });
         let borrowed = Self::public_value_ty(runtime_crate, quote! { '__i });
+        let is_valid = methods.is_valid.then(|| {
+            quote! {
+                pub fn is_valid(instance: &#anonymous) -> bool {
+                    #impl_mod_name::entry_is_valid(instance)
+                }
+            }
+        });
+        let validate = methods.validate.then(|| {
+            quote! {
+                pub fn validate<'__i>(
+                    instance: &'__i #borrowed,
+                ) -> ::std::result::Result<(), #runtime_crate::ValidationError<'__i>> {
+                    #impl_mod_name::entry_validate(instance)
+                }
+            }
+        });
+        let iter_errors = methods.iter_errors.then(|| {
+            quote! {
+                pub fn iter_errors<'__i>(
+                    instance: &'__i #borrowed,
+                ) -> #runtime_crate::ErrorIterator<'__i> {
+                    #impl_mod_name::entry_iter_errors(instance)
+                }
+            }
+        });
         quote! {
-            pub fn is_valid(instance: &#anonymous) -> bool {
-                #impl_mod_name::entry_is_valid(instance)
-            }
-
-            pub fn validate<'__i>(
-                instance: &'__i #borrowed,
-            ) -> ::std::result::Result<(), #runtime_crate::ValidationError<'__i>> {
-                #impl_mod_name::entry_validate(instance)
-            }
-
-            pub fn iter_errors<'__i>(
-                instance: &'__i #borrowed,
-            ) -> #runtime_crate::ErrorIterator<'__i> {
-                #impl_mod_name::entry_iter_errors(instance)
-            }
+            #is_valid
+            #validate
+            #iter_errors
         }
     }
 

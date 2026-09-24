@@ -100,6 +100,7 @@ pub(crate) fn test_config_with_draft(schema: Value, draft: Draft) -> CodegenConf
         ignore_unknown_formats: true,
         email_options: None,
         pattern_options: crate::context::PatternEngineConfig::default(),
+        methods: crate::context::MethodGates::default(),
     }
 }
 
@@ -246,17 +247,141 @@ fn config_rejects_unknown_attribute() {
 
     assert_eq!(
         error.to_string(),
-        "Expected `path`, `schema`, `draft`, `backend`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute"
+        "Expected `path`, `schema`, `draft`, `backend`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, `pattern_options`, or `methods` attribute"
     );
 }
 
 #[test]
 fn config_parses_with_trailing_commas() {
-    let input = r#"schema = "{}", resources = { "json-schema:///a" => { schema = "{}", }, }, pattern_options = { size_limit = 1, }, email_options = { required_tld = true, }"#;
+    let input = r#"schema = "{}", resources = { "json-schema:///a" => { schema = "{}", }, }, pattern_options = { size_limit = 1, }, email_options = { required_tld = true, }, methods = { is_valid = true, }"#;
     assert!(
         syn::parse_str::<crate::Config>(input).is_ok(),
         "trailing commas after the final entry should parse"
     );
+}
+
+#[test]
+fn config_parses_methods() {
+    let config = syn::parse_str::<crate::Config>(
+        r#"schema = "{}", methods = { validate = false, iter_errors = false }"#,
+    )
+    .expect("methods should parse");
+    assert!(config.methods.is_valid);
+    assert!(!config.methods.validate);
+    assert!(!config.methods.iter_errors);
+}
+
+#[test]
+fn config_methods_default_to_all_enabled() {
+    let config = syn::parse_str::<crate::Config>(r#"schema = "{}""#).expect("config should parse");
+    assert!(config.methods.is_valid);
+    assert!(config.methods.validate);
+    assert!(config.methods.iter_errors);
+}
+
+#[test_case(r#"schema = "{}", methods = { evaluate = false }"#, "Unknown methods key. Expected `is_valid`, `validate`, or `iter_errors`" ; "unknown_key")]
+#[test_case(r#"schema = "{}", methods = { validate = false, validate = true }"#, "Duplicate methods key: `validate`" ; "duplicate_key")]
+#[test_case(r#"schema = "{}", methods = { is_valid = false, validate = false, iter_errors = false }"#, "At least one of `is_valid`, `validate`, or `iter_errors` must be enabled" ; "all_disabled")]
+fn config_rejects_invalid_methods(input: &str, expected: &str) {
+    let error = syn::parse_str::<crate::Config>(input)
+        .err()
+        .expect("invalid methods should not parse");
+    assert_eq!(error.to_string(), expected);
+}
+
+fn branchy_schema() -> Value {
+    json!({"anyOf": [{"type": "string"}, {"type": "number"}]})
+}
+
+fn schema_to_code_with_methods(schema: Value, methods: crate::context::MethodGates) -> String {
+    let mut config = test_config(schema);
+    config.methods = methods;
+    render_config(&config)
+}
+
+// Absence is the property only a text scan can establish; the surviving methods are proven
+// against the runtime validator by the `methods` cases in `crates/jsonschema/tests/codegen.rs`.
+#[test]
+fn methods_is_valid_off_drops_only_public_wrapper() {
+    let code = schema_to_code_with_methods(
+        branchy_schema(),
+        crate::context::MethodGates {
+            is_valid: false,
+            ..Default::default()
+        },
+    );
+    assert!(!code.contains("pub fn is_valid"), "{code}");
+    assert!(!code.contains("entry_is_valid"), "{code}");
+    // `validate` and the branch gates still call the internal `is_valid`.
+    extract_is_valid_body(&code);
+}
+
+#[test]
+fn methods_validate_off_drops_validate_functions() {
+    let code = schema_to_code_with_methods(
+        branchy_schema(),
+        crate::context::MethodGates {
+            validate: false,
+            ..Default::default()
+        },
+    );
+    assert!(!code.contains("pub fn validate"), "{code}");
+    assert!(!code.contains("pub(super) fn validate"), "{code}");
+    assert!(!code.contains("_validate"), "{code}");
+    // `iter_errors` keeps the error-collection functions.
+    extract_fn_body(&code, "pub(super) fn collect_errors");
+}
+
+#[test]
+fn methods_iter_errors_off_drops_only_public_wrapper() {
+    let code = schema_to_code_with_methods(
+        branchy_schema(),
+        crate::context::MethodGates {
+            iter_errors: false,
+            ..Default::default()
+        },
+    );
+    assert!(!code.contains("pub fn iter_errors"), "{code}");
+    assert!(!code.contains("entry_iter_errors"), "{code}");
+    // `validate` builds `anyOf` error context from the collection functions.
+    extract_fn_body(&code, "pub(super) fn collect_errors");
+}
+
+#[test]
+fn methods_validate_and_iter_errors_off_drop_collection() {
+    let code = schema_to_code_with_methods(
+        branchy_schema(),
+        crate::context::MethodGates {
+            validate: false,
+            iter_errors: false,
+            ..Default::default()
+        },
+    );
+    assert!(!code.contains("collect_errors"), "{code}");
+    assert!(!code.contains("collect_branch_errors"), "{code}");
+    assert!(!code.contains("_validate"), "{code}");
+    extract_is_valid_body(&code);
+}
+
+#[test]
+fn methods_gate_every_backend() {
+    let mut config = test_config(branchy_schema());
+    config.methods = crate::context::MethodGates {
+        validate: false,
+        iter_errors: false,
+        ..Default::default()
+    };
+    for code in [
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config),
+        render_config_for::<crate::codegen::emit_pyo3::Pyo3Emitter>(&config),
+        render_config_for::<crate::codegen::emit_magnus::MagnusEmitter>(&config),
+    ] {
+        assert!(!code.contains("pub fn validate"), "{code}");
+        assert!(!code.contains("pub fn iter_errors"), "{code}");
+        assert!(!code.contains("entry_validate"), "{code}");
+        assert!(!code.contains("entry_iter_errors"), "{code}");
+        extract_is_valid_body(&code);
+    }
 }
 
 #[test]

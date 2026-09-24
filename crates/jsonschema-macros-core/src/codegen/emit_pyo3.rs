@@ -6,6 +6,7 @@ use quote::{quote, ToTokens};
 use referencing::Draft;
 
 use super::emit::ValueEmitter;
+use crate::context::MethodGates;
 
 pub(crate) struct Pyo3Emitter;
 
@@ -315,87 +316,117 @@ impl ValueEmitter for Pyo3Emitter {
     }
 
     // Accessors record read failures in a scope; a recorded error outranks the run's result.
-    fn entry_bodies() -> TokenStream {
+    fn entry_bodies(methods: MethodGates) -> TokenStream {
+        let is_valid = methods.is_valid.then(|| {
+            quote! {
+                pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
+                    let _scope = __json::PendingErrorScope::enter();
+                    __json::probe_root(instance.as_borrowed());
+                    if let Some(error) = __json::take_pending_error() {
+                        return Err(error);
+                    }
+                    let result = is_valid(instance.as_borrowed());
+                    if let Some(error) = __json::take_pending_error() {
+                        return Err(error);
+                    }
+                    Ok(result)
+                }
+            }
+        });
+        let validate = methods.validate.then(|| {
+            quote! {
+                pub(super) fn entry_validate<'__i>(
+                    instance: &'__i __Bound<'__i>,
+                ) -> __py3::PyResult<::std::result::Result<(), __VE<'__i>>> {
+                    let _scope = __json::PendingErrorScope::enter();
+                    __json::probe_root(instance.as_borrowed());
+                    if let Some(error) = __json::take_pending_error() {
+                        return Err(error);
+                    }
+                    let result = match validate(
+                        instance.as_borrowed(),
+                        &__paths::LazyLocation::new(),
+                    ) {
+                        Some(e) => Err(e),
+                        None => Ok(()),
+                    };
+                    if let Some(error) = __json::take_pending_error() {
+                        return Err(error);
+                    }
+                    Ok(result)
+                }
+            }
+        });
+        let iter_errors = methods.iter_errors.then(|| {
+            quote! {
+                pub(super) fn entry_iter_errors<'__i>(
+                    instance: &'__i __Bound<'__i>,
+                ) -> __py3::PyResult<__EI<'__i>> {
+                    let _scope = __json::PendingErrorScope::enter();
+                    __json::probe_root(instance.as_borrowed());
+                    if let Some(error) = __json::take_pending_error() {
+                        return Err(error);
+                    }
+                    let mut errors = Vec::new();
+                    collect_errors(
+                        instance.as_borrowed(),
+                        &__paths::LazyLocation::new(),
+                        &mut errors,
+                    );
+                    if let Some(error) = __json::take_pending_error() {
+                        return Err(error);
+                    }
+                    Ok(__err::iterator_from(errors))
+                }
+            }
+        });
         quote! {
-            pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
-                let _scope = __json::PendingErrorScope::enter();
-                __json::probe_root(instance.as_borrowed());
-                if let Some(error) = __json::take_pending_error() {
-                    return Err(error);
-                }
-                let result = is_valid(instance.as_borrowed());
-                if let Some(error) = __json::take_pending_error() {
-                    return Err(error);
-                }
-                Ok(result)
-            }
-
-            pub(super) fn entry_validate<'__i>(
-                instance: &'__i __Bound<'__i>,
-            ) -> __py3::PyResult<::std::result::Result<(), __VE<'__i>>> {
-                let _scope = __json::PendingErrorScope::enter();
-                __json::probe_root(instance.as_borrowed());
-                if let Some(error) = __json::take_pending_error() {
-                    return Err(error);
-                }
-                let result = match validate(
-                    instance.as_borrowed(),
-                    &__paths::LazyLocation::new(),
-                ) {
-                    Some(e) => Err(e),
-                    None => Ok(()),
-                };
-                if let Some(error) = __json::take_pending_error() {
-                    return Err(error);
-                }
-                Ok(result)
-            }
-
-            pub(super) fn entry_iter_errors<'__i>(
-                instance: &'__i __Bound<'__i>,
-            ) -> __py3::PyResult<__EI<'__i>> {
-                let _scope = __json::PendingErrorScope::enter();
-                __json::probe_root(instance.as_borrowed());
-                if let Some(error) = __json::take_pending_error() {
-                    return Err(error);
-                }
-                let mut errors = Vec::new();
-                collect_errors(
-                    instance.as_borrowed(),
-                    &__paths::LazyLocation::new(),
-                    &mut errors,
-                );
-                if let Some(error) = __json::take_pending_error() {
-                    return Err(error);
-                }
-                Ok(__err::iterator_from(errors))
-            }
+            #is_valid
+            #validate
+            #iter_errors
         }
     }
 
-    fn entry_points(impl_mod_name: &Ident, runtime_crate: &TokenStream) -> TokenStream {
+    fn entry_points(
+        impl_mod_name: &Ident,
+        runtime_crate: &TokenStream,
+        methods: MethodGates,
+    ) -> TokenStream {
         let anonymous = Self::public_value_ty(runtime_crate, quote! { '_ });
         let borrowed = Self::public_value_ty(runtime_crate, quote! { '__i });
+        let is_valid = methods.is_valid.then(|| {
+            quote! {
+                pub fn is_valid(
+                    instance: &#anonymous,
+                ) -> #runtime_crate::__private::pyo3::PyResult<bool> {
+                    #impl_mod_name::entry_is_valid(instance)
+                }
+            }
+        });
+        let validate = methods.validate.then(|| {
+            quote! {
+                pub fn validate<'__i>(
+                    instance: &'__i #borrowed,
+                ) -> #runtime_crate::__private::pyo3::PyResult<
+                    ::std::result::Result<(), #runtime_crate::ValidationError<'__i>>,
+                > {
+                    #impl_mod_name::entry_validate(instance)
+                }
+            }
+        });
+        let iter_errors = methods.iter_errors.then(|| {
+            quote! {
+                pub fn iter_errors<'__i>(
+                    instance: &'__i #borrowed,
+                ) -> #runtime_crate::__private::pyo3::PyResult<#runtime_crate::ErrorIterator<'__i>> {
+                    #impl_mod_name::entry_iter_errors(instance)
+                }
+            }
+        });
         quote! {
-            pub fn is_valid(
-                instance: &#anonymous,
-            ) -> #runtime_crate::__private::pyo3::PyResult<bool> {
-                #impl_mod_name::entry_is_valid(instance)
-            }
-
-            pub fn validate<'__i>(
-                instance: &'__i #borrowed,
-            ) -> #runtime_crate::__private::pyo3::PyResult<
-                ::std::result::Result<(), #runtime_crate::ValidationError<'__i>>,
-            > {
-                #impl_mod_name::entry_validate(instance)
-            }
-
-            pub fn iter_errors<'__i>(
-                instance: &'__i #borrowed,
-            ) -> #runtime_crate::__private::pyo3::PyResult<#runtime_crate::ErrorIterator<'__i>> {
-                #impl_mod_name::entry_iter_errors(instance)
-            }
+            #is_valid
+            #validate
+            #iter_errors
         }
     }
 

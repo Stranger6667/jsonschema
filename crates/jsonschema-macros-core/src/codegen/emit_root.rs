@@ -38,6 +38,12 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
         .cloned()
         .unwrap_or_else(|| quote! { jsonschema });
     let ref_cycle_needed = ctx.uses_ref_cycle;
+    let methods = ctx.config.methods;
+    // Validity bodies and `is_branch_valid_*` serve every method and always stay. `validate` alone
+    // owns the `_validate` bodies; error collection serves `validate` (branch context) and
+    // `iter_errors`, so it goes only when both are off.
+    let emit_validate = methods.validate;
+    let emit_collect = methods.validate || methods.iter_errors;
     let module_prelude = E::module_prelude();
     let function_prelude = E::function_prelude();
     let node = E::node_param(None);
@@ -46,8 +52,8 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     let map = E::map_param();
     let array = E::array_param();
     // Public `impl` methods live outside the aliased module, so they use the full type.
-    let entry_points = E::entry_points(impl_mod_name, &runtime_crate);
-    let entry_bodies = E::entry_bodies();
+    let entry_points = E::entry_points(impl_mod_name, &runtime_crate, methods);
+    let entry_bodies = E::entry_bodies(methods);
 
     let regex_helpers: Vec<TokenStream> = ctx
         .regex_helpers
@@ -165,27 +171,37 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 .is_valid_fns
                 .get_collect_body(fname)
                 .expect("every is_valid fn stores a collect body");
+            let validate_fn = emit_validate.then(|| {
+                quote! {
+                    #[inline]
+                    fn #validate_ident<'__i>(
+                        instance: #borrowed_node,
+                        __path: &__paths::LazyLocation,
+                    ) -> Option<__VE<'__i>> {
+                        #function_prelude
+                        #validate_body
+                    }
+                }
+            });
+            let collect_fn = emit_collect.then(|| {
+                quote! {
+                    #[cold]
+                    #[inline(never)]
+                    fn #collect_ident<'__i>(
+                        instance: #borrowed_node,
+                        __path: &__paths::LazyLocation,
+                        __errors: &mut Vec<__VE<'__i>>,
+                    ) {
+                        #function_prelude
+                        #collect_body
+                    }
+                }
+            });
             quote! {
                 #[inline]
                 fn #func_ident(instance: #node) -> bool { #function_prelude #body }
-                #[inline]
-                fn #validate_ident<'__i>(
-                    instance: #borrowed_node,
-                    __path: &__paths::LazyLocation,
-                ) -> Option<__VE<'__i>> {
-                    #function_prelude
-                    #validate_body
-                }
-                #[cold]
-                #[inline(never)]
-                fn #collect_ident<'__i>(
-                    instance: #borrowed_node,
-                    __path: &__paths::LazyLocation,
-                    __errors: &mut Vec<__VE<'__i>>,
-                ) {
-                    #function_prelude
-                    #collect_body
-                }
+                #validate_fn
+                #collect_fn
             }
         })
         .collect();
@@ -198,22 +214,27 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
         .map(|(idx, (is_valid, collect))| {
             let is_valid_ident = format_ident!("is_branch_valid_{}", idx);
             let collect_ident = format_ident!("collect_branch_errors_{}", idx);
+            let collect_fn = emit_collect.then(|| {
+                quote! {
+                    #[cold]
+                    #[inline(never)]
+                    fn #collect_ident<'__i>(
+                        instance: #borrowed_node,
+                        __path: &__paths::LazyLocation,
+                        __errors: &mut Vec<__VE<'__i>>,
+                    ) {
+                        #function_prelude
+                        #collect
+                    }
+                }
+            });
             quote! {
                 #[inline]
                 fn #is_valid_ident(instance: #node) -> bool {
                     #function_prelude
                     #is_valid
                 }
-                #[cold]
-                #[inline(never)]
-                fn #collect_ident<'__i>(
-                    instance: #borrowed_node,
-                    __path: &__paths::LazyLocation,
-                    __errors: &mut Vec<__VE<'__i>>,
-                ) {
-                    #function_prelude
-                    #collect
-                }
+                #collect_fn
             }
         })
         .collect();
@@ -425,7 +446,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
 
     let validate_stmts = validation_expr.validate.as_token_stream();
 
-    let validate_fns = {
+    let validate_fns = emit_validate.then(|| {
         let validate_ident = format_ident!("validate");
         let collect_ident = format_ident!("collect_errors");
         let validate_body = if recursive_stack_needed || dynamic_stack_needed {
@@ -506,11 +527,11 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 #validate_body
             }
         }
-    };
+    });
 
     let collect_stmts = validation_expr.collect.as_token_stream();
 
-    let collect_fns = {
+    let collect_fns = emit_collect.then(|| {
         let collect_ident = format_ident!("collect_errors");
         let collect_body = if recursive_stack_needed || dynamic_stack_needed {
             let recursive_collect_push = if recursive_stack_needed {
@@ -559,7 +580,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 #collect_body
             }
         }
-    };
+    });
 
     quote! {
         #[doc(hidden)]

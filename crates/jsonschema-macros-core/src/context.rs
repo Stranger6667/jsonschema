@@ -189,6 +189,24 @@ pub(crate) struct EmailOptionsConfig {
     pub(crate) allow_display_text: Option<bool>,
 }
 
+/// Which public methods the validator gets.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct MethodGates {
+    pub(crate) is_valid: bool,
+    pub(crate) validate: bool,
+    pub(crate) iter_errors: bool,
+}
+
+impl Default for MethodGates {
+    fn default() -> Self {
+        Self {
+            is_valid: true,
+            validate: true,
+            iter_errors: true,
+        }
+    }
+}
+
 /// Immutable configuration built from macro attributes.
 pub(crate) struct CodegenConfig {
     pub(crate) schema: serde_json::Value,
@@ -206,6 +224,7 @@ pub(crate) struct CodegenConfig {
     pub(crate) ignore_unknown_formats: bool,
     pub(crate) email_options: Option<EmailOptionsConfig>,
     pub(crate) pattern_options: PatternEngineConfig,
+    pub(crate) methods: MethodGates,
 }
 
 /// Mutable compilation state threaded through all `compile_*` calls.
