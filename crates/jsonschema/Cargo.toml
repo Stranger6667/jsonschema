@@ -35,7 +35,7 @@ arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint", "json
 # `float-roundtrip` keeps the macro's schema parsing bit-identical to the runtime's.
 macros = ["dep:jsonschema-macros", "jsonschema-macros/float-roundtrip", "jsonschema-value/macros"]
 # The `json::Magnus` instance representation used by the Ruby bindings.
-magnus = ["jsonschema-value/magnus"]
+magnus = ["jsonschema-value/magnus", "dep:magnus"]
 # The `json::Pyo3` instance representation used by the Python bindings.
 pyo3 = ["jsonschema-value/pyo3", "dep:pyo3"]
 
@@ -76,6 +76,7 @@ num-bigint = { version = "0.4", optional = true }
 num-cmp = "0.1"
 num-traits = "0.2.19"
 percent-encoding = "2.3"
+magnus = { version = "0.8", optional = true, features = ["rb-sys"] }
 pyo3 = { version = "0.29", optional = true }
 referencing = { version = "0.57.0", path = "../jsonschema-referencing" }
 regex = "1.11.1"

@@ -3424,6 +3424,30 @@ pub mod __private {
 
     pub use crate::__pyo3_backend as pyo3_backend;
 
+    #[cfg(feature = "magnus")]
+    pub mod magnus {
+        pub use ::magnus::{rb_sys::AsRawValue, Error, Value};
+    }
+
+    // Wraps a `backend = Magnus` validator, so a build without the feature reports that alone.
+    #[cfg(feature = "magnus")]
+    #[doc(hidden)]
+    #[macro_export]
+    macro_rules! __magnus_backend {
+        ($($generated:tt)*) => { $($generated)* };
+    }
+
+    #[cfg(not(feature = "magnus"))]
+    #[doc(hidden)]
+    #[macro_export]
+    macro_rules! __magnus_backend {
+        ($($generated:tt)*) => {
+            ::core::compile_error!("`backend = Magnus` needs the `magnus` feature of `jsonschema`");
+        };
+    }
+
+    pub use crate::__magnus_backend as magnus_backend;
+
     pub use ::serde_json;
 
     pub mod fancy_regex {
