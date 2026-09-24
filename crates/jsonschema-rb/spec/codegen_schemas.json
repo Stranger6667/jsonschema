@@ -1,5 +1,5 @@
 {
-  "keywords": {},
+  "keywords": {"all-positive": "crate::all_positive", "customRange": "crate::custom_range", "even": "crate::even"},
   "schemas": [
     {"type": "integer", "minimum": 0},
     {"type": "number", "minimum": 0},
@@ -7,6 +7,12 @@
     {"type": "number"},
     {"type": "string"},
     {"type": "object"},
-    {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+    {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]},
+    {"even": true},
+    {"even": false},
+    {"type": "integer", "minimum": 0, "even": true},
+    {"type": "object", "properties": {"count": {"type": "integer", "even": true}}},
+    {"customRange": {"min": 0, "max": 10}},
+    {"all-positive": true}
   ]
 }
