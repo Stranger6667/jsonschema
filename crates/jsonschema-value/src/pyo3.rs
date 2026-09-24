@@ -186,7 +186,16 @@ fn resolved<'py>(node: PyNode<'py>) -> PyNode<'py> {
             }
         }
     }
-    unsafe { Borrowed::from_ptr(current.py(), current.as_ptr()) }
+    // Another thread may replace the member's attribute, so the value is held.
+    #[cfg(Py_GIL_DISABLED)]
+    {
+        let py = current.py();
+        unsafe { Borrowed::from_ptr(py, hold(current.into_ptr())) }
+    }
+    #[cfg(not(Py_GIL_DISABLED))]
+    unsafe {
+        Borrowed::from_ptr(current.py(), current.as_ptr())
+    }
 }
 
 // Stand-in for a node that could not be read; an error is pending, so the result is discarded.
@@ -219,10 +228,29 @@ pub fn take_pending_error() -> Option<PyErr> {
     PENDING_ERROR.with(|slot| slot.borrow_mut().take())
 }
 
+#[cfg(Py_GIL_DISABLED)]
+thread_local! {
+    // Strong references to the objects a call reads. Without the GIL another thread can drop a
+    // container's own references mid-call, so nodes keep these until the call's scope ends.
+    static HELD: RefCell<Vec<*mut ffi::PyObject>> = const { RefCell::new(Vec::new()) };
+}
+
+// Takes over the new reference `object` until the enclosing `PendingErrorScope` ends.
+#[cfg(Py_GIL_DISABLED)]
+fn hold(object: *mut ffi::PyObject) -> *mut ffi::PyObject {
+    HELD.with(|held| held.borrow_mut().push(object));
+    object
+}
+
 /// RAII scope giving each call its own error slot and restoring the caller's on exit, so a keyword
 /// that re-enters validation cannot consume the outer call's error.
+///
+/// On free-threaded builds it also keeps every object the call reads alive until it ends, so
+/// validation reading an instance must run inside one.
 pub struct PendingErrorScope {
     saved: Option<PyErr>,
+    #[cfg(Py_GIL_DISABLED)]
+    held: usize,
 }
 
 impl PendingErrorScope {
@@ -230,6 +258,8 @@ impl PendingErrorScope {
     pub fn enter() -> Self {
         Self {
             saved: take_pending_error(),
+            #[cfg(Py_GIL_DISABLED)]
+            held: HELD.with(|held| held.borrow().len()),
         }
     }
 }
@@ -238,16 +268,43 @@ impl Drop for PendingErrorScope {
     fn drop(&mut self) {
         let saved = self.saved.take();
         PENDING_ERROR.with(|slot| *slot.borrow_mut() = saved);
+        #[cfg(Py_GIL_DISABLED)]
+        {
+            // Released after the borrow ends: dropping an object can run code that validates again.
+            let released = HELD.with(|held| held.borrow_mut().split_off(self.held));
+            for object in released {
+                unsafe { ffi::Py_DECREF(object) };
+            }
+        }
     }
 }
 
 // PyPy runs `PyDict_Next` over one key snapshot per dict and drops it when any loop over that dict
 // finishes, so a loop nested over the same dict ends the outer one. There each cursor walks its own.
+// The value under `key`, or null; lookups by a string key never raise.
+fn dict_get(dict: *mut ffi::PyObject, key: *mut ffi::PyObject) -> *mut ffi::PyObject {
+    #[cfg(Py_GIL_DISABLED)]
+    {
+        let mut value: *mut ffi::PyObject = std::ptr::null_mut();
+        if unsafe { ffi::PyDict_GetItemRef(dict, key, &raw mut value) } > 0 {
+            hold(value)
+        } else {
+            std::ptr::null_mut()
+        }
+    }
+    #[cfg(not(Py_GIL_DISABLED))]
+    {
+        unsafe { ffi::PyDict_GetItem(dict, key) }
+    }
+}
+
 struct DictCursor<'py> {
     dict: Borrowed<'py, 'py, PyDict>,
     pos: ffi::Py_ssize_t,
     #[cfg(PyPy)]
     keys: Option<Bound<'py, PyAny>>,
+    #[cfg(Py_GIL_DISABLED)]
+    size: ffi::Py_ssize_t,
 }
 
 impl<'py> DictCursor<'py> {
@@ -257,6 +314,8 @@ impl<'py> DictCursor<'py> {
             pos: 0,
             #[cfg(PyPy)]
             keys: None,
+            #[cfg(Py_GIL_DISABLED)]
+            size: unsafe { ffi::PyDict_Size(dict.as_ptr()) },
         }
     }
 
@@ -264,7 +323,33 @@ impl<'py> DictCursor<'py> {
     #[allow(clippy::inline_always)]
     #[inline(always)]
     fn next(&mut self) -> Option<(*mut ffi::PyObject, *mut ffi::PyObject)> {
-        #[cfg(not(PyPy))]
+        // Another thread may resize the dict between steps, so each step locks it and holds what
+        // it read.
+        #[cfg(Py_GIL_DISABLED)]
+        {
+            let dict = self.dict.as_ptr();
+            let mut key: *mut ffi::PyObject = std::ptr::null_mut();
+            let mut value: *mut ffi::PyObject = std::ptr::null_mut();
+            let mut section = unsafe { std::mem::zeroed::<ffi::PyCriticalSection>() };
+            unsafe { ffi::PyCriticalSection_Begin(&raw mut section, dict) };
+            let resized = unsafe { ffi::PyDict_Size(dict) } != self.size;
+            let found = !resized
+                && unsafe {
+                    ffi::PyDict_Next(dict, &raw mut self.pos, &raw mut key, &raw mut value)
+                } != 0;
+            if found {
+                unsafe {
+                    ffi::Py_INCREF(key);
+                    ffi::Py_INCREF(value);
+                }
+            }
+            unsafe { ffi::PyCriticalSection_End(&raw mut section) };
+            if resized {
+                record_value_error("Dictionary changed size during validation");
+            }
+            found.then(|| (hold(key), hold(value)))
+        }
+        #[cfg(all(not(PyPy), not(Py_GIL_DISABLED)))]
         {
             let mut key: *mut ffi::PyObject = std::ptr::null_mut();
             let mut value: *mut ffi::PyObject = std::ptr::null_mut();
@@ -796,13 +881,11 @@ impl<'py> Object<'py, Pyo3> for Borrowed<'py, 'py, PyDict> {
     }
 
     fn get(&self, key: &Py<PyString>) -> Option<PyNode<'py>> {
-        let py = self.py();
-        // `PyDict_GetItem` returns a borrowed reference and never raises.
-        let value = unsafe { ffi::PyDict_GetItem(self.as_ptr(), key.as_ptr()) };
+        let value = dict_get(self.as_ptr(), key.as_ptr());
         if value.is_null() {
             None
         } else {
-            Some(unsafe { Borrowed::from_ptr(py, value) })
+            Some(unsafe { Borrowed::from_ptr(self.py(), value) })
         }
     }
 
@@ -962,8 +1045,8 @@ fn equal_typed(
                     record_unusable_key(key_node);
                     return false;
                 }
-                // Borrowed, never raises; a missing key means the objects differ.
-                let other = unsafe { ffi::PyDict_GetItem(right_ptr, key) };
+                // A missing key means the objects differ.
+                let other = dict_get(right_ptr, key);
                 if other.is_null() {
                     return false;
                 }
@@ -1066,8 +1149,22 @@ impl<'py> Iterator for PyElements<'py> {
         let index = self.index as ffi::Py_ssize_t;
         self.index += 1;
         let ptr = self.sequence.as_ptr();
+        // Another thread may shrink the list and drop an item, so each one is held.
+        #[cfg(Py_GIL_DISABLED)]
+        let borrowed = unsafe {
+            if self.is_tuple {
+                ffi::PyTuple_GetItem(ptr, index)
+            } else {
+                let item = ffi::PyList_GetItemRef(ptr, index);
+                if item.is_null() {
+                    item
+                } else {
+                    hold(item)
+                }
+            }
+        };
         // Borrowed references; keep them borrowed for `'py`.
-        #[cfg(any(Py_LIMITED_API, PyPy, GraalPy))]
+        #[cfg(all(any(Py_LIMITED_API, PyPy, GraalPy), not(Py_GIL_DISABLED)))]
         let borrowed = unsafe {
             if self.is_tuple {
                 ffi::PyTuple_GetItem(ptr, index)
@@ -1076,7 +1173,7 @@ impl<'py> Iterator for PyElements<'py> {
             }
         };
         // Direct reads skip the call and bounds check; a list can still shrink under a callback.
-        #[cfg(not(any(Py_LIMITED_API, PyPy, GraalPy)))]
+        #[cfg(not(any(Py_LIMITED_API, PyPy, GraalPy, Py_GIL_DISABLED)))]
         let borrowed = unsafe {
             if self.is_tuple {
                 ffi::PyTuple_GET_ITEM(ptr, index)
