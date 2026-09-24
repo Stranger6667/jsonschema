@@ -86,7 +86,7 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
                 use super::#test_func_ident;
 
                 #[inline]
-                fn inner_test(test: &Test, validator: Box<dyn testsuite::CodegenValidator>) {
+                fn inner_test(test: &Test, validator: Option<Box<dyn testsuite::CodegenValidator>>) {
                     #test_func_ident(test, validator);
                 }
                 #modules
