@@ -6,7 +6,7 @@
 //! - 📚 Support for popular JSON Schema drafts
 //! - 🔧 Custom keywords and format validators
 //! - ⚡ [Compile-time validators](#compile-time-validator-macro), also for
-//!   [Python extension modules](#python-extension-modules)
+//!   [Python](#python-extension-modules) and [Ruby](#ruby-extension-modules) extension modules
 //! - 🌐 Blocking & non-blocking remote reference fetching (network/file)
 //! - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 //! - ✨ Meta-schema validation for schema documents
@@ -169,8 +169,10 @@
 //! which documents its behavior and defaults:
 //!
 //! - schema source (exactly one required): `path = "..."` (file) or `schema = r#"..."#` (inline)
-//! - `backend = SerdeJson|Pyo3` (default: `SerdeJson`), the representation the generated validator
-//!   reads; `Pyo3` needs the `pyo3` feature (see [Python Extension Modules](#python-extension-modules))
+//! - `backend = SerdeJson|Pyo3|Magnus` (default: `SerdeJson`), the representation the generated
+//!   validator reads; `Pyo3` needs the `pyo3` feature (see
+//!   [Python Extension Modules](#python-extension-modules)) and `Magnus` the `magnus` feature (see
+//!   [Ruby Extension Modules](#ruby-extension-modules))
 //! - `draft = Draft202012` (or another variant) -> [`ValidationOptions::with_draft`]
 //! - `base_uri = "..."` -> [`ValidationOptions::with_base_uri`]
 //! - `resources = { "<uri>" => { schema = r#"..."# } | { path = "..." } }`
@@ -210,6 +212,32 @@
 //! Building the extension with `PyO3`'s `abi3` features limits it to the stable Python API, where
 //! list and tuple elements are read through function calls; a build per Python version reads them
 //! in place, which is faster on array-heavy instances.
+//!
+//! ## Ruby Extension Modules
+//!
+//! With `backend = Magnus`, the generated validator reads Ruby objects in place, for extension
+//! modules that know their schemas at build time. The methods take `&magnus::Value` and return
+//! `Result<..., magnus::Error>`, which is an error when the instance holds a value with no JSON
+//! counterpart, such as a `Regexp`. They must run on a thread holding the GVL, as any Ruby call:
+//!
+//! ```ignore
+//! use magnus::{function, Error, Ruby, Value};
+//!
+//! #[jsonschema::validator(path = "event.json", backend = Magnus)]
+//! struct Event;
+//!
+//! fn valid_event(instance: Value) -> Result<bool, Error> {
+//!     Event::is_valid(&instance)
+//! }
+//!
+//! #[magnus::init]
+//! fn init(ruby: &Ruby) -> Result<(), Error> {
+//!     ruby.define_global_function("valid_event?", function!(valid_event, 1));
+//!     Ok(())
+//! }
+//! ```
+//!
+//! A `keywords` factory for this backend returns `Box<dyn for<'i> Keyword<'i, json::Magnus>>`.
 //!
 //! ## Limitations
 //!

@@ -22,8 +22,10 @@ use proc_macro::TokenStream;
 ///
 /// # Optional attributes
 ///
-/// - `backend = SerdeJson|Pyo3` (default: `SerdeJson`; under `Pyo3` the generated methods take
-///   `&Bound<'_, PyAny>` and return `PyResult<...>`, and need the `pyo3` feature of `jsonschema`)
+/// - `backend = SerdeJson|Pyo3|Magnus` (default: `SerdeJson`; under `Pyo3` the generated methods
+///   take `&Bound<'_, PyAny>` and return `PyResult<...>`, and need the `pyo3` feature of
+///   `jsonschema`; under `Magnus` they take `&magnus::Value` and return
+///   `Result<..., magnus::Error>`, and need the `magnus` feature)
 /// - `draft = Draft4|Draft6|Draft7|Draft201909|Draft202012` (a qualified path like
 ///   `jsonschema::Draft::Draft7` is accepted; only the final segment is inspected)
 /// - `base_uri = "json-schema:///root/main.json"`

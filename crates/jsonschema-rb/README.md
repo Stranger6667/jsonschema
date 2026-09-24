@@ -700,6 +700,15 @@ Valid draft symbols: `:draft4`, `:draft6`, `:draft7`, `:draft201909`, `:draft202
 
 For detailed benchmarks, see our [full performance comparison](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-rb/BENCHMARKS.md).
 
+### Compile-Time Validators
+
+If you ship your own extension and know the schema at build time, the Rust crate's
+`#[jsonschema::validator(..., backend = Magnus)]` macro compiles it into a validator that reads
+Ruby objects directly, so nothing is parsed or compiled when your extension is loaded. See the
+[macro documentation](https://docs.rs/jsonschema/latest/jsonschema/#ruby-extension-modules).
+
+This is not available from the `jsonschema_rs` gem, which takes its schemas at run time.
+
 ## Acknowledgements
 
 This library draws API design inspiration from the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. We're grateful to the Python `jsonschema` maintainers and contributors for their pioneering work in JSON Schema validation.
