@@ -1281,8 +1281,9 @@ pub mod json {
     };
     #[cfg(feature = "magnus")]
     pub use jsonschema_value::{
-        magnus_child, magnus_invalidate_members_cache, magnus_is_object, magnus_probe_root,
-        magnus_take_pending_error, Magnus, MagnusPendingErrorScope, PendingError, RbNode,
+        magnus_child, magnus_invalidate_members_cache, magnus_is_object, magnus_object_values,
+        magnus_probe_root, magnus_string_node, magnus_take_pending_error, Magnus,
+        MagnusPendingErrorScope, PendingError, RbNode,
     };
     #[cfg(feature = "pyo3")]
     pub use jsonschema_value::{
