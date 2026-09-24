@@ -399,8 +399,8 @@ enum NumberKind {
 ///
 /// One place, so `is_number` and `as_number` cannot drift apart.
 #[inline]
-fn number_kind(value: VALUE) -> Option<NumberKind> {
-    match value_kind(value) {
+fn number_kind(value: VALUE, kind: Kind) -> Option<NumberKind> {
+    match kind {
         // Integers always read; only the float and decimal forms can fail.
         Kind::Fixnum => Some(NumberKind::Fixnum),
         Kind::Bignum => Some(NumberKind::Bignum),
@@ -813,35 +813,64 @@ impl<'a> Node<'a, Magnus> for RbNode<'a> {
                 len: unsafe { rb_sys::RARRAY_LEN(self.value) }.max(0) as usize,
                 marker: PhantomData,
             }),
+            Kind::Unsupported => {
+                record_unsupported(self.value);
+                None
+            }
             _ => None,
         }
     }
 
     fn as_string(&self) -> Option<Cow<'a, str>> {
-        text_of(self.value).map(Cow::Borrowed)
+        match value_kind(self.value) {
+            Kind::Str => str_ref(self.value).map(Cow::Borrowed),
+            Kind::Symbol => symbol_str(self.value).map(Cow::Borrowed),
+            Kind::Unsupported => {
+                record_unsupported(self.value);
+                None
+            }
+            _ => None,
+        }
     }
 
     fn as_number(&self) -> Option<RbNumber> {
-        number_kind(self.value).map(|kind| RbNumber {
-            value: self.value,
-            kind,
-        })
+        match value_kind(self.value) {
+            Kind::Unsupported => {
+                record_unsupported(self.value);
+                None
+            }
+            kind => number_kind(self.value, kind).map(|kind| RbNumber {
+                value: self.value,
+                kind,
+            }),
+        }
     }
 
     fn is_number(&self) -> bool {
-        number_kind(self.value).is_some()
+        number_kind(self.value, value_kind(self.value)).is_some()
     }
 
     fn as_boolean(&self) -> Option<bool> {
         match value_kind(self.value) {
             Kind::True => Some(true),
             Kind::False => Some(false),
+            Kind::Unsupported => {
+                record_unsupported(self.value);
+                None
+            }
             _ => None,
         }
     }
 
     fn is_null(&self) -> bool {
-        unsafe { rb_sys::RB_TYPE(self.value) == ruby_value_type::RUBY_T_NIL }
+        match value_kind(self.value) {
+            Kind::Null => true,
+            Kind::Unsupported => {
+                record_unsupported(self.value);
+                false
+            }
+            _ => false,
+        }
     }
 
     fn json_type(&self) -> JsonType {
@@ -868,7 +897,7 @@ impl<'a> Node<'a, Magnus> for RbNode<'a> {
             Kind::Str if is_ascii_only(self.value) => {
                 Some(unsafe { rb_sys::RSTRING_LEN(self.value) }.max(0) as u64)
             }
-            _ => self.as_string().map(|text| text.chars().count() as u64),
+            _ => text_of(self.value).map(|text| text.chars().count() as u64),
         }
     }
 
@@ -894,16 +923,18 @@ fn equals_value(value: VALUE, expected: &Value) -> bool {
         Value::Number(expected) => node
             .as_number()
             .is_some_and(|number| cmp::equal_numbers(&number, expected)),
-        Value::String(expected) => text_of(value).is_some_and(|text| text == expected.as_str()),
+        Value::String(expected) => node
+            .as_string()
+            .is_some_and(|text| text == expected.as_str()),
         Value::Array(expected) => {
-            value_kind(value) == Kind::Array
+            node.as_array().is_some()
                 && (unsafe { rb_sys::RARRAY_LEN(value) }) as usize == expected.len()
                 && raw_elements(value)
                     .zip(expected)
                     .all(|(element, expected)| equals_value(element, expected))
         }
         Value::Object(expected) => {
-            value_kind(value) == Kind::Hash && {
+            node.as_object().is_some() && {
                 let members = raw_members(value);
                 members.len() == expected.len()
                     && members.iter().all(|(key, element)| {
@@ -1267,6 +1298,8 @@ mod tests {
         error_path_helpers_walk_the_instance(&ruby);
         pending_errors_nest(&ruby);
         unsupported_values_are_recorded_where_read(&ruby);
+        unsupported_silent_reads_stay_silent(&ruby);
+        unsupported_reads_record(&ruby);
         hashing_covers_every_shape(&ruby);
         snapshot_edges(&ruby);
         non_ascii_keys_resolve(&ruby);
@@ -1544,6 +1577,42 @@ mod tests {
         let text = RbNode::new(eval(ruby, "'plain'"));
         probe_root(text);
         assert_eq!(pending(), None);
+    }
+
+    // `minLength` and `type: number` read any instance; they answer "not one" without raising.
+    fn unsupported_silent_reads_stay_silent(ruby: &Ruby) {
+        let node = RbNode::new(eval(ruby, "Object.new"));
+
+        assert!(node.string_length().is_none());
+        assert!(!node.is_number());
+        assert_eq!(pending(), None);
+    }
+
+    fn unsupported_reads_record(ruby: &Ruby) {
+        type Read = fn(RbNode<'_>) -> bool;
+        let reads: &[(&str, Read)] = &[
+            ("is_null", |node| !node.is_null()),
+            ("as_boolean", |node| node.as_boolean().is_none()),
+            ("as_number", |node| node.as_number().is_none()),
+            ("as_string", |node| node.as_string().is_none()),
+            ("as_array", |node| node.as_array().is_none()),
+            ("equals_value(string)", |node| {
+                !node.equals_value(&json!("x"))
+            }),
+            ("equals_value(array)", |node| !node.equals_value(&json!([]))),
+            ("equals_value(object)", |node| {
+                !node.equals_value(&json!({}))
+            }),
+        ];
+        for &(name, read) in reads {
+            let node = RbNode::new(eval(ruby, "Object.new"));
+            assert!(read(node), "{name}");
+            assert_eq!(
+                pending().as_deref(),
+                Some("Unsupported type: 'Object'"),
+                "{name}"
+            );
+        }
     }
 
     // The hashing path only reaches a shape if no earlier element already collided, so the repeat

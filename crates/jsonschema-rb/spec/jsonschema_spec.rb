@@ -2097,6 +2097,12 @@ RSpec.describe "Type coercion errors" do
       end
     end
   end
+
+  it "raises for an unsupported type nested under type: null" do
+    schema = { "properties" => { "a" => { "type" => "null" } } }
+    expect { JSONSchema.valid?(schema, { "a" => Object.new }) }
+      .to raise_error(TypeError, /Unsupported type: 'Object'/)
+  end
 end
 
 RSpec.describe "Invalid option types" do
