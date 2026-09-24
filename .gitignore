@@ -12,6 +12,12 @@ crates/jsonschema-wasm/pkg/
 # Python
 __pycache__/
 .venv-coverage/
+
+# Extension examples
+examples/pyo3-extension/.venv/
+examples/pyo3-extension/uv.lock
+examples/magnus-extension/lib/
+examples/magnus-extension/tmp/
 *.profraw
 
 # IDEs

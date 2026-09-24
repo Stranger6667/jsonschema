@@ -709,6 +709,8 @@ validation runs up to 5.9x faster than with a validator built at run time. See t
 [macro documentation](https://docs.rs/jsonschema/latest/jsonschema/#ruby-extension-modules).
 
 This is not available from the `jsonschema_rs` gem, which takes its schemas at run time.
+A complete extension with its build and test commands lives in
+[`examples/magnus-extension`](https://github.com/Stranger6667/jsonschema/tree/master/examples/magnus-extension).
 
 ## Acknowledgements
 

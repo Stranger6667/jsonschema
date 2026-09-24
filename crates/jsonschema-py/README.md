@@ -842,6 +842,8 @@ runs up to 6.7x faster than with a validator built at run time. See the
 [macro documentation](https://docs.rs/jsonschema/latest/jsonschema/#python-extension-modules).
 
 This is not available from the `jsonschema-rs` package on PyPI, which takes its schemas at run time.
+A complete extension with its build and test commands lives in
+[`examples/pyo3-extension`](https://github.com/Stranger6667/jsonschema/tree/master/examples/pyo3-extension).
 
 ## Python support
 

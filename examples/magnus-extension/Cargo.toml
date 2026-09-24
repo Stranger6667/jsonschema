@@ -1,0 +1,16 @@
+[package]
+name = "jsonschema-example-magnus"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[lib]
+name = "jsonschema_example_magnus"
+crate-type = ["cdylib"]
+test = false
+
+[dependencies]
+# Outside this repository: `jsonschema = { version = "...", features = ["macros", "magnus"] }`.
+jsonschema = { path = "../../crates/jsonschema", features = ["macros", "magnus"] }
+magnus = { version = "0.8", features = ["rb-sys"] }
+serde_json = "1"

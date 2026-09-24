@@ -207,7 +207,9 @@
 //! }
 //! ```
 //!
-//! A `keywords` factory for this backend returns `Box<dyn for<'i> Keyword<'i, json::Pyo3>>`.
+//! A `keywords` factory for this backend returns `Box<dyn for<'i> Keyword<'i, json::Pyo3>>`. A
+//! complete extension with its build and test commands lives in
+//! [`examples/pyo3-extension`](https://github.com/Stranger6667/jsonschema/tree/master/examples/pyo3-extension).
 //!
 //! Building the extension with `PyO3`'s `abi3` features limits it to the stable Python API, where
 //! list and tuple elements are read through function calls; a build per Python version reads them
@@ -237,7 +239,9 @@
 //! }
 //! ```
 //!
-//! A `keywords` factory for this backend returns `Box<dyn for<'i> Keyword<'i, json::Magnus>>`.
+//! A `keywords` factory for this backend returns `Box<dyn for<'i> Keyword<'i, json::Magnus>>`. A
+//! complete extension with its build and test commands lives in
+//! [`examples/magnus-extension`](https://github.com/Stranger6667/jsonschema/tree/master/examples/magnus-extension).
 //!
 //! ## Limitations
 //!

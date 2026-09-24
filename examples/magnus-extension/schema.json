@@ -1,0 +1,12 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "properties": {
+    "id": {"type": "string", "minLength": 1},
+    "kind": {"enum": ["created", "updated", "deleted"]},
+    "code": {"type": "string", "uppercase": true},
+    "tags": {"type": "array", "items": {"type": "string"}, "uniqueItems": true}
+  },
+  "required": ["id", "kind"],
+  "additionalProperties": false
+}
