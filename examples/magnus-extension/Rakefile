@@ -1,0 +1,9 @@
+# frozen_string_literal: true
+
+require "rb_sys/extensiontask"
+
+RbSys::ExtensionTask.new("jsonschema-example-magnus") do |ext|
+  ext.lib_dir = "lib"
+end
+
+task default: :compile
