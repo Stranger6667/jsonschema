@@ -18,7 +18,7 @@ mod validator_map;
 use jsonschema::{
     json::{
         magnus_child, magnus_invalidate_members_cache, magnus_is_object, magnus_probe_root,
-        magnus_take_pending_error, Magnus, MagnusPendingErrorScope, PendingError, RbNode,
+        magnus_take_pending_error, Magnus, MagnusPendingErrorScope, RbNode,
     },
     paths::LocationSegment,
     ValidationOptions,
@@ -550,19 +550,10 @@ fn handle_callback_panic(ruby: &Ruby, err: Box<dyn std::any::Any + Send>) -> Err
     })
 }
 
-fn pending_error_to_ruby(ruby: &Ruby, error: PendingError) -> Error {
-    match error {
-        PendingError::Type(message) => Error::new(ruby.exception_type_error(), message),
-        PendingError::Encoding(message) => Error::new(ruby.exception_encoding_error(), message),
-        PendingError::Argument(message) => Error::new(ruby.exception_arg_error(), message),
-    }
-}
-
 /// Run validation over `instance` in place, raising anything the representation could only record.
 ///
 /// Accessors cannot fail, so a value the representation cannot read is stashed and surfaced here.
 fn surface_pending_errors<T>(
-    ruby: &Ruby,
     instance: Value,
     run: impl FnOnce(RbNode<'_>) -> Result<T, Error>,
 ) -> Result<T, Error> {
@@ -573,11 +564,11 @@ fn surface_pending_errors<T>(
     let node = RbNode::new(instance.as_raw());
     magnus_probe_root(node);
     if let Some(error) = magnus_take_pending_error() {
-        return Err(pending_error_to_ruby(ruby, error));
+        return Err(Error::from(error));
     }
     let result = run(node)?;
     if let Some(error) = magnus_take_pending_error() {
-        return Err(pending_error_to_ruby(ruby, error));
+        return Err(Error::from(error));
     }
     Ok(result)
 }
@@ -633,14 +624,14 @@ impl Validator {
     }
 
     fn is_valid(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<bool, Error> {
-        surface_pending_errors(ruby, instance, |node| {
+        surface_pending_errors(instance, |node| {
             let result = catch_unwind_silent(AssertUnwindSafe(|| rb_self.validator.is_valid(node)));
             result.map_err(|err| handle_callback_panic(ruby, err))
         })
     }
 
     fn validate(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<(), Error> {
-        surface_pending_errors(ruby, instance, |node| {
+        surface_pending_errors(instance, |node| {
             let _scope = KeywordCauseScope::enter();
             let result = catch_unwind_silent(AssertUnwindSafe(|| rb_self.validator.validate(node)));
             match result {
@@ -657,7 +648,7 @@ impl Validator {
     }
 
     fn iter_errors(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<Value, Error> {
-        surface_pending_errors(ruby, instance, |node| {
+        surface_pending_errors(instance, |node| {
             let _scope = KeywordCauseScope::enter();
 
             if ruby.block_given() {
@@ -704,7 +695,7 @@ impl Validator {
     }
 
     fn evaluate(ruby: &Ruby, rb_self: &Self, instance: Value) -> Result<Evaluation, Error> {
-        surface_pending_errors(ruby, instance, |node| {
+        surface_pending_errors(instance, |node| {
             let _scope = KeywordCauseScope::enter();
             let result = catch_unwind_silent(AssertUnwindSafe(|| rb_self.validator.evaluate(node)));
             match result {
@@ -923,7 +914,7 @@ fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
         &json_schema,
     )?;
 
-    surface_pending_errors(ruby, instance, |node| {
+    surface_pending_errors(instance, |node| {
         let _callback_roots =
             has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
         catch_unwind_silent(AssertUnwindSafe(|| validator.is_valid(node)))
@@ -954,7 +945,7 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
         &json_schema,
     )?;
 
-    surface_pending_errors(ruby, instance, |node| {
+    surface_pending_errors(instance, |node| {
         let _callback_roots =
             has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
         match catch_unwind_silent(AssertUnwindSafe(|| validator.validate(node))) {
@@ -993,7 +984,7 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
         &json_schema,
     )?;
 
-    surface_pending_errors(ruby, instance, |node| {
+    surface_pending_errors(instance, |node| {
         let _callback_roots =
             has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
 
@@ -1057,7 +1048,7 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
         &json_schema,
     )?;
 
-    surface_pending_errors(ruby, instance, |node| {
+    surface_pending_errors(instance, |node| {
         let _callback_roots =
             has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
         match catch_unwind_silent(AssertUnwindSafe(|| validator.evaluate(node))) {

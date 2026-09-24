@@ -21,7 +21,8 @@ mod serde_number;
 #[cfg(feature = "magnus")]
 pub use magnus::{
     child as magnus_child, invalidate_members_cache as magnus_invalidate_members_cache,
-    is_object as magnus_is_object, probe_root as magnus_probe_root,
+    is_object as magnus_is_object, object_values as magnus_object_values,
+    probe_root as magnus_probe_root, string_node as magnus_string_node,
     take_pending_error as magnus_take_pending_error, Magnus, PendingError,
     PendingErrorScope as MagnusPendingErrorScope, RbNode,
 };
