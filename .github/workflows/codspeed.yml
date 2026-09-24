@@ -109,6 +109,8 @@ jobs:
       - name: Build extension
         working-directory: crates/jsonschema-rb
         run: bundle exec rake compile
+        env:
+          JSONSCHEMA_RB_CODEGEN_BENCH: "1"
 
       - uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:

@@ -20,12 +20,23 @@ schema_file, instance_file = CASES.fetch(name)
 
 schema = JSON.parse(File.read(File.join(DATA, schema_file)))
 iterations = Integer(ENV.fetch("CODSPEED_ITERS", "20"))
+instance = -> { JSON.parse(File.read(File.join(DATA, instance_file))) }
 
 case mode
 when "valid"
-  instance = JSON.parse(File.read(File.join(DATA, instance_file)))
   validator = JSONSchema.validator_for(schema)
+  instance = instance.call
   iterations.times { validator.valid?(instance) }
+when "validate"
+  validator = JSONSchema.validator_for(schema)
+  instance = instance.call
+  iterations.times { validator.validate!(instance) }
+when "codegen-valid", "codegen-validate"
+  # `JSONSchemaBench` holds a `backend = Magnus` validator per benchmark schema.
+  require_relative "support/jsonschema_bench_magnus"
+  compiled = JSONSchemaBench.method(:"#{name}_#{mode == 'codegen-valid' ? 'valid?' : 'validate!'}")
+  instance = instance.call
+  iterations.times { compiled.call(instance) }
 when "meta-valid"
   iterations.times { JSONSchema::Meta.valid?(schema) }
 when "meta-validate"
