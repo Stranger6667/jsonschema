@@ -3,6 +3,7 @@ use quote::{format_ident, quote};
 use std::collections::HashSet;
 use syn::{parse_macro_input, ItemFn};
 
+mod backend_generator;
 mod canonical;
 mod files;
 mod generator;
@@ -10,7 +11,6 @@ mod idents;
 mod loader;
 mod output_generator;
 mod output_loader;
-mod pyo3_generator;
 mod remotes;
 
 /// A procedural macro that generates tests from
@@ -189,27 +189,53 @@ fn compile_error_ts(err: impl quote::ToTokens) -> TokenStream {
     })
 }
 
-/// Generates one `backend = Pyo3` validator per suite case, reachable through `SUITE_ENTRIES`.
-#[proc_macro]
-pub fn pyo3_suite(input: TokenStream) -> TokenStream {
+fn backend_suite(input: TokenStream, backend: &str) -> TokenStream {
     let config = parse_macro_input!(input as testsuite::SuiteConfig);
     let remote_data = match remotes::generate(&config.path) {
         Ok(data) => data,
         Err(e) => return compile_error_ts(e.to_string()),
     };
-    match pyo3_generator::generate(&config.path, &config.drafts, &remote_data.resources) {
+    match backend_generator::generate(
+        &format_ident!("{backend}"),
+        &config.path,
+        &config.drafts,
+        &remote_data.resources,
+    ) {
         Ok(tokens) => tokens.into(),
         Err(e) => compile_error_ts(e.to_string()),
     }
+}
+
+fn backend_schemas(input: TokenStream, backend: &str) -> TokenStream {
+    let path = parse_macro_input!(input as syn::LitStr);
+    match backend_generator::generate_schemas(&format_ident!("{backend}"), &path.value()) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => compile_error_ts(e.to_string()),
+    }
+}
+
+/// Generates one `backend = Pyo3` validator per suite case, reachable through `SUITE_ENTRIES`.
+#[proc_macro]
+pub fn pyo3_suite(input: TokenStream) -> TokenStream {
+    backend_suite(input, "Pyo3")
 }
 
 /// Generates one `backend = Pyo3` validator per schema in a JSON file, reachable through
 /// `SCHEMA_ENTRIES`.
 #[proc_macro]
 pub fn pyo3_schemas(input: TokenStream) -> TokenStream {
-    let path = parse_macro_input!(input as syn::LitStr);
-    match pyo3_generator::generate_schemas(&path.value()) {
-        Ok(tokens) => tokens.into(),
-        Err(e) => compile_error_ts(e.to_string()),
-    }
+    backend_schemas(input, "Pyo3")
+}
+
+/// Generates one `backend = Magnus` validator per suite case, reachable through `SUITE_ENTRIES`.
+#[proc_macro]
+pub fn magnus_suite(input: TokenStream) -> TokenStream {
+    backend_suite(input, "Magnus")
+}
+
+/// Generates one `backend = Magnus` validator per schema in a JSON file, reachable through
+/// `SCHEMA_ENTRIES`.
+#[proc_macro]
+pub fn magnus_schemas(input: TokenStream) -> TokenStream {
+    backend_schemas(input, "Magnus")
 }

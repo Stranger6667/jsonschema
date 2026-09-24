@@ -7,8 +7,9 @@ use testsuite_internal::Case;
 
 use crate::{files, loader};
 
-/// One `backend = Pyo3` validator per suite case, and the table entry that finds it by id.
+/// One validator per suite case for the given backend, and the table entry that finds it by id.
 pub(crate) fn generate(
+    backend: &Ident,
     suite_path: &str,
     drafts: &[String],
     remote_resources: &[(String, String)],
@@ -54,7 +55,7 @@ pub(crate) fn generate(
                     #[jsonschema::validator(
                         schema = #schema,
                         draft = #draft_variant,
-                        backend = Pyo3
+                        backend = #backend
                         #resources
                         #validate_formats
                     )]
@@ -71,9 +72,13 @@ pub(crate) fn generate(
     })
 }
 
-/// One `backend = Pyo3` validator per schema in `{"keywords": {name: path}, "schemas": [...]}`,
-/// found by the schema's JSON with sorted keys. Every schema gets every listed custom keyword.
-pub(crate) fn generate_schemas(path: &str) -> Result<TokenStream, Box<dyn std::error::Error>> {
+/// One validator per schema in `{"keywords": {name: path}, "schemas": [...]}` for the given
+/// backend, found by the schema's JSON with sorted keys. Every schema gets every listed custom
+/// keyword.
+pub(crate) fn generate_schemas(
+    backend: &Ident,
+    path: &str,
+) -> Result<TokenStream, Box<dyn std::error::Error>> {
     let file: Value = serde_json::from_str(&fs::read_to_string(path)?)?;
     let keywords = file["keywords"]
         .as_object()
@@ -96,7 +101,7 @@ pub(crate) fn generate_schemas(path: &str) -> Result<TokenStream, Box<dyn std::e
         let schema = serde_json::to_string(&sorted(schema))?;
         let ident = format_ident!("SchemaValidator{index}");
         definitions.push(quote! {
-            #[jsonschema::validator(schema = #schema, backend = Pyo3, keywords = { #(#keywords),* })]
+            #[jsonschema::validator(schema = #schema, backend = #backend, keywords = { #(#keywords),* })]
             struct #ident;
         });
         entries.push(entry(&ident, &schema));

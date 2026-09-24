@@ -3,6 +3,7 @@
 require "spec_helper"
 require "json"
 require "pathname"
+require_relative "support/jsonschema_testsuite_magnus"
 
 module SuiteHelpers
   SUITE_PATH = Pathname.new(__dir__).join("../../jsonschema/tests/suite/tests")
@@ -63,15 +64,18 @@ RSpec.describe "JSON Schema Test Suite" do
 
     describe draft_name do
       draft_path.glob("**/*.json").sort.each do |test_file|
-        relative_path = test_file.relative_path_from(draft_path).to_s.sub(/\.json$/, "")
+        relative_file = test_file.relative_path_from(draft_path).to_s
+        relative_path = relative_file.sub(/\.json$/, "")
         is_optional = relative_path.start_with?("optional/")
 
         context relative_path do
           test_cases = JSON.parse(SuiteHelpers.sanitize_lone_surrogates(test_file.read))
 
-          test_cases.each do |test_case|
+          test_cases.each_with_index do |test_case, index|
             case_description = test_case["description"]
             schema = test_case["schema"]
+            # Matches the id `magnus_suite!` gives the validator compiled for this block.
+            case_id = "#{draft_name}|#{relative_file}|#{index}"
 
             context case_description do
               test_case["tests"].each do |test|
@@ -121,6 +125,14 @@ RSpec.describe "JSON Schema Test Suite" do
                   eval_result = JSONSchema.evaluate(schema, data, **opts)
                   expect(eval_result.valid?).to eq(expected_valid),
                                                 "evaluate.valid? expected #{expected_valid}.\n#{error_ctx}"
+
+                  # `JSONSchemaTestSuite` holds one `backend = Magnus` validator per suite case.
+                  expect(JSONSchemaTestSuite.valid?(case_id, data)).to be(expected_valid),
+                                                                       "codegen valid? mismatch.\n#{error_ctx}"
+                  expect(JSONSchemaTestSuite.validate(case_id, data).nil?).to be(expected_valid),
+                                                                              "codegen validate mismatch.\n#{error_ctx}"
+                  expect(JSONSchemaTestSuite.each_error(case_id, data).empty?).to be(expected_valid),
+                                                                                  "codegen each_error mismatch.\n#{error_ctx}"
                 end
               end
             end

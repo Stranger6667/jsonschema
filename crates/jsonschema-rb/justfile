@@ -1,6 +1,6 @@
-# Build the native extension
+# Build the native extension and the compiled test-suite validators
 build:
-    bundle exec rake compile
+    JSONSCHEMA_RB_CODEGEN_SUITE=1 bundle exec rake compile
 
 # Run tests
 test: build
