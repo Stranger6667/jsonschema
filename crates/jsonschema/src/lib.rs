@@ -205,6 +205,10 @@
 //!
 //! A `keywords` factory for this backend returns `Box<dyn for<'i> Keyword<'i, json::Pyo3>>`.
 //!
+//! Building the extension with PyO3's `abi3` features limits it to the stable Python API, where
+//! list and tuple elements are read through function calls; a build per Python version reads them
+//! in place, which is faster on array-heavy instances.
+//!
 //! ## Limitations
 //!
 //! - `is_valid`, `validate`, and `iter_errors` are generated; `evaluate` is not implemented yet.
