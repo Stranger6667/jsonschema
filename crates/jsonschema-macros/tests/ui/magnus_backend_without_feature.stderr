@@ -1,0 +1,7 @@
+error: `backend = Magnus` needs the `magnus` feature of `jsonschema`
+ --> tests/ui/magnus_backend_without_feature.rs:1:1
+  |
+1 | #[jsonschema::validator(schema = "{}", backend = Magnus)]
+  | ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  |
+  = note: this error originates in the macro `::jsonschema::__private::magnus_backend` which comes from the expansion of the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)

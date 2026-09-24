@@ -115,6 +115,7 @@ enum Backend {
     #[default]
     SerdeJson,
     Pyo3,
+    Magnus,
 }
 
 enum SchemaSource {
@@ -539,6 +540,7 @@ impl Parse for Config {
                     backend = match value.to_string().as_str() {
                         "SerdeJson" => Backend::SerdeJson,
                         "Pyo3" => Backend::Pyo3,
+                        "Magnus" => Backend::Magnus,
                         other => {
                             return Err(syn::Error::new_spanned(
                                 &value,
@@ -877,6 +879,13 @@ so the generated methods cannot depend on type parameters",
             >(&config, &recompile_trigger, name, &impl_mod_name)?;
             let runtime_crate = config.runtime_crate_alias.as_ref();
             quote! { #runtime_crate::__private::pyo3_backend! { #generated } }
+        }
+        Backend::Magnus => {
+            let generated = crate::codegen::generate_from_config::<
+                crate::codegen::emit_magnus::MagnusEmitter,
+            >(&config, &recompile_trigger, name, &impl_mod_name)?;
+            let runtime_crate = config.runtime_crate_alias.as_ref();
+            quote! { #runtime_crate::__private::magnus_backend! { #generated } }
         }
     };
 

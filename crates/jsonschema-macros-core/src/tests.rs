@@ -812,54 +812,60 @@ fn discriminator_branch_helper_reduces_only_validity() {
     assert!(collect.contains("circle"));
 }
 
-#[test_case("pyo3_emitter", &json!({
-    "properties": {
-        "structured": {"const": {"o": true}},
-        "integer": {"type": "integer", "minimum": 1},
-        "choice": {"enum": [1, "a", true, null, {"o": [1]}]},
-        "tuple": {
-            "prefixItems": [{"type": "string"}],
-            "contains": {"const": 1},
-            "uniqueItems": true
+fn keyword_families_schema() -> Value {
+    json!({
+        "properties": {
+            "structured": {"const": {"o": true}},
+            "integer": {"type": "integer", "minimum": 1},
+            "choice": {"enum": [1, "a", true, null, {"o": [1]}]},
+            "tuple": {
+                "prefixItems": [{"type": "string"}],
+                "contains": {"const": 1},
+                "uniqueItems": true
+            },
+            "record": {
+                "patternProperties": {"^x-": {"type": "integer"}},
+                "propertyNames": {"maxLength": 5}
+            },
+            "open": {"additionalProperties": {"type": "boolean"}},
+            "shape": {
+                "oneOf": [{"properties": {"kind": {"const": "circle"}, "r": {"type": "number"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "square"}, "s": {"type": "number"}}, "required": ["kind"]}]
+            },
+            "code": {
+                "oneOf": [{"properties": {"code": {"const": 1}}, "required": ["code"]}, {"properties": {"code": {"const": 2}}, "required": ["code"]}]
+            },
+            "flag": {
+                "oneOf": [{"properties": {"on": {"const": true}}, "required": ["on"]}, {"properties": {"on": {"const": false}}, "required": ["on"]}]
+            },
+            "nothing": {"type": "null"},
+            "list": {"type": "array"},
+            "flags": {"type": ["boolean", "null", "array"]},
+            "fallbacks": {"type": ["string", "integer", "array", "object"], "minProperties": 1},
+            "empty": {"additionalProperties": false},
+            "rest": {"unevaluatedProperties": {"type": "string"}},
+            "items": {"unevaluatedItems": false},
+            "tree": {"$ref": "#/$defs/tree"},
+            "nested": {
+                "allOf": [{"unevaluatedProperties": {"type": "string"}}],
+                "unevaluatedProperties": false
+            }
         },
-        "record": {
-            "patternProperties": {"^x-": {"type": "integer"}},
-            "propertyNames": {"maxLength": 5}
-        },
-        "open": {"additionalProperties": {"type": "boolean"}},
-        "shape": {
-            "oneOf": [{"properties": {"kind": {"const": "circle"}, "r": {"type": "number"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "square"}, "s": {"type": "number"}}, "required": ["kind"]}]
-        },
-        "code": {
-            "oneOf": [{"properties": {"code": {"const": 1}}, "required": ["code"]}, {"properties": {"code": {"const": 2}}, "required": ["code"]}]
-        },
-        "flag": {
-            "oneOf": [{"properties": {"on": {"const": true}}, "required": ["on"]}, {"properties": {"on": {"const": false}}, "required": ["on"]}]
-        },
-        "nothing": {"type": "null"},
-        "list": {"type": "array"},
-        "flags": {"type": ["boolean", "null", "array"]},
-        "fallbacks": {"type": ["string", "integer", "array", "object"], "minProperties": 1},
-        "empty": {"additionalProperties": false},
-        "rest": {"unevaluatedProperties": {"type": "string"}},
-        "items": {"unevaluatedItems": false},
-        "tree": {"$ref": "#/$defs/tree"},
-        "nested": {
-            "allOf": [{"unevaluatedProperties": {"type": "string"}}],
-            "unevaluatedProperties": false
-        }
-    },
-    "$defs": {"tree": {"properties": {"child": {"$ref": "#/$defs/tree"}}}}
-}) ; "keyword families")]
-#[test_case(
-    "pyo3_emitter_draft4",
-    &json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": ["integer", "string"]})
-    ; "draft4 integer"
-)]
-fn pyo3_emitter(snapshot: &str, schema: &Value) {
+        "$defs": {"tree": {"properties": {"child": {"$ref": "#/$defs/tree"}}}}
+    })
+}
+
+fn draft4_integer_schema() -> Value {
+    json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": ["integer", "string"]})
+}
+
+#[test_case("pyo3_emitter", &quote! { Pyo3 }, &keyword_families_schema() ; "pyo3 keyword families")]
+#[test_case("pyo3_emitter_draft4", &quote! { Pyo3 }, &draft4_integer_schema() ; "pyo3 draft4 integer")]
+#[test_case("magnus_emitter", &quote! { Magnus }, &keyword_families_schema() ; "magnus keyword families")]
+#[test_case("magnus_emitter_draft4", &quote! { Magnus }, &draft4_integer_schema() ; "magnus draft4 integer")]
+fn backend_emitter(snapshot: &str, backend: &TokenStream, schema: &Value) {
     let schema = serde_json::to_string(schema).expect("schema serializes");
     let config: crate::Config =
-        syn::parse2(quote! { schema = #schema, backend = Pyo3 }).expect("Config should parse");
+        syn::parse2(quote! { schema = #schema, backend = #backend }).expect("Config should parse");
     let item: syn::ItemStruct = syn::parse2(quote! {
         struct Validator;
     })
