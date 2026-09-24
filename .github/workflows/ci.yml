@@ -96,7 +96,7 @@ jobs:
       # `benchmark-suite` only carries benchmarks for other validators (valico, jsonschema-valid,
       # boon) and has no tests, so building it here costs ~30 extra dependency crates for nothing.
       - if: runner.os != 'Windows'
-        run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite --exclude jsonschema-testsuite-pyo3 --exclude jsonschema-bench-pyo3 --exclude jsonschema-testsuite-magnus
+        run: cargo test --no-fail-fast --all-features --workspace --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite --exclude jsonschema-testsuite-pyo3 --exclude jsonschema-bench-pyo3 --exclude jsonschema-testsuite-magnus --exclude jsonschema-bench-magnus
 
       # `rb-sys` builds against the Ruby the host provides, and the MSVC runner has none to link,
       # so `magnus` is named out rather than reached through `--all-features`. The feature carries
@@ -104,7 +104,7 @@ jobs:
       - if: runner.os == 'Windows'
         run: >
           cargo test --no-fail-fast --workspace
-          --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite --exclude jsonschema-testsuite-pyo3 --exclude jsonschema-bench-pyo3 --exclude jsonschema-testsuite-magnus
+          --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite --exclude jsonschema-testsuite-pyo3 --exclude jsonschema-bench-pyo3 --exclude jsonschema-testsuite-magnus --exclude jsonschema-bench-magnus
           --features jsonschema/conformance,jsonschema/resolve-http,jsonschema/resolve-file,jsonschema/resolve-async,jsonschema/tls-aws-lc-rs,jsonschema/tls-ring,jsonschema/arbitrary-precision,jsonschema/macros,jsonschema/pyo3,referencing/retrieve-async,jsonschema-macros/arbitrary-precision,jsonschema-macros/float-roundtrip
 
       - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros"
@@ -281,6 +281,7 @@ jobs:
             --exclude jsonschema-testsuite-pyo3 \
             --exclude jsonschema-bench-pyo3 \
             --exclude jsonschema-testsuite-magnus \
+            --exclude jsonschema-bench-magnus \
             --exclude benchmark \
             --exclude benchmark-suite \
             --exclude jsonschema-testsuite \
@@ -1000,7 +1001,7 @@ jobs:
           save-if: ${{ github.ref == 'refs/heads/master' }}
           cache-all-crates: "true"
 
-      - run: cargo doc --workspace --exclude jsonschema-testsuite-pyo3 --exclude jsonschema-bench-pyo3 --exclude jsonschema-testsuite-magnus --no-deps --all-features --document-private-items
+      - run: cargo doc --workspace --exclude jsonschema-testsuite-pyo3 --exclude jsonschema-bench-pyo3 --exclude jsonschema-testsuite-magnus --exclude jsonschema-bench-magnus --no-deps --all-features --document-private-items
         env:
           RUSTDOCFLAGS: "-D warnings"
 

@@ -1,0 +1,19 @@
+[package]
+name = "jsonschema-bench-magnus"
+publish = false
+version = "0.0.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+
+[lib]
+name = "jsonschema_bench_magnus"
+crate-type = ["cdylib"]
+test = false
+
+[dependencies]
+jsonschema = { path = "../jsonschema", features = ["macros", "magnus"] }
+magnus = { version = "0.8", features = ["rb-sys"] }
+
+[lints]
+workspace = true

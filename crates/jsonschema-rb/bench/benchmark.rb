@@ -6,7 +6,24 @@ require "json_schemer"
 require "json-schema"
 require "rj_schema"
 
+begin
+  require_relative "support/jsonschema_bench_magnus"
+rescue LoadError
+  warn "Compiled validators not built: JSONSCHEMA_RB_CODEGEN_BENCH=1 bundle exec rake compile"
+end
+
 BENCHMARK_DATA_PATH = File.expand_path("../../benchmark/data", __dir__)
+
+# `JSONSchemaBench` holds a `backend = Magnus` validator per benchmark schema.
+CODEGEN_NAMES = {
+  "openapi.json" => "openapi",
+  "swagger.json" => "swagger",
+  "geojson.json" => "geojson",
+  "citm_catalog_schema.json" => "citm",
+  "fast_schema.json" => "fast",
+  "fhir.schema.json" => "fhir",
+  "recursive_schema.json" => "recursive"
+}.freeze
 
 # Reusable helpers for section printing, time formatting, and measurement
 module BenchHelper
@@ -150,9 +167,30 @@ def print_lib_result(lib, value)
   puts "  #{lib.ljust(15)}  #{value}"
 end
 
-def print_table_row(name, col1, col2, col3, col4)
+def print_table_row(name, col1, col2, col3, col4, col5)
   puts "| #{name.to_s.ljust(20)} | #{col1.to_s.ljust(30)} | #{col2.to_s.ljust(30)} " \
-       "| #{col3.to_s.ljust(30)} | #{col4.to_s.ljust(25)} |"
+       "| #{col3.to_s.ljust(30)} | #{col4.to_s.ljust(25)} | #{col5.to_s.ljust(25)} |"
+end
+
+# Swallows the invalid-instance error `validate!` raises, so the timing covers the whole call.
+def swallowing_errors(&block)
+  lambda do
+    block.call
+  rescue StandardError
+    nil
+  end
+end
+
+def measure_compiled(row, bench, validator, instance) # rubocop:disable Metrics/AbcSize
+  return unless defined?(JSONSchemaBench)
+
+  name = CODEGEN_NAMES.fetch(bench[:schema])
+  compiled_valid = JSONSchemaBench.method(:"#{name}_valid?")
+  compiled_validate = JSONSchemaBench.method(:"#{name}_validate!")
+  row[:codegen_valid] = BenchHelper.measure { compiled_valid.call(instance) }
+  row[:runtime_validate] = BenchHelper.measure(&swallowing_errors { validator.validate!(instance) })
+  row[:codegen_validate] = BenchHelper.measure(&swallowing_errors { compiled_validate.call(instance) })
+  print_lib_result("jsonschema_rs (codegen)", BenchHelper.format_time(row[:codegen_valid]))
 end
 
 LIBRARIES = %w[json-schema rj_schema json_schemer jsonschema_rs].freeze
@@ -195,6 +233,8 @@ BENCHMARKS.each do |bench|
     print_lib_result(lib, "error: #{e.message[0..60]}")
   end
 
+  measure_compiled(row, bench, validators["jsonschema_rs"], instance)
+
   results << row
   puts
 end
@@ -205,8 +245,8 @@ BenchHelper.section("Summary")
 baseline_lib = "jsonschema_rs"
 libs = %w[json-schema rj_schema json_schemer]
 header = "| #{'Benchmark'.ljust(20)} | #{'json-schema'.ljust(30)} | #{'rj_schema'.ljust(30)} " \
-         "| #{'json_schemer'.ljust(30)} | #{'jsonschema_rs'.ljust(25)} |"
-separator = "|#{'-' * 22}|#{'-' * 32}|#{'-' * 32}|#{'-' * 32}|#{'-' * 27}|"
+         "| #{'json_schemer'.ljust(30)} | #{'jsonschema_rs'.ljust(25)} | #{'jsonschema_rs (codegen)'.ljust(25)} |"
+separator = "|#{'-' * 22}|#{'-' * 32}|#{'-' * 32}|#{'-' * 32}|#{'-' * 27}|#{'-' * 27}|"
 
 puts header
 puts separator
@@ -225,7 +265,21 @@ results.each do |row|
     end
   end
   jsonschema_rs_col = baseline ? BenchHelper.format_time(baseline) : "-"
-  print_table_row(row[:name], cols[0], cols[1], cols[2], jsonschema_rs_col)
+  codegen_col = row[:codegen_valid] ? BenchHelper.format_time(row[:codegen_valid]) : "-"
+  print_table_row(row[:name], cols[0], cols[1], cols[2], jsonschema_rs_col, codegen_col)
+end
+
+if defined?(JSONSchemaBench)
+  puts
+  BenchHelper.section("Compile-time Validators")
+  puts "| #{'Benchmark'.ljust(20)} | #{'valid? (runtime)'.ljust(20)} | #{'valid? (codegen)'.ljust(20)} " \
+       "| #{'validate! (runtime)'.ljust(20)} | #{'validate! (codegen)'.ljust(20)} |"
+  puts "|#{'-' * 22}|#{'-' * 22}|#{'-' * 22}|#{'-' * 22}|#{'-' * 22}|"
+  results.each do |row|
+    cells = [row["jsonschema_rs"], row[:codegen_valid], row[:runtime_validate], row[:codegen_validate]]
+            .map { |time| time ? BenchHelper.format_time(time) : "-" }
+    puts "| #{row[:name].ljust(20)} | #{cells.map { |cell| cell.ljust(20) }.join(' | ')} |"
+  end
 end
 
 puts

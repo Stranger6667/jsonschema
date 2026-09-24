@@ -18,6 +18,7 @@ clean:
 setup:
     bundle install
 
-# Run benchmarks
-bench: build
+# Run benchmarks, including the compiled validators
+bench:
+    JSONSCHEMA_RB_CODEGEN_BENCH=1 bundle exec rake compile
     bundle exec ruby bench/benchmark.rb
