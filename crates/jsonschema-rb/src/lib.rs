@@ -1152,24 +1152,40 @@ define_draft_validator!(
     jsonschema::Draft::Draft202012
 );
 
-fn meta_is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
-    use magnus::scan_args::get_kwargs;
-    let parsed_args = scan_args::<(Value,), (), (), (), _, ()>(args)?;
-    let (schema,) = parsed_args.required;
-    let kw: magnus::scan_args::KwArgs<(), (Option<Option<&Registry>>,), ()> =
-        get_kwargs(parsed_args.keywords, &[], &[*options::KW_REGISTRY])?;
-    let registry = kw.optional.0.flatten();
+// A Ruby string holds JSON text; anything else is read in place.
+fn json_text_schema(schema: Value) -> Option<serde_json::Value> {
+    let rstring = RString::from_value(schema)?;
+    #[allow(unsafe_code)]
+    let bytes = unsafe { rstring.as_slice() };
+    serde_json::from_slice(bytes).ok()
+}
 
-    let json_schema = to_schema_value(ruby, schema)?;
+// The bundled meta-schemas are compiled in and read the Ruby object in place; `None` sends a
+// `$schema` outside them through its chain.
+fn compiled_meta_is_valid(schema: Value) -> Option<Result<bool, Error>> {
+    #[allow(unsafe_code)]
+    let node = RbNode::new(schema.as_raw());
+    match jsonschema::meta::magnus::draft_of(node) {
+        jsonschema::Draft::Unknown => None,
+        draft => Some(jsonschema::meta::magnus::is_valid_fn(draft)(&schema)),
+    }
+}
 
-    let result = if let Some(registry) = registry {
-        jsonschema::meta::options()
-            .with_registry(registry.inner.as_ref())
-            .validate(&json_schema)
-    } else {
-        jsonschema::meta::validate(&json_schema)
-    };
+fn compiled_meta_validate(
+    schema: &Value,
+) -> Option<Result<Result<(), jsonschema::ValidationError<'_>>, Error>> {
+    #[allow(unsafe_code)]
+    let node = RbNode::new(schema.as_raw());
+    match jsonschema::meta::magnus::draft_of(node) {
+        jsonschema::Draft::Unknown => None,
+        draft => Some(jsonschema::meta::magnus::validate_fn(draft)(schema)),
+    }
+}
 
+fn meta_result_to_bool(
+    ruby: &Ruby,
+    result: Result<(), jsonschema::ValidationError<'_>>,
+) -> Result<bool, Error> {
     match result {
         Ok(()) => Ok(true),
         Err(error) => {
@@ -1181,6 +1197,35 @@ fn meta_is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     }
 }
 
+fn meta_is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
+    use magnus::scan_args::get_kwargs;
+    let parsed_args = scan_args::<(Value,), (), (), (), _, ()>(args)?;
+    let (schema,) = parsed_args.required;
+    let kw: magnus::scan_args::KwArgs<(), (Option<Option<&Registry>>,), ()> =
+        get_kwargs(parsed_args.keywords, &[], &[*options::KW_REGISTRY])?;
+    let registry = kw.optional.0.flatten();
+
+    if let Some(registry) = registry {
+        let json_schema = to_schema_value(ruby, schema)?;
+        let result = jsonschema::meta::options()
+            .with_registry(registry.inner.as_ref())
+            .validate(&json_schema);
+        return meta_result_to_bool(ruby, result);
+    }
+    if let Some(json_schema) = json_text_schema(schema) {
+        return meta_result_to_bool(ruby, jsonschema::meta::validate(&json_schema));
+    }
+    surface_pending_errors(schema, |node| {
+        if let Some(result) = compiled_meta_is_valid(schema) {
+            return result;
+        }
+        match jsonschema::meta::is_valid_for::<Magnus>(node) {
+            Ok(valid) => Ok(valid),
+            Err(error) => meta_result_to_bool(ruby, Err(error)),
+        }
+    })
+}
+
 fn meta_validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
     use magnus::scan_args::get_kwargs;
     let parsed_args = scan_args::<(Value,), (), (), (), _, ()>(args)?;
@@ -1189,27 +1234,30 @@ fn meta_validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
         get_kwargs(parsed_args.keywords, &[], &[*options::KW_REGISTRY])?;
     let registry = kw.optional.0.flatten();
 
-    let json_schema = to_schema_value(ruby, schema)?;
-
-    let result = if let Some(registry) = registry {
-        jsonschema::meta::options()
+    let raise = |error: jsonschema::ValidationError<'_>| {
+        if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
+            return referencing_error(ruby, err.to_string());
+        }
+        #[allow(unsafe_code)]
+        let node = RbNode::new(schema.as_raw());
+        raise_validation_error(ruby, error, Some(node), None)
+    };
+    if let Some(registry) = registry {
+        let json_schema = to_schema_value(ruby, schema)?;
+        return jsonschema::meta::options()
             .with_registry(registry.inner.as_ref())
             .validate(&json_schema)
-    } else {
-        jsonschema::meta::validate(&json_schema)
-    };
-
-    match result {
-        Ok(()) => Ok(()),
-        Err(error) => {
-            if let jsonschema::error::ValidationErrorKind::Referencing(err) = error.kind() {
-                return Err(referencing_error(ruby, err.to_string()));
-            }
-            #[allow(unsafe_code)]
-            let node = RbNode::new(schema.as_raw());
-            Err(raise_validation_error(ruby, error, Some(node), None))
-        }
+            .map_err(raise);
     }
+    if let Some(json_schema) = json_text_schema(schema) {
+        return jsonschema::meta::validate(&json_schema).map_err(raise);
+    }
+    surface_pending_errors(schema, |node| {
+        if let Some(result) = compiled_meta_validate(&schema) {
+            return result?.map_err(raise);
+        }
+        jsonschema::meta::validate_for::<Magnus>(node).map_err(raise)
+    })
 }
 
 // ValidationError instance methods (defined from Rust, called on exception instances)
