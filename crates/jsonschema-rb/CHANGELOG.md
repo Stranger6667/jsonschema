@@ -5,6 +5,7 @@
 ### Fixed
 
 - `Canonical.find_unsatisfiable` missing a `oneOf` over `$ref` branches beside a sibling none of them admits.
+- A value with no JSON form nested under `type: null` failing validation silently (it should raise `TypeError`).
 
 ## [0.57.0] - 2026-09-22
 
