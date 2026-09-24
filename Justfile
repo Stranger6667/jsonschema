@@ -40,6 +40,11 @@ test-py-coverage *FLAGS:
   VIRTUAL_ENV="$PWD/.venv-coverage" .venv-coverage/bin/maturin develop --uv -m crates/jsonschema-testsuite-pyo3/Cargo.toml
   .venv-coverage/bin/pytest crates/jsonschema-py/tests-py {{FLAGS}}
 
+test-rb-coverage *FLAGS:
+  cd crates/jsonschema-rb && JSONSCHEMA_RB_CODEGEN_SUITE=1 RB_SYS_CARGO_PROFILE=dev bundle exec rake compile
+  cd crates/jsonschema-rb && bundle exec rspec --tag '~compaction' {{FLAGS}}
+  cd crates/jsonschema-rb && bundle exec rspec spec/jsonschema_spec.rb --tag compaction
+
 bench-py *FLAGS:
   uvx --with="crates/jsonschema-py[bench]" --with=crates/jsonschema-bench-pyo3 --refresh pytest crates/jsonschema-py/benches/bench.py --benchmark-columns=min {{FLAGS}}
 
