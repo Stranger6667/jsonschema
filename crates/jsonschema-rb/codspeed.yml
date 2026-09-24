@@ -11,3 +11,27 @@ benchmarks:
     exec: bundle exec ruby bench/codspeed_bench.rb fhir
   - name: "ruby-recursive"
     exec: bundle exec ruby bench/codspeed_bench.rb recursive
+  - name: "ruby-meta-valid-openapi"
+    exec: bundle exec ruby bench/codspeed_bench.rb openapi meta-valid
+  - name: "ruby-meta-valid-swagger"
+    exec: bundle exec ruby bench/codspeed_bench.rb swagger meta-valid
+  - name: "ruby-meta-valid-geojson"
+    exec: bundle exec ruby bench/codspeed_bench.rb geojson meta-valid
+  - name: "ruby-meta-valid-citm"
+    exec: bundle exec ruby bench/codspeed_bench.rb citm meta-valid
+  - name: "ruby-meta-valid-fhir"
+    exec: bundle exec ruby bench/codspeed_bench.rb fhir meta-valid
+  - name: "ruby-meta-valid-recursive"
+    exec: bundle exec ruby bench/codspeed_bench.rb recursive meta-valid
+  - name: "ruby-meta-validate-openapi"
+    exec: bundle exec ruby bench/codspeed_bench.rb openapi meta-validate
+  - name: "ruby-meta-validate-swagger"
+    exec: bundle exec ruby bench/codspeed_bench.rb swagger meta-validate
+  - name: "ruby-meta-validate-geojson"
+    exec: bundle exec ruby bench/codspeed_bench.rb geojson meta-validate
+  - name: "ruby-meta-validate-citm"
+    exec: bundle exec ruby bench/codspeed_bench.rb citm meta-validate
+  - name: "ruby-meta-validate-fhir"
+    exec: bundle exec ruby bench/codspeed_bench.rb fhir meta-validate
+  - name: "ruby-meta-validate-recursive"
+    exec: bundle exec ruby bench/codspeed_bench.rb recursive meta-validate
