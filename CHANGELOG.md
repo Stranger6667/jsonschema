@@ -16,6 +16,8 @@
 ### Fixed
 
 - A `oneOf` over `$ref` branches beside a sibling none of them admits, which canonicalized to an `allOf` instead of `false`.
+- `multipleOf` incorrectly accepted `1e-400` and other magnitudes below the smallest `f64` subnormal with `arbitrary-precision` (they are not zero).
+- Numeric keywords panicked on a custom representation holding a number past `f64` without `arbitrary-precision`.
 
 ## [0.57.0] - 2026-09-22
 

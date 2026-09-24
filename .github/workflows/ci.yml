@@ -109,6 +109,10 @@ jobs:
 
       - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros"
 
+      # The only run of the crate's default feature set, where numbers past `f64` take the
+      # digit-based fallbacks instead of the exact arithmetic `arbitrary-precision` brings.
+      - run: cargo test --no-fail-fast -p jsonschema-value --features "conformance,macros"
+
   test-cross:
     strategy:
       fail-fast: false
@@ -288,7 +292,9 @@ jobs:
             --exclude testsuite-common
 
       - name: Run tests without arbitrary-precision
-        run: cargo llvm-cov --no-report -p jsonschema --features macros
+        run: |
+          cargo llvm-cov --no-report -p jsonschema --features macros
+          cargo llvm-cov --no-report -p jsonschema-value --features conformance,macros
 
       - name: Generate merged coverage report
         run: cargo llvm-cov report --lcov --output-path lcov.info

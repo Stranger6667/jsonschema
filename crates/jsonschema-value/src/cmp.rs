@@ -103,7 +103,8 @@ pub fn equal_numbers<L: crate::JsonNumber>(left: &L, right: &serde_json::Number)
         } else if let Some(a) = left.as_f64() {
             num_cmp!(a, right)
         } else {
-            unreachable!("Numbers always fit in u64/i64/f64 without arbitrary-precision")
+            // Past `f64`, with no exact arithmetic to place it against the literal.
+            false
         }
     }
 }
