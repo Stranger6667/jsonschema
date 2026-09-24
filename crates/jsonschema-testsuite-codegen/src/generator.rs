@@ -121,45 +121,55 @@ fn generate_nested_structure(
                                     valid: #valid,
                                 };
 
-                                #[jsonschema::validator(
-                                    schema = #schema,
-                                    draft = #draft_variant
-                                    #resources_attr
-                                    #validate_formats_attr
-                                )]
-                                struct Validator;
+                                // One generated validator per suite test is more than rustc can
+                                // hold on a hosted runner for this target; the generated code is
+                                // target-independent and compared on every other one.
+                                #[cfg(all(target_arch = "wasm32", target_os = "unknown"))]
+                                let validator: Option<Box<dyn testsuite::CodegenValidator>> = None;
 
-                                impl testsuite::CodegenValidator for Validator {
-                                    fn is_valid(&self, instance: &serde_json::Value) -> bool {
-                                        Self::is_valid(instance)
-                                    }
-                                    fn validate(
-                                        &self,
-                                        instance: &serde_json::Value,
-                                    ) -> Result<(), Box<dyn std::any::Any + Send + Sync>> {
-                                        Self::validate(instance).map_err(|e| {
-                                            Box::new(e.to_owned())
-                                                as Box<dyn std::any::Any + Send + Sync>
-                                        })
-                                    }
-                                    fn iter_errors(
-                                        &self,
-                                        instance: &serde_json::Value,
-                                    ) -> Vec<(String, String, String)> {
-                                        Self::iter_errors(instance)
-                                            .map(|e| {
-                                                (
-                                                    e.to_string(),
-                                                    e.schema_path().to_string(),
-                                                    e.instance_path().to_string(),
-                                                )
+                                #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+                                let validator: Option<Box<dyn testsuite::CodegenValidator>> = {
+                                    #[jsonschema::validator(
+                                        schema = #schema,
+                                        draft = #draft_variant
+                                        #resources_attr
+                                        #validate_formats_attr
+                                    )]
+                                    struct Validator;
+
+                                    impl testsuite::CodegenValidator for Validator {
+                                        fn is_valid(&self, instance: &serde_json::Value) -> bool {
+                                            Self::is_valid(instance)
+                                        }
+                                        fn validate(
+                                            &self,
+                                            instance: &serde_json::Value,
+                                        ) -> Result<(), Box<dyn std::any::Any + Send + Sync>> {
+                                            Self::validate(instance).map_err(|e| {
+                                                Box::new(e.to_owned())
+                                                    as Box<dyn std::any::Any + Send + Sync>
                                             })
-                                            .collect()
+                                        }
+                                        fn iter_errors(
+                                            &self,
+                                            instance: &serde_json::Value,
+                                        ) -> Vec<(String, String, String)> {
+                                            Self::iter_errors(instance)
+                                                .map(|e| {
+                                                    (
+                                                        e.to_string(),
+                                                        e.schema_path().to_string(),
+                                                        e.instance_path().to_string(),
+                                                    )
+                                                })
+                                                .collect()
+                                        }
                                     }
-                                }
 
-                                let validator = Box::new(Validator);
-                                inner_test(&test, validator as Box<dyn testsuite::CodegenValidator>);
+                                    Some(Box::new(Validator))
+                                };
+
+                                inner_test(&test, validator);
                             }
                         }
                     });
