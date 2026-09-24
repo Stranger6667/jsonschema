@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `Meta.valid?` and `Meta.validate!` check a schema against the bundled drafts without converting it first, 2 to 5x faster on the benchmarked schemas.
+
 ### Fixed
 
 - `Canonical.find_unsatisfiable` missing a `oneOf` over `$ref` branches beside a sibling none of them admits.

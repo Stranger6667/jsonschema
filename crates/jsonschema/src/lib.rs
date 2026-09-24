@@ -1885,6 +1885,30 @@ pub mod meta {
         }
     }
 
+    /// Meta-schema validators that read a schema held as a Ruby object.
+    ///
+    /// The bundled drafts are compiled in, so a schema already in Ruby form is checked without
+    /// being converted to [`serde_json::Value`]. A `$schema` outside them is reached through
+    /// [`is_valid_for`] / [`validate_for`] instead.
+    ///
+    /// Needs the `macros` feature; without it, use [`is_valid_for`] / [`validate_for`] with
+    /// [`json::Magnus`](crate::json::Magnus).
+    #[cfg(all(feature = "macros", feature = "magnus", not(target_family = "wasm")))]
+    pub mod magnus {
+        use crate::{json::RbNode, Draft};
+
+        pub use crate::meta_codegen::magnus::{is_valid_fn, validate_fn, IsValidFn, ValidateFn};
+
+        /// The draft whose meta-schema `schema` names in `$schema`.
+        ///
+        /// `Draft::Unknown` means a URI outside the bundled drafts, which the functions above
+        /// cannot answer for.
+        #[must_use]
+        pub fn draft_of(schema: RbNode<'_>) -> Draft {
+            super::meta_cache::<crate::json::Magnus>().draft_of(&schema)
+        }
+    }
+
     /// Create a meta-validation options builder.
     ///
     /// # Examples

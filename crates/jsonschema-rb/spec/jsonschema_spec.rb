@@ -610,6 +610,19 @@ RSpec.describe JSONSchema::Meta do
     end
   end
 
+  # The schema is read in place, so a value the meta-schema never looks at needs no JSON form.
+  describe "reading the schema in place" do
+    let(:schema) { { "type" => "string", "x-vendor" => Object.new } }
+
+    it "checks it with valid?" do
+      expect(JSONSchema::Meta.valid?(schema)).to be true
+    end
+
+    it "checks it with validate!" do
+      expect(JSONSchema::Meta.validate!(schema)).to be_nil
+    end
+  end
+
   describe ".validate!" do
     it "returns nil for valid schema" do
       schema = { "type" => "string" }

@@ -152,3 +152,79 @@ pub(crate) mod pyo3 {
         }
     }
 }
+
+#[cfg(feature = "magnus")]
+pub(crate) mod magnus {
+    use crate::{Draft, ValidationError};
+    use ::magnus::{Error, Value};
+
+    pub type IsValidFn = fn(&Value) -> Result<bool, Error>;
+    pub type ValidateFn = for<'i> fn(&'i Value) -> Result<Result<(), ValidationError<'i>>, Error>;
+
+    #[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4, backend = Magnus)]
+    struct MetaDraft4;
+
+    #[jsonschema_macros::validator(path = "metaschemas/draft6.json", draft = Draft6, backend = Magnus)]
+    struct MetaDraft6;
+
+    #[jsonschema_macros::validator(path = "metaschemas/draft7.json", draft = Draft7, backend = Magnus)]
+    struct MetaDraft7;
+
+    #[jsonschema_macros::validator(
+        path = "metaschemas/draft2019-09/schema.json",
+        draft = Draft201909,
+        backend = Magnus,
+        resources = {
+            "https://json-schema.org/draft/2019-09/meta/core" => { path = "metaschemas/draft2019-09/meta/core.json" },
+            "https://json-schema.org/draft/2019-09/meta/applicator" => { path = "metaschemas/draft2019-09/meta/applicator.json" },
+            "https://json-schema.org/draft/2019-09/meta/validation" => { path = "metaschemas/draft2019-09/meta/validation.json" },
+            "https://json-schema.org/draft/2019-09/meta/meta-data" => { path = "metaschemas/draft2019-09/meta/meta-data.json" },
+            "https://json-schema.org/draft/2019-09/meta/format" => { path = "metaschemas/draft2019-09/meta/format.json" },
+            "https://json-schema.org/draft/2019-09/meta/content" => { path = "metaschemas/draft2019-09/meta/content.json" },
+        }
+    )]
+    struct MetaDraft201909;
+
+    #[jsonschema_macros::validator(
+        path = "metaschemas/draft2020-12/schema.json",
+        draft = Draft202012,
+        backend = Magnus,
+        resources = {
+            "https://json-schema.org/draft/2020-12/meta/core" => { path = "metaschemas/draft2020-12/meta/core.json" },
+            "https://json-schema.org/draft/2020-12/meta/applicator" => { path = "metaschemas/draft2020-12/meta/applicator.json" },
+            "https://json-schema.org/draft/2020-12/meta/unevaluated" => { path = "metaschemas/draft2020-12/meta/unevaluated.json" },
+            "https://json-schema.org/draft/2020-12/meta/validation" => { path = "metaschemas/draft2020-12/meta/validation.json" },
+            "https://json-schema.org/draft/2020-12/meta/meta-data" => { path = "metaschemas/draft2020-12/meta/meta-data.json" },
+            "https://json-schema.org/draft/2020-12/meta/format-annotation" => { path = "metaschemas/draft2020-12/meta/format-annotation.json" },
+            "https://json-schema.org/draft/2020-12/meta/content" => { path = "metaschemas/draft2020-12/meta/content.json" },
+        }
+    )]
+    struct MetaDraft202012;
+
+    /// The meta-schema `draft` is checked against, reading the schema as a Ruby object.
+    ///
+    /// `Draft::Unknown` and future drafts fall through to Draft 2020-12, matching the
+    /// serde-backed dispatch above.
+    #[must_use]
+    pub fn is_valid_fn(draft: Draft) -> IsValidFn {
+        match draft {
+            Draft::Draft4 => MetaDraft4::is_valid,
+            Draft::Draft6 => MetaDraft6::is_valid,
+            Draft::Draft7 => MetaDraft7::is_valid,
+            Draft::Draft201909 => MetaDraft201909::is_valid,
+            _ => MetaDraft202012::is_valid,
+        }
+    }
+
+    /// The first meta-schema error, reading the schema as a Ruby object.
+    #[must_use]
+    pub fn validate_fn(draft: Draft) -> ValidateFn {
+        match draft {
+            Draft::Draft4 => MetaDraft4::validate,
+            Draft::Draft6 => MetaDraft6::validate,
+            Draft::Draft7 => MetaDraft7::validate,
+            Draft::Draft201909 => MetaDraft201909::validate,
+            _ => MetaDraft202012::validate,
+        }
+    }
+}
