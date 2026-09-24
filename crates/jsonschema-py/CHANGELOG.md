@@ -8,6 +8,7 @@
 
 ### Fixed
 
+- Crash on free-threaded Python when another thread resized a list or dict during validation.
 - `find_unsatisfiable` missing a `oneOf` over `$ref` branches beside a sibling none of them admits.
 
 ## [0.57.1] - 2026-09-22

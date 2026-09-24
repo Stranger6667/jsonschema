@@ -106,6 +106,85 @@ pub(crate) unsafe fn pylist_get_item(
     }
 }
 
+/// An item read out of a container. On free-threaded builds it holds its own reference, since
+/// another thread may drop the container's.
+pub(crate) struct Item(*mut pyo3::ffi::PyObject);
+
+impl Item {
+    #[inline]
+    pub(crate) fn as_ptr(&self) -> *mut pyo3::ffi::PyObject {
+        self.0
+    }
+}
+
+#[cfg(Py_GIL_DISABLED)]
+impl Drop for Item {
+    #[inline]
+    fn drop(&mut self) {
+        unsafe { pyo3::ffi::Py_DECREF(self.0) };
+    }
+}
+
+/// The list item at `index`, or `None` once the list has shrunk below it.
+#[inline]
+pub(crate) unsafe fn pylist_item(
+    object: *mut pyo3::ffi::PyObject,
+    index: pyo3::ffi::Py_ssize_t,
+) -> Option<Item> {
+    #[cfg(Py_GIL_DISABLED)]
+    let item = pyo3::ffi::PyList_GetItemRef(object, index);
+    #[cfg(all(Py_LIMITED_API, not(Py_GIL_DISABLED)))]
+    let item = pyo3::ffi::PyList_GetItem(object, index);
+    #[cfg(not(any(Py_LIMITED_API, Py_GIL_DISABLED)))]
+    let item = if index < PyList_GET_SIZE(object) {
+        PyList_GET_ITEM(object, index)
+    } else {
+        std::ptr::null_mut()
+    };
+    if item.is_null() {
+        pyo3::ffi::PyErr_Clear();
+        None
+    } else {
+        Some(Item(item))
+    }
+}
+
+/// Key and value pairs of a dict; on free-threaded builds each step locks the dict.
+pub(crate) struct DictEntries {
+    dict: *mut pyo3::ffi::PyObject,
+    pos: pyo3::ffi::Py_ssize_t,
+}
+
+impl DictEntries {
+    pub(crate) fn new(dict: *mut pyo3::ffi::PyObject) -> Self {
+        Self { dict, pos: 0 }
+    }
+
+    pub(crate) unsafe fn next(&mut self) -> Option<(Item, Item)> {
+        let mut key: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
+        let mut value: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
+        #[cfg(Py_GIL_DISABLED)]
+        let mut section = std::mem::zeroed::<pyo3::ffi::PyCriticalSection>();
+        #[cfg(Py_GIL_DISABLED)]
+        pyo3::ffi::PyCriticalSection_Begin(&raw mut section, self.dict);
+        let found =
+            pyo3::ffi::PyDict_Next(self.dict, &raw mut self.pos, &raw mut key, &raw mut value) != 0;
+        #[cfg(Py_GIL_DISABLED)]
+        {
+            if found {
+                pyo3::ffi::Py_INCREF(key);
+                pyo3::ffi::Py_INCREF(value);
+            }
+            pyo3::ffi::PyCriticalSection_End(&raw mut section);
+        }
+        if found {
+            Some((Item(key), Item(value)))
+        } else {
+            None
+        }
+    }
+}
+
 #[inline]
 pub(crate) unsafe fn pytuple_len(object: *mut pyo3::ffi::PyObject) -> usize {
     #[cfg(Py_LIMITED_API)]
@@ -344,19 +423,10 @@ impl Serialize for SerializePyObject {
                     tri!(serializer.serialize_map(Some(0))).end()
                 } else {
                     let mut map = tri!(serializer.serialize_map(Some(length)));
-                    let mut pos = 0_isize;
                     let mut str_size: pyo3::ffi::Py_ssize_t = 0;
-                    let mut key: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
-                    let mut value: *mut pyo3::ffi::PyObject = std::ptr::null_mut();
-                    for _ in 0..length {
-                        unsafe {
-                            pyo3::ffi::PyDict_Next(
-                                self.object,
-                                &raw mut pos,
-                                &raw mut key,
-                                &raw mut value,
-                            );
-                        }
+                    let mut entries = DictEntries::new(self.object);
+                    while let Some((key_item, value_item)) = unsafe { entries.next() } {
+                        let (key, value) = (key_item.as_ptr(), value_item.as_ptr());
                         let object_type = unsafe { Py_TYPE(key) };
                         let (key_unicode, owned) = if object_type == unsafe { types::STR_TYPE } {
                             // if the key type is string, use it as is
@@ -434,8 +504,12 @@ impl Serialize for SerializePyObject {
                     let mut ob_type = ObjectType::Str;
                     let mut sequence = tri!(serializer.serialize_seq(Some(length)));
                     for i in 0..length {
-                        let elem =
-                            unsafe { pylist_get_item(self.object, i as pyo3::ffi::Py_ssize_t) };
+                        let Some(item) =
+                            (unsafe { pylist_item(self.object, i as pyo3::ffi::Py_ssize_t) })
+                        else {
+                            break;
+                        };
+                        let elem = item.as_ptr();
                         let current_ob_type = unsafe { Py_TYPE(elem) };
                         if current_ob_type != type_ptr {
                             type_ptr = current_ob_type;

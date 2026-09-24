@@ -89,7 +89,9 @@ unsafe fn clone_dict(object: *mut ffi::PyObject, depth: u8) -> PyResult<*mut ffi
         return Err(exceptions::PyValueError::new_err("Failed to copy dict"));
     }
 
-    let size = dict_len(object);
+    // The copy owns its keys and values, so reading it is safe while another thread changes
+    // `object`; replacing values below keeps its keys fixed, as `PyDict_Next` requires.
+    let size = dict_len(output);
     if size == 0 {
         return Ok(output);
     }
@@ -99,7 +101,7 @@ unsafe fn clone_dict(object: *mut ffi::PyObject, depth: u8) -> PyResult<*mut ffi
     let mut value: *mut ffi::PyObject = std::ptr::null_mut();
 
     for _ in 0..size {
-        if ffi::PyDict_Next(object, &raw mut pos, &raw mut key, &raw mut value) == 0 {
+        if ffi::PyDict_Next(output, &raw mut pos, &raw mut key, &raw mut value) == 0 {
             break;
         }
 
@@ -151,14 +153,14 @@ unsafe fn clone_dict(object: *mut ffi::PyObject, depth: u8) -> PyResult<*mut ffi
 ///
 /// `PyList_SetItem` *steals* the reference — no DECREF needed after the call.
 unsafe fn clone_list(object: *mut ffi::PyObject, depth: u8) -> PyResult<*mut ffi::PyObject> {
-    let size = pylist_len(object);
-    let output = ffi::PyList_GetSlice(object, 0, size as ffi::Py_ssize_t);
+    let output = ffi::PyList_GetSlice(object, 0, pylist_len(object) as ffi::Py_ssize_t);
     if output.is_null() {
         return Err(exceptions::PyValueError::new_err("Failed to copy list"));
     }
 
-    for i in 0..size {
-        let item = pylist_get_item(object, i as ffi::Py_ssize_t);
+    // The copy owns its items, so reading it is safe while another thread changes `object`.
+    for i in 0..pylist_len(output) {
+        let item = pylist_get_item(output, i as ffi::Py_ssize_t);
         if item.is_null() {
             ffi::Py_DECREF(output);
             return Err(exceptions::PyValueError::new_err("Failed to get list item"));
