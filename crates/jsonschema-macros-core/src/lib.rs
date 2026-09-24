@@ -44,7 +44,7 @@ pub mod bench {
     use referencing::{Draft, Registry, RegistryBuilder};
     use serde_json::Value;
 
-    use crate::context::{CodegenConfig, PatternEngineConfig};
+    use crate::context::{CodegenConfig, MethodGates, PatternEngineConfig};
 
     pub struct Input(CodegenConfig);
 
@@ -77,6 +77,7 @@ pub mod bench {
             ignore_unknown_formats: true,
             email_options: None,
             pattern_options: PatternEngineConfig::default(),
+            methods: MethodGates::default(),
         })
     }
 
@@ -107,6 +108,7 @@ struct Config {
     email_options: Option<context::EmailOptionsConfig>,
     pattern_options: PatternOptionsConfig,
     backend: Backend,
+    methods: context::MethodGates,
 }
 
 /// The JSON representation the generated validator reads.
@@ -477,6 +479,52 @@ fn parse_email_options(input: ParseStream) -> syn::Result<context::EmailOptionsC
     Ok(options)
 }
 
+fn parse_methods(input: ParseStream) -> syn::Result<context::MethodGates> {
+    let content;
+    syn::braced!(content in input);
+
+    let mut methods = context::MethodGates::default();
+    let mut seen = HashSet::new();
+
+    while !content.is_empty() {
+        let key: Ident = content.parse()?;
+        let key_name = key.to_string();
+        if !seen.insert(key_name.clone()) {
+            return Err(syn::Error::new_spanned(
+                key,
+                format!("Duplicate methods key: `{key_name}`"),
+            ));
+        }
+
+        content.parse::<Token![=]>()?;
+        let value: LitBool = content.parse()?;
+        match key_name.as_str() {
+            "is_valid" => methods.is_valid = value.value,
+            "validate" => methods.validate = value.value,
+            "iter_errors" => methods.iter_errors = value.value,
+            _ => {
+                return Err(syn::Error::new_spanned(
+                    key,
+                    "Unknown methods key. Expected `is_valid`, `validate`, or `iter_errors`",
+                ));
+            }
+        }
+
+        if content.peek(Token![,]) {
+            content.parse::<Token![,]>()?;
+        }
+    }
+
+    if !(methods.is_valid || methods.validate || methods.iter_errors) {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "At least one of `is_valid`, `validate`, or `iter_errors` must be enabled",
+        ));
+    }
+
+    Ok(methods)
+}
+
 impl Parse for Config {
     fn parse(input: ParseStream) -> syn::Result<Self> {
         let mut schema_source = None;
@@ -493,6 +541,7 @@ impl Parse for Config {
         let mut ignore_unknown_formats = None;
         let mut email_options = None;
         let mut pattern_options = PatternOptionsConfig::default();
+        let mut methods = context::MethodGates::default();
 
         let mut seen_keys = HashSet::new();
         while !input.is_empty() {
@@ -665,10 +714,14 @@ impl Parse for Config {
                     input.parse::<Token![=]>()?;
                     pattern_options = parse_pattern_options(input)?;
                 }
+                "methods" => {
+                    input.parse::<Token![=]>()?;
+                    methods = parse_methods(input)?;
+                }
                 _ => {
                     return Err(syn::Error::new_spanned(
                         ident,
-                        "Expected `path`, `schema`, `draft`, `backend`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, or `pattern_options` attribute",
+                        "Expected `path`, `schema`, `draft`, `backend`, `base_uri`, `resources`, `vocabularies`, `validate_formats`, `formats`, `keywords`, `content_media_types`, `content_encodings`, `ignore_unknown_formats`, `email_options`, `pattern_options`, or `methods` attribute",
                     ));
                 }
             }
@@ -700,6 +753,7 @@ impl Parse for Config {
             email_options,
             pattern_options,
             backend,
+            methods,
         })
     }
 }
@@ -864,6 +918,7 @@ so the generated methods cannot depend on type parameters",
                 dfa_size_limit: attr.pattern_options.dfa_size_limit,
             },
         },
+        methods: attr.methods,
     };
     let impl_mod_name = format_ident!("__{}_impl", name.to_string().to_lowercase());
     let recompile_trigger = quote! {

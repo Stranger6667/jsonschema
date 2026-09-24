@@ -4,6 +4,8 @@ use proc_macro2::{Ident, TokenStream};
 use quote::ToTokens;
 use referencing::Draft;
 
+use crate::context::MethodGates;
+
 pub(crate) trait ValueEmitter {
     /// The type a node is passed by. `serde_json` passes a reference into the document; a
     /// representation whose handle is itself a borrow passes that handle by value.
@@ -60,10 +62,14 @@ pub(crate) trait ValueEmitter {
     fn public_value_ty(runtime_crate: &TokenStream, lifetime: impl ToTokens) -> TokenStream;
     /// The bodies behind the validator struct's methods, emitted inside the aliased module. A
     /// representation that records unreadable values out of band wraps each one and returns them.
-    fn entry_bodies() -> TokenStream;
+    fn entry_bodies(methods: MethodGates) -> TokenStream;
     /// The `is_valid`/`validate`/`iter_errors` methods on the validator struct, delegating to
     /// [`ValueEmitter::entry_bodies`].
-    fn entry_points(impl_mod_name: &Ident, runtime_crate: &TokenStream) -> TokenStream;
+    fn entry_points(
+        impl_mod_name: &Ident,
+        runtime_crate: &TokenStream,
+        methods: MethodGates,
+    ) -> TokenStream;
     fn declare_key(key: &str) -> TokenStream;
     fn key_to_owned(key_expr: impl ToTokens) -> TokenStream;
     /// Imports and aliases the emitted module opens with, and the statement every emitted

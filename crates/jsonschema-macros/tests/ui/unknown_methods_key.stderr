@@ -1,0 +1,5 @@
+error: Unknown methods key. Expected `is_valid`, `validate`, or `iter_errors`
+ --> tests/ui/unknown_methods_key.rs:3:17
+  |
+3 |     methods = { evaluate = false }
+  |                 ^^^^^^^^

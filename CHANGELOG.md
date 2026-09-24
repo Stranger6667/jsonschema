@@ -7,6 +7,7 @@
 - `backend = Pyo3` on `#[jsonschema::validator]`, generating a validator that reads Python objects in place.
 - `backend = Magnus` on `#[jsonschema::validator]`, generating a validator that reads Ruby objects in place.
 - `jsonschema::meta::pyo3`, the bundled meta-schema validators for a schema held as a Python object.
+- `methods = { ... }` on `#[jsonschema::validator]`, selecting which of `is_valid`, `validate`, and `iter_errors` are generated.
 
 ### Performance
 

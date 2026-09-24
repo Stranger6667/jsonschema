@@ -6,6 +6,7 @@ use quote::{quote, ToTokens};
 use referencing::Draft;
 
 use super::emit::ValueEmitter;
+use crate::context::MethodGates;
 
 pub(crate) struct MagnusEmitter;
 
@@ -320,91 +321,121 @@ impl ValueEmitter for MagnusEmitter {
 
     // Accessors record read failures in a scope; a recorded error outranks the run's result. The
     // members snapshot is dropped first, since Ruby may have mutated the object since the last call.
-    fn entry_bodies() -> TokenStream {
+    fn entry_bodies(methods: MethodGates) -> TokenStream {
+        let is_valid = methods.is_valid.then(|| {
+            quote! {
+                pub(super) fn entry_is_valid(
+                    instance: &__rb::Value,
+                ) -> ::std::result::Result<bool, __rb::Error> {
+                    let _scope = __json::MagnusPendingErrorScope::enter();
+                    __json::magnus_invalidate_members_cache();
+                    let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
+                    __json::magnus_probe_root(node);
+                    if let Some(error) = __json::magnus_take_pending_error() {
+                        return Err(error.into());
+                    }
+                    let result = is_valid(node);
+                    if let Some(error) = __json::magnus_take_pending_error() {
+                        return Err(error.into());
+                    }
+                    Ok(result)
+                }
+            }
+        });
+        let validate = methods.validate.then(|| {
+            quote! {
+                pub(super) fn entry_validate<'__i>(
+                    instance: &'__i __rb::Value,
+                ) -> ::std::result::Result<::std::result::Result<(), __VE<'__i>>, __rb::Error> {
+                    let _scope = __json::MagnusPendingErrorScope::enter();
+                    __json::magnus_invalidate_members_cache();
+                    let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
+                    __json::magnus_probe_root(node);
+                    if let Some(error) = __json::magnus_take_pending_error() {
+                        return Err(error.into());
+                    }
+                    let result = match validate(node, &__paths::LazyLocation::new()) {
+                        Some(e) => Err(e),
+                        None => Ok(()),
+                    };
+                    if let Some(error) = __json::magnus_take_pending_error() {
+                        return Err(error.into());
+                    }
+                    Ok(result)
+                }
+            }
+        });
+        let iter_errors = methods.iter_errors.then(|| {
+            quote! {
+                pub(super) fn entry_iter_errors<'__i>(
+                    instance: &'__i __rb::Value,
+                ) -> ::std::result::Result<__EI<'__i>, __rb::Error> {
+                    let _scope = __json::MagnusPendingErrorScope::enter();
+                    __json::magnus_invalidate_members_cache();
+                    let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
+                    __json::magnus_probe_root(node);
+                    if let Some(error) = __json::magnus_take_pending_error() {
+                        return Err(error.into());
+                    }
+                    let mut errors = Vec::new();
+                    collect_errors(node, &__paths::LazyLocation::new(), &mut errors);
+                    if let Some(error) = __json::magnus_take_pending_error() {
+                        return Err(error.into());
+                    }
+                    Ok(__err::iterator_from(errors))
+                }
+            }
+        });
         quote! {
-            pub(super) fn entry_is_valid(
-                instance: &__rb::Value,
-            ) -> ::std::result::Result<bool, __rb::Error> {
-                let _scope = __json::MagnusPendingErrorScope::enter();
-                __json::magnus_invalidate_members_cache();
-                let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
-                __json::magnus_probe_root(node);
-                if let Some(error) = __json::magnus_take_pending_error() {
-                    return Err(error.into());
-                }
-                let result = is_valid(node);
-                if let Some(error) = __json::magnus_take_pending_error() {
-                    return Err(error.into());
-                }
-                Ok(result)
-            }
-
-            pub(super) fn entry_validate<'__i>(
-                instance: &'__i __rb::Value,
-            ) -> ::std::result::Result<::std::result::Result<(), __VE<'__i>>, __rb::Error> {
-                let _scope = __json::MagnusPendingErrorScope::enter();
-                __json::magnus_invalidate_members_cache();
-                let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
-                __json::magnus_probe_root(node);
-                if let Some(error) = __json::magnus_take_pending_error() {
-                    return Err(error.into());
-                }
-                let result = match validate(node, &__paths::LazyLocation::new()) {
-                    Some(e) => Err(e),
-                    None => Ok(()),
-                };
-                if let Some(error) = __json::magnus_take_pending_error() {
-                    return Err(error.into());
-                }
-                Ok(result)
-            }
-
-            pub(super) fn entry_iter_errors<'__i>(
-                instance: &'__i __rb::Value,
-            ) -> ::std::result::Result<__EI<'__i>, __rb::Error> {
-                let _scope = __json::MagnusPendingErrorScope::enter();
-                __json::magnus_invalidate_members_cache();
-                let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
-                __json::magnus_probe_root(node);
-                if let Some(error) = __json::magnus_take_pending_error() {
-                    return Err(error.into());
-                }
-                let mut errors = Vec::new();
-                collect_errors(node, &__paths::LazyLocation::new(), &mut errors);
-                if let Some(error) = __json::magnus_take_pending_error() {
-                    return Err(error.into());
-                }
-                Ok(__err::iterator_from(errors))
-            }
+            #is_valid
+            #validate
+            #iter_errors
         }
     }
 
-    fn entry_points(impl_mod_name: &Ident, runtime_crate: &TokenStream) -> TokenStream {
+    fn entry_points(
+        impl_mod_name: &Ident,
+        runtime_crate: &TokenStream,
+        methods: MethodGates,
+    ) -> TokenStream {
         let value = Self::public_value_ty(runtime_crate, quote! { '_ });
+        let is_valid = methods.is_valid.then(|| {
+            quote! {
+                pub fn is_valid(
+                    instance: &#value,
+                ) -> ::std::result::Result<bool, #runtime_crate::__private::magnus::Error> {
+                    #impl_mod_name::entry_is_valid(instance)
+                }
+            }
+        });
+        let validate = methods.validate.then(|| {
+            quote! {
+                pub fn validate<'__i>(
+                    instance: &'__i #value,
+                ) -> ::std::result::Result<
+                    ::std::result::Result<(), #runtime_crate::ValidationError<'__i>>,
+                    #runtime_crate::__private::magnus::Error,
+                > {
+                    #impl_mod_name::entry_validate(instance)
+                }
+            }
+        });
+        let iter_errors = methods.iter_errors.then(|| {
+            quote! {
+                pub fn iter_errors<'__i>(
+                    instance: &'__i #value,
+                ) -> ::std::result::Result<
+                    #runtime_crate::ErrorIterator<'__i>,
+                    #runtime_crate::__private::magnus::Error,
+                > {
+                    #impl_mod_name::entry_iter_errors(instance)
+                }
+            }
+        });
         quote! {
-            pub fn is_valid(
-                instance: &#value,
-            ) -> ::std::result::Result<bool, #runtime_crate::__private::magnus::Error> {
-                #impl_mod_name::entry_is_valid(instance)
-            }
-
-            pub fn validate<'__i>(
-                instance: &'__i #value,
-            ) -> ::std::result::Result<
-                ::std::result::Result<(), #runtime_crate::ValidationError<'__i>>,
-                #runtime_crate::__private::magnus::Error,
-            > {
-                #impl_mod_name::entry_validate(instance)
-            }
-
-            pub fn iter_errors<'__i>(
-                instance: &'__i #value,
-            ) -> ::std::result::Result<
-                #runtime_crate::ErrorIterator<'__i>,
-                #runtime_crate::__private::magnus::Error,
-            > {
-                #impl_mod_name::entry_iter_errors(instance)
-            }
+            #is_valid
+            #validate
+            #iter_errors
         }
     }
 

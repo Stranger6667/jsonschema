@@ -39,6 +39,8 @@ use proc_macro::TokenStream;
 ///   (same fn signatures as `ValidationOptions::{with_content_media_type,with_content_encoding}`)
 /// - `email_options = { ... }`
 /// - `pattern_options = { ... }`
+/// - `methods = { is_valid = <bool>, validate = <bool>, iter_errors = <bool> }` (all default to
+///   `true`; a method set to `false` is not generated, and at least one must stay enabled)
 ///
 /// `email_options` keys:
 ///

@@ -183,6 +183,8 @@
 //! - `content_encodings = { "name" => { check = ..., convert = ... } }` -> [`ValidationOptions::with_content_encoding`]
 //! - `pattern_options = { ... }` -> [`PatternOptions`]
 //! - `email_options = { ... }` -> [`EmailOptions`]
+//! - `methods = { is_valid = true, validate = false, iter_errors = false }`, which methods to
+//!   generate (all default to `true`; at least one must stay enabled)
 //!
 //! ## Python Extension Modules
 //!
