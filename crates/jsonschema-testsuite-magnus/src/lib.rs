@@ -13,10 +13,12 @@ testsuite::magnus_suite!(
     path = "crates/jsonschema/tests/suite",
     drafts = ["draft4", "draft6", "draft7", "draft2019-09", "draft2020-12"]
 );
+testsuite::magnus_schemas!("crates/jsonschema-rb/spec/codegen_schemas.json");
 
 static BY_ID: LazyLock<HashMap<&'static str, &'static SuiteEntry>> = LazyLock::new(|| {
     SUITE_ENTRIES
         .iter()
+        .chain(SCHEMA_ENTRIES)
         .map(|entry| (entry.id, entry))
         .collect()
 });

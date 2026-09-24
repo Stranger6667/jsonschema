@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "weakref"
+require_relative "support/codegen_backend"
 
 # Keep strong defaults locally, while allowing CI to tune stress-loop counts.
 LIFETIME_STRESS_ITERATIONS = Integer(ENV.fetch("JSONSCHEMA_RB_LIFETIME_STRESS_ITERATIONS", "100"))
@@ -1713,12 +1714,40 @@ RSpec.describe "evaluation_path_pointer" do
 end
 
 RSpec.describe "BigDecimal and large numbers" do
-  it "validates large integers" do
-    schema = { "type" => "integer", "minimum" => 0 }
-    expect(JSONSchema.valid?(schema, 10**100)).to be true
-    expect(JSONSchema.valid?(schema, -(10**100))).to be false
+  BACKENDS.each do |backend_name, backend|
+    context "with the #{backend_name} backend" do
+      it "validates large integers" do
+        schema = { "type" => "integer", "minimum" => 0 }
+        expect(backend.valid?(schema, 10**100)).to be true
+        expect(backend.valid?(schema, -(10**100))).to be false
+      end
+
+      it "validates large floats" do
+        schema = { "type" => "number", "minimum" => 0 }
+        expect(backend.valid?(schema, 1.0e+308)).to be true
+      end
+
+      it "handles BigDecimal values" do
+        require "bigdecimal"
+        schema = { "type" => "number", "minimum" => 0 }
+        expect(backend.valid?(schema, BigDecimal("99999999999999999999.5"))).to be true
+        expect(backend.valid?(schema, BigDecimal("-1.5"))).to be false
+      end
+
+      it "handles BigDecimal values nested in input data" do
+        require "bigdecimal"
+        schema = {
+          "type" => "object",
+          "properties" => { "price" => { "type" => "number", "minimum" => 0 } },
+          "required" => ["price"]
+        }
+        expect(backend.valid?(schema, { "price" => BigDecimal("1234567890.123456789") })).to be true
+      end
+    end
   end
 
+  # Integers beyond the i64/u64 range stay exact only with `arbitrary-precision`, which the compiled
+  # suite does not enable.
   it "compares integers just outside the i64/u64 range exactly against limits" do
     min_i64 = -(2**63)
     expect(JSONSchema.valid?({ "minimum" => min_i64 }, min_i64 - 1)).to be false
@@ -1727,28 +1756,6 @@ RSpec.describe "BigDecimal and large numbers" do
     max_u64 = (2**64) - 1
     expect(JSONSchema.valid?({ "minimum" => max_u64 }, max_u64 + 1)).to be true
     expect(JSONSchema.valid?({ "maximum" => max_u64 }, max_u64 + 1)).to be false
-  end
-
-  it "validates large floats" do
-    schema = { "type" => "number", "minimum" => 0 }
-    expect(JSONSchema.valid?(schema, 1.0e+308)).to be true
-  end
-
-  it "handles BigDecimal values" do
-    require "bigdecimal"
-    schema = { "type" => "number", "minimum" => 0 }
-    expect(JSONSchema.valid?(schema, BigDecimal("99999999999999999999.5"))).to be true
-    expect(JSONSchema.valid?(schema, BigDecimal("-1.5"))).to be false
-  end
-
-  it "handles BigDecimal values nested in input data" do
-    require "bigdecimal"
-    schema = {
-      "type" => "object",
-      "properties" => { "price" => { "type" => "number", "minimum" => 0 } },
-      "required" => ["price"]
-    }
-    expect(JSONSchema.valid?(schema, { "price" => BigDecimal("1234567890.123456789") })).to be true
   end
 
   it "preserves large integer precision in ValidationError#instance" do
@@ -2046,19 +2053,34 @@ RSpec.describe "draft: keyword argument on module-level functions" do
 end
 
 RSpec.describe "Type coercion errors" do
-  it "raises for NaN as instance value" do
-    expect { JSONSchema.valid?({ "type" => "number" }, Float::NAN) }
-      .to raise_error(ArgumentError, /NaN/)
-  end
+  BACKENDS.each do |backend_name, backend|
+    context "with the #{backend_name} backend" do
+      it "raises for NaN as instance value" do
+        expect { backend.valid?({ "type" => "number" }, Float::NAN) }
+          .to raise_error(ArgumentError, /NaN/)
+      end
 
-  it "raises for Infinity as instance value" do
-    expect { JSONSchema.valid?({ "type" => "number" }, Float::INFINITY) }
-      .to raise_error(ArgumentError, /Infinity/)
-  end
+      it "raises for Infinity as instance value" do
+        expect { backend.valid?({ "type" => "number" }, Float::INFINITY) }
+          .to raise_error(ArgumentError, /Infinity/)
+      end
 
-  it "raises for unsupported types" do
-    expect { JSONSchema.valid?({ "type" => "string" }, /regex/) }
-      .to raise_error(TypeError, /Unsupported type/)
+      it "raises for unsupported types" do
+        expect { backend.valid?({ "type" => "string" }, /regex/) }
+          .to raise_error(TypeError, /Unsupported type/)
+      end
+
+      it "raises for non-string hash keys" do
+        expect { backend.validate!({ "type" => "object" }, { 1 => 2 }) }
+          .to raise_error(TypeError, /Hash keys must be strings or symbols. Got 'Integer'/)
+      end
+
+      it "raises for strings that are not valid UTF-8" do
+        value = "\xFF".dup.force_encoding(Encoding::ASCII_8BIT)
+        expect { backend.each_error({ "type" => "string" }, value) }
+          .to raise_error(EncodingError, /String is not valid UTF-8/)
+      end
+    end
   end
 end
 
@@ -2247,11 +2269,13 @@ RSpec.describe "Native instance validation" do
     expect(JSONSchema.valid?(schema, instance)).to be false
   end
 
-  it "validates symbol-keyed instances" do
-    schema = { "type" => "object", "properties" => { "name" => { "type" => "string" } }, "required" => ["name"] }
-    expect(JSONSchema.valid?(schema, { name: "Alice" })).to be true
-    expect(JSONSchema.valid?(schema, { name: 42 })).to be false
-    expect(JSONSchema.valid?(schema, {})).to be false
+  BACKENDS.each do |backend_name, backend|
+    it "validates symbol-keyed instances with the #{backend_name} backend" do
+      schema = { "type" => "object", "properties" => { "name" => { "type" => "string" } }, "required" => ["name"] }
+      expect(backend.valid?(schema, { name: "Alice" })).to be true
+      expect(backend.valid?(schema, { name: 42 })).to be false
+      expect(backend.valid?(schema, {})).to be false
+    end
   end
 end
 

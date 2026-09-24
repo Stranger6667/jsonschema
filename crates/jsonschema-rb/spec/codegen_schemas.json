@@ -1,0 +1,12 @@
+{
+  "keywords": {},
+  "schemas": [
+    {"type": "integer", "minimum": 0},
+    {"type": "number", "minimum": 0},
+    {"type": "object", "properties": {"price": {"type": "number", "minimum": 0}}, "required": ["price"]},
+    {"type": "number"},
+    {"type": "string"},
+    {"type": "object"},
+    {"type": "object", "properties": {"name": {"type": "string"}}, "required": ["name"]}
+  ]
+}
