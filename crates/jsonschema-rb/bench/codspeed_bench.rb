@@ -15,11 +15,21 @@ CASES = {
 }.freeze
 
 name = ARGV.fetch(0)
+mode = ARGV.fetch(1, "valid")
 schema_file, instance_file = CASES.fetch(name)
 
 schema = JSON.parse(File.read(File.join(DATA, schema_file)))
-instance = JSON.parse(File.read(File.join(DATA, instance_file)))
-validator = JSONSchema.validator_for(schema)
-
 iterations = Integer(ENV.fetch("CODSPEED_ITERS", "20"))
-iterations.times { validator.valid?(instance) }
+
+case mode
+when "valid"
+  instance = JSON.parse(File.read(File.join(DATA, instance_file)))
+  validator = JSONSchema.validator_for(schema)
+  iterations.times { validator.valid?(instance) }
+when "meta-valid"
+  iterations.times { JSONSchema::Meta.valid?(schema) }
+when "meta-validate"
+  iterations.times { JSONSchema::Meta.validate!(schema) }
+else
+  raise ArgumentError, "unknown mode: #{mode}"
+end
