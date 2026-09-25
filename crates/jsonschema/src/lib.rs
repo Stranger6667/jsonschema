@@ -1096,6 +1096,20 @@ pub(crate) use jsonschema_value::{
 /// `serde_json::Value`; only instances use the custom representation. [`SerdeJson`] is the
 /// built-in representation behind [`validator_for`] and the crate-level convenience functions.
 ///
+/// Enable the `jsonb` feature for `json::Jsonb`, which reads a Postgres `jsonb` value in
+/// place. It takes the container bytes without the varlena header, so detoast first:
+///
+/// ```rust,ignore
+/// let detoasted = unsafe { pgrx::pg_sys::pg_detoast_datum_packed(datum.cast_mut_ptr()) };
+/// let bytes = unsafe { pgrx::varlena_to_byte_slice(detoasted) };
+/// validator.is_valid(Jsonb::root(bytes))
+/// ```
+///
+/// The slice lives until the memory context resets. The bytes are in the server's native byte
+/// order, and keys and strings are read as UTF-8. An error's instance is built on first access;
+/// past 128 levels of nesting it holds `null` there and
+/// `json::jsonb::take_pending_error` returns the error.
+///
 /// The accessors are infallible, so the representation must be total over JSON: reject nodes
 /// with no JSON meaning (tags, foreign objects) before validation, or track them on a side
 /// channel of the representation.
@@ -1313,6 +1327,8 @@ pub mod json {
     pub use jsonschema_value::{
         cmp, unique, Array, Json, JsonNumber, Node, NodeIdentity, Object, SerdeJson,
     };
+    #[cfg(feature = "jsonb")]
+    pub use jsonschema_value::{jsonb, Jsonb, JsonbNode};
     #[cfg(feature = "magnus")]
     pub use jsonschema_value::{
         magnus_child, magnus_invalidate_members_cache, magnus_is_object, magnus_object_values,
