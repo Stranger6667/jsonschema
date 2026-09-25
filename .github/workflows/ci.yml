@@ -150,6 +150,43 @@ jobs:
         # costs more than the whole rest of the suite, and they cover no endianness-specific code.
         run: cross test --target ${{ matrix.target }} --tests --no-fail-fast --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest -p jsonschema
 
+      - name: Test jsonb on ${{ matrix.target }}
+        env:
+          CROSS_CONTAINER_OPTS: >-
+            --env XDG_CACHE_HOME=/tmp/.cache
+            --env XDG_DATA_HOME=/tmp/.local/share
+        # Reads `jsonb-corpus-be.tsv`, captured from a PostgreSQL server on this architecture.
+        run: cross test --target ${{ matrix.target }} --tests --no-fail-fast --features jsonb-testkit,conformance -p jsonschema-value
+
+  test-jsonb-postgres:
+    name: jsonb against PostgreSQL
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_HOST_AUTH_METHOD: trust
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 2s
+          --health-timeout 5s
+          --health-retries 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        with:
+          save-if: ${{ github.ref == 'refs/heads/master' }}
+
+      - run: cargo test --no-fail-fast -p jsonschema-value --features jsonb-testkit --test jsonb_live -- --ignored
+        env:
+          JSONB_LIVE_PG_URL: postgres://postgres@localhost:5432/postgres
+
   test-wasm:
     strategy:
       fail-fast: false

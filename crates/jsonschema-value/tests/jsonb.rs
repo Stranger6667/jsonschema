@@ -17,9 +17,9 @@ use serde_json::{json, Value};
 use test_case::test_case;
 
 use jsonschema_value::jsonb::encode::{
-    assemble, encode, encode_array_of, encode_nested_arrays, encode_numeric_text_array,
-    encode_numeric_text_object, encode_numeric_text_scalar, encode_raw_key_object, NumericForm,
-    JB_FARRAY, JB_FSCALAR, JENTRY_HAS_OFF,
+    assemble, decode_hex, encode, encode_array_of, encode_nested_arrays, encode_numeric_text_array,
+    encode_numeric_text_object, encode_numeric_text_scalar, encode_raw_key_object, strip_varlena,
+    to_hex, NumericForm, JB_FARRAY, JB_FSCALAR, JENTRY_HAS_OFF,
 };
 
 #[test_case(json!({"a": 1}), JsonType::Object; "object root")]
@@ -39,6 +39,98 @@ fn scalar_root_entry_carries_has_off() {
     let encoded = encode(&json!(1));
     let entry = u32::from_ne_bytes(encoded[4..8].try_into().expect("4 bytes"));
     assert_eq!(entry & JENTRY_HAS_OFF, JENTRY_HAS_OFF);
+}
+
+// Fixtures captured from a real PostgreSQL server; see tools/gen-jsonb-fixtures.sh. `jsonb` stores
+// its integer fields in native byte order, so each byte order needs its own capture.
+const CORPUS_LITTLE: &str = include_str!("fixtures/jsonb-corpus.tsv");
+const CORPUS_BIG: &str = include_str!("fixtures/jsonb-corpus-be.tsv");
+
+#[cfg(target_endian = "little")]
+const CORPUS: &str = CORPUS_LITTLE;
+#[cfg(target_endian = "big")]
+const CORPUS: &str = CORPUS_BIG;
+
+const READER_ONLY_MARKER: &str = "# reader-only below this line";
+
+fn parse_corpus_line(line: &str) -> Option<(&str, &str, Vec<u8>)> {
+    if line.starts_with('#') || line.is_empty() {
+        return None;
+    }
+    let mut columns = line.split('\t');
+    let input = columns.next().expect("input column");
+    let text = columns.next().expect("text column");
+    let hex = columns.next().expect("hex column");
+    Some((input, text, decode_hex(hex)))
+}
+
+/// `(input, postgres_text, stored_bytes)` for every fixture our encoder must reproduce exactly.
+fn strict_corpus() -> Vec<(&'static str, &'static str, Vec<u8>)> {
+    let mut rows = Vec::new();
+    for line in CORPUS.lines() {
+        if line.starts_with(READER_ONLY_MARKER) {
+            break;
+        }
+        if let Some(row) = parse_corpus_line(line) {
+            rows.push(row);
+        }
+    }
+    rows
+}
+
+// Catches a capture regenerated for only one byte order, or taken on the wrong architecture.
+#[test]
+fn captures_mirror_each_other() {
+    let little: Vec<_> = CORPUS_LITTLE
+        .lines()
+        .filter_map(parse_corpus_line)
+        .collect();
+    let big: Vec<_> = CORPUS_BIG.lines().filter_map(parse_corpus_line).collect();
+    assert_eq!(
+        little.len(),
+        big.len(),
+        "captures cover a different row count"
+    );
+    // Per row the bytes may legitimately match - a container whose every word is symmetric
+    // reads the same either way - so the byte order shows up across the corpus, not row by row.
+    let mut differing_bytes = false;
+    for (left, right) in little.iter().zip(&big) {
+        assert_eq!(left.0, right.0, "captures cover different inputs");
+        differing_bytes |= left.2 != right.2;
+        assert_eq!(left.1, right.1, "postgres renders {} differently", left.0);
+    }
+    assert!(
+        differing_bytes,
+        "the two captures are byte-identical, so one of them is not from the other byte order"
+    );
+}
+
+#[test]
+fn corpus_is_populated() {
+    let rows = strict_corpus();
+    assert!(
+        rows.len() >= 30,
+        "corpus has {} strict rows, expected at least 30",
+        rows.len()
+    );
+}
+
+// The encoder feeds the rest of the suite: if it drifts, every other test agrees with a wrong
+// reader.
+#[test]
+fn encoder_reproduces_postgres_bytes() {
+    for (input, text, stored) in strict_corpus() {
+        let value: Value = serde_json::from_str(text).expect("postgres text parses");
+        let ours = encode(&value);
+        let theirs = strip_varlena(&stored);
+        assert_eq!(
+            ours,
+            theirs,
+            "encoder diverges from postgres for {input}\n  ours:   {}\n  theirs: {}",
+            to_hex(&ours),
+            to_hex(theirs),
+        );
+    }
 }
 
 #[test_case("0", Some(0), Some(0), 0.0, true; "zero")]
@@ -618,6 +710,57 @@ fn check_lookups(node: &JsonbNode<'_>) {
         for element in array.elements() {
             check_lookups(&element);
         }
+    }
+}
+
+/// `(input, postgres_text, stored_bytes)` for every fixture, both sides of the reader-only marker.
+fn reader_corpus() -> Vec<(&'static str, &'static str, Vec<u8>)> {
+    CORPUS.lines().filter_map(parse_corpus_line).collect()
+}
+
+// Against bytes Postgres produced, rather than bytes our own encoder produced.
+#[test]
+fn reader_decodes_postgres_bytes() {
+    for (input, text, stored) in reader_corpus() {
+        let expected: Value = serde_json::from_str(text).expect("postgres text parses");
+        let container = strip_varlena(&stored);
+        let actual = Jsonb::root(container).to_value();
+        assert_eq!(
+            actual.as_ref(),
+            &expected,
+            "reader diverges from postgres for input {input}"
+        );
+    }
+}
+
+// The reader-only rows hold numbers past f64, where `as_str` still carries every digit.
+#[test]
+fn reader_reads_wide_numbers() {
+    let strict_count = strict_corpus().len();
+    let rows = reader_corpus();
+    let reader_only = &rows[strict_count..];
+    assert_eq!(
+        reader_only.len(),
+        5,
+        "reader-only rows moved; update this test alongside the marker"
+    );
+    for (input, text, stored) in reader_only {
+        let container = strip_varlena(stored);
+        let root = Jsonb::root(container);
+        let (number, expected) = if let Some(number) = root.as_number() {
+            (number, (*text).to_string())
+        } else {
+            let object = root.as_object().expect("object");
+            assert_eq!(object.len(), 1, "single-member object");
+            let (name, member) = object.members().next().expect("one member");
+            let expected = text
+                .strip_prefix(&format!("{{\"{name}\": "))
+                .and_then(|rest| rest.strip_suffix('}'))
+                .unwrap_or_else(|| panic!("unexpected rendering for {input}: {text}"))
+                .to_string();
+            (member.as_number().expect("number"), expected)
+        };
+        assert_eq!(number.as_str(), expected, "digits for {input}");
     }
 }
 
