@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-09-25
+
 ### Performance
 
 - `oneOf` and `anyOf` whose branches each require a property fixed to a distinct string validate only the branch matching the instance's value.
@@ -587,7 +589,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.57.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.0...HEAD
+[0.58.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.57.0...ruby-v0.58.0
 [0.57.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.56.0...ruby-v0.57.0
 [0.56.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.55.1...ruby-v0.56.0
 [0.55.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.55.0...ruby-v0.55.1
