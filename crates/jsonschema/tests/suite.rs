@@ -1,7 +1,11 @@
 #![allow(clippy::large_stack_arrays, clippy::needless_pass_by_value)]
 
 mod tests {
+    #[cfg(feature = "jsonb")]
+    use jsonschema::json::Jsonb;
     use jsonschema::{canonical::CanonicalKind, Draft, PatternOptions, Registry};
+    #[cfg(feature = "jsonb")]
+    use jsonschema_value::jsonb::encode::encode;
     #[cfg(not(target_arch = "wasm32"))]
     use std::env;
     #[cfg(not(target_arch = "wasm32"))]
@@ -69,6 +73,35 @@ mod tests {
             .with_registry(&registry);
         if test.is_optional {
             options = options.should_validate_formats(true);
+        }
+
+        #[cfg(feature = "jsonb")]
+        {
+            let mut options = jsonschema::options_for::<Jsonb>()
+                .with_draft(draft)
+                .with_registry(&registry);
+            if test.is_optional {
+                options = options.should_validate_formats(true);
+            }
+            let validator = options
+                .build(&test.schema)
+                .expect("Failed to build a schema");
+            let encoded = encode(&test.data);
+            let instance = Jsonb::root(&encoded);
+            for (method, valid) in [
+                ("is_valid", validator.is_valid(instance)),
+                ("validate", validator.validate(instance).is_ok()),
+            ] {
+                assert_eq!(
+                    valid,
+                    test.valid,
+                    "`{method}` over jsonb:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+            }
         }
 
         for engine in [RegexEngine::FancyRegex, RegexEngine::Regex] {
