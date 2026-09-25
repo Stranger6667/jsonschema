@@ -16,6 +16,8 @@ use super::{
 };
 pub const JB_FSCALAR: u32 = super::JB_FSCALAR;
 pub const JENTRY_HAS_OFF: u32 = super::JENTRY_HAS_OFF;
+use std::fmt::Write as _;
+
 use serde_json::Value;
 
 pub const JB_FARRAY: u32 = 0x4000_0000;
@@ -29,6 +31,44 @@ pub enum NumericForm {
     Long,
     // A 1-byte varlena header, not the short numeric header.
     ShortVarlena,
+}
+
+/// The stored varlena without its header: a `JsonbContainer`.
+///
+/// The header is 1 byte or 4, flagged in the low bit (high bit on big-endian).
+pub fn strip_varlena(bytes: &[u8]) -> &[u8] {
+    let word = || u32::from_ne_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
+    #[cfg(target_endian = "big")]
+    let (header, size) = if bytes[0] & 0x80 == 0x80 {
+        (1, usize::from(bytes[0] & 0x7F))
+    } else {
+        // The top two bits flag the header form, as `VARSIZE_4B` masks off.
+        (4, (word() & 0x3FFF_FFFF) as usize)
+    };
+    #[cfg(target_endian = "little")]
+    let (header, size) = if bytes[0] & 0x01 == 0x01 {
+        (1, usize::from(bytes[0] >> 1) & 0x7F)
+    } else {
+        (4, (word() >> 2) as usize)
+    };
+    &bytes[header..size]
+}
+
+/// Bytes from the hex `psql` prints for a `bytea`.
+pub fn decode_hex(text: &str) -> Vec<u8> {
+    (0..text.len())
+        .step_by(2)
+        .map(|at| u8::from_str_radix(&text[at..at + 2], 16).expect("hex"))
+        .collect()
+}
+
+pub fn to_hex(bytes: &[u8]) -> String {
+    bytes
+        .iter()
+        .fold(String::with_capacity(bytes.len() * 2), |mut out, byte| {
+            write!(out, "{byte:02x}").expect("write to String never fails");
+            out
+        })
 }
 
 pub fn encode(value: &Value) -> Vec<u8> {
