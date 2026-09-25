@@ -33,6 +33,10 @@ jobs:
             # they actually run.
             features: "--features macros,arbitrary-precision"
             benches: "--bench canonicalize --bench canonicalize_many"
+          - name: jsonb
+            package: jsonschema
+            features: "--features jsonb"
+            benches: "--bench jsonb"
           - name: codegen-generate
             package: jsonschema-macros-core
             features: "--features bench"
