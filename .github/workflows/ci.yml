@@ -114,7 +114,7 @@ jobs:
       - run: cargo test --no-fail-fast -p jsonschema-value --features "conformance,macros,jsonb-testkit"
 
       # Every other job enabling `jsonb` also enables `arbitrary-precision`.
-      - run: cargo test --no-fail-fast -p jsonschema --features jsonb --test jsonb
+      - run: cargo test --no-fail-fast -p jsonschema --features jsonb,macros --test jsonb --test suite
 
   test-cross:
     strategy:
