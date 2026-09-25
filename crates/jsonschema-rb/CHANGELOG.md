@@ -4,6 +4,7 @@
 
 ### Performance
 
+- `oneOf` and `anyOf` whose branches each require a property fixed to a distinct string validate only the branch matching the instance's value.
 - `Meta.valid?` and `Meta.validate!` check a schema against the bundled drafts without converting it first, 2 to 5x faster on the benchmarked schemas.
 
 ### Fixed

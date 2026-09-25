@@ -5,7 +5,10 @@ use crate::{
     compiler,
     error::ValidationError,
     evaluation::{ChildList, ErrorDescription},
-    keywords::CompilationResult,
+    keywords::{
+        discriminator::{Candidates, Discriminator, Dispatch, NoDispatch},
+        CompilationResult,
+    },
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
@@ -14,8 +17,9 @@ use crate::{
 };
 use serde_json::{Map, Value};
 
-pub(crate) struct OneOfValidator<F: Json> {
+pub(crate) struct OneOfValidator<F: Json, D = NoDispatch> {
     schemas: Vec<SchemaNode<F>>,
+    dispatch: D,
     location: Location,
 }
 
@@ -33,10 +37,19 @@ impl OneOfValidator<SerdeJson> {
                 let node = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
                 schemas.push(node);
             }
-            Ok(Box::new(OneOfValidator {
-                schemas,
-                location: ctx.location().clone(),
-            }))
+            let location = ctx.location().clone();
+            Ok(match Discriminator::compile(&ctx, items) {
+                Some(dispatch) => Box::new(OneOfValidator {
+                    schemas,
+                    dispatch,
+                    location,
+                }),
+                None => Box::new(OneOfValidator {
+                    schemas,
+                    dispatch: NoDispatch,
+                    location,
+                }),
+            })
         } else {
             let location = ctx.location().join("oneOf");
             Err(ValidationError::single_type_error(
@@ -50,12 +63,24 @@ impl OneOfValidator<SerdeJson> {
     }
 }
 
-impl<F: Json> OneOfValidator<F> {
+impl<F: Json, D: Dispatch<F>> OneOfValidator<F, D> {
+    #[inline]
+    fn candidates(&self, instance: &F::Node<'_>) -> Candidates {
+        self.dispatch.candidates(instance)
+    }
+
     fn get_first_valid(
         &self,
         instance: &F::Node<'_>,
         ctx: &mut ValidationContext,
     ) -> Option<usize> {
+        match self.candidates(instance) {
+            Candidates::All => {}
+            Candidates::One(idx) => {
+                return self.schemas[idx].is_valid(instance, ctx).then_some(idx)
+            }
+            Candidates::None => return None,
+        }
         let mut first_valid_idx = None;
         for (idx, node) in self.schemas.iter().enumerate() {
             if node.is_valid(instance, ctx) {
@@ -73,6 +98,10 @@ impl<F: Json> OneOfValidator<F> {
         idx: usize,
         ctx: &mut ValidationContext,
     ) -> bool {
+        // Past a single candidate, no other branch can accept the instance.
+        if !matches!(self.candidates(instance), Candidates::All) {
+            return false;
+        }
         self.schemas
             .iter()
             .skip(idx + 1)
@@ -158,7 +187,7 @@ impl<F: Json> Validate<F> for SingleOneOfValidator<F> {
     }
 }
 
-impl<F: Json> Validate<F> for OneOfValidator<F> {
+impl<F: Json, D: Dispatch<F>> Validate<F> for OneOfValidator<F, D> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let first_valid_idx = self.get_first_valid(instance, ctx);
         first_valid_idx.is_some_and(|idx| !self.are_others_valid(instance, idx, ctx))
