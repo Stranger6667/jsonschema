@@ -277,6 +277,9 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn draft(&self) -> Draft {
         self.draft
     }
+    pub(crate) fn resolver(&self) -> &Resolver<'a> {
+        &self.resolver
+    }
     pub(crate) fn config(&self) -> &dyn CompilationOptions<F> {
         self.config
     }

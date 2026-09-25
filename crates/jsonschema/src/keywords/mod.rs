@@ -8,6 +8,7 @@ pub(crate) mod contains;
 pub(crate) mod content;
 pub(crate) mod custom;
 pub(crate) mod dependencies;
+pub(crate) mod discriminator;
 pub(crate) mod enum_;
 pub(crate) mod format;
 pub(crate) mod helpers;

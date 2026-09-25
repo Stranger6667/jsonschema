@@ -5,6 +5,7 @@ use crate::{
     compiler,
     error::ValidationError,
     evaluation::ChildList,
+    keywords::discriminator::{Candidates, Discriminator, Dispatch, NoDispatch},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
@@ -15,8 +16,9 @@ use serde_json::{Map, Value};
 
 use super::CompilationResult;
 
-pub(crate) struct AnyOfValidator<F: Json> {
+pub(crate) struct AnyOfValidator<F: Json, D = NoDispatch> {
     schemas: Vec<SchemaNode<F>>,
+    dispatch: D,
     location: Location,
 }
 
@@ -34,10 +36,19 @@ impl AnyOfValidator<SerdeJson> {
                 let node = compiler::compile(&ctx, ctx.as_resource_ref(item))?;
                 schemas.push(node);
             }
-            Ok(Box::new(AnyOfValidator {
-                schemas,
-                location: ctx.location().clone(),
-            }))
+            let location = ctx.location().clone();
+            Ok(match Discriminator::compile(&ctx, items) {
+                Some(dispatch) => Box::new(AnyOfValidator {
+                    schemas,
+                    dispatch,
+                    location,
+                }),
+                None => Box::new(AnyOfValidator {
+                    schemas,
+                    dispatch: NoDispatch,
+                    location,
+                }),
+            })
         } else {
             let location = ctx.location().join("anyOf");
             Err(ValidationError::single_type_error(
@@ -51,9 +62,13 @@ impl AnyOfValidator<SerdeJson> {
     }
 }
 
-impl<F: Json> Validate<F> for AnyOfValidator<F> {
+impl<F: Json, D: Dispatch<F>> Validate<F> for AnyOfValidator<F, D> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
-        self.schemas.iter().any(|s| s.is_valid(instance, ctx))
+        match self.dispatch.candidates(instance) {
+            Candidates::All => self.schemas.iter().any(|s| s.is_valid(instance, ctx)),
+            Candidates::One(idx) => self.schemas[idx].is_valid(instance, ctx),
+            Candidates::None => false,
+        }
     }
 
     fn validate<'i>(

@@ -13,6 +13,7 @@
 
 ### Performance
 
+- `oneOf` and `anyOf` whose branches each require a property fixed to a distinct string validate only the branch matching the instance's value.
 - Generated `validate` checks `required` in the same pass over an object as `properties`, instead of looking up each required name.
 
 ### Fixed
