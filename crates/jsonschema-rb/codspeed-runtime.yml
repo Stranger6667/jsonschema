@@ -1,0 +1,25 @@
+benchmarks:
+  - name: "ruby-openapi"
+    exec: bundle exec ruby bench/codspeed_bench.rb openapi
+  - name: "ruby-swagger"
+    exec: bundle exec ruby bench/codspeed_bench.rb swagger
+  - name: "ruby-geojson"
+    exec: bundle exec ruby bench/codspeed_bench.rb geojson
+  - name: "ruby-citm"
+    exec: bundle exec ruby bench/codspeed_bench.rb citm
+  - name: "ruby-fhir"
+    exec: bundle exec ruby bench/codspeed_bench.rb fhir
+  - name: "ruby-recursive"
+    exec: bundle exec ruby bench/codspeed_bench.rb recursive
+  - name: "ruby-validate-openapi"
+    exec: bundle exec ruby bench/codspeed_bench.rb openapi validate
+  - name: "ruby-validate-swagger"
+    exec: bundle exec ruby bench/codspeed_bench.rb swagger validate
+  - name: "ruby-validate-geojson"
+    exec: bundle exec ruby bench/codspeed_bench.rb geojson validate
+  - name: "ruby-validate-citm"
+    exec: bundle exec ruby bench/codspeed_bench.rb citm validate
+  - name: "ruby-validate-fhir"
+    exec: bundle exec ruby bench/codspeed_bench.rb fhir validate
+  - name: "ruby-validate-recursive"
+    exec: bundle exec ruby bench/codspeed_bench.rb recursive validate
