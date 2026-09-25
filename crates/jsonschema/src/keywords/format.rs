@@ -17,7 +17,7 @@ use crate::{
     compiler,
     error::ValidationError,
     evaluation::Annotations,
-    keywords::CompilationResult,
+    keywords::{rfc3986, CompilationResult},
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -1072,12 +1072,13 @@ pub fn is_valid_iri_reference(iri_reference: &str) -> bool {
 
 #[must_use]
 pub fn is_valid_uri(uri: &str) -> bool {
-    referencing::Uri::parse(uri).is_ok()
+    rfc3986::check(uri, true).unwrap_or_else(|| referencing::Uri::parse(uri).is_ok())
 }
 
 #[must_use]
 pub fn is_valid_uri_reference(uri_reference: &str) -> bool {
-    referencing::UriRef::parse(uri_reference).is_ok()
+    rfc3986::check(uri_reference, false)
+        .unwrap_or_else(|| referencing::UriRef::parse(uri_reference).is_ok())
 }
 
 #[must_use]
@@ -1778,6 +1779,61 @@ mod tests {
     use crate::{tests_util, EmailOptions};
 
     use super::*;
+
+    // The full `fluent_uri` parse is the oracle for the byte-level recognizer.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn agrees_with_fluent_uri(text: &str) {
+        assert_eq!(
+            is_valid_uri_reference(text),
+            referencing::UriRef::parse(text).is_ok(),
+            "uri-reference: {text:?}"
+        );
+        assert_eq!(
+            is_valid_uri(text),
+            referencing::Uri::parse(text).is_ok(),
+            "uri: {text:?}"
+        );
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[hegel::test(test_cases = 20_000)]
+    fn uri_syntax_agrees_with_fluent_uri_on_any_text(tc: hegel::TestCase) {
+        let text: String = tc.draw(
+            hegel::generators::text()
+                .alphabet("aZ09:/?#[]@!$&'()*+,;=%-._~ Fé")
+                .max_size(24),
+        );
+        agrees_with_fluent_uri(&text);
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[hegel::test(test_cases = 20_000)]
+    fn uri_syntax_agrees_with_fluent_uri_on_uri_shapes(tc: hegel::TestCase) {
+        let gs = hegel::generators::sampled_from;
+        let parts = [
+            tc.draw(gs(vec!["", "http:", "a+b-c.d:", "1a:", "a_b:", ":", "A:"])),
+            tc.draw(gs(vec!["", "//", "///", "/", "./", "../", ":"])),
+            tc.draw(gs(vec!["", "user@", "u:p@", "@", "a@b@", "%41@", "%4@"])),
+            tc.draw(gs(vec![
+                "",
+                "host",
+                "127.0.0.1",
+                "[::1]",
+                "[v1.x]",
+                "h%2F",
+                "h%zz",
+                "a:b",
+                "é",
+            ])),
+            tc.draw(gs(vec!["", ":", ":80", ":8a", ":65536", "::"])),
+            tc.draw(gs(vec![
+                "", "/", "/a/b", "a:b/c", "/a:b", "//x", "/%20", "/%", "/a b", "/[x]",
+            ])),
+            tc.draw(gs(vec!["", "?", "?q=1&r", "?a?b/c", "?%zz", "?#"])),
+            tc.draw(gs(vec!["", "#", "#f", "#a/b?c", "#a#b", "#%41"])),
+        ];
+        agrees_with_fluent_uri(&parts.concat());
+    }
 
     #[test_case(b"00" => Some(0);  "min")]
     #[test_case(b"09" => Some(9);  "nine")]

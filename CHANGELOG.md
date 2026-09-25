@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `uri` and `uri-reference` formats check the syntax directly instead of parsing each value into a URI.
+
 ## [0.58.0] - 2026-09-25
 
 ### Added
