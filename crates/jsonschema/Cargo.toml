@@ -38,6 +38,8 @@ macros = ["dep:jsonschema-macros", "jsonschema-macros/float-roundtrip", "jsonsch
 magnus = ["jsonschema-value/magnus", "dep:magnus"]
 # The `json::Pyo3` instance representation used by the Python bindings.
 pyo3 = ["jsonschema-value/pyo3", "dep:pyo3"]
+# The `json::Jsonb` instance representation for Postgres `jsonb` values.
+jsonb = ["jsonschema-value/jsonb"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Use rustls-no-provider to allow manual selection of crypto backend
@@ -98,6 +100,7 @@ wasm-bindgen-test = "0.3.55"
 
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 benchmark = { path = "../benchmark/" }
+jsonschema-value = { path = "../jsonschema-value", features = ["jsonb-testkit"] }
 hegeltest = { version = "0.46", features = ["serde_json"] }
 codspeed-criterion-compat = { version = "5.0", default-features = false }
 criterion = { version = "0.8", default-features = false }

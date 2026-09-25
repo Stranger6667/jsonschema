@@ -9,6 +9,7 @@
 - `jsonschema::meta::pyo3`, the bundled meta-schema validators for a schema held as a Python object.
 - `jsonschema::meta::magnus`, the bundled meta-schema validators for a schema held as a Ruby object.
 - `methods = { ... }` on `#[jsonschema::validator]`, selecting which of `is_valid`, `validate`, and `iter_errors` are generated.
+- `json::Jsonb`, validating a Postgres `jsonb` value in place, behind the `jsonb` feature.
 
 ### Performance
 
