@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-09-25
+
 ### Added
 
 - `backend = Pyo3` on `#[jsonschema::validator]`, generating a validator that reads Python objects in place.
@@ -1866,7 +1868,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.57.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.0...HEAD
+[0.58.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.57.0...rust-v0.58.0
 [0.57.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.56.0...rust-v0.57.0
 [0.56.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.55.1...rust-v0.56.0
 [0.55.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.55.0...rust-v0.55.1
