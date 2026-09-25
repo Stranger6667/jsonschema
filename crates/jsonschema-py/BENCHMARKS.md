@@ -54,7 +54,7 @@ Sources:
 | CITM Catalog  | 4.54 ms (**x11.54**) | 77.97 ms (**x198.25**) | 393.28 µs | 201.68 µs |
 | Fast (Valid)  | 2.02 µs (**x11.25**) | 33.16 µs (**x184.27**) | 179.96 ns | 130.00 ns |
 | Fast (Invalid) | 901.00 ns (**x0.87**) | 5.05 µs (**x4.90**) | 1.03 µs | 500.00 ns |
-| FHIR          | 2.02 ms (**x501.14**) | 11.85 ms (**x2,936.00**) | 4.04 µs | 601.00 ns |
+| FHIR          | 2.02 ms (**x1,848.12**) | 11.85 ms (**x10,841.72**) | 1.09 µs | 601.00 ns |
 | Recursive     | 1.03 ms (**x122.73**) | 1.20 s (**x142,801**) | 8.42 µs | 1.77 µs |
 
 The codegen column is a validator compiled into an extension module at build time; see
@@ -74,7 +74,7 @@ time, which is the trade for the numbers below.
 | CITM Catalog  | 382.88 µs | 188.89 µs (**x2.03**) | 393.28 µs | 201.68 µs (**x1.95**) |
 | Fast (Valid)  | 220.00 ns | 130.00 ns (**x1.69**) | 179.96 ns | 130.00 ns (**x1.38**) |
 | Fast (Invalid) | 229.99 ns | 142.06 ns (**x1.62**) | 1.03 µs | 500.00 ns (**x2.06**) |
-| FHIR          | 4.03 µs | 611.00 ns (**x6.59**) | 4.04 µs | 601.00 ns (**x6.72**) |
+| FHIR          | 1.10 µs | 611.00 ns (**x1.79**) | 1.09 µs | 601.00 ns (**x1.82**) |
 | Recursive     | 8.23 µs | 1.77 µs (**x4.64**) | 8.42 µs | 1.77 µs (**x4.75**) |
 
 Compiled validators also skip schema preparation, where `validator_for` takes from 11.19 µs (Fast)

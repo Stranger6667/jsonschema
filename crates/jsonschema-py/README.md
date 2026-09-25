@@ -828,8 +828,8 @@ On instance["password"]:
 
 `jsonschema-rs` is designed for high performance, outperforming other Python JSON Schema validators in most scenarios:
 
-- **138-2,841x** faster than `jsonschema` for complex schemas and large instances
-- **8-470x** faster than `fastjsonschema` on CPython
+- **138-10,841x** faster than `jsonschema` for complex schemas and large instances
+- **8-1,848x** faster than `fastjsonschema` on CPython
 
 For detailed benchmarks, see our [full performance comparison](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/BENCHMARKS.md).
 
@@ -838,7 +838,7 @@ For detailed benchmarks, see our [full performance comparison](https://github.co
 If you ship your own extension module and know the schema at build time, the Rust crate's
 `#[jsonschema::validator(..., backend = Pyo3)]` macro compiles it into a validator that reads
 Python objects directly, so nothing is parsed or compiled when your module is imported, and validation
-runs up to 6.7x faster than with a validator built at run time. See the
+runs up to 4.8x faster than with a validator built at run time. See the
 [macro documentation](https://docs.rs/jsonschema/latest/jsonschema/#python-extension-modules).
 
 This is not available from the `jsonschema-rs` package on PyPI, which takes its schemas at run time.

@@ -63,7 +63,7 @@ Not all libraries support the same compile-once, validate-many pattern, which af
 | CITM Catalog     | - (1)                          | 18.88 ms (**x26.24**)          | 71.64 ms (**x99.56**)          | 719.57 µs     | 532.89 µs               |
 | Fast (Valid)     | - (1)                          | 71.93 µs (**x266.93**)         | 29.75 µs (**x110.40**)         | 269.46 ns     | 192.78 ns               |
 | Fast (Invalid)   | - (1)                          | - (3)                          | 32.21 µs (**x528.54**)         | 60.94 ns      | 52.42 ns                |
-| FHIR             | 490.38 ms (**x71155.02**)      | 2.22 s (**x321740.57**)        | 9.70 ms (**x1406.82**)         | 6.89 µs       | 1.16 µs                 |
+| FHIR             | 490.38 ms (**x360573.53**)     | 2.22 s (**x1632352.94**)       | 9.70 ms (**x7132.35**)         | 1.36 µs       | 1.16 µs                 |
 | Recursive        | - (1)                          | 3.19 ms (**x245.27**)          | 20.90 s (**x1607720.80**)      | 13.00 µs      | 3.83 µs                 |
 
 Notes:
@@ -93,7 +93,7 @@ time, which is the trade for the numbers below.
 | CITM Catalog     | 719.57 µs | 532.89 µs (**x1.35**) | 729.61 µs | 530.64 µs (**x1.37**) |
 | Fast (Valid)     | 269.46 ns | 192.78 ns (**x1.40**) | 334.99 ns | 208.59 ns (**x1.61**) |
 | Fast (Invalid)   | 60.94 ns | 52.42 ns (**x1.16**) | 1.98 µs | 734.63 ns (**x2.70**) |
-| FHIR             | 6.89 µs | 1.16 µs (**x5.94**) | 6.85 µs | 1.16 µs (**x5.91**) |
+| FHIR             | 1.36 µs | 1.16 µs (**x1.17**) | 1.41 µs | 1.16 µs (**x1.22**) |
 | Recursive        | 13.00 µs | 3.83 µs (**x3.39**) | 13.22 µs | 3.79 µs (**x3.49**) |
 
 You can find benchmark code in [bench/](bench/), Ruby version `4.0.1`, Rust version `1.98.0`.
