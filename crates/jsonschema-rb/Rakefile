@@ -35,7 +35,7 @@ if ENV["JSONSCHEMA_RB_CODEGEN_SUITE"]
 end
 
 # `backend = Magnus` validators for the benchmark schemas, loaded by the benchmarks only.
-if ENV["JSONSCHEMA_RB_CODEGEN_BENCH"]
+if ENV["JSONSCHEMA_RB_CODEGEN_BENCH"] == "1"
   RbSys::ExtensionTask.new("jsonschema-bench-magnus") do |ext|
     ext.lib_dir = "bench/support"
   end

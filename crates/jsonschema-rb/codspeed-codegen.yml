@@ -1,0 +1,25 @@
+benchmarks:
+  - name: "ruby-codegen-valid-openapi"
+    exec: bundle exec ruby bench/codspeed_bench.rb openapi codegen-valid
+  - name: "ruby-codegen-valid-swagger"
+    exec: bundle exec ruby bench/codspeed_bench.rb swagger codegen-valid
+  - name: "ruby-codegen-valid-geojson"
+    exec: bundle exec ruby bench/codspeed_bench.rb geojson codegen-valid
+  - name: "ruby-codegen-valid-citm"
+    exec: bundle exec ruby bench/codspeed_bench.rb citm codegen-valid
+  - name: "ruby-codegen-valid-fhir"
+    exec: bundle exec ruby bench/codspeed_bench.rb fhir codegen-valid
+  - name: "ruby-codegen-valid-recursive"
+    exec: bundle exec ruby bench/codspeed_bench.rb recursive codegen-valid
+  - name: "ruby-codegen-validate-openapi"
+    exec: bundle exec ruby bench/codspeed_bench.rb openapi codegen-validate
+  - name: "ruby-codegen-validate-swagger"
+    exec: bundle exec ruby bench/codspeed_bench.rb swagger codegen-validate
+  - name: "ruby-codegen-validate-geojson"
+    exec: bundle exec ruby bench/codspeed_bench.rb geojson codegen-validate
+  - name: "ruby-codegen-validate-citm"
+    exec: bundle exec ruby bench/codspeed_bench.rb citm codegen-validate
+  - name: "ruby-codegen-validate-fhir"
+    exec: bundle exec ruby bench/codspeed_bench.rb fhir codegen-validate
+  - name: "ruby-codegen-validate-recursive"
+    exec: bundle exec ruby bench/codspeed_bench.rb recursive codegen-validate

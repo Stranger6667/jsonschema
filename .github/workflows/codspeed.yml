@@ -94,7 +94,14 @@ jobs:
   ruby:
     runs-on: ubuntu-24.04
     timeout-minutes: 30
-    name: "Run benchmarks (ruby)"
+    strategy:
+      matrix:
+        include:
+          - group: runtime
+          - group: meta
+          - group: codegen
+            codegen: "1"
+    name: "Run benchmarks (ruby-${{ matrix.group }})"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -110,11 +117,11 @@ jobs:
         working-directory: crates/jsonschema-rb
         run: bundle exec rake compile
         env:
-          JSONSCHEMA_RB_CODEGEN_BENCH: "1"
+          JSONSCHEMA_RB_CODEGEN_BENCH: ${{ matrix.codegen }}
 
       - uses: CodSpeedHQ/action@373d6868929f444bc08d901fd0eb0ad52a8875ea # v5.2.1
         with:
           working-directory: crates/jsonschema-rb
-          config: crates/jsonschema-rb/codspeed.yml
+          config: crates/jsonschema-rb/codspeed-${{ matrix.group }}.yml
           mode: "simulation"
           token: ${{ secrets.CODSPEED_TOKEN }}

@@ -19,7 +19,7 @@ mode = ARGV.fetch(1, "valid")
 schema_file, instance_file = CASES.fetch(name)
 
 schema = JSON.parse(File.read(File.join(DATA, schema_file)))
-iterations = Integer(ENV.fetch("CODSPEED_ITERS", "20"))
+iterations = Integer(ENV.fetch("CODSPEED_ITERS", "10"))
 instance = -> { JSON.parse(File.read(File.join(DATA, instance_file))) }
 
 case mode
