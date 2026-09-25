@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.0] - 2026-09-25
+
 ### Performance
 
 - `oneOf` and `anyOf` whose branches each require a property fixed to a distinct string validate only the branch matching the instance's value.
@@ -1527,7 +1529,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.57.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.0...HEAD
+[0.58.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.57.1...python-v0.58.0
 [0.57.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.57.0...python-v0.57.1
 [0.57.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.56.0...python-v0.57.0
 [0.56.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.55.1...python-v0.56.0
