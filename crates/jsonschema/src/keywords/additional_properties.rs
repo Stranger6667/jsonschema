@@ -341,6 +341,9 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
     }
 }
 
+// Container members `is_valid` holds back; past this many they are validated as they come.
+const DEFERRED_MEMBERS: usize = 4;
+
 /// Fused validator for properties + additionalProperties: false + required
 /// Eliminates separate required validation pass by tracking the required property during iteration.
 pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequired1Validator<M> {
@@ -388,23 +391,32 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
 {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
-            if object.is_empty() {
-                return false;
-            }
+            // Scalars are checked as they come; containers wait until every member is known to be
+            // declared. An undeclared member then rejects before any deep validation, and a cheap
+            // discriminator (a `const` scalar) rejects early, whatever order members arrive in.
+            let mut deferred: [Option<(&SchemaNode<F>, F::Node<'_>)>; DEFERRED_MEMBERS] =
+                [const { None }; DEFERRED_MEMBERS];
+            let mut count = 0;
             let mut found_required = false;
             for (property, value) in object.members() {
-                if let Some(node) = self.properties.get_validator(property.as_ref()) {
-                    if !node.is_valid(&value, ctx) {
-                        return false;
-                    }
-                    if property.as_ref() == self.required.as_str() {
-                        found_required = true;
-                    }
-                } else {
+                let Some(node) = self.properties.get_validator(property.as_ref()) else {
+                    return false;
+                };
+                found_required |= property.as_ref() == self.required.as_str();
+                if count < DEFERRED_MEMBERS
+                    && matches!(value.json_type(), JsonType::Array | JsonType::Object)
+                {
+                    deferred[count] = Some((node, value));
+                    count += 1;
+                } else if !node.is_valid(&value, ctx) {
                     return false;
                 }
             }
             found_required
+                && deferred[..count]
+                    .iter()
+                    .flatten()
+                    .all(|(node, value)| node.is_valid(value, ctx))
         } else {
             true
         }
@@ -1864,6 +1876,39 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // `properties` + `additionalProperties: false` + one `required` name. `a`..`e` are five
+    // container members, one more than `is_valid` holds back.
+    fn fused_required_schema() -> Value {
+        json!({
+            "additionalProperties": false,
+            "required": ["id"],
+            "properties": {
+                "id": {"type": "integer"},
+                "a": {"type": "array"},
+                "b": {"type": "array"},
+                "c": {"type": "array"},
+                "d": {"type": "array"},
+                "e": {"type": "array"},
+            }
+        })
+    }
+
+    #[test_case(&json!({"a": [], "b": [], "c": [], "d": [], "e": [], "id": 1}); "five containers")]
+    #[test_case(&json!({"a": [], "id": 1}); "one container")]
+    #[test_case(&json!({"id": 1}); "only the required member")]
+    fn fused_required_valid(instance: &Value) {
+        tests_util::is_valid(&fused_required_schema(), instance);
+    }
+
+    #[test_case(&json!({"a": [], "b": [], "c": [], "d": [], "e": {}, "id": 1}); "invalid container past the held-back ones")]
+    #[test_case(&json!({"a": {}, "id": 1}); "invalid held-back container")]
+    #[test_case(&json!({"a": [], "id": "x"}); "invalid scalar")]
+    #[test_case(&json!({"a": [], "id": 1, "zzz": 1}); "undeclared member after a container")]
+    #[test_case(&json!({"a": []}); "required member missing")]
+    fn fused_required_invalid(instance: &Value) {
+        tests_util::is_not_valid(&fused_required_schema(), instance);
+    }
 
     fn schema_1() -> Value {
         // For `AdditionalPropertiesWithPatternsNotEmptyFalseValidator`
