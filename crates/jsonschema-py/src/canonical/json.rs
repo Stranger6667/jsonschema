@@ -10,8 +10,8 @@ use std::{cell::RefCell, io, mem};
 use crate::{
     ser::{
         dict_len, get_object_type, get_object_type_from_object, get_type_name, is_enum_subclass,
-        pylist_get_item, pylist_len, pytuple_get_item, pytuple_len, serialize_large_int,
-        ObjectType, RECURSION_LIMIT,
+        pylist_item, pylist_len, pytuple_get_item, pytuple_len, serialize_large_int, DictEntries,
+        Item, ObjectType, RECURSION_LIMIT,
     },
     types,
 };
@@ -270,10 +270,14 @@ struct CanonicalPyObject<'scratch> {
     scratch_pool: &'scratch RefCell<Vec<Vec<DictEntry>>>,
 }
 
+/// `key_ptr` points into the key's UTF-8 buffer; on free-threaded builds the entry keeps the key
+/// alive, since another thread may drop the dict's reference.
 struct DictEntry {
     key_ptr: *const u8,
     key_len: usize,
-    value: *mut ffi::PyObject,
+    #[cfg(Py_GIL_DISABLED)]
+    _key: Item,
+    value: Item,
 }
 
 #[derive(Default)]
@@ -469,13 +473,13 @@ impl Serialize for CanonicalPyObject<'_> {
                     tri!(serializer.serialize_map(Some(0))).end()
                 } else if length == 1 {
                     // Fast path: single key — no allocation or sorting needed
-                    let mut pos = 0_isize;
+                    let Some((key_item, value_item)) =
+                        (unsafe { DictEntries::new(self.object).next() })
+                    else {
+                        return tri!(serializer.serialize_map(Some(0))).end();
+                    };
+                    let (key, value) = (key_item.as_ptr(), value_item.as_ptr());
                     let mut str_size: ffi::Py_ssize_t = 0;
-                    let mut key: *mut ffi::PyObject = std::ptr::null_mut();
-                    let mut value: *mut ffi::PyObject = std::ptr::null_mut();
-                    unsafe {
-                        ffi::PyDict_Next(self.object, &raw mut pos, &raw mut key, &raw mut value);
-                    }
                     let object_type = unsafe { Py_TYPE(key) };
                     let (key_unicode, owned) = if object_type == unsafe { types::STR_TYPE } {
                         (key, false)
@@ -535,19 +539,13 @@ impl Serialize for CanonicalPyObject<'_> {
                     let mut scratch = DictEntryScratch::with_capacity(self.scratch_pool, length);
                     let entries = scratch.entries_mut();
                     let mut owned_key_refs = OwnedKeyRefs::default();
-                    let mut pos = 0_isize;
                     let mut str_size: ffi::Py_ssize_t = 0;
-                    let mut key: *mut ffi::PyObject = std::ptr::null_mut();
-                    let mut value: *mut ffi::PyObject = std::ptr::null_mut();
+                    let mut dict_entries = DictEntries::new(self.object);
                     for _ in 0..length {
-                        unsafe {
-                            ffi::PyDict_Next(
-                                self.object,
-                                &raw mut pos,
-                                &raw mut key,
-                                &raw mut value,
-                            );
-                        }
+                        let Some((key_item, value_item)) = (unsafe { dict_entries.next() }) else {
+                            break;
+                        };
+                        let key = key_item.as_ptr();
                         let object_type = unsafe { Py_TYPE(key) };
                         let key_unicode = if object_type == unsafe { types::STR_TYPE } {
                             key
@@ -589,7 +587,9 @@ impl Serialize for CanonicalPyObject<'_> {
                         entries.push(DictEntry {
                             key_ptr: ptr.cast::<u8>(),
                             key_len: str_size as usize,
-                            value,
+                            #[cfg(Py_GIL_DISABLED)]
+                            _key: key_item,
+                            value: value_item,
                         });
                     }
                     // Sort keys alphabetically for canonical form
@@ -598,7 +598,7 @@ impl Serialize for CanonicalPyObject<'_> {
                             .cmp(std::slice::from_raw_parts(b.key_ptr, b.key_len))
                     });
 
-                    let mut map = tri!(serializer.serialize_map(Some(length)));
+                    let mut map = tri!(serializer.serialize_map(Some(entries.len())));
                     for entry in entries.iter() {
                         let key_str = unsafe {
                             std::str::from_utf8_unchecked(std::slice::from_raw_parts(
@@ -609,7 +609,7 @@ impl Serialize for CanonicalPyObject<'_> {
                         tri!(map.serialize_entry(
                             key_str,
                             &CanonicalPyObject::new(
-                                entry.value,
+                                entry.value.as_ptr(),
                                 self.recursion_depth + 1,
                                 self.scratch_pool,
                             ),
@@ -630,7 +630,12 @@ impl Serialize for CanonicalPyObject<'_> {
                     let mut ob_type = ObjectType::Str;
                     let mut sequence = tri!(serializer.serialize_seq(Some(length)));
                     for i in 0..length {
-                        let elem = unsafe { pylist_get_item(self.object, i as ffi::Py_ssize_t) };
+                        let Some(item) =
+                            (unsafe { pylist_item(self.object, i as ffi::Py_ssize_t) })
+                        else {
+                            break;
+                        };
+                        let elem = item.as_ptr();
                         let current_ob_type = unsafe { Py_TYPE(elem) };
                         if current_ob_type != type_ptr {
                             type_ptr = current_ob_type;
