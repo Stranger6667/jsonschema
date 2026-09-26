@@ -31,10 +31,7 @@ pub use magnus::{
     PendingErrorScope as MagnusPendingErrorScope, RbNode,
 };
 #[cfg(feature = "pyo3")]
-pub use pyo3::{
-    narrow_array, narrow_object, object_values, probe_root, take_pending_error, PendingErrorScope,
-    Pyo3,
-};
+pub use pyo3::{inspect, narrow_array, narrow_object, object_values, stock_enum_value, Pyo3};
 #[cfg(feature = "serde_json")]
 pub use serde_json::SerdeJson;
 

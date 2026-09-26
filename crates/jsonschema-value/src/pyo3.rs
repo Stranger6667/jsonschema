@@ -12,20 +12,23 @@
 
 use std::{
     borrow::Cow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     hash::{Hash, Hasher},
     str::FromStr,
     sync::atomic::{AtomicPtr, Ordering},
 };
 
+#[cfg(not(Py_GIL_DISABLED))]
+use std::sync::atomic::AtomicUsize;
+
 use ahash::{AHashSet, AHasher};
 
 use pyo3::{
     exceptions::PyValueError,
-    ffi,
+    ffi, intern,
     prelude::*,
     sync::PyOnceLock,
-    types::{PyDict, PyString},
+    types::{PyDict, PyString, PyType},
     Borrowed,
 };
 use serde_json::{Map, Number, Value};
@@ -77,6 +80,8 @@ struct TypePtrs {
     dict: *mut ffi::PyTypeObject,
     tuple: *mut ffi::PyTypeObject,
     enum_base: *mut ffi::PyTypeObject,
+    // `Enum.value`, the descriptor stock members read `_value_` through.
+    enum_value: *mut ffi::PyObject,
     decimal: *mut ffi::PyTypeObject,
     none: *mut ffi::PyObject,
     true_: *mut ffi::PyObject,
@@ -118,6 +123,10 @@ fn types_init(py: Python<'_>) -> &'static TypePtrs {
             dict: py.get_type::<PyDict>().as_type_ptr(),
             tuple: ptr("builtins", "tuple"),
             enum_base: ptr("enum", "Enum"),
+            enum_value: py
+                .import("enum")
+                .and_then(|m| m.getattr("Enum")?.getattr("__dict__")?.get_item("value"))
+                .map_or(std::ptr::null_mut(), |value| value.as_ptr()),
             decimal: ptr("decimal", "Decimal"),
             none: unsafe { ffi::Py_None() },
             true_: unsafe { ffi::Py_True() },
@@ -166,7 +175,84 @@ fn is_subtype(ty: *mut ffi::PyTypeObject, base: *mut ffi::PyTypeObject) -> bool 
     !base.is_null() && unsafe { ffi::PyType_IsSubtype(ty, base) != 0 }
 }
 
-// Unwrap an `Enum` member to its `.value`, which its parent's attribute slot holds, so the borrow
+/// The `_value_` of an `Enum` member whose class reads `value` the stock way, fetched without
+/// running Python code; `None` when the class overrides `value` or attribute access.
+#[must_use]
+pub fn stock_enum_value<'py>(member: Borrowed<'_, 'py, PyAny>) -> Option<Bound<'py, PyAny>> {
+    let py = member.py();
+    if !reads_value_stock(&member.get_type()) {
+        return None;
+    }
+    let namespace = unsafe {
+        Bound::from_owned_ptr_or_err(
+            py,
+            ffi::PyObject_GenericGetDict(member.as_ptr(), std::ptr::null_mut()),
+        )
+    }
+    .ok()?;
+    namespace
+        .cast_into::<PyDict>()
+        .ok()?
+        .get_item(intern!(py, "_value_"))
+        .ok()
+        .flatten()
+}
+
+const ENUM_CLASSES_LIMIT: usize = 8;
+
+thread_local! {
+    // Verdicts of `reads_value_stock` per enum class. Each entry holds its class, so the address of
+    // a freed class is never mistaken for a live one.
+    static ENUM_CLASSES: RefCell<Vec<(Py<PyType>, bool)>> = const { RefCell::new(Vec::new()) };
+}
+
+// Whether members of `class` read `value` through `Enum`'s own descriptor and default attribute
+// access. The verdict is kept, so a `value` override set on the class after its first check is
+// not seen.
+fn reads_value_stock(class: &Bound<'_, PyType>) -> bool {
+    let cached = ENUM_CLASSES.with(|classes| {
+        classes
+            .borrow()
+            .iter()
+            .find(|(known, _)| known.as_ptr() == class.as_ptr())
+            .map(|(_, stock)| *stock)
+    });
+    if let Some(stock) = cached {
+        return stock;
+    }
+    let stock = inspect_enum_class(class);
+    ENUM_CLASSES.with(|classes| {
+        let mut classes = classes.borrow_mut();
+        if classes.len() == ENUM_CLASSES_LIMIT {
+            classes.remove(0);
+        }
+        classes.push((class.clone().unbind(), stock));
+    });
+    stock
+}
+
+fn inspect_enum_class(class: &Bound<'_, PyType>) -> bool {
+    let py = class.py();
+    let getattro = unsafe { ffi::PyType_GetSlot(class.as_type_ptr(), ffi::Py_tp_getattro) };
+    if getattro != ffi::PyObject_GenericGetAttr as *mut std::ffi::c_void {
+        return false;
+    }
+    let value_name = intern!(py, "value");
+    class
+        .mro()
+        .iter()
+        .find_map(|base| {
+            let namespace = base.getattr(intern!(py, "__dict__")).ok()?;
+            if namespace.contains(value_name).ok()? {
+                namespace.get_item(value_name).ok()
+            } else {
+                None
+            }
+        })
+        .is_some_and(|descriptor| descriptor.as_ptr() == types(py).enum_value)
+}
+
+// Unwrap an `Enum` member to its value, which the member's attribute slot holds, so the borrow
 // outlives the owned handles dropped here.
 fn resolved<'py>(node: PyNode<'py>) -> PyNode<'py> {
     let mut current = node.to_owned();
@@ -178,7 +264,16 @@ fn resolved<'py>(node: PyNode<'py>) -> PyNode<'py> {
             return inert(current.py());
         }
         seen.push(current.as_ptr());
-        match current.getattr("value") {
+        let value = match stock_enum_value(current.as_borrowed()) {
+            Some(value) => Ok(value),
+            None if holding() => current.getattr("value"),
+            // A `value` override runs Python code, which may drop what the walk still reads
+            None => {
+                NEEDS_HOLDING.with(|needs| needs.set(true));
+                return inert(current.py());
+            }
+        };
+        match value {
             Ok(value) => current = value,
             Err(error) => {
                 record_value_error(&format!("Failed to access enum value: {error}"));
@@ -186,15 +281,11 @@ fn resolved<'py>(node: PyNode<'py>) -> PyNode<'py> {
             }
         }
     }
-    // Another thread may replace the member's attribute, so the value is held.
-    #[cfg(Py_GIL_DISABLED)]
-    {
-        let py = current.py();
+    let py = current.py();
+    if holding() {
         unsafe { Borrowed::from_ptr(py, hold(current.into_ptr())) }
-    }
-    #[cfg(not(Py_GIL_DISABLED))]
-    unsafe {
-        Borrowed::from_ptr(current.py(), current.as_ptr())
+    } else {
+        unsafe { Borrowed::from_ptr(py, current.as_ptr()) }
     }
 }
 
@@ -224,42 +315,118 @@ fn record_value_error(message: &str) {
 
 /// Take the error recorded while inspecting an instance, if any.
 #[must_use]
-pub fn take_pending_error() -> Option<PyErr> {
+pub(crate) fn take_pending_error() -> Option<PyErr> {
     PENDING_ERROR.with(|slot| slot.borrow_mut().take())
 }
 
-#[cfg(Py_GIL_DISABLED)]
+/// Run `run` over `instance`.
+///
+/// `holding` keeps every object the run reads alive, as Python code it runs (custom keywords or
+/// formats) may drop a container's references. A run without it that reaches such code, an `Enum`
+/// member's `value` override, is redone holding.
+///
+/// # Errors
+///
+/// The first error recorded while reading `instance`; it outranks the run's result.
+pub fn inspect<T>(
+    instance: Borrowed<'_, '_, PyAny>,
+    holding: bool,
+    mut run: impl FnMut() -> T,
+) -> PyResult<T> {
+    let mut holding = holding;
+    loop {
+        let _scope = PendingErrorScope::enter(holding);
+        probe_root(instance);
+        if let Some(error) = take_pending_error() {
+            return Err(error);
+        }
+        let result = run();
+        if !holding && NEEDS_HOLDING.with(Cell::get) {
+            holding = true;
+            continue;
+        }
+        if let Some(error) = take_pending_error() {
+            return Err(error);
+        }
+        return Ok(result);
+    }
+}
+
 thread_local! {
-    // Strong references to the objects a call reads. Without the GIL another thread can drop a
+    // Strong references to the objects a call reads. Python code the call runs (an `Enum` member's
+    // `value` override, a custom keyword or format) or, without the GIL, another thread can drop a
     // container's own references mid-call, so nodes keep these until the call's scope ends.
     static HELD: RefCell<Vec<*mut ffi::PyObject>> = const { RefCell::new(Vec::new()) };
+    // Whether the current call holds what it reads; calls that run no Python code skip it.
+    static HOLDING: Cell<bool> = const { Cell::new(false) };
+    // Set when a call without holding reached Python code it did not run; the call is redone
+    // holding.
+    static NEEDS_HOLDING: Cell<bool> = const { Cell::new(false) };
+}
+
+// Calls in any thread that hold what they read. Reads check it instead of the thread's own mode:
+// holding in a call that does not need it is only slower.
+#[cfg(not(Py_GIL_DISABLED))]
+static HOLDING_CALLS: AtomicUsize = AtomicUsize::new(0);
+
+#[inline]
+fn holding() -> bool {
+    cfg!(Py_GIL_DISABLED) || HOLDING.with(Cell::get)
 }
 
 // Takes over the new reference `object` until the enclosing `PendingErrorScope` ends.
-#[cfg(Py_GIL_DISABLED)]
 fn hold(object: *mut ffi::PyObject) -> *mut ffi::PyObject {
     HELD.with(|held| held.borrow_mut().push(object));
     object
 }
 
-/// RAII scope giving each call its own error slot and restoring the caller's on exit, so a keyword
-/// that re-enters validation cannot consume the outer call's error.
-///
-/// On free-threaded builds it also keeps every object the call reads alive until it ends, so
-/// validation reading an instance must run inside one.
-pub struct PendingErrorScope {
+// Holds the borrowed `object`, if any, until the enclosing `PendingErrorScope` ends, when the call
+// holds what it reads.
+#[cfg(not(Py_GIL_DISABLED))]
+#[inline]
+fn held(object: *mut ffi::PyObject) -> *mut ffi::PyObject {
+    if object.is_null() || !holds_reads() {
+        return object;
+    }
+    hold_borrowed(object)
+}
+
+#[cfg(not(Py_GIL_DISABLED))]
+#[inline]
+fn holds_reads() -> bool {
+    HOLDING_CALLS.load(Ordering::Relaxed) != 0
+}
+
+// Out of line, so callers do not look up `HELD` on the path that skips holding.
+#[cfg(not(Py_GIL_DISABLED))]
+#[cold]
+#[inline(never)]
+fn hold_borrowed(object: *mut ffi::PyObject) -> *mut ffi::PyObject {
+    unsafe { ffi::Py_INCREF(object) };
+    hold(object)
+}
+
+// Gives each call its own error slot and holding mode, restoring the caller's on exit, so a
+// keyword that re-enters validation cannot consume the outer call's error. Objects the call holds
+// are released when it ends.
+struct PendingErrorScope {
     saved: Option<PyErr>,
-    #[cfg(Py_GIL_DISABLED)]
     held: usize,
+    holding: bool,
+    needs_holding: bool,
 }
 
 impl PendingErrorScope {
-    #[must_use]
-    pub fn enter() -> Self {
+    fn enter(holding: bool) -> Self {
+        if holding {
+            #[cfg(not(Py_GIL_DISABLED))]
+            HOLDING_CALLS.fetch_add(1, Ordering::Relaxed);
+        }
         Self {
             saved: take_pending_error(),
-            #[cfg(Py_GIL_DISABLED)]
             held: HELD.with(|held| held.borrow().len()),
+            holding: HOLDING.with(|cell| cell.replace(holding)),
+            needs_holding: NEEDS_HOLDING.with(|cell| cell.replace(false)),
         }
     }
 }
@@ -268,13 +435,15 @@ impl Drop for PendingErrorScope {
     fn drop(&mut self) {
         let saved = self.saved.take();
         PENDING_ERROR.with(|slot| *slot.borrow_mut() = saved);
-        #[cfg(Py_GIL_DISABLED)]
-        {
-            // Released after the borrow ends: dropping an object can run code that validates again.
-            let released = HELD.with(|held| held.borrow_mut().split_off(self.held));
-            for object in released {
-                unsafe { ffi::Py_DECREF(object) };
-            }
+        if HOLDING.with(|cell| cell.replace(self.holding)) {
+            #[cfg(not(Py_GIL_DISABLED))]
+            HOLDING_CALLS.fetch_sub(1, Ordering::Relaxed);
+        }
+        NEEDS_HOLDING.with(|cell| cell.set(self.needs_holding));
+        // Released after the borrow ends: dropping an object can run code that validates again.
+        let released = HELD.with(|held| held.borrow_mut().split_off(self.held));
+        for object in released {
+            unsafe { ffi::Py_DECREF(object) };
         }
     }
 }
@@ -282,6 +451,7 @@ impl Drop for PendingErrorScope {
 // PyPy runs `PyDict_Next` over one key snapshot per dict and drops it when any loop over that dict
 // finishes, so a loop nested over the same dict ends the outer one. There each cursor walks its own.
 // The value under `key`, or null; lookups by a string key never raise.
+#[inline]
 fn dict_get(dict: *mut ffi::PyObject, key: *mut ffi::PyObject) -> *mut ffi::PyObject {
     #[cfg(Py_GIL_DISABLED)]
     {
@@ -294,7 +464,7 @@ fn dict_get(dict: *mut ffi::PyObject, key: *mut ffi::PyObject) -> *mut ffi::PyOb
     }
     #[cfg(not(Py_GIL_DISABLED))]
     {
-        unsafe { ffi::PyDict_GetItem(dict, key) }
+        held(unsafe { ffi::PyDict_GetItem(dict, key) })
     }
 }
 
@@ -305,6 +475,8 @@ struct DictCursor<'py> {
     keys: Option<Bound<'py, PyAny>>,
     #[cfg(Py_GIL_DISABLED)]
     size: ffi::Py_ssize_t,
+    #[cfg(not(Py_GIL_DISABLED))]
+    holding: bool,
 }
 
 impl<'py> DictCursor<'py> {
@@ -316,6 +488,8 @@ impl<'py> DictCursor<'py> {
             keys: None,
             #[cfg(Py_GIL_DISABLED)]
             size: unsafe { ffi::PyDict_Size(dict.as_ptr()) },
+            #[cfg(not(Py_GIL_DISABLED))]
+            holding: holds_reads(),
         }
     }
 
@@ -361,7 +535,13 @@ impl<'py> DictCursor<'py> {
                     &raw mut value,
                 )
             } != 0)
-                .then_some((key, value))
+                .then(|| {
+                    if self.holding {
+                        (hold_borrowed(key), hold_borrowed(value))
+                    } else {
+                        (key, value)
+                    }
+                })
         }
         #[cfg(PyPy)]
         {
@@ -372,9 +552,12 @@ impl<'py> DictCursor<'py> {
             if self.pos >= unsafe { ffi::PyList_Size(keys.as_ptr()) } {
                 return None;
             }
-            let key = unsafe { ffi::PyList_GetItem(keys.as_ptr(), self.pos) };
+            let key = held(unsafe { ffi::PyList_GetItem(keys.as_ptr(), self.pos) });
             self.pos += 1;
-            Some((key, unsafe { ffi::PyDict_GetItem(self.dict.as_ptr(), key) }))
+            Some((
+                key,
+                held(unsafe { ffi::PyDict_GetItem(self.dict.as_ptr(), key) }),
+            ))
         }
     }
 }
@@ -436,7 +619,7 @@ pub fn narrow_object<'py>(node: PyNode<'py>) -> Option<Borrowed<'py, 'py, PyDict
 ///
 /// Nested ones surface only when a keyword reads that value; scanning the whole instance would cost
 /// a full traversal per call.
-pub fn probe_root(node: Borrowed<'_, '_, PyAny>) {
+pub(crate) fn probe_root(node: Borrowed<'_, '_, PyAny>) {
     match object_type(node) {
         ObjType::Str => drop(str_ref(node)),
         ObjType::Enum => drop(resolved(node)),
@@ -932,6 +1115,8 @@ impl<'py> Array<'py, Pyo3> for PyArray<'py> {
             is_tuple: self.is_tuple,
             index: 0,
             len: self.len,
+            #[cfg(not(Py_GIL_DISABLED))]
+            holding: holds_reads(),
         }
     }
 
@@ -1134,6 +1319,8 @@ pub struct PyElements<'py> {
     is_tuple: bool,
     index: usize,
     len: usize,
+    #[cfg(not(Py_GIL_DISABLED))]
+    holding: bool,
 }
 
 impl<'py> Iterator for PyElements<'py> {
@@ -1163,7 +1350,6 @@ impl<'py> Iterator for PyElements<'py> {
                 }
             }
         };
-        // Borrowed references; keep them borrowed for `'py`.
         #[cfg(all(any(Py_LIMITED_API, PyPy, GraalPy), not(Py_GIL_DISABLED)))]
         let borrowed = unsafe {
             if self.is_tuple {
@@ -1189,6 +1375,10 @@ impl<'py> Iterator for PyElements<'py> {
             record_value_error("Sequence changed size during validation");
             self.index = self.len;
             return None;
+        }
+        #[cfg(not(Py_GIL_DISABLED))]
+        if self.holding && !self.is_tuple {
+            hold_borrowed(borrowed);
         }
         Some(unsafe { Borrowed::from_ptr(self.sequence.py(), borrowed) })
     }

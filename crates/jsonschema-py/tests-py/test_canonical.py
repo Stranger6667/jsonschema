@@ -40,6 +40,14 @@ class StrColor(str, enum.Enum):
     BLUE = "blue"
 
 
+class RenamedColor(str, enum.Enum):
+    BLUE = "blue"
+
+    @property
+    def value(self):
+        return "navy"
+
+
 def large_integer_overflow_error_count():
     gc.collect()
     return sum(
@@ -82,6 +90,9 @@ def large_integer_overflow_error_count():
         (Color.RED, '"red"'),
         (Color.GREEN, "1"),
         ({StrColor.BLUE: "sky"}, '{"blue":"sky"}'),
+        ({StrColor.BLUE: "sky", "a": 1}, '{"a":1,"blue":"sky"}'),
+        ({RenamedColor.BLUE: "sky"}, '{"navy":"sky"}'),
+        ({RenamedColor.BLUE: "sky", "a": 1}, '{"a":1,"navy":"sky"}'),
         (Decimal("1.0"), "1"),
         (Decimal("100"), "100"),
         (Decimal("NaN"), "null"),
@@ -163,13 +174,20 @@ def test_integer_float_same_as_int(float_val, int_val):
     assert to_string(float_val) == to_string(int_val)
 
 
+@pytest.mark.parametrize("value", [{1: "a"}, {1: "a", "b": 2}])
+def test_non_string_key_raises(value):
+    with pytest.raises(ValueError, match="Dict key must be str or str enum. Got 'int'"):
+        to_string(value)
+
+
 @pytest.mark.parametrize("value", ["\ud800", {"\ud800": 1}])
 def test_lone_surrogate_raises(value):
     with pytest.raises(ValueError, match="surrogates not allowed"):
         to_string(value)
 
 
-def test_str_enum_key_value_lookup_error():
+@pytest.mark.parametrize("siblings", [{}, {"b": 2}])
+def test_str_enum_key_value_lookup_error(siblings):
     class BrokenStrEnum(str, enum.Enum):
         A = "a"
 
@@ -179,7 +197,7 @@ def test_str_enum_key_value_lookup_error():
             return super().__getattribute__(name)
 
     with pytest.raises(ValueError, match="Failed to access enum key value"):
-        to_string({BrokenStrEnum.A: 1})
+        to_string({BrokenStrEnum.A: 1, **siblings})
 
 
 def test_enum_value_lookup_error():
@@ -193,6 +211,50 @@ def test_enum_value_lookup_error():
 
     with pytest.raises(ValueError, match="boom"):
         to_string(BrokenEnum.A)
+
+
+# Objects allocated into the memory a callback frees, kept alive so a read through a dangling
+# reference sees them (or crashes) instead of the stale contents.
+CHURN = []
+
+
+def empty_and_churn(container):
+    container.clear()
+    CHURN.append([({f"k{j}": object() for j in range(8)}, [object()] * 64) for _ in range(2000)])
+
+
+def emptying_member(container):
+    class Emptying(enum.Enum):
+        A = "a"
+
+        @property
+        def value(self):
+            empty_and_churn(container)
+            return "a"
+
+    return Emptying.A
+
+
+def many_entries(first):
+    return {"a": first, **{f"k{i}-" + "x" * 50: [f"v{i}" * 50] * 50 for i in range(200)}}
+
+
+def nested_lists(first):
+    return [[first] + [f"v{i}" * 50 for i in range(200)]] + [[f"w{i}"] * 10 for i in range(10)]
+
+
+def test_enum_value_emptying_sorted_dict():
+    document = {}
+    document.update(many_entries(emptying_member(document)))
+    # Entries are collected before any value runs, so all of them are written
+    assert to_string(document) == json.dumps(many_entries("a"), sort_keys=True, separators=(",", ":"))
+
+
+def test_enum_value_emptying_outer_list():
+    outer = []
+    outer.extend(nested_lists(emptying_member(outer)))
+    # The inner list is written in full; the outer one stops where it was emptied
+    assert to_string(outer) == json.dumps(nested_lists("a")[:1], separators=(",", ":"))
 
 
 @given(_json_values)

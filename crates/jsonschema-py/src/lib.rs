@@ -20,7 +20,7 @@ use email::EmailOptions;
 use http::HttpOptions;
 use jsonschema::{
     canonical::json::canonical_number,
-    json::{probe_root, take_pending_error, PendingErrorScope, Pyo3},
+    json::{inspect, Pyo3},
     paths::{Location, LocationSegment},
     Draft, Retrieve, ValidationOptions,
 };
@@ -1157,23 +1157,22 @@ fn make_options<'a>(
     Ok(options)
 }
 
-// Errors the representation recorded out of band, since validation cannot return them.
+// Errors the representation recorded out of band, since validation cannot return them. A recorded
+// error outranks whatever `run` produced: building a validation error can itself hit an unreadable
+// part of the instance, and that error is the accurate one.
 fn surface_pending_errors<T>(
     instance: &Bound<'_, PyAny>,
-    run: impl FnOnce() -> PyResult<T>,
+    holding: bool,
+    run: impl FnMut() -> PyResult<T>,
 ) -> PyResult<T> {
-    let _scope = PendingErrorScope::enter();
-    probe_root(instance.as_borrowed());
-    if let Some(error) = take_pending_error() {
-        return Err(error);
-    }
-    // A recorded error outranks whatever `run` produced: building a validation error can itself hit
-    // an unreadable part of the instance, and that error is the accurate one.
-    let result = run();
-    if let Some(error) = take_pending_error() {
-        return Err(error);
-    }
-    result
+    inspect(instance.as_borrowed(), holding, run)?
+}
+
+// Custom formats and keywords run Python code mid-validation, which may drop parts of the instance
+// the validator still reads.
+fn runs_python(formats: Option<&Bound<'_, PyDict>>, keywords: Option<&Bound<'_, PyDict>>) -> bool {
+    formats.is_some_and(|formats| !formats.is_empty())
+        || keywords.is_some_and(|keywords| !keywords.is_empty())
 }
 
 fn iter_on_error(
@@ -1181,8 +1180,9 @@ fn iter_on_error(
     validator: &jsonschema::Validator<Pyo3>,
     instance: &Bound<'_, PyAny>,
     mask: Option<&str>,
+    holding: bool,
 ) -> PyResult<ValidationErrorIter> {
-    surface_pending_errors(instance, || {
+    surface_pending_errors(instance, holding, || {
         let _scope = KeywordCauseScope::enter();
         let mut pyerrors = vec![];
         let node = instance.as_borrowed();
@@ -1205,8 +1205,9 @@ fn raise_on_error(
     validator: &jsonschema::Validator<Pyo3>,
     instance: &Bound<'_, PyAny>,
     mask: Option<&str>,
+    holding: bool,
 ) -> PyResult<()> {
-    surface_pending_errors(instance, || {
+    surface_pending_errors(instance, holding, || {
         let _scope = KeywordCauseScope::enter();
         let node = instance.as_borrowed();
         let error = panic::catch_unwind(AssertUnwindSafe(|| validator.validate(node)))
@@ -1336,7 +1337,7 @@ fn is_valid(
     )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
-        Ok(validator) => surface_pending_errors(instance, || {
+        Ok(validator) => surface_pending_errors(instance, runs_python(formats, keywords), || {
             panic::catch_unwind(AssertUnwindSafe(|| {
                 Ok(validator.is_valid(instance.as_borrowed()))
             }))
@@ -1396,7 +1397,13 @@ fn validate(
     )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
-        Ok(validator) => raise_on_error(py, &validator, instance, mask.as_deref()),
+        Ok(validator) => raise_on_error(
+            py,
+            &validator,
+            instance,
+            mask.as_deref(),
+            runs_python(formats, keywords),
+        ),
         Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
 }
@@ -1450,7 +1457,13 @@ fn iter_errors(
     )?;
     let schema = ser::to_value(schema)?;
     match options.build(&schema) {
-        Ok(validator) => iter_on_error(py, &validator, instance, mask.as_deref()),
+        Ok(validator) => iter_on_error(
+            py,
+            &validator,
+            instance,
+            mask.as_deref(),
+            runs_python(formats, keywords),
+        ),
         Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
 }
@@ -1563,7 +1576,7 @@ fn evaluate(
         Ok(validator) => validator,
         Err(error) => return Err(into_py_err(py, error, None)?),
     };
-    let evaluation = surface_pending_errors(instance, || {
+    let evaluation = surface_pending_errors(instance, runs_python(formats, keywords), || {
         panic::catch_unwind(AssertUnwindSafe(|| {
             validator.evaluate(instance.as_borrowed())
         }))
@@ -1585,15 +1598,18 @@ fn handle_format_checked_panic(err: Box<dyn Any + Send>) -> PyErr {
 }
 
 #[pyclass(module = "jsonschema_rs", subclass)]
+#[allow(clippy::struct_field_names)]
 struct Validator {
     validator: jsonschema::Validator<Pyo3>,
     mask: Option<String>,
+    holding: bool,
 }
 
 #[pyclass(module = "jsonschema_rs")]
 struct ValidatorMap {
     inner: jsonschema::ValidatorMap<Pyo3>,
     mask: Option<String>,
+    holding: bool,
 }
 
 #[pymethods]
@@ -1609,6 +1625,7 @@ impl ValidatorMap {
         self.inner.get(pointer).map(|v| Validator {
             validator: v.clone(),
             mask: self.mask.clone(),
+            holding: self.holding,
         })
     }
 
@@ -1617,6 +1634,7 @@ impl ValidatorMap {
             Some(v) => Ok(Validator {
                 validator: v.clone(),
                 mask: self.mask.clone(),
+                holding: self.holding,
             }),
             None => Err(PyKeyError::new_err(pointer.to_owned())),
         }
@@ -1731,7 +1749,11 @@ fn validator_map_for(
         offline,
     )?;
     match options.build_map(&schema) {
-        Ok(inner) => Ok(ValidatorMap { inner, mask }),
+        Ok(inner) => Ok(ValidatorMap {
+            inner,
+            mask,
+            holding: runs_python(formats, keywords),
+        }),
         Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
 }
@@ -1901,7 +1923,11 @@ fn validator_for_impl(
         offline,
     )?;
     match options.build(&schema) {
-        Ok(validator) => Ok(Validator { validator, mask }),
+        Ok(validator) => Ok(Validator {
+            validator,
+            mask,
+            holding: runs_python(formats, keywords),
+        }),
         Err(error) => Err(into_py_err(py, error, mask.as_deref())?),
     }
 }
@@ -1956,7 +1982,7 @@ impl Validator {
     /// The output is a boolean value, that indicates whether the instance is valid or not.
     #[pyo3(text_signature = "(instance)")]
     fn is_valid(&self, instance: &Bound<'_, PyAny>) -> PyResult<bool> {
-        surface_pending_errors(instance, || {
+        surface_pending_errors(instance, self.holding, || {
             panic::catch_unwind(AssertUnwindSafe(|| {
                 Ok(self.validator.is_valid(instance.as_borrowed()))
             }))
@@ -1975,7 +2001,13 @@ impl Validator {
     /// If the input instance is invalid, only the first occurred error is raised.
     #[pyo3(text_signature = "(instance)")]
     fn validate(&self, py: Python<'_>, instance: &Bound<'_, PyAny>) -> PyResult<()> {
-        raise_on_error(py, &self.validator, instance, self.mask.as_deref())
+        raise_on_error(
+            py,
+            &self.validator,
+            instance,
+            self.mask.as_deref(),
+            self.holding,
+        )
     }
     /// iter_errors(instance)
     ///
@@ -1991,7 +2023,13 @@ impl Validator {
         py: Python<'_>,
         instance: &Bound<'_, PyAny>,
     ) -> PyResult<ValidationErrorIter> {
-        iter_on_error(py, &self.validator, instance, self.mask.as_deref())
+        iter_on_error(
+            py,
+            &self.validator,
+            instance,
+            self.mask.as_deref(),
+            self.holding,
+        )
     }
     /// evaluate(instance)
     ///
@@ -2034,7 +2072,7 @@ impl Validator {
     /// ```
     #[pyo3(text_signature = "(instance)")]
     fn evaluate(&self, instance: &Bound<'_, PyAny>) -> PyResult<PyEvaluation> {
-        surface_pending_errors(instance, || {
+        surface_pending_errors(instance, self.holding, || {
             let _scope = KeywordCauseScope::enter();
             let evaluation = panic::catch_unwind(AssertUnwindSafe(|| {
                 self.validator.evaluate(instance.as_borrowed())
@@ -2394,7 +2432,7 @@ mod meta {
         registry: Option<&crate::registry::Registry>,
     ) -> PyResult<bool> {
         let Some(registry) = registry else {
-            return crate::surface_pending_errors(schema, || {
+            return crate::surface_pending_errors(schema, false, || {
                 if let Some(result) = compiled_is_valid(schema) {
                     return result;
                 }
@@ -2460,7 +2498,7 @@ mod meta {
         registry: Option<&crate::registry::Registry>,
     ) -> PyResult<()> {
         let Some(registry) = registry else {
-            return crate::surface_pending_errors(schema, || {
+            return crate::surface_pending_errors(schema, false, || {
                 if let Some(result) = compiled_validate(schema) {
                     return match result? {
                         Ok(()) => Ok(()),
