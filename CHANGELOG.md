@@ -2,9 +2,14 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Crash in `Pyo3` validators when an `Enum` member's `value` override emptied a list or dict holding the instance being read.
+
 ### Performance
 
 - `uri` and `uri-reference` formats check the syntax directly instead of parsing each value into a URI.
+- `Enum` members read their stored value directly instead of calling the `value` property in `Pyo3` validators.
 
 ## [0.58.0] - 2026-09-25
 

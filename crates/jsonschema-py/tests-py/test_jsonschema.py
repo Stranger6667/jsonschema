@@ -275,6 +275,97 @@ def test_list_resized_during_validation_raises(backend):
         backend.is_valid({"items": {"type": "integer"}}, items)
 
 
+# Objects allocated into the memory a callback frees, kept alive so a read through a dangling
+# reference sees them (or crashes) instead of the stale contents.
+CHURN = []
+
+
+def empty_and_churn(outer):
+    outer.clear()
+    CHURN.append([({f"k{j}": object() for j in range(8)}, [object()] * 64) for _ in range(2000)])
+
+
+def emptying_member(outer):
+    class Emptying(E.Enum):
+        A = "a"
+
+        @property
+        def value(self):
+            empty_and_churn(outer)
+            return "a"
+
+    return Emptying.A
+
+
+# `first` is read before anything else in the first inner container, which only `outer` owns.
+def nested_instance(shape, first):
+    if shape == "list":
+        return [[first] + [f"v{i}" * 50 for i in range(200)]] + [[f"w{i}"] * 10 for i in range(10)]
+    return [{"a": first, **{f"k{i}": f"v{i}" * 50 for i in range(200)}}] + [{"w": f"w{i}"} for i in range(10)]
+
+
+def nested_schema(shape, leaf):
+    if shape == "list":
+        return {"items": {"items": leaf}}
+    return {"items": {"required": ["a"], "additionalProperties": leaf}}
+
+
+def run(call, method):
+    result = call()
+    return list(result) if method == "iter_errors" else result
+
+
+@pytest.mark.parametrize("method", ["is_valid", "validate", "iter_errors"])
+@pytest.mark.parametrize("shape", ["list", "dict"])
+def test_enum_value_emptying_the_instance_raises(backend, shape, method):
+    outer = []
+    outer.extend(nested_instance(shape, emptying_member(outer)))
+    schema = nested_schema(shape, {"type": "string"})
+    with pytest.raises(ValueError, match="Sequence changed size during validation"):
+        run(partial(getattr(backend, method), schema, outer), method)
+
+
+@pytest.mark.parametrize("method", ["is_valid", "validate", "iter_errors"])
+@pytest.mark.parametrize("shape", ["list", "dict"])
+@pytest.mark.parametrize("callback", ["format", "keyword"])
+def test_callback_emptying_the_instance_raises(callback, shape, method):
+    outer = nested_instance(shape, "a")
+    expected = list(outer[0]) if shape == "list" else list(outer[0].values())
+    seen = []
+
+    def check(instance):
+        seen.append(instance)
+        if len(seen) == 1:
+            empty_and_churn(outer)
+        return True
+
+    class Emptying:
+        def __init__(self, parent_schema, value, schema_path):
+            pass
+
+        def validate(self, instance):
+            check(instance)
+
+    if callback == "format":
+        validator = validator_for(
+            nested_schema(shape, {"format": "emptying"}), formats={"emptying": check}, validate_formats=True
+        )
+    else:
+        validator = validator_for(nested_schema(shape, {"emptying": True}), keywords={"emptying": Emptying})
+    with pytest.raises(ValueError, match="Sequence changed size during validation"):
+        run(partial(getattr(validator, method), outer), method)
+    # The inner container outlives its parent's emptying and is walked in full
+    assert seen == expected
+
+
+@pytest.mark.parametrize("shape", ["list", "dict"])
+def test_enum_value_emptying_the_schema(shape):
+    outer = []
+    outer.extend(nested_instance(shape, emptying_member(outer)))
+    # The first inner container is read in full; the outer list stops where it was emptied
+    assert validator_for({"const": outer}).is_valid(nested_instance(shape, "a")[:1])
+
+
 def test_nested_validation_keeps_outer_error():
     calls = []
 
@@ -900,6 +991,10 @@ def test_enum_as_keys_invalid(backend, enum_type):
         backend.is_valid(schema, {EnumCls.A: "xyz"})
 
 
+class StrEnumKey(str, E.Enum):
+    A = "a"
+
+
 class BrokenValueStrEnum(str, E.Enum):
     A = "a"
 
@@ -918,6 +1013,35 @@ def test_enum_key_value_lookup_error(backend):
 def test_enum_value_lookup_error(backend):
     with pytest.raises(ValueError, match="boom from value"):
         backend.is_valid(True, BrokenValueStrEnum.A)
+
+
+class RenamedStrEnum(str, E.Enum):
+    A = "a"
+
+    @property
+    def value(self):
+        return "renamed"
+
+
+@pytest.mark.parametrize("key, name", [(StrEnumKey.A, "a"), (RenamedStrEnum.A, "renamed")])
+def test_enum_key_in_schema(key, name):
+    assert validator_for({"properties": {key: {"type": "integer"}}}).is_valid({name: "x"}) is False
+
+
+@pytest.mark.parametrize(
+    "schema, message",
+    [
+        ({"properties": {BrokenValueStrEnum.A: {}}}, "Failed to access enum key value: RuntimeError: boom from value"),
+        ({"const": BrokenValueStrEnum.A}, "Failed to access enum value: RuntimeError: boom from value"),
+    ],
+)
+def test_enum_lookup_error_in_schema(schema, message):
+    with pytest.raises(ValueError, match=message):
+        validator_for(schema)
+
+
+def test_tuple_in_schema():
+    assert validator_for({"enum": [(1, 2)]}).is_valid([1, 2]) is True
 
 
 @pytest.mark.skipif(not hasattr(sys, "getrefcount"), reason="PyPy does not have sys.getrefcount")

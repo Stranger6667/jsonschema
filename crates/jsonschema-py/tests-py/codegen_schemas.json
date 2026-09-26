@@ -8,6 +8,8 @@
     {"properties": {"a": {"const": 1}}},
     {"properties": {"a": {"enum": [1, 2]}}},
     {"items": {"const": 1}},
+    {"items": {"items": {"type": "string"}}},
+    {"items": {"required": ["a"], "additionalProperties": {"type": "string"}}},
     {"type": "null"},
     {"const": null},
     {"properties": {"a": {"type": "null"}}},

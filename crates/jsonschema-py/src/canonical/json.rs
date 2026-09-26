@@ -9,15 +9,13 @@ use std::{cell::RefCell, io, mem};
 
 use crate::{
     ser::{
-        dict_len, get_object_type, get_object_type_from_object, get_type_name, is_enum_subclass,
-        pylist_item, pylist_len, pytuple_get_item, pytuple_len, serialize_large_int, DictEntries,
-        Item, ObjectType, RECURSION_LIMIT,
+        dict_len, enum_value, get_object_type, get_object_type_from_object, get_type_name,
+        is_str_enum_key, pylist_item, pylist_len, pytuple_get_item, pytuple_len,
+        serialize_large_int, walk, DictEntries, ObjectType, RECURSION_LIMIT, REDO_HOLDING,
     },
     types,
 };
-use pyo3::ffi::{
-    PyLong_AsLongLong, PyObject_GetAttr, PyObject_IsInstance, PyUnicode_AsUTF8AndSize, Py_TYPE,
-};
+use pyo3::ffi::{PyLong_AsLongLong, PyUnicode_AsUTF8AndSize, Py_TYPE};
 
 /// A serde_json Formatter that writes integer-valued floats as integers.
 ///
@@ -263,36 +261,35 @@ impl Formatter for CanonicalFormatter {
     }
 }
 
-struct CanonicalPyObject<'scratch> {
+/// `HOLDING` walks keep every object they read alive; see `walk`.
+struct CanonicalPyObject<'scratch, const HOLDING: bool> {
     object: *mut ffi::PyObject,
     object_type: ObjectType,
     recursion_depth: u8,
     scratch_pool: &'scratch RefCell<Vec<Vec<DictEntry>>>,
 }
 
-/// `key_ptr` points into the key's UTF-8 buffer; on free-threaded builds the entry keeps the key
-/// alive, since another thread may drop the dict's reference.
+/// `key_ptr` points into the key's UTF-8 buffer; a holding walk keeps the key and value alive in
+/// `OwnedRefs`.
 struct DictEntry {
     key_ptr: *const u8,
     key_len: usize,
-    #[cfg(Py_GIL_DISABLED)]
-    _key: Item,
-    value: Item,
+    value: *mut ffi::PyObject,
 }
 
 #[derive(Default)]
-struct OwnedKeyRefs {
+struct OwnedRefs {
     refs: Option<Vec<*mut ffi::PyObject>>,
 }
 
-impl OwnedKeyRefs {
+impl OwnedRefs {
     #[inline]
     fn push(&mut self, object: *mut ffi::PyObject) {
         self.refs.get_or_insert_with(Vec::new).push(object);
     }
 }
 
-impl Drop for OwnedKeyRefs {
+impl Drop for OwnedRefs {
     fn drop(&mut self) {
         if let Some(refs) = self.refs.take() {
             for object in refs {
@@ -347,7 +344,7 @@ impl Drop for DictEntryScratch<'_> {
     }
 }
 
-impl<'scratch> CanonicalPyObject<'scratch> {
+impl<'scratch, const HOLDING: bool> CanonicalPyObject<'scratch, HOLDING> {
     #[inline]
     fn new(
         object: *mut ffi::PyObject,
@@ -387,7 +384,7 @@ macro_rules! tri {
     };
 }
 
-impl Serialize for CanonicalPyObject<'_> {
+impl<const HOLDING: bool> Serialize for CanonicalPyObject<'_, HOLDING> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: Serializer,
@@ -474,7 +471,7 @@ impl Serialize for CanonicalPyObject<'_> {
                 } else if length == 1 {
                     // Fast path: single key — no allocation or sorting needed
                     let Some((key_item, value_item)) =
-                        (unsafe { DictEntries::new(self.object).next() })
+                        (unsafe { DictEntries::<HOLDING>::new(self.object).next() })
                     else {
                         return tri!(serializer.serialize_map(Some(0))).end();
                     };
@@ -483,29 +480,21 @@ impl Serialize for CanonicalPyObject<'_> {
                     let object_type = unsafe { Py_TYPE(key) };
                     let (key_unicode, owned) = if object_type == unsafe { types::STR_TYPE } {
                         (key, false)
-                    } else {
-                        let is_str = unsafe {
-                            PyObject_IsInstance(key, types::STR_TYPE.cast::<ffi::PyObject>())
-                        };
-                        if is_str < 0 {
-                            return Err(ser::Error::custom("Error while checking key type"));
-                        }
-                        if is_str > 0 && is_enum_subclass(object_type) {
-                            let attr = unsafe { PyObject_GetAttr(key, types::VALUE_STR) };
-                            if attr.is_null() {
-                                let py = unsafe { Python::assume_attached() };
-                                let py_error = pyo3::PyErr::fetch(py);
+                    } else if is_str_enum_key(object_type) {
+                        match enum_value(key, HOLDING) {
+                            Ok(attr) => (attr, true),
+                            Err(Some(py_error)) => {
                                 return Err(ser::Error::custom(format!(
                                     "Failed to access enum key value: {py_error}",
                                 )));
                             }
-                            (attr, true)
-                        } else {
-                            return Err(ser::Error::custom(format!(
-                                "Dict key must be str or str enum. Got '{}'",
-                                get_type_name(object_type)
-                            )));
+                            Err(None) => return Err(ser::Error::custom(REDO_HOLDING)),
                         }
+                    } else {
+                        return Err(ser::Error::custom(format!(
+                            "Dict key must be str or str enum. Got '{}'",
+                            get_type_name(object_type)
+                        )));
                     };
                     let ptr = unsafe { PyUnicode_AsUTF8AndSize(key_unicode, &raw mut str_size) };
                     if ptr.is_null() {
@@ -527,7 +516,11 @@ impl Serialize for CanonicalPyObject<'_> {
                     let mut map = tri!(serializer.serialize_map(Some(1)));
                     let result = map.serialize_entry(
                         key_str,
-                        &CanonicalPyObject::new(value, self.recursion_depth + 1, self.scratch_pool),
+                        &CanonicalPyObject::<HOLDING>::new(
+                            value,
+                            self.recursion_depth + 1,
+                            self.scratch_pool,
+                        ),
                     );
                     if owned {
                         unsafe { ffi::Py_DECREF(key_unicode) };
@@ -538,9 +531,9 @@ impl Serialize for CanonicalPyObject<'_> {
                     // Collect all key-value pairs, sort by key, then serialize
                     let mut scratch = DictEntryScratch::with_capacity(self.scratch_pool, length);
                     let entries = scratch.entries_mut();
-                    let mut owned_key_refs = OwnedKeyRefs::default();
+                    let mut owned_refs = OwnedRefs::default();
                     let mut str_size: ffi::Py_ssize_t = 0;
-                    let mut dict_entries = DictEntries::new(self.object);
+                    let mut dict_entries = DictEntries::<HOLDING>::new(self.object);
                     for _ in 0..length {
                         let Some((key_item, value_item)) = (unsafe { dict_entries.next() }) else {
                             break;
@@ -549,30 +542,23 @@ impl Serialize for CanonicalPyObject<'_> {
                         let object_type = unsafe { Py_TYPE(key) };
                         let key_unicode = if object_type == unsafe { types::STR_TYPE } {
                             key
-                        } else {
-                            let is_str = unsafe {
-                                PyObject_IsInstance(key, types::STR_TYPE.cast::<ffi::PyObject>())
-                            };
-                            if is_str < 0 {
-                                return Err(ser::Error::custom("Error while checking key type"));
-                            }
-                            if is_str > 0 && is_enum_subclass(object_type) {
-                                let attr = unsafe { PyObject_GetAttr(key, types::VALUE_STR) };
-                                if attr.is_null() {
-                                    let py = unsafe { Python::assume_attached() };
-                                    let py_error = pyo3::PyErr::fetch(py);
+                        } else if is_str_enum_key(object_type) {
+                            let attr = match enum_value(key, HOLDING) {
+                                Ok(attr) => attr,
+                                Err(Some(py_error)) => {
                                     return Err(ser::Error::custom(format!(
                                         "Failed to access enum key value: {py_error}"
                                     )));
                                 }
-                                owned_key_refs.push(attr);
-                                attr
-                            } else {
-                                return Err(ser::Error::custom(format!(
-                                    "Dict key must be str or str enum. Got '{}'",
-                                    get_type_name(object_type)
-                                )));
-                            }
+                                Err(None) => return Err(ser::Error::custom(REDO_HOLDING)),
+                            };
+                            owned_refs.push(attr);
+                            attr
+                        } else {
+                            return Err(ser::Error::custom(format!(
+                                "Dict key must be str or str enum. Got '{}'",
+                                get_type_name(object_type)
+                            )));
                         };
 
                         let ptr =
@@ -584,12 +570,15 @@ impl Serialize for CanonicalPyObject<'_> {
                                 "Failed to get key as UTF-8: {py_error}",
                             )));
                         }
+                        let (value, owned) = value_item.into_raw();
+                        if owned {
+                            owned_refs.push(key_item.into_raw().0);
+                            owned_refs.push(value);
+                        }
                         entries.push(DictEntry {
                             key_ptr: ptr.cast::<u8>(),
                             key_len: str_size as usize,
-                            #[cfg(Py_GIL_DISABLED)]
-                            _key: key_item,
-                            value: value_item,
+                            value,
                         });
                     }
                     // Sort keys alphabetically for canonical form
@@ -608,8 +597,8 @@ impl Serialize for CanonicalPyObject<'_> {
                         };
                         tri!(map.serialize_entry(
                             key_str,
-                            &CanonicalPyObject::new(
-                                entry.value.as_ptr(),
+                            &CanonicalPyObject::<HOLDING>::new(
+                                entry.value,
                                 self.recursion_depth + 1,
                                 self.scratch_pool,
                             ),
@@ -631,7 +620,7 @@ impl Serialize for CanonicalPyObject<'_> {
                     let mut sequence = tri!(serializer.serialize_seq(Some(length)));
                     for i in 0..length {
                         let Some(item) =
-                            (unsafe { pylist_item(self.object, i as ffi::Py_ssize_t) })
+                            (unsafe { pylist_item::<HOLDING>(self.object, i as ffi::Py_ssize_t) })
                         else {
                             break;
                         };
@@ -641,12 +630,14 @@ impl Serialize for CanonicalPyObject<'_> {
                             type_ptr = current_ob_type;
                             ob_type = get_object_type(current_ob_type);
                         }
-                        tri!(sequence.serialize_element(&CanonicalPyObject::with_obtype(
-                            elem,
-                            ob_type,
-                            self.recursion_depth + 1,
-                            self.scratch_pool,
-                        )));
+                        tri!(sequence.serialize_element(
+                            &CanonicalPyObject::<HOLDING>::with_obtype(
+                                elem,
+                                ob_type,
+                                self.recursion_depth + 1,
+                                self.scratch_pool,
+                            )
+                        ));
                     }
                     sequence.end()
                 }
@@ -669,30 +660,36 @@ impl Serialize for CanonicalPyObject<'_> {
                             type_ptr = current_ob_type;
                             ob_type = get_object_type(current_ob_type);
                         }
-                        tri!(sequence.serialize_element(&CanonicalPyObject::with_obtype(
-                            elem,
-                            ob_type,
-                            self.recursion_depth + 1,
-                            self.scratch_pool,
-                        )));
+                        tri!(sequence.serialize_element(
+                            &CanonicalPyObject::<HOLDING>::with_obtype(
+                                elem,
+                                ob_type,
+                                self.recursion_depth + 1,
+                                self.scratch_pool,
+                            )
+                        ));
                     }
                     sequence.end()
                 }
             }
             ObjectType::Decimal => serialize_decimal(self.object, serializer),
             ObjectType::Enum => {
-                let value = unsafe { PyObject_GetAttr(self.object, types::VALUE_STR) };
-                if value.is_null() {
-                    let py = unsafe { Python::assume_attached() };
-                    let py_error = pyo3::PyErr::fetch(py);
-                    return Err(ser::Error::custom(format!(
-                        "Failed to access enum value: {py_error}",
-                    )));
-                }
+                let value = match enum_value(self.object, HOLDING) {
+                    Ok(value) => value,
+                    Err(Some(py_error)) => {
+                        return Err(ser::Error::custom(format!(
+                            "Failed to access enum value: {py_error}",
+                        )));
+                    }
+                    Err(None) => return Err(ser::Error::custom(REDO_HOLDING)),
+                };
                 #[allow(clippy::arithmetic_side_effects)]
-                let result =
-                    CanonicalPyObject::new(value, self.recursion_depth + 1, self.scratch_pool)
-                        .serialize(serializer);
+                let result = CanonicalPyObject::<HOLDING>::new(
+                    value,
+                    self.recursion_depth + 1,
+                    self.scratch_pool,
+                )
+                .serialize(serializer);
                 unsafe { ffi::Py_DECREF(value) };
                 result
             }
@@ -736,15 +733,22 @@ fn initial_output_capacity(object: *mut ffi::PyObject, object_type: ObjectType) 
 
 fn to_canonical_string(object: *mut ffi::PyObject) -> serde_json::Result<String> {
     let object_type = get_object_type_from_object(object);
-    let mut output = Vec::with_capacity(initial_output_capacity(object, object_type));
-    let formatter = CanonicalFormatter {
-        default: CompactFormatter,
-    };
     let scratch_pool = RefCell::new(Vec::new());
-    let mut serializer = serde_json::Serializer::with_formatter(&mut output, formatter);
-    CanonicalPyObject::with_obtype(object, object_type, 0, &scratch_pool)
-        .serialize(&mut serializer)?;
-    Ok(unsafe { String::from_utf8_unchecked(output) })
+    walk(|holding| {
+        let mut output = Vec::with_capacity(initial_output_capacity(object, object_type));
+        let formatter = CanonicalFormatter {
+            default: CompactFormatter,
+        };
+        let mut serializer = serde_json::Serializer::with_formatter(&mut output, formatter);
+        if holding {
+            CanonicalPyObject::<true>::with_obtype(object, object_type, 0, &scratch_pool)
+                .serialize(&mut serializer)?;
+        } else {
+            CanonicalPyObject::<false>::with_obtype(object, object_type, 0, &scratch_pool)
+                .serialize(&mut serializer)?;
+        }
+        Ok(unsafe { String::from_utf8_unchecked(output) })
+    })
 }
 
 /// Serialize a Python object to canonical JSON.

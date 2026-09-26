@@ -2956,54 +2956,42 @@ mod __validator_impl {
         }
     }
     pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
-        let _scope = __json::PendingErrorScope::enter();
-        __json::probe_root(instance.as_borrowed());
-        if let Some(error) = __json::take_pending_error() {
-            return Err(error);
-        }
-        let result = is_valid(instance.as_borrowed());
-        if let Some(error) = __json::take_pending_error() {
-            return Err(error);
-        }
-        Ok(result)
+        __json::inspect(
+            instance.as_borrowed(),
+            false,
+            || { is_valid(instance.as_borrowed()) },
+        )
     }
     pub(super) fn entry_validate<'__i>(
         instance: &'__i __Bound<'__i>,
     ) -> __py3::PyResult<::std::result::Result<(), __VE<'__i>>> {
-        let _scope = __json::PendingErrorScope::enter();
-        __json::probe_root(instance.as_borrowed());
-        if let Some(error) = __json::take_pending_error() {
-            return Err(error);
-        }
-        let result = match validate(
+        __json::inspect(
             instance.as_borrowed(),
-            &__paths::LazyLocation::new(),
-        ) {
-            Some(e) => Err(e),
-            None => Ok(()),
-        };
-        if let Some(error) = __json::take_pending_error() {
-            return Err(error);
-        }
-        Ok(result)
+            false,
+            || {
+                match validate(instance.as_borrowed(), &__paths::LazyLocation::new()) {
+                    Some(e) => Err(e),
+                    None => Ok(()),
+                }
+            },
+        )
     }
     pub(super) fn entry_iter_errors<'__i>(
         instance: &'__i __Bound<'__i>,
     ) -> __py3::PyResult<__EI<'__i>> {
-        let _scope = __json::PendingErrorScope::enter();
-        __json::probe_root(instance.as_borrowed());
-        if let Some(error) = __json::take_pending_error() {
-            return Err(error);
-        }
-        let mut errors = Vec::new();
-        collect_errors(
+        let errors = __json::inspect(
             instance.as_borrowed(),
-            &__paths::LazyLocation::new(),
-            &mut errors,
-        );
-        if let Some(error) = __json::take_pending_error() {
-            return Err(error);
-        }
+            false,
+            || {
+                let mut errors = Vec::new();
+                collect_errors(
+                    instance.as_borrowed(),
+                    &__paths::LazyLocation::new(),
+                    &mut errors,
+                );
+                errors
+            },
+        )?;
         Ok(__err::iterator_from(errors))
     }
 }

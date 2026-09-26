@@ -5,10 +5,12 @@
 ### Fixed
 
 - Crash in `canonical.json.to_string` on free-threaded Python when another thread resized a list or dict. [#1664](https://github.com/Stranger6667/jsonschema/issues/1664)
+- Crash when an `Enum` member's `value` override, a custom keyword or a custom format emptied a list or dict holding the instance being read, during validation, schema conversion or `canonical.json.to_string`.
 
 ### Performance
 
 - `uri` and `uri-reference` formats check the syntax directly instead of parsing each value into a URI.
+- `Enum` members read their stored value directly instead of calling the `value` property.
 
 ## [0.58.0] - 2026-09-25
 
