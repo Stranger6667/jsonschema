@@ -28,7 +28,7 @@ syn = { version = "2", features = ["full"] }
 
 [dev-dependencies]
 insta = "1"
-prettyplease = "0.2"
+prettyplease = "0.3"
 test-case = "3"
 jsonschema = { path = "../jsonschema", features = ["macros"] }
 codspeed-criterion-compat = { version = "5.0", default-features = false }
