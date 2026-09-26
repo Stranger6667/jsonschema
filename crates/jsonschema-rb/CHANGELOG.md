@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.1] - 2026-09-26
+
 ### Performance
 
 - `uri` and `uri-reference` formats check the syntax directly instead of parsing each value into a URI.
@@ -593,7 +595,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.1...HEAD
+[0.58.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.0...ruby-v0.58.1
 [0.58.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.57.0...ruby-v0.58.0
 [0.57.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.56.0...ruby-v0.57.0
 [0.56.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.55.1...ruby-v0.56.0
