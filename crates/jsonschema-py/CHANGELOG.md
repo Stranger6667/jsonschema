@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Crash in `canonical.json.to_string` on free-threaded Python when another thread resized a list or dict. [#1664](https://github.com/Stranger6667/jsonschema/issues/1664)
+
 ### Performance
 
 - `uri` and `uri-reference` formats check the syntax directly instead of parsing each value into a URI.

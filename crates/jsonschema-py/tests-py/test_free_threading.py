@@ -9,6 +9,7 @@ PROGRAM = textwrap.dedent(
     """
     import json, sys, threading, time
     import jsonschema_rs, jsonschema_testsuite_pyo3
+    from jsonschema_rs.canonical import json as canonical_json
 
     backend, mutation = sys.argv[1], sys.argv[2]
     big = 10**30
@@ -20,6 +21,14 @@ PROGRAM = textwrap.dedent(
         def mutate(n):
             instance.clear()
             instance.extend(big + n + i for i in range(2000))
+    elif mutation == "clear":
+        schema = {"additionalProperties": {"type": "object"}}
+        instance = {}
+
+        def mutate(n):
+            for i in range(40):
+                instance[f"k{i}"] = {"v": str(n + i)}
+            instance.clear()
     else:
         schema = {"properties": {"a": {"type": "string"}}}
         instance = {f"k{i}": f"value-{i}" * 3 for i in range(2000)}
@@ -36,6 +45,8 @@ PROGRAM = textwrap.dedent(
     elif backend == "codegen":
         key = json.dumps(schema, sort_keys=True, separators=(",", ":"))
         check = lambda value: jsonschema_testsuite_pyo3.is_valid(key, value)
+    elif backend == "canonical":
+        check = canonical_json.to_string
     else:
         check = lambda value: jsonschema_rs.validator_for({"enum": [value]})
 
@@ -63,8 +74,8 @@ PROGRAM = textwrap.dedent(
 )
 
 
-@pytest.mark.parametrize("backend", ["runtime", "codegen", "schema"])
-@pytest.mark.parametrize("mutation", ["list", "dict"])
+@pytest.mark.parametrize("backend", ["runtime", "codegen", "schema", "canonical"])
+@pytest.mark.parametrize("mutation", ["list", "dict", "clear"])
 def test_concurrent_mutation_does_not_crash(backend, mutation):
     result = subprocess.run(
         [sys.executable, "-c", PROGRAM, backend, mutation], capture_output=True, text=True, timeout=60
