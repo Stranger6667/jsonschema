@@ -386,6 +386,19 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
         self.validate_schema = false;
         self
     }
+    /// Set whether to validate the schema against its meta-schema before compiling it.
+    ///
+    /// Enabled by default. Disable it for schemas that are valid by construction, such as
+    /// schemas generated from types: the first meta-schema validation loads and compiles
+    /// the bundled meta-schemas, which is the largest one-time cost of building a validator.
+    ///
+    /// Compilation may still fail on a schema it cannot interpret.
+    #[inline]
+    #[must_use]
+    pub fn should_validate_schema(mut self, yes: bool) -> Self {
+        self.validate_schema = yes;
+        self
+    }
     /// Set whether to validate formats.
     ///
     /// Default behavior depends on the draft version. This method overrides
@@ -1264,6 +1277,19 @@ mod tests {
     #[test_case(Draft::Draft202012, "unix-time", false; "a name no check answers to")]
     fn test_known_builtin_format(draft: Draft, name: &str, known: bool) {
         assert_eq!(crate::options().is_known_format(draft, name), known);
+    }
+
+    #[test]
+    fn test_skipping_schema_validation() {
+        // `title` must be a string, so the meta-schema rejects this schema.
+        let schema = json!({"type": "string", "title": 5});
+        assert!(crate::options().build(&schema).is_err());
+        let validator = crate::options()
+            .should_validate_schema(false)
+            .build(&schema)
+            .expect("compiles without meta-schema validation");
+        assert!(validator.is_valid(&json!("text")));
+        assert!(!validator.is_valid(&json!(42)));
     }
 
     #[test]

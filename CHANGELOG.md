@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `ValidationOptions::should_validate_schema`, to skip validating the schema against its meta-schema, e.g. for schemas generated from types.
+
 ### Performance
 
 - `uri` and `uri-reference` formats check the syntax directly instead of parsing each value into a URI.
