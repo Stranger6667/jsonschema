@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.1] - 2026-09-26
+
 ### Fixed
 
 - Crash in `canonical.json.to_string` on free-threaded Python when another thread resized a list or dict. [#1664](https://github.com/Stranger6667/jsonschema/issues/1664)
@@ -1537,7 +1539,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.1...HEAD
+[0.58.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.0...python-v0.58.1
 [0.58.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.57.1...python-v0.58.0
 [0.57.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.57.0...python-v0.57.1
 [0.57.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.56.0...python-v0.57.0
