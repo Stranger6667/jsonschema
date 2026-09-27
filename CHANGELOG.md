@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Distinct named reference targets sharing a base URI and output location could reuse each other's compiled validators, including recursive anchors and OSCAL schemas.
+
 ## [0.58.1] - 2026-09-26
 
 ### Fixed

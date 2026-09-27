@@ -1755,4 +1755,115 @@ mod tests {
         assert!(validator.is_valid(&json!(1)));
         assert!(!validator.is_valid(&json!("text")));
     }
+
+    #[test_case(crate::Draft::Draft6; "draft6")]
+    #[test_case(crate::Draft::Draft7; "draft7")]
+    fn distinct_fragment_ids_keep_distinct_cached_targets(draft: crate::Draft) {
+        let schema = json!({
+            "$id": "https://example.com/model.json",
+            "type": "object",
+            "definitions": {
+                "directive": {"$id": "#directive", "$ref": "#/definitions/text"},
+                "model": {
+                    "$id": "#model",
+                    "type": "object",
+                    "properties": {"name": {"$ref": "#/definitions/text"}},
+                    "required": ["name"]
+                },
+                "text": {"type": "string"}
+            },
+            "properties": {
+                "$schema": {"$ref": "#directive"},
+                "alias": {"$ref": "#/definitions/model"},
+                "model": {"$ref": "#model"}
+            },
+            "required": ["model"]
+        });
+        let validator = crate::options()
+            .with_draft(draft)
+            .build(&schema)
+            .expect("Valid fragment-ID schema");
+        for instance in [
+            json!({"model": {"name": "actual model"}}),
+            json!({"$schema": "a reference", "model": {"name": "actual model"}}),
+            json!({"alias": {"name": "same target"}, "model": {"name": "actual model"}}),
+        ] {
+            tests_util::is_valid_with(&validator, &instance);
+        }
+        for instance in [
+            json!({"model": "not a model object"}),
+            json!({"model": {"name": 42}}),
+            json!({"model": {}}),
+            json!({"$schema": {}, "model": {"name": "actual model"}}),
+            json!({"alias": {"name": 42}, "model": {"name": "actual model"}}),
+        ] {
+            tests_util::is_not_valid_with(&validator, &instance);
+        }
+    }
+
+    #[test_case(crate::Draft::Draft4, "id", "id", "#", "definitions"; "draft4")]
+    #[test_case(crate::Draft::Draft6, "$id", "$id", "#", "definitions"; "draft6")]
+    #[test_case(crate::Draft::Draft7, "$id", "$id", "#", "definitions"; "draft7")]
+    #[test_case(crate::Draft::Draft201909, "$id", "$anchor", "", "$defs"; "draft2019")]
+    #[test_case(crate::Draft::Draft202012, "$id", "$anchor", "", "$defs"; "draft2020")]
+    fn distinct_recursive_anchors_keep_their_own_children(
+        draft: crate::Draft,
+        id: &str,
+        anchor: &str,
+        prefix: &str,
+        definitions: &str,
+    ) {
+        let schema = json!({
+            (id): "https://example.com/recursive.json",
+            "type": "object",
+            (definitions): {
+                "left": {
+                    (anchor): format!("{prefix}left"),
+                    "type": "object",
+                    "properties": {
+                        "tag": {"enum": ["left"]},
+                        "next": {"$ref": "#right"}
+                    },
+                    "required": ["tag"],
+                    "additionalProperties": false
+                },
+                "right": {
+                    (anchor): format!("{prefix}right"),
+                    "type": "object",
+                    "properties": {
+                        "tag": {"enum": ["right"]},
+                        "next": {"$ref": "#left"}
+                    },
+                    "required": ["tag"],
+                    "additionalProperties": false
+                }
+            },
+            "properties": {
+                "left": {"$ref": "#left"},
+                "right": {"$ref": "#right"},
+                "viaPointer": {"$ref": format!("#/{definitions}/left")}
+            }
+        });
+        let validator = crate::options()
+            .with_draft(draft)
+            .build(&schema)
+            .expect("Valid recursive anchor schema");
+        for instance in [
+            json!({"left": {"tag": "left"}, "right": {"tag": "right"}}),
+            json!({"left": {"tag": "left", "next": {"tag": "right", "next": {"tag": "left"}}}}),
+            json!({"viaPointer": {"tag": "left", "next": {"tag": "right"}}}),
+        ] {
+            tests_util::is_valid_with(&validator, &instance);
+        }
+        for instance in [
+            json!({"left": {"tag": "right"}}),
+            json!({"right": {"tag": "left"}}),
+            json!({"left": {"tag": "left", "next": {"tag": "left"}}}),
+            json!({"right": {"tag": "right", "next": {"tag": "right"}}}),
+            json!({"viaPointer": {"tag": "right"}}),
+            json!({"viaPointer": {"tag": "left", "next": {"tag": "left"}}}),
+        ] {
+            tests_util::is_not_valid_with(&validator, &instance);
+        }
+    }
 }
