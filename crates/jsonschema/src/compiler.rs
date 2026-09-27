@@ -110,6 +110,15 @@ pub(crate) struct LocationCacheKey {
     dynamic_scope: List<Uri<String>>,
 }
 
+/// Named anchors can share a base URI and output location without naming the same schema.
+/// The node cache lives only for one root compilation: input/registry values stay borrowed
+/// and immovable until that cache is dropped. This pointer is never persisted or dereferenced.
+#[derive(Hash, PartialEq, Eq, Clone, Debug)]
+pub(crate) struct NodeCacheKey {
+    location: LocationCacheKey,
+    schema_ptr: usize,
+}
+
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
 struct PropertyValidatorsPendingKey {
     schema_ptr: usize,
@@ -167,9 +176,9 @@ impl std::hash::Hash for BaseUriKey {
 /// Shared caches reused across every `Context` derived from a schema root.
 struct SharedContextState<F: Json = SerdeJson> {
     seen: SharedSet<Arc<Uri<String>>>,
-    location_nodes: SharedCache<LocationCacheKey, SchemaNode<F>>,
+    location_nodes: SharedCache<NodeCacheKey, SchemaNode<F>>,
     alias_nodes: SharedCache<AliasCacheKey, SchemaNode<F>>,
-    pending_nodes: SharedCache<LocationCacheKey, PendingSchemaNode<F>>,
+    pending_nodes: SharedCache<NodeCacheKey, PendingSchemaNode<F>>,
     alias_placeholders: SharedCache<Arc<Uri<String>>, PendingSchemaNode<F>>,
     pending_property_validators: SharedCache<LocationCacheKey, PendingPropertyValidators<F>>,
     pending_property_validators_by_schema:
@@ -505,11 +514,11 @@ impl<'a, F: Json> Context<'a, F> {
         Ok(target)
     }
 
-    pub(crate) fn cached_location_node(&self, key: &LocationCacheKey) -> Option<SchemaNode<F>> {
+    pub(crate) fn cached_location_node(&self, key: &NodeCacheKey) -> Option<SchemaNode<F>> {
         self.shared.location_nodes.borrow().get(key).cloned()
     }
 
-    pub(crate) fn cache_location_node(&self, key: LocationCacheKey, node: SchemaNode<F>) {
+    pub(crate) fn cache_location_node(&self, key: NodeCacheKey, node: SchemaNode<F>) {
         self.shared.location_nodes.borrow_mut().insert(key, node);
     }
 
@@ -523,20 +532,20 @@ impl<'a, F: Json> Context<'a, F> {
 
     pub(crate) fn cached_pending_location_node(
         &self,
-        key: &LocationCacheKey,
+        key: &NodeCacheKey,
     ) -> Option<PendingSchemaNode<F>> {
         self.shared.pending_nodes.borrow().get(key).cloned()
     }
 
     pub(crate) fn cache_pending_location_node(
         &self,
-        key: LocationCacheKey,
+        key: NodeCacheKey,
         node: PendingSchemaNode<F>,
     ) {
         self.shared.pending_nodes.borrow_mut().insert(key, node);
     }
 
-    pub(crate) fn remove_pending_location_node(&self, key: &LocationCacheKey) {
+    pub(crate) fn remove_pending_location_node(&self, key: &NodeCacheKey) {
         self.shared.pending_nodes.borrow_mut().remove(key);
     }
 
@@ -1088,7 +1097,10 @@ fn compile_with_internal<'a, F: Json>(
     }
 
     // Check location-based cache
-    let key = ctx.location_cache_key();
+    let key = NodeCacheKey {
+        location: ctx.location_cache_key(),
+        schema_ptr: std::ptr::from_ref(resource.contents()) as usize,
+    };
     if let Some(existing) = ctx.cached_location_node(&key) {
         return Ok(existing);
     }
