@@ -5,6 +5,7 @@
 ### Fixed
 
 - `$ref` to an `$anchor` or fragment `$id` validating against another anchor in the same document. [#1668](https://github.com/Stranger6667/jsonschema/issues/1668)
+- `schema_path` of errors under a `$ref` or `$dynamicRef` to a named schema pointing at the resource root instead of that schema.
 
 ## [0.58.1] - 2026-09-26
 
