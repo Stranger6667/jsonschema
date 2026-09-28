@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.2] - 2026-09-28
+
 ### Fixed
 
 - `$dynamicRef` targets in another document resolving relative references and reporting absolute keyword locations against the referencing document.
@@ -1885,7 +1887,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.2...HEAD
+[0.58.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.1...rust-v0.58.2
 [0.58.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.0...rust-v0.58.1
 [0.58.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.57.0...rust-v0.58.0
 [0.57.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.56.0...rust-v0.57.0
