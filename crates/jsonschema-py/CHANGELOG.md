@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `$ref` to an `$anchor` or fragment `$id` validating against another anchor in the same document. [#1668](https://github.com/Stranger6667/jsonschema/issues/1668)
+
 ## [0.58.1] - 2026-09-26
 
 ### Fixed

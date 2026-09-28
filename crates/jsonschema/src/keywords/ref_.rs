@@ -1756,16 +1756,17 @@ mod tests {
         assert!(!validator.is_valid(&json!("text")));
     }
 
-    #[test_case(crate::Draft::Draft6; "draft6")]
-    #[test_case(crate::Draft::Draft7; "draft7")]
-    fn distinct_fragment_ids_keep_distinct_cached_targets(draft: crate::Draft) {
+    #[test_case(crate::Draft::Draft4, "id"; "draft4")]
+    #[test_case(crate::Draft::Draft6, "$id"; "draft6")]
+    #[test_case(crate::Draft::Draft7, "$id"; "draft7")]
+    fn distinct_fragment_ids_keep_distinct_cached_targets(draft: crate::Draft, id: &str) {
         let schema = json!({
-            "$id": "https://example.com/model.json",
+            id: "https://example.com/model.json",
             "type": "object",
             "definitions": {
-                "directive": {"$id": "#directive", "$ref": "#/definitions/text"},
+                "directive": {id: "#directive", "$ref": "#/definitions/text"},
                 "model": {
-                    "$id": "#model",
+                    id: "#model",
                     "type": "object",
                     "properties": {"name": {"$ref": "#/definitions/text"}},
                     "required": ["name"]
@@ -1814,11 +1815,11 @@ mod tests {
         definitions: &str,
     ) {
         let schema = json!({
-            (id): "https://example.com/recursive.json",
+            id: "https://example.com/recursive.json",
             "type": "object",
-            (definitions): {
+            definitions: {
                 "left": {
-                    (anchor): format!("{prefix}left"),
+                    anchor: format!("{prefix}left"),
                     "type": "object",
                     "properties": {
                         "tag": {"enum": ["left"]},
@@ -1828,7 +1829,7 @@ mod tests {
                     "additionalProperties": false
                 },
                 "right": {
-                    (anchor): format!("{prefix}right"),
+                    anchor: format!("{prefix}right"),
                     "type": "object",
                     "properties": {
                         "tag": {"enum": ["right"]},
