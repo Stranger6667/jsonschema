@@ -188,6 +188,9 @@ struct SharedContextState<F: Json = SerdeJson> {
         SharedCache<ItemsValidatorsPendingKey, PendingItemsValidators<F>>,
     pattern_cache: SharedCache<Arc<str>, PatternCacheEntry>,
     ref_targets: SharedCache<BaseUriKey, AHashMap<Box<str>, RefTarget>>,
+    /// Locations of anchor-bearing schemas, keyed by their resource root's address and then
+    /// by their own. Roots stay borrowed until this cache is dropped.
+    anchor_locations: SharedCache<usize, AHashMap<usize, Location>>,
     uri_buffer: RefCell<uri::EncodedBuffer>,
 }
 
@@ -219,6 +222,7 @@ impl<F: Json> SharedContextState<F> {
             pending_items_validators_by_schema: RefCell::new(AHashMap::new()),
             pattern_cache: RefCell::new(AHashMap::new()),
             ref_targets: RefCell::new(AHashMap::new()),
+            anchor_locations: RefCell::new(AHashMap::new()),
             uri_buffer: RefCell::new(uri::EncodedBuffer::new()),
         }
     }
@@ -482,6 +486,21 @@ impl<'a, F: Json> Context<'a, F> {
     ) -> Result<Arc<Uri<String>>, referencing::Error> {
         self.resolver
             .resolve_uri(&self.resolver.base_uri().borrow(), reference)
+    }
+
+    /// Location of `target` within the resource rooted at `root`, if `target` declares an anchor.
+    pub(crate) fn anchor_location(&self, root: &Value, target: &Value) -> Option<Location> {
+        self.shared
+            .anchor_locations
+            .borrow_mut()
+            .entry(std::ptr::from_ref(root) as usize)
+            .or_insert_with(|| {
+                let mut index = AHashMap::new();
+                index_anchors(root, &mut Vec::new(), &mut index);
+                index
+            })
+            .get(&(std::ptr::from_ref(target) as usize))
+            .cloned()
     }
 
     /// The resolved URI of `reference` and the location its target starts at.
@@ -1063,6 +1082,42 @@ pub(crate) fn validate_schema(
         return Err(error.to_owned());
     }
     Ok(())
+}
+
+/// Keywords that can name the schema holding them, across all drafts.
+const ANCHOR_KEYWORDS: [&str; 4] = ["$anchor", "$dynamicAnchor", "$id", "id"];
+
+fn index_anchors<'v>(
+    value: &'v Value,
+    path: &mut Vec<LocationSegment<'v>>,
+    index: &mut AHashMap<usize, Location>,
+) {
+    match value {
+        Value::Object(map) => {
+            if ANCHOR_KEYWORDS
+                .iter()
+                .any(|keyword| map.contains_key(*keyword))
+            {
+                let location = path.iter().fold(Location::new(), |location, segment| {
+                    location.join(segment.clone())
+                });
+                index.insert(std::ptr::from_ref(value) as usize, location);
+            }
+            for (key, child) in map {
+                path.push(key.into());
+                index_anchors(child, path, index);
+                path.pop();
+            }
+        }
+        Value::Array(items) => {
+            for (idx, child) in items.iter().enumerate() {
+                path.push(idx.into());
+                index_anchors(child, path, index);
+                path.pop();
+            }
+        }
+        _ => {}
+    }
 }
 
 /// Compile a JSON Schema instance to a tree of nodes.

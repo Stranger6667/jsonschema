@@ -249,6 +249,9 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
         HashMap<String, Vec<crate::codegen::DynamicAnchorBinding>>,
     pub(crate) dynamic_anchor_bindings_being_compiled: HashSet<String>,
     pub(crate) regex_to_helper: HashMap<String, String>,
+    /// JSON Pointers of anchor-bearing schemas, keyed by their resource root's address and then
+    /// by their own. Roots live in the registry for the whole expansion.
+    pub(crate) anchor_pointers: HashMap<usize, HashMap<usize, String>>,
     pub(crate) translated_regex_cache: HashMap<String, String>,
     pub(crate) regex_helpers: Vec<(String, String)>,
     pub(crate) regex_counter: usize,
@@ -300,6 +303,7 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             dynamic_anchor_bindings_cache: HashMap::new(),
             dynamic_anchor_bindings_being_compiled: HashSet::new(),
             regex_to_helper: HashMap::new(),
+            anchor_pointers: HashMap::new(),
             translated_regex_cache: HashMap::new(),
             regex_helpers: Vec::new(),
             regex_counter: 0,

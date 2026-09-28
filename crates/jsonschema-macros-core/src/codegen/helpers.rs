@@ -1,8 +1,11 @@
 use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
-use referencing::Uri;
+use referencing::{write_escaped_str, Uri};
 use serde_json::Value;
-use std::{collections::HashSet, sync::Arc};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use crate::context::CompileContext;
 
@@ -220,6 +223,62 @@ pub(crate) fn get_or_create_item_eval_fn<E: ValueEmitter>(
     func_name
 }
 
+/// JSON Pointer of the schema `reference` (`#foo`) names within the resource at `base_uri`.
+fn named_target_pointer<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    base_uri: &Uri<String>,
+    reference: &str,
+) -> String {
+    let resolver = ctx.config.registry.resolver(base_uri.clone());
+    let (Ok(resource), Ok(target)) = (resolver.lookup(""), resolver.lookup(reference)) else {
+        // Guard helpers key on the serialized subschema, not a URI
+        return String::new();
+    };
+    let root = resource.contents();
+    ctx.anchor_pointers
+        .entry(std::ptr::from_ref(root) as usize)
+        .or_insert_with(|| {
+            let mut index = HashMap::new();
+            index_anchors(root, &mut String::new(), &mut index);
+            index
+        })
+        .get(&(std::ptr::from_ref(target.contents()) as usize))
+        .cloned()
+        .expect("An anchor lives in the resource it is looked up in")
+}
+
+/// Keywords that can name the schema holding them, across all drafts.
+const ANCHOR_KEYWORDS: [&str; 4] = ["$anchor", "$dynamicAnchor", "$id", "id"];
+
+fn index_anchors(value: &Value, pointer: &mut String, index: &mut HashMap<usize, String>) {
+    let parent_len = pointer.len();
+    match value {
+        Value::Object(map) => {
+            if ANCHOR_KEYWORDS
+                .iter()
+                .any(|keyword| map.contains_key(*keyword))
+            {
+                index.insert(std::ptr::from_ref(value) as usize, pointer.clone());
+            }
+            for (key, child) in map {
+                pointer.push('/');
+                write_escaped_str(pointer, key);
+                index_anchors(child, pointer, index);
+                pointer.truncate(parent_len);
+            }
+        }
+        Value::Array(items) => {
+            for (idx, child) in items.iter().enumerate() {
+                pointer.push('/');
+                pointer.push_str(&idx.to_string());
+                index_anchors(child, pointer, index);
+                pointer.truncate(parent_len);
+            }
+        }
+        _ => {}
+    }
+}
+
 /// Get or create a function for a reference location.
 pub(crate) fn get_or_create_is_valid_fn<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -244,20 +303,23 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
 
     let func_name = ctx.is_valid_fns.alloc_name(location);
 
-    // Errors inside this helper carry the percent-decoded JSON Pointer fragment of
-    // `location` ("/$defs/foo" from "base.json#/$defs/foo"); anchor fragments ("#foo") use "".
-    let ref_schema_path: String =
-        location
-            .rsplit_once('#')
-            .map_or_else(String::new, |(_, frag)| {
-                if frag.starts_with('/') {
-                    percent_encoding::percent_decode_str(frag)
-                        .decode_utf8_lossy()
-                        .into_owned()
-                } else {
-                    String::new()
-                }
-            });
+    // Errors inside this helper carry the target's JSON Pointer within its resource: the
+    // percent-decoded fragment of `location` ("/$defs/foo" from "base.json#/$defs/foo"), or
+    // where an anchor fragment ("#foo") sits.
+    let ref_schema_path: String = location.rfind('#').map_or_else(String::new, |hash| {
+        // `#foo`, borrowed from `location` to look the anchor up
+        let reference = &location[hash..];
+        let frag = &reference[1..];
+        if frag.starts_with('/') {
+            percent_encoding::percent_decode_str(frag)
+                .decode_utf8_lossy()
+                .into_owned()
+        } else if frag.is_empty() {
+            String::new()
+        } else {
+            named_target_pointer(ctx, &schema_base_uri, reference)
+        }
+    });
 
     let body = ctx.with_is_valid_scope(location, |ctx| {
         ctx.with_schema_env(schema, schema_base_uri, |ctx| {

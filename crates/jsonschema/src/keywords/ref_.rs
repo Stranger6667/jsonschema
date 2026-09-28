@@ -10,6 +10,7 @@ use crate::{
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, ValidationError,
 };
+use referencing::Resolved;
 use serde_json::{Map, Value};
 
 /// Tracks `$ref` traversals for recursive references where the target is behind `BoxedValidator<F>`
@@ -181,6 +182,33 @@ fn extract_ref_target_base(alias: &referencing::Uri<String>) -> Location {
     Location::new()
 }
 
+/// Whether `alias` names its target by an anchor rather than a JSON Pointer.
+fn is_named(alias: &referencing::Uri<String>) -> bool {
+    alias.fragment().is_some_and(|fragment| {
+        !fragment.as_str().is_empty() && !fragment.as_str().starts_with('/')
+    })
+}
+
+/// Location of a named target within its resource.
+fn named_target_base<F: Json>(
+    ctx: &compiler::Context<F>,
+    resolved: &Resolved<'_>,
+) -> Result<Location, referencing::Error> {
+    let resolver = resolved.resolver();
+    let resource = resolver.lookup("")?;
+    if let Some(location) = ctx.anchor_location(resource.contents(), resolved.contents()) {
+        return Ok(location);
+    }
+    // A dynamic anchor can live in any resource of the dynamic scope
+    for uri in &resolver.dynamic_scope() {
+        let resource = resolver.lookup(uri.as_str())?;
+        if let Some(location) = ctx.anchor_location(resource.contents(), resolved.contents()) {
+            return Ok(location);
+        }
+    }
+    unreachable!("A named target lives in its resolver's resource or in its dynamic scope")
+}
+
 fn compile_reference_validator<'a, F: Json>(
     ctx: &compiler::Context<F>,
     parent: &Map<String, Value>,
@@ -205,6 +233,14 @@ fn compile_reference_validator<'a, F: Json>(
     let resolved = match ctx.lookup(reference) {
         Ok(resolved) => resolved,
         Err(error) => return Some(Err(ValidationError::from(error))),
+    };
+    let ref_target_base = if is_named(&alias) {
+        match named_target_base(ctx, &resolved) {
+            Ok(location) => location,
+            Err(error) => return Some(Err(ValidationError::from(error))),
+        }
+    } else {
+        ref_target_base
     };
 
     // Direct self-reference - skip to avoid infinite recursion. This compares node identity
@@ -1472,6 +1508,81 @@ mod tests {
 
         assert!(paths.contains(&"/properties/name/$ref/type".to_string()));
         assert!(paths.contains(&"/properties/age/$ref/type".to_string()));
+    }
+
+    // A named target reports the same `schema_path` as a JSON Pointer to it
+    #[test_case(
+        &json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {"model": {"$anchor": "model", "properties": {"name": {"type": "string"}}}},
+            "properties": {"named": {"$ref": "#model"}, "pointer": {"$ref": "#/$defs/model"}}
+        }),
+        "/$defs/model/properties/name/type";
+        "draft2020 anchor"
+    )]
+    #[test_case(
+        &json!({
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$defs": {"model": {"$anchor": "model", "properties": {"name": {"type": "string"}}}},
+            "properties": {"named": {"$ref": "#model"}, "pointer": {"$ref": "#/$defs/model"}}
+        }),
+        "/$defs/model/properties/name/type";
+        "draft2019 anchor"
+    )]
+    #[test_case(
+        &json!({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "definitions": {"model": {"$id": "#model", "properties": {"name": {"type": "string"}}}},
+            "properties": {"named": {"$ref": "#model"}, "pointer": {"$ref": "#/definitions/model"}}
+        }),
+        "/definitions/model/properties/name/type";
+        "draft7 fragment id"
+    )]
+    #[test_case(
+        &json!({
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "definitions": {"model": {"id": "#model", "properties": {"name": {"type": "string"}}}},
+            "properties": {"named": {"$ref": "#model"}, "pointer": {"$ref": "#/definitions/model"}}
+        }),
+        "/definitions/model/properties/name/type";
+        "draft4 fragment id"
+    )]
+    #[test_case(
+        &json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {"model": {"$dynamicAnchor": "model", "properties": {"name": {"type": "string"}}}},
+            "properties": {"named": {"$dynamicRef": "#model"}, "pointer": {"$ref": "#/$defs/model"}}
+        }),
+        "/$defs/model/properties/name/type";
+        "draft2020 dynamic anchor"
+    )]
+    #[test_case(
+        &json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root.json",
+            "$defs": {
+                "inner": {
+                    "$id": "inner.json",
+                    "$defs": {"model": {"$anchor": "model", "properties": {"name": {"type": "string"}}}}
+                }
+            },
+            "properties": {"named": {"$ref": "inner.json#model"}, "pointer": {"$ref": "inner.json#/$defs/model"}}
+        }),
+        "/$defs/model/properties/name/type";
+        "anchor in embedded resource"
+    )]
+    fn schema_path_of_named_target(schema: &Value, expected: &str) {
+        let validator = crate::validator_for(schema).expect("Invalid schema");
+        for property in ["named", "pointer"] {
+            let instance = json!({property: {"name": 42}});
+            let error = validator.validate(&instance).expect_err("Should fail");
+            assert_eq!(error.schema_path().as_str(), expected, "{property}");
+            let errors: Vec<_> = validator
+                .iter_errors(&instance)
+                .map(|error| error.schema_path().to_string())
+                .collect();
+            assert_eq!(errors, vec![expected.to_string()], "{property}");
+        }
     }
 
     #[test]
