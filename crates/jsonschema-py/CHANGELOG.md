@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.2] - 2026-09-28
+
 ### Fixed
 
 - `$dynamicRef` targets in another document resolving relative references and reporting absolute keyword locations against the referencing document.
@@ -1545,7 +1547,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.2...HEAD
+[0.58.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.1...python-v0.58.2
 [0.58.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.0...python-v0.58.1
 [0.58.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.57.1...python-v0.58.0
 [0.57.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.57.0...python-v0.57.1
