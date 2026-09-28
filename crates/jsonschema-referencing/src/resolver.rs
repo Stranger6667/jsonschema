@@ -175,6 +175,17 @@ impl<'r> Resolver<'r> {
             Ok(self.clone())
         }
     }
+    /// The same resolver based at `uri`, keeping the dynamic scope.
+    #[inline]
+    pub(crate) fn at_uri(&self, uri: &Uri<String>) -> Result<Self, Error> {
+        Ok(Resolver {
+            registry: self.registry,
+            base_uri: self
+                .registry
+                .resolve_uri(&self.base_uri.borrow(), uri.as_str())?,
+            scopes: self.scopes.clone(),
+        })
+    }
     #[must_use]
     #[inline]
     pub fn dynamic_scope(&self) -> List<Uri<String>> {

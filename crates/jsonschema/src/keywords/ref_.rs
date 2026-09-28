@@ -196,17 +196,9 @@ fn named_target_base<F: Json>(
 ) -> Result<Location, referencing::Error> {
     let resolver = resolved.resolver();
     let resource = resolver.lookup("")?;
-    if let Some(location) = ctx.anchor_location(resource.contents(), resolved.contents()) {
-        return Ok(location);
-    }
-    // A dynamic anchor can live in any resource of the dynamic scope
-    for uri in &resolver.dynamic_scope() {
-        let resource = resolver.lookup(uri.as_str())?;
-        if let Some(location) = ctx.anchor_location(resource.contents(), resolved.contents()) {
-            return Ok(location);
-        }
-    }
-    unreachable!("A named target lives in its resolver's resource or in its dynamic scope")
+    Ok(ctx
+        .anchor_location(resource.contents(), resolved.contents())
+        .expect("A named target lives in its resolver's resource"))
 }
 
 fn compile_reference_validator<'a, F: Json>(
@@ -1339,6 +1331,75 @@ mod tests {
             error.evaluation_path().as_str(),
             "/properties/child/$dynamicRef/properties/data/type"
         );
+    }
+
+    #[test_case(
+        &json!({"child": {"v": 1}}),
+        None;
+        "target relative ref accepts integer"
+    )]
+    #[test_case(
+        &json!({"child": {"v": "x"}}),
+        Some((
+            "\"x\" is not of type \"integer\"",
+            "/$defs/leaf/properties/v/type",
+            "https://example.com/root.json#/$defs/leaf/properties/v/type",
+        ));
+        "target relative ref rejects string"
+    )]
+    #[test_case(
+        &json!({"child": "str"}),
+        None;
+        "target permits non-object"
+    )]
+    fn cross_document_dynamic_ref_uses_target_base(
+        instance: &Value,
+        expected_error: Option<(&str, &str, &str)>,
+    ) {
+        let tree = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/tree.json",
+            "$dynamicAnchor": "node",
+            "type": "object",
+            "properties": {"child": {"$dynamicRef": "#node"}},
+            "$defs": {"leaf": {"type": "string"}}
+        });
+        let root = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root.json",
+            "$ref": "tree.json",
+            "$defs": {
+                "node": {"$dynamicAnchor": "node", "$ref": "#/$defs/leaf"},
+                "leaf": {"properties": {"v": {"type": "integer"}}}
+            }
+        });
+        let registry = crate::Registry::new()
+            .add("https://example.com/tree.json", &tree)
+            .expect("Invalid resource")
+            .prepare()
+            .expect("Invalid registry");
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&root)
+            .expect("Invalid schema");
+
+        assert_eq!(validator.is_valid(instance), expected_error.is_none());
+        let result = validator.validate(instance);
+        match expected_error {
+            Some((message, schema_path, absolute_keyword_location)) => {
+                let error = result.expect_err("Should fail");
+                assert_eq!(error.to_string(), message);
+                assert_eq!(error.schema_path().as_str(), schema_path);
+                assert_eq!(
+                    error
+                        .absolute_keyword_location()
+                        .expect("Absolute keyword location")
+                        .as_str(),
+                    absolute_keyword_location
+                );
+            }
+            None => assert!(result.is_ok()),
+        }
     }
 
     #[test]
