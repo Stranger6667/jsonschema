@@ -44,18 +44,26 @@ impl<'r> Anchor<'r> {
                 resource.draft(),
             )),
             Anchor::Dynamic { name, resource } => {
+                let scope = resolver.dynamic_scope();
                 let mut last = *resource;
-                for uri in &resolver.dynamic_scope() {
+                let mut found_in = None;
+                for uri in &scope {
                     match resolver.lookup_anchor(uri, name) {
                         Ok(anchor) => {
                             if let Anchor::Dynamic { resource, .. } = anchor {
                                 last = resource;
+                                found_in = Some(uri);
                             }
                         }
                         Err(Error::NoSuchAnchor { .. }) => {}
                         Err(err) => return Err(err),
                     }
                 }
+                // The anchor's own document is the base for references inside it
+                let resolver = match found_in {
+                    Some(uri) => resolver.at_uri(uri)?,
+                    None => resolver,
+                };
                 Ok(Resolved::new(
                     last.contents(),
                     resolver.in_subresource(last)?,
@@ -223,6 +231,38 @@ mod tests {
             .expect("Lookup failed");
         assert_eq!(fourth.contents(), root.contents());
         assert_eq!(format!("{:?}", fourth.resolver()), "Resolver { base_uri: \"http://example.com\", scopes: \"[http://example.com/foo/, http://example.com, http://example.com]\" }");
+    }
+
+    #[test]
+    fn dynamic_anchor_in_another_document_uses_that_document_as_base() {
+        let root = Draft::Draft202012.create_resource(json!({
+            "$id": "https://example.com/root.json",
+            "$defs": {"node": {"$dynamicAnchor": "node"}}
+        }));
+        let tree = Draft::Draft202012.create_resource(json!({
+            "$id": "https://example.com/tree.json",
+            "$dynamicAnchor": "node"
+        }));
+        let registry = Registry::new()
+            .extend([
+                ("https://example.com/root.json", &root),
+                ("https://example.com/tree.json", &tree),
+            ])
+            .expect("Invalid resources")
+            .prepare()
+            .expect("Invalid resources");
+        let resolver = registry.resolver(
+            crate::uri::from_str("https://example.com/root.json").expect("Invalid base URI"),
+        );
+
+        let tree = resolver.lookup("tree.json").expect("Lookup failed");
+        let node = tree.resolver().lookup("#node").expect("Lookup failed");
+
+        assert_eq!(node.contents(), &root.contents()["$defs"]["node"]);
+        assert_eq!(
+            node.resolver().base_uri().as_str(),
+            "https://example.com/root.json"
+        );
     }
 
     #[test]

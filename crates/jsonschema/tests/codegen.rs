@@ -1110,6 +1110,14 @@ struct SelfRefValidator;
 )]
 struct ExternalRefFragmentsValidator;
 
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root.json","$ref":"tree.json","$defs":{"node":{"$dynamicAnchor":"node","$ref":"#/$defs/leaf"},"leaf":{"properties":{"v":{"type":"integer"}}}}}"##,
+    resources = {
+        "https://example.com/tree.json" => { schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/tree.json","$dynamicAnchor":"node","type":"object","properties":{"child":{"$dynamicRef":"#node"}},"$defs":{"leaf":{"type":"string"}}}"## },
+    }
+)]
+struct CrossDocumentDynamicRefValidator;
+
 #[jsonschema::validator(schema = r#"{"const":1}"#, draft = referencing::Draft::Draft4)]
 struct Draft4ConstIgnoredValidator;
 
@@ -2484,6 +2492,33 @@ fn test_draft4_ignores_modern_dollar_id(instance: serde_json::Value) {
 #[test_case(serde_json::json!(true), false ; "bool_rejected")]
 fn test_external_ref_fragments_use_distinct_helpers(instance: serde_json::Value, expected: bool) {
     assert_eq!(ExternalRefFragmentsValidator::is_valid(&instance), expected);
+}
+
+// The dynamic target's `$ref` resolves against the document holding the target
+#[test_case(serde_json::json!({"child": {"v": 1}}), None ; "target_relative_ref_accepts_integer")]
+#[test_case(
+    serde_json::json!({"child": {"v": "x"}}),
+    Some(("\"x\" is not of type \"integer\"", "/$defs/leaf/properties/v/type"))
+    ; "target_relative_ref_rejects_string"
+)]
+#[test_case(serde_json::json!({"child": "str"}), None ; "target_permits_non_object")]
+fn test_cross_document_dynamic_ref_uses_target_base(
+    instance: serde_json::Value,
+    expected_error: Option<(&str, &str)>,
+) {
+    assert_eq!(
+        CrossDocumentDynamicRefValidator::is_valid(&instance),
+        expected_error.is_none()
+    );
+    let result = CrossDocumentDynamicRefValidator::validate(&instance);
+    match expected_error {
+        Some((message, schema_path)) => {
+            let error = result.expect_err("Should fail");
+            assert_eq!(error.to_string(), message);
+            assert_eq!(error.schema_path().as_str(), schema_path);
+        }
+        None => assert!(result.is_ok()),
+    }
 }
 
 #[test_case(serde_json::json!(1), true ; "const_value")]
