@@ -303,11 +303,19 @@ impl<'a, F: Json> Context<'a, F> {
         resource: ResourceRef<'_>,
     ) -> Result<Context<'a, F>, referencing::Error> {
         let resolver = self.resolver.in_subresource(resource)?;
+        let draft = resource.draft();
+        // A `$schema` below the root switches the draft, and its vocabularies with it: Draft 4-7
+        // roots have none, so a nested Draft 2019-09+ subschema would compile no keywords.
+        let vocabularies = if draft == self.draft {
+            self.vocabularies.clone()
+        } else {
+            resolver.find_vocabularies(draft, resource.contents())
+        };
         Ok(Context {
             config: self.config,
             resolver,
-            vocabularies: self.vocabularies.clone(),
-            draft: resource.draft(),
+            vocabularies,
+            draft,
             resource_base: self.resource_base.clone(),
             location: self.location.clone(),
             shared: Rc::clone(&self.shared),

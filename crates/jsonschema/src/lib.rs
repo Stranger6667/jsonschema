@@ -4592,6 +4592,21 @@ mod tests {
         assert_eq!(error.instance_path().as_str(), expected);
     }
 
+    // A subschema's `$schema` switches the draft for that subschema, whatever the root draft.
+    #[test_case(Draft::Draft4, &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "prefixItems": [{"type": "string"}]}), false ; "2020-12 under draft 4")]
+    #[test_case(Draft::Draft4, &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "items": [{"type": "string"}]}), false ; "2019-09 under draft 4")]
+    #[test_case(Draft::Draft7, &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "prefixItems": [{"type": "string"}]}), false ; "2020-12 under draft 7")]
+    #[test_case(Draft::Draft4, &json!({"$schema": "http://json-schema.org/draft-07/schema#", "items": [{"type": "string"}]}), false ; "draft 7 under draft 4")]
+    #[test_case(Draft::Draft201909, &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "prefixItems": [{"type": "string"}]}), false ; "2020-12 under 2019-09")]
+    #[test_case(Draft::Draft202012, &json!({"$schema": "http://json-schema.org/draft-04/schema#", "prefixItems": [{"type": "string"}]}), true ; "draft 4 under 2020-12")]
+    fn nested_schema_switches_draft(root: Draft, pair: &Value, expected: bool) {
+        let validator = crate::options()
+            .with_draft(root)
+            .build(&json!({"properties": {"pair": pair}}))
+            .expect("Should build validator");
+        assert_eq!(validator.is_valid(&json!({"pair": [1]})), expected);
+    }
+
     #[test_case(crate::is_valid ; "autodetect")]
     #[test_case(crate::draft4::is_valid ; "draft4")]
     #[test_case(crate::draft6::is_valid ; "draft6")]
@@ -5403,6 +5418,22 @@ mod tests {
             .expect("Should build validator");
 
         assert!(!validator.is_valid(&json!("not-an-ipv4")));
+    }
+
+    #[test]
+    fn nested_dialect_declares_vocabularies() {
+        let registry = dialect_registry(&format_assertion_dialect(true));
+        let validator = crate::options()
+            .with_draft(Draft::Draft4)
+            .with_registry(&registry)
+            .build(&json!({
+                "properties": {
+                    "address": {"$schema": "https://example.com/dialect", "format": "ipv4"}
+                }
+            }))
+            .expect("Should build validator");
+
+        assert!(!validator.is_valid(&json!({"address": "not-an-ipv4"})));
     }
 
     #[test_case("https://json-schema.org/draft/2020-12/meta/format-assertion" ; "2020-12 format-assertion")]
