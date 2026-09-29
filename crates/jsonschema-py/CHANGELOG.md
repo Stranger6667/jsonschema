@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Keywords of a subschema declaring a Draft 2019-09+ `$schema` under a Draft 4, 6 or 7 root being ignored.
+
 ## [0.58.2] - 2026-09-28
 
 ### Fixed
