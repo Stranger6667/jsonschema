@@ -349,14 +349,8 @@ assert evaluation.errors() == [
     }
 ]
 
-assert evaluation.annotations() == [
-    {
-        "schemaLocation": "/prefixItems",
-        "absoluteKeywordLocation": None,
-        "instanceLocation": "",
-        "annotations": 0,
-    }
-]
+# A failing schema produces no annotations
+assert evaluation.annotations() == []
 ```
 
 ### Arbitrary-Precision Numbers

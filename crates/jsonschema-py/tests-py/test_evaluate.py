@@ -176,6 +176,7 @@ def test_validator_evaluate_annotations_and_errors():
 
     invalid_eval = validator.evaluate(["hello", "oops"])
     assert invalid_eval.flag() == {"valid": False}
+    assert invalid_eval.annotations() == []
     assert invalid_eval.errors() == [
         {
             "schemaLocation": "/items/type",
