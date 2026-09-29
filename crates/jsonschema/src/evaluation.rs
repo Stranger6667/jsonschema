@@ -614,7 +614,8 @@ impl Evaluation {
     ///
     /// Annotations are metadata emitted by keywords during successful validation.
     /// They can be used to collect information about which parts of a schema
-    /// matched the instance.
+    /// matched the instance. A failing schema produces no annotations, including those of
+    /// its subschemas, so an invalid instance yields none.
     ///
     /// # Examples
     ///
@@ -1026,6 +1027,8 @@ impl fmt::Display for ErrorEntry<'_> {
 struct NodeIter<'a> {
     arena: &'a EvaluationArena,
     stack: Vec<u32>,
+    /// Whether to walk into the subtrees of failing nodes.
+    enter_invalid: bool,
 }
 
 impl<'a> NodeIter<'a> {
@@ -1033,6 +1036,16 @@ impl<'a> NodeIter<'a> {
         NodeIter {
             arena,
             stack: vec![root],
+            enter_invalid: true,
+        }
+    }
+
+    /// Only nodes whose every ancestor, and the node itself, is valid.
+    fn valid(arena: &'a EvaluationArena, root: u32) -> Self {
+        NodeIter {
+            arena,
+            stack: vec![root],
+            enter_invalid: false,
         }
     }
 }
@@ -1041,11 +1054,17 @@ impl<'a> Iterator for NodeIter<'a> {
     type Item = &'a EvaluationNode;
 
     fn next(&mut self) -> Option<Self::Item> {
-        let index = self.stack.pop()?;
-        let start = self.stack.len();
-        self.stack.extend(self.arena.child_indices(index));
-        self.stack[start..].reverse();
-        Some(self.arena.node(index))
+        loop {
+            let index = self.stack.pop()?;
+            let node = self.arena.node(index);
+            if !node.valid && !self.enter_invalid {
+                continue;
+            }
+            let start = self.stack.len();
+            self.stack.extend(self.arena.child_indices(index));
+            self.stack[start..].reverse();
+            return Some(node);
+        }
     }
 }
 
@@ -1054,7 +1073,7 @@ impl<'a> Iterator for NodeIter<'a> {
 /// This iterator traverses the evaluation tree and yields [`AnnotationEntry`]
 /// for each node that produced annotations during validation.
 ///
-/// Annotations are only present for nodes where validation succeeded.
+/// A failing schema produces no annotations, including those of its subschemas.
 ///
 /// # Examples
 ///
@@ -1096,7 +1115,7 @@ pub struct AnnotationIter<'a> {
 impl<'a> AnnotationIter<'a> {
     fn new(arena: &'a EvaluationArena, root: u32) -> Self {
         AnnotationIter {
-            nodes: NodeIter::new(arena, root),
+            nodes: NodeIter::valid(arena, root),
         }
     }
 }
@@ -1694,10 +1713,8 @@ mod tests {
 
         let evaluation = Evaluation::with_root(arena, root);
 
-        // Should have 1 annotation (from valid child only; root has dropped annotations)
-        let annotations: Vec<_> = evaluation.iter_annotations().collect();
-        assert_eq!(annotations.len(), 1);
-        assert_eq!(annotations[0].schema_location, "/valid");
+        // The failing root drops the annotations of its valid child too
+        assert_eq!(evaluation.iter_annotations().count(), 0);
 
         // Should have 2 errors (root + invalid child)
         let errors: Vec<_> = evaluation.iter_errors().collect();
@@ -2011,6 +2028,51 @@ mod tests {
     fn test_evaluation_is_valid(instance: Value, expected: bool) {
         let validator = crate::validator_for(&json!({"type": "number"})).expect("valid schema");
         assert_eq!(validator.evaluate(&instance).is_valid(), expected);
+    }
+
+    // A failing schema produces no annotations, including those of its subschemas
+    #[test_case(
+        json!({"properties": {"a": {"title": "x"}}, "required": ["b"]}),
+        json!({"a": 1}),
+        vec![];
+        "invalid root"
+    )]
+    #[test_case(
+        json!({"properties": {"obj": {"properties": {"a": {"title": "x"}}, "required": ["b"]}}}),
+        json!({"obj": {"a": 1}}),
+        vec![];
+        "invalid nested object"
+    )]
+    #[test_case(
+        json!({"properties": {"a": {"title": "x"}}, "required": ["a"]}),
+        json!({"a": 1}),
+        vec![
+            ("/properties", "", json!(["a"])),
+            ("/properties/a", "/a", json!({"title": "x"})),
+        ];
+        "valid root"
+    )]
+    #[test_case(
+        json!({"anyOf": [{"title": "t0", "required": ["b"]}, {"title": "t1"}]}),
+        json!({"a": 1}),
+        vec![("/anyOf/1", "", json!({"title": "t1"}))];
+        "valid anyOf branch"
+    )]
+    #[allow(clippy::needless_pass_by_value)]
+    fn test_iter_annotations(schema: Value, instance: Value, expected: Vec<(&str, &str, Value)>) {
+        let validator = crate::validator_for(&schema).expect("valid schema");
+        let evaluation = validator.evaluate(&instance);
+        let annotations: Vec<_> = evaluation
+            .iter_annotations()
+            .map(|entry| {
+                (
+                    entry.schema_location,
+                    entry.instance_location.as_str(),
+                    entry.annotations.value().clone(),
+                )
+            })
+            .collect();
+        assert_eq!(annotations, expected);
     }
 
     #[test]
