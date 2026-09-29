@@ -4607,6 +4607,58 @@ mod tests {
         assert_eq!(validator.is_valid(&json!({"pair": [1]})), expected);
     }
 
+    const DRAFT4: &str = "http://json-schema.org/draft-04/schema#";
+    const DRAFT6: &str = "http://json-schema.org/draft-06/schema#";
+    const DRAFT7: &str = "http://json-schema.org/draft-07/schema#";
+    const DRAFT202012: &str = "https://json-schema.org/draft/2020-12/schema";
+
+    fn with_embedded_resource(root: &str, resource: &Value) -> Value {
+        json!({"$schema": root, "properties": {"a": resource}})
+    }
+
+    // An embedded resource is checked against the meta-schema of its own `$schema`, not the root's.
+    #[test_case(DRAFT202012, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "items": [{"type": "string"}]}), &json!(["x"]), &json!([1]) ; "draft 4 tuple items under 2020-12")]
+    #[test_case(DRAFT202012, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "minimum": 5, "exclusiveMinimum": true}), &json!(6), &json!(5) ; "draft 4 boolean exclusiveMinimum under 2020-12")]
+    #[test_case(DRAFT6, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "minimum": 5, "exclusiveMinimum": true}), &json!(6), &json!(5) ; "draft 4 boolean exclusiveMinimum under draft 6")]
+    #[test_case(DRAFT4, &json!({"$id": "https://example.com/a", "$schema": DRAFT202012, "exclusiveMinimum": 5}), &json!(6), &json!(5) ; "2020-12 numeric exclusiveMinimum under draft 4")]
+    fn embedded_resource_follows_own_meta_schema(
+        root: &str,
+        resource: &Value,
+        valid: &Value,
+        invalid: &Value,
+    ) {
+        let validator =
+            validator_for(&with_embedded_resource(root, resource)).expect("Should build validator");
+        assert_eq!(
+            (
+                validator.is_valid(&json!({"a": valid})),
+                validator.is_valid(&json!({"a": invalid}))
+            ),
+            (true, false)
+        );
+    }
+
+    // The error points at the offending keyword inside the embedded resource.
+    #[test_case(DRAFT7, &json!({"$id": "https://example.com/a", "$schema": DRAFT202012, "minContains": -1}), "/properties/a/minContains" ; "2020-12 under draft 7")]
+    #[test_case(DRAFT202012, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "minimum": 1, "exclusiveMinimum": 5}), "/properties/a/exclusiveMinimum" ; "draft 4 under 2020-12")]
+    #[test_case(DRAFT202012, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "properties": {"b": {"$id": "https://example.com/b", "$schema": DRAFT202012, "minContains": -1}}}), "/properties/a/properties/b/minContains" ; "2020-12 under draft 4 under 2020-12")]
+    fn embedded_resource_rejected_by_own_meta_schema(root: &str, resource: &Value, expected: &str) {
+        let error = validator_for(&with_embedded_resource(root, resource))
+            .expect_err("Should reject the embedded resource");
+        assert_eq!(error.instance_path().as_str(), expected);
+    }
+
+    // Without `$id` the subschema is not a resource root, so the root's meta-schema still applies.
+    #[test]
+    fn nested_schema_without_id_follows_root_meta_schema() {
+        let error = validator_for(&with_embedded_resource(
+            DRAFT202012,
+            &json!({"$schema": DRAFT4, "items": [{"type": "string"}]}),
+        ))
+        .expect_err("Should reject array-form `items` under 2020-12");
+        assert_eq!(error.instance_path().as_str(), "/properties/a/items");
+    }
+
     #[test_case(crate::is_valid ; "autodetect")]
     #[test_case(crate::draft4::is_valid ; "draft4")]
     #[test_case(crate::draft6::is_valid ; "draft6")]

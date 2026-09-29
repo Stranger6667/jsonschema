@@ -1085,11 +1085,112 @@ pub(crate) fn validate_schema(
         }
     }
 
+    let mut embedded = Vec::new();
+    if declares_nested_schema(schema) {
+        collect_embedded_resources(draft, draft, schema, &mut embedded);
+    }
     let validator = crate::meta::validator_for_draft(draft);
-    if let Err(error) = validator.validate(schema) {
-        return Err(error.to_owned());
+    if embedded.is_empty() {
+        return validator
+            .validate(schema)
+            .map_err(ValidationError::to_owned);
+    }
+    // Each embedded resource with its own dialect is validated against its own meta-schema
+    // (JSON Schema 2020-12 Core, Section 9.3.3), so the enclosing one sees it as `{}`.
+    let mut resources = Vec::with_capacity(embedded.len());
+    let enclosing = without_embedded_resources(schema, &embedded, &Location::new(), &mut resources);
+    validator
+        .validate(&enclosing)
+        .map_err(ValidationError::to_owned)?;
+    for (location, draft, contents) in resources {
+        validate_schema(draft, contents)
+            .map_err(|error| error.with_instance_path_prefix(&location))?;
     }
     Ok(())
+}
+
+/// Whether `$schema` appears anywhere below the root. This structural scan is several times
+/// cheaper than the schema-aware traversal, which a single-dialect document never needs.
+fn declares_nested_schema(schema: &Value) -> bool {
+    fn contains_schema_keyword(value: &Value) -> bool {
+        match value {
+            Value::Object(map) => map
+                .iter()
+                .any(|(key, child)| key == "$schema" || contains_schema_keyword(child)),
+            Value::Array(items) => items.iter().any(contains_schema_keyword),
+            _ => false,
+        }
+    }
+    schema
+        .as_object()
+        .is_some_and(|map| map.values().any(contains_schema_keyword))
+}
+
+/// Embedded resources below `schema` whose `$schema` names a draft other than `meta_draft`, the
+/// draft whose meta-schema the enclosing resource is validated against.
+///
+/// Only a resource root may declare `$schema` (2019-09 and 2020-12 Core, Section 8.1.1), so a
+/// subschema without an identifier stays under the enclosing meta-schema.
+fn collect_embedded_resources<'a>(
+    draft: Draft,
+    meta_draft: Draft,
+    schema: &'a Value,
+    embedded: &mut Vec<(&'a Value, Draft)>,
+) {
+    for subresource in draft.subresources_of(schema) {
+        let subresource_draft = draft.detect(subresource);
+        let own_dialect = subresource_draft != meta_draft && subresource_draft != Draft::Unknown;
+        // A resource written against an older draft may name itself with that draft's `id`.
+        if own_dialect
+            && (draft.create_resource_ref(subresource).id().is_some()
+                || subresource_draft
+                    .create_resource_ref(subresource)
+                    .id()
+                    .is_some())
+        {
+            embedded.push((subresource, subresource_draft));
+        } else {
+            collect_embedded_resources(subresource_draft, meta_draft, subresource, embedded);
+        }
+    }
+}
+
+/// Copy of `value` with every `embedded` resource replaced by `{}`, which every draft accepts.
+/// The replaced resources are recorded with their location.
+fn without_embedded_resources<'a>(
+    value: &'a Value,
+    embedded: &[(&'a Value, Draft)],
+    location: &Location,
+    replaced: &mut Vec<(Location, Draft, &'a Value)>,
+) -> Value {
+    if let Some((_, draft)) = embedded
+        .iter()
+        .find(|(resource, _)| std::ptr::eq(*resource, value))
+    {
+        replaced.push((location.clone(), *draft, value));
+        return Value::Object(Map::new());
+    }
+    match value {
+        Value::Object(map) => Value::Object(
+            map.iter()
+                .map(|(key, child)| {
+                    let child =
+                        without_embedded_resources(child, embedded, &location.join(key), replaced);
+                    (key.clone(), child)
+                })
+                .collect(),
+        ),
+        Value::Array(items) => Value::Array(
+            items
+                .iter()
+                .enumerate()
+                .map(|(idx, child)| {
+                    without_embedded_resources(child, embedded, &location.join(idx), replaced)
+                })
+                .collect(),
+        ),
+        _ => value.clone(),
+    }
 }
 
 /// Keywords that can name the schema holding them, across all drafts.
