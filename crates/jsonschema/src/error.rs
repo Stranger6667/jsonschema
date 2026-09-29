@@ -493,6 +493,12 @@ impl<'a> ValidationError<'a> {
         self
     }
 
+    /// Place the instance location under `prefix`, for an error raised on a part of a document.
+    pub(crate) fn with_instance_path_prefix(mut self, prefix: &Location) -> Self {
+        self.repr.instance_path = prefix.join_raw_suffix(self.repr.instance_path.as_str());
+        self
+    }
+
     pub(crate) fn set_absolute_keyword_location(&mut self, uri: &Arc<Uri<String>>) {
         if self.repr.absolute_keyword_location.is_none() {
             self.repr.absolute_keyword_location = Some(Arc::clone(uri));
