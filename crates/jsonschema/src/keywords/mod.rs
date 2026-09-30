@@ -291,7 +291,7 @@ pub(crate) fn keyword_is_leaf(keyword: &Keyword) -> bool {
 }
 
 pub(crate) fn get_for_draft<'a, F: Json>(
-    ctx: &compiler::Context<'a, F>,
+    ctx: &compiler::Context<'_, F>,
     keyword: &'a str,
 ) -> Option<(Keyword, CompileFunc<'a, F>)> {
     match (ctx.draft(), keyword) {

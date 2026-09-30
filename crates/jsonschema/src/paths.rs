@@ -295,6 +295,24 @@ impl<'a> RefTracker<'a> {
     /// Computed once on first access, then cached.
     #[inline]
     pub(crate) fn prefix(&self) -> &Location {
+        if let Some(prefix) = self.cached_prefix.get() {
+            return prefix;
+        }
+        // Fill uncached ancestors root-first, so a long `$ref` chain joins in a loop, not a recursion.
+        let mut uncached = Vec::new();
+        let mut ancestor = self.parent;
+        while let Some(tracker) = ancestor {
+            if tracker.cached_prefix.get().is_some() {
+                break;
+            }
+            uncached.push(tracker);
+            ancestor = tracker.parent;
+        }
+        for tracker in uncached.into_iter().rev() {
+            tracker
+                .cached_prefix
+                .get_or_init(|| tracker.compute_prefix());
+        }
         self.cached_prefix.get_or_init(|| self.compute_prefix())
     }
 

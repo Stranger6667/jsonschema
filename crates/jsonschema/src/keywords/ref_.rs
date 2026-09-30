@@ -2,9 +2,8 @@ use crate::LazyInstance;
 use std::borrow::Cow;
 
 use crate::{
-    compiler,
+    compiler::{self, TargetNode},
     keywords::{BoxedValidator, CompilationResult},
-    node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -97,17 +96,17 @@ impl<F: Json> Validate<F> for RefValidator<F> {
     }
 }
 
-/// Like `RefValidator` but holds a concrete `SchemaNode<F>` instead of `BoxedValidator<F>`,
+/// Like `RefValidator` but holds a concrete target instead of `BoxedValidator<F>`,
 /// eliminating one layer of vtable dispatch on every validation call.
-/// Used for non-recursive refs where the target is fully resolved at compile time.
-struct DirectRefValidator<F: Json> {
-    inner: SchemaNode<F>,
+/// Used for non-recursive refs: a compiled node, or a placeholder for a deferred one.
+struct DirectRefValidator<T> {
+    inner: T,
     ref_suffix: Location,
     ref_target_base: Location,
     target_location: Option<Arc<Uri<String>>>,
 }
 
-impl<F: Json> Validate<F> for DirectRefValidator<F> {
+impl<F: Json, T: Validate<F>> Validate<F> for DirectRefValidator<T> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         self.inner.is_valid(instance, ctx)
     }
@@ -339,6 +338,16 @@ fn compile_reference_validator<'a, F: Json>(
         return Some(Err(ValidationError::from(error)));
     }
 
+    if ctx.defers_ref_target(&resolved, &alias) {
+        let placeholder = ctx.defer_ref_target(resolved, ref_target_base.clone(), alias);
+        return Some(Ok(Box::new(DirectRefValidator {
+            inner: placeholder,
+            ref_suffix,
+            ref_target_base,
+            target_location,
+        })));
+    }
+
     let (contents, resolver, draft) = resolved.into_inner();
     let vocabularies = resolver.find_vocabularies(draft, contents);
     let resource_ref = draft.create_resource_ref(contents);
@@ -352,14 +361,20 @@ fn compile_reference_validator<'a, F: Json>(
         Err(error) => return Some(Err(error)),
     };
     Some(
-        compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
-            .map(|node| {
-                Box::new(DirectRefValidator {
+        ctx.compile_ref_target(|| compiler::compile_with_alias(&inner_ctx, resource_ref, alias))
+            .map(|target| match target {
+                TargetNode::Owned(node) => Box::new(DirectRefValidator {
                     inner: node,
                     ref_suffix,
                     ref_target_base,
                     target_location,
-                }) as Box<dyn Validate<F>>
+                }) as Box<dyn Validate<F>>,
+                TargetNode::Shared(_) => Box::new(RefValidator {
+                    inner: target.into_validator(),
+                    ref_suffix,
+                    ref_target_base,
+                    target_location,
+                }),
             })
             .map_err(ValidationError::to_owned),
     )
@@ -402,10 +417,9 @@ fn compile_recursive_validator<'a, F: Json>(
     let inner_ctx =
         ctx.with_resolver_and_draft(resolver, resource_ref.draft(), vocabularies, target_base)?;
     compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
-        .map(|node| {
-            let inner: BoxedValidator<F> = Box::new(node);
+        .map(|target| {
             Box::new(RefValidator {
-                inner,
+                inner: target.into_validator(),
                 ref_suffix,
                 ref_target_base,
                 target_location,

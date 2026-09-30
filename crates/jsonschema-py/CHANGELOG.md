@@ -10,6 +10,7 @@
 - Evaluation output `schemaLocation` and absolute keyword location of `$ref`, `$dynamicRef` and `$recursiveRef` nodes not pointing at the reference target.
 - Absolute keyword location of errors and annotations from a whole subschema, such as `false`, missing its JSON Pointer fragment.
 - `$dynamicRef` and `$recursiveRef` resolving in the dynamic scope of another path to the same schema, depending on property order.
+- Stack overflow when building validators for long `$ref` chains.
 
 ## [0.58.3] - 2026-09-30
 

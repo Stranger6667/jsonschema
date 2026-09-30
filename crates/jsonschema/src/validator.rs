@@ -424,6 +424,9 @@ impl EvaluationResult {
 /// of the schema tree and the configuration options used during compilation.
 pub struct Validator<F: Json = SerdeJson> {
     pub(crate) root: SchemaNode<F>,
+    /// `$ref` targets compiled off the call stack. Owning them here drops a long `$ref` chain
+    /// one target at a time; `root` drops first, so each target is released from this list.
+    pub(crate) targets: Vec<SchemaNode<F>>,
     pub(crate) draft: Draft,
 }
 
@@ -431,6 +434,7 @@ impl<F: Json> Clone for Validator<F> {
     fn clone(&self) -> Self {
         Self {
             root: self.root.clone(),
+            targets: self.targets.clone(),
             draft: self.draft,
         }
     }
@@ -441,7 +445,7 @@ impl<F: Json> std::fmt::Debug for Validator<F> {
         f.debug_struct("Validator")
             .field("root", &self.root)
             .field("draft", &self.draft)
-            .finish()
+            .finish_non_exhaustive()
     }
 }
 
@@ -687,6 +691,15 @@ mod tests {
             assert_eq!(unit["instanceLocation"], format!("/{idx}/value"));
             assert_eq!(unit["schemaLocation"], "/$defs/leaf/type");
         }
+    }
+
+    #[test]
+    fn debug_shows_root_and_draft() {
+        let validator = crate::validator_for(&json!(true)).expect("Valid schema");
+        assert_eq!(
+            format!("{validator:?}"),
+            r#"Validator { root: SchemaNode { inner: SchemaNodeInner { validators: Boolean, .. }, location: Location(""), .. }, draft: Draft202012, .. }"#
+        );
     }
 
     #[test]
