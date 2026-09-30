@@ -855,17 +855,6 @@ pub(crate) fn absorbed_error_node(
     )
 }
 
-pub(crate) fn format_schema_location(
-    location: &Location,
-    absolute: Option<&Arc<Uri<String>>>,
-) -> Arc<str> {
-    if let Some(uri) = absolute {
-        join_schema_location(uri, location.as_str())
-    } else {
-        location.as_arc()
-    }
-}
-
 /// `schemaLocation` of a keyword whose absolute location names it.
 ///
 /// The JSON Pointer comes from that URI, so it counts from the root of the keyword's own
@@ -1887,21 +1876,20 @@ mod tests {
     }
 
     #[test]
-    fn format_schema_location_without_absolute() {
+    fn format_keyword_location_without_absolute() {
         let location = Location::new().join("properties").join("name");
-        let formatted = format_schema_location(&location, None);
+        let formatted = format_keyword_location(&location, None);
         assert_eq!(formatted.as_ref(), "/properties/name");
     }
 
     #[test]
-    fn format_schema_location_with_absolute_no_fragment() {
-        let location = Location::new().join("properties");
+    fn join_schema_location_no_fragment() {
         let uri = Arc::new(
             Uri::parse("http://example.com/schema.json")
                 .unwrap()
                 .to_owned(),
         );
-        let formatted = format_schema_location(&location, Some(&uri));
+        let formatted = join_schema_location(&uri, "/properties");
         assert_eq!(
             formatted.as_ref(),
             "http://example.com/schema.json#/properties"
@@ -1909,27 +1897,24 @@ mod tests {
     }
 
     #[test]
-    fn format_schema_location_with_absolute_empty_location() {
-        let location = Location::new();
+    fn join_schema_location_empty_pointer() {
         let uri = Arc::new(
             Uri::parse("http://example.com/schema.json")
                 .unwrap()
                 .to_owned(),
         );
-        let formatted = format_schema_location(&location, Some(&uri));
+        let formatted = join_schema_location(&uri, "");
         assert_eq!(formatted.as_ref(), "http://example.com/schema.json#");
     }
 
     #[test]
-    fn format_schema_location_with_absolute_existing_fragment() {
-        let location = Location::new().join("properties");
+    fn join_schema_location_existing_fragment() {
         let uri = Arc::new(
             Uri::parse("http://example.com/schema.json#/defs/myDef")
                 .unwrap()
                 .to_owned(),
         );
-        let formatted = format_schema_location(&location, Some(&uri));
-        // When URI has a fragment, it's replaced with the location
+        let formatted = join_schema_location(&uri, "/properties");
         assert_eq!(
             formatted.as_ref(),
             "http://example.com/schema.json#/properties"

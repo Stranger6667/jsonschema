@@ -488,24 +488,24 @@ impl<F: Json> SchemaNode<F> {
             let child_result =
                 validator.evaluate_with_location(instance, location, instance_loc, tracker, ctx);
 
+            // schemaLocation: The canonical location WITHOUT $ref traversals.
+            // Per JSON Schema spec: "MUST NOT include by-reference applicators such as $ref"
+            // For by-reference validators like $ref, use the target's canonical location,
+            // which lives in the target's resource.
+            // For regular validators, use the keyword's location.
+            let (schema_location, absolute_location) = validator
+                .canonical_location()
+                .unwrap_or((child_location, absolute_location));
             let absolute_location = absolute_location.cloned();
 
             let eval_path = crate::paths::evaluation_path(tracker, child_location, ctx);
 
-            // schemaLocation: The canonical location WITHOUT $ref traversals.
-            // Per JSON Schema spec: "MUST NOT include by-reference applicators such as $ref"
-            // For by-reference validators like $ref, use the target's canonical location.
-            // For regular validators, use the keyword's location.
             // schemaLocation is fixed per subschema, by-reference or not, so it is rendered once.
             let formatted_schema_location = Arc::clone(cached_schema_location.get_or_init(|| {
-                if let Some(target) = validator.canonical_location() {
-                    crate::evaluation::format_schema_location(target, absolute_location.as_ref())
-                } else {
-                    crate::evaluation::format_keyword_location(
-                        child_location,
-                        absolute_location.as_ref(),
-                    )
-                }
+                crate::evaluation::format_keyword_location(
+                    schema_location,
+                    absolute_location.as_ref(),
+                )
             }));
 
             let child_node = match child_result {

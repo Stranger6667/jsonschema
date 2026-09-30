@@ -1,7 +1,7 @@
 //! Building a JSON Schema validator.
 //! The main idea is to create a tree from the input JSON Schema. This tree will contain
 //! everything needed to perform such validation in runtime.
-use std::collections::hash_map::Entry;
+use std::{collections::hash_map::Entry, sync::Arc};
 
 use crate::{
     error::ErrorIterator,
@@ -13,6 +13,7 @@ use crate::{
     Draft, Json, NodeIdentity, SerdeJson, ValidationError, ValidationOptions,
 };
 use ahash::AHashMap;
+use referencing::Uri;
 use serde_json::Value;
 
 // Re-export LazyEvaluationPath from paths module
@@ -307,9 +308,9 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
     /// canonical location, so this returns `None` by default.
     ///
     /// `RefValidator` and similar by-reference validators override this to return
-    /// the target schema's canonical location (e.g., `/$defs/item` instead of
-    /// `/properties/foo/$ref`).
-    fn canonical_location(&self) -> Option<&Location> {
+    /// the target schema's location within its resource (e.g., `/$defs/item` instead of
+    /// `/properties/foo/$ref`), together with its absolute URI when the resource has one.
+    fn canonical_location(&self) -> Option<(&Location, Option<&Arc<Uri<String>>>)> {
         None
     }
 }
