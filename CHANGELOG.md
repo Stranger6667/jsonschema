@@ -7,6 +7,7 @@
 - Absolute keyword location and `schemaLocation` of keywords inside a nested `$id` resource counting from the document root.
 - Absolute keyword location of `patternProperties` annotations missing its JSON Pointer fragment.
 - Evaluation output `schemaLocation` and absolute keyword location of `$ref`, `$dynamicRef` and `$recursiveRef` nodes not pointing at the reference target.
+- Absolute keyword location of errors and annotations from a whole subschema, such as `false`, missing its JSON Pointer fragment.
 
 ## [0.58.3] - 2026-09-30
 

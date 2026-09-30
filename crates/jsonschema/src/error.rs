@@ -2337,7 +2337,7 @@ mod tests {
             .expect("false schema should have absolute keyword location");
         assert_eq!(
             absolute_location.as_str(),
-            "https://example.com/schema.json"
+            "https://example.com/schema.json#"
         );
     }
 

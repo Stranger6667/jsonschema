@@ -390,10 +390,6 @@ impl<'a, F: Json> Context<'a, F> {
         Some(Arc::new(resolved))
     }
 
-    pub(crate) fn resource_start(&self) -> usize {
-        self.resource_start
-    }
-
     fn translated_pattern(&self, pattern: &str) -> Result<Arc<str>, ()> {
         if let Some(entry) = self.shared.pattern_cache.borrow().get(pattern) {
             return Ok(Arc::clone(&entry.translated));

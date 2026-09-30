@@ -4717,6 +4717,78 @@ mod tests {
     }
 
     #[test_case(
+        &json!({"properties": {"tree": {"$id": "https://example.com/tree", "properties": {"value": false}}}}),
+        &json!({"tree": {"value": 1}}),
+        &[("https://example.com/tree#/properties/value", Some("https://example.com/tree#/properties/value"))],
+        &[Some("https://example.com/tree#/properties/value")];
+        "false subschema in nested resource"
+    )]
+    #[test_case(
+        &json!({"properties": {"tree": {"$id": "https://example.com/tree", "unevaluatedProperties": false}}}),
+        &json!({"tree": {"a": 1, "b": 2}}),
+        &[
+            ("https://example.com/tree#/unevaluatedProperties", Some("https://example.com/tree#/unevaluatedProperties")),
+            ("https://example.com/tree#/unevaluatedProperties", Some("https://example.com/tree#/unevaluatedProperties")),
+            ("https://example.com/tree#/unevaluatedProperties", Some("https://example.com/tree#/unevaluatedProperties")),
+        ],
+        &[Some("https://example.com/tree#/unevaluatedProperties")];
+        "unevaluatedProperties false in nested resource"
+    )]
+    #[test_case(
+        &json!({"$id": "https://example.com/root", "$ref": "#/$defs/never", "$defs": {"never": false}}),
+        &json!(1),
+        &[("https://example.com/root#/$defs/never", Some("https://example.com/root#/$defs/never"))],
+        &[Some("https://example.com/root#/$defs/never")];
+        "ref to false in same resource"
+    )]
+    #[test_case(
+        &json!({"$id": "https://example.com/root", "$ref": "other#/$defs/never", "$defs": {"other": {"$id": "other", "$defs": {"never": false}}}}),
+        &json!(1),
+        &[("https://example.com/other#/$defs/never", Some("https://example.com/other#/$defs/never"))],
+        &[Some("https://example.com/other#/$defs/never")];
+        "ref to false in other resource"
+    )]
+    #[test_case(
+        &json!({"properties": {"value": false}}),
+        &json!({"value": 1}),
+        &[("/properties/value", None)],
+        &[None];
+        "false subschema without id"
+    )]
+    fn false_schema_error_locations(
+        schema: &Value,
+        instance: &Value,
+        evaluate: &[(&str, Option<&str>)],
+        iter_errors: &[Option<&str>],
+    ) {
+        let validator = validator_for(schema).expect("Should build validator");
+        let evaluation = validator.evaluate(instance);
+        let locations: Vec<(&str, Option<String>)> = evaluation
+            .iter_errors()
+            .map(|entry| {
+                (
+                    entry.schema_location,
+                    entry.absolute_keyword_location.map(ToString::to_string),
+                )
+            })
+            .collect();
+        let expected: Vec<(&str, Option<String>)> = evaluate
+            .iter()
+            .map(|(schema_location, absolute)| (*schema_location, absolute.map(str::to_string)))
+            .collect();
+        assert_eq!(locations, expected);
+        let locations: Vec<Option<String>> = validator
+            .iter_errors(instance)
+            .map(|error| error.absolute_keyword_location().map(ToString::to_string))
+            .collect();
+        let expected: Vec<Option<String>> = iter_errors
+            .iter()
+            .map(|absolute| absolute.map(str::to_string))
+            .collect();
+        assert_eq!(locations, expected);
+    }
+
+    #[test_case(
         &json!({"$id": "https://example.com/tree", "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a", "b"]}),
         &json!({}),
         &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/properties", "https://example.com/tree#/required"];
@@ -4817,6 +4889,15 @@ mod tests {
             ("https://example.com/tree#/patternProperties", Some("https://example.com/tree#/patternProperties")),
         ];
         "patternProperties beside additionalProperties in nested resource"
+    )]
+    #[test_case(
+        &json!({"properties": {"tree": {"$id": "https://example.com/tree", "unknown": 1}}}),
+        &json!({"tree": 1}),
+        &[
+            ("/properties", None),
+            ("https://example.com/tree#", Some("https://example.com/tree#")),
+        ];
+        "unknown keyword at nested resource root"
     )]
     fn annotation_locations(schema: &Value, instance: &Value, expected: &[(&str, Option<&str>)]) {
         let validator = validator_for(schema).expect("Should build validator");
