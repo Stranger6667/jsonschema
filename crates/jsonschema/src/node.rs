@@ -16,8 +16,6 @@ use std::{
 struct SchemaNodeInner<F: Json> {
     validators: NodeValidators<F>,
     formatted_schema_location: OnceLock<Arc<str>>,
-    /// Where the resource named by the node's absolute path starts in its location.
-    resource_start: usize,
 }
 
 impl<F: Json> fmt::Debug for SchemaNodeInner<F> {
@@ -276,12 +274,11 @@ impl<F: Json> SchemaNode<F> {
         validator: Option<BoxedValidator<F>>,
     ) -> SchemaNode<F> {
         let location = ctx.location().clone();
-        let absolute_path = ctx.base_uri();
+        let absolute_path = ctx.absolute_location(&location);
         SchemaNode {
             inner: Arc::new(SchemaNodeInner {
                 validators: NodeValidators::Boolean { validator },
                 formatted_schema_location: OnceLock::new(),
-                resource_start: ctx.resource_start(),
             }),
             location,
             absolute_path,
@@ -299,7 +296,7 @@ impl<F: Json> SchemaNode<F> {
         validators.sort_by_key(|(keyword, _)| crate::keywords::keyword_priority(keyword));
 
         let location = ctx.location().clone();
-        let absolute_path = ctx.base_uri();
+        let absolute_path = ctx.absolute_location(&location);
         let validators = validators
             .into_iter()
             .map(|(keyword, validator)| {
@@ -322,7 +319,6 @@ impl<F: Json> SchemaNode<F> {
                     validators,
                 }),
                 formatted_schema_location: OnceLock::new(),
-                resource_start: ctx.resource_start(),
             }),
             location,
             absolute_path,
@@ -334,7 +330,7 @@ impl<F: Json> SchemaNode<F> {
         validators: Vec<BoxedValidator<F>>,
     ) -> SchemaNode<F> {
         let location = ctx.location().clone();
-        let absolute_path = ctx.base_uri();
+        let absolute_path = ctx.absolute_location(&location);
         let validators = validators
             .into_iter()
             .enumerate()
@@ -353,7 +349,6 @@ impl<F: Json> SchemaNode<F> {
             inner: Arc::new(SchemaNodeInner {
                 validators: NodeValidators::Array { validators },
                 formatted_schema_location: OnceLock::new(),
-                resource_start: ctx.resource_start(),
             }),
             location,
             absolute_path,
@@ -420,13 +415,7 @@ impl<F: Json> SchemaNode<F> {
 
         let keyword_location = crate::paths::evaluation_path(tracker, &self.location, ctx);
         let schema_location = Arc::clone(self.inner.formatted_schema_location.get_or_init(|| {
-            match self.absolute_path.as_ref() {
-                Some(uri) => crate::evaluation::join_schema_location(
-                    uri,
-                    &self.location.as_str()[self.inner.resource_start..],
-                ),
-                None => self.location.as_arc(),
-            }
+            crate::evaluation::format_keyword_location(&self.location, self.absolute_path.as_ref())
         }));
 
         let previous = ctx.enter_instance_location(instance_location.clone());
