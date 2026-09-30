@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.3] - 2026-09-30
+
 ### Fixed
 
 - Keywords of a subschema declaring a Draft 2019-09+ `$schema` under a Draft 4, 6 or 7 root being ignored.
@@ -1893,7 +1895,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.3...HEAD
+[0.58.3]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.2...rust-v0.58.3
 [0.58.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.1...rust-v0.58.2
 [0.58.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.0...rust-v0.58.1
 [0.58.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.57.0...rust-v0.58.0
