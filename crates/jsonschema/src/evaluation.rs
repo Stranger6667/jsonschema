@@ -2102,6 +2102,106 @@ mod tests {
             ]
         );
     }
+
+    fn node(evaluation_path: &str, schema_location: &str) -> Value {
+        json!({
+            "valid": true,
+            "evaluationPath": evaluation_path,
+            "schemaLocation": schema_location,
+            "instanceLocation": ""
+        })
+    }
+
+    fn with_details(mut node: Value, details: Vec<Value>) -> Value {
+        node["details"] = Value::Array(details);
+        node
+    }
+
+    fn outputs(schema: &Value) -> (Value, Value, usize) {
+        let validator = crate::validator_for(schema).expect("valid schema");
+        let evaluation = validator.evaluate(&json!("x"));
+        (
+            serde_json::to_value(evaluation.list()).expect("serialization succeeds"),
+            serde_json::to_value(evaluation.hierarchical()).expect("serialization succeeds"),
+            evaluation.iter_annotations().count(),
+        )
+    }
+
+    // Drafts 4-7 ignore every `$ref` sibling, annotations included
+    #[test_case("http://json-schema.org/draft-04/schema#"; "draft 4")]
+    #[test_case("http://json-schema.org/draft-06/schema#"; "draft 6")]
+    #[test_case("http://json-schema.org/draft-07/schema#"; "draft 7")]
+    fn ref_siblings_produce_no_annotations(dialect: &str) {
+        let schema = json!({
+            "$schema": dialect,
+            "definitions": {"a": {"type": "string"}},
+            "$ref": "#/definitions/a",
+            "type": "integer",
+            "title": "T",
+            "x-unknown": 1
+        });
+        let root = node("", "");
+        let reference = node("/$ref", "/definitions/a");
+        let target_type = node("/$ref/type", "/definitions/a/type");
+        assert_eq!(
+            outputs(&schema),
+            (
+                json!({"valid": true, "details": [root, reference, target_type]}),
+                with_details(root, vec![with_details(reference, vec![target_type])]),
+                0
+            )
+        );
+    }
+
+    #[test]
+    fn draft7_unknown_keywords_without_ref_are_annotations() {
+        let schema = json!({
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "definitions": {"a": {"type": "string"}},
+            "type": "string",
+            "title": "T",
+            "x-unknown": 1
+        });
+        let mut root = node("", "");
+        root["annotations"] = json!({"title": "T", "x-unknown": 1});
+        let target_type = node("/type", "/type");
+        assert_eq!(
+            outputs(&schema),
+            (
+                json!({"valid": true, "details": [root, target_type]}),
+                with_details(root, vec![target_type]),
+                1
+            )
+        );
+    }
+
+    #[test]
+    fn draft2020_ref_siblings_apply() {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {"a": {"type": "string"}},
+            "$ref": "#/$defs/a",
+            "maxLength": 5,
+            "title": "T",
+            "x-unknown": 1
+        });
+        let mut root = node("", "");
+        root["annotations"] = json!({"title": "T", "x-unknown": 1});
+        let max_length = node("/maxLength", "/maxLength");
+        let reference = node("/$ref", "/$defs/a");
+        let target_type = node("/$ref/type", "/$defs/a/type");
+        assert_eq!(
+            outputs(&schema),
+            (
+                json!({"valid": true, "details": [root, max_length, reference, target_type]}),
+                with_details(
+                    root,
+                    vec![max_length, with_details(reference, vec![target_type])]
+                ),
+                1
+            )
+        );
+    }
 }
 
 #[cfg(test)]
