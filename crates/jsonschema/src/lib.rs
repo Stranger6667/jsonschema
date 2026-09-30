@@ -4607,6 +4607,236 @@ mod tests {
         assert_eq!(validator.is_valid(&json!({"pair": [1]})), expected);
     }
 
+    // The fragment of an absolute keyword location is a JSON Pointer from the root of the
+    // resource that holds the keyword, not from the root of the document embedding it.
+    #[test_case(
+        &json!({"properties": {"tree": {"$id": "https://example.com/tree", "type": "object", "properties": {"value": {"type": "string"}}}}}),
+        &json!({"tree": {"value": 1}}),
+        &["https://example.com/tree#/properties/value/type"];
+        "draft 2020-12"
+    )]
+    #[test_case(
+        &json!({"properties": {"tree": {"$id": "https://example.com/tree", "type": "object"}}}),
+        &json!({"tree": 1}),
+        &["https://example.com/tree#/type"];
+        "keyword at resource root"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "properties": {"tree": {"$id": "https://example.com/tree", "properties": {"value": {"type": "string"}}}}}),
+        &json!({"tree": {"value": 1}}),
+        &["https://example.com/tree#/properties/value/type"];
+        "draft 2019-09"
+    )]
+    #[test_case(
+        &json!({"$schema": "http://json-schema.org/draft-07/schema#", "properties": {"tree": {"$id": "https://example.com/tree", "properties": {"value": {"type": "string"}}}}}),
+        &json!({"tree": {"value": 1}}),
+        &["https://example.com/tree#/properties/value/type"];
+        "draft 7"
+    )]
+    #[test_case(
+        &json!({"$schema": "http://json-schema.org/draft-06/schema#", "properties": {"tree": {"$id": "https://example.com/tree", "properties": {"value": {"type": "string"}}}}}),
+        &json!({"tree": {"value": 1}}),
+        &["https://example.com/tree#/properties/value/type"];
+        "draft 6"
+    )]
+    #[test_case(
+        &json!({"$schema": "http://json-schema.org/draft-04/schema#", "properties": {"tree": {"id": "https://example.com/tree", "properties": {"value": {"type": "string"}}}}}),
+        &json!({"tree": {"value": 1}}),
+        &["https://example.com/tree#/properties/value/type"];
+        "draft 4"
+    )]
+    #[test_case(
+        &json!({"$id": "https://example.com/root.json", "properties": {"tree": {"$id": "tree.json", "properties": {"value": {"type": "string"}}}}}),
+        &json!({"tree": {"value": 1}}),
+        &["https://example.com/tree.json#/properties/value/type"];
+        "relative id"
+    )]
+    #[test_case(
+        &json!({
+            "$id": "https://example.com/root.json",
+            "properties": {
+                "outer": {
+                    "$id": "outer/",
+                    "properties": {
+                        "inner": {"$id": "inner.json", "properties": {"value": {"type": "string"}}},
+                        "count": {"type": "integer"}
+                    }
+                },
+                "name": {"type": "string"}
+            }
+        }),
+        &json!({"outer": {"inner": {"value": 1}, "count": "x"}, "name": 1}),
+        &[
+            "https://example.com/outer/#/properties/count/type",
+            "https://example.com/outer/inner.json#/properties/value/type",
+            "https://example.com/root.json#/properties/name/type",
+        ];
+        "id nested in id"
+    )]
+    #[test_case(
+        &json!({"$schema": "http://json-schema.org/draft-07/schema#", "$id": "https://example.com/root", "properties": {"tree": {"$id": "#tree", "properties": {"value": {"type": "string"}}}}}),
+        &json!({"tree": {"value": 1}}),
+        &["https://example.com/root#/properties/tree/properties/value/type"];
+        "draft 7 fragment-only id names no resource"
+    )]
+    #[test_case(
+        &json!({"$schema": "http://json-schema.org/draft-07/schema#", "$id": "https://example.com/root", "properties": {"tree": {"$id": "https://example.com/tree", "$ref": "#/definitions/leaf"}}, "definitions": {"leaf": {"type": "string"}}}),
+        &json!({"tree": 1}),
+        &["https://example.com/root#/definitions/leaf/type"];
+        "draft 7 id beside ref names no resource"
+    )]
+    fn absolute_keyword_location_in_nested_resource(
+        schema: &Value,
+        instance: &Value,
+        expected: &[&str],
+    ) {
+        let validator = validator_for(schema).expect("Should build validator");
+        let mut locations: Vec<String> = validator
+            .iter_errors(instance)
+            .map(|error| {
+                error
+                    .absolute_keyword_location()
+                    .expect("Absolute keyword location")
+                    .to_string()
+            })
+            .collect();
+        locations.sort();
+        assert_eq!(locations, expected);
+        let evaluation = validator.evaluate(instance);
+        let mut locations: Vec<String> = evaluation
+            .iter_errors()
+            .map(|entry| {
+                entry
+                    .absolute_keyword_location
+                    .expect("Absolute keyword location")
+                    .to_string()
+            })
+            .collect();
+        locations.sort();
+        assert_eq!(locations, expected);
+    }
+
+    #[test_case(
+        &json!({"$id": "https://example.com/tree", "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a", "b"]}),
+        &json!({}),
+        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/properties", "https://example.com/tree#/required"];
+        "required"
+    )]
+    #[test_case(
+        &json!({"$id": "https://example.com/tree", "minLength": 1, "maxLength": 2}),
+        &json!("abc"),
+        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/minLength", "https://example.com/tree#/maxLength"];
+        "maxLength beside minLength"
+    )]
+    #[test_case(
+        &json!({"$id": "https://example.com/tree", "type": "array", "minItems": 2, "maxItems": 0, "items": {"type": "string"}}),
+        &json!([1]),
+        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/items", "https://example.com/tree#/minItems", "https://example.com/tree#/maxItems"];
+        "array bounds beside items"
+    )]
+    #[test_case(
+        &json!({"$id": "https://example.com/tree", "type": "array", "items": {"type": "string"}}),
+        &json!(1),
+        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/items", "https://example.com/tree#/type"];
+        "type beside items"
+    )]
+    #[test_case(
+        &json!({"$id": "https://example.com/tree", "patternProperties": {"^a": {}}, "additionalProperties": false}),
+        &json!({"a": 1, "b": 1}),
+        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/additionalProperties", "https://example.com/tree#/patternProperties/^a", "https://example.com/tree#/patternProperties"];
+        "patternProperties beside additionalProperties"
+    )]
+    fn list_schema_locations_in_nested_resource(tree: &Value, instance: &Value, expected: &[&str]) {
+        let validator =
+            validator_for(&json!({"properties": {"tree": tree}})).expect("Should build validator");
+        let evaluation = validator.evaluate(&json!({"tree": instance}));
+        let list = serde_json::to_value(evaluation.list()).expect("List output");
+        let locations: Vec<&str> = list["details"]
+            .as_array()
+            .expect("List output details")
+            .iter()
+            .map(|entry| entry["schemaLocation"].as_str().expect("Schema location"))
+            .collect();
+        assert_eq!(locations, expected);
+    }
+
+    #[test]
+    fn output_locations_in_nested_resource() {
+        let validator = validator_for(&json!({
+            "properties": {
+                "tree": {"$id": "https://example.com/tree", "properties": {"value": {"type": "string"}}}
+            }
+        }))
+        .expect("Should build validator");
+
+        let evaluation = validator.evaluate(&json!({"tree": {"value": 1}}));
+        let list = serde_json::to_value(evaluation.list()).expect("List output");
+        let locations: Vec<&str> = list["details"]
+            .as_array()
+            .expect("List output details")
+            .iter()
+            .map(|entry| entry["schemaLocation"].as_str().expect("Schema location"))
+            .collect();
+        assert_eq!(
+            locations,
+            [
+                "",
+                "/properties",
+                "https://example.com/tree#",
+                "https://example.com/tree#/properties",
+                "https://example.com/tree#/properties/value",
+                "https://example.com/tree#/properties/value/type",
+            ]
+        );
+
+        let evaluation = validator.evaluate(&json!({"tree": {"value": "leaf"}}));
+        let annotations: Vec<Option<String>> = evaluation
+            .iter_annotations()
+            .map(|entry| entry.absolute_keyword_location.map(ToString::to_string))
+            .collect();
+        assert_eq!(
+            annotations,
+            [
+                None,
+                Some("https://example.com/tree#/properties".to_string())
+            ]
+        );
+    }
+
+    #[test_case(
+        &json!({"$id": "https://example.com/root", "patternProperties": {"^a": {}}, "additionalProperties": false}),
+        &json!({"a": 1}),
+        &[("https://example.com/root#/patternProperties", Some("https://example.com/root#/patternProperties"))];
+        "patternProperties beside additionalProperties at resource root"
+    )]
+    #[test_case(
+        &json!({"properties": {"tree": {"$id": "https://example.com/tree", "patternProperties": {"^a": {}}, "additionalProperties": false}}}),
+        &json!({"tree": {"a": 1}}),
+        &[
+            ("/properties", None),
+            ("https://example.com/tree#/patternProperties", Some("https://example.com/tree#/patternProperties")),
+        ];
+        "patternProperties beside additionalProperties in nested resource"
+    )]
+    fn annotation_locations(schema: &Value, instance: &Value, expected: &[(&str, Option<&str>)]) {
+        let validator = validator_for(schema).expect("Should build validator");
+        let evaluation = validator.evaluate(instance);
+        let locations: Vec<(&str, Option<String>)> = evaluation
+            .iter_annotations()
+            .map(|entry| {
+                (
+                    entry.schema_location,
+                    entry.absolute_keyword_location.map(ToString::to_string),
+                )
+            })
+            .collect();
+        let expected: Vec<(&str, Option<String>)> = expected
+            .iter()
+            .map(|(schema_location, absolute)| (*schema_location, absolute.map(str::to_string)))
+            .collect();
+        assert_eq!(locations, expected);
+    }
+
     const DRAFT4: &str = "http://json-schema.org/draft-04/schema#";
     const DRAFT6: &str = "http://json-schema.org/draft-06/schema#";
     const DRAFT7: &str = "http://json-schema.org/draft-07/schema#";

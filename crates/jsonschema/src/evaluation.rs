@@ -4,12 +4,14 @@ use crate::{
     ValidationError,
 };
 use ahash::AHashMap;
+use percent_encoding::percent_decode_str;
 use referencing::Uri;
 use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Serialize,
 };
 use std::{
+    borrow::Cow,
     fmt::{self, Write},
     sync::Arc,
 };
@@ -845,7 +847,7 @@ pub(crate) fn absorbed_error_node(
     EvaluationNode::invalid(
         crate::paths::evaluation_path(tracker, keyword_location, ctx),
         absolute_location.cloned(),
-        format_schema_location(keyword_location, absolute_location),
+        format_keyword_location(keyword_location, absolute_location),
         location.into(),
         None,
         vec![error],
@@ -858,14 +860,36 @@ pub(crate) fn format_schema_location(
     absolute: Option<&Arc<Uri<String>>>,
 ) -> Arc<str> {
     if let Some(uri) = absolute {
-        let base = uri.strip_fragment();
-        let suffix = location.as_str();
-        crate::paths::build_arc_str(suffix.len() + 1, |buffer| {
-            write!(buffer, "{base}#{suffix}").expect("writing to a String cannot fail");
-        })
+        join_schema_location(uri, location.as_str())
     } else {
         location.as_arc()
     }
+}
+
+/// `schemaLocation` of a keyword whose absolute location names it.
+///
+/// The JSON Pointer comes from that URI, so it counts from the root of the keyword's own
+/// resource, which a subschema declaring its own `$id` places below the document root.
+pub(crate) fn format_keyword_location(
+    location: &Location,
+    absolute: Option<&Arc<Uri<String>>>,
+) -> Arc<str> {
+    if let Some(uri) = absolute {
+        let pointer = uri.fragment().map_or(Cow::Borrowed(""), |fragment| {
+            percent_decode_str(fragment.as_str()).decode_utf8_lossy()
+        });
+        join_schema_location(uri, &pointer)
+    } else {
+        location.as_arc()
+    }
+}
+
+/// `uri` with its fragment replaced by the unencoded JSON Pointer `pointer`.
+pub(crate) fn join_schema_location(uri: &Uri<String>, pointer: &str) -> Arc<str> {
+    let base = uri.strip_fragment();
+    crate::paths::build_arc_str(pointer.len() + 1, |buffer| {
+        write!(buffer, "{base}#{pointer}").expect("writing to a String cannot fail");
+    })
 }
 
 struct ListEntry<'a> {

@@ -250,6 +250,11 @@ pub(crate) struct Context<'a, F: Json = SerdeJson> {
     ///   suffix()      = /type
     /// ```
     resource_base: Location,
+    /// Length of the `location` prefix outside the resource the base URI names.
+    ///
+    /// Absolute locations count their JSON Pointer from that resource's root, which a
+    /// subschema declaring its own `$id` moves below the document root.
+    resource_start: usize,
     pub(crate) draft: Draft,
     shared: Rc<SharedContextState<F>>,
 }
@@ -262,6 +267,7 @@ impl<F: Json> Clone for Context<'_, F> {
             vocabularies: self.vocabularies.clone(),
             location: self.location.clone(),
             resource_base: self.resource_base.clone(),
+            resource_start: self.resource_start,
             draft: self.draft,
             shared: Rc::clone(&self.shared),
         }
@@ -281,6 +287,7 @@ impl<'a, F: Json> Context<'a, F> {
             config,
             resolver,
             resource_base: location.clone(),
+            resource_start: 0,
             location,
             vocabularies,
             draft,
@@ -311,12 +318,18 @@ impl<'a, F: Json> Context<'a, F> {
         } else {
             resolver.find_vocabularies(draft, resource.contents())
         };
+        let resource_start = if resource.id().is_some() {
+            self.location.as_str().len()
+        } else {
+            self.resource_start
+        };
         Ok(Context {
             config: self.config,
             resolver,
             vocabularies,
             draft,
             resource_base: self.resource_base.clone(),
+            resource_start,
             location: self.location.clone(),
             shared: Rc::clone(&self.shared),
         })
@@ -333,6 +346,7 @@ impl<'a, F: Json> Context<'a, F> {
             resolver: self.resolver.clone(),
             vocabularies: self.vocabularies.clone(),
             resource_base: self.resource_base.clone(),
+            resource_start: self.resource_start,
             location,
             draft: self.draft,
             shared: Rc::clone(&self.shared),
@@ -370,10 +384,14 @@ impl<'a, F: Json> Context<'a, F> {
         let base = self.base_uri()?;
         let mut buffer = self.shared.uri_buffer.borrow_mut();
         buffer.clear();
-        buffer.encode_str::<uri::Path>(location.as_str());
+        buffer.encode_str::<uri::Path>(&location.as_str()[self.resource_start..]);
         let resolved = base.with_fragment(Some(buffer.as_estr()));
         buffer.clear();
         Some(Arc::new(resolved))
+    }
+
+    pub(crate) fn resource_start(&self) -> usize {
+        self.resource_start
     }
 
     fn translated_pattern(&self, pattern: &str) -> Result<Arc<str>, ()> {
@@ -436,6 +454,7 @@ impl<'a, F: Json> Context<'a, F> {
             vocabularies,
             location: resource_base.clone(),
             resource_base,
+            resource_start: 0,
             shared: Rc::clone(&self.shared),
         })
     }
