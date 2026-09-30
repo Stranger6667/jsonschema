@@ -307,7 +307,7 @@ impl<F: Json> ConditionalValidators<F> {
 ///
 /// Recursively builds the `ItemsValidators` tree by examining all keywords that
 /// can evaluate items. Handles circular references via pending nodes cached
-/// by location and schema pointer.
+/// by schema pointer.
 fn compile_items_validators<'a, F: Json>(
     ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
@@ -328,9 +328,7 @@ fn compile_pending_items_validators<'a, F: Json>(
     parent: &'a Map<String, Value>,
 ) -> Result<PendingItemsValidators<F>, ValidationError<'a>> {
     // Create a pending node and cache it before compiling to handle circular refs
-    let cache_key = ctx.location_cache_key();
     let pending = Arc::new(OnceLock::new());
-    ctx.cache_pending_items_validators(cache_key.clone(), pending.clone());
     ctx.cache_pending_items_validators_for_schema(parent, pending.clone());
 
     let applicator = ctx.has_vocabulary(&Vocabulary::Applicator);
@@ -396,7 +394,6 @@ fn compile_pending_items_validators<'a, F: Json>(
     pending
         .set(validators)
         .expect("pending node should not be initialized yet");
-    ctx.remove_pending_items_validators(&cache_key);
     ctx.remove_pending_items_validators_for_schema(parent);
 
     Ok(pending)
@@ -521,12 +518,6 @@ fn compile_recursive_ref<'a, F: Json>(
 
         // Check if we're already compiling this schema (circular reference)
         if let Some(pending) = ref_ctx.get_pending_items_validators_for_schema(subschema) {
-            return Ok(Some(pending));
-        }
-
-        let cache_key = ref_ctx.location_cache_key();
-        if let Some(pending) = ref_ctx.get_pending_items_validators(&cache_key) {
-            // Circular reference detected - return the pending node
             return Ok(Some(pending));
         }
 
@@ -890,6 +881,45 @@ mod tests {
     use referencing::Draft;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    fn errors(schema: &Value, instance: &Value) -> Vec<(String, String, String)> {
+        let validator = crate::validator_for(schema).expect("schema compiles");
+        validator
+            .iter_errors(instance)
+            .map(|error| {
+                (
+                    error.instance_path().as_str().to_owned(),
+                    error.evaluation_path().as_str().to_owned(),
+                    error.to_string(),
+                )
+            })
+            .collect()
+    }
+
+    // The reference beside the keyword evaluates the items of the node it points to
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$defs": {"R": {"items": [{"type": "integer"}, {"$recursiveRef": "#", "unevaluatedItems": false}]}}, "$ref": "#/$defs/R"}), &json!([1, [2]]), &[]; "2019-09 prefixed item")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$defs": {"R": {"items": [{"type": "integer"}, {"$recursiveRef": "#", "unevaluatedItems": false}]}}, "$ref": "#/$defs/R"}), &json!([1, [2, [3]]]), &[]; "2019-09 nested prefixed item")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$defs": {"R": {"items": [{"type": "integer"}, {"$recursiveRef": "#", "unevaluatedItems": false}]}}, "$ref": "#/$defs/R"}), &json!([1, [2, 3, 4]]), &[("/1", "/$ref/items/1/unevaluatedItems", "Unevaluated items are not allowed ('4' was unexpected)")]; "2019-09 item past the prefix")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$defs": {"R": {"items": [{"type": "integer"}, {"$recursiveRef": "#", "unevaluatedItems": false}]}}, "$ref": "#/$defs/R"}), &json!([1, [2, [3, 4, 5]]]), &[("/1/1", "/$ref/items/1/$recursiveRef/$ref/items/1/unevaluatedItems", "Unevaluated items are not allowed ('5' was unexpected)")]; "2019-09 nested item past the prefix")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$defs": {"R": {"prefixItems": [{"type": "integer"}, {"$dynamicRef": "#", "unevaluatedItems": false}]}}, "$ref": "#/$defs/R"}), &json!([1, [2]]), &[]; "2020-12 prefixed item")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$defs": {"R": {"prefixItems": [{"type": "integer"}, {"$dynamicRef": "#", "unevaluatedItems": false}]}}, "$ref": "#/$defs/R"}), &json!([1, [2, 3, 4]]), &[("/1", "/$ref/prefixItems/1/unevaluatedItems", "Unevaluated items are not allowed ('4' was unexpected)")]; "2020-12 item past the prefix")]
+    fn reference_to_root_evaluates_the_root_items(
+        schema: &Value,
+        instance: &Value,
+        expected: &[(&str, &str, &str)],
+    ) {
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(instance_path, evaluation_path, message)| {
+                (
+                    (*instance_path).to_owned(),
+                    (*evaluation_path).to_owned(),
+                    (*message).to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(errors(schema, instance), expected);
+    }
 
     #[test_case(Draft::Draft201909, &json!([]), true; "2019-09 empty array")]
     #[test_case(Draft::Draft201909, &json!([1]), false; "2019-09 leaves the first item unevaluated")]
