@@ -322,7 +322,7 @@ fn compile_reference_validator<'a, F: Json>(
         return None;
     }
 
-    match ctx.lookup_maybe_recursive(reference) {
+    match ctx.lookup_maybe_recursive(reference, resolved.resolver()) {
         Ok(Some(validator)) => {
             return Some(Ok(Box::new(RefValidator {
                 inner: validator,
@@ -378,7 +378,7 @@ fn compile_recursive_validator<'a, F: Json>(
         .map_err(ValidationError::from)?;
     let target_location = target_location(&resolved.resolver().base_uri(), &ref_target_base);
 
-    match ctx.lookup_maybe_recursive(reference) {
+    match ctx.lookup_maybe_recursive(reference, resolved.resolver()) {
         Ok(Some(validator)) => {
             return Ok(Box::new(RefValidator {
                 inner: validator,
@@ -2537,5 +2537,102 @@ mod tests {
         ] {
             tests_util::is_not_valid_with(&validator, &instance);
         }
+    }
+
+    fn dynamic_anchor_via_pointer(entry: &str) -> Value {
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root",
+            "$defs": {
+                "sub": {
+                    "$id": "sub",
+                    "$defs": {
+                        "bind": {"$dynamicAnchor": "T", "type": "number"},
+                        "middle": {"$ref": "https://example.com/shared"}
+                    }
+                },
+                "shared": {
+                    "$id": "shared",
+                    "$defs": {"fallback": {"$dynamicAnchor": "T", "type": "string"}},
+                    "items": {"$dynamicRef": "#T"}
+                }
+            },
+            "properties": {
+                entry: {"$ref": "sub#/$defs/middle"},
+                "b": {"$ref": "shared"}
+            }
+        })
+    }
+
+    fn dynamic_anchor_beside_stray_id(entry: &str) -> Value {
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root",
+            "$defs": {
+                "holder": {
+                    "$id": "holder",
+                    "$defs": {
+                        "bind": {"id": "stray", "$dynamicAnchor": "T", "type": "number"},
+                        "use": {"$ref": "https://example.com/shared"}
+                    }
+                },
+                "shared": {
+                    "$id": "shared",
+                    "$defs": {"fallback": {"$dynamicAnchor": "T", "type": "string"}},
+                    "items": {"$dynamicRef": "#T"}
+                }
+            },
+            "properties": {
+                entry: {"$ref": "holder#/$defs/use"},
+                "b": {"$ref": "shared"}
+            }
+        })
+    }
+
+    fn recursive_anchor_via_pointer(entry: &str) -> Value {
+        json!({
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$id": "https://example.com/root",
+            "$defs": {
+                "sub": {
+                    "$id": "sub",
+                    "$recursiveAnchor": true,
+                    "type": "number",
+                    "$defs": {"middle": {"$ref": "https://example.com/shared"}}
+                },
+                "shared": {
+                    "$id": "shared",
+                    "$recursiveAnchor": true,
+                    "anyOf": [
+                        {"type": "string"},
+                        {"type": "array", "items": {"$recursiveRef": "#"}}
+                    ]
+                }
+            },
+            "properties": {
+                entry: {"$ref": "sub#/$defs/middle"},
+                "b": {"$ref": "shared"}
+            }
+        })
+    }
+
+    #[test_case(dynamic_anchor_via_pointer, "a" ; "dynamic anchor, entry compiled first")]
+    #[test_case(dynamic_anchor_via_pointer, "z" ; "dynamic anchor, entry compiled last")]
+    #[test_case(dynamic_anchor_beside_stray_id, "a" ; "stray id, entry compiled first")]
+    #[test_case(dynamic_anchor_beside_stray_id, "z" ; "stray id, entry compiled last")]
+    #[test_case(recursive_anchor_via_pointer, "a" ; "recursive anchor, entry compiled first")]
+    #[test_case(recursive_anchor_via_pointer, "z" ; "recursive anchor, entry compiled last")]
+    fn anchor_binding_does_not_depend_on_property_order(schema: fn(&str) -> Value, entry: &str) {
+        let validator = crate::validator_for(&schema(entry)).expect("Invalid schema");
+        let results: Vec<bool> = [
+            json!({entry: [1]}),
+            json!({entry: ["s"]}),
+            json!({"b": [1]}),
+            json!({"b": ["s"]}),
+        ]
+        .iter()
+        .map(|instance| validator.is_valid(instance))
+        .collect();
+        assert_eq!(results, vec![true, false, false, true]);
     }
 }
