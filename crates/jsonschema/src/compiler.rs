@@ -1540,27 +1540,14 @@ fn compile_without_cache<'a, F: Json>(
             )),
         },
         Value::Object(schema) => {
-            // A schema could contain validation keywords along with annotations and we need to
-            // collect annotations separately
             if !ctx.supports_adjacent_validation() {
-                // Older drafts ignore all other keywords if `$ref` is present
+                // Drafts 4-7 ignore every `$ref` sibling, annotations included
                 if let Some(reference) = schema.get("$ref") {
-                    // Treat all keywords other than `$ref` as annotations
-                    let annotations: Map<String, Value> = schema
-                        .iter()
-                        .filter(|(k, _)| k.as_str() != "$ref")
-                        .map(|(k, v)| (k.clone(), v.clone()))
-                        .collect();
-                    let annotations = if annotations.is_empty() {
-                        None
-                    } else {
-                        Some(Arc::new(Value::Object(annotations)))
-                    };
                     return if let Some(validator) =
                         keywords::ref_::compile_ref(ctx, schema, reference)
                     {
                         let validators = vec![(BuiltinKeyword::Ref.into(), validator?)];
-                        Ok(SchemaNode::from_keywords(ctx, validators, annotations))
+                        Ok(SchemaNode::from_keywords(ctx, validators, None))
                     } else {
                         // Infinite reference to the same location
                         Ok(SchemaNode::from_boolean(ctx, None))
