@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Absolute keyword location and `schemaLocation` of keywords a `$ref` JSON Pointer reaches through a subschema with its own `$id`.
 - Absolute keyword location and `schemaLocation` of keywords inside a nested `$id` resource counting from the document root.
 - Absolute keyword location of `patternProperties` annotations missing its JSON Pointer fragment.
 - Evaluation output `schemaLocation` and absolute keyword location of `$ref`, `$dynamicRef` and `$recursiveRef` nodes not pointing at the reference target.

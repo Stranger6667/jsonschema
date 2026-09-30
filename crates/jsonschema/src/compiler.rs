@@ -458,6 +458,12 @@ impl<'a, F: Json> Context<'a, F> {
             shared: Rc::clone(&self.shared),
         })
     }
+    /// Count absolute locations from `start` bytes into `location`, where a `$id` subschema begins.
+    #[must_use]
+    pub(crate) fn with_resource_start(mut self, start: usize) -> Self {
+        self.resource_start = start;
+        self
+    }
     pub(crate) fn get_content_media_type_check(
         &self,
         media_type: &str,
