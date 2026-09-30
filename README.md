@@ -44,7 +44,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Generated validators are significantly faster than runtime validators,
+    // Generated validators are significantly faster than runtime ones,
     // so prefer them when the schema is known at build time.
     // Requires the `macros` feature.
     // Inline schema, or `path = "schema.json"` to load from a file
