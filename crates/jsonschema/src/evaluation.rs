@@ -4,17 +4,12 @@ use crate::{
     ValidationError,
 };
 use ahash::AHashMap;
-use percent_encoding::percent_decode_str;
 use referencing::Uri;
 use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Serialize,
 };
-use std::{
-    borrow::Cow,
-    fmt::{self, Write},
-    sync::Arc,
-};
+use std::{fmt, sync::Arc};
 
 /// Annotations associated with an output unit.
 #[derive(Debug, Clone, PartialEq)]
@@ -855,30 +850,15 @@ pub(crate) fn absorbed_error_node(
     )
 }
 
-/// `schemaLocation` of a keyword whose absolute location names it.
+/// `schemaLocation` of a keyword: its absolute URI when it has one, otherwise its JSON Pointer.
 ///
-/// The JSON Pointer comes from that URI, so it counts from the root of the keyword's own
-/// resource, which a subschema declaring its own `$id` places below the document root.
+/// The URI's fragment counts from the root of the keyword's own resource, which a subschema
+/// declaring its own `$id` places below the document root.
 pub(crate) fn format_keyword_location(
     location: &Location,
     absolute: Option<&Arc<Uri<String>>>,
 ) -> Arc<str> {
-    if let Some(uri) = absolute {
-        let pointer = uri.fragment().map_or(Cow::Borrowed(""), |fragment| {
-            percent_decode_str(fragment.as_str()).decode_utf8_lossy()
-        });
-        join_schema_location(uri, &pointer)
-    } else {
-        location.as_arc()
-    }
-}
-
-/// `uri` with its fragment replaced by the unencoded JSON Pointer `pointer`.
-pub(crate) fn join_schema_location(uri: &Uri<String>, pointer: &str) -> Arc<str> {
-    let base = uri.strip_fragment();
-    crate::paths::build_arc_str(pointer.len() + 1, |buffer| {
-        write!(buffer, "{base}#{pointer}").expect("writing to a String cannot fail");
-    })
+    absolute.map_or_else(|| location.as_arc(), |uri| Arc::from(uri.as_str()))
 }
 
 struct ListEntry<'a> {
@@ -1883,41 +1863,17 @@ mod tests {
     }
 
     #[test]
-    fn join_schema_location_no_fragment() {
+    fn format_keyword_location_keeps_encoded_fragment() {
+        let location = Location::new().join("properties").join("s p");
         let uri = Arc::new(
-            Uri::parse("http://example.com/schema.json")
+            Uri::parse("http://example.com/schema.json#/properties/s%20p")
                 .unwrap()
                 .to_owned(),
         );
-        let formatted = join_schema_location(&uri, "/properties");
+        let formatted = format_keyword_location(&location, Some(&uri));
         assert_eq!(
             formatted.as_ref(),
-            "http://example.com/schema.json#/properties"
-        );
-    }
-
-    #[test]
-    fn join_schema_location_empty_pointer() {
-        let uri = Arc::new(
-            Uri::parse("http://example.com/schema.json")
-                .unwrap()
-                .to_owned(),
-        );
-        let formatted = join_schema_location(&uri, "");
-        assert_eq!(formatted.as_ref(), "http://example.com/schema.json#");
-    }
-
-    #[test]
-    fn join_schema_location_existing_fragment() {
-        let uri = Arc::new(
-            Uri::parse("http://example.com/schema.json#/defs/myDef")
-                .unwrap()
-                .to_owned(),
-        );
-        let formatted = join_schema_location(&uri, "/properties");
-        assert_eq!(
-            formatted.as_ref(),
-            "http://example.com/schema.json#/properties"
+            "http://example.com/schema.json#/properties/s%20p"
         );
     }
 
