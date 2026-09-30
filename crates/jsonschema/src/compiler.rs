@@ -828,15 +828,22 @@ impl<'a, F: Json> Context<'a, F> {
 
     /// Lookup a reference that is potentially recursive and return already
     /// compiled nodes when available.
+    ///
+    /// `target` is the resolver the reference resolved to: the node is cached under the dynamic
+    /// scope it was compiled in, which is the target's, not this context's.
     pub(crate) fn lookup_maybe_recursive(
         &self,
         reference: &str,
+        target: &Resolver<'_>,
     ) -> Result<Option<Box<dyn Validate<F>>>, ValidationError<'static>> {
         if self.is_circular_reference(reference)? {
             let uri = self
                 .resolve_reference_uri(reference)
                 .map_err(ValidationError::from)?;
-            let key = self.alias_cache_key(Arc::clone(&uri));
+            let key = AliasCacheKey {
+                uri: Arc::clone(&uri),
+                dynamic_scope: target.dynamic_scope(),
+            };
             if let Some(node) = self.cached_alias_node(&key) {
                 return Ok(Some(Box::new(node)));
             }
