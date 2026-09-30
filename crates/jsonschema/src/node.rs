@@ -71,18 +71,17 @@ impl<F: Json> fmt::Debug for PendingSchemaNode<F> {
     }
 }
 
-struct PendingTarget<F: Json> {
+enum PendingTarget<F: Json> {
+    /// Owns a target no `$ref` cycle passes through.
+    Strong(SchemaNode<F>),
+    /// A target a `$ref` cycle may pass through; owning it could close an `Arc` cycle.
+    Weak(WeakTarget<F>),
+}
+
+struct WeakTarget<F: Json> {
     inner: Weak<SchemaNodeInner<F>>,
     location: Location,
     absolute_path: Option<Arc<Uri<String>>>,
-}
-
-impl<F: Json> fmt::Debug for PendingTarget<F> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.debug_struct("PendingTarget")
-            .field("location", &self.location)
-            .finish_non_exhaustive()
-    }
 }
 
 enum NodeValidators<F: Json> {
@@ -150,42 +149,48 @@ impl<F: Json> PendingSchemaNode<F> {
         }
     }
 
+    /// A node pointing at `node`, which a `$ref` cycle may pass through.
+    pub(crate) fn pointing_at(node: &SchemaNode<F>) -> Self {
+        let pending = Self::new();
+        pending.initialize(node);
+        pending
+    }
+
+    /// Point at `node`, which a `$ref` cycle may pass through.
     pub(crate) fn initialize(&self, node: &SchemaNode<F>) {
-        let target = PendingTarget {
+        self.set(PendingTarget::Weak(WeakTarget {
             inner: Arc::downgrade(&node.inner),
             location: node.location.clone(),
             absolute_path: node.absolute_path.clone(),
-        };
+        }));
+    }
+
+    /// Point at `node` and own it; no `$ref` cycle passes through it.
+    pub(crate) fn initialize_owned(&self, node: SchemaNode<F>) {
+        self.set(PendingTarget::Strong(node));
+    }
+
+    fn set(&self, target: PendingTarget<F>) {
+        assert!(
+            self.cell.set(target).is_ok(),
+            "pending node initialized twice"
+        );
+    }
+
+    fn target(&self) -> &PendingTarget<F> {
         self.cell
-            .set(target)
-            .expect("pending node initialized twice");
-    }
-
-    pub(crate) fn get(&self) -> Option<SchemaNode<F>> {
-        self.cell.get().map(PendingTarget::materialize)
-    }
-
-    fn with_node<T, R>(&self, f: T) -> R
-    where
-        T: FnOnce(&SchemaNode<F>) -> R,
-    {
-        let target = self
-            .cell
             .get()
-            .expect("pending node accessed before initialization");
-        let node = target.materialize();
-        f(&node)
-    }
-
-    /// Get a unique identifier for this pending node.
-    /// Uses the address of the inner cell as a stable identifier.
-    #[inline]
-    fn node_id(&self) -> usize {
-        Arc::as_ptr(&self.cell) as usize
+            .expect("pending node accessed before initialization")
     }
 }
 
-impl<F: Json> PendingTarget<F> {
+impl<F: Json> WeakTarget<F> {
+    /// The target's address: every guarded `$ref` to one node shares its cycle guard.
+    #[inline]
+    fn node_id(&self) -> usize {
+        Weak::as_ptr(&self.inner) as usize
+    }
+
     fn materialize(&self) -> SchemaNode<F> {
         let inner = self.inner.upgrade().expect("pending schema target dropped");
         SchemaNode {
@@ -196,9 +201,15 @@ impl<F: Json> PendingTarget<F> {
     }
 }
 
+/// A `Strong` target validates as a direct child. Every `$ref` cycle passes a `Weak` target,
+/// whose guard stops re-entry.
 impl<F: Json> Validate<F> for PendingSchemaNode<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
-        let node_id = self.node_id();
+        let target = match self.target() {
+            PendingTarget::Strong(node) => return node.is_valid(instance, ctx),
+            PendingTarget::Weak(target) => target,
+        };
+        let node_id = target.node_id();
         let identity = instance.identity();
         // The cycle guard comes first: while this node sits on the stack the cycle answer is the
         // one the other modes reach, and a cached value would override it here alone.
@@ -210,7 +221,7 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         let result = if let Some(cached) = ctx.get_cached_result(node_id, container_identity) {
             cached
         } else {
-            let computed = self.with_node(|node| node.is_valid(instance, ctx));
+            let computed = target.materialize().is_valid(instance, ctx);
             // Cache result for recursive schemas
             ctx.cache_result(node_id, container_identity, computed);
             computed
@@ -226,12 +237,18 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
+        let target = match self.target() {
+            PendingTarget::Strong(node) => return node.validate(instance, location, tracker, ctx),
+            PendingTarget::Weak(target) => target,
+        };
         let identity = instance.identity();
-        if ctx.enter(self.node_id(), identity) {
+        if ctx.enter(target.node_id(), identity) {
             return Ok(());
         }
-        let result = self.with_node(|node| node.validate(instance, location, tracker, ctx));
-        ctx.exit(self.node_id(), identity);
+        let result = target
+            .materialize()
+            .validate(instance, location, tracker, ctx);
+        ctx.exit(target.node_id(), identity);
         result
     }
 
@@ -243,12 +260,20 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         ctx: &mut ValidationContext,
         errors: &mut Vec<ValidationError<'i>>,
     ) {
+        let target = match self.target() {
+            PendingTarget::Strong(node) => {
+                return node.collect_errors(instance, location, tracker, ctx, errors)
+            }
+            PendingTarget::Weak(target) => target,
+        };
         let identity = instance.identity();
-        if ctx.enter(self.node_id(), identity) {
+        if ctx.enter(target.node_id(), identity) {
             return;
         }
-        self.with_node(|node| node.collect_errors(instance, location, tracker, ctx, errors));
-        ctx.exit(self.node_id(), identity);
+        target
+            .materialize()
+            .collect_errors(instance, location, tracker, ctx, errors);
+        ctx.exit(target.node_id(), identity);
     }
 
     fn evaluate(
@@ -258,12 +283,41 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
+        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let target = match self.target() {
+            PendingTarget::Strong(node) => {
+                return node.evaluate_with_location(
+                    instance,
+                    location,
+                    instance_location,
+                    tracker,
+                    ctx,
+                )
+            }
+            PendingTarget::Weak(target) => target,
+        };
         let identity = instance.identity();
-        if ctx.enter(self.node_id(), identity) {
+        if ctx.enter(target.node_id(), identity) {
             return EvaluationResult::valid_empty();
         }
-        let result = self.with_node(|node| node.evaluate(instance, location, tracker, ctx));
-        ctx.exit(self.node_id(), identity);
+        let result = target.materialize().evaluate_with_location(
+            instance,
+            location,
+            instance_location,
+            tracker,
+            ctx,
+        );
+        ctx.exit(target.node_id(), identity);
         result
     }
 }
