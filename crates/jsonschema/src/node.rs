@@ -16,6 +16,8 @@ use std::{
 struct SchemaNodeInner<F: Json> {
     validators: NodeValidators<F>,
     formatted_schema_location: OnceLock<Arc<str>>,
+    /// Where the resource named by the node's absolute path starts in its location.
+    resource_start: usize,
 }
 
 impl<F: Json> fmt::Debug for SchemaNodeInner<F> {
@@ -279,6 +281,7 @@ impl<F: Json> SchemaNode<F> {
             inner: Arc::new(SchemaNodeInner {
                 validators: NodeValidators::Boolean { validator },
                 formatted_schema_location: OnceLock::new(),
+                resource_start: ctx.resource_start(),
             }),
             location,
             absolute_path,
@@ -319,6 +322,7 @@ impl<F: Json> SchemaNode<F> {
                     validators,
                 }),
                 formatted_schema_location: OnceLock::new(),
+                resource_start: ctx.resource_start(),
             }),
             location,
             absolute_path,
@@ -349,6 +353,7 @@ impl<F: Json> SchemaNode<F> {
             inner: Arc::new(SchemaNodeInner {
                 validators: NodeValidators::Array { validators },
                 formatted_schema_location: OnceLock::new(),
+                resource_start: ctx.resource_start(),
             }),
             location,
             absolute_path,
@@ -415,7 +420,13 @@ impl<F: Json> SchemaNode<F> {
 
         let keyword_location = crate::paths::evaluation_path(tracker, &self.location, ctx);
         let schema_location = Arc::clone(self.inner.formatted_schema_location.get_or_init(|| {
-            crate::evaluation::format_schema_location(&self.location, self.absolute_path.as_ref())
+            match self.absolute_path.as_ref() {
+                Some(uri) => crate::evaluation::join_schema_location(
+                    uri,
+                    &self.location.as_str()[self.inner.resource_start..],
+                ),
+                None => self.location.as_arc(),
+            }
         }));
 
         let previous = ctx.enter_instance_location(instance_location.clone());
@@ -487,10 +498,14 @@ impl<F: Json> SchemaNode<F> {
             // For regular validators, use the keyword's location.
             // schemaLocation is fixed per subschema, by-reference or not, so it is rendered once.
             let formatted_schema_location = Arc::clone(cached_schema_location.get_or_init(|| {
-                crate::evaluation::format_schema_location(
-                    validator.canonical_location().unwrap_or(child_location),
-                    absolute_location.as_ref(),
-                )
+                if let Some(target) = validator.canonical_location() {
+                    crate::evaluation::format_schema_location(target, absolute_location.as_ref())
+                } else {
+                    crate::evaluation::format_keyword_location(
+                        child_location,
+                        absolute_location.as_ref(),
+                    )
+                }
             }));
 
             let child_node = match child_result {

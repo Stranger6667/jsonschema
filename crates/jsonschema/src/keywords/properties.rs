@@ -5,7 +5,7 @@ use crate::{
     compiler,
     error::ValidationError,
     evaluation::{
-        format_schema_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
+        format_keyword_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
     },
     keywords::CompilationResult,
     node::SchemaNode,
@@ -488,7 +488,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                 let child = EvaluationNode::invalid(
                     crate::paths::evaluation_path(tracker, &self.required_location, ctx),
                     self.required_absolute_location.clone(),
-                    format_schema_location(
+                    format_keyword_location(
                         &self.required_location,
                         self.required_absolute_location.as_ref(),
                     ),

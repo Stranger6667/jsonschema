@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Absolute keyword location and `schemaLocation` of keywords inside a nested `$id` resource counting from the document root.
+- Absolute keyword location of `patternProperties` annotations missing its JSON Pointer fragment.
+
 ## [0.58.3] - 2026-09-30
 
 ### Fixed

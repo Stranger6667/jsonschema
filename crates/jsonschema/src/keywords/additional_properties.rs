@@ -867,7 +867,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for AdditionalPropertiesWithPatternsVa
             }
             if !pattern_matched_propnames.is_empty() {
                 let annotation = Annotations::new(Value::from(pattern_matched_propnames));
-                let schema_location = crate::evaluation::format_schema_location(
+                let schema_location = crate::evaluation::format_keyword_location(
                     &self.pattern_keyword_path,
                     self.pattern_keyword_absolute_location.as_ref(),
                 );
@@ -1041,7 +1041,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for AdditionalPropertiesWithPatternsFa
             }
             if !pattern_matched_props.is_empty() {
                 let annotation = Annotations::new(Value::from(pattern_matched_props));
-                let schema_location = crate::evaluation::format_schema_location(
+                let schema_location = crate::evaluation::format_keyword_location(
                     &self.pattern_keyword_path,
                     self.pattern_keyword_absolute_location.as_ref(),
                 );
@@ -1687,9 +1687,9 @@ pub(crate) fn compile<'a, F: Json>(
                                         pattern_keyword_path: ctx
                                             .location()
                                             .join("patternProperties"),
-                                        pattern_keyword_absolute_location: ctx
-                                            .new_at_location("patternProperties")
-                                            .base_uri(),
+                                        pattern_keyword_absolute_location: ctx.absolute_location(
+                                            &ctx.location().join("patternProperties"),
+                                        ),
                                     },
                                 )))
                             }
@@ -1720,9 +1720,9 @@ pub(crate) fn compile<'a, F: Json>(
                                     )),
                                     patterns,
                                     pattern_keyword_path: ctx.location().join("patternProperties"),
-                                    pattern_keyword_absolute_location: ctx
-                                        .new_at_location("patternProperties")
-                                        .base_uri(),
+                                    pattern_keyword_absolute_location: ctx.absolute_location(
+                                        &ctx.location().join("patternProperties"),
+                                    ),
                                 })))
                             }
                         }
@@ -1760,9 +1760,9 @@ pub(crate) fn compile<'a, F: Json>(
                                         pattern_keyword_path: ctx
                                             .location()
                                             .join("patternProperties"),
-                                        pattern_keyword_absolute_location: ctx
-                                            .new_at_location("patternProperties")
-                                            .base_uri(),
+                                        pattern_keyword_absolute_location: ctx.absolute_location(
+                                            &ctx.location().join("patternProperties"),
+                                        ),
                                     },
                                 )))
                             }
@@ -1792,9 +1792,9 @@ pub(crate) fn compile<'a, F: Json>(
                                     )),
                                     patterns,
                                     pattern_keyword_path: ctx.location().join("patternProperties"),
-                                    pattern_keyword_absolute_location: ctx
-                                        .new_at_location("patternProperties")
-                                        .base_uri(),
+                                    pattern_keyword_absolute_location: ctx.absolute_location(
+                                        &ctx.location().join("patternProperties"),
+                                    ),
                                 })))
                             }
                         }
