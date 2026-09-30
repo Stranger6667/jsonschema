@@ -34,6 +34,35 @@ use std::{
 pub(crate) const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
 
+/// `base` with `pointer` as its fragment.
+fn resolve_absolute_location(
+    base: &Uri<String>,
+    pointer: &str,
+    buffer: &mut uri::EncodedBuffer,
+) -> Uri<String> {
+    buffer.clear();
+    buffer.encode_str::<uri::Path>(pointer);
+    let resolved = base.with_fragment(Some(buffer.as_estr()));
+    buffer.clear();
+    resolved
+}
+
+/// [`Context::absolute_location`] for a location resolved after compilation.
+pub(crate) struct DeferredAbsoluteLocation {
+    base: Arc<Uri<String>>,
+    resource_start: usize,
+}
+
+impl DeferredAbsoluteLocation {
+    pub(crate) fn resolve(&self, location: &Location) -> Arc<Uri<String>> {
+        Arc::new(resolve_absolute_location(
+            &self.base,
+            &location.as_str()[self.resource_start..],
+            &mut uri::EncodedBuffer::new(),
+        ))
+    }
+}
+
 pub(crate) const fn formats_are_assertions_by_default(draft: Draft) -> bool {
     matches!(draft, Draft::Draft4 | Draft::Draft6 | Draft::Draft7)
 }
@@ -453,6 +482,7 @@ impl<'a, F: Json> Context<'a, F> {
         }
     }
 
+    #[inline]
     pub(crate) fn base_uri(&self) -> Option<Arc<Uri<String>>> {
         let base_uri = self.resolver.base_uri();
         if base_uri.scheme().as_str() == DEFAULT_SCHEME {
@@ -465,11 +495,19 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn absolute_location(&self, location: &Location) -> Option<Arc<Uri<String>>> {
         let base = self.base_uri()?;
         let mut buffer = self.shared.uri_buffer.borrow_mut();
-        buffer.clear();
-        buffer.encode_str::<uri::Path>(&location.as_str()[self.resource_start..]);
-        let resolved = base.with_fragment(Some(buffer.as_estr()));
-        buffer.clear();
-        Some(Arc::new(resolved))
+        Some(Arc::new(resolve_absolute_location(
+            &base,
+            &location.as_str()[self.resource_start..],
+            &mut buffer,
+        )))
+    }
+
+    /// What [`Self::absolute_location`] resolves against, for resolving it later.
+    pub(crate) fn deferred_absolute_location(&self) -> Option<DeferredAbsoluteLocation> {
+        Some(DeferredAbsoluteLocation {
+            base: self.base_uri()?,
+            resource_start: self.resource_start,
+        })
     }
 
     fn translated_pattern(&self, pattern: &str) -> Result<Arc<str>, ()> {
