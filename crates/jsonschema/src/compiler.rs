@@ -254,10 +254,8 @@ struct SharedContextState<'a, F: Json = SerdeJson> {
     alias_placeholders: SharedCache<Arc<Uri<String>>, PendingSchemaNode<F>>,
     /// Deferred targets whose round has not started, one per dynamic scope.
     deferred_placeholders: SharedCache<AliasCacheKey, PendingSchemaNode<F>>,
-    pending_property_validators: SharedCache<LocationCacheKey, PendingPropertyValidators<F>>,
     pending_property_validators_by_schema:
         SharedCache<PropertyValidatorsPendingKey, PendingPropertyValidators<F>>,
-    pending_items_validators: SharedCache<LocationCacheKey, PendingItemsValidators<F>>,
     pending_items_validators_by_schema:
         SharedCache<ItemsValidatorsPendingKey, PendingItemsValidators<F>>,
     pattern_cache: SharedCache<Arc<str>, PatternCacheEntry>,
@@ -298,9 +296,7 @@ impl<F: Json> SharedContextState<'_, F> {
             alias_nodes: RefCell::new(AHashMap::new()),
             alias_placeholders: RefCell::new(AHashMap::new()),
             deferred_placeholders: RefCell::new(AHashMap::new()),
-            pending_property_validators: RefCell::new(AHashMap::new()),
             pending_property_validators_by_schema: RefCell::new(AHashMap::new()),
-            pending_items_validators: RefCell::new(AHashMap::new()),
             pending_items_validators_by_schema: RefCell::new(AHashMap::new()),
             pattern_cache: RefCell::new(AHashMap::new()),
             ref_targets: RefCell::new(AHashMap::new()),
@@ -700,37 +696,6 @@ impl<'a, F: Json> Context<'a, F> {
         self.shared.alias_nodes.borrow_mut().insert(key, node);
     }
 
-    pub(crate) fn get_pending_property_validators(
-        &self,
-        key: &LocationCacheKey,
-    ) -> Option<PendingPropertyValidators<F>> {
-        let pending = self
-            .shared
-            .pending_property_validators
-            .borrow()
-            .get(key)
-            .cloned();
-        self.reach_pending(pending)
-    }
-
-    pub(crate) fn cache_pending_property_validators(
-        &self,
-        key: LocationCacheKey,
-        pending: PendingPropertyValidators<F>,
-    ) {
-        self.shared
-            .pending_property_validators
-            .borrow_mut()
-            .insert(key, pending);
-    }
-
-    pub(crate) fn remove_pending_property_validators(&self, key: &LocationCacheKey) {
-        self.shared
-            .pending_property_validators
-            .borrow_mut()
-            .remove(key);
-    }
-
     fn property_schema_key(schema: &Map<String, Value>) -> PropertyValidatorsPendingKey {
         PropertyValidatorsPendingKey::new(schema)
     }
@@ -788,37 +753,6 @@ impl<'a, F: Json> Context<'a, F> {
             .get(&key)
             .cloned();
         self.reach_pending(pending)
-    }
-
-    pub(crate) fn get_pending_items_validators(
-        &self,
-        key: &LocationCacheKey,
-    ) -> Option<PendingItemsValidators<F>> {
-        let pending = self
-            .shared
-            .pending_items_validators
-            .borrow()
-            .get(key)
-            .cloned();
-        self.reach_pending(pending)
-    }
-
-    pub(crate) fn cache_pending_items_validators(
-        &self,
-        key: LocationCacheKey,
-        pending: PendingItemsValidators<F>,
-    ) {
-        self.shared
-            .pending_items_validators
-            .borrow_mut()
-            .insert(key, pending);
-    }
-
-    pub(crate) fn remove_pending_items_validators(&self, key: &LocationCacheKey) {
-        self.shared
-            .pending_items_validators
-            .borrow_mut()
-            .remove(key);
     }
 
     pub(crate) fn cache_pending_items_validators_for_schema(

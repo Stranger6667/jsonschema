@@ -378,7 +378,7 @@ impl<F: Json> ConditionalValidators<F> {
 ///
 /// Recursively builds the `PropertyValidators` tree by examining all keywords that
 /// can evaluate properties. Handles circular references via pending nodes cached
-/// by location and schema pointer.
+/// by schema pointer.
 fn compile_property_validators<'a, F: Json>(
     ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
@@ -399,9 +399,7 @@ fn compile_pending_property_validators<'a, F: Json>(
     parent: &'a Map<String, Value>,
 ) -> Result<PendingPropertyValidators<F>, ValidationError<'a>> {
     // Create a pending node and cache it before compiling to handle circular refs
-    let cache_key = ctx.location_cache_key();
     let pending = Arc::new(OnceLock::new());
-    ctx.cache_pending_property_validators(cache_key.clone(), pending.clone());
     ctx.cache_pending_property_validators_for_schema(parent, pending.clone());
 
     let applicator = ctx.has_vocabulary(&Vocabulary::Applicator);
@@ -459,7 +457,6 @@ fn compile_pending_property_validators<'a, F: Json>(
         .expect("pending node should not be initialized yet");
 
     // Remove from pending cache
-    ctx.remove_pending_property_validators(&cache_key);
     ctx.remove_pending_property_validators_for_schema(parent);
 
     Ok(pending)
@@ -767,12 +764,6 @@ fn compile_recursive_ref<'a, F: Json>(
             return Ok(Some(pending));
         }
 
-        let cache_key = ref_ctx.location_cache_key();
-        if let Some(pending) = ref_ctx.get_pending_property_validators(&cache_key) {
-            // Circular reference detected - return the pending node
-            return Ok(Some(pending));
-        }
-
         // Not circular, compile normally
         Ok(Some(
             compile_pending_property_validators(&ref_ctx, subschema)
@@ -1056,6 +1047,65 @@ mod tests {
     use crate::error::ValidationErrorKind;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    fn errors(schema: &Value, instance: &Value) -> Vec<(String, String, String)> {
+        let validator = crate::validator_for(schema).expect("schema compiles");
+        validator
+            .iter_errors(instance)
+            .map(|error| {
+                (
+                    error.instance_path().as_str().to_owned(),
+                    error.evaluation_path().as_str().to_owned(),
+                    error.to_string(),
+                )
+            })
+            .collect()
+    }
+
+    fn recursive_child(draft: &str, reference: &str) -> Value {
+        json!({
+            "$schema": draft,
+            "$defs": {
+                "R": {
+                    "properties": {
+                        "foo": {"type": "integer"},
+                        "child": {reference: "#", "unevaluatedProperties": false}
+                    }
+                }
+            },
+            "$ref": "#/$defs/R"
+        })
+    }
+
+    // The reference beside the keyword evaluates the properties of the node it points to
+    #[test_case("https://json-schema.org/draft/2019-09/schema", "$recursiveRef", &json!({"child": {"foo": 1}}), &[]; "2019-09 declared property")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", "$recursiveRef", &json!({"child": {"child": {"foo": 1}}}), &[]; "2019-09 nested declared property")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", "$recursiveRef", &json!({"child": {"bar": 1}}), &[("/child", "/$ref/properties/child/unevaluatedProperties", "Unevaluated properties are not allowed ('bar' was unexpected)")]; "2019-09 undeclared property")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", "$recursiveRef", &json!({"child": {"child": {"bar": 1}}}), &[("/child/child", "/$ref/properties/child/$recursiveRef/$ref/properties/child/unevaluatedProperties", "Unevaluated properties are not allowed ('bar' was unexpected)")]; "2019-09 nested undeclared property")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", "$recursiveRef", &json!({"child": {"foo": "x"}}), &[("/child/foo", "/$ref/properties/child/$recursiveRef/$ref/properties/foo/type", r#""x" is not of type "integer""#)]; "2019-09 declared property of the wrong type")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", "$dynamicRef", &json!({"child": {"foo": 1}}), &[]; "2020-12 declared property")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", "$dynamicRef", &json!({"child": {"bar": 1}}), &[("/child", "/$ref/properties/child/unevaluatedProperties", "Unevaluated properties are not allowed ('bar' was unexpected)")]; "2020-12 undeclared property")]
+    fn reference_to_root_evaluates_the_root_properties(
+        draft: &str,
+        reference: &str,
+        instance: &Value,
+        expected: &[(&str, &str, &str)],
+    ) {
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(instance_path, evaluation_path, message)| {
+                (
+                    (*instance_path).to_owned(),
+                    (*evaluation_path).to_owned(),
+                    (*message).to_owned(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            errors(&recursive_child(draft, reference), instance),
+            expected
+        );
+    }
 
     #[test]
     fn evaluated_keys_across_ref_use_target_applicator_vocabulary() {
