@@ -30,7 +30,7 @@ use std::{
     sync::{Arc, LazyLock},
 };
 
-const DEFAULT_SCHEME: &str = "json-schema";
+pub(crate) const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
 
 pub(crate) const fn formats_are_assertions_by_default(draft: Draft) -> bool {
