@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.3] - 2026-09-30
+
 ### Fixed
 
 - Keywords of a subschema declaring a Draft 2019-09+ `$schema` under a Draft 4, 6 or 7 root being ignored.
@@ -609,7 +611,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.3...HEAD
+[0.58.3]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.2...ruby-v0.58.3
 [0.58.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.1...ruby-v0.58.2
 [0.58.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.0...ruby-v0.58.1
 [0.58.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.57.0...ruby-v0.58.0
