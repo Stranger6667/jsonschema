@@ -1777,4 +1777,26 @@ mod tests {
             &[("type", "https://example.com/s.json#/type")],
         );
     }
+
+    #[test_case(
+        &json!([1]),
+        &[
+            ("[1] has less than 2 items", "", "/minItems"),
+            ("1 is not of type \"string\"", "/0", "/items/type"),
+        ];
+        "minItems with items"
+    )]
+    #[test_case(
+        &json!(["a", "b", "c", "d"]),
+        &[("[\"a\",\"b\",\"c\",\"d\"] has more than 3 items", "", "/maxItems")];
+        "maxItems"
+    )]
+    #[test_case(&json!(1), &[("1 is not of type \"array\"", "", "/type")]; "type")]
+    fn array_shape_error_locations(instance: &Value, expected: &[(&str, &str, &str)]) {
+        tests_util::assert_error_locations(
+            &json!({"type": "array", "minItems": 2, "maxItems": 3, "items": {"type": "string"}}),
+            instance,
+            expected,
+        );
+    }
 }

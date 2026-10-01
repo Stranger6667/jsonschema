@@ -306,4 +306,35 @@ mod tests {
         tests_util::assert_keyword_location(&validator, &instance, "", "/minLength");
         tests_util::assert_keyword_location(&validator, &instance, "", "/maxLength");
     }
+
+    #[test]
+    fn fused_error_locations() {
+        let schema = json!({"minLength": 2, "maxLength": 3});
+        tests_util::assert_error_locations(
+            &schema,
+            &json!("a"),
+            &[("\"a\" is shorter than 2 characters", "", "/minLength")],
+        );
+        tests_util::assert_error_locations(
+            &schema,
+            &json!("abcd"),
+            &[("\"abcd\" is longer than 3 characters", "", "/maxLength")],
+        );
+        tests_util::assert_error_locations(
+            &json!({"minLength": 20, "maxLength": 5}),
+            &json!("secretvalue"),
+            &[
+                (
+                    "\"secretvalue\" is shorter than 20 characters",
+                    "",
+                    "/minLength",
+                ),
+                (
+                    "\"secretvalue\" is longer than 5 characters",
+                    "",
+                    "/maxLength",
+                ),
+            ],
+        );
+    }
 }

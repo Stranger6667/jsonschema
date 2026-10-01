@@ -8,10 +8,44 @@ use crate::{
     validator::{EvaluationResult, Validate, ValidationContext},
     Array, Draft, Json, Node, SerdeJson,
 };
-use referencing::Vocabulary;
+use referencing::{Uri, Vocabulary};
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 use super::helpers::map_get_u64;
+
+/// The keyword a `contains` failure is reported at.
+struct Site {
+    location: Location,
+    absolute_location: Option<Arc<Uri<String>>>,
+}
+
+impl Site {
+    fn new<F: Json>(ctx: &compiler::Context<F>, keyword: &str) -> Self {
+        let location = ctx.location().join(keyword);
+        Site {
+            absolute_location: ctx.absolute_location(&location),
+            location,
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn error<'i, F: Json>(
+        &self,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+    ) -> ValidationError<'i> {
+        ValidationError::contains(
+            self.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &self.location),
+            location.into(),
+            instance.lazy_value(),
+        )
+        .with_absolute_keyword_location(self.absolute_location.clone())
+    }
+}
 
 pub(crate) struct ContainsValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
@@ -117,6 +151,7 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
 pub(crate) struct MinContainsValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
     min_contains: u64,
+    min: Site,
 }
 
 impl MinContainsValidator {
@@ -126,10 +161,12 @@ impl MinContainsValidator {
         schema: &'a Value,
         min_contains: u64,
     ) -> CompilationResult<'a, F> {
+        let min = Site::new(ctx, "minContains");
         let ctx = ctx.new_at_location("minContains");
         Ok(Box::new(MinContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
             min_contains,
+            min,
         }))
     }
 }
@@ -178,13 +215,7 @@ impl<F: Json> Validate<F> for MinContainsValidator<F> {
                 }
             }
             if self.min_contains > 0 {
-                let loc = self.node.location();
-                Err(ValidationError::contains(
-                    loc.clone(),
-                    crate::paths::capture_evaluation_path(tracker, loc),
-                    location.into(),
-                    instance.lazy_value(),
-                ))
+                Err(self.min.error::<F>(instance, location, tracker))
             } else {
                 Ok(())
             }
@@ -200,6 +231,7 @@ impl<F: Json> Validate<F> for MinContainsValidator<F> {
 pub(crate) struct MaxContainsValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
     max_contains: u64,
+    max: Site,
 }
 
 impl MaxContainsValidator {
@@ -209,10 +241,12 @@ impl MaxContainsValidator {
         schema: &'a Value,
         max_contains: u64,
     ) -> CompilationResult<'a, F> {
+        let max = Site::new(ctx, "maxContains");
         let ctx = ctx.new_at_location("maxContains");
         Ok(Box::new(MaxContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
             max_contains,
+            max,
         }))
     }
 }
@@ -247,7 +281,6 @@ impl<F: Json> Validate<F> for MaxContainsValidator<F> {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Some(array) = instance.as_array() {
-            let loc = self.node.location();
             let mut matches = 0;
             for item in array.elements() {
                 if self
@@ -257,24 +290,14 @@ impl<F: Json> Validate<F> for MaxContainsValidator<F> {
                 {
                     matches += 1;
                     if matches > self.max_contains {
-                        return Err(ValidationError::contains(
-                            loc.clone(),
-                            crate::paths::capture_evaluation_path(tracker, loc),
-                            location.into(),
-                            instance.lazy_value(),
-                        ));
+                        return Err(self.max.error::<F>(instance, location, tracker));
                     }
                 }
             }
             if matches > 0 {
                 Ok(())
             } else {
-                Err(ValidationError::contains(
-                    loc.clone(),
-                    crate::paths::capture_evaluation_path(tracker, loc),
-                    location.into(),
-                    instance.lazy_value(),
-                ))
+                Err(self.max.error::<F>(instance, location, tracker))
             }
         } else {
             Ok(())
@@ -292,8 +315,8 @@ pub(crate) struct MinMaxContainsValidator<F: Json = SerdeJson> {
     min_contains: u64,
     max_contains: u64,
     // Both bounds report against their own keyword, which the shared subschema location cannot name.
-    min_location: Location,
-    max_location: Location,
+    min: Site,
+    max: Site,
 }
 
 impl MinMaxContainsValidator {
@@ -304,15 +327,15 @@ impl MinMaxContainsValidator {
         min_contains: u64,
         max_contains: u64,
     ) -> CompilationResult<'a, F> {
-        let min_location = ctx.location().join("minContains");
-        let max_location = ctx.location().join("maxContains");
+        let min = Site::new(ctx, "minContains");
+        let max = Site::new(ctx, "maxContains");
         let ctx = ctx.new_at_location("contains");
         Ok(Box::new(MinMaxContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
             min_contains,
             max_contains,
-            min_location,
-            max_location,
+            min,
+            max,
         }))
     }
 }
@@ -356,25 +379,12 @@ impl<F: Json> Validate<F> for MinMaxContainsValidator<F> {
                 {
                     matches += 1;
                     if matches > self.max_contains {
-                        let eval_path =
-                            crate::paths::capture_evaluation_path(tracker, &self.max_location);
-                        return Err(ValidationError::contains(
-                            self.max_location.clone(),
-                            eval_path,
-                            location.into(),
-                            instance.lazy_value(),
-                        ));
+                        return Err(self.max.error::<F>(instance, location, tracker));
                     }
                 }
             }
             if matches < self.min_contains {
-                let eval_path = crate::paths::capture_evaluation_path(tracker, &self.min_location);
-                Err(ValidationError::contains(
-                    self.min_location.clone(),
-                    eval_path,
-                    location.into(),
-                    instance.lazy_value(),
-                ))
+                Err(self.min.error::<F>(instance, location, tracker))
             } else {
                 Ok(())
             }
@@ -481,5 +491,23 @@ mod tests {
                 (true, Vec::new()),
             ]
         );
+    }
+
+    #[test_case(&json!({}), &json!([2]), "/contains"; "contains")]
+    #[test_case(&json!({"minContains": 2}), &json!([1]), "/minContains"; "minContains")]
+    #[test_case(&json!({"maxContains": 1}), &json!([1, 1]), "/maxContains"; "maxContains")]
+    #[test_case(&json!({"maxContains": 1}), &json!([2]), "/maxContains"; "maxContains without a match")]
+    #[test_case(&json!({"minContains": 2, "maxContains": 3}), &json!([1]), "/minContains"; "min of both")]
+    #[test_case(
+        &json!({"minContains": 2, "maxContains": 3}),
+        &json!([1, 1, 1, 1]),
+        "/maxContains";
+        "max of both"
+    )]
+    fn error_locations(bounds: &Value, instance: &Value, schema_path: &str) {
+        let mut schema = bounds.clone();
+        schema["contains"] = json!({"const": 1});
+        let message = format!("None of {instance} are valid under the given schema");
+        tests_util::assert_error_locations(&schema, instance, &[(&message, "", schema_path)]);
     }
 }

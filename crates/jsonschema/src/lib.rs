@@ -4527,6 +4527,61 @@ pub(crate) mod tests_util {
         assert_eq!(actual, expected);
     }
 
+    /// Message, instance path, schema path and absolute keyword location of an error.
+    type ErrorLocations = (String, String, String, Option<String>);
+
+    fn error_locations(error: &ValidationError<'_>) -> ErrorLocations {
+        (
+            error.to_string(),
+            error.instance_path().as_str().to_owned(),
+            error.schema_path().as_str().to_owned(),
+            error.absolute_keyword_location().map(ToString::to_string),
+        )
+    }
+
+    /// Asserts the errors from `iter_errors` and the one from `validate` against `expected`
+    /// (message, instance path, schema path), with `schema` both at the root of a resource and
+    /// behind a `$ref`. The absolute keyword location must name the schema path.
+    #[track_caller]
+    pub(crate) fn assert_error_locations(
+        schema: &Value,
+        instance: &Value,
+        expected: &[(&str, &str, &str)],
+    ) {
+        const BASE: &str = "https://example.com/s.json";
+        let mut root = schema.clone();
+        root["$id"] = Value::from(BASE);
+        let behind_ref =
+            serde_json::json!({"$id": BASE, "$defs": {"t": schema}, "$ref": "#/$defs/t"});
+        for (schema, prefix) in [(root, ""), (behind_ref, "/$defs/t")] {
+            let validator = crate::validator_for(&schema).expect("Invalid schema");
+            let expected: Vec<ErrorLocations> = expected
+                .iter()
+                .map(|(message, instance_path, schema_path)| {
+                    (
+                        (*message).to_owned(),
+                        (*instance_path).to_owned(),
+                        format!("{prefix}{schema_path}"),
+                        Some(format!("{BASE}#{prefix}{schema_path}")),
+                    )
+                })
+                .collect();
+            let actual: Vec<ErrorLocations> = validator
+                .iter_errors(instance)
+                .map(|error| error_locations(&error))
+                .collect();
+            assert_eq!(actual, expected, "iter_errors for {schema}");
+            let first = validator
+                .validate(instance)
+                .expect_err("Should be an error");
+            assert_eq!(
+                Some(error_locations(&first)),
+                expected.first().cloned(),
+                "validate for {schema}"
+            );
+        }
+    }
+
     #[track_caller]
     pub(crate) fn assert_evaluation_path(schema: &Value, instance: &Value, expected: &str) {
         let error = validate(schema, instance);
