@@ -114,7 +114,8 @@ impl<F: Json> fmt::Debug for PropertyValidators<F> {
 /// Conditional validators from "if/then/else" keywords
 struct ConditionalValidators<F: Json = SerdeJson> {
     condition: SchemaNode<F>,
-    if_: PropertyValidators<F>,
+    /// `None` for a boolean `if`, which evaluates nothing.
+    if_: Option<PropertyValidators<F>>,
     then_: Option<PropertyValidators<F>>,
     else_: Option<PropertyValidators<F>>,
 }
@@ -363,8 +364,9 @@ impl<F: Json> ConditionalValidators<F> {
         ctx: &mut ValidationContext,
     ) {
         if self.condition.is_valid(instance, ctx) {
-            self.if_
-                .mark_evaluated_properties(instance, properties, ctx);
+            if let Some(if_) = &self.if_ {
+                if_.mark_evaluated_properties(instance, properties, ctx);
+            }
             if let Some(then_) = &self.then_ {
                 then_.mark_evaluated_properties(instance, properties, ctx);
             }
@@ -653,20 +655,20 @@ fn compile_conditional<'a, F: Json>(
     ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<Box<ConditionalValidators<F>>>, ValidationError<'a>> {
-    let Some(if_value) = parent.get("if") else {
+    let Some(if_value @ (Value::Object(_) | Value::Bool(_))) = parent.get("if") else {
         return Ok(None);
     };
-    let Value::Object(if_schema) = if_value else {
-        return Ok(None);
-    };
-
     let if_ctx = ctx.new_at_location("if");
     let if_resource = if_ctx.as_resource_ref(if_value);
     let condition = compiler::compile(&if_ctx, if_resource).map_err(ValidationError::to_owned)?;
-    let if_inner_ctx = if_ctx
-        .in_subresource(if_resource)
-        .map_err(ValidationError::from)?;
-    let if_ = compile_property_validators(&if_inner_ctx, if_schema)?;
+    let if_ = if let Value::Object(if_schema) = if_value {
+        let if_inner_ctx = if_ctx
+            .in_subresource(if_resource)
+            .map_err(ValidationError::from)?;
+        Some(compile_property_validators(&if_inner_ctx, if_schema)?)
+    } else {
+        None
+    };
 
     let then_ = compile_branch(ctx, parent, "then")?;
     let else_ = compile_branch(ctx, parent, "else")?;
@@ -1060,6 +1062,95 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// `is_valid`, `iter_errors`, `evaluate()` validity and `evaluate()` errors, each error as
+    /// a (schema location, message) pair.
+    type Outcome = (bool, Vec<(String, String)>, bool, Vec<(String, String)>);
+
+    fn errors_and_evaluation(schema: &Value, instance: &Value) -> Outcome {
+        let validator = crate::validator_for(schema).expect("schema compiles");
+        let errors = validator
+            .iter_errors(instance)
+            .map(|error| {
+                (
+                    error.evaluation_path().as_str().to_owned(),
+                    error.to_string(),
+                )
+            })
+            .collect();
+        let evaluation = validator.evaluate(instance);
+        let evaluation_errors = evaluation
+            .iter_errors()
+            .map(|entry| (entry.schema_location.to_owned(), entry.error.to_string()))
+            .collect();
+        (
+            validator.is_valid(instance),
+            errors,
+            evaluation.flag().valid,
+            evaluation_errors,
+        )
+    }
+
+    const A_UNEXPECTED: &[(&str, &str)] = &[(
+        "/unevaluatedProperties",
+        "Unevaluated properties are not allowed ('a' was unexpected)",
+    )];
+
+    // Boolean and empty subschemas evaluate nothing; the branches they select still do
+    #[test_case(&json!({"if": true, "then": {"properties": {"a": {}}}}), &[]; "if true with then")]
+    #[test_case(&json!({"if": false, "else": {"properties": {"a": {}}}}), &[]; "if false with else")]
+    #[test_case(&json!({"if": true, "else": {"properties": {"a": {}}}}), A_UNEXPECTED; "if true with else only")]
+    #[test_case(&json!({"if": false, "then": {"properties": {"a": {}}}}), A_UNEXPECTED; "if false with then only")]
+    #[test_case(&json!({"if": true, "then": true}), A_UNEXPECTED; "if true with then true")]
+    #[test_case(&json!({"if": {}, "then": {"properties": {"a": {}}}}), &[]; "if empty with then")]
+    #[test_case(&json!({"if": true, "then": {"if": false, "else": {"properties": {"a": {}}}}}), &[]; "nested boolean if")]
+    #[test_case(&json!({"$defs": {"d": {"properties": {"a": {}}}}, "if": true, "then": {"$ref": "#/$defs/d"}}), &[]; "if true with then ref")]
+    #[test_case(&json!({"allOf": [true]}), A_UNEXPECTED; "allOf true")]
+    #[test_case(&json!({"allOf": [true, {"properties": {"a": {}}}]}), &[]; "allOf true and object")]
+    #[test_case(&json!({"anyOf": [true, {"properties": {"a": {}}}]}), &[]; "anyOf true and object")]
+    #[test_case(&json!({"oneOf": [true, {"required": ["b"], "properties": {"a": {}}}]}), A_UNEXPECTED; "oneOf true and failing object")]
+    #[test_case(&json!({"oneOf": [false, {"properties": {"a": {}}}]}), &[]; "oneOf false and object")]
+    #[test_case(&json!({"dependentSchemas": {"a": true}}), A_UNEXPECTED; "dependentSchemas true")]
+    #[test_case(&json!({"dependentSchemas": {"a": {"properties": {"a": {}}}, "b": true}}), &[]; "dependentSchemas object and true")]
+    #[test_case(&json!({"not": false}), A_UNEXPECTED; "not false")]
+    #[test_case(&json!({"$defs": {"t": true}, "$ref": "#/$defs/t"}), A_UNEXPECTED; "ref to true")]
+    #[test_case(&json!({"properties": {"a": true}}), &[]; "properties true")]
+    #[test_case(&json!({"patternProperties": {"^a": true}}), &[]; "patternProperties true")]
+    #[test_case(&json!({"additionalProperties": true}), &[]; "additionalProperties true")]
+    fn boolean_subschemas(applicator: &Value, expected: &[(&str, &str)]) {
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(location, message)| ((*location).to_owned(), (*message).to_owned()))
+            .collect();
+        // `evaluate()` also lists the `false` subschema rejecting the unevaluated value
+        let mut evaluation_expected = expected.clone();
+        if !expected.is_empty() {
+            evaluation_expected.push((
+                "/unevaluatedProperties".to_owned(),
+                "False schema does not allow 1".to_owned(),
+            ));
+        }
+        for draft in [
+            "https://json-schema.org/draft/2019-09/schema",
+            "https://json-schema.org/draft/2020-12/schema",
+        ] {
+            let mut schema = json!({"$schema": draft, "unevaluatedProperties": false});
+            schema
+                .as_object_mut()
+                .expect("object schema")
+                .extend(applicator.as_object().expect("object applicator").clone());
+            assert_eq!(
+                errors_and_evaluation(&schema, &json!({"a": 1})),
+                (
+                    expected.is_empty(),
+                    expected.clone(),
+                    expected.is_empty(),
+                    evaluation_expected.clone()
+                ),
+                "{draft}"
+            );
+        }
     }
 
     fn recursive_child(draft: &str, reference: &str) -> Value {

@@ -15,6 +15,7 @@
 - Absolute keyword location of errors and annotations from a whole subschema, such as `false`, missing its JSON Pointer fragment.
 - Evaluation annotations from `$ref` siblings in Draft 4, 6 and 7 schemas.
 - `$dynamicRef` and `$recursiveRef` resolving in the dynamic scope of another path to the same schema, depending on property order.
+- `unevaluatedProperties` and `unevaluatedItems` ignoring what `then` or `else` evaluates when `if` is `true` or `false`.
 - Stack overflow when building validators for long `$ref` chains.
 - `format: "regex"` and meta-schema validation rejecting escaped punctuation such as `\-` in patterns.
 
