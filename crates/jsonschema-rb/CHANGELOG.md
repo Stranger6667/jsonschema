@@ -14,6 +14,7 @@
 - Evaluation annotations from `$ref` siblings in Draft 4, 6 and 7 schemas.
 - `$dynamicRef` and `$recursiveRef` resolving in the dynamic scope of another path to the same schema, depending on property order.
 - Stack overflow when building validators for long `$ref` chains.
+- `format: "regex"` and meta-schema validation rejecting escaped punctuation such as `\-` in patterns.
 
 ## [0.58.3] - 2026-09-30
 

@@ -1956,6 +1956,77 @@ mod tests {
         assert!(validator.is_valid(&instance));
     }
 
+    /// Each draft, its meta-schema, and whether that meta-schema asserts `format`.
+    const DRAFTS: [(Draft, &str, bool); 5] = [
+        (
+            Draft::Draft4,
+            "http://json-schema.org/draft-04/schema#",
+            true,
+        ),
+        (
+            Draft::Draft6,
+            "http://json-schema.org/draft-06/schema#",
+            true,
+        ),
+        (
+            Draft::Draft7,
+            "http://json-schema.org/draft-07/schema#",
+            true,
+        ),
+        (
+            Draft::Draft201909,
+            "https://json-schema.org/draft/2019-09/schema",
+            false,
+        ),
+        (
+            Draft::Draft202012,
+            "https://json-schema.org/draft/2020-12/schema",
+            false,
+        ),
+    ];
+
+    #[test_case(r"^\-?\d+$", true; "escaped dash")]
+    #[test_case(r"^(\-?\d+(\.\d+)?),\s*(\-?\d+(\.\d+)?)$", true; "escaped dashes in groups")]
+    #[test_case(r"\/", true; "escaped slash")]
+    #[test_case(r"\:", true; "escaped colon")]
+    #[test_case(r"\ ", true; "escaped space")]
+    #[test_case(r"\@", true; "escaped at sign")]
+    #[test_case(r"[\:\@]", true; "escaped punctuation in class")]
+    #[test_case(r"\p{Letter}", true; "property escape")]
+    #[test_case(r"(", false; "unbalanced paren")]
+    #[test_case(r"[", false; "unbalanced bracket")]
+    #[test_case("\\", false; "trailing backslash")]
+    #[test_case(r"\a", false; "escaped letter")]
+    #[test_case(r"\u{110000}", false; "out of range braced unicode escape")]
+    fn regex_format_per_draft(pattern: &str, expected: bool) {
+        for (draft, uri, asserts_format) in DRAFTS {
+            let validator = crate::options()
+                .with_draft(draft)
+                .should_validate_formats(true)
+                .build(&json!({"format": "regex"}))
+                .expect("Invalid schema");
+            assert_eq!(validator.is_valid(&json!(pattern)), expected, "{draft:?}");
+            let schema = json!({"$schema": uri, "pattern": pattern});
+            assert_eq!(
+                crate::meta::is_valid(&schema),
+                expected || !asserts_format,
+                "{draft:?}"
+            );
+        }
+    }
+
+    #[test_case(r"^\-?\d+$"; "regex engine")]
+    #[test_case(r"^(?=\-?\d)\-?\d+$"; "fancy regex engine")]
+    fn draft4_pattern_with_escaped_dash(pattern: &str) {
+        let schema =
+            json!({"$schema": "http://json-schema.org/draft-04/schema#", "pattern": pattern});
+        assert!(crate::meta::is_valid(&schema));
+        let validator = crate::validator_for(&schema).expect("Invalid schema");
+        assert!(validator.is_valid(&json!("-12")));
+        assert!(validator.is_valid(&json!("12")));
+        assert!(!validator.is_valid(&json!("1-2")));
+    }
+
     #[test]
     fn location() {
         tests_util::assert_schema_location(&json!({"format": "date"}), &json!("bla"), "/format");

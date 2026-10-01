@@ -1,12 +1,15 @@
-//! ECMA-262 regular expression syntax check (Unicode mode).
+//! ECMA-262 regular expression syntax check.
 //!
 //! The grammar is the `Pattern[+UnicodeMode, +NamedCaptureGroups]` production of ECMA-262,
-//! including the pattern modifiers of ES2025. Unicode property names and values are checked for
-//! shape only, not against the Unicode tables.
+//! including the pattern modifiers of ES2025, widened with the identity escapes that patterns
+//! without the `u` flag allow: a backslash before any character that is not alphanumeric. Drafts 4
+//! to 2019-09 cite the ES5.1 dialect, which has no `u` flag. Unicode property names and values are
+//! checked for shape only, not against the Unicode tables.
 
 use std::{borrow::Cow, cmp::Ordering};
 
-/// Whether `pattern` is a syntactically valid ECMA-262 regular expression under the `u` flag.
+/// Whether `pattern` is a syntactically valid ECMA-262 regular expression under the `u` flag, or
+/// differs from one only by escaping non-alphanumeric characters.
 #[must_use]
 pub fn is_valid_ecma_regex(pattern: &str) -> bool {
     Parser::new(pattern).parse().is_ok()
@@ -377,7 +380,7 @@ impl<'a> Parser<'a> {
                 high * 16 + low
             }
             'u' => self.unicode_escape()?,
-            c if is_syntax_character(c) || c == '/' => c as u32,
+            c if !c.is_alphanumeric() => c as u32,
             _ => return Err(SyntaxError),
         })
     }
@@ -485,13 +488,6 @@ impl<'a> Parser<'a> {
     }
 }
 
-fn is_syntax_character(c: char) -> bool {
-    matches!(
-        c,
-        '^' | '$' | '\\' | '.' | '*' | '+' | '?' | '(' | ')' | '[' | ']' | '{' | '}' | '|'
-    )
-}
-
 /// `ID_Start` plus `$` and `_`, approximated by the Alphabetic property.
 fn is_identifier_start(c: char) -> bool {
     c.is_alphabetic() || matches!(c, '$' | '_')
@@ -568,6 +564,16 @@ mod tests {
     #[test_case("\\f\\n\\r\\t\\v"; "control escapes")]
     #[test_case("\\/\\^\\$\\\\\\.\\*\\+\\?\\(\\)\\[\\]\\{\\}\\|"; "identity escapes")]
     #[test_case("\\b\\B"; "word boundaries")]
+    #[test_case("^\\-?\\d+$"; "escaped dash outside class")]
+    #[test_case("^(\\-?\\d+(\\.\\d+)?),\\s*(\\-?\\d+(\\.\\d+)?)$"; "escaped dashes in groups")]
+    #[test_case("\\:"; "escaped colon")]
+    #[test_case("\\ "; "escaped space")]
+    #[test_case("\\@"; "escaped at sign")]
+    #[test_case("\\#\\%\\&\\'\\\"\\,\\;\\<\\=\\>\\!\\~\\`"; "escaped punctuation")]
+    #[test_case("\\_"; "escaped underscore")]
+    #[test_case("\\§"; "escaped non-ascii symbol")]
+    #[test_case("[\\:\\@\\ \\_]"; "escaped punctuation in class")]
+    #[test_case("[\\!-\\/]"; "range of escaped punctuation")]
     #[test_case("a*?b+?c??d{2}?e{2,}?f{2,3}?"; "lazy quantifiers")]
     #[test_case("a{2}"; "exact count")]
     #[test_case("a{2,}"; "open count")]
@@ -587,8 +593,8 @@ mod tests {
 
     #[test_case("^(abc]"; "suite unclosed group")]
     #[test_case("\\a"; "identity escape of a letter")]
-    #[test_case("\\-"; "escaped dash outside class")]
-    #[test_case("\\ "; "escaped space")]
+    #[test_case("\\é"; "identity escape of a non-ascii letter")]
+    #[test_case("\\٣"; "identity escape of a non-ascii digit")]
     #[test_case("\\"; "trailing backslash")]
     #[test_case("(?P<name>x)"; "python named group")]
     #[test_case("(?P<n>a)(?P=n)"; "python named backreference")]
@@ -669,5 +675,17 @@ mod tests {
     #[test_case("(?<n>"; "unclosed named group")]
     fn invalid(pattern: &str) {
         assert!(!is_valid_ecma_regex(pattern));
+    }
+
+    #[test]
+    fn accepts_every_escape_the_translation_compiles() {
+        for c in (' '..='~').filter(|c| !c.is_ascii_alphanumeric()) {
+            for pattern in [format!("\\{c}"), format!("[\\{c}]")] {
+                if crate::to_rust_regex(&pattern).is_ok_and(|rust| regex::Regex::new(&rust).is_ok())
+                {
+                    assert!(is_valid_ecma_regex(&pattern), "{pattern}");
+                }
+            }
+        }
     }
 }

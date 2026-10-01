@@ -1601,6 +1601,26 @@ fn uncheckable_format_keeps_the_value_beside_the_leaf(leaf: &Value, instance: &V
     assert!(build(&canonical.to_json_schema()).is_valid(instance));
 }
 
+#[test_case(Draft::Draft4; "draft 4")]
+#[test_case(Draft::Draft6; "draft 6")]
+#[test_case(Draft::Draft7; "draft 7")]
+fn pattern_with_identity_escapes(draft: Draft) {
+    let schema = json!({
+        "type": "string",
+        "pattern": r"^(\-?\d+(\.\d+)?),\s*(\-?\d+(\.\d+)?)$"
+    });
+    let canonical = options()
+        .with_draft(draft)
+        .canonicalize(&schema)
+        .expect("canonicalizes");
+    let validator = ::jsonschema::options()
+        .with_draft(draft)
+        .build(&canonical.to_json_schema())
+        .expect("builds");
+    assert!(validator.is_valid(&json!("-1.5, 2")));
+    assert!(!validator.is_valid(&json!("1-5, 2")));
+}
+
 // A Draft 4 integer property schema is a typed group, which the format scan walks past to reach the
 // key whose format it cannot check.
 #[test]
