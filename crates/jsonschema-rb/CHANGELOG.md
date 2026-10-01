@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.4] - 2026-10-01
+
 ### Fixed
 
 - `inspect` of a `validator_for` validator naming the default draft instead of the one `$schema` declares.
@@ -635,7 +637,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.3...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.4...HEAD
+[0.58.4]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.3...ruby-v0.58.4
 [0.58.3]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.2...ruby-v0.58.3
 [0.58.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.1...ruby-v0.58.2
 [0.58.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.0...ruby-v0.58.1
