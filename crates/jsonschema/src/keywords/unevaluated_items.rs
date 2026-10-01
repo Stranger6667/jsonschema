@@ -90,7 +90,8 @@ impl<F: Json> fmt::Debug for ItemsValidators<F> {
 /// Conditional validators from "if/then/else" keywords
 struct ConditionalValidators<F: Json = SerdeJson> {
     condition: SchemaNode<F>,
-    if_: ItemsValidators<F>,
+    /// `None` for a boolean `if`, which evaluates nothing.
+    if_: Option<ItemsValidators<F>>,
     then_: Option<ItemsValidators<F>>,
     else_: Option<ItemsValidators<F>>,
 }
@@ -293,7 +294,9 @@ impl<F: Json> ConditionalValidators<F> {
         ctx: &mut ValidationContext,
     ) {
         if self.condition.is_valid(instance, ctx) {
-            self.if_.mark_evaluated_indexes(instance, indexes, ctx);
+            if let Some(if_) = &self.if_ {
+                if_.mark_evaluated_indexes(instance, indexes, ctx);
+            }
             if let Some(then_) = &self.then_ {
                 then_.mark_evaluated_indexes(instance, indexes, ctx);
             }
@@ -599,27 +602,30 @@ fn compile_conditional<'a, F: Json>(
     ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
 ) -> Result<Option<Box<ConditionalValidators<F>>>, ValidationError<'a>> {
-    if let Some(subschema) = parent.get("if") {
-        if let Value::Object(if_parent) = subschema {
-            let if_ctx = ctx.new_at_location("if");
-            let if_resource = if_ctx.as_resource_ref(subschema);
-            let condition =
-                compiler::compile(&if_ctx, if_resource).map_err(ValidationError::to_owned)?;
-            let if_inner_ctx = if_ctx
-                .in_subresource(if_resource)
-                .map_err(ValidationError::from)?;
-            let if_ = compile_items_validators(&if_inner_ctx, if_parent)
-                .map_err(ValidationError::to_owned)?;
+    let Some(subschema @ (Value::Object(_) | Value::Bool(_))) = parent.get("if") else {
+        return Ok(None);
+    };
+    let if_ctx = ctx.new_at_location("if");
+    let if_resource = if_ctx.as_resource_ref(subschema);
+    let condition = compiler::compile(&if_ctx, if_resource).map_err(ValidationError::to_owned)?;
+    let if_ = if let Value::Object(if_parent) = subschema {
+        let if_inner_ctx = if_ctx
+            .in_subresource(if_resource)
+            .map_err(ValidationError::from)?;
+        Some(
+            compile_items_validators(&if_inner_ctx, if_parent)
+                .map_err(ValidationError::to_owned)?,
+        )
+    } else {
+        None
+    };
 
-            return Ok(Some(Box::new(ConditionalValidators {
-                condition,
-                if_,
-                then_: compile_branch(ctx, parent, "then")?,
-                else_: compile_branch(ctx, parent, "else")?,
-            })));
-        }
-    }
-    Ok(None)
+    Ok(Some(Box::new(ConditionalValidators {
+        condition,
+        if_,
+        then_: compile_branch(ctx, parent, "then")?,
+        else_: compile_branch(ctx, parent, "else")?,
+    })))
 }
 
 type CompiledItemsSubschemas<F> = Vec<(SchemaNode<F>, ItemsValidators<F>)>;
@@ -894,6 +900,34 @@ mod tests {
                 )
             })
             .collect()
+    }
+
+    /// `is_valid`, `iter_errors`, `evaluate()` validity and `evaluate()` errors, each error as
+    /// a (schema location, message) pair.
+    type Outcome = (bool, Vec<(String, String)>, bool, Vec<(String, String)>);
+
+    fn errors_and_evaluation(schema: &Value, instance: &Value) -> Outcome {
+        let validator = crate::validator_for(schema).expect("schema compiles");
+        let errors = validator
+            .iter_errors(instance)
+            .map(|error| {
+                (
+                    error.evaluation_path().as_str().to_owned(),
+                    error.to_string(),
+                )
+            })
+            .collect();
+        let evaluation = validator.evaluate(instance);
+        let evaluation_errors = evaluation
+            .iter_errors()
+            .map(|entry| (entry.schema_location.to_owned(), entry.error.to_string()))
+            .collect();
+        (
+            validator.is_valid(instance),
+            errors,
+            evaluation.flag().valid,
+            evaluation_errors,
+        )
     }
 
     // The reference beside the keyword evaluates the items of the node it points to
@@ -1205,5 +1239,72 @@ mod tests {
 
         assert!(validator.is_valid(&json!(["x"])));
         assert!(!validator.is_valid(&json!(["x", "y"])));
+    }
+
+    const FIRST_UNEXPECTED: &[(&str, &str)] = &[(
+        "/unevaluatedItems",
+        "Unevaluated items are not allowed ('1' was unexpected)",
+    )];
+
+    // Boolean and empty subschemas evaluate nothing; the branches they select still do
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"if": true, "then": {"items": [{}]}}), &[]; "2019-09 if true with then")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"if": false, "else": {"items": [{}]}}), &[]; "2019-09 if false with else")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"if": true, "else": {"items": [{}]}}), FIRST_UNEXPECTED; "2019-09 if true with else only")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"if": false, "then": {"items": [{}]}}), FIRST_UNEXPECTED; "2019-09 if false with then only")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"if": true, "then": true}), FIRST_UNEXPECTED; "2019-09 if true with then true")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"if": true, "then": {"items": true}}), &[]; "2019-09 if true with then items true")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"if": {}, "then": {"items": [{}]}}), &[]; "2019-09 if empty with then")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"if": true, "then": {"if": false, "else": {"items": [{}]}}}), &[]; "2019-09 nested boolean if")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"allOf": [true]}), FIRST_UNEXPECTED; "2019-09 allOf true")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"allOf": [true, {"items": [{}]}]}), &[]; "2019-09 allOf true and object")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"anyOf": [true, {"items": [{}]}]}), &[]; "2019-09 anyOf true and object")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"oneOf": [false, {"items": [{}]}]}), &[]; "2019-09 oneOf false and object")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"not": false}), FIRST_UNEXPECTED; "2019-09 not false")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"$defs": {"t": true}, "$ref": "#/$defs/t"}), FIRST_UNEXPECTED; "2019-09 ref to true")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"items": true}), &[]; "2019-09 items true")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"items": [true]}), &[]; "2019-09 items true")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"if": true, "then": {"prefixItems": [{}]}}), &[]; "2020-12 if true with then")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"if": false, "else": {"prefixItems": [{}]}}), &[]; "2020-12 if false with else")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"if": true, "else": {"prefixItems": [{}]}}), FIRST_UNEXPECTED; "2020-12 if true with else only")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"if": false, "then": {"prefixItems": [{}]}}), FIRST_UNEXPECTED; "2020-12 if false with then only")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"if": true, "then": true}), FIRST_UNEXPECTED; "2020-12 if true with then true")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"if": true, "then": {"items": true}}), &[]; "2020-12 if true with then items true")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"if": {}, "then": {"prefixItems": [{}]}}), &[]; "2020-12 if empty with then")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"if": true, "then": {"if": false, "else": {"prefixItems": [{}]}}}), &[]; "2020-12 nested boolean if")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"allOf": [true]}), FIRST_UNEXPECTED; "2020-12 allOf true")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"allOf": [true, {"prefixItems": [{}]}]}), &[]; "2020-12 allOf true and object")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"anyOf": [true, {"prefixItems": [{}]}]}), &[]; "2020-12 anyOf true and object")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"oneOf": [false, {"prefixItems": [{}]}]}), &[]; "2020-12 oneOf false and object")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"not": false}), FIRST_UNEXPECTED; "2020-12 not false")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"$defs": {"t": true}, "$ref": "#/$defs/t"}), FIRST_UNEXPECTED; "2020-12 ref to true")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"items": true}), &[]; "2020-12 items true")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"prefixItems": [true]}), &[]; "2020-12 prefixItems true")]
+    fn boolean_subschemas(draft: &str, applicator: &Value, expected: &[(&str, &str)]) {
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(location, message)| ((*location).to_owned(), (*message).to_owned()))
+            .collect();
+        // `evaluate()` also lists the `false` subschema rejecting the unevaluated value
+        let mut evaluation_expected = expected.clone();
+        if !expected.is_empty() {
+            evaluation_expected.push((
+                "/unevaluatedItems".to_owned(),
+                "False schema does not allow 1".to_owned(),
+            ));
+        }
+        let mut schema = json!({"$schema": draft, "unevaluatedItems": false});
+        schema
+            .as_object_mut()
+            .expect("object schema")
+            .extend(applicator.as_object().expect("object applicator").clone());
+        assert_eq!(
+            errors_and_evaluation(&schema, &json!([1])),
+            (
+                expected.is_empty(),
+                expected.clone(),
+                expected.is_empty(),
+                evaluation_expected
+            )
+        );
     }
 }
