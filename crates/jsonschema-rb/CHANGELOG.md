@@ -5,6 +5,7 @@
 ### Fixed
 
 - `unevaluatedProperties` and `unevaluatedItems` beside a `$recursiveRef` ignoring what the reference target evaluates.
+- `unevaluatedProperties` ignoring the configured regex engine and its limits for `patternProperties`.
 - Absolute keyword location and `schemaLocation` of keywords a `$ref` JSON Pointer reaches through a subschema with its own `$id`.
 - `type`, `minItems` and `maxItems` ignored beside `items` when the applicator vocabulary is disabled.
 - Absolute keyword location and `schemaLocation` of keywords inside a nested `$id` resource counting from the document root.
