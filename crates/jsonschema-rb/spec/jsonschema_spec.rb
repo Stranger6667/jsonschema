@@ -292,6 +292,20 @@ RSpec.describe "Reusable validators" do
         expect(v.inspect).to eq("#<JSONSchema::#{name}Validator>")
       end
     end
+
+    {
+      nil => "Draft202012",
+      "http://json-schema.org/draft-04/schema#" => "Draft4",
+      "http://json-schema.org/draft-06/schema#" => "Draft6",
+      "http://json-schema.org/draft-07/schema#" => "Draft7",
+      "https://json-schema.org/draft/2019-09/schema" => "Draft201909",
+      "https://json-schema.org/draft/2020-12/schema" => "Draft202012"
+    }.each do |uri, name|
+      it "shows #{name} for validator_for with $schema #{uri.inspect}" do
+        schema = uri ? { "$schema" => uri, "type" => "string" } : { "type" => "string" }
+        expect(JSONSchema.validator_for(schema).inspect).to eq("#<JSONSchema::#{name}Validator>")
+      end
+    end
   end
 
   describe "with keyword arguments via validator_for" do

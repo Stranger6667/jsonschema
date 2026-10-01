@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- `repr` of a `validator_for` validator naming the default draft instead of the one `$schema` declares.
 - `unevaluatedProperties` and `unevaluatedItems` beside a `$recursiveRef` ignoring what the reference target evaluates.
 - `unevaluatedProperties` ignoring the configured regex engine and its limits for `patternProperties`.
 - Absolute keyword location and `schemaLocation` of keywords a `$ref` JSON Pointer reaches through a subschema with its own `$id`.

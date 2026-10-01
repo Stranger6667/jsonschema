@@ -561,7 +561,8 @@ impl<F: Json> Validator<F> {
         let root = ctx.arena.push(root);
         Evaluation::new(std::mem::take(&mut ctx.arena), root)
     }
-    /// The [`Draft`] which was used to build this validator.
+    /// The [`Draft`] this validator applies: the one set via `with_draft`, else the one `$schema`
+    /// declares, else the default.
     #[must_use]
     pub fn draft(&self) -> Draft {
         self.draft
@@ -634,7 +635,8 @@ impl<F: Json> std::ops::Index<&str> for ValidatorMap<F> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        error::ValidationError, keywords::custom::Keyword, paths::Location, Validator, ValidatorMap,
+        error::ValidationError, keywords::custom::Keyword, paths::Location, Draft, Validator,
+        ValidatorMap,
     };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
@@ -700,6 +702,127 @@ mod tests {
             format!("{validator:?}"),
             r#"Validator { root: SchemaNode { inner: SchemaNodeInner { validators: Boolean, .. }, location: Location(""), .. }, draft: Draft202012, .. }"#
         );
+    }
+
+    fn schema_declaring(uri: Option<&str>) -> Value {
+        match uri {
+            Some(uri) => json!({"$schema": uri, "type": "string"}),
+            None => json!({"type": "string"}),
+        }
+    }
+
+    #[test_case(None, None, Draft::Draft202012; "no schema default")]
+    #[test_case(Some("http://json-schema.org/draft-04/schema#"), None, Draft::Draft4; "draft 4")]
+    #[test_case(Some("http://json-schema.org/draft-06/schema#"), None, Draft::Draft6; "draft 6")]
+    #[test_case(Some("http://json-schema.org/draft-07/schema#"), None, Draft::Draft7; "draft 7")]
+    #[test_case(Some("https://json-schema.org/draft/2019-09/schema"), None, Draft::Draft201909; "draft 2019-09")]
+    #[test_case(Some("https://json-schema.org/draft/2020-12/schema"), None, Draft::Draft202012; "draft 2020-12")]
+    #[test_case(Some("https://json-schema.org/schema"), None, Draft::Draft202012; "version-less")]
+    #[test_case(None, Some(Draft::Draft4), Draft::Draft4; "no schema explicit draft 4")]
+    #[test_case(Some("http://json-schema.org/draft-04/schema#"), Some(Draft::Draft4), Draft::Draft4; "explicit draft 4 matching")]
+    #[test_case(Some("http://json-schema.org/draft-07/schema#"), Some(Draft::Draft4), Draft::Draft4; "explicit draft 4 over draft 7")]
+    #[test_case(Some("http://json-schema.org/draft-04/schema#"), Some(Draft::Draft202012), Draft::Draft202012; "explicit draft 2020-12 over draft 4")]
+    #[test_case(Some("https://json-schema.org/draft/2020-12/schema"), Some(Draft::Draft6), Draft::Draft6; "explicit draft 6 over draft 2020-12")]
+    fn reports_draft_used_to_validate(uri: Option<&str>, explicit: Option<Draft>, expected: Draft) {
+        let schema = schema_declaring(uri);
+        let mut options = crate::options();
+        if let Some(draft) = explicit {
+            options = options.with_draft(draft);
+        }
+        let validator = options.build(&schema).expect("Valid schema");
+        let map = options.build_map(&schema).expect("Valid schema");
+        let root = map.get("#").expect("Root is present");
+        assert_eq!([validator.draft(), root.draft()], [expected; 2]);
+    }
+
+    #[test]
+    fn validator_for_reports_declared_draft() {
+        let schema = schema_declaring(Some("http://json-schema.org/draft-04/schema#"));
+        let validator = crate::validator_for(&schema).expect("Valid schema");
+        assert_eq!(validator.draft(), Draft::Draft4);
+    }
+
+    #[test]
+    fn draft_constructors_report_their_draft() {
+        let schema = schema_declaring(Some("https://json-schema.org/draft/2020-12/schema"));
+        let drafts = [
+            crate::draft4::new(&schema).expect("Valid schema").draft(),
+            crate::draft6::new(&schema).expect("Valid schema").draft(),
+            crate::draft7::new(&schema).expect("Valid schema").draft(),
+            crate::draft201909::new(&schema)
+                .expect("Valid schema")
+                .draft(),
+            crate::draft202012::new(&schema)
+                .expect("Valid schema")
+                .draft(),
+        ];
+        assert_eq!(
+            drafts,
+            [
+                Draft::Draft4,
+                Draft::Draft6,
+                Draft::Draft7,
+                Draft::Draft201909,
+                Draft::Draft202012
+            ]
+        );
+    }
+
+    #[test]
+    fn meta_validators_report_their_draft() {
+        let drafts = [
+            crate::draft4::meta::validator().draft(),
+            crate::draft6::meta::validator().draft(),
+            crate::draft7::meta::validator().draft(),
+            crate::draft201909::meta::validator().draft(),
+            crate::draft202012::meta::validator().draft(),
+        ];
+        assert_eq!(
+            drafts,
+            [
+                Draft::Draft4,
+                Draft::Draft6,
+                Draft::Draft7,
+                Draft::Draft201909,
+                Draft::Draft202012
+            ]
+        );
+    }
+
+    #[test]
+    fn custom_meta_schema_reports_the_draft_it_builds_on() {
+        let meta_schema = crate::Resource::from_contents(json!({
+            "$id": "https://example.com/meta",
+            "$schema": "http://json-schema.org/draft-07/schema#",
+            "type": "object"
+        }));
+        let registry = crate::Registry::new()
+            .add("https://example.com/meta", meta_schema)
+            .expect("Valid resource")
+            .prepare()
+            .expect("Valid registry");
+        let schema = schema_declaring(Some("https://example.com/meta"));
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&schema)
+            .expect("Valid schema");
+        assert_eq!(validator.draft(), Draft::Draft7);
+    }
+
+    #[test]
+    fn unknown_meta_schema_is_rejected() {
+        let schema = schema_declaring(Some("https://example.com/unknown"));
+        assert!(crate::options().offline().build(&schema).is_err());
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[tokio::test]
+    async fn async_build_reports_declared_draft() {
+        let schema = schema_declaring(Some("http://json-schema.org/draft-04/schema#"));
+        let validator = crate::async_validator_for(&schema)
+            .await
+            .expect("Valid schema");
+        assert_eq!(validator.draft(), Draft::Draft4);
     }
 
     #[test]
