@@ -517,58 +517,36 @@ jobs:
       - run: uvx mypy python
         working-directory: crates/jsonschema-py
 
-  # Both extensions are abi3, so one build per OS serves every CPython version under test.
-  build-python:
-    strategy:
-      fail-fast: false
-      matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025, windows-11-arm]
-
-    name: Build Python wheels on ${{ matrix.os }}
-    runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
-    # Fat LTO with a single codegen unit is for published wheels; tests do not need it.
-    env:
-      CARGO_PROFILE_RELEASE_LTO: "false"
-      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-        with:
-          submodules: true
-
-      - uses: dtolnay/rust-toolchain@stable
-
-      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
-
-      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
-        with:
-          python-version: '3.13'
-
-      - run: uvx --from "maturin>=1.0,<2.0" maturin build --release -m crates/jsonschema-py/Cargo.toml --out dist
-
-      - run: uvx --from "maturin>=1.0,<2.0" maturin build -m crates/jsonschema-testsuite-pyo3/Cargo.toml --features abi3 --out dist
-
-      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
-        with:
-          name: python-wheels-${{ matrix.os }}
-          path: dist
-          retention-days: 1
-
   test-python:
-    needs: build-python
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, macos-15, windows-2025, windows-11-arm]
-        python-version: ['3.10', '3.11', '3.12', '3.13', '3.14', 'pypy3.11']
-        exclude:
-          # CPython does not have a Windows ARM64 release before 3.11, and PyPy has none.
+        include:
+          - os: ubuntu-24.04
+            python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+          - os: macos-15
+            python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+          - os: windows-2025
+            python-versions: '["3.10", "3.11", "3.12", "3.13", "3.14"]'
+          # CPython does not have a Windows ARM64 release before 3.11.
           - os: windows-11-arm
-            python-version: '3.10'
-          - os: windows-11-arm
-            python-version: 'pypy3.11'
+            python-versions: '["3.11", "3.12", "3.13", "3.14"]'
 
-    name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
+    name: Test Python on ${{ matrix.os }}
+    uses: ./.github/workflows/python-tests.yml
+    with:
+      os: ${{ matrix.os }}
+      python-versions: ${{ matrix.python-versions }}
+
+  # PyPy cannot load abi3 extensions, so it builds both from source.
+  test-pypy:
+    strategy:
+      fail-fast: false
+      matrix:
+        # PyPy has no Windows ARM64 release.
+        os: [ubuntu-24.04, macos-15, windows-2025]
+
+    name: Test Python pypy3.11 on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
     # Fat LTO with a single codegen unit is for published wheels; tests do not need it.
@@ -580,33 +558,16 @@ jobs:
         with:
           submodules: true
 
-      # PyPy cannot load abi3 extensions, so it builds both from source.
       - uses: dtolnay/rust-toolchain@stable
-        if: startsWith(matrix.python-version, 'pypy')
 
       - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
 
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
         id: python
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: pypy3.11
 
-      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
-        if: ${{ !startsWith(matrix.python-version, 'pypy') }}
-        with:
-          name: python-wheels-${{ matrix.os }}
-          path: crates/jsonschema-py/dist
-
-      - if: ${{ !startsWith(matrix.python-version, 'pypy') }}
-        shell: bash
-        run: |
-          uv venv --python '${{ steps.python.outputs.python-path }}'
-          uv pip install "$(ls dist/jsonschema_rs-*.whl)[tests]" dist/jsonschema_testsuite_pyo3-*.whl
-          uv run --no-project pytest tests-py
-        working-directory: crates/jsonschema-py
-
-      - if: startsWith(matrix.python-version, 'pypy')
-        run: uvx --with=".[tests]" --with=../jsonschema-testsuite-pyo3 --python='${{ steps.python.outputs.python-path }}' pytest tests-py
+      - run: uvx --with=".[tests]" --with=../jsonschema-testsuite-pyo3 --python='${{ steps.python.outputs.python-path }}' pytest tests-py
         working-directory: crates/jsonschema-py
 
   test-python-freethreaded:
