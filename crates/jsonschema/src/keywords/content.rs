@@ -545,4 +545,31 @@ mod tests {
             error.kind()
         );
     }
+
+    #[test_case(crate::options(), &json!({"contentEncoding": "rot13"}), &json!("x"); "unknown encoding")]
+    #[test_case(crate::options(), &json!({"contentEncoding": "rot13", "contentMediaType": "application/json"}), &json!("{"); "unknown encoding with media type")]
+    #[test_case(crate::options(), &json!({"contentMediaType": "text/x-unknown"}), &json!("{"); "unknown media type")]
+    #[test_case(crate::options().without_content_media_type_support("application/json"), &json!({"contentMediaType": "application/json"}), &json!("{"); "media type support removed")]
+    #[test_case(crate::options().without_content_media_type_support("application/json"), &json!({"contentMediaType": "application/json", "contentEncoding": "base64"}), &json!("ew=="); "media type support removed with encoding")]
+    #[test_case(crate::options().without_content_encoding_support("base64"), &json!({"contentEncoding": "base64"}), &json!("not base64!"); "encoding support removed")]
+    #[test_case(crate::options().without_content_encoding_support("base64"), &json!({"contentEncoding": "base64", "contentMediaType": "application/json"}), &json!("not base64!"); "encoding support removed with media type")]
+    fn unchecked(options: crate::ValidationOptions, schema: &Value, instance: &Value) {
+        let validator = options
+            .with_draft(Draft::Draft7)
+            .build(schema)
+            .expect("Invalid schema");
+        crate::tests_util::is_valid_with(&validator, instance);
+    }
+
+    #[test_case(&json!({"contentMediaType": 5}), "/contentMediaType"; "media type")]
+    #[test_case(&json!({"contentMediaType": "application/json", "contentEncoding": 5}), "/contentEncoding"; "encoding with media type")]
+    #[test_case(&json!({"contentEncoding": 5}), "/contentEncoding"; "encoding")]
+    fn malformed(schema: &Value, location: &str) {
+        crate::tests_util::assert_compile_error_with(
+            &crate::options().with_draft(Draft::Draft7),
+            schema,
+            "5 is not of type \"string\"",
+            location,
+        );
+    }
 }

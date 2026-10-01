@@ -335,4 +335,13 @@ mod tests {
     fn location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"oneOf": 5}),
+            "5 is not of type \"array\"",
+            "/oneOf",
+        );
+    }
 }

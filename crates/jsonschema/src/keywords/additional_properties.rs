@@ -1890,8 +1890,8 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::tests_util;
-    use serde_json::{json, Value};
+    use crate::{properties::HASHMAP_THRESHOLD, tests_util, PatternOptions};
+    use serde_json::{json, Map, Value};
     use test_case::test_case;
 
     // `properties` + `additionalProperties: false` + one `required` name. `a`..`e` are five
@@ -2585,5 +2585,154 @@ mod tests {
         expected: &[(&str, &str, &str)],
     ) {
         tests_util::assert_error_locations(schema, instance, expected);
+    }
+
+    const NOT_INTEGER: &str = "\"x\" is not of type \"integer\"";
+    const EXTRA: &str = "Additional properties are not allowed ('extra' was unexpected)";
+
+    /// Adds enough integer `properties` for them to be looked up in a hash map.
+    fn with_many_properties(mut schema: Value) -> Value {
+        let properties: Map<String, Value> = (0..HASHMAP_THRESHOLD)
+            .map(|idx| (format!("p{idx}"), json!({"type": "integer"})))
+            .collect();
+        schema["properties"] = Value::Object(properties);
+        schema
+    }
+
+    fn regex_engine_options() -> [crate::ValidationOptions<'static>; 2] {
+        [
+            crate::options().with_pattern_options(PatternOptions::fancy_regex()),
+            crate::options().with_pattern_options(PatternOptions::regex()),
+        ]
+    }
+
+    #[test_case(&with_many_properties(json!({"additionalProperties": false})), &json!({"p0": 1, "p14": 2}), None, &[]; "many properties and false valid")]
+    #[test_case(
+        &with_many_properties(json!({"additionalProperties": false})),
+        &json!({"p0": "x", "extra": 1}),
+        Some(EXTRA),
+        &[(NOT_INTEGER, "/p0", "/properties/p0/type"), (EXTRA, "", "/additionalProperties")];
+        "many properties and false invalid"
+    )]
+    #[test_case(&with_many_properties(json!({"additionalProperties": false, "required": ["p1"]})), &json!({"p1": 1}), None, &[]; "many properties, false and required valid")]
+    #[test_case(
+        &with_many_properties(json!({"additionalProperties": false, "required": ["p1"]})),
+        &json!({"p0": "x", "extra": 1}),
+        Some(EXTRA),
+        &[
+            (NOT_INTEGER, "/p0", "/properties/p0/type"),
+            (EXTRA, "", "/additionalProperties"),
+            ("\"p1\" is a required property", "", "/required"),
+        ];
+        "many properties, false and required invalid"
+    )]
+    #[test_case(&with_many_properties(json!({"additionalProperties": {"type": "string"}})), &json!({"p0": 1, "extra": "y"}), None, &[]; "many properties and schema valid")]
+    #[test_case(
+        &with_many_properties(json!({"additionalProperties": {"type": "string"}})),
+        &json!({"p0": "x", "extra": 1}),
+        Some(NOT_STRING),
+        &[(NOT_STRING, "/extra", "/additionalProperties/type"), (NOT_INTEGER, "/p0", "/properties/p0/type")];
+        "many properties and schema invalid"
+    )]
+    #[test_case(
+        &with_many_properties(json!({"patternProperties": {"^x": {"type": "string"}}, "additionalProperties": false})),
+        &json!({"p0": 1, "x1": "y"}),
+        None,
+        &[];
+        "many properties, patterns and false valid"
+    )]
+    #[test_case(
+        &with_many_properties(json!({"patternProperties": {"^x": {"type": "string"}}, "additionalProperties": false})),
+        &json!({"p0": "x", "x1": 1, "extra": 1}),
+        Some(EXTRA),
+        &[
+            (NOT_INTEGER, "/p0", "/properties/p0/type"),
+            (NOT_STRING, "/x1", "/patternProperties/^x/type"),
+            (EXTRA, "", "/additionalProperties"),
+        ];
+        "many properties, patterns and false invalid"
+    )]
+    #[test_case(
+        &with_many_properties(json!({"patternProperties": {"^x": {"type": "string"}}, "additionalProperties": {"type": "string"}})),
+        &json!({"p0": 1, "x1": "y", "extra": "z"}),
+        None,
+        &[];
+        "many properties, patterns and schema valid"
+    )]
+    #[test_case(
+        &with_many_properties(json!({"patternProperties": {"^x": {"type": "string"}}, "additionalProperties": {"type": "string"}})),
+        &json!({"p0": "x", "x1": 1, "extra": 1}),
+        Some(NOT_STRING),
+        &[
+            (NOT_STRING, "/extra", "/additionalProperties/type"),
+            (NOT_INTEGER, "/p0", "/properties/p0/type"),
+            (NOT_STRING, "/x1", "/patternProperties/^x/type"),
+        ];
+        "many properties, patterns and schema invalid"
+    )]
+    #[test_case(
+        &json!({"patternProperties": {"^x": {"type": "string"}}, "additionalProperties": true}),
+        &json!({"x1": 1, "extra": 1}),
+        Some(NOT_STRING),
+        &[(NOT_STRING, "/x1", "/patternProperties/^x/type")];
+        "patterns and true"
+    )]
+    #[test_case(
+        &json!({"patternProperties": {"^x": {"type": "string"}}, "additionalProperties": {"type": "string"}}),
+        &json!({"x1": 1, "extra": 1}),
+        Some(NOT_STRING),
+        &[(NOT_STRING, "/extra", "/additionalProperties/type"), (NOT_STRING, "/x1", "/patternProperties/^x/type")];
+        "patterns and schema"
+    )]
+    fn on_both_regex_engines(
+        schema: &Value,
+        instance: &Value,
+        first: Option<&str>,
+        expected: &[(&str, &str, &str)],
+    ) {
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(message, instance_path, schema_path)| {
+                (
+                    (*message).to_string(),
+                    (*instance_path).to_string(),
+                    (*schema_path).to_string(),
+                )
+            })
+            .collect();
+        for options in regex_engine_options() {
+            let validator = options.build(schema).expect("Invalid schema");
+            let errors: Vec<_> = validator
+                .iter_errors(instance)
+                .map(|error| {
+                    (
+                        error.to_string(),
+                        error.instance_path().to_string(),
+                        error.schema_path().to_string(),
+                    )
+                })
+                .collect();
+            assert_eq!(
+                (
+                    validator.is_valid(instance),
+                    validator
+                        .validate(instance)
+                        .err()
+                        .map(|error| error.to_string()),
+                    errors
+                ),
+                (first.is_none(), first.map(str::to_string), expected.clone())
+            );
+        }
+    }
+
+    #[test_case(&json!({"additionalProperties": 5}), "5 is not of types \"boolean\", \"object\"", "/additionalProperties"; "not schema")]
+    #[test_case(&json!({"patternProperties": 5, "additionalProperties": false}), "5 is not of type \"object\"", "/patternProperties"; "pattern properties not object")]
+    #[test_case(&json!({"properties": 5, "patternProperties": {"a": {}}, "additionalProperties": false}), "Unexpected type", "/properties"; "properties not object with patterns and false")]
+    #[test_case(&json!({"properties": 5, "patternProperties": {"a": {}}, "additionalProperties": {}}), "Unexpected type", "/properties"; "properties not object with patterns and schema")]
+    fn malformed(schema: &Value, message: &str, location: &str) {
+        for options in regex_engine_options() {
+            tests_util::assert_compile_error_with(&options, schema, message, location);
+        }
     }
 }

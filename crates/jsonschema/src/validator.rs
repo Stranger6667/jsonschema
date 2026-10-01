@@ -1258,6 +1258,52 @@ mod tests {
         assert_eq!(error.to_string(), "invalid schema value");
         assert_eq!(error.schema_path().as_str(), "/properties/field/myKeyword");
     }
+
+    #[test]
+    fn custom_keyword_forwards_nested_error_kind() {
+        struct Delegate(Validator);
+
+        impl<'i> Keyword<'i> for Delegate {
+            fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
+                self.0.validate(instance)
+            }
+            fn is_valid(&self, instance: &'i Value) -> bool {
+                self.0.is_valid(instance)
+            }
+        }
+
+        fn delegate<'a>(
+            _: &'a Map<String, Value>,
+            value: &'a Value,
+            _: Location,
+        ) -> Result<Box<dyn for<'i> Keyword<'i>>, ValidationError<'a>> {
+            let validator = crate::validator_for(value).map_err(ValidationError::to_owned)?;
+            Ok(Box::new(Delegate(validator)))
+        }
+
+        let validator = crate::options()
+            .with_keyword("inner", delegate)
+            .build(&json!({"properties": {"a": {"inner": {"minimum": 3}}}}))
+            .expect("Valid schema");
+        let instance = json!({"a": 1});
+        let error = validator.validate(&instance).expect_err("Should fail");
+        assert_eq!(
+            (
+                error.to_string(),
+                error.kind().keyword(),
+                error.instance_path().as_str(),
+                error.schema_path().as_str(),
+                error.evaluation_path().as_str(),
+            ),
+            (
+                "1 is less than the minimum of 3".to_string(),
+                "minimum",
+                "/a",
+                "/properties/a/inner",
+                "/properties/a/inner",
+            )
+        );
+    }
     struct AcceptAny;
 
     impl<'i> Keyword<'i> for AcceptAny {

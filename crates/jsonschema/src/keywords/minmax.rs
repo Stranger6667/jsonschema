@@ -687,4 +687,16 @@ mod tests {
             tests_util::is_not_valid(&schema, &instance);
         }
     }
+
+    #[test_case("minimum")]
+    #[test_case("maximum")]
+    #[test_case("exclusiveMinimum")]
+    #[test_case("exclusiveMaximum")]
+    fn malformed(keyword: &str) {
+        tests_util::assert_compile_error(
+            &json!({keyword: "a"}),
+            "\"a\" is not of type \"number\"",
+            &format!("/{keyword}"),
+        );
+    }
 }

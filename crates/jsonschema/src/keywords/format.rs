@@ -2763,4 +2763,13 @@ mod tests {
             "`{text}` sits inside the window rather than at an end"
         );
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"format": 5}),
+            "5 is not of type \"string\"",
+            "/format",
+        );
+    }
 }

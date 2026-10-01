@@ -906,4 +906,13 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"multipleOf": "a"}),
+            "\"a\" is not of type \"number\"",
+            "/multipleOf",
+        );
+    }
 }

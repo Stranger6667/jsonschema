@@ -613,6 +613,18 @@ mod tests {
         tests_util::assert_schema_location(schema, instance, expected);
     }
 
+    #[test_case(&json!({"required": 5}), "5 is not of type \"array\""; "not array")]
+    #[test_case(&json!({"required": [1]}), "1 is not of type \"string\""; "one")]
+    #[test_case(&json!({"required": ["a", 1]}), "1 is not of type \"string\""; "two second")]
+    #[test_case(&json!({"required": [1, "a"]}), "1 is not of type \"string\""; "two first")]
+    #[test_case(&json!({"required": ["a", "b", 1]}), "1 is not of type \"string\""; "three third")]
+    #[test_case(&json!({"required": ["a", 1, "c"]}), "1 is not of type \"string\""; "three second")]
+    #[test_case(&json!({"required": [1, "b", "c"]}), "1 is not of type \"string\""; "three first")]
+    #[test_case(&json!({"required": ["a", "b", "c", 1]}), "1 is not of type \"string\""; "many")]
+    fn malformed(schema: &Value, message: &str) {
+        tests_util::assert_compile_error(schema, message, "/required");
+    }
+
     // Required names and instance keys that agree on length and on long prefixes
     #[test_case("abcdefghijklX", "abcdefghijklX", true; "thirteen bytes equal")]
     #[test_case("abcdefghijklX", "abcdefghijklY", false; "thirteen bytes differing after the head")]

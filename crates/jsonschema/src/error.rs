@@ -2200,6 +2200,75 @@ mod tests {
         assert_eq!(error.instance_path().as_str(), expected);
     }
 
+    #[test_case(&json!({"anyOf": [{"type": "string"}, {"type": "boolean"}]}), &json!(1), "anyOf", "[REDACTED] is not valid under any of the schemas listed in the 'anyOf' keyword"; "any of")]
+    #[test_case(&json!({"oneOf": [{"type": "string"}, {"type": "boolean"}]}), &json!(1), "oneOf", "[REDACTED] is not valid under any of the schemas listed in the 'oneOf' keyword"; "one of none valid")]
+    #[test_case(&json!({"oneOf": [{"type": "integer"}, {"minimum": 0}]}), &json!(1), "oneOf", "[REDACTED] is valid under more than one of the schemas listed in the 'oneOf' keyword"; "one of multiple valid")]
+    #[test_case(&json!({"contains": {"type": "string"}}), &json!([1]), "contains", "None of [REDACTED] are valid under the given schema"; "contains")]
+    #[test_case(&json!({"const": "secret"}), &json!("x"), "const", "\"secret\" was expected"; "constant")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema#", "contentEncoding": "base64"}), &json!("not base64!"), "contentEncoding", "[REDACTED] is not compliant with \"base64\" content encoding"; "content encoding")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema#", "contentMediaType": "application/json"}), &json!("{"), "contentMediaType", "[REDACTED] is not compliant with \"application/json\" media type"; "content media type")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema#", "contentMediaType": "application/json", "contentEncoding": "base64"}), &json!("/w=="), "contentEncoding", "invalid utf-8 sequence of 1 bytes from index 0"; "decoded content is not utf-8")]
+    #[test_case(&json!({"enum": ["a", "b"]}), &json!("c"), "enum", "[REDACTED] is not one of \"a\" or \"b\""; "enumeration")]
+    #[test_case(&json!({"exclusiveMaximum": 1}), &json!(1), "exclusiveMaximum", "[REDACTED] is greater than or equal to the maximum of 1"; "exclusive maximum")]
+    #[test_case(&json!({"exclusiveMinimum": 1}), &json!(1), "exclusiveMinimum", "[REDACTED] is less than or equal to the minimum of 1"; "exclusive minimum")]
+    #[test_case(&json!(false), &json!(1), "falseSchema", "False schema does not allow [REDACTED]"; "false schema")]
+    #[test_case(&json!({"maximum": 1}), &json!(2), "maximum", "[REDACTED] is greater than the maximum of 1"; "maximum")]
+    #[test_case(&json!({"maxLength": 1}), &json!("ab"), "maxLength", "[REDACTED] is longer than 1 character"; "max length singular")]
+    #[test_case(&json!({"minLength": 1}), &json!(""), "minLength", "[REDACTED] is shorter than 1 character"; "min length singular")]
+    #[test_case(&json!({"minLength": 2}), &json!("a"), "minLength", "[REDACTED] is shorter than 2 characters"; "min length plural")]
+    #[test_case(&json!({"maxItems": 1}), &json!([1, 2]), "maxItems", "[REDACTED] has more than 1 item"; "max items singular")]
+    #[test_case(&json!({"maxItems": 0}), &json!([1]), "maxItems", "[REDACTED] has more than 0 items"; "max items plural")]
+    #[test_case(&json!({"minItems": 1}), &json!([]), "minItems", "[REDACTED] has less than 1 item"; "min items singular")]
+    #[test_case(&json!({"minItems": 2}), &json!([1]), "minItems", "[REDACTED] has less than 2 items"; "min items plural")]
+    #[test_case(&json!({"maxProperties": 1}), &json!({"a": 1, "b": 2}), "maxProperties", "[REDACTED] has more than 1 property"; "max properties singular")]
+    #[test_case(&json!({"maxProperties": 0}), &json!({"a": 1}), "maxProperties", "[REDACTED] has more than 0 properties"; "max properties plural")]
+    #[test_case(&json!({"minProperties": 1}), &json!({}), "minProperties", "[REDACTED] has less than 1 property"; "min properties singular")]
+    #[test_case(&json!({"minProperties": 2}), &json!({"a": 1}), "minProperties", "[REDACTED] has less than 2 properties"; "min properties plural")]
+    #[test_case(&json!({"not": {"type": "integer"}}), &json!(1), "not", "{\"type\":\"integer\"} is not allowed for [REDACTED]"; "not")]
+    #[test_case(&json!({"propertyNames": {"maxLength": 1}}), &json!({"ab": 1}), "propertyNames", "\"ab\" is longer than 1 character"; "property names")]
+    #[test_case(&json!({"required": ["a"]}), &json!({}), "required", "\"a\" is a required property"; "required")]
+    #[test_case(&json!({"multipleOf": 2}), &json!(3), "multipleOf", "[REDACTED] is not a multiple of 2"; "multiple of")]
+    #[test_case(&json!({"properties": {"a": {}}, "unevaluatedProperties": false}), &json!({"a": 1, "b": 2}), "unevaluatedProperties", "Unevaluated properties are not allowed ('b' was unexpected)"; "unevaluated properties")]
+    #[test_case(&json!({"type": ["string", "null"]}), &json!(1), "type", "[REDACTED] is not of types \"null\", \"string\""; "multiple types")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": ["string", "null"]}), &json!(1), "type", "[REDACTED] is not of types \"null\", \"string\""; "multiple types draft 4")]
+    fn masked_validation_messages(schema: &Value, instance: &Value, keyword: &str, expected: &str) {
+        let validator = crate::validator_for(schema).expect("Invalid schema");
+        let error = validator.validate(instance).expect_err("Should fail");
+        assert_eq!(
+            (
+                error.kind().keyword(),
+                error.masked_with("[REDACTED]").to_string()
+            ),
+            (keyword, expected.to_string())
+        );
+    }
+
+    #[test]
+    fn masked_unresolvable_reference() {
+        let error = crate::validator_for(&json!({"$ref": "#/missing"})).expect_err("Should fail");
+        assert_eq!(
+            (error.kind().keyword(), error.masked().to_string()),
+            ("$ref", "Pointer '/missing' does not exist".to_string())
+        );
+    }
+
+    #[test]
+    fn masked_backtrack_limit_exceeded() {
+        let validator = crate::options()
+            .with_pattern_options(crate::PatternOptions::fancy_regex().backtrack_limit(1))
+            .build(&json!({"pattern": "(?<=ab)c"}))
+            .expect("Invalid schema");
+        let instance = json!("abc");
+        let error = validator.validate(&instance).expect_err("Should fail");
+        assert_eq!(
+            (error.kind().keyword(), error.masked().to_string()),
+            (
+                "pattern",
+                "Error executing regex: Max limit for backtracking count exceeded".to_string()
+            )
+        );
+    }
+
     #[test_case(
         json!("2023-13-45"), 
         ValidationErrorKind::Format {

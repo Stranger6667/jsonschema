@@ -77,4 +77,13 @@ mod tests {
             "/not",
         );
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"not": 5}),
+            "5 is not of types \"boolean\", \"object\"",
+            "/not",
+        );
+    }
 }

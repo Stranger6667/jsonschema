@@ -551,6 +551,16 @@ mod tests {
         tests_util::assert_schema_location(schema, instance, expected);
     }
 
+    #[test_case(&json!({"type": 5}), "5 is not of types \"string\", \"array\""; "not string or array")]
+    #[test_case(&json!({"type": "foo"}), "Unexpected type"; "unknown name")]
+    #[test_case(&json!({"type": ["foo"]}), "Unexpected type"; "single unknown name")]
+    #[test_case(&json!({"type": [5]}), "5 is not of type \"string\""; "single non string")]
+    #[test_case(&json!({"type": ["string", "foo"]}), "\"foo\" is not one of \"array\", \"boolean\" or 5 other candidates"; "list unknown name")]
+    #[test_case(&json!({"type": [5, "string"]}), "5 is not of type \"string\""; "list non string")]
+    fn malformed(schema: &Value, message: &str) {
+        tests_util::assert_compile_error(schema, message, "/type");
+    }
+
     fn parse_json(s: &str) -> Value {
         serde_json::from_str(s).unwrap()
     }

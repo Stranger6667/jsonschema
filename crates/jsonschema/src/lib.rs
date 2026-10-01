@@ -4667,6 +4667,35 @@ pub(crate) mod tests_util {
             .expect("Invalid schema");
         is_not_valid_with(&validator, instance);
     }
+
+    /// Compiles `subschema` behind a `$ref`: the meta-schema never sees a subschema under an
+    /// unknown keyword, so malformed keyword values reach the keyword compilers. `location` is
+    /// relative to `subschema`.
+    #[track_caller]
+    pub(crate) fn assert_compile_error_with(
+        options: &crate::ValidationOptions,
+        subschema: &Value,
+        message: &str,
+        location: &str,
+    ) {
+        let error = options
+            .build(&serde_json::json!({"$ref": "#/x", "x": subschema}))
+            .expect_err("Should fail to compile");
+        let location = format!("/x{location}");
+        assert_eq!(
+            (
+                error.to_string(),
+                error.instance_path().as_str(),
+                error.schema_path().as_str()
+            ),
+            (message.to_string(), location.as_str(), location.as_str())
+        );
+    }
+
+    #[track_caller]
+    pub(crate) fn assert_compile_error(subschema: &Value, message: &str, location: &str) {
+        assert_compile_error_with(&crate::options(), subschema, message, location);
+    }
 }
 
 #[cfg(test)]
@@ -6962,6 +6991,84 @@ mod tests {
         let validator = crate::meta::validator_for(&schema).expect("Valid meta-schema");
         let errors: Vec<_> = validator.iter_errors(&schema).collect();
         assert!(!errors.is_empty());
+    }
+
+    #[test_case(
+        "http://json-schema.org/draft-04/schema#",
+        "http://json-schema.org/draft-04/schema#/definitions/positiveInteger/minimum",
+        "/definitions/positiveInteger/minimum";
+        "draft 4"
+    )]
+    #[test_case(
+        "http://json-schema.org/draft-06/schema#",
+        "http://json-schema.org/draft-06/schema#/definitions/nonNegativeInteger/minimum",
+        "/definitions/nonNegativeInteger/minimum";
+        "draft 6"
+    )]
+    #[test_case(
+        "http://json-schema.org/draft-07/schema#",
+        "http://json-schema.org/draft-07/schema#/definitions/nonNegativeInteger/minimum",
+        "/definitions/nonNegativeInteger/minimum";
+        "draft 7"
+    )]
+    #[test_case(
+        "https://json-schema.org/draft/2019-09/schema",
+        "https://json-schema.org/draft/2019-09/meta/validation#/$defs/nonNegativeInteger/minimum",
+        "/$defs/nonNegativeInteger/minimum";
+        "draft 2019-09"
+    )]
+    #[test_case(
+        "https://json-schema.org/draft/2020-12/schema",
+        "https://json-schema.org/draft/2020-12/meta/validation#/$defs/nonNegativeInteger/minimum",
+        "/$defs/nonNegativeInteger/minimum";
+        "draft 2020-12"
+    )]
+    fn test_meta_validator_for_reports_negative_length(
+        dialect: &str,
+        schema_location: &str,
+        schema_path: &str,
+    ) {
+        const NEGATIVE: &str = "-1 is less than the minimum of 0";
+        let schema = json!({"$schema": dialect, "minLength": -1});
+        let validator = crate::meta::validator_for(&schema).expect("Valid meta-schema");
+
+        let evaluation = validator.evaluate(&schema);
+        let evaluated: Vec<_> = evaluation
+            .iter_errors()
+            .map(|entry| {
+                (
+                    entry.instance_location.as_str().to_string(),
+                    entry.schema_location.to_string(),
+                    entry.error.to_string(),
+                )
+            })
+            .collect();
+        let errors: Vec<_> = validator
+            .iter_errors(&schema)
+            .map(|error| {
+                (
+                    error.to_string(),
+                    error.instance_path().to_string(),
+                    error.schema_path().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            (evaluation.flag().valid, evaluated, errors),
+            (
+                false,
+                vec![(
+                    "/minLength".to_string(),
+                    schema_location.to_string(),
+                    NEGATIVE.to_string()
+                )],
+                vec![(
+                    NEGATIVE.to_string(),
+                    "/minLength".to_string(),
+                    schema_path.to_string()
+                )]
+            )
+        );
     }
 }
 

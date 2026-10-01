@@ -612,4 +612,13 @@ mod tests {
         let result = validator.evaluate(&instance);
         assert!(!result.flag().valid);
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"patternProperties": 5}),
+            "5 is not of type \"object\"",
+            "/patternProperties",
+        );
+    }
 }

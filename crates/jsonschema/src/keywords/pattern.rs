@@ -506,4 +506,23 @@ mod tests {
             "Regex engine failed to evaluate pattern '^.{0,404600}$'"
         );
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"pattern": 5}),
+            "5 is not of type \"string\"",
+            "/pattern",
+        );
+    }
+
+    #[test]
+    fn unsupported_by_regex_engine() {
+        tests_util::assert_compile_error_with(
+            &crate::options().with_pattern_options(PatternOptions::regex()),
+            &json!({"pattern": "(?<=a)b"}),
+            "\"(?<=a)b\" is not a \"regex\"",
+            "/pattern",
+        );
+    }
 }

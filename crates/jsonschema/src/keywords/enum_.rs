@@ -471,4 +471,13 @@ mod tests {
             &[r#""z" is not one of "a", "b" or 9 other candidates"#],
         );
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"enum": 5}),
+            "5 is not of type \"array\"",
+            "/enum",
+        );
+    }
 }

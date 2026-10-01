@@ -1395,6 +1395,17 @@ mod tests {
     }
 
     #[test]
+    fn debug_lists_custom_content_checks() {
+        let options = crate::options()
+            .with_draft(Draft::Draft7)
+            .with_content_media_type("application/x-a", |content: &str| content == "a");
+        assert_eq!(
+            format!("{options:?}"),
+            "CompilationConfig { draft: Some(Draft7), content_media_type: [\"application/x-a\"], content_encoding: [] }"
+        );
+    }
+
+    #[test]
     #[should_panic(expected = "Draft::Unknown is internal-only and cannot be explicitly set")]
     fn with_draft_rejects_unknown() {
         let _options = crate::options().with_draft(Draft::Unknown);
