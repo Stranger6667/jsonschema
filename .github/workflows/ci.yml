@@ -155,9 +155,15 @@ jobs:
             --env XDG_CACHE_HOME=/tmp/.cache
             --env XDG_DATA_HOME=/tmp/.local/share
         # Everything except `pyo3`: the cross image has no libpython to link test binaries against.
-        # `--tests` skips doctests: each needs its own `rustc` invocation, which under emulation
-        # costs more than the whole rest of the suite, and they cover no endianness-specific code.
-        run: cross test --target ${{ matrix.target }} --tests --no-fail-fast --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest,jsonb -p jsonschema
+        # Doctests and canonicalization tests are left out: none of them covers endianness-specific
+        # code, and under emulation doctests need a `rustc` invocation each while canonicalization
+        # tests take most of an hour. Test targets are named one by one to leave out the latter.
+        run: >
+          cross test --target ${{ matrix.target }} --no-fail-fast
+          --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest,jsonb -p jsonschema
+          --lib --test annotation_suite --test bundle --test codegen --test custom_representation --test dereference
+          --test jsonb --test lazy_instance --test leak --test output_suite --test ref_chain --test suite
+          -- --skip canonical::
 
       - name: Test jsonb on ${{ matrix.target }}
         env:
