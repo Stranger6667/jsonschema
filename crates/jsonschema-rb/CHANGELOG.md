@@ -14,6 +14,7 @@
 - Evaluation output `schemaLocation` URIs not percent-encoding their fragment, such as a space in a property name.
 - Absolute keyword location of errors and annotations from a whole subschema, such as `false`, missing its JSON Pointer fragment.
 - Evaluation annotations from `$ref` siblings in Draft 4, 6 and 7 schemas.
+- Masked `additionalItems` messages counting allowed items instead of extra ones, and "1 items" in masked `unevaluatedItems` messages.
 - `$dynamicRef` and `$recursiveRef` resolving in the dynamic scope of another path to the same schema, depending on property order.
 - Stack overflow when building validators for long `$ref` chains.
 - `format: "regex"` and meta-schema validation rejecting escaped punctuation such as `\-` in patterns.
