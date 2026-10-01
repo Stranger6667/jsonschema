@@ -4390,6 +4390,45 @@ pub(crate) mod tests_util {
         );
     }
 
+    /// `is_valid` and every error as `(schema path, message)` per instance, under a 2020-12
+    /// meta-schema that enables only `vocabulary` beside core.
+    pub(crate) fn outcomes_with_only_vocabulary(
+        vocabulary: &str,
+        schema: &Value,
+        instances: &[Value],
+    ) -> Vec<(bool, Vec<(String, String)>)> {
+        let meta_id = format!("json-schema:///meta/only-{vocabulary}");
+        let meta = serde_json::json!({
+            "$id": meta_id,
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                format!("https://json-schema.org/draft/2020-12/vocab/{vocabulary}"): true
+            }
+        });
+        let registry = crate::Registry::new()
+            .add(meta_id.as_str(), &meta)
+            .expect("meta-schema registers")
+            .prepare()
+            .expect("registry prepares");
+        let mut schema = schema.clone();
+        schema["$schema"] = Value::String(meta_id);
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&schema)
+            .expect("schema compiles");
+        instances
+            .iter()
+            .map(|instance| {
+                let errors = validator
+                    .iter_errors(instance)
+                    .map(|error| (error.schema_path().as_str().to_string(), error.to_string()))
+                    .collect();
+                (validator.is_valid(instance), errors)
+            })
+            .collect()
+    }
+
     #[track_caller]
     pub(crate) fn is_not_valid(schema: &Value, instance: &Value) {
         let validator = crate::options()

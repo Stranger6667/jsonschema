@@ -11,6 +11,7 @@ use crate::{
     validator::{Validate, ValidationContext},
     Json, Node, Object, SerdeJson,
 };
+use referencing::Vocabulary;
 use serde_json::{Map, Value};
 
 /// Longest `required` array scanned in one pass; beyond it the comparisons outgrow the lookups.
@@ -477,8 +478,11 @@ pub(crate) fn compile<'a, F: Json>(
     parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
-    // Check if fused validators handle this case
-    if let Value::Array(items) = schema {
+    // Fused validators compile under the applicator vocabulary only
+    if let Some(items) = schema
+        .as_array()
+        .filter(|_| ctx.has_vocabulary(&Vocabulary::Applicator))
+    {
         let has_properties = parent.contains_key("properties");
         let has_pattern_properties = parent.contains_key("patternProperties");
         let additional_props_false =
@@ -811,5 +815,31 @@ mod tests {
             .map(|name| (name.clone(), json!(1)))
             .collect();
         assert_eq!(crate::is_valid(&schema, &Value::Object(instance)), expected);
+    }
+
+    fn missing(names: &[&str]) -> (bool, Vec<(String, String)>) {
+        let errors = names
+            .iter()
+            .map(|name| {
+                (
+                    "/required".to_string(),
+                    format!("\"{name}\" is a required property"),
+                )
+            })
+            .collect();
+        (false, errors)
+    }
+
+    // `properties` and `additionalProperties` are inert, while `required` still applies.
+    #[test_case(&json!({"properties": {"a": false}, "required": ["a", "b"]}), &["a", "b"]; "properties two names")]
+    #[test_case(&json!({"properties": {"a": false}, "additionalProperties": false, "required": ["b"]}), &["b"]; "properties additional false one name")]
+    #[test_case(&json!({"properties": {"a": false}, "required": ["a", "b", "c"]}), &["a", "b", "c"]; "properties three names")]
+    #[test_case(&json!({"required": ["a", "b"]}), &["a", "b"]; "required alone")]
+    fn required_without_applicator_vocabulary(schema: &Value, expected_missing: &[&str]) {
+        let instances = [json!({}), json!({"a": 1, "b": 1, "c": 1})];
+        assert_eq!(
+            tests_util::outcomes_with_only_vocabulary("validation", schema, &instances),
+            [missing(expected_missing), (true, Vec::new())]
+        );
     }
 }

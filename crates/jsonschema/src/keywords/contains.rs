@@ -8,6 +8,7 @@ use crate::{
     validator::{EvaluationResult, Validate, ValidationContext},
     Array, Draft, Json, Node, SerdeJson,
 };
+use referencing::Vocabulary;
 use serde_json::{Map, Value};
 
 use super::helpers::map_get_u64;
@@ -404,6 +405,10 @@ fn compile_contains<'a, F: Json>(
     parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
+    // `minContains` and `maxContains` belong to the validation vocabulary
+    if !ctx.has_vocabulary(&Vocabulary::Validation) {
+        return Some(ContainsValidator::compile(ctx, schema));
+    }
     let min_contains = match map_get_u64(parent, ctx, "minContains").transpose() {
         Ok(n) => n,
         Err(err) => return Some(Err(err)),
@@ -424,7 +429,8 @@ fn compile_contains<'a, F: Json>(
 #[cfg(test)]
 mod tests {
     use crate::tests_util;
-    use serde_json::json;
+    use serde_json::{json, Value};
+    use test_case::test_case;
 
     #[test]
     fn location() {
@@ -445,5 +451,35 @@ mod tests {
         });
         tests_util::is_valid(&schema, &json!([{}]));
         tests_util::is_not_valid(&schema, &json!([null]));
+    }
+
+    // `minContains` and `maxContains` are inert, so `contains` asks for one match.
+    #[test_case(&json!({}); "no bounds")]
+    #[test_case(&json!({"minContains": 2}); "min")]
+    #[test_case(&json!({"maxContains": 1}); "max")]
+    #[test_case(&json!({"minContains": 2, "maxContains": 1}); "min and max")]
+    #[test_case(&json!({"minContains": 0}); "min zero")]
+    fn contains_bounds_without_validation_vocabulary(bounds: &Value) {
+        let mut schema = json!({"contains": {"items": false}});
+        schema
+            .as_object_mut()
+            .expect("object schema")
+            .extend(bounds.as_object().expect("object bounds").clone());
+        let instances = [json!([]), json!([[]]), json!([[], []]), json!([[1], []])];
+        assert_eq!(
+            tests_util::outcomes_with_only_vocabulary("applicator", &schema, &instances),
+            [
+                (
+                    false,
+                    vec![(
+                        "/contains".to_string(),
+                        "None of [] are valid under the given schema".to_string()
+                    )]
+                ),
+                (true, Vec::new()),
+                (true, Vec::new()),
+                (true, Vec::new()),
+            ]
+        );
     }
 }

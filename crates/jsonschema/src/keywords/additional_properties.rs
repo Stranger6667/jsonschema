@@ -25,7 +25,7 @@ use crate::{
     Json, LazyInstance, Node, Object, SerdeJson,
 };
 use ahash::AHashMap;
-use referencing::Uri;
+use referencing::{Uri, Vocabulary};
 use serde_json::{Map, Value};
 use std::{borrow::Cow, sync::Arc};
 
@@ -1816,11 +1816,11 @@ pub(crate) fn compile<'a, F: Json>(
             Value::Bool(true) => None, // "additionalProperties" are "true" by default
             Value::Bool(false) => {
                 if let Some(properties) = properties {
-                    // Check if we can use fused validator with required
-                    if let Some(Value::Array(required)) = parent
-                        .get("required")
-                        .filter(|_| !ctx.is_keyword_overridden("required"))
-                    {
+                    // Fuse `required`, which compiles under the validation vocabulary only
+                    if let Some(Value::Array(required)) = parent.get("required").filter(|_| {
+                        ctx.has_vocabulary(&Vocabulary::Validation)
+                            && !ctx.is_keyword_overridden("required")
+                    }) {
                         if required.len() == 1 {
                             if let Some(Value::String(req)) = required.first() {
                                 if let Value::Object(map) = properties {
@@ -2484,5 +2484,26 @@ mod tests {
         let instance = json!({"extra": "val"});
         let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert_eq!(errors.len(), 2);
+    }
+
+    // `required` is inert, while `properties` and `additionalProperties` still apply.
+    #[test_case(&json!({"properties": {"a": {}}, "additionalProperties": false, "required": ["b"]}); "one name")]
+    #[test_case(&json!({"properties": {"a": {}}, "additionalProperties": false, "required": ["b", "c"]}); "two names")]
+    fn additional_properties_without_validation_vocabulary(schema: &Value) {
+        let instances = [json!({}), json!({"a": 1}), json!({"x": 1})];
+        assert_eq!(
+            tests_util::outcomes_with_only_vocabulary("applicator", schema, &instances),
+            [
+                (true, Vec::new()),
+                (true, Vec::new()),
+                (
+                    false,
+                    vec![(
+                        "/additionalProperties".to_string(),
+                        "Additional properties are not allowed ('x' was unexpected)".to_string()
+                    )]
+                ),
+            ]
+        );
     }
 }
