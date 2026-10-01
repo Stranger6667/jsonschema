@@ -244,6 +244,21 @@ mod tests {
         }
     }
 
+    #[test_case(r#"{"type": 5}"#, "5 is not of types \"string\", \"array\""; "not string or array")]
+    #[test_case(r#"{"type": "foo"}"#, "Unexpected type"; "unknown name")]
+    #[test_case(r#"{"type": ["foo"]}"#, "Unexpected type"; "single unknown name")]
+    #[test_case(r#"{"type": [5]}"#, "5 is not of type \"string\""; "single non string")]
+    #[test_case(r#"{"type": ["string", "foo"]}"#, "\"foo\" is not one of \"array\", \"boolean\" or 5 other candidates"; "list unknown name")]
+    #[test_case(r#"{"type": [5, "string"]}"#, "5 is not of type \"string\""; "list non string")]
+    fn malformed_draft4(schema_json: &str, message: &str) {
+        tests_util::assert_compile_error_with(
+            &crate::options().with_draft(crate::Draft::Draft4),
+            &parse_json(schema_json),
+            message,
+            "/type",
+        );
+    }
+
     #[cfg(feature = "arbitrary-precision")]
     mod arbitrary_precision {
         use crate::tests_util;

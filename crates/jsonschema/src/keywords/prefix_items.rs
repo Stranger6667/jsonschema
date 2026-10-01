@@ -358,4 +358,13 @@ mod tests {
         normalize_evaluation_output(&mut expected);
         assert_eq!(actual, expected);
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"prefixItems": 5}),
+            "5 is not of type \"array\"",
+            "/prefixItems",
+        );
+    }
 }

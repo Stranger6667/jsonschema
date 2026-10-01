@@ -1307,4 +1307,13 @@ mod tests {
             )
         );
     }
+
+    #[test]
+    fn malformed() {
+        crate::tests_util::assert_compile_error(
+            &json!({"unevaluatedItems": 5}),
+            "5 is not of types \"boolean\", \"object\"",
+            "/unevaluatedItems",
+        );
+    }
 }

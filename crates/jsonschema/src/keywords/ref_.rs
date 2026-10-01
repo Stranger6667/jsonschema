@@ -2649,4 +2649,24 @@ mod tests {
         .collect();
         assert_eq!(results, vec![true, false, false, true]);
     }
+
+    #[test_case("$ref"; "ref")]
+    #[test_case("$dynamicRef"; "dynamic ref")]
+    fn malformed(keyword: &str) {
+        tests_util::assert_compile_error(
+            &json!({keyword: 5}),
+            "5 is not of type \"string\"",
+            &format!("/{keyword}"),
+        );
+    }
+
+    #[test]
+    fn malformed_draft7() {
+        tests_util::assert_compile_error_with(
+            &crate::options().with_draft(crate::Draft::Draft7),
+            &json!({"$ref": 5}),
+            "5 is not of type \"string\"",
+            "/$ref",
+        );
+    }
 }

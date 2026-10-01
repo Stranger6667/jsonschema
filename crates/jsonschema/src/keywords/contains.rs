@@ -510,4 +510,13 @@ mod tests {
         let message = format!("None of {instance} are valid under the given schema");
         tests_util::assert_error_locations(&schema, instance, &[(&message, "", schema_path)]);
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"contains": 5}),
+            "5 is not of types \"boolean\", \"object\"",
+            "/contains",
+        );
+    }
 }

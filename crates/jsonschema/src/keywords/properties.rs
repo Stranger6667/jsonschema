@@ -1007,4 +1007,13 @@ mod tests {
             expected,
         );
     }
+
+    #[test]
+    fn malformed() {
+        tests_util::assert_compile_error(
+            &json!({"properties": 5}),
+            "5 is not of type \"object\"",
+            "/properties",
+        );
+    }
 }
