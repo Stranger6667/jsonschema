@@ -75,8 +75,19 @@ def test_lone_surrogate_nested_raises(backend):
         backend.is_valid({"properties": {"n": {"const": "x"}}}, {"n": "\ud800"})
 
 
-def test_repr():
-    assert repr(validator_for({"minimum": 5})) == "<Draft202012Validator>"
+@pytest.mark.parametrize(
+    "schema, expected",
+    (
+        ({"minimum": 5}, "<Draft202012Validator>"),
+        ({"$schema": "http://json-schema.org/draft-04/schema#", "minimum": 5}, "<Draft4Validator>"),
+        ({"$schema": "http://json-schema.org/draft-06/schema#", "minimum": 5}, "<Draft6Validator>"),
+        ({"$schema": "http://json-schema.org/draft-07/schema#", "minimum": 5}, "<Draft7Validator>"),
+        ({"$schema": "https://json-schema.org/draft/2019-09/schema", "minimum": 5}, "<Draft201909Validator>"),
+        ({"$schema": "https://json-schema.org/draft/2020-12/schema", "minimum": 5}, "<Draft202012Validator>"),
+    ),
+)
+def test_repr(schema, expected):
+    assert repr(validator_for(schema)) == expected
 
 
 @pytest.mark.parametrize(

@@ -1222,7 +1222,7 @@ fn build_validator_with_registry<R, F: Json>(
         Location::new(),
         capacity,
     );
-    compile_validator(&ctx, resource, config.draft())
+    compile_validator(&ctx, resource, draft)
 }
 
 /// Compile `resource`, then the `$ref` targets it deferred.

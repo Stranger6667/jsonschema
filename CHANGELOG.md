@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- `Validator::draft` returning the default draft instead of the one `$schema` declares.
 - `unevaluatedProperties` and `unevaluatedItems` beside a `$recursiveRef` ignoring what the reference target evaluates.
 - Absolute keyword location and `schemaLocation` of keywords a `$ref` JSON Pointer reaches through a subschema with its own `$id`.
 - Absolute keyword location and `schemaLocation` of keywords inside a nested `$id` resource counting from the document root.

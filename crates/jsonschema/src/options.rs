@@ -113,11 +113,6 @@ impl<F: Json> Default for ValidationOptions<'_, Arc<dyn referencing::AsyncRetrie
 }
 
 impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
-    /// Return the draft version, or the default if not set.
-    pub(crate) fn draft(&self) -> Draft {
-        self.draft.unwrap_or_default()
-    }
-
     pub(crate) fn compiler_pattern_options(&self) -> PatternEngineOptions {
         self.pattern_options
     }
