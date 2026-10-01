@@ -16,7 +16,7 @@ use crate::{
     Json, Node, Object, SerdeJson,
 };
 use ahash::AHashMap;
-use referencing::Uri;
+use referencing::{Uri, Vocabulary};
 use serde_json::{Map, Value};
 use std::sync::Arc;
 
@@ -594,6 +594,10 @@ fn extract_required2<F: Json>(
     ctx: &compiler::Context<F>,
     parent: &Map<String, Value>,
 ) -> Option<(String, String)> {
+    // `required` compiles under the validation vocabulary only
+    if !ctx.has_vocabulary(&Vocabulary::Validation) {
+        return None;
+    }
     // No patternProperties (uses separate validator paths)
     if parent.contains_key("patternProperties") {
         return None;
@@ -952,6 +956,26 @@ mod tests {
                 ("required", "https://example.com/s.json#/required"),
                 ("required", "https://example.com/s.json#/required"),
             ],
+        );
+    }
+
+    // `required` is inert, while `properties` still applies.
+    #[test_case(&json!({"properties": {"a": false}, "required": ["b", "c"]}); "two names")]
+    #[test_case(&json!({"properties": {"a": false}, "required": ["b", "c", "d"]}); "three names")]
+    fn properties_without_validation_vocabulary(schema: &Value) {
+        let instances = [json!({}), json!({"a": 1})];
+        assert_eq!(
+            tests_util::outcomes_with_only_vocabulary("applicator", schema, &instances),
+            [
+                (true, Vec::new()),
+                (
+                    false,
+                    vec![(
+                        "/properties/a".to_string(),
+                        "False schema does not allow 1".to_string()
+                    )]
+                ),
+            ]
         );
     }
 }
