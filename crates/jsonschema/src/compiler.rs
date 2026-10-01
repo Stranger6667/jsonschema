@@ -1585,7 +1585,7 @@ fn compile_without_cache<'a, F: Json>(
                         keywords::ref_::compile_ref(ctx, schema, reference)
                     {
                         let validators = vec![(BuiltinKeyword::Ref.into(), validator?)];
-                        Ok(SchemaNode::from_keywords(ctx, validators, None))
+                        Ok(SchemaNode::from_keywords(ctx, validators, None, None))
                     } else {
                         // Infinite reference to the same location
                         Ok(SchemaNode::from_boolean(ctx, None))
@@ -1595,7 +1595,24 @@ fn compile_without_cache<'a, F: Json>(
 
             let mut validators = Vec::with_capacity(schema.len());
             let mut annotations = Map::new();
+            let array_shape = keywords::items::array_shape_fusion(ctx, schema);
+            let mut absorbed = None;
             for (keyword, value) in schema {
+                if array_shape {
+                    match keyword.as_str() {
+                        // Checked by the fused validator compiled from `items`.
+                        "type" | "minItems" | "maxItems" => continue,
+                        "items" => {
+                            let (validator, keywords) =
+                                keywords::items::ArrayShapeValidator::compile(ctx, schema, value)
+                                    .map_err(ValidationError::to_owned)?;
+                            validators.push((BuiltinKeyword::Items.into(), validator));
+                            absorbed = Some(keywords);
+                            continue;
+                        }
+                        _ => {}
+                    }
+                }
                 // Check if this keyword is overridden, then check the standard definitions
                 if let Some(factory) = ctx.get_keyword_factory(keyword) {
                     let path = ctx.location().join(keyword);
@@ -1620,7 +1637,12 @@ fn compile_without_cache<'a, F: Json>(
             } else {
                 Some(Arc::new(Value::Object(annotations)))
             };
-            Ok(SchemaNode::from_keywords(ctx, validators, annotations))
+            Ok(SchemaNode::from_keywords(
+                ctx,
+                validators,
+                absorbed,
+                annotations,
+            ))
         }
         _ => {
             let location = ctx.location().clone();

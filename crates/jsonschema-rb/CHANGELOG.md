@@ -11,6 +11,7 @@
 - Absolute keyword location and `schemaLocation` of keywords inside a nested `$id` resource counting from the document root.
 - Absolute keyword location and evaluation output of `type` errors in a `type`-only `items` subschema pointing at `items` instead of the failing element's `type`.
 - Absolute keyword location of `patternProperties` annotations missing its JSON Pointer fragment.
+- Evaluation output of `type: array` beside schema-form `items` omitting passing `type`, `minItems` and `maxItems` units and nesting failing ones under `items`.
 - Evaluation output `schemaLocation` and absolute keyword location of `$ref`, `$dynamicRef` and `$recursiveRef` nodes not pointing at the reference target.
 - Evaluation output `schemaLocation` URIs not percent-encoding their fragment, such as a space in a property name.
 - Absolute keyword location of errors and annotations from a whole subschema, such as `false`, missing its JSON Pointer fragment.

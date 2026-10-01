@@ -140,13 +140,9 @@ pub(crate) fn is_integer<N: jsonschema_value::JsonNumber>(num: &N) -> bool {
 #[inline]
 pub(crate) fn compile<'a, F: Json>(
     ctx: &compiler::Context<F>,
-    parent: &'a Map<String, Value>,
+    _parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
-    // Absorbed by the fused array-shape validator emitted from `items`.
-    if crate::keywords::items::array_shape_fusion(ctx, parent) {
-        return None;
-    }
     let location = ctx.location().join("type");
     match schema {
         Value::String(item) => Some(compile_single_type(item.as_str(), location, schema)),

@@ -4803,13 +4803,13 @@ mod tests {
     #[test_case(
         &json!({"$id": "https://example.com/tree", "type": "array", "minItems": 2, "maxItems": 0, "items": {"type": "string"}}),
         &json!([1]),
-        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/items", "https://example.com/tree#/minItems", "https://example.com/tree#/maxItems", "https://example.com/tree#/items", "https://example.com/tree#/items/type"];
+        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/type", "https://example.com/tree#/minItems", "https://example.com/tree#/maxItems", "https://example.com/tree#/items", "https://example.com/tree#/items", "https://example.com/tree#/items/type"];
         "array bounds beside items"
     )]
     #[test_case(
         &json!({"$id": "https://example.com/tree", "type": "array", "items": {"type": "string"}}),
         &json!(1),
-        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/items", "https://example.com/tree#/type"];
+        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/type", "https://example.com/tree#/items"];
         "type beside items"
     )]
     #[test_case(

@@ -1,10 +1,10 @@
 use crate::{
     compiler::Context,
     evaluation::{Annotations, ChildList, EvaluationNode},
-    keywords::{BoxedValidator, Keyword},
+    keywords::{items::AbsorbedKeywords, BoxedValidator, BuiltinKeyword, Keyword},
     paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
-    Json, Node, SerdeJson, ValidationError,
+    Array, Json, Node, SerdeJson, ValidationError,
 };
 use referencing::Uri;
 use serde_json::Value;
@@ -124,6 +124,15 @@ struct KeywordValidators<F: Json> {
     // We should probably use AHashMap here but it breaks a bunch of tests which assume
     // validators are in a particular order
     validators: Vec<KeywordValidatorEntry<F>>,
+    absorbed: Option<AbsorbedUnits>,
+}
+
+/// Keywords a fused validator checks on its own. `evaluate` reports them as their own units, so
+/// the output lists the same units as without the fusion.
+struct AbsorbedUnits {
+    keywords: Arc<AbsorbedKeywords>,
+    /// How many of the node's validators run before `minItems` and `maxItems`; `type` runs first.
+    counts_at: usize,
 }
 
 struct KeywordValidatorEntry<F: Json> {
@@ -133,6 +142,25 @@ struct KeywordValidatorEntry<F: Json> {
     location: Location,
     absolute_location: Option<Arc<Uri<String>>>,
     formatted_schema_location: OnceLock<Arc<str>>,
+}
+
+/// A subschema's location, absolute location, cached `schemaLocation` and validator.
+type EntryParts<'a, F> = (
+    &'a Location,
+    Option<&'a Arc<Uri<String>>>,
+    &'a OnceLock<Arc<str>>,
+    &'a BoxedValidator<F>,
+);
+
+impl<F: Json> KeywordValidatorEntry<F> {
+    fn parts(&self) -> EntryParts<'_, F> {
+        (
+            &self.location,
+            self.absolute_location.as_ref(),
+            &self.formatted_schema_location,
+            &self.validator,
+        )
+    }
 }
 
 struct ArrayValidatorEntry<F: Json> {
@@ -339,15 +367,27 @@ impl<F: Json> SchemaNode<F> {
         }
     }
 
+    /// `absorbed` holds the keywords a fused validator in `validators` checks on its own.
     pub(crate) fn from_keywords(
         ctx: &Context<'_, F>,
         mut validators: Vec<(Keyword, BoxedValidator<F>)>,
+        absorbed: Option<Arc<AbsorbedKeywords>>,
         unmatched_keywords: Option<Arc<Value>>,
     ) -> SchemaNode<F> {
         // Sort validators by priority (lower = execute first).
         // This enables "fail fast" by running cheap validators (type, const)
         // before expensive ones (allOf, $ref).
         validators.sort_by_key(|(keyword, _)| crate::keywords::keyword_priority(keyword));
+        let absorbed = absorbed.map(|keywords| {
+            // Nothing sorts between `minItems` and `maxItems`, and nothing before `type`.
+            let priority = crate::keywords::keyword_priority(&BuiltinKeyword::MinItems.into());
+            AbsorbedUnits {
+                keywords,
+                counts_at: validators.partition_point(|(keyword, _)| {
+                    crate::keywords::keyword_priority(keyword) < priority
+                }),
+            }
+        });
 
         let location = ctx.location().clone();
         let absolute_path = ctx.absolute_location(&location);
@@ -371,6 +411,7 @@ impl<F: Json> SchemaNode<F> {
                 validators: NodeValidators::Keyword(KeywordValidators {
                     unmatched_keywords,
                     validators,
+                    absorbed,
                 }),
                 formatted_schema_location: OnceLock::new(),
             }),
@@ -515,16 +556,100 @@ impl<F: Json> SchemaNode<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult
     where
-        I: Iterator<
-                Item = (
-                    &'a Location,
-                    Option<&'a Arc<Uri<String>>>,
-                    &'a OnceLock<Arc<str>>,
-                    &'a BoxedValidator<F>,
-                ),
-            > + 'a,
+        I: Iterator<Item = EntryParts<'a, F>> + 'a,
     {
         let mut children = ChildList::default();
+        let invalid = Self::push_subschemas(
+            instance,
+            location,
+            instance_loc,
+            tracker,
+            subschemas,
+            &mut children,
+            ctx,
+        );
+        Self::keyword_result(children, invalid, annotations)
+    }
+
+    /// Evaluates the node's keywords, reporting `absorbed` beside them in priority order.
+    ///
+    /// Kept out of line so the common path in `evaluate_at` compiles as without it.
+    #[allow(clippy::too_many_arguments)]
+    #[inline(never)]
+    fn evaluate_with_absorbed(
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_loc: &Location,
+        tracker: Option<&RefTracker>,
+        validators: &[KeywordValidatorEntry<F>],
+        absorbed: &AbsorbedUnits,
+        annotations: Option<Annotations>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let count = instance.as_array().map(|array| array.len() as u64);
+        let keywords = &*absorbed.keywords;
+        let mut children = ChildList::default();
+        let node =
+            keywords.evaluate_type::<F>(instance, count.is_some(), instance_loc, tracker, ctx);
+        children.push(&mut ctx.arena, node);
+        let (before, after) = validators.split_at(absorbed.counts_at);
+        Self::push_subschemas(
+            instance,
+            location,
+            instance_loc,
+            tracker,
+            before.iter().map(KeywordValidatorEntry::parts),
+            &mut children,
+            ctx,
+        );
+        keywords.evaluate_counts::<F>(instance, count, instance_loc, tracker, ctx, &mut children);
+        Self::push_subschemas(
+            instance,
+            location,
+            instance_loc,
+            tracker,
+            after.iter().map(KeywordValidatorEntry::parts),
+            &mut children,
+            ctx,
+        );
+        let invalid = !children.all_valid();
+        Self::keyword_result(children, invalid, annotations)
+    }
+
+    fn keyword_result(
+        children: ChildList,
+        invalid: bool,
+        annotations: Option<Annotations>,
+    ) -> EvaluationResult {
+        if invalid {
+            EvaluationResult::Invalid {
+                errors: Vec::new(),
+                children,
+                annotations,
+            }
+        } else {
+            EvaluationResult::Valid {
+                annotations,
+                children,
+            }
+        }
+    }
+
+    /// Pushes the output unit of each subschema onto `children`; returns whether any failed.
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
+    fn push_subschemas<'a, 'i, I>(
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        instance_loc: &Location,
+        tracker: Option<&RefTracker>,
+        subschemas: I,
+        children: &mut ChildList,
+        ctx: &mut ValidationContext,
+    ) -> bool
+    where
+        I: Iterator<Item = EntryParts<'a, F>> + 'a,
+    {
         let mut invalid = false;
 
         for (child_location, absolute_location, cached_schema_location, validator) in subschemas {
@@ -582,18 +707,7 @@ impl<F: Json> SchemaNode<F> {
             };
             children.push(&mut ctx.arena, child_node);
         }
-        if invalid {
-            EvaluationResult::Invalid {
-                errors: Vec::new(),
-                children,
-                annotations,
-            }
-        } else {
-            EvaluationResult::Valid {
-                annotations,
-                children,
-            }
-        }
+        invalid
     }
 
     pub(crate) fn location(&self) -> &Location {
@@ -813,26 +927,33 @@ impl<F: Json> SchemaNode<F> {
                 let KeywordValidators {
                     ref unmatched_keywords,
                     ref validators,
+                    ref absorbed,
                 } = *kvals;
                 let annotations: Option<Annotations> = unmatched_keywords
                     .as_ref()
                     .map(|v| Annotations::from_arc(Arc::clone(v)));
-                Self::evaluate_subschemas(
-                    instance,
-                    location,
-                    instance_loc,
-                    tracker,
-                    validators.iter().map(|entry| {
-                        (
-                            &entry.location,
-                            entry.absolute_location.as_ref(),
-                            &entry.formatted_schema_location,
-                            &entry.validator,
-                        )
-                    }),
-                    annotations,
-                    ctx,
-                )
+                if let Some(absorbed) = absorbed {
+                    Self::evaluate_with_absorbed(
+                        instance,
+                        location,
+                        instance_loc,
+                        tracker,
+                        validators,
+                        absorbed,
+                        annotations,
+                        ctx,
+                    )
+                } else {
+                    Self::evaluate_subschemas(
+                        instance,
+                        location,
+                        instance_loc,
+                        tracker,
+                        validators.iter().map(KeywordValidatorEntry::parts),
+                        annotations,
+                        ctx,
+                    )
+                }
             }
         }
     }
