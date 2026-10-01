@@ -874,7 +874,7 @@ mod tests {
     #[test]
     fn an_in_place_self_cycle_is_excluded() {
         let schema = json!({"$ref": "#/$defs/a", "$defs": {"a": {"allOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]}}});
-        assert!(guarded(&schema).is_empty());
+        assert_eq!(guarded(&schema), Vec::<String>::new());
     }
 
     /// Every cycle here passes through the consuming edge.
@@ -913,6 +913,6 @@ mod tests {
     #[test]
     fn an_acyclic_document_has_no_members() {
         let schema = json!({"$ref": "#/$defs/a", "$defs": {"a": {"type": "integer"}}});
-        assert!(guarded(&schema).is_empty());
+        assert_eq!(guarded(&schema), Vec::<String>::new());
     }
 }

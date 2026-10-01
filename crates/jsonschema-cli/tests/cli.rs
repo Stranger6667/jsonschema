@@ -1475,7 +1475,7 @@ fn test_bundle_output_to_file() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(output.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
 
     let written = fs::read_to_string(&out_path).unwrap();
     let bundled: serde_json::Value = serde_json::from_str(&written).unwrap();
@@ -1660,7 +1660,7 @@ fn test_dereference_output_to_file() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(output.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
 
     let written = fs::read_to_string(&out_path).unwrap();
     let dereferenced: serde_json::Value = serde_json::from_str(&written).unwrap();
@@ -1820,7 +1820,7 @@ fn test_canonicalize_output_to_file() {
         .output()
         .unwrap();
     assert!(output.status.success());
-    assert!(output.stdout.is_empty());
+    assert_eq!(String::from_utf8_lossy(&output.stdout), "");
 
     let written = fs::read_to_string(&out_path).unwrap();
     let canonical: Value = serde_json::from_str(&written).unwrap();
