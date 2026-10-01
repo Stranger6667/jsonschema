@@ -10,6 +10,10 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+# Line tables keep panic locations; full debug info inflates `target/` and every cache built from it.
+env:
+  CARGO_PROFILE_DEV_DEBUG: line-tables-only
+
 jobs:
 
   check-commits:
@@ -529,6 +533,10 @@ jobs:
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # Fat LTO with a single codegen unit is for published wheels; tests do not need it.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -556,6 +564,10 @@ jobs:
     name: Test Python ${{ matrix.python-version }} on ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     timeout-minutes: 30
+    # Fat LTO with a single codegen unit is for published wheels; tests do not need it.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
@@ -604,9 +616,10 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+          # One cache per OS: only the crates linking libruby differ between Ruby versions.
+          save-if: ${{ github.ref == 'refs/heads/master' && matrix.ruby-version == '4.0' }}
           cache-all-crates: "true"
-          key: ruby-${{ matrix.os }}-${{ matrix.ruby-version }}
+          key: ruby-${{ matrix.os }}
 
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
@@ -656,9 +669,9 @@ jobs:
 
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
-          save-if: ${{ github.ref == 'refs/heads/master' }}
+          save-if: ${{ github.ref == 'refs/heads/master' && matrix.ruby-version == '4.0' }}
           cache-all-crates: "true"
-          key: ruby-gem-install-${{ matrix.os }}-${{ matrix.ruby-version }}
+          key: ruby-gem-install-${{ matrix.os }}
 
       - uses: ruby/setup-ruby@14594264cd68ce8a2345dd349bc3d138a4ef85c8 # v1.327.0
         with:
