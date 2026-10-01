@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.4] - 2026-10-01
+
 ### Fixed
 
 - `repr` of a `validator_for` validator naming the default draft instead of the one `$schema` declares.
@@ -1579,7 +1581,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.3...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.4...HEAD
+[0.58.4]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.3...python-v0.58.4
 [0.58.3]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.2...python-v0.58.3
 [0.58.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.1...python-v0.58.2
 [0.58.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.0...python-v0.58.1
