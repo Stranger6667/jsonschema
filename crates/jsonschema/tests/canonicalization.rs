@@ -1420,7 +1420,7 @@ fn array_view_exposes_bounds() {
     assert_eq!(view.min_items, Some(Number::from(1u64)));
     assert_eq!(view.max_items, Some(Number::from(3u64)));
     assert_eq!(view.distinctness, Distinctness::AllDistinct);
-    assert!(view.prefix_items.is_empty());
+    assert_eq!(view.prefix_items.len(), 0);
 }
 
 #[test]
@@ -1566,7 +1566,7 @@ fn object_view_exposes_undeclared_value_fails_violation() {
         );
     };
     assert_eq!(names, &vec!["a".to_string()]);
-    assert!(patterns.is_empty());
+    assert_eq!(patterns, &Vec::<String>::new());
     assert_eq!(
         additional.to_json_schema(),
         json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"})

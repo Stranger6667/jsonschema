@@ -62,7 +62,7 @@ mod tests {
         let options: Options = serde_json::from_str("{}").unwrap();
         assert_eq!(options.format_assertions, None);
         assert!(options.ignore_unknown_formats);
-        assert!(options.vocabularies.is_empty());
+        assert_eq!(options.vocabularies, Vec::<String>::new());
     }
 
     #[test]

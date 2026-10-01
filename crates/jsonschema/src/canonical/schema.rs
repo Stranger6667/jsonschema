@@ -483,7 +483,6 @@ impl CanonicalSchema {
     }
 
     /// Every reachable reference target known to this document, keyed by its URI.
-    #[must_use]
     pub fn definitions(&self) -> impl ExactSizeIterator<Item = (String, CanonicalSchema)> + '_ {
         self.document
             .definitions
