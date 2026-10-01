@@ -978,4 +978,33 @@ mod tests {
             ]
         );
     }
+
+    #[test_case(
+        &json!({}),
+        &[
+            ("\"a\" is a required property", "", "/required"),
+            ("\"b\" is a required property", "", "/required"),
+        ];
+        "required alone"
+    )]
+    #[test_case(
+        &json!({"a": 1}),
+        &[
+            ("\"b\" is a required property", "", "/required"),
+            ("1 is not of type \"string\"", "/a", "/properties/a/type"),
+        ];
+        "required with properties"
+    )]
+    #[test_case(
+        &json!({"a": 1, "b": 1}),
+        &[("1 is not of type \"string\"", "/a", "/properties/a/type")];
+        "properties alone"
+    )]
+    fn fused_required_error_locations(instance: &Value, expected: &[(&str, &str, &str)]) {
+        tests_util::assert_error_locations(
+            &json!({"properties": {"a": {"type": "string"}}, "required": ["a", "b"]}),
+            instance,
+            expected,
+        );
+    }
 }

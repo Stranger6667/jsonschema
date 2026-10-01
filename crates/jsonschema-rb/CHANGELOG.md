@@ -17,6 +17,7 @@
 - Evaluation output `schemaLocation` and absolute keyword location of `$ref`, `$dynamicRef` and `$recursiveRef` nodes not pointing at the reference target.
 - Evaluation output `schemaLocation` URIs not percent-encoding their fragment, such as a space in a property name.
 - Absolute keyword location of errors and annotations from a whole subschema, such as `false`, missing its JSON Pointer fragment.
+- Absolute keyword location of `required`, `minContains` and `maxContains` errors pointing at a sibling keyword.
 - Evaluation annotations from `$ref` siblings in Draft 4, 6 and 7 schemas.
 - Masked `additionalItems` messages counting allowed items instead of extra ones, and "1 items" in masked `unevaluatedItems` messages.
 - `$dynamicRef` and `$recursiveRef` resolving in the dynamic scope of another path to the same schema, depending on property order.
