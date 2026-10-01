@@ -315,6 +315,26 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
     }
 }
 
+/// `evaluate` for a keyword that asserts on the instance alone and annotates nothing: a valid
+/// instance skips building errors.
+pub(crate) fn evaluate_assertion<F: Json, V: Validate<F>>(
+    validator: &V,
+    instance: &F::Node<'_>,
+    location: &LazyLocation,
+    tracker: Option<&RefTracker>,
+    ctx: &mut ValidationContext,
+) -> EvaluationResult {
+    if validator.is_valid(instance, ctx) {
+        return EvaluationResult::valid_empty();
+    }
+    match validator.validate(instance, location, tracker, ctx) {
+        Ok(()) => EvaluationResult::valid_empty(),
+        Err(error) => {
+            EvaluationResult::invalid_empty(vec![ErrorDescription::from_validation_error(&error)])
+        }
+    }
+}
+
 /// The result of evaluating a validator against an instance. This is a "partial" result because it does not include information about
 /// where the error or annotation occurred.
 #[derive(PartialEq)]
@@ -1625,5 +1645,45 @@ mod tests {
         assert!(!map["#/$defs/User"].is_valid(&json!({})));
         assert!(map["#/$defs/Role"].is_valid(&json!("admin")));
         assert!(!map["#/$defs/Role"].is_valid(&json!("superuser")));
+    }
+
+    #[test_case(&json!({"minItems": 2}), &json!([1, 2]), &json!({"valid": true, "details": [
+        {"valid": true, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
+        {"valid": true, "evaluationPath": "/minItems", "schemaLocation": "/minItems", "instanceLocation": ""}
+    ]}); "minItems valid")]
+    #[test_case(&json!({"minItems": 2}), &json!([1]), &json!({"valid": false, "details": [
+        {"valid": false, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
+        {"valid": false, "evaluationPath": "/minItems", "schemaLocation": "/minItems", "instanceLocation": "",
+         "errors": {"minItems": "[1] has less than 2 items"}}
+    ]}); "minItems invalid")]
+    #[test_case(&json!({"maxItems": 1}), &json!([1, 2]), &json!({"valid": false, "details": [
+        {"valid": false, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
+        {"valid": false, "evaluationPath": "/maxItems", "schemaLocation": "/maxItems", "instanceLocation": "",
+         "errors": {"maxItems": "[1,2] has more than 1 item"}}
+    ]}); "maxItems invalid")]
+    #[test_case(&json!({"minLength": 2}), &json!("a"), &json!({"valid": false, "details": [
+        {"valid": false, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
+        {"valid": false, "evaluationPath": "/minLength", "schemaLocation": "/minLength", "instanceLocation": "",
+         "errors": {"minLength": "\"a\" is shorter than 2 characters"}}
+    ]}); "minLength invalid")]
+    #[test_case(&json!({"maxLength": 1}), &json!("ab"), &json!({"valid": false, "details": [
+        {"valid": false, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
+        {"valid": false, "evaluationPath": "/maxLength", "schemaLocation": "/maxLength", "instanceLocation": "",
+         "errors": {"maxLength": "\"ab\" is longer than 1 character"}}
+    ]}); "maxLength invalid")]
+    #[test_case(&json!({"minProperties": 1}), &json!({}), &json!({"valid": false, "details": [
+        {"valid": false, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
+        {"valid": false, "evaluationPath": "/minProperties", "schemaLocation": "/minProperties", "instanceLocation": "",
+         "errors": {"minProperties": "{} has less than 1 property"}}
+    ]}); "minProperties invalid")]
+    #[test_case(&json!({"maxProperties": 0}), &json!({"a": 1}), &json!({"valid": false, "details": [
+        {"valid": false, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
+        {"valid": false, "evaluationPath": "/maxProperties", "schemaLocation": "/maxProperties", "instanceLocation": "",
+         "errors": {"maxProperties": "{\"a\":1} has more than 0 properties"}}
+    ]}); "maxProperties invalid")]
+    fn size_keyword_output(schema: &Value, instance: &Value, expected: &Value) {
+        let validator = crate::validator_for(schema).expect("Valid schema");
+        let list = serde_json::to_value(validator.evaluate(instance).list()).expect("List output");
+        assert_eq!(&list, expected);
     }
 }

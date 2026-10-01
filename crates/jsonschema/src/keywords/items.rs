@@ -1,8 +1,7 @@
 use crate::{
     compiler::{self, DeferredAbsoluteLocation},
     evaluation::{
-        absorbed_error_node, format_keyword_location, Annotations, ChildList, ErrorDescription,
-        EvaluationNode,
+        format_keyword_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
     },
     keywords::{BoxedValidator, CompilationResult},
     node::SchemaNode,
@@ -585,8 +584,7 @@ impl<T: ItemType, F: Json> Validate<F> for ItemsTypeValidator<T, F> {
 
 struct CountConstraint {
     limit: u64,
-    location: Location,
-    absolute_location: Option<Arc<Uri<String>>>,
+    site: SchemaSite,
 }
 
 /// Element validation for the fused validator. Single-type variants keep the specialized `items`
@@ -633,90 +631,198 @@ impl<F: Json> FusedItems<F> {
 /// one length check, and one element pass instead of three validators re-reading the same node.
 pub(crate) struct ArrayShapeValidator<F: Json = SerdeJson> {
     items: FusedItems<F>,
+    /// `minItems`, or 0 without one.
+    min_items: u64,
+    /// `maxItems`, or `u64::MAX` without one.
+    max_items: u64,
+    /// Shared with the schema node, which reports these keywords as their own output units.
+    absorbed: Arc<AbsorbedKeywords>,
+}
+
+/// `type`, `minItems` and `maxItems` beside a fused `items`, with the locations their errors and
+/// output units report.
+pub(crate) struct AbsorbedKeywords {
+    type_: SchemaSite,
     min_items: Option<CountConstraint>,
     max_items: Option<CountConstraint>,
-    type_location: Location,
-    type_absolute_location: Option<Arc<Uri<String>>>,
 }
 
 impl ArrayShapeValidator {
+    /// Also returns the absorbed keywords, which the schema node reports as their own units.
     #[inline]
     pub(crate) fn compile<'a, F: Json>(
         ctx: &compiler::Context<F>,
         parent: &'a Map<String, Value>,
         items: &'a Value,
-    ) -> CompilationResult<'a, F> {
+    ) -> Result<(BoxedValidator<F>, Arc<AbsorbedKeywords>), ValidationError<'a>> {
         let items = FusedItems::compile(ctx, items)?;
-        let type_location = ctx.location().join("type");
-        let type_absolute_location = ctx.absolute_location(&type_location);
         let constraint = |key: &str| -> Option<CountConstraint> {
-            let limit = accepts_item_count(ctx, parent.get(key)?)?;
-            let location = ctx.location().join(key);
-            let absolute_location = ctx.absolute_location(&location);
             Some(CountConstraint {
-                limit,
-                location,
-                absolute_location,
+                limit: accepts_item_count(ctx, parent.get(key)?)?,
+                site: SchemaSite::new(ctx, ctx.location().join(key)),
             })
         };
-        Ok(Box::new(ArrayShapeValidator {
-            items,
+        let absorbed = Arc::new(AbsorbedKeywords {
+            type_: SchemaSite::new(ctx, ctx.location().join("type")),
             min_items: constraint("minItems"),
             max_items: constraint("maxItems"),
-            type_location,
-            type_absolute_location,
-        }))
+        });
+        let validator = Box::new(ArrayShapeValidator {
+            items,
+            min_items: absorbed.min_items.as_ref().map_or(0, |c| c.limit),
+            max_items: absorbed.max_items.as_ref().map_or(u64::MAX, |c| c.limit),
+            absorbed: Arc::clone(&absorbed),
+        });
+        Ok((validator, absorbed))
     }
 }
 
-impl<F: Json> ArrayShapeValidator<F> {
-    fn type_error<'i>(
+impl AbsorbedKeywords {
+    #[cold]
+    #[inline(never)]
+    fn type_error<'i, F: Json>(
         &self,
         instance: &F::Node<'i>,
-        location: &LazyLocation,
+        instance_location: impl Into<Location>,
         tracker: Option<&RefTracker>,
     ) -> ValidationError<'i> {
+        let site = &self.type_;
         ValidationError::single_type_error(
-            self.type_location.clone(),
-            crate::paths::capture_evaluation_path(tracker, &self.type_location),
-            location.into(),
+            site.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &site.location),
+            instance_location.into(),
             instance.lazy_value(),
             JsonType::Array,
         )
-        .with_absolute_keyword_location(self.type_absolute_location.clone())
+        .with_absolute_keyword_location(site.absolute_location().cloned())
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn min_items_error<'i, F: Json>(
+        &self,
+        instance: &F::Node<'i>,
+        instance_location: impl Into<Location>,
+        tracker: Option<&RefTracker>,
+    ) -> ValidationError<'i> {
+        let constraint = self.min_items.as_ref().expect("Fails only with its limit");
+        let site = &constraint.site;
+        ValidationError::min_items(
+            site.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &site.location),
+            instance_location.into(),
+            instance.lazy_value(),
+            constraint.limit,
+        )
+        .with_absolute_keyword_location(site.absolute_location().cloned())
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn max_items_error<'i, F: Json>(
+        &self,
+        instance: &F::Node<'i>,
+        instance_location: impl Into<Location>,
+        tracker: Option<&RefTracker>,
+    ) -> ValidationError<'i> {
+        let constraint = self.max_items.as_ref().expect("Fails only with its limit");
+        let site = &constraint.site;
+        ValidationError::max_items(
+            site.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &site.location),
+            instance_location.into(),
+            instance.lazy_value(),
+            constraint.limit,
+        )
+        .with_absolute_keyword_location(site.absolute_location().cloned())
+    }
+
+    /// The `type` unit, as the standalone `type` validator would report it.
+    pub(crate) fn evaluate_type<F: Json>(
+        &self,
+        instance: &F::Node<'_>,
+        is_array: bool,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationNode {
+        let error = (!is_array).then(|| {
+            ErrorDescription::new(
+                "type",
+                format!(r#"{} is not of type "array""#, instance.to_value()),
+            )
+        });
+        unit(&self.type_, error, instance_location, tracker, ctx)
+    }
+
+    /// The `minItems` and `maxItems` units, as their standalone validators would report them.
+    /// `count` is `None` for a non-array instance.
+    pub(crate) fn evaluate_counts<F: Json>(
+        &self,
+        instance: &F::Node<'_>,
+        count: Option<u64>,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+        children: &mut ChildList,
+    ) {
+        if let Some(constraint) = &self.min_items {
+            let error = count
+                .is_some_and(|count| count < constraint.limit)
+                .then(|| {
+                    ErrorDescription::from_validation_error(&self.min_items_error::<F>(
+                        instance,
+                        instance_location.clone(),
+                        tracker,
+                    ))
+                });
+            let node = unit(&constraint.site, error, instance_location, tracker, ctx);
+            children.push(&mut ctx.arena, node);
+        }
+        if let Some(constraint) = &self.max_items {
+            let error = count
+                .is_some_and(|count| count > constraint.limit)
+                .then(|| {
+                    ErrorDescription::from_validation_error(&self.max_items_error::<F>(
+                        instance,
+                        instance_location.clone(),
+                        tracker,
+                    ))
+                });
+            let node = unit(&constraint.site, error, instance_location, tracker, ctx);
+            children.push(&mut ctx.arena, node);
+        }
     }
 }
 
-fn min_items_error<'i, F: Json>(
-    constraint: &CountConstraint,
-    instance: &F::Node<'i>,
-    location: &LazyLocation,
+/// A leaf keyword's output unit: valid and empty, or failing with `error`.
+fn unit(
+    site: &SchemaSite,
+    error: Option<ErrorDescription>,
+    instance_location: &Location,
     tracker: Option<&RefTracker>,
-) -> ValidationError<'i> {
-    ValidationError::min_items(
-        constraint.location.clone(),
-        crate::paths::capture_evaluation_path(tracker, &constraint.location),
-        location.into(),
-        instance.lazy_value(),
-        constraint.limit,
-    )
-    .with_absolute_keyword_location(constraint.absolute_location.clone())
-}
-
-fn max_items_error<'i, F: Json>(
-    constraint: &CountConstraint,
-    instance: &F::Node<'i>,
-    location: &LazyLocation,
-    tracker: Option<&RefTracker>,
-) -> ValidationError<'i> {
-    ValidationError::max_items(
-        constraint.location.clone(),
-        crate::paths::capture_evaluation_path(tracker, &constraint.location),
-        location.into(),
-        instance.lazy_value(),
-        constraint.limit,
-    )
-    .with_absolute_keyword_location(constraint.absolute_location.clone())
+    ctx: &mut ValidationContext,
+) -> EvaluationNode {
+    let evaluation_path = crate::paths::evaluation_path(tracker, &site.location, ctx);
+    match error {
+        None => EvaluationNode::valid(
+            evaluation_path,
+            site.absolute_location().cloned(),
+            site.schema_location(),
+            instance_location.clone(),
+            None,
+            ChildList::default(),
+        ),
+        Some(error) => EvaluationNode::invalid(
+            evaluation_path,
+            site.absolute_location().cloned(),
+            site.schema_location(),
+            instance_location.clone(),
+            None,
+            vec![error],
+            ChildList::default(),
+        ),
+    }
 }
 
 impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
@@ -725,15 +831,11 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
             return false;
         };
         let count = array.len() as u64;
-        if let Some(constraint) = &self.min_items {
-            if count < constraint.limit {
-                return false;
-            }
+        if count < self.min_items {
+            return false;
         }
-        if let Some(constraint) = &self.max_items {
-            if count > constraint.limit {
-                return false;
-            }
+        if count > self.max_items {
+            return false;
         }
         match &self.items {
             FusedItems::Number(_) => array
@@ -763,22 +865,18 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         let Some(array) = instance.as_array() else {
-            return Err(self.type_error(instance, location, tracker));
+            return Err(self.absorbed.type_error::<F>(instance, location, tracker));
         };
         let count = array.len() as u64;
-        if let Some(constraint) = &self.min_items {
-            if count < constraint.limit {
-                return Err(min_items_error::<F>(
-                    constraint, instance, location, tracker,
-                ));
-            }
+        if count < self.min_items {
+            return Err(self
+                .absorbed
+                .min_items_error::<F>(instance, location, tracker));
         }
-        if let Some(constraint) = &self.max_items {
-            if count > constraint.limit {
-                return Err(max_items_error::<F>(
-                    constraint, instance, location, tracker,
-                ));
-            }
+        if count > self.max_items {
+            return Err(self
+                .absorbed
+                .max_items_error::<F>(instance, location, tracker));
         }
         match &self.items {
             FusedItems::Generic(node) => {
@@ -806,23 +904,21 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
         errors: &mut Vec<ValidationError<'i>>,
     ) {
         let Some(array) = instance.as_array() else {
-            errors.push(self.type_error(instance, location, tracker));
+            errors.push(self.absorbed.type_error::<F>(instance, location, tracker));
             return;
         };
         let count = array.len() as u64;
-        if let Some(constraint) = &self.min_items {
-            if count < constraint.limit {
-                errors.push(min_items_error::<F>(
-                    constraint, instance, location, tracker,
-                ));
-            }
+        if count < self.min_items {
+            errors.push(
+                self.absorbed
+                    .min_items_error::<F>(instance, location, tracker),
+            );
         }
-        if let Some(constraint) = &self.max_items {
-            if count > constraint.limit {
-                errors.push(max_items_error::<F>(
-                    constraint, instance, location, tracker,
-                ));
-            }
+        if count > self.max_items {
+            errors.push(
+                self.absorbed
+                    .max_items_error::<F>(instance, location, tracker),
+            );
         }
         match &self.items {
             FusedItems::Generic(node) => {
@@ -840,6 +936,8 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
         }
     }
 
+    /// Evaluates `items` alone: the schema node reports the [`AbsorbedKeywords`] as their own
+    /// units, as they would be without the fusion.
     fn evaluate(
         &self,
         instance: &F::Node<'_>,
@@ -847,88 +945,13 @@ impl<F: Json> Validate<F> for ArrayShapeValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let Some(array) = instance.as_array() else {
-            let error = ErrorDescription::new(
-                "type",
-                format!(r#"{} is not of type "array""#, instance.to_value()),
-            );
-            let node = absorbed_error_node(
-                location,
-                tracker,
-                &self.type_location,
-                self.type_absolute_location.as_ref(),
-                error,
-                ctx,
-            );
-            return EvaluationResult::from_children(ChildList::of(&mut ctx.arena, node));
-        };
-        let count = array.len() as u64;
-        let mut children = ChildList::default();
-        if let Some(constraint) = &self.min_items {
-            if count < constraint.limit {
-                let error = ErrorDescription::from_validation_error(&min_items_error::<F>(
-                    constraint, instance, location, tracker,
-                ));
-                let child = absorbed_error_node(
-                    location,
-                    tracker,
-                    &constraint.location,
-                    constraint.absolute_location.as_ref(),
-                    error,
-                    ctx,
-                );
-                children.push(&mut ctx.arena, child);
-            }
-        }
-        if let Some(constraint) = &self.max_items {
-            if count > constraint.limit {
-                let error = ErrorDescription::from_validation_error(&max_items_error::<F>(
-                    constraint, instance, location, tracker,
-                ));
-                let child = absorbed_error_node(
-                    location,
-                    tracker,
-                    &constraint.location,
-                    constraint.absolute_location.as_ref(),
-                    error,
-                    ctx,
-                );
-                children.push(&mut ctx.arena, child);
-            }
-        }
-        let element_result = match &self.items {
+        match &self.items {
             FusedItems::Generic(node) => evaluate_each_item(node, instance, location, tracker, ctx),
             FusedItems::Number(cold)
             | FusedItems::String(cold)
             | FusedItems::Boolean(cold)
             | FusedItems::IntegerDraft4(cold)
             | FusedItems::IntegerDraft7(cold) => cold.evaluate(instance, location, tracker, ctx),
-        };
-        // Fold the element evaluation into this `items` node, keeping the absorbed length nodes
-        // ahead of the element children.
-        let (errors, element_children, annotations) = match element_result {
-            EvaluationResult::Valid {
-                annotations,
-                children,
-            } => (Vec::new(), children, annotations),
-            EvaluationResult::Invalid {
-                errors,
-                children,
-                annotations,
-            } => (errors, children, annotations),
-        };
-        children.append(&mut ctx.arena, element_children);
-        if errors.is_empty() && children.all_valid() {
-            EvaluationResult::Valid {
-                annotations,
-                children,
-            }
-        } else {
-            EvaluationResult::Invalid {
-                errors,
-                children,
-                annotations,
-            }
         }
     }
 }
@@ -945,19 +968,20 @@ pub(crate) fn array_shape_fusion<F: Json>(
     ctx: &compiler::Context<F>,
     parent: &Map<String, Value>,
 ) -> bool {
-    // `items` compiles only under the applicator vocabulary, `type` and the bounds under validation.
-    if !ctx.has_vocabulary(&Vocabulary::Validation) || !ctx.has_vocabulary(&Vocabulary::Applicator)
-    {
+    // Runs once per object schema, so the checks most schemas fail come first.
+    if !matches!(
+        parent.get("items"),
+        Some(Value::Object(_) | Value::Bool(false))
+    ) {
         return false;
     }
     match parent.get("type") {
         Some(Value::String(ty)) if ty.as_str() == "array" => {}
         _ => return false,
     }
-    if !matches!(
-        parent.get("items"),
-        Some(Value::Object(_) | Value::Bool(false))
-    ) {
+    // `items` compiles only under the applicator vocabulary, `type` and the bounds under validation.
+    if !ctx.has_vocabulary(&Vocabulary::Validation) || !ctx.has_vocabulary(&Vocabulary::Applicator)
+    {
         return false;
     }
     for key in [
@@ -1032,9 +1056,6 @@ pub(crate) fn compile<'a, F: Json>(
     match schema {
         Value::Array(items) => Some(ItemsArrayValidator::compile(ctx, items)),
         Value::Object(_) | Value::Bool(false) => {
-            if array_shape_fusion(ctx, parent) {
-                return Some(ArrayShapeValidator::compile(ctx, parent, schema));
-            }
             // `prefixItems` arrived in 2020-12; an earlier draft reads it as an unknown keyword,
             // leaving no prefix for schema-form `items` to skip.
             if ctx.draft().is_known_keyword("prefixItems") {
@@ -1276,6 +1297,129 @@ mod tests {
                 ]
             })
         );
+    }
+
+    /// Drops the output units of `uniqueItems`, which the unfused schema carries only to block
+    /// the fusion.
+    fn without_unique_items(output: &mut Value) {
+        match output {
+            Value::Object(map) => {
+                if let Some(Value::Array(details)) = map.get_mut("details") {
+                    details.retain(|unit| {
+                        !unit["evaluationPath"]
+                            .as_str()
+                            .is_some_and(|path| path.ends_with("/uniqueItems"))
+                    });
+                }
+                map.values_mut().for_each(without_unique_items);
+            }
+            Value::Array(items) => items.iter_mut().for_each(without_unique_items),
+            _ => {}
+        }
+    }
+
+    #[test_case(Draft::Draft4)]
+    #[test_case(Draft::Draft7)]
+    #[test_case(Draft::Draft201909)]
+    #[test_case(Draft::Draft202012)]
+    fn array_shape_reports_like_unfused(draft: Draft) {
+        let instances = [
+            json!([]),
+            json!([1]),
+            json!([1, 2]),
+            json!([1, 2, 3]),
+            json!(["x"]),
+            json!([-1, "x", 2]),
+            json!("s"),
+            json!({}),
+        ];
+        // Draft 4 has no boolean schemas.
+        let never = if draft == Draft::Draft4 {
+            json!({"not": {}})
+        } else {
+            json!(false)
+        };
+        for items in [
+            json!({"type": "integer"}),
+            json!({"type": "integer", "minimum": 0}),
+            never,
+        ] {
+            for bounds in [
+                json!({}),
+                json!({"minItems": 2}),
+                json!({"maxItems": 2}),
+                json!({"minItems": 1, "maxItems": 2}),
+            ] {
+                let mut fused = json!({"type": "array", "items": items});
+                fused
+                    .as_object_mut()
+                    .expect("object schema")
+                    .extend(bounds.as_object().expect("object bounds").clone());
+                let fused = with_id(draft, fused);
+                let mut unfused = fused.clone();
+                unfused["uniqueItems"] = json!(false);
+                for instance in &instances {
+                    assert_eq!(
+                        error_report(&fused, draft, instance),
+                        error_report(&unfused, draft, instance),
+                        "{fused} errors for {instance}"
+                    );
+                    let (mut list, mut hierarchical) = output_report(&unfused, draft, instance);
+                    without_unique_items(&mut list);
+                    without_unique_items(&mut hierarchical);
+                    assert_eq!(
+                        output_report(&fused, draft, instance),
+                        (list, hierarchical),
+                        "{fused} output for {instance}"
+                    );
+                }
+            }
+        }
+    }
+
+    // Siblings sorting before and after the bounds, reached through `$ref` and a nested resource.
+    #[test_case(Draft::Draft7, "definitions")]
+    #[test_case(Draft::Draft202012, "$defs")]
+    fn array_shape_reports_like_unfused_beside_siblings_and_refs(draft: Draft, defs: &str) {
+        let fused = json!({
+            "$id": "https://example.com/root",
+            defs: {
+                "shape": {
+                    "type": "array",
+                    "minItems": 2,
+                    "maxItems": 3,
+                    "items": {"type": "integer"},
+                    "const": [1, 2],
+                    "minProperties": 0,
+                    "required": ["x"]
+                },
+                "nested": {
+                    "$id": "nested",
+                    "properties": {"p": {"$ref": format!("https://example.com/root#/{defs}/shape")}}
+                }
+            },
+            "properties": {
+                "x": {"$ref": format!("#/{defs}/shape")},
+                "y": {"$ref": "nested"},
+                "z": {"anyOf": [{"$ref": format!("#/{defs}/shape")}, {"type": "string"}]}
+            }
+        });
+        let mut unfused = fused.clone();
+        unfused[defs]["shape"]["uniqueItems"] = json!(false);
+        for instance in [
+            json!({"x": [1], "y": {"p": "s"}, "z": [1, 2, 3, 4, "q"]}),
+            json!({"x": [1, 2], "y": {"p": [1, 2]}, "z": "ok"}),
+            json!({"x": {}, "z": []}),
+        ] {
+            let (mut list, mut hierarchical) = output_report(&unfused, draft, &instance);
+            without_unique_items(&mut list);
+            without_unique_items(&mut hierarchical);
+            assert_eq!(
+                output_report(&fused, draft, &instance),
+                (list, hierarchical),
+                "output for {instance}"
+            );
+        }
     }
 
     // Fused `type:array` + optional min/maxItems + schema `items` (ArrayShapeValidator)

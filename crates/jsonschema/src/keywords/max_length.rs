@@ -6,7 +6,7 @@ use crate::{
         CompilationResult,
     },
     paths::{LazyLocation, Location, RefTracker},
-    validator::{Validate, ValidationContext},
+    validator::{evaluate_assertion, EvaluationResult, Validate, ValidationContext},
     Json, Node,
 };
 use serde_json::{Map, Value};
@@ -59,6 +59,16 @@ impl<F: Json> Validate<F> for MaxLengthValidator {
             }
         }
         Ok(())
+    }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        evaluate_assertion::<F, _>(self, instance, location, tracker, ctx)
     }
 }
 

@@ -7,7 +7,7 @@ use crate::{
         CompilationResult,
     },
     paths::{LazyLocation, Location, RefTracker},
-    validator::{EvaluationResult, Validate, ValidationContext},
+    validator::{evaluate_assertion, EvaluationResult, Validate, ValidationContext},
     Json, Node,
 };
 use referencing::Uri;
@@ -48,6 +48,16 @@ impl<F: Json> Validate<F> for MinLengthValidator {
             }
         }
         Ok(())
+    }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        evaluate_assertion::<F, _>(self, instance, location, tracker, ctx)
     }
 }
 

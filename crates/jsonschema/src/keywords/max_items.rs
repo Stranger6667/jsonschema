@@ -6,7 +6,7 @@ use crate::{
         CompilationResult,
     },
     paths::{LazyLocation, Location, RefTracker},
-    validator::{Validate, ValidationContext},
+    validator::{evaluate_assertion, EvaluationResult, Validate, ValidationContext},
     Array, Json, Node,
 };
 use serde_json::{Map, Value};
@@ -60,18 +60,24 @@ impl<F: Json> Validate<F> for MaxItemsValidator {
         }
         Ok(())
     }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        evaluate_assertion::<F, _>(self, instance, location, tracker, ctx)
+    }
 }
 
 #[inline]
 pub(crate) fn compile<'a, F: Json>(
     ctx: &compiler::Context<F>,
-    parent: &'a Map<String, Value>,
+    _parent: &'a Map<String, Value>,
     schema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
-    // Absorbed by the fused array-shape validator emitted from `items`.
-    if crate::keywords::items::array_shape_fusion(ctx, parent) {
-        return None;
-    }
     let location = ctx.location().join("maxItems");
     Some(MaxItemsValidator::compile(ctx, schema, location))
 }
