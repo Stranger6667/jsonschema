@@ -945,7 +945,9 @@ pub(crate) fn array_shape_fusion<F: Json>(
     ctx: &compiler::Context<F>,
     parent: &Map<String, Value>,
 ) -> bool {
-    if !ctx.has_vocabulary(&Vocabulary::Validation) {
+    // `items` compiles only under the applicator vocabulary, `type` and the bounds under validation.
+    if !ctx.has_vocabulary(&Vocabulary::Validation) || !ctx.has_vocabulary(&Vocabulary::Applicator)
+    {
         return false;
     }
     match parent.get("type") {
@@ -1388,6 +1390,44 @@ mod tests {
             .build(&schema)
             .unwrap();
         assert!(validator.is_valid(&json!([1, "x"])));
+    }
+
+    #[test]
+    fn array_shape_respects_disabled_applicator_vocabulary() {
+        let meta = json!({
+            "$id": "json-schema:///meta/no-applicator",
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": true
+            }
+        });
+        let registry = crate::Registry::new()
+            .add("json-schema:///meta/no-applicator", &meta)
+            .unwrap()
+            .prepare()
+            .unwrap();
+        let schema = json!({
+            "$schema": "json-schema:///meta/no-applicator",
+            "type": "array",
+            "minItems": 2,
+            "items": {"type": "integer"}
+        });
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&schema)
+            .unwrap();
+        // `items` is inert, while `type` and `minItems` still apply.
+        let verdicts: Vec<_> = [json!("x"), json!([1]), json!(["a", "b"])]
+            .iter()
+            .map(|instance| {
+                (
+                    validator.is_valid(instance),
+                    validator.evaluate(instance).flag().valid,
+                )
+            })
+            .collect();
+        assert_eq!(verdicts, [(false, false), (false, false), (true, true)]);
     }
 
     fn parse_json(s: &str) -> Value {
