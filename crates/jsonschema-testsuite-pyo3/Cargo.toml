@@ -17,5 +17,10 @@ serde_json.workspace = true
 pyo3 = { version = "0.29", features = ["extension-module"] }
 testsuite = { package = "jsonschema-testsuite", path = "../jsonschema-testsuite" }
 
+[features]
+# One wheel for every CPython version; off by default so local and coverage builds keep the
+# direct reads the full API allows.
+abi3 = ["pyo3/abi3-py310"]
+
 [lints]
 workspace = true
