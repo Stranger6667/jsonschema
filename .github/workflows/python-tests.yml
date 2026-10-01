@@ -1,0 +1,81 @@
+name: Python tests
+
+# Called once per OS, so each OS's tests wait only for that OS's wheels.
+on:
+  workflow_call:
+    inputs:
+      os:
+        required: true
+        type: string
+      python-versions:
+        description: JSON array of CPython versions to test.
+        required: true
+        type: string
+
+# Fat LTO with a single codegen unit is for published wheels; tests do not need it.
+env:
+  CARGO_PROFILE_RELEASE_LTO: "false"
+  CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+
+jobs:
+  # Both extensions are abi3, so one build serves every CPython version under test.
+  build:
+    name: Build Python wheels on ${{ inputs.os }}
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: dtolnay/rust-toolchain@stable
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        with:
+          python-version: '3.13'
+
+      - run: uvx --from "maturin>=1.0,<2.0" maturin build --release -m crates/jsonschema-py/Cargo.toml --out dist
+
+      - run: uvx --from "maturin>=1.0,<2.0" maturin build -m crates/jsonschema-testsuite-pyo3/Cargo.toml --features abi3 --out dist
+
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: python-wheels-${{ inputs.os }}
+          path: dist
+          retention-days: 1
+
+  test:
+    needs: build
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ${{ fromJSON(inputs.python-versions) }}
+
+    name: Test Python ${{ matrix.python-version }} on ${{ inputs.os }}
+    runs-on: ${{ inputs.os }}
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+
+      - uses: astral-sh/setup-uv@c18668ad3cf93ea998bef934396af7bb5c839dc7 # v10.2.0
+
+      - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97 # v7.0.0
+        id: python
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: python-wheels-${{ inputs.os }}
+          path: crates/jsonschema-py/dist
+
+      - shell: bash
+        run: |
+          uv venv --python '${{ steps.python.outputs.python-path }}'
+          uv pip install "$(ls dist/jsonschema_rs-*.whl)[tests]" dist/jsonschema_testsuite_pyo3-*.whl
+          uv run --no-project pytest tests-py
+        working-directory: crates/jsonschema-py
