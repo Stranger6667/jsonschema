@@ -1,10 +1,9 @@
-use crate::LazyInstance;
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use crate::{
     compiler,
+    keywords::pattern_properties::invalid_regex,
     node::SchemaNode,
-    paths::{LazyEvaluationPath, Location},
     regex::{analyze_pattern, contains_ecma_whitespace, LiteralMatchError, PatternOptimization},
     validator::Validate as _,
     Json, Object, SerdeJson, ValidationContext,
@@ -243,15 +242,9 @@ pub(crate) fn compile_fancy_regex_patterns<'a, F: Json>(
             }
             Some(PatternOptimization::NoWhitespace) => CompiledPattern::NoWhitespace,
             None => {
-                let regex = ctx.get_or_compile_regex(pattern).map_err(|()| {
-                    ValidationError::format(
-                        kctx.location().clone(),
-                        LazyEvaluationPath::SameAsSchemaPath,
-                        Location::new(),
-                        LazyInstance::Ready(Cow::Borrowed(subschema)),
-                        "regex",
-                    )
-                })?;
+                let regex = ctx
+                    .get_or_compile_regex(pattern)
+                    .map_err(|()| invalid_regex(&pctx, pattern))?;
                 CompiledPattern::Regex((*regex).clone())
             }
         };
@@ -280,15 +273,9 @@ pub(crate) fn compile_regex_patterns<'a, F: Json>(
             }
             Some(PatternOptimization::NoWhitespace) => CompiledPattern::NoWhitespace,
             None => {
-                let regex = ctx.get_or_compile_standard_regex(pattern).map_err(|()| {
-                    ValidationError::format(
-                        kctx.location().clone(),
-                        LazyEvaluationPath::SameAsSchemaPath,
-                        Location::new(),
-                        LazyInstance::Ready(Cow::Borrowed(subschema)),
-                        "regex",
-                    )
-                })?;
+                let regex = ctx
+                    .get_or_compile_standard_regex(pattern)
+                    .map_err(|()| invalid_regex(&pctx, pattern))?;
                 CompiledPattern::Regex((*regex).clone())
             }
         };

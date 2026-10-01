@@ -2313,31 +2313,6 @@ mod tests {
         tests_util::assert_locations(&schema, instance, locations);
     }
 
-    // Invalid regex pattern in `patternProperties` with `additionalProperties: false`
-    #[test_case(&json!({"additionalProperties": false, "patternProperties": {"[invalid": {"type": "string"}}}))]
-    // Invalid regex pattern in `patternProperties` with `additionalProperties` as an object
-    #[test_case(&json!({"additionalProperties": {"type": "integer"}, "patternProperties": {"[invalid": {"type": "string"}}}))]
-    // Invalid regex pattern in `patternProperties` with `properties` and `additionalProperties: false`
-    #[test_case(&json!({"properties": {"foo": {"type": "string"}}, "additionalProperties": false, "patternProperties": {"[invalid": {"type": "string"}}}))]
-    fn invalid_pattern_properties_fancy_regex(schema: &Value) {
-        // Default engine is fancy_regex
-        let error = crate::validator_for(schema).expect_err("Should fail to compile");
-        assert!(error.to_string().contains("regex"));
-    }
-
-    #[test_case(&json!({"additionalProperties": false, "patternProperties": {"[invalid": {"type": "string"}}}))]
-    #[test_case(&json!({"additionalProperties": {"type": "integer"}, "patternProperties": {"[invalid": {"type": "string"}}}))]
-    #[test_case(&json!({"properties": {"foo": {"type": "string"}}, "additionalProperties": false, "patternProperties": {"[invalid": {"type": "string"}}}))]
-    fn invalid_pattern_properties_standard_regex(schema: &Value) {
-        use crate::PatternOptions;
-
-        let error = crate::options()
-            .with_pattern_options(PatternOptions::regex())
-            .build(schema)
-            .expect_err("Should fail to compile");
-        assert!(error.to_string().contains("regex"));
-    }
-
     // Test prefix optimization with additionalProperties: false
     #[test_case("^x-", "x-custom", true)]
     #[test_case("^x-", "y-other", false)]

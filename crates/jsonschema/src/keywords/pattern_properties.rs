@@ -238,9 +238,9 @@ pub(crate) fn compile<'a, F: Json>(
     // Fall back to regex compilation
     let result = match ctx.config().pattern_options() {
         PatternEngineOptions::FancyRegex { .. } => {
-            compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
+            compile_pattern_entries(&ctx, map, |pctx, pattern| {
                 pctx.get_or_compile_regex(pattern)
-                    .map_err(|()| invalid_regex(pctx, subschema))
+                    .map_err(|()| invalid_regex(pctx, pattern))
             })
             .map(|patterns| {
                 build_validator_from_entries(patterns, |regex, node| {
@@ -250,9 +250,9 @@ pub(crate) fn compile<'a, F: Json>(
             })
         }
         PatternEngineOptions::Regex { .. } => {
-            compile_pattern_entries(&ctx, map, |pctx, pattern, subschema| {
+            compile_pattern_entries(&ctx, map, |pctx, pattern| {
                 pctx.get_or_compile_standard_regex(pattern)
-                    .map_err(|()| invalid_regex(pctx, subschema))
+                    .map_err(|()| invalid_regex(pctx, pattern))
             })
             .map(|patterns| {
                 build_validator_from_entries(patterns, |regex, node| {
@@ -293,15 +293,16 @@ fn try_compile_as_literals<'a, F: Json>(
     })))
 }
 
-fn invalid_regex<'a, F: Json>(
+/// Build error for a `patternProperties` key that is not a valid regex; `ctx` points at the key.
+pub(crate) fn invalid_regex<F: Json>(
     ctx: &compiler::Context<F>,
-    schema: &'a Value,
-) -> ValidationError<'a> {
+    pattern: &str,
+) -> ValidationError<'static> {
     ValidationError::format(
         ctx.location().clone(),
         LazyEvaluationPath::SameAsSchemaPath,
         Location::new(),
-        LazyInstance::Ready(Cow::Borrowed(schema)),
+        LazyInstance::Ready(Cow::Owned(Value::String(pattern.to_owned()))),
         "regex",
     )
 }
@@ -315,12 +316,12 @@ fn compile_pattern_entries<'a, R, C, F: Json>(
     mut compile_regex: C,
 ) -> Result<CompiledPatterns<R, F>, ValidationError<'a>>
 where
-    C: FnMut(&compiler::Context<F>, &str, &'a Value) -> Result<Arc<R>, ValidationError<'a>>,
+    C: FnMut(&compiler::Context<F>, &str) -> Result<Arc<R>, ValidationError<'a>>,
 {
     let mut patterns = Vec::with_capacity(map.len());
     for (pattern, subschema) in map {
         let pctx = ctx.new_at_location(pattern.as_str());
-        let regex = compile_regex(&pctx, pattern, subschema)?;
+        let regex = compile_regex(&pctx, pattern)?;
         let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
         patterns.push((regex, node));
     }
@@ -346,10 +347,11 @@ where
 #[cfg(test)]
 mod tests {
     use crate::{
+        properties::HASHMAP_THRESHOLD,
         regex::{analyze_pattern, PatternOptimization},
-        tests_util,
+        tests_util, PatternOptions,
     };
-    use serde_json::{json, Value};
+    use serde_json::{json, Map, Value};
     use test_case::test_case;
 
     #[test_case(&json!({"patternProperties": {"^f": {"type": "string"}}}), &json!({"f": 42}), "/patternProperties/^f/type")]
@@ -358,25 +360,76 @@ mod tests {
         tests_util::assert_schema_location(schema, instance, expected);
     }
 
-    // Invalid regex in `patternProperties` without `additionalProperties`
-    #[test_case(&json!({"patternProperties": {"[invalid": {"type": "string"}}}))]
-    // Invalid regex with `additionalProperties: true` (default behavior)
-    #[test_case(&json!({"additionalProperties": true, "patternProperties": {"[invalid": {"type": "string"}}}))]
-    fn invalid_regex_fancy_regex(schema: &Value) {
-        let error = crate::validator_for(schema).expect_err("Should fail to compile");
-        assert!(error.to_string().contains("regex"));
+    #[derive(Clone, Copy)]
+    enum Engine {
+        FancyRegex,
+        Regex,
     }
 
-    #[test_case(&json!({"patternProperties": {"[invalid": {"type": "string"}}}))]
-    #[test_case(&json!({"additionalProperties": true, "patternProperties": {"[invalid": {"type": "string"}}}))]
-    fn invalid_regex_standard_regex(schema: &Value) {
-        use crate::PatternOptions;
+    fn with_many_properties(mut schema: Value) -> Value {
+        let properties = (0..HASHMAP_THRESHOLD)
+            .map(|idx| (format!("p{idx}"), json!({})))
+            .collect::<Map<String, Value>>();
+        schema["properties"] = Value::Object(properties);
+        schema
+    }
 
-        let error = crate::options()
-            .with_pattern_options(PatternOptions::regex())
-            .build(schema)
-            .expect_err("Should fail to compile");
-        assert!(error.to_string().contains("regex"));
+    const LOOKBEHIND: &str = "(?<=a)b";
+    const UNBALANCED: &str = "a(";
+
+    #[test_case(Engine::Regex, &json!({"patternProperties": {LOOKBEHIND: {"type": "string"}}}), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex plain")]
+    #[test_case(Engine::Regex, &json!({"patternProperties": {"^x": {}, LOOKBEHIND: {"type": "string"}}}), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex plain many")]
+    #[test_case(Engine::Regex, &json!({"additionalProperties": true, "patternProperties": {LOOKBEHIND: {"type": "string"}}}), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex additional true")]
+    #[test_case(Engine::Regex, &json!({"additionalProperties": false, "patternProperties": {LOOKBEHIND: {"type": "string"}}}), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex additional false")]
+    #[test_case(Engine::Regex, &json!({"additionalProperties": {"type": "integer"}, "patternProperties": {LOOKBEHIND: {"type": "string"}}}), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex additional schema")]
+    #[test_case(Engine::Regex, &json!({"properties": {"foo": {}}, "additionalProperties": false, "patternProperties": {LOOKBEHIND: {"type": "string"}}}), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex properties additional false")]
+    #[test_case(Engine::Regex, &json!({"properties": {"foo": {}}, "additionalProperties": {"type": "integer"}, "patternProperties": {LOOKBEHIND: {"type": "string"}}}), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex properties additional schema")]
+    #[test_case(Engine::Regex, &with_many_properties(json!({"additionalProperties": false, "patternProperties": {LOOKBEHIND: {"type": "string"}}})), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex many properties additional false")]
+    #[test_case(Engine::Regex, &with_many_properties(json!({"additionalProperties": {"type": "integer"}, "patternProperties": {LOOKBEHIND: {"type": "string"}}})), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex many properties additional schema")]
+    #[test_case(Engine::Regex, &json!({"unevaluatedProperties": false, "patternProperties": {LOOKBEHIND: {"type": "string"}}}), LOOKBEHIND, "/patternProperties/(?<=a)b"; "regex unevaluated")]
+    #[test_case(Engine::Regex, &json!({"patternProperties": {"a/b~(?<=c)": {}}}), "a/b~(?<=c)", "/patternProperties/a~1b~0(?<=c)"; "regex escaped key")]
+    #[test_case(Engine::Regex, &json!({"additionalProperties": false, "patternProperties": {"a/b~(?<=c)": {}}}), "a/b~(?<=c)", "/patternProperties/a~1b~0(?<=c)"; "regex escaped key additional false")]
+    #[test_case(Engine::Regex, &json!({"propertyNames": {"pattern": LOOKBEHIND}}), LOOKBEHIND, "/propertyNames/pattern"; "regex property names")]
+    #[test_case(Engine::Regex, &json!({"pattern": LOOKBEHIND}), LOOKBEHIND, "/pattern"; "regex pattern")]
+    #[test_case(Engine::FancyRegex, &json!({"patternProperties": {UNBALANCED: {"type": "string"}}}), UNBALANCED, "/patternProperties/a("; "fancy plain")]
+    #[test_case(Engine::FancyRegex, &json!({"patternProperties": {"^x": {}, UNBALANCED: {"type": "string"}}}), UNBALANCED, "/patternProperties/a("; "fancy plain many")]
+    #[test_case(Engine::FancyRegex, &json!({"additionalProperties": true, "patternProperties": {UNBALANCED: {"type": "string"}}}), UNBALANCED, "/patternProperties/a("; "fancy additional true")]
+    #[test_case(Engine::FancyRegex, &json!({"additionalProperties": false, "patternProperties": {UNBALANCED: {"type": "string"}}}), UNBALANCED, "/patternProperties/a("; "fancy additional false")]
+    #[test_case(Engine::FancyRegex, &json!({"additionalProperties": {"type": "integer"}, "patternProperties": {UNBALANCED: {"type": "string"}}}), UNBALANCED, "/patternProperties/a("; "fancy additional schema")]
+    #[test_case(Engine::FancyRegex, &json!({"properties": {"foo": {}}, "additionalProperties": false, "patternProperties": {UNBALANCED: {"type": "string"}}}), UNBALANCED, "/patternProperties/a("; "fancy properties additional false")]
+    #[test_case(Engine::FancyRegex, &json!({"properties": {"foo": {}}, "additionalProperties": {"type": "integer"}, "patternProperties": {UNBALANCED: {"type": "string"}}}), UNBALANCED, "/patternProperties/a("; "fancy properties additional schema")]
+    #[test_case(Engine::FancyRegex, &with_many_properties(json!({"additionalProperties": false, "patternProperties": {UNBALANCED: {"type": "string"}}})), UNBALANCED, "/patternProperties/a("; "fancy many properties additional false")]
+    #[test_case(Engine::FancyRegex, &with_many_properties(json!({"additionalProperties": {"type": "integer"}, "patternProperties": {UNBALANCED: {"type": "string"}}})), UNBALANCED, "/patternProperties/a("; "fancy many properties additional schema")]
+    #[test_case(Engine::FancyRegex, &json!({"unevaluatedProperties": false, "patternProperties": {UNBALANCED: {"type": "string"}}}), UNBALANCED, "/patternProperties/a("; "fancy unevaluated")]
+    #[test_case(Engine::FancyRegex, &json!({"patternProperties": {"a/b~(": {}}}), "a/b~(", "/patternProperties/a~1b~0("; "fancy escaped key")]
+    #[test_case(Engine::FancyRegex, &json!({"additionalProperties": false, "patternProperties": {"a/b~(": {}}}), "a/b~(", "/patternProperties/a~1b~0("; "fancy escaped key additional false")]
+    #[test_case(Engine::FancyRegex, &json!({"propertyNames": {"pattern": UNBALANCED}}), UNBALANCED, "/propertyNames/pattern"; "fancy property names")]
+    #[test_case(Engine::FancyRegex, &json!({"pattern": UNBALANCED}), UNBALANCED, "/pattern"; "fancy pattern")]
+    fn invalid_regex(engine: Engine, schema: &Value, pattern: &str, schema_path: &str) {
+        let options = crate::options();
+        let error = match engine {
+            Engine::FancyRegex => options
+                .with_pattern_options(PatternOptions::fancy_regex())
+                .build(schema),
+            Engine::Regex => options
+                .with_pattern_options(PatternOptions::regex())
+                .build(schema),
+        }
+        .expect_err("Should fail to compile");
+        assert_eq!(
+            (
+                error.to_string(),
+                error.instance().as_ref(),
+                error.schema_path().as_str(),
+                error.evaluation_path().as_str(),
+            ),
+            (
+                format!("{} is not a \"regex\"", json!(pattern)),
+                &json!(pattern),
+                schema_path,
+                schema_path,
+            )
+        );
     }
 
     #[test]

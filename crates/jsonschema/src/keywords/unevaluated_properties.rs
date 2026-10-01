@@ -6,7 +6,6 @@
 //!
 //! The implementation eagerly compiles a recursive `PropertyValidators` structure during
 //! schema compilation, using `Arc<OnceLock>` for circular reference handling.
-use crate::LazyInstance;
 use ahash::AHashSet;
 use referencing::Vocabulary;
 use serde_json::{Map, Value};
@@ -20,12 +19,12 @@ use crate::{
     compiler,
     evaluation::{ChildList, ErrorDescription},
     node::SchemaNode,
-    paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
+    paths::{LazyLocation, Location, RefTracker},
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson, ValidationError,
 };
 
-use super::CompilationResult;
+use super::{pattern_properties::invalid_regex, CompilationResult};
 
 /// Lazy property validators that are compiled on first access.
 /// Used for $recursiveRef and circular references to handle cycles during compilation.
@@ -539,13 +538,7 @@ fn compile_pattern_properties<'a, F: Json>(
     for (pattern, schema) in patterns {
         let schema_ctx = pat_ctx.new_at_location(pattern.as_str());
         let Ok(()) = result.push(&schema_ctx, pattern) else {
-            return Err(ValidationError::format(
-                schema_ctx.location().clone(),
-                LazyEvaluationPath::SameAsSchemaPath,
-                Location::new(),
-                LazyInstance::Ready(Cow::Borrowed(schema)),
-                "regex",
-            ));
+            return Err(invalid_regex(&schema_ctx, pattern));
         };
         compiler::compile(&schema_ctx, schema_ctx.as_resource_ref(schema))
             .map_err(ValidationError::to_owned)?;
