@@ -1414,6 +1414,10 @@ fn write_unexpected_suffix(f: &mut Formatter<'_>, len: usize) -> fmt::Result {
     })
 }
 
+fn write_item_count(f: &mut Formatter<'_>, count: usize) -> fmt::Result {
+    write!(f, "{count} item{})", if count == 1 { "" } else { "s" })
+}
+
 const MAX_DISPLAYED_ENUM_VARIANTS: usize = 3;
 
 fn write_enum_message(
@@ -1674,7 +1678,14 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 write!(f, r#"{} is not a "{format}""#, self.placeholder)
             }
             ValidationErrorKind::AdditionalItems { limit } => {
-                write!(f, "Additional items are not allowed ({limit} items)")
+                // `limit` is how many items the schema allows; report how many exceed it.
+                let extra = self
+                    .error
+                    .instance()
+                    .as_array()
+                    .map_or(0, |array| array.len().saturating_sub(*limit));
+                f.write_str("Additional items are not allowed (")?;
+                write_item_count(f, extra)
             }
             ValidationErrorKind::AdditionalProperties { unexpected } => {
                 f.write_str("Additional properties are not allowed (")?;
@@ -1807,11 +1818,8 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
                 )
             }
             ValidationErrorKind::UnevaluatedItems { unexpected } => {
-                write!(
-                    f,
-                    "Unevaluated items are not allowed ({} items)",
-                    unexpected.len()
-                )
+                f.write_str("Unevaluated items are not allowed (")?;
+                write_item_count(f, unexpected.len())
             }
             ValidationErrorKind::UnevaluatedProperties { unexpected } => {
                 f.write_str("Unevaluated properties are not allowed (")?;
@@ -2272,6 +2280,62 @@ mod tests {
             Location::new(),
         );
         assert_eq!(error.masked_with(placeholder).to_string(), expected);
+    }
+
+    fn single_error_messages(
+        draft: referencing::Draft,
+        schema: &Value,
+        instance: &Value,
+    ) -> (String, String, String) {
+        let validator = crate::options()
+            .with_draft(draft)
+            .build(schema)
+            .expect("schema compiles");
+        let mut errors = validator.iter_errors(instance);
+        let error = errors.next().expect("validation error");
+        assert!(errors.next().is_none());
+        (
+            error.to_string(),
+            error.masked().to_string(),
+            error.masked_with("***").to_string(),
+        )
+    }
+
+    #[test_case(referencing::Draft::Draft4, &json!([1, 2]), "Additional items are not allowed (2 was unexpected)", "Additional items are not allowed (1 item)"; "draft4 one extra")]
+    #[test_case(referencing::Draft::Draft4, &json!([1, 2, 3]), "Additional items are not allowed (2, 3 were unexpected)", "Additional items are not allowed (2 items)"; "draft4 two extra")]
+    #[test_case(referencing::Draft::Draft6, &json!([1, 2]), "Additional items are not allowed (2 was unexpected)", "Additional items are not allowed (1 item)"; "draft6 one extra")]
+    #[test_case(referencing::Draft::Draft6, &json!([1, 2, 3]), "Additional items are not allowed (2, 3 were unexpected)", "Additional items are not allowed (2 items)"; "draft6 two extra")]
+    #[test_case(referencing::Draft::Draft7, &json!([1, 2]), "Additional items are not allowed (2 was unexpected)", "Additional items are not allowed (1 item)"; "draft7 one extra")]
+    #[test_case(referencing::Draft::Draft7, &json!([1, 2, 3]), "Additional items are not allowed (2, 3 were unexpected)", "Additional items are not allowed (2 items)"; "draft7 two extra")]
+    #[test_case(referencing::Draft::Draft7, &json!([1, "a", null, 4]), "Additional items are not allowed (\"a\", null, 4 were unexpected)", "Additional items are not allowed (3 items)"; "draft7 three extra")]
+    #[test_case(referencing::Draft::Draft201909, &json!([1, 2]), "Additional items are not allowed (2 was unexpected)", "Additional items are not allowed (1 item)"; "draft2019 one extra")]
+    #[test_case(referencing::Draft::Draft201909, &json!([1, 2, 3]), "Additional items are not allowed (2, 3 were unexpected)", "Additional items are not allowed (2 items)"; "draft2019 two extra")]
+    fn masked_additional_items_counts_extra_items(
+        draft: referencing::Draft,
+        instance: &Value,
+        expected: &str,
+        expected_masked: &str,
+    ) {
+        let schema = json!({"items": [{}], "additionalItems": false});
+        let (message, masked, masked_with) = single_error_messages(draft, &schema, instance);
+        assert_eq!(message, expected);
+        assert_eq!(masked, expected_masked);
+        assert_eq!(masked_with, expected_masked);
+    }
+
+    #[test_case(&json!([1, 2]), "Unevaluated items are not allowed ('2' was unexpected)", "Unevaluated items are not allowed (1 item)"; "one extra")]
+    #[test_case(&json!([1, 2, 3]), "Unevaluated items are not allowed ('2', '3' were unexpected)", "Unevaluated items are not allowed (2 items)"; "two extra")]
+    fn masked_unevaluated_items_pluralises_count(
+        instance: &Value,
+        expected: &str,
+        expected_masked: &str,
+    ) {
+        let schema = json!({"prefixItems": [{}], "unevaluatedItems": false});
+        let (message, masked, masked_with) =
+            single_error_messages(referencing::Draft::Draft202012, &schema, instance);
+        assert_eq!(message, expected);
+        assert_eq!(masked, expected_masked);
+        assert_eq!(masked_with, expected_masked);
     }
 
     #[test]
