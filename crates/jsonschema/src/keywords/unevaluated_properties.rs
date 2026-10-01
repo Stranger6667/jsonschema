@@ -8,7 +8,6 @@
 //! schema compilation, using `Arc<OnceLock>` for circular reference handling.
 use crate::LazyInstance;
 use ahash::AHashSet;
-use fancy_regex::Regex;
 use referencing::Vocabulary;
 use serde_json::{Map, Value};
 use std::{
@@ -36,7 +35,7 @@ pub(crate) type PendingPropertyValidators<F = SerdeJson> = Arc<OnceLock<Property
 #[derive(Default)]
 struct StaticEvaluated {
     names: AHashSet<String>,
-    patterns: Vec<Regex>,
+    patterns: Patterns,
     /// `additionalProperties` anywhere evaluates everything.
     saturated: bool,
     /// An `allOf` contributed. The true/false answer matches the walk, the errors may not.
@@ -44,12 +43,49 @@ struct StaticEvaluated {
 }
 
 impl StaticEvaluated {
+    #[inline]
     fn covers(&self, property: &str) -> bool {
-        self.names.contains(property)
-            || self
-                .patterns
-                .iter()
-                .any(|pattern| pattern.is_match(property).unwrap_or(false))
+        self.names.contains(property) || self.patterns.is_match(property)
+    }
+}
+
+/// `patternProperties` regexes built with the configured engine, as `patternProperties` builds them.
+/// One list per engine keeps the engine choice out of the per-pattern loop.
+#[derive(Clone, Default)]
+struct Patterns {
+    fancy: Vec<Arc<fancy_regex::Regex>>,
+    standard: Vec<Arc<regex::Regex>>,
+}
+
+impl Patterns {
+    fn push<F: Json>(&mut self, ctx: &compiler::Context<'_, F>, pattern: &str) -> Result<(), ()> {
+        match ctx.config().pattern_options() {
+            crate::options::PatternEngineOptions::FancyRegex { .. } => {
+                self.fancy.push(ctx.get_or_compile_regex(pattern)?);
+            }
+            crate::options::PatternEngineOptions::Regex { .. } => {
+                self.standard
+                    .push(ctx.get_or_compile_standard_regex(pattern)?);
+            }
+        }
+        Ok(())
+    }
+
+    fn extend(&mut self, other: &Patterns) {
+        self.fancy.extend(other.fancy.iter().cloned());
+        self.standard.extend(other.standard.iter().cloned());
+    }
+
+    fn is_empty(&self) -> bool {
+        self.fancy.is_empty() && self.standard.is_empty()
+    }
+
+    #[inline]
+    fn is_match(&self, property: &str) -> bool {
+        self.fancy
+            .iter()
+            .any(|regex| regex.is_match(property).unwrap_or(false))
+            || self.standard.iter().any(|regex| regex.is_match(property))
     }
 }
 
@@ -60,8 +96,8 @@ pub(crate) struct PropertyValidators<F: Json = SerdeJson> {
     properties: AHashSet<String>,
     /// Validator from "additionalProperties" keyword
     additional: Option<SchemaNode<F>>,
-    /// Pattern-based property validators from "patternProperties" keyword
-    pattern_properties: Vec<(Regex, SchemaNode<F>)>,
+    /// Patterns from "patternProperties" keyword
+    pattern_properties: Patterns,
     /// Validator from "unevaluatedProperties" keyword itself
     unevaluated: Option<SchemaNode<F>>,
     /// Validators from "allOf" keyword - both the schema and its property validators
@@ -164,11 +200,7 @@ impl<F: Json> PropertyValidators<F> {
         visited.push(id);
 
         out.names.extend(self.properties.iter().cloned());
-        out.patterns.extend(
-            self.pattern_properties
-                .iter()
-                .map(|(pattern, _)| pattern.clone()),
-        );
+        out.patterns.extend(&self.pattern_properties);
         out.saturated |= self.additional.is_some();
 
         for (_, branch) in &self.all_of {
@@ -246,11 +278,8 @@ impl<F: Json> PropertyValidators<F> {
                     if properties.contains(property.as_ref()) {
                         continue; // Already marked by "properties"
                     }
-                    for (pattern, _) in &self.pattern_properties {
-                        if pattern.is_match(property.as_ref()).unwrap_or(false) {
-                            properties.insert(property.into());
-                            break;
-                        }
+                    if self.pattern_properties.is_match(property.as_ref()) {
+                        properties.insert(property.into());
                     }
                 }
             }
@@ -418,7 +447,7 @@ fn compile_pending_property_validators<'a, F: Json>(
         pattern_properties: if applicator {
             compile_pattern_properties(ctx, parent)?
         } else {
-            Vec::new()
+            Patterns::default()
         },
         unevaluated: compile_unevaluated(ctx, parent)?,
         all_of: if applicator {
@@ -497,19 +526,17 @@ fn compile_additional<'a, F: Json>(
 fn compile_pattern_properties<'a, F: Json>(
     ctx: &compiler::Context<'_, F>,
     parent: &'a Map<String, Value>,
-) -> Result<Vec<(Regex, SchemaNode<F>)>, ValidationError<'a>> {
+) -> Result<Patterns, ValidationError<'a>> {
     let Some(Value::Object(patterns)) = parent.get("patternProperties") else {
-        return Ok(Vec::new());
+        return Ok(Patterns::default());
     };
 
     let pat_ctx = ctx.new_at_location("patternProperties");
-    let mut result = Vec::with_capacity(patterns.len());
+    let mut result = Patterns::default();
 
     for (pattern, schema) in patterns {
         let schema_ctx = pat_ctx.new_at_location(pattern.as_str());
-        let Ok(regex) =
-            jsonschema_regex::to_rust_regex(pattern).and_then(|p| Regex::new(&p).map_err(|_| ()))
-        else {
+        let Ok(()) = result.push(&schema_ctx, pattern) else {
             return Err(ValidationError::format(
                 schema_ctx.location().clone(),
                 LazyEvaluationPath::SameAsSchemaPath,
@@ -518,9 +545,8 @@ fn compile_pattern_properties<'a, F: Json>(
                 "regex",
             ));
         };
-        let node = compiler::compile(&schema_ctx, schema_ctx.as_resource_ref(schema))
+        compiler::compile(&schema_ctx, schema_ctx.as_resource_ref(schema))
             .map_err(ValidationError::to_owned)?;
-        result.push((regex, node));
     }
 
     Ok(result)
@@ -1354,5 +1380,92 @@ mod tests {
             .extend(applicator.as_object().expect("object applicator").clone());
 
         crate::validator_for(&schema).expect("schema compiles");
+    }
+
+    fn messages(validator: &crate::Validator, instance: &Value) -> Vec<String> {
+        validator
+            .iter_errors(instance)
+            .map(|error| error.to_string())
+            .collect()
+    }
+
+    fn beside_unevaluated(wrapping: &str, pattern_properties: &Value) -> Value {
+        let inner = json!({"patternProperties": pattern_properties});
+        match wrapping {
+            "direct" => {
+                json!({"patternProperties": pattern_properties, "unevaluatedProperties": false})
+            }
+            "allOf" => json!({"allOf": [inner], "unevaluatedProperties": false}),
+            "$ref" => {
+                json!({"$defs": {"t": inner}, "$ref": "#/$defs/t", "unevaluatedProperties": false})
+            }
+            "then" => json!({"if": {}, "then": inner, "unevaluatedProperties": false}),
+            _ => unreachable!("unknown wrapping"),
+        }
+    }
+
+    // Exceeds the engines' default size limit
+    const LARGE_PATTERN: &str = r"^\p{L}{300}$";
+
+    #[test_case(true, "direct")]
+    #[test_case(true, "allOf")]
+    #[test_case(true, "$ref")]
+    #[test_case(true, "then")]
+    #[test_case(false, "direct")]
+    #[test_case(false, "allOf")]
+    #[test_case(false, "$ref")]
+    #[test_case(false, "then")]
+    fn pattern_properties_use_the_configured_size_limit(fancy: bool, wrapping: &str) {
+        let schema = beside_unevaluated(wrapping, &json!({LARGE_PATTERN: {"type": "integer"}}));
+        let options = if fancy {
+            crate::options()
+                .with_pattern_options(crate::PatternOptions::fancy_regex().size_limit(1 << 30))
+        } else {
+            crate::options()
+                .with_pattern_options(crate::PatternOptions::regex().size_limit(1 << 30))
+        };
+        let validator = options.build(&schema).expect("schema compiles");
+
+        let matched = json!({"a".repeat(300): 1});
+        let unmatched = json!({"b": 1});
+        assert_eq!(
+            (
+                validator.is_valid(&matched),
+                messages(&validator, &matched),
+                validator.is_valid(&unmatched),
+                messages(&validator, &unmatched),
+            ),
+            (
+                true,
+                Vec::<String>::new(),
+                false,
+                vec!["Unevaluated properties are not allowed ('b' was unexpected)".to_owned()],
+            )
+        );
+    }
+
+    // `patternProperties` does not evaluate a key whose match exceeds the backtrack limit
+    #[test_case("direct")]
+    #[test_case("allOf")]
+    #[test_case("$ref")]
+    #[test_case("then")]
+    fn pattern_properties_use_the_configured_backtrack_limit(wrapping: &str) {
+        let schema = beside_unevaluated(wrapping, &json!({"(?<=ab)c": {"type": "integer"}}));
+        let validator = crate::options()
+            .with_pattern_options(crate::PatternOptions::fancy_regex().backtrack_limit(1))
+            .build(&schema)
+            .expect("schema compiles");
+
+        let instance = json!({"abc": "x"});
+        assert_eq!(
+            (
+                validator.is_valid(&instance),
+                messages(&validator, &instance)
+            ),
+            (
+                false,
+                vec!["Unevaluated properties are not allowed ('abc' was unexpected)".to_owned()],
+            )
+        );
     }
 }
