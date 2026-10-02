@@ -296,7 +296,7 @@ Main use case: deduplicating equivalent JSON Schemas.
 
 > **Experimental**: the canonicalization API may change in minor releases.
 
-`JSONSchema.canonicalize` reduces a schema to a normal form without changing the values it accepts. Schemas that accept the same values reduce to equal `CanonicalSchema` objects, and contradictions reduce to `false`:
+`JSONSchema.canonicalize` reduces a schema to a normal form that accepts the same values. Schemas that accept the same values reduce to equal `CanonicalSchema` objects, and a schema proven to accept nothing reduces to `false`:
 
 ```ruby
 canonical = JSONSchema.canonicalize(
@@ -315,7 +315,9 @@ JSONSchema.canonicalize({ "type" => "integer", "minimum" => 10, "maximum" => 5 }
 # => :no, which is JSONSchema::Canonical::Satisfiability::NO
 ```
 
-A canonical schema *is* the set of values it accepts, so canonical schemas combine as sets. Every emitted schema carries `$schema`, left out of the comments below:
+A schema the canonical form cannot model exactly comes back unchanged, with `kind == :raw`. Its `view.reason` names what stopped the run, and `view.pointer` the subschema at fault when a single one is.
+
+Canonical schemas combine like sets of values. Every emitted schema carries `$schema`; the comments below leave it out:
 
 ```ruby
 positive = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 0 })
@@ -333,19 +335,19 @@ positive.union(bounded).to_json_schema
 positive.subtract(bounded).to_json_schema
 # => {"type"=>"integer", "minimum"=>101}
 
-# Every value `positive` rejects, across the types it never admitted
+# Every value `positive` rejects: other types, negative integers and non-integer numbers
 positive.negate.to_json_schema
 # => {"anyOf"=>[{"type"=>["null", "boolean", "string", "array", "object"]},
 #               {"type"=>"integer", "maximum"=>-1},
 #               {"type"=>"number", "not"=>{"multipleOf"=>1}}]}
 
-positive.covers(bounded)        # => :no - `bounded` takes negative integers, `positive` does not
+positive.covers(bounded)        # => :no: `bounded` takes negative integers, `positive` does not
 positive.satisfiability         # => :yes
 ```
 
 ### Comparing two versions of a schema
 
-The difference answers what editing a schema did to the values it takes: it accepts exactly what the old schema took and the new one turns away, and is unsatisfiable exactly when nothing was lost.
+`subtract` tells you what an edit did to a schema. `old.subtract(new)` accepts exactly the values `old` accepts and `new` rejects, so it accepts nothing when the edit lost nothing.
 
 ```ruby
 old = JSONSchema.canonicalize({ "type" => "string" })
@@ -361,19 +363,23 @@ new.subtract(old).satisfiability
 # => :no
 ```
 
-Compare a request schema new-against-old and a response schema old-against-new: narrowing a request turns away payloads a caller used to send, widening a response returns values a caller never agreed to read.
+The direction to check depends on who sends the value:
 
-`:no` on the difference proves nothing was lost. `:unknown` proves nothing either way.
+- For a request schema, check `old.subtract(new)`. It accepts the payloads existing callers send that the new schema rejects.
+- For a response schema, check `new.subtract(old)`. It accepts the values the new schema lets a server return that callers never agreed to read.
 
-`:unknown` is undecided, not negative, so the two questions have opposite safe tests: only `satisfiability == :no` proves a schema admits nothing, and only `covers == :yes` proves containment.
+`:no` on the difference proves the edit safe in that direction. `:unknown` means the canonicalizer could not decide, and proves nothing either way. Read it as the answer that keeps you safe:
+
+- `satisfiability`: only `:no` proves a schema accepts nothing. Treat `:unknown` like `:yes`.
+- `a.covers(b)`: only `:yes` proves `a` accepts every value `b` accepts. Treat `:unknown` like `:no`.
 
 `JSONSchema::Canonical::Containment`, `Satisfiability`, `Distinctness` and `Kind` hold these symbols as constants, each with an `ALL` list.
 
-Both operands must share one setup - the same draft, format policy, regular-expression engine and definitions - or `IncompatibleOperands` is raised. `UnsupportedOperand` means an operand is a `Raw` pass-through, and `UnsupportedResult` that the canonical form does not support the result. All three live under `JSONSchema::Canonical`.
+The set operations raise `IncompatibleOperands` when the operands differ in draft, `format` assertion or regular-expression engine, or resolve `#` or one external resource to different schemas. They raise `UnsupportedOperand` when an operand is `:raw`, and `UnsupportedResult` when the canonical form cannot express the result exactly. All three live under `JSONSchema::Canonical`.
 
 ### Finding the dead subschemas of a document
 
-`JSONSchema::Canonical.find_unsatisfiable` walks a whole document and answers which of its subschemas admit no value, and why - the keywords at fault and where they sit:
+`JSONSchema::Canonical.find_unsatisfiable` walks a whole document and reports each subschema that accepts no value, with the keywords at fault and their pointers:
 
 ```ruby
 reasons = JSONSchema::Canonical.find_unsatisfiable(
@@ -396,7 +402,7 @@ reasons.key?("/properties/name")
 # => false
 ```
 
-A reason is a `LiteralReason` (written as `false`), an `EmptyReason` (one part admits nothing by itself) or a `ConflictReason` (each part admits values, together they admit none). A pointer left out is not proven satisfiable: a document canonicalization cannot model reports nothing, as `satisfiability` answers `:unknown`.
+A reason is a `LiteralReason` (written as `false`), an `EmptyReason` (one part admits nothing by itself) or a `ConflictReason` (each part admits values, together they admit none). A missing pointer does not prove that subschema satisfiable. For a document the canonical form cannot model, `find_unsatisfiable` reports nothing, the same way `satisfiability` answers `:unknown`.
 
 ## Schema Bundling and Dereferencing
 

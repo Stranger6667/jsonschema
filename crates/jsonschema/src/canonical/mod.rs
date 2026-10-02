@@ -7,8 +7,10 @@
 //!
 //! </div>
 //!
-//! Canonicalization rewrites schemas to a normal form without changing the accepted value set.
-//! Equivalent supported schemas reduce to the same form and contradictions reduce to `false`.
+//! Canonicalization rewrites a schema to a normal form that accepts the same values. Two schemas
+//! accepting the same values reduce to the same form, and a schema proven to accept nothing
+//! reduces to `false`. A schema the canonical form cannot model comes back unchanged as
+//! [`CanonicalKind::Raw`]; see [Unsupported schemas](#unsupported-schemas).
 //!
 //! # Examples
 //!
@@ -48,17 +50,16 @@
 //!
 //! # How it works
 //!
-//! Canonicalization parses a schema into an internal representation, normalizes that
-//! representation, then emits JSON Schema. Annotations that do not affect validation disappear.
-//! The selected draft, format policy, and regular-expression configuration are part of the result's
-//! semantics.
+//! Canonicalization parses a schema into an internal representation, normalizes it, then emits
+//! JSON Schema. Annotations such as `title` and `description` are dropped. The draft, whether
+//! `format` asserts, and the regular-expression engine all change what a schema accepts, so each
+//! result carries them, and set operations refuse operands that differ in any of them.
 //!
 //! # Comparing two versions of a schema
 //!
-//! A canonical schema *is* the set of values it accepts, so the set operations answer what editing
-//! a schema did to that set. [`subtract`](CanonicalSchema::subtract) is the one to reach for: the
-//! difference accepts exactly the values the old schema took and the new one turns away, and it is
-//! empty exactly when nothing was lost.
+//! [`subtract`](CanonicalSchema::subtract) tells you what an edit did to a schema.
+//! `old.subtract(&new)` accepts exactly the values `old` accepts and `new` rejects, so it accepts
+//! nothing when the edit lost nothing.
 //!
 //! ```
 //! use jsonschema::{canonicalize, canonical::Satisfiability};
@@ -81,20 +82,23 @@
 //! # Ok::<(), Box<dyn std::error::Error>>(())
 //! ```
 //!
-//! Compare a request schema new-against-old and a response schema old-against-new: narrowing a
-//! request turns away payloads a caller used to send, widening a response returns values a caller
-//! never agreed to read.
+//! The direction to check depends on who sends the value:
 //!
-//! [`Satisfiability::No`] on the difference proves nothing was lost. [`Satisfiability::Unknown`]
-//! proves nothing either way. Where the canonical form cannot express the difference exactly, it
-//! declines with [`CanonicalizationError::UnsupportedResult`] rather than guess.
+//! - For a request schema, check `old.subtract(&new)`. It accepts the payloads existing callers
+//!   send that the new schema rejects.
+//! - For a response schema, check `new.subtract(&old)`. It accepts the values the new schema lets
+//!   a server return that callers never agreed to read.
+//!
+//! [`Satisfiability::No`] on the difference proves the edit safe in that direction.
+//! [`Satisfiability::Unknown`] proves nothing either way. When the canonical form cannot express
+//! the difference exactly, `subtract` returns [`CanonicalizationError::UnsupportedResult`].
 //!
 //! ## What the operations do with `$defs`
 //!
-//! A `$defs` key is a name private to the document that declares it, so two versions may give the
-//! same key different bodies - editing a shared component is the commonest change there is. The
-//! operations resolve both operands through one map, and rename the clashing keys of one side
-//! apart to build it. Nothing is refused, and the generated names show up in the result:
+//! A `$defs` key is private to the document that declares it, so two versions of a schema may give
+//! one key different bodies, as they do whenever you edit a shared component. The operations merge
+//! both maps into one and rename the clashing keys of one side, so a changed `$defs` body never
+//! causes an error. The generated names show up in the result:
 //!
 //! ```text
 //! old: {"$defs": {"User": {"type": "object"}}, "$ref": "#/$defs/User"}
@@ -102,16 +106,16 @@
 //!      old.subtract(&new)  =>  {"const": {}}   (the empty object, which `new` no longer takes)
 //! ```
 //!
-//! Two cases still report [`CanonicalizationError::IncompatibleOperands`] rather than answering:
+//! Operands that differ in draft, `format` assertion or regular-expression engine return
+//! [`CanonicalizationError::IncompatibleOperands`], and so do two conflicts between documents:
 //!
 //! * The operands resolve **one external resource** to different schemas
-//!   ([`OperandMismatch::Definitions`]). A resource is named by its URI rather than by a private
-//!   key, so two documents disagreeing about one disagree about the resource itself - which is a
-//!   difference between their registries, not between the schemas being compared.
-//! * Both operands read the **document root** `#`, and it points at different schemas
-//!   ([`OperandMismatch::DocumentRoots`]). `#` means "this document", so it cannot be renamed the
-//!   way a private key can, and two separately canonicalized recursive schemas bind it to two
-//!   different documents:
+//!   ([`OperandMismatch::Definitions`]). A URI names the same resource in every document, so the
+//!   two registries disagree about it. Canonicalize both operands against one registry.
+//! * Both operands read the **document root** `#`, and it names a different schema on each side
+//!   ([`OperandMismatch::DocumentRoots`]). `#` means "this document" and has no key to rename.
+//!   Write the recursion through a `$defs` entry, `{"$defs": {"Node": ...}, "$ref": "#/$defs/Node"}`,
+//!   and the clash becomes a renamed key instead:
 //!
 //! ```text
 //! old: {"type": "object", "properties": {"next": {"$ref": "#"}}}
@@ -119,27 +123,27 @@
 //!      => Err(IncompatibleOperands(DocumentRoots))
 //! ```
 //!
-//! Chaining is unaffected: a result keeps the root its operands had, so `a.union(&b)?.covers(&a)`
-//! works.
+//! A result keeps the root its operands had, so chained calls such as `a.union(&b)?.covers(&a)`
+//! work.
 //!
 //! # Unsupported schemas
 //!
-//! When exact normalization is unavailable, canonicalization succeeds with
-//! [`CanonicalKind::Raw`] and preserves the original document unchanged. [`CanonicalView::Raw`]
-//! carries a [`RawReason`] saying what stopped the run, and a pointer to the subschema it stopped
-//! on where one node is at fault. Unresolved references remain errors. A reference whose target
-//! uses a different draft than the referring document is also not yet modeled and falls back to
-//! `Raw` (future work).
+//! A schema the canonical form cannot model exactly still canonicalizes: the result has kind
+//! [`CanonicalKind::Raw`] and holds the original document unchanged. [`CanonicalView::Raw`]
+//! carries a [`RawReason`] naming what stopped the run and, when a single subschema is at fault,
+//! its pointer. A reference into a document of another draft also yields `Raw`. A reference that
+//! cannot be resolved is an error, [`CanonicalizationError::ReferenceResolution`].
 //!
 //! # Recursive schemas
 //!
-//! A schema demanding an infinite descent, such as `{"type": "object", "required": ["a"],
-//! "properties": {"a": {"$ref": "#"}}}`, canonicalizes to `false`: every cycle passes a keyword
-//! that consumes structure, so no finite value can satisfy it.
+//! `{"type": "object", "required": ["a"], "properties": {"a": {"$ref": "#"}}}` canonicalizes to
+//! `false`. Its cycle passes through `properties`, which steps into a child value, and `required`
+//! makes every step mandatory, so only an infinitely nested value could satisfy it.
 //!
-//! A cycle closed entirely through in-place applicators (`allOf`, `anyOf`, `oneOf`, `not`) consumes
-//! nothing, so no descent is forced. Carrying no assertion anywhere on it, such a cycle leaves
-//! nothing for a value to violate and canonicalizes to `true`; otherwise it is left untouched.
+//! A cycle made only of `$ref` and the applicators that stay on the same value (`allOf`, `anyOf`,
+//! `oneOf`, `not`) never steps into a child. When no keyword on such a cycle asserts anything, as in
+//! `{"$ref": "#"}`, nothing on it can reject a value and it canonicalizes to `true`. A cycle with
+//! an assertion on it keeps its references.
 //!
 //! # Entry points
 //!
@@ -148,18 +152,18 @@
 //! - [`CanonicalSchema`] emits, inspects, and checks the result. Its
 //!   [`intersect`](CanonicalSchema::intersect), [`union`](CanonicalSchema::union),
 //!   [`subtract`](CanonicalSchema::subtract), and [`negate`](CanonicalSchema::negate) combine two
-//!   results as sets of values, while [`covers`](CanonicalSchema::covers) and
-//!   [`satisfiability`](CanonicalSchema::satisfiability) ask about them.
+//!   results as sets of values. `a.covers(&b)` asks whether `a` accepts every value `b` accepts,
+//!   and [`satisfiability`](CanonicalSchema::satisfiability) asks whether a schema accepts any.
 //!
 //! # Reading the two questions
 //!
-//! `Unknown` means undecided, not negative, and the two have opposite safe readings:
+//! `Unknown` means the canonicalizer could not decide. Read it as the answer that keeps you safe:
 //!
 //! - [`satisfiability`](CanonicalSchema::satisfiability) - test for `No`, treat `Unknown` like `Yes`.
 //! - [`covers`](CanonicalSchema::covers) - test for `Yes`, treat `Unknown` like `No`.
 //!
-//! Reading either the other way around is silent: nothing raises, and the caller acts on a
-//! conclusion the canonical form never reached.
+//! Neither method raises on `Unknown`, so a caller that reads it the other way acts on a conclusion
+//! nobody proved.
 
 #![deny(clippy::wildcard_enum_match_arm)]
 
