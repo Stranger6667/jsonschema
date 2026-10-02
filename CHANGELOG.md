@@ -5,6 +5,7 @@
 ### Fixed
 
 - `canonicalize` keeping a reference to a cycle of bare references under `not` or `oneOf` instead of treating it as accepting every value.
+- Building a validator with an explicit draft retrieving the schema's `$schema` URI.
 
 ## [0.58.4] - 2026-10-01
 

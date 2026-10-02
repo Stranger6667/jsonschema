@@ -1094,6 +1094,7 @@ pub(crate) fn build_registry<'a, F: Json>(
     let registry = referencing::Registry::new()
         .retriever(config.retriever.clone())
         .draft(draft)
+        .retrieve_known_draft_meta_schemas(config.draft.is_none())
         .add(base_uri.as_str(), resource)?
         .prepare()?;
     Ok((registry, base_uri))
@@ -1117,6 +1118,7 @@ pub(crate) fn build_validator<F: Json>(
             .add(base_uri.as_str(), resource)?
             .retriever(config.retriever.clone())
             .draft(draft)
+            .retrieve_known_draft_meta_schemas(config.draft.is_none())
             .prepare()?;
         return build_validator_with_registry(config, schema, draft, resource, &registry);
     }
@@ -1135,6 +1137,7 @@ pub(crate) async fn build_registry_async<'a, F: Json>(
     let registry = referencing::Registry::new()
         .async_retriever(config.retriever.clone())
         .draft(draft)
+        .retrieve_known_draft_meta_schemas(config.draft.is_none())
         .add(base_uri.as_str(), resource)?
         .async_prepare()
         .await?;
@@ -1159,6 +1162,7 @@ pub(crate) async fn build_validator_async<F: Json>(
             .add(base_uri.as_str(), resource_ref)?
             .async_retriever(config.retriever.clone())
             .draft(draft)
+            .retrieve_known_draft_meta_schemas(config.draft.is_none())
             .async_prepare()
             .await?;
         return build_validator_with_registry(config, schema, draft, resource_ref, &registry);
@@ -1737,6 +1741,7 @@ pub(crate) fn build_validator_map<F: Json>(
             .add(base_uri.as_str(), resource)?
             .retriever(config.retriever.clone())
             .draft(draft)
+            .retrieve_known_draft_meta_schemas(config.draft.is_none())
             .prepare()?;
         return build_validator_map_with_registry(config, schema, draft, resource, &registry);
     }
@@ -1761,6 +1766,7 @@ pub(crate) async fn build_validator_map_async<F: Json>(
             .add(base_uri.as_str(), resource)?
             .async_retriever(config.retriever.clone())
             .draft(draft)
+            .retrieve_known_draft_meta_schemas(config.draft.is_none())
             .async_prepare()
             .await?;
         return build_validator_map_with_registry(config, schema, draft, resource, &registry);

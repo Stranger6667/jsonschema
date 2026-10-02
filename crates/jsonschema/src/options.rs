@@ -1359,6 +1359,86 @@ mod tests {
         }
     }
 
+    struct PanickingRetriever;
+
+    impl Retrieve for PanickingRetriever {
+        fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            panic!("unexpected retrieval for {}", uri.as_str())
+        }
+    }
+
+    // A fixed draft makes the `$schema` URI irrelevant, so it is never fetched.
+    #[test_case(Draft::Draft4)]
+    #[test_case(Draft::Draft6)]
+    #[test_case(Draft::Draft7)]
+    #[test_case(Draft::Draft201909)]
+    #[test_case(Draft::Draft202012)]
+    fn explicit_draft_does_not_retrieve_unknown_meta_schema(draft: Draft) {
+        let schema = json!({"$schema": "https://example.com/dialect", "type": "string"});
+        let validator = crate::options()
+            .with_draft(draft)
+            .with_retriever(PanickingRetriever)
+            .build(&schema)
+            .expect("Validator should build without retrieving `$schema`");
+        assert!(validator.is_valid(&json!("foo")));
+        assert!(!validator.is_valid(&json!(1)));
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[async_trait::async_trait]
+    impl referencing::AsyncRetrieve for PanickingRetriever {
+        async fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            panic!("unexpected retrieval for {}", uri.as_str())
+        }
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[tokio::test]
+    async fn async_explicit_draft_does_not_retrieve_unknown_meta_schema() {
+        let schema = json!({"$schema": "https://example.com/dialect", "type": "string"});
+        let validator = crate::async_options()
+            .with_draft(Draft::Draft202012)
+            .with_retriever(PanickingRetriever)
+            .build(&schema)
+            .await
+            .expect("Validator should build without retrieving `$schema`");
+        assert!(validator.is_valid(&json!("foo")));
+        assert!(!validator.is_valid(&json!(1)));
+    }
+
+    // A meta-schema already in the registry still supplies the vocabularies.
+    #[test]
+    fn explicit_draft_uses_registered_meta_schema_vocabularies() {
+        let registry = Registry::new()
+            .add(
+                "https://example.com/dialect",
+                json!({
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "$vocabulary": {
+                        "https://json-schema.org/draft/2020-12/vocab/core": true,
+                        "https://json-schema.org/draft/2020-12/vocab/applicator": true
+                    }
+                }),
+            )
+            .expect("Invalid URI")
+            .prepare()
+            .expect("Registry should prepare");
+        let schema = json!({"$schema": "https://example.com/dialect", "minimum": 10});
+        let validator = crate::options()
+            .with_draft(Draft::Draft202012)
+            .with_registry(&registry)
+            .with_retriever(PanickingRetriever)
+            .build(&schema)
+            .expect("Validator should build");
+        assert!(validator.is_valid(&json!(1)));
+    }
+
     #[test]
     fn with_registry_uses_validation_options_retriever_for_inline_only_refs() {
         let shared = Registry::new().prepare().expect("Registry should prepare");

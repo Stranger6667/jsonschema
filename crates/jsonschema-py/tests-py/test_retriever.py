@@ -2,7 +2,16 @@ import json
 
 import pytest
 
-from jsonschema_rs import Registry, ValidationError, validator_for
+from jsonschema_rs import (
+    Draft4Validator,
+    Draft6Validator,
+    Draft7Validator,
+    Draft201909Validator,
+    Draft202012Validator,
+    Registry,
+    ValidationError,
+    validator_for,
+)
 
 
 def test_basic_retriever():
@@ -122,3 +131,19 @@ def test_offline_allows_registry_references():
     )
     assert validator.is_valid(3)
     assert not validator.is_valid(0)
+
+
+@pytest.mark.parametrize(
+    "cls", [Draft4Validator, Draft6Validator, Draft7Validator, Draft201909Validator, Draft202012Validator]
+)
+def test_explicit_draft_does_not_retrieve_meta_schema(cls):
+    retrieved = []
+
+    def retrieve(uri: str):
+        retrieved.append(uri)
+        return {}
+
+    validator = cls({"$schema": "https://example.com/dialect", "type": "string"}, retriever=retrieve)
+    assert retrieved == []
+    assert validator.is_valid("foo")
+    assert not validator.is_valid(1)

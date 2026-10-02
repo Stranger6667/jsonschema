@@ -134,15 +134,18 @@ struct CrawlState {
     /// Tracks schema/base/draft traversal contexts we have already processed.
     visited_schemas: AHashSet<VisitedSchemaContext>,
     deferred_refs: Vec<PendingLocalRef>,
+    /// Whether a resource whose draft is known has its `$schema` retrieved.
+    retrieve_known_draft_meta_schemas: bool,
 }
 
 impl CrawlState {
-    fn new() -> Self {
+    fn new(retrieve_known_draft_meta_schemas: bool) -> Self {
         Self {
             external: AHashSet::new(),
             found_metaschema_ref: false,
             visited_schemas: AHashSet::new(),
             deferred_refs: Vec::new(),
+            retrieve_known_draft_meta_schemas,
         }
     }
 }
@@ -155,12 +158,12 @@ struct BuildState<'a> {
 }
 
 impl BuildState<'_> {
-    fn new() -> Self {
+    fn new(retrieve_known_draft_meta_schemas: bool) -> Self {
         Self {
             queue: VecDeque::new(),
             custom_metaschemas: Vec::new(),
             index: Index::default(),
-            crawl: CrawlState::new(),
+            crawl: CrawlState::new(retrieve_known_draft_meta_schemas),
         }
     }
 }
@@ -179,8 +182,9 @@ pub(super) fn index_resources<'a>(
     known_resources: &mut KnownResources,
     resolution_cache: &mut UriCache,
     draft_override: Option<Draft>,
+    retrieve_known_draft_meta_schemas: bool,
 ) -> Result<(Vec<String>, Index<'a>), Error> {
-    let mut state = BuildState::new();
+    let mut state = BuildState::new(retrieve_known_draft_meta_schemas);
     enqueue_resources(
         pairs,
         documents,
@@ -207,8 +211,9 @@ pub(super) async fn index_resources_async<'a>(
     known_resources: &mut KnownResources,
     resolution_cache: &mut UriCache,
     draft_override: Option<Draft>,
+    retrieve_known_draft_meta_schemas: bool,
 ) -> Result<(Vec<String>, Index<'a>), Error> {
-    let mut state = BuildState::new();
+    let mut state = BuildState::new(retrieve_known_draft_meta_schemas);
     enqueue_resources(
         pairs,
         documents,
@@ -233,7 +238,7 @@ pub(super) fn build_index_from_stored<'a>(
     documents: &ResourceStore<'a>,
     resolution_cache: &mut UriCache,
 ) -> Result<Index<'a>, Error> {
-    let mut state = BuildState::new();
+    let mut state = BuildState::new(true);
     let mut known_resources = KnownResources::default();
 
     for (doc_uri, document) in documents {
@@ -1019,10 +1024,12 @@ fn record_refs<'doc>(
     meta_schema: Option<&'doc str>,
     crawl: &mut CrawlState,
     resolution_cache: &mut UriCache,
-    _draft: Draft,
+    draft: Draft,
     doc_key: &Arc<Uri<String>>,
     visited: &mut VisitedLocalRefs<'doc>,
 ) -> Result<(), Error> {
+    let meta_schema =
+        meta_schema.filter(|_| draft == Draft::Unknown || crawl.retrieve_known_draft_meta_schemas);
     for (reference, key) in [(dollar_ref, "$ref"), (meta_schema, "$schema")] {
         let Some(reference) = reference else {
             continue;
