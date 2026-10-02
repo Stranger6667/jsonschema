@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Installing the source gem.
+
 ## [0.58.5] - 2026-10-02
 
 ### Fixed

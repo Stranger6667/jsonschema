@@ -709,7 +709,7 @@ dependencies = [
  "jsonschema-macros",
  "jsonschema-regex",
  "jsonschema-value",
- "magnus 0.9.1",
+ "magnus",
  "num-bigint",
  "num-cmp",
  "num-traits",
@@ -759,7 +759,7 @@ name = "jsonschema-rb-ext"
 version = "0.58.5"
 dependencies = [
  "jsonschema",
- "magnus 0.8.2",
+ "magnus",
  "rb-sys",
  "referencing",
  "serde",
@@ -787,7 +787,7 @@ dependencies = [
  "bytecount",
  "fraction",
  "getrandom 0.3.4",
- "magnus 0.9.1",
+ "magnus",
  "num-bigint",
  "num-cmp",
  "num-traits",
@@ -841,37 +841,14 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "magnus"
-version = "0.8.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "3b36a5b126bbe97eb0d02d07acfeb327036c6319fd816139a49824a83b7f9012"
-dependencies = [
- "magnus-macros 0.8.0",
- "rb-sys",
- "rb-sys-env",
- "seq-macro",
-]
-
-[[package]]
-name = "magnus"
 version = "0.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "4c01bef153b8d0f086991f0e166474a1d57b738221f9a9c11405d498ac95a44d"
 dependencies = [
- "magnus-macros 0.9.1",
+ "magnus-macros",
  "rb-sys",
  "rb-sys-env",
  "seq-macro",
-]
-
-[[package]]
-name = "magnus-macros"
-version = "0.8.0"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "47607461fd8e1513cb4f2076c197d8092d921a1ea75bd08af97398f593751892"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn",
 ]
 
 [[package]]

@@ -11,7 +11,7 @@ path = "../../src/lib.rs"
 
 [dependencies]
 jsonschema = { version = "0.58.5", default-features = false, features = ["magnus", "arbitrary-precision", "resolve-http", "resolve-file", "tls-ring", "macros", "idna"] }
-magnus = { version = "0.8", features = ["rb-sys"] }
+magnus = { version = "0.9", features = ["rb-sys"] }
 rb-sys = "0.9"
 referencing = "0.58.5"
 serde = { version = "1", features = ["derive"] }
