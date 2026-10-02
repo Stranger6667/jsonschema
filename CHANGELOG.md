@@ -7,6 +7,7 @@
 - `.` in `pattern` and `patternProperties` matched `\r`, U+2028 and U+2029 (it should reject every line terminator).
 - `evaluate()` reported a missing single `required` name beside `additionalProperties: false` at `/additionalProperties` (it should be `/required`).
 - Numeric keywords misjudging whole floats past 2^53. [#1825](https://github.com/Stranger6667/jsonschema/issues/1825)
+- Building a validator with an explicit draft retrieving the schema's `$schema` URI.
 
 ### Performance
 

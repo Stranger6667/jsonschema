@@ -38,6 +38,7 @@ pub struct RegistryBuilder<'a> {
     #[cfg(feature = "retrieve-async")]
     async_retriever: Option<Arc<dyn crate::AsyncRetrieve>>,
     draft: Option<Draft>,
+    retrieve_known_draft_meta_schemas: bool,
 }
 
 impl fmt::Debug for RegistryBuilder<'_> {
@@ -93,6 +94,7 @@ impl<'a> RegistryBuilder<'a> {
             #[cfg(feature = "retrieve-async")]
             async_retriever: None,
             draft: None,
+            retrieve_known_draft_meta_schemas: true,
         }
     }
 
@@ -104,12 +106,23 @@ impl<'a> RegistryBuilder<'a> {
             #[cfg(feature = "retrieve-async")]
             async_retriever: None,
             draft: None,
+            retrieve_known_draft_meta_schemas: true,
         }
     }
 
     #[must_use]
     pub fn draft(mut self, draft: Draft) -> Self {
         self.draft = Some(draft);
+        self
+    }
+
+    /// Whether to retrieve the `$schema` of a resource whose draft is known. On by default, as
+    /// a custom meta-schema may still declare the vocabularies of such a resource.
+    ///
+    /// A resource of an unknown draft always has its `$schema` retrieved.
+    #[must_use]
+    pub fn retrieve_known_draft_meta_schemas(mut self, retrieve: bool) -> Self {
+        self.retrieve_known_draft_meta_schemas = retrieve;
         self
     }
 
@@ -150,6 +163,7 @@ impl<'a> RegistryBuilder<'a> {
             #[cfg(feature = "retrieve-async")]
             async_retriever: self.async_retriever,
             draft: self.draft,
+            retrieve_known_draft_meta_schemas: self.retrieve_known_draft_meta_schemas,
         })
     }
 
@@ -172,6 +186,7 @@ impl<'a> RegistryBuilder<'a> {
             #[cfg(feature = "retrieve-async")]
             async_retriever: self.async_retriever,
             draft: self.draft,
+            retrieve_known_draft_meta_schemas: self.retrieve_known_draft_meta_schemas,
         };
         for (uri, resource) in pairs {
             builder = builder.add(uri, resource)?;
@@ -200,6 +215,7 @@ impl<'a> RegistryBuilder<'a> {
             &mut known_resources,
             &mut resolution_cache,
             self.draft,
+            self.retrieve_known_draft_meta_schemas,
         )?;
         build::validate_custom_metaschemas(&custom_metaschemas, &known_resources)?;
         Ok(Registry {
@@ -233,6 +249,7 @@ impl<'a> RegistryBuilder<'a> {
             &mut known_resources,
             &mut resolution_cache,
             self.draft,
+            self.retrieve_known_draft_meta_schemas,
         )
         .await?;
         build::validate_custom_metaschemas(&custom_metaschemas, &known_resources)?;
