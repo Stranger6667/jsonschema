@@ -2227,6 +2227,50 @@
     ]
   },
   {
+    "description": "not over a self-referencing definition admits nothing",
+    "schema": {"$defs": {"A": {"$ref": "#/$defs/A"}}, "not": {"$ref": "#/$defs/A"}},
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": null, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "not over two definitions pointing at each other admits nothing",
+    "schema": {"$defs": {"A": {"$ref": "#/$defs/B"}, "B": {"$ref": "#/$defs/A"}}, "not": {"$ref": "#/$defs/A"}},
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": "a", "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "not over a self-referencing definition beside other keywords admits nothing",
+    "schema": {"$defs": {"A": {"$ref": "#/$defs/A"}}, "type": "object", "not": {"$ref": "#/$defs/A"}},
+    "satisfiable": false,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": {}, "valid": false},
+      {"data": {"a": 1}, "valid": false}
+    ]
+  },
+  {
+    "description": "draft4: not over a self-referencing definition admits nothing",
+    "draft": "draft4",
+    "schema": {"definitions": {"A": {"$ref": "#/definitions/A"}}, "type": "object", "not": {"$ref": "#/definitions/A"}},
+    "satisfiable": false,
+    "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "not": {}},
+    "tests": [
+      {"data": 1, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
     "description": "a dynamic reference closing on its own anchor admits every value",
     "schema": {"$id": "https://example.com/dynamic-cycle", "$dynamicAnchor": "m", "$dynamicRef": "#m"},
     "satisfiable": true,

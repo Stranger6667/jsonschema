@@ -424,11 +424,12 @@ pub(crate) fn fold_definitions<'a>(
         // Proving a target empty can leave a cycle with nothing on it, and folding one away can
         // leave a target provably empty, so neither ordering settles - only running both to a
         // fixed point does.
-        // An inversion cannot appear over a round that already resolved a target as `true`: that
-        // only ever replaces a reference with `true`, and neither `allOf` nor `anyOf` - the only
-        // operators a qualifying body is built from - can turn one into an inversion.
+        // An inversion cannot appear on a cycle over a round that already resolved a target as
+        // `true`: that only ever replaces a reference with `true`, which neither closes a cycle nor,
+        // under `allOf` or `anyOf` - the only operators a qualifying body is built from - puts an
+        // inversion anywhere.
         debug_assert!(
-            !inverts_an_operand(&parsed) || assumptions.admits_all.is_empty(),
+            !inverts_on_a_cycle(&parsed, &edges) || assumptions.admits_all.is_empty(),
             "resolving a target as `true` never puts an inversion over a later round"
         );
         for uri in unconstrained_members(&parsed, &edges) {
@@ -454,11 +455,13 @@ pub(crate) fn fold_definitions<'a>(
 /// inside the set forever without meeting one.
 fn unconstrained_members(parsed: &ParseOutput, edges: &ReferenceEdges) -> AHashSet<Arc<str>> {
     // `reference_to_definition` is the only producer of `Reference`, so without one no body
-    // qualifies. `not` and `oneOf` invert their operand, so a reference resolved to `true` under
-    // one can reject a value the validator admits - and a member is named from anywhere in the
-    // document, not only from the bodies this walk keeps. Both gates read the current IR, so a
-    // later round still folds what an earlier one declined.
-    if !parsed.has_references || inverts_an_operand(parsed) {
+    // qualifies. A member accepts every value wherever it is named, `not` and `oneOf` included. A
+    // cycle through `not` or `oneOf` is another matter: it has no fixed point, so what it accepts
+    // is the validator's answer, and resolving a member it reads changes which answer that is.
+    // Both gates read the current IR, so a later round still folds what an earlier one declined.
+    //
+    // e.g.  {"$defs": {"a": {"$ref": "#/$defs/a"}}, "not": {"$ref": "#/$defs/a"}}  =>  false
+    if !parsed.has_references || inverts_on_a_cycle(parsed, edges) {
         return AHashSet::default();
     }
     let mut members: AHashSet<Arc<str>> = edges.keys().cloned().collect();
@@ -491,9 +494,13 @@ fn unconstrained_members(parsed: &ParseOutput, edges: &ReferenceEdges) -> AHashS
     members
 }
 
-/// Whether anything anywhere in the document inverts its operand.
-fn inverts_an_operand(parsed: &ParseOutput) -> bool {
-    inverts(&parsed.root) || parsed.definitions.values().any(inverts)
+/// Whether a body on a reference cycle inverts its operand.
+fn inverts_on_a_cycle(parsed: &ParseOutput, edges: &ReferenceEdges) -> bool {
+    strongly_connected(edges)
+        .iter()
+        .filter(|component| is_cyclic(component, edges))
+        .flatten()
+        .any(|key| body_of(parsed, key).is_some_and(inverts))
 }
 
 fn inverts(schema: &Schema) -> bool {

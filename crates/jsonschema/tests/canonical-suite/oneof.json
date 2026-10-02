@@ -1321,18 +1321,20 @@
     ]
   },
   {
-    "description": "a pointer chain closing on itself keeps the choice",
+    "description": "a pointer chain closing on itself admits every value inside a choice",
     "schema": {
       "oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}],
       "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}}
     },
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
-      "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}},
-      "oneOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]
+      "anyOf": [{"type": ["null", "boolean", "string", "array", "object"]}, {"type": "number", "not": {"multipleOf": 1}}]
     },
     "tests": [
-      3
+      {"data": 3, "valid": false},
+      {"data": 1.5, "valid": true},
+      {"data": "a", "valid": true},
+      {"data": {}, "valid": true}
     ]
   },
   {
