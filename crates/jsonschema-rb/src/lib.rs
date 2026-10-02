@@ -25,9 +25,7 @@ use jsonschema::{
 };
 use magnus::{
     error::ErrorType,
-    function,
-    gc::{register_address, register_mark_object, unregister_address},
-    method,
+    function, method,
     prelude::*,
     rb_sys::AsRawValue,
     scan_args::scan_args,
@@ -133,7 +131,7 @@ fn build_validator(
 ///
 /// Persistent `Validator` instances protect their callbacks via the GC mark phase
 /// (see `Validator::mark_callback_roots`). One-off calls have no such wrapper, so
-/// this guard calls `register_address` on construction and `unregister_address` on
+/// this guard calls `gc_register_address` on construction and `gc_unregister_address` on
 /// drop to keep callbacks alive while validation runs.
 struct CallbackRootGuard {
     roots: Vec<Value>,
@@ -154,7 +152,7 @@ impl CallbackRootGuard {
         // We do not mutate `roots` after this point, so references used for GC address
         // registration remain valid for the lifetime of the guard.
         for root in &roots {
-            register_address(root);
+            ruby.gc_register_address(root);
         }
 
         Self { roots }
@@ -163,8 +161,9 @@ impl CallbackRootGuard {
 
 impl Drop for CallbackRootGuard {
     fn drop(&mut self) {
+        let ruby = Ruby::get().expect("Ruby VM should be initialized");
         for root in &self.roots {
-            unregister_address(root);
+            ruby.gc_unregister_address(root);
         }
     }
 }
@@ -250,7 +249,7 @@ static VALIDATION_ERROR_CLASS: Lazy<ExceptionClass> = Lazy::new(|ruby| {
         .expect("JSONSchema::ValidationError must be defined before native extension is used");
     let exc_cls = ExceptionClass::from_value(cls.as_value())
         .expect("JSONSchema::ValidationError must be an exception class");
-    register_mark_object(exc_cls);
+    ruby.gc_register_mark_object(exc_cls);
     exc_cls
 });
 
@@ -264,7 +263,7 @@ static REFERENCING_ERROR_CLASS: Lazy<ExceptionClass> = Lazy::new(|ruby| {
         .expect("JSONSchema::ReferencingError must be defined before native extension is used");
     let exc_cls = ExceptionClass::from_value(cls.as_value())
         .expect("JSONSchema::ReferencingError must be an exception class");
-    register_mark_object(exc_cls);
+    ruby.gc_register_mark_object(exc_cls);
     exc_cls
 });
 
@@ -585,9 +584,9 @@ pub struct Validator {
     mask: Option<String>,
     /// Marked during Ruby's GC mark phase to keep runtime callbacks alive.
     callback_roots: CallbackRoots,
-    /// Protects callbacks via `register_address` during schema compilation —
+    /// Protects callbacks via `gc_register_address` during schema compilation —
     /// before this wrapper exists and `mark()` can run. Held so that its `Drop`
-    /// impl calls `unregister_address` to balance the registrations.
+    /// impl calls `gc_unregister_address` to balance the registrations.
     _compilation_roots: CompilationRootsRef,
 }
 

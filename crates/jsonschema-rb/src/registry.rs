@@ -1,9 +1,7 @@
 use std::sync::Arc;
 
 use magnus::{
-    function,
-    gc::{register_address, unregister_address},
-    method,
+    function, method,
     prelude::*,
     scan_args::{get_kwargs, scan_args},
     value::Opaque,
@@ -23,13 +21,13 @@ struct RetrieverBuildRootGuard {
 }
 
 impl RetrieverBuildRootGuard {
-    fn new(root: Option<Value>) -> Self {
+    fn new(ruby: &Ruby, root: Option<Value>) -> Self {
         let mut roots = Vec::new();
         if let Some(value) = root {
             roots.push(value);
         }
         for value in &roots {
-            register_address(value);
+            ruby.gc_register_address(value);
         }
         Self { roots }
     }
@@ -37,8 +35,9 @@ impl RetrieverBuildRootGuard {
 
 impl Drop for RetrieverBuildRootGuard {
     fn drop(&mut self) {
+        let ruby = Ruby::get().expect("Ruby VM should be initialized");
         for value in &self.roots {
-            unregister_address(value);
+            ruby.gc_unregister_address(value);
         }
     }
 }
@@ -148,7 +147,7 @@ impl Registry {
 
         // Keep the retriever proc GC-rooted for the entire build, because `build`
         // may call into retriever callbacks while traversing referenced resources.
-        let _retriever_build_guard = RetrieverBuildRootGuard::new(retriever_build_root);
+        let _retriever_build_guard = RetrieverBuildRootGuard::new(ruby, retriever_build_root);
         for item in resources {
             let pair: RArray = TryConvert::try_convert(item)?;
             if pair.len() != 2 {

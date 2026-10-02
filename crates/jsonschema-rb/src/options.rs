@@ -6,9 +6,7 @@ use std::{
 
 use magnus::{
     block::Proc,
-    function,
-    gc::{register_address, unregister_address},
-    method,
+    function, method,
     prelude::*,
     scan_args::{get_kwargs, scan_args, KwArgs},
     value::Opaque,
@@ -85,10 +83,10 @@ pub struct ParsedOptions<'i> {
 ///   mechanism for preventing collection of objects referenced by native extensions.
 ///   For one-off validation functions (module-level `valid?`, `validate!`, etc.),
 ///   where no persistent `Validator` exists, a [`CallbackRootGuard`](crate::CallbackRootGuard)
-///   temporarily registers the same roots via `register_address` for the duration
+///   temporarily registers the same roots via `gc_register_address` for the duration
 ///   of the call.
 ///
-/// * **`CompilationRoots`** — registered via `register_address` immediately when
+/// * **`CompilationRoots`** — registered via `gc_register_address` immediately when
 ///   added, so callbacks are protected during schema compilation (before the
 ///   `Validator` wrapper and its mark function exist). Unregistered on drop.
 ///
@@ -104,10 +102,10 @@ pub struct CompilationRoots {
 }
 
 impl CompilationRoots {
-    fn add(&self, value: Opaque<Value>) -> Result<(), ()> {
+    fn add(&self, ruby: &Ruby, value: Opaque<Value>) -> Result<(), ()> {
         let mut roots = self.roots.lock().map_err(|_| ())?;
         let pinned = Box::pin(value);
-        register_address(pinned.as_ref().get_ref());
+        ruby.gc_register_address(pinned.as_ref().get_ref());
         roots.push(pinned);
         Ok(())
     }
@@ -119,8 +117,9 @@ impl Drop for CompilationRoots {
             Ok(roots) => roots,
             Err(poisoned) => poisoned.into_inner(),
         };
+        let ruby = Ruby::get().expect("Ruby VM should be initialized");
         for root in roots.drain(..) {
-            unregister_address(root.as_ref().get_ref());
+            ruby.gc_unregister_address(root.as_ref().get_ref());
         }
     }
 }
@@ -553,12 +552,14 @@ pub fn make_options_from_kwargs(
 
     if let Some(val) = retriever_val {
         if let Some(ret) = make_retriever(ruby, val)? {
-            compilation_roots.add(Opaque::from(val)).map_err(|()| {
-                Error::new(
-                    ruby.exception_runtime_error(),
-                    "Compilation callback root storage is poisoned",
-                )
-            })?;
+            compilation_roots
+                .add(ruby, Opaque::from(val))
+                .map_err(|()| {
+                    Error::new(
+                        ruby.exception_runtime_error(),
+                        "Compilation callback root storage is poisoned",
+                    )
+                })?;
             {
                 let mut roots = callback_roots.lock().map_err(|_| {
                     Error::new(
@@ -586,7 +587,7 @@ pub fn make_options_from_kwargs(
                 if let Some(registry_retriever_value) = reg.retriever_value(ruby) {
                     if let Some(ret) = make_retriever(ruby, registry_retriever_value)? {
                         compilation_roots
-                            .add(Opaque::from(registry_retriever_value))
+                            .add(ruby, Opaque::from(registry_retriever_value))
                             .map_err(|()| {
                                 Error::new(
                                     ruby.exception_runtime_error(),
@@ -633,7 +634,7 @@ pub fn make_options_from_kwargs(
             })?;
 
             compilation_roots
-                .add(Opaque::from(callback))
+                .add(ruby, Opaque::from(callback))
                 .map_err(|()| {
                     Error::new(
                         ruby.exception_runtime_error(),
@@ -692,7 +693,7 @@ pub fn make_options_from_kwargs(
                 class: Opaque::from(callback),
             });
             compilation_roots
-                .add(Opaque::from(callback))
+                .add(ruby, Opaque::from(callback))
                 .map_err(|()| {
                     Error::new(
                         ruby.exception_runtime_error(),
@@ -755,7 +756,7 @@ pub fn make_options_from_kwargs(
                         Ok(inst) => {
                             let opaque_inst = Opaque::from(inst);
                             compilation_roots_for_keyword
-                                .add(opaque_inst)
+                                .add(&inner_ruby, opaque_inst)
                                 .map_err(|()| {
                                     jsonschema::ValidationError::custom(
                                         "Compilation callback root storage is poisoned",
