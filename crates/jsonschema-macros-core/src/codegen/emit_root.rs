@@ -74,7 +74,10 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                         .map(|limit| quote! { builder.delegate_dfa_size_limit(#limit); });
                     quote! {
                         #[inline]
-                        fn #helper_ident(subject: &str) -> bool {
+                        fn #helper_ident(
+                            subject: &str,
+                            site: impl FnOnce() -> __unfinished::Site,
+                        ) -> bool {
                             static REGEX: __Lazy<Option<__fancy::Regex>> =
                                 __Lazy::new(|| {
                                     let mut builder = __fancy::RegexBuilder::new(#pattern);
@@ -83,9 +86,9 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                                     #set_dfa_size_limit
                                     builder.build().ok()
                                 });
-                            REGEX
-                                .as_ref()
-                                .is_some_and(|re| re.is_match(subject).unwrap_or(false))
+                            REGEX.as_ref().is_some_and(|re| {
+                                __unfinished::fancy_is_match(re, subject, site)
+                            })
                         }
                     }
                 }
@@ -582,6 +585,67 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
         }
     });
 
+    // Entry points resolve regex matches the engine cannot finish; recursive calls must not, so
+    // they keep calling `is_valid`, `validate` and `collect_errors` directly.
+    let err_instance = E::err_instance(format_ident!("instance"));
+    // Only `fancy-regex` can leave a match unfinished.
+    let regex_used = !ctx.regex_helpers.is_empty()
+        && matches!(
+            ctx.config.pattern_options,
+            PatternEngineConfig::FancyRegex { .. }
+        );
+    let run_is_valid_body = if regex_used {
+        quote! { __unfinished::is_valid(|| is_valid(instance)) }
+    } else {
+        quote! { is_valid(instance) }
+    };
+    let run_validate_fn = emit_validate.then(|| {
+        let body = if regex_used {
+            quote! {
+                __unfinished::validate(
+                    || ::core::convert::Into::into(#err_instance),
+                    || validate(instance, &__paths::LazyLocation::new()),
+                    || {
+                        let mut errors = Vec::new();
+                        collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
+                        errors
+                    },
+                )
+            }
+        } else {
+            quote! { validate(instance, &__paths::LazyLocation::new()) }
+        };
+        quote! {
+            pub(super) fn run_validate<'__i>(instance: #borrowed_node) -> Option<__VE<'__i>> {
+                #function_prelude
+                #body
+            }
+        }
+    });
+    let run_collect_fn = emit_collect.then(|| {
+        let collect = quote! {
+            let mut errors = Vec::new();
+            collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
+            errors
+        };
+        let body = if regex_used {
+            quote! {
+                __unfinished::collect_errors(
+                    || ::core::convert::Into::into(#err_instance),
+                    || { #collect },
+                )
+            }
+        } else {
+            collect
+        };
+        quote! {
+            pub(super) fn run_collect_errors<'__i>(instance: #borrowed_node) -> Vec<__VE<'__i>> {
+                #function_prelude
+                #body
+            }
+        }
+    });
+
     quote! {
         #[doc(hidden)]
         #[allow(non_snake_case, dead_code, unused_imports, unused_variables, unreachable_code, clippy::all)]
@@ -599,6 +663,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             use jsonschema::__private::serde_json as __sj;
             use jsonschema::__private::types as __types;
             use jsonschema::__private::unique_items as __uniq;
+            use jsonschema::__private::unfinished_matches as __unfinished;
             use jsonschema::paths as __paths;
             use jsonschema::JsonType as __JT;
             use jsonschema::JsonTypeSet as __JTS;
@@ -623,6 +688,13 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
 
             #validate_fns
             #collect_fns
+
+            pub(super) fn run_is_valid(instance: #node) -> bool {
+                #function_prelude
+                #run_is_valid_body
+            }
+            #run_validate_fn
+            #run_collect_fn
             #entry_bodies
         }
 

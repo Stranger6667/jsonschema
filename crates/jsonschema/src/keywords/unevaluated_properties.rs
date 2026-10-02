@@ -20,6 +20,7 @@ use crate::{
     evaluation::{ChildList, ErrorDescription},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    unfinished_matches::MatchSite,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson, ValidationError,
 };
@@ -43,8 +44,13 @@ struct StaticEvaluated {
 
 impl StaticEvaluated {
     #[inline]
-    fn covers(&self, property: &str) -> bool {
-        self.names.contains(property) || self.patterns.is_match(property)
+    fn covers(
+        &self,
+        property: &str,
+        ctx: &mut ValidationContext,
+        site: impl Fn(&Location) -> MatchSite,
+    ) -> bool {
+        self.names.contains(property) || self.patterns.is_match(property, ctx, site)
     }
 }
 
@@ -52,19 +58,39 @@ impl StaticEvaluated {
 /// One list per engine keeps the engine choice out of the per-pattern loop.
 #[derive(Clone, Default)]
 struct Patterns {
-    fancy: Vec<Arc<fancy_regex::Regex>>,
-    standard: Vec<Arc<regex::Regex>>,
+    fancy: Vec<Pattern<fancy_regex::Regex>>,
+    standard: Vec<Pattern<regex::Regex>>,
+}
+
+struct Pattern<R> {
+    regex: Arc<R>,
+    /// The `patternProperties` subschema for this pattern.
+    location: Location,
+}
+
+impl<R> Clone for Pattern<R> {
+    fn clone(&self) -> Self {
+        Pattern {
+            regex: Arc::clone(&self.regex),
+            location: self.location.clone(),
+        }
+    }
 }
 
 impl Patterns {
     fn push<F: Json>(&mut self, ctx: &compiler::Context<'_, F>, pattern: &str) -> Result<(), ()> {
         match ctx.config().pattern_options() {
             crate::options::PatternEngineOptions::FancyRegex { .. } => {
-                self.fancy.push(ctx.get_or_compile_regex(pattern)?);
+                self.fancy.push(Pattern {
+                    regex: ctx.get_or_compile_regex(pattern)?,
+                    location: ctx.location().clone(),
+                });
             }
             crate::options::PatternEngineOptions::Regex { .. } => {
-                self.standard
-                    .push(ctx.get_or_compile_standard_regex(pattern)?);
+                self.standard.push(Pattern {
+                    regex: ctx.get_or_compile_standard_regex(pattern)?,
+                    location: ctx.location().clone(),
+                });
             }
         }
         Ok(())
@@ -80,11 +106,19 @@ impl Patterns {
     }
 
     #[inline]
-    fn is_match(&self, property: &str) -> bool {
+    fn is_match(
+        &self,
+        property: &str,
+        ctx: &mut ValidationContext,
+        site: impl Fn(&Location) -> MatchSite,
+    ) -> bool {
         self.fancy
             .iter()
-            .any(|regex| regex.is_match(property).unwrap_or(false))
-            || self.standard.iter().any(|regex| regex.is_match(property))
+            .any(|pattern| ctx.is_match(&*pattern.regex, property, || site(&pattern.location)))
+            || self
+                .standard
+                .iter()
+                .any(|pattern| ctx.is_match(&*pattern.regex, property, || site(&pattern.location)))
     }
 }
 
@@ -278,7 +312,10 @@ impl<F: Json> PropertyValidators<F> {
                     if properties.contains(property.as_ref()) {
                         continue; // Already marked by "properties"
                     }
-                    if self.pattern_properties.is_match(property.as_ref()) {
+                    if self
+                        .pattern_properties
+                        .is_match(property.as_ref(), ctx, MatchSite::schema)
+                    {
                         properties.insert(property.into());
                     }
                 }
@@ -882,7 +919,9 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                 }
                 let mut unevaluated = Vec::new();
                 for (property, value) in object.members() {
-                    if evaluated.covers(property.as_ref()) {
+                    if evaluated.covers(property.as_ref(), ctx, |schema_path| {
+                        MatchSite::located(schema_path, tracker, location)
+                    }) {
                         continue;
                     }
                     match &self.validators.unevaluated {
@@ -949,7 +988,7 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                     return true;
                 }
                 for (property, value) in object.members() {
-                    if evaluated.covers(property.as_ref()) {
+                    if evaluated.covers(property.as_ref(), ctx, MatchSite::schema) {
                         continue;
                     }
                     match &self.validators.unevaluated {
@@ -1528,12 +1567,25 @@ mod tests {
         );
     }
 
-    // `patternProperties` does not evaluate a key whose match exceeds the backtrack limit
-    #[test_case("direct")]
-    #[test_case("allOf")]
-    #[test_case("$ref")]
-    #[test_case("then")]
-    fn pattern_properties_use_the_configured_backtrack_limit(wrapping: &str) {
+    // Whether the key matches decides the error, except under `allOf`, whose failing branch
+    // evaluates nothing either way
+    #[test_case(
+        "direct",
+        "Error executing regex: Max limit for backtracking count exceeded"
+    )]
+    #[test_case(
+        "allOf",
+        "Unevaluated properties are not allowed ('abc' was unexpected)"
+    )]
+    #[test_case(
+        "$ref",
+        "Error executing regex: Max limit for backtracking count exceeded"
+    )]
+    #[test_case(
+        "then",
+        "Error executing regex: Max limit for backtracking count exceeded"
+    )]
+    fn pattern_properties_use_the_configured_backtrack_limit(wrapping: &str, expected: &str) {
         let schema = beside_unevaluated(wrapping, &json!({"(?<=ab)c": {"type": "integer"}}));
         let validator = crate::options()
             .with_pattern_options(crate::PatternOptions::fancy_regex().backtrack_limit(1))
@@ -1546,10 +1598,7 @@ mod tests {
                 validator.is_valid(&instance),
                 messages(&validator, &instance)
             ),
-            (
-                false,
-                vec!["Unevaluated properties are not allowed ('abc' was unexpected)".to_owned()],
-            )
+            (false, vec![expected.to_owned()])
         );
     }
 

@@ -33,7 +33,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     let uses_recursive_stack = ctx.uses_recursive_ref
         && ctx.draft.supports_recursive_ref_keyword()
         && schema.get("$recursiveAnchor").and_then(Value::as_bool) == Some(true);
-    let evaluated_expr = compile_key_evaluated_expr(ctx, schema, uses_recursive_stack);
+    let evaluated_expr = compile_key_evaluated_expr(ctx, schema, uses_recursive_stack, false);
     if !uses_recursive_stack && evaluated_expr.to_string() == "true" {
         return None;
     }
@@ -98,6 +98,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         );
         Some(CompiledExpr::with_validate_blocks(is_valid, validate))
     } else {
+        let located_expr = compile_key_evaluated_expr(ctx, schema, false, true);
         let is_valid = quote! {
             #entries.all(|(__key, __value)| {
                 let key_str = #key_as_str;
@@ -114,7 +115,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (__key, __value) in #entries {
                     let key_str = #key_as_str;
-                    if !(#evaluated_expr) && !(#unevaluated_check) {
+                    if !(#located_expr) && !(#unevaluated_check) {
                         __unexpected.push(#owned_key);
                     }
                 }

@@ -28,7 +28,18 @@ match instance {
                             true
                         });
                     __object_pass
-                }) && (obj.keys().all(|s| { __jsonschema_regex_0(s) }))
+                })
+                    && (obj
+                        .keys()
+                        .all(|s| {
+                            __jsonschema_regex_0(
+                                s,
+                                || __unfinished::schema_site(
+                                    "/propertyNames/pattern",
+                                    Some("^[ab]"),
+                                ),
+                            )
+                        }))
             }
             _ => false,
         }

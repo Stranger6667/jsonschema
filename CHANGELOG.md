@@ -5,6 +5,7 @@
 ### Fixed
 
 - `canonicalize` keeping a reference to a cycle of bare references under `not` or `oneOf` instead of treating it as accepting every value.
+- Regex matches the engine cannot finish, such as on reaching the backtrack limit, counted as non-matches, letting `not` or `patternProperties` accept invalid instances. [#1715](https://github.com/Stranger6667/jsonschema/issues/1715)
 
 ## [0.58.4] - 2026-10-01
 

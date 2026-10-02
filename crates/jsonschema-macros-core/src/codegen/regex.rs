@@ -73,13 +73,35 @@ fn get_or_create_regex_helper<E: ValueEmitter>(
     format_ident!("{}", name)
 }
 
+/// Where a regex match happens, for reporting a match `fancy-regex` cannot finish.
+pub(super) struct RegexSite<'a> {
+    pub(super) schema_path: &'a str,
+    /// The `pattern` keyword's source pattern.
+    pub(super) pattern: Option<&'a str>,
+    /// Emitted into `validate` or `collect_errors` code, where `__path` is the instance location.
+    pub(super) located: bool,
+}
+
 pub(super) fn compile_regex_match<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     pattern: &str,
     subject: &TokenStream,
+    site: &RegexSite<'_>,
 ) -> TokenStream {
     let helper = get_or_create_regex_helper(ctx, pattern);
-    quote! {
-        #helper(#subject)
+    match ctx.config.pattern_options {
+        PatternEngineConfig::FancyRegex { .. } => {
+            let schema_path = site.schema_path;
+            let source = site
+                .pattern
+                .map_or_else(|| quote! { None }, |p| quote! { Some(#p) });
+            let site = if site.located {
+                quote! { || __unfinished::located_site(#schema_path, #source, __path) }
+            } else {
+                quote! { || __unfinished::schema_site(#schema_path, #source) }
+            };
+            quote! { #helper(#subject, #site) }
+        }
+        PatternEngineConfig::Regex { .. } => quote! { #helper(#subject) },
     }
 }

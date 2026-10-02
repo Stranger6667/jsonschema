@@ -266,7 +266,7 @@ impl ValueEmitter for SerdeEmitter {
         let is_valid = methods.is_valid.then(|| {
             quote! {
                 pub(super) fn entry_is_valid(instance: &__Value) -> bool {
-                    is_valid(instance)
+                    run_is_valid(instance)
                 }
             }
         });
@@ -275,7 +275,7 @@ impl ValueEmitter for SerdeEmitter {
                 pub(super) fn entry_validate<'__i>(
                     instance: &'__i __Value,
                 ) -> ::std::result::Result<(), __VE<'__i>> {
-                    match validate(instance, &__paths::LazyLocation::new()) {
+                    match run_validate(instance) {
                         Some(e) => Err(e),
                         None => Ok(()),
                     }
@@ -285,9 +285,7 @@ impl ValueEmitter for SerdeEmitter {
         let iter_errors = methods.iter_errors.then(|| {
             quote! {
                 pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
-                    let mut errors = Vec::new();
-                    collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
-                    __err::iterator_from(errors)
+                    __err::iterator_from(run_collect_errors(instance))
                 }
             }
         });

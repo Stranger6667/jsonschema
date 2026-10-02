@@ -69,7 +69,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     // `patternProperties` combined with a false or schema `additionalProperties` is fused into a
     // single instance-order pass by `object_pass`, so this path never covers keys by pattern; the
     // only role of `pattern_properties` here is surfacing an invalid pattern regex.
-    if let Err(err) = build_pattern_coverage(ctx, pattern_properties) {
+    if let Err(err) = build_pattern_coverage(ctx, pattern_properties, false) {
         return Some(err);
     }
 

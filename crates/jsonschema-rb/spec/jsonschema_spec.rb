@@ -2094,6 +2094,30 @@ RSpec.describe "draft: keyword argument on module-level functions" do
   end
 end
 
+RSpec.describe "Unfinished regex matches" do
+  # The engine cannot finish the first alternative within the default backtrack limit; the second,
+  # `a+!$`, matches
+  pattern = "^(?:((a|aa)(?=a?))+$|a+!$)"
+  subject_string = "#{'a' * 64}!"
+  undecided = "Error executing regex: Max limit for backtracking count exceeded"
+
+  BACKENDS.each do |backend_name, backend|
+    context "with the #{backend_name} backend" do
+      it "reports a match that decides the outcome as an error" do
+        schema = { "not" => { "pattern" => pattern } }
+        expect([backend.valid?(schema, subject_string), backend.each_error(schema, subject_string).map(&:message)])
+          .to eq([false, [undecided]])
+      end
+
+      it "accepts when every outcome of the match is valid" do
+        schema = { "anyOf" => [{ "pattern" => pattern }, { "type" => "string" }] }
+        expect([backend.valid?(schema, subject_string), backend.each_error(schema, subject_string).map(&:message)])
+          .to eq([true, []])
+      end
+    end
+  end
+end
+
 RSpec.describe "Type coercion errors" do
   BACKENDS.each do |backend_name, backend|
     context "with the #{backend_name} backend" do

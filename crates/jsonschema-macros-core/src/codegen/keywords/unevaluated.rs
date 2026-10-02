@@ -293,8 +293,9 @@ fn compile_if_then_else_evaluated(
 fn compile_pattern_coverage_for_key<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     patterns: Option<&Value>,
+    located: bool,
 ) -> Option<TokenStream> {
-    let coverage = match super::pattern_coverage::build_pattern_coverage(ctx, patterns) {
+    let coverage = match super::pattern_coverage::build_pattern_coverage(ctx, patterns, located) {
         Ok(coverage) => coverage,
         Err(error_expr) => return Some(error_expr.into_token_stream()),
     };
@@ -377,7 +378,7 @@ fn recurse_eval<E: ValueEmitter>(
     hoist: &mut GuardHoist,
 ) -> TokenStream {
     match kind {
-        EvalKind::Key => compile_key_evaluated_expr(ctx, schema, true),
+        EvalKind::Key => compile_key_evaluated_expr(ctx, schema, true, false),
         EvalKind::Item => compile_index_evaluated_expr(ctx, schema, hoist),
     }
 }
@@ -556,10 +557,12 @@ fn push_ref_dispatch<E: ValueEmitter>(
     }
 }
 
+/// `located` emits the expression into `validate` code, where `__path` is the object's location.
 pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     include_own_unevaluated: bool,
+    located: bool,
 ) -> TokenStream {
     let mut parts = Vec::new();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
@@ -589,7 +592,7 @@ pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
 
     if applicator_vocab_enabled {
         if let Some(pattern_expr) =
-            compile_pattern_coverage_for_key(ctx, schema.get("patternProperties"))
+            compile_pattern_coverage_for_key(ctx, schema.get("patternProperties"), located)
         {
             parts.push(pattern_expr);
         }
@@ -599,7 +602,7 @@ pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
         if let Some(dependent_schemas) = schema.get("dependentSchemas").and_then(Value::as_object) {
             for (property, subschema) in dependent_schemas {
                 if let Value::Object(subschema_obj) = subschema {
-                    let sub_eval = compile_key_evaluated_expr(ctx, subschema_obj, true);
+                    let sub_eval = compile_key_evaluated_expr(ctx, subschema_obj, true, located);
                     let contains_key = E::object_contains_key(format_ident!("obj"), property);
                     parts.push(quote! { #contains_key && (#sub_eval) });
                 }
