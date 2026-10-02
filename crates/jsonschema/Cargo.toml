@@ -101,7 +101,7 @@ wasm-bindgen-test = "0.3.55"
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 benchmark = { path = "../benchmark/" }
 jsonschema-value = { path = "../jsonschema-value", features = ["jsonb-testkit"] }
-hegeltest = { version = "0.47", features = ["serde_json"] }
+hegeltest = { version = "0.48", features = ["serde_json"] }
 codspeed-criterion-compat = { version = "5.0", default-features = false }
 criterion = { version = "0.8", default-features = false }
 tempfile = "3.13.0"
