@@ -172,9 +172,7 @@ Takes the same options as `bundle`.
 
 ## `jsonschema canonicalize` — reduce a schema to a normal form
 
-Rewrites a schema to a normal form without changing the set of values it accepts. `allOf` folds
-into a single constraint set, `$ref` targets are resolved, and contradictions collapse to `false`.
-Equivalent schemas reduce to the same form, so two canonical outputs can be compared directly.
+Rewrites a schema to a normal form that accepts the same values. `allOf` branches merge into one schema, `$ref` targets are resolved, and a schema proven to accept nothing becomes `false`. Schemas that accept the same values reduce to the same form, so you can compare two outputs directly.
 
 ```
 jsonschema canonicalize [OPTIONS] <SCHEMA>
@@ -190,7 +188,7 @@ jsonschema canonicalize [OPTIONS] <SCHEMA>
 |---|---|
 | `--at <POINTER>` | Canonicalize only the subschema at this JSON Pointer |
 | `-d, --draft <DRAFT>` | Enforce a specific draft (`4`, `6`, `7`, `2019`, `2020`) |
-| `--assert-format` / `--no-assert-format` | Turn `format` validation on or off |
+| `--assert-format` / `--no-assert-format` | Turn `format` validation on or off (default: on for Drafts 4, 6 and 7, off for 2019-09 and 2020-12) |
 | `-o, --output <FILE>` | Write result to file instead of stdout |
 
 ### Examples
@@ -236,13 +234,12 @@ $ jsonschema canonicalize empty.json
 }
 ```
 
-Constructs the canonical form cannot model exactly — `$dynamicRef` beside `unevaluatedProperties`,
-a `not` over a pattern map, and the like — are passed through as the original document, unchanged.
+A schema the canonical form cannot model exactly is printed unchanged, with exit status 0, so output identical to the input marks it. An error, such as an unresolvable `$ref` or a pointer that selects nothing, prints `error: ...` to stderr and exits with status 1.
 
 ### Selecting a subschema
 
-`--at` answers "what does this part of the document accept?" without lifting the subschema out of
-it, so references into the rest of the document keep resolving:
+`--at` canonicalizes one subschema in place, so its references into the rest of the document
+still resolve:
 
 ```console
 $ jsonschema canonicalize openapi.yaml --at /components/schemas/Adult

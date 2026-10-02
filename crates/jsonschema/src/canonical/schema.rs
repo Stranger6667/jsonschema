@@ -743,8 +743,7 @@ impl CanonicalSchema {
     ///
     /// [`CanonicalizationError::UnsupportedOperand`] when this schema is unsupported, and
     /// [`CanonicalizationError::UnsupportedResult`] where the canonical form cannot express the
-    /// negation exactly. The negation of a schema admitting nothing is every value, which is a
-    /// result like any other - it is returned as `true`, never an error.
+    /// negation exactly. Negating a schema that admits nothing returns `true`.
     pub fn negate(&self) -> Result<Self, CanonicalizationError> {
         // A `Raw` operand is unsupported whichever operation reaches it, so a unary one reports it the
         // same way the binary ones do rather than as a negation it could not express.

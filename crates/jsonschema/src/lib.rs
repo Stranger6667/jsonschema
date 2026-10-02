@@ -1707,19 +1707,18 @@ pub async fn async_validator_map_for(
     async_options().build_map(schema).await
 }
 
-/// Reduce a JSON Schema to its canonical IR form.
+/// Reduce a JSON Schema to a normal form that accepts the same values.
 ///
 /// Experimental: keyword coverage is incomplete and the API may change in minor releases.
 ///
 /// Use [`canonical::options`](fn@canonical::options) to configure canonicalization.
 ///
-/// Inputs the canonical form cannot model exactly succeed as an opaque `Raw` pass-through of the original document;
-/// see the [`canonical`] module's Coverage section.
+/// A schema the canonical form cannot model exactly still succeeds, as a `Raw` result holding the
+/// original document; see [Unsupported schemas](canonical#unsupported-schemas).
 ///
 /// # Errors
 ///
 /// Returns [`CanonicalizationError`] when the input is not a valid JSON Schema document or a reference cannot be resolved.
-/// Valid constructs outside the modeled subset instead produce an opaque `Raw` form.
 pub fn canonicalize(value: &Value) -> Result<canonical::CanonicalSchema, CanonicalizationError> {
     canonical::options().canonicalize(value)
 }

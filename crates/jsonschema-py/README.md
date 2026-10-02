@@ -418,7 +418,7 @@ dereferenced = jsonschema_rs.dereference(schema, registry=registry)
 
 > **Experimental**: the canonicalization API may change in minor releases.
 
-`canonicalize` reduces a schema to a normal form without changing the values it accepts. Schemas that accept the same values reduce to equal `CanonicalSchema` objects, and contradictions reduce to `false`:
+`canonicalize` reduces a schema to a normal form that accepts the same values. Schemas that accept the same values reduce to equal `CanonicalSchema` objects, and a schema proven to accept nothing reduces to `false`:
 
 ```python
 import jsonschema_rs
@@ -440,7 +440,9 @@ from jsonschema_rs.canonical import Satisfiability
 assert jsonschema_rs.canonicalize({"type": "integer", "minimum": 10, "maximum": 5}).satisfiability() == Satisfiability.NO
 ```
 
-A canonical schema *is* the set of values it accepts, so canonical schemas combine as sets. Every emitted schema carries `$schema`, left out of the comments below:
+A schema the canonical form cannot model exactly comes back unchanged, with `kind == CanonicalKind.RAW`. Its `view().reason` names what stopped the run, and `view().pointer` the subschema at fault when a single one is.
+
+Canonical schemas combine like sets of values. Every emitted schema carries `$schema`; the comments below leave it out:
 
 ```python
 positive = jsonschema_rs.canonicalize({"type": "integer", "minimum": 0})
@@ -458,19 +460,19 @@ positive.union(bounded).to_json_schema()
 positive.subtract(bounded).to_json_schema()
 # {"type": "integer", "minimum": 101}
 
-# Every value `positive` rejects, across the types it never admitted
+# Every value `positive` rejects: other types, negative integers and non-integer numbers
 positive.negate().to_json_schema()
 # {"anyOf": [{"type": ["null", "boolean", "string", "array", "object"]},
 #            {"type": "integer", "maximum": -1},
 #            {"type": "number", "not": {"multipleOf": 1}}]}
 
-positive.covers(bounded)        # Containment.NO - `bounded` takes negative integers, `positive` does not
+positive.covers(bounded)        # Containment.NO: `bounded` takes negative integers, `positive` does not
 positive.satisfiability()       # Satisfiability.YES
 ```
 
 ### Comparing two versions of a schema
 
-The difference answers what editing a schema did to the values it takes: it accepts exactly what the old schema took and the new one turns away, and is unsatisfiable exactly when nothing was lost.
+`subtract` tells you what an edit did to a schema. `old.subtract(new)` accepts exactly the values `old` accepts and `new` rejects, so it accepts nothing when the edit lost nothing.
 
 ```python
 old = jsonschema_rs.canonicalize({"type": "string"})
@@ -485,19 +487,23 @@ assert old.subtract(new).to_json_schema() == {
 assert new.subtract(old).satisfiability() == Satisfiability.NO
 ```
 
-Compare a request schema new-against-old and a response schema old-against-new: narrowing a request turns away payloads a caller used to send, widening a response returns values a caller never agreed to read.
+The direction to check depends on who sends the value:
 
-`Satisfiability.NO` on the difference proves nothing was lost. `UNKNOWN` proves nothing either way.
+- For a request schema, check `old.subtract(new)`. It accepts the payloads existing callers send that the new schema rejects.
+- For a response schema, check `new.subtract(old)`. It accepts the values the new schema lets a server return that callers never agreed to read.
 
-`UNKNOWN` is undecided, not negative, so the two questions have opposite safe tests: only `satisfiability() == Satisfiability.NO` proves a schema admits nothing, and only `covers() == Containment.YES` proves containment.
+`Satisfiability.NO` on the difference proves the edit safe in that direction. `UNKNOWN` means the canonicalizer could not decide, and proves nothing either way. Read it as the answer that keeps you safe:
 
-`Containment`, `Satisfiability`, `Distinctness`, `CanonicalKind`, `UnsatisfiableReason` and `Cause` live in `jsonschema_rs.canonical`.
+- `satisfiability()`: only `Satisfiability.NO` proves a schema accepts nothing. Treat `UNKNOWN` like `YES`.
+- `a.covers(b)`: only `Containment.YES` proves `a` accepts every value `b` accepts. Treat `UNKNOWN` like `NO`.
 
-Both operands must share one setup - the same draft, format policy, regular-expression engine and definitions - or `IncompatibleOperands` is raised. `UnsupportedOperand` means an operand is a `Raw` pass-through, and `UnsupportedResult` that the canonical form does not support the result.
+`Containment`, `Satisfiability`, `Distinctness`, `CanonicalKind`, `UnsatisfiableReason`, `Cause` and the exceptions below live in `jsonschema_rs.canonical`.
+
+The set operations raise `IncompatibleOperands` when the operands differ in draft, `format` assertion or regular-expression engine, or resolve `#` or one external resource to different schemas. They raise `UnsupportedOperand` when an operand is `RAW`, and `UnsupportedResult` when the canonical form cannot express the result exactly. All three subclass `CanonicalizationError`.
 
 ### Finding the dead subschemas of a document
 
-`find_unsatisfiable` walks a whole document and answers which of its subschemas admit no value, and why - the keywords at fault and where they sit:
+`find_unsatisfiable` walks a whole document and reports each subschema that accepts no value, with the keywords at fault and their pointers:
 
 ```python
 from jsonschema_rs.canonical import UnsatisfiableReason, find_unsatisfiable
@@ -520,7 +526,7 @@ match reasons["/properties/tag"]:
 assert "/properties/name" not in reasons
 ```
 
-A reason is `Literal` (written as `false`), `Empty` (one part admits nothing by itself) or `Conflict` (each part admits values, together they admit none). A pointer left out is not proven satisfiable: a document canonicalization cannot model reports nothing, as `Satisfiability` answers `UNKNOWN`.
+A reason is `Literal` (written as `false`), `Empty` (one part admits nothing by itself) or `Conflict` (each part admits values, together they admit none). A missing pointer does not prove that subschema satisfiable. For a document the canonical form cannot model, `find_unsatisfiable` reports nothing, the same way `satisfiability()` answers `UNKNOWN`.
 
 ## Meta-Schema Validation
 
