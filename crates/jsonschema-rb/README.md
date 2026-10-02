@@ -45,17 +45,17 @@ end
 
 ## Highlights
 
-- 📚 Full support for popular JSON Schema drafts
-- 🌐 Remote reference fetching (network/file)
+- 📚 Drafts 4, 6, 7, 2019-09 and 2020-12
 - 🔧 Custom keywords and format validators
-- ✨ Meta-schema validation for schema documents
+- ⚡ Compile-time validators for your own native extensions, via the Rust crate
+- 🌐 `$ref` resolution over HTTP and from files
 - 📦 Schema bundling into Compound Schema Documents, and `$ref` dereferencing
+- 🎨 Structured Output v1 reports (flag/list/hierarchical)
+- ✨ Meta-schema validation for schema documents, including custom metaschemas
 - 🧮 Experimental schema canonicalization
 - ♦️ Supports Ruby 3.2, 3.4 and 4.0
 
 ### Supported drafts
-
-The following drafts are supported:
 
 - [![Draft 2020-12](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2020-12.json)](https://bowtie.report/#/implementations/rust-jsonschema)
 - [![Draft 2019-09](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2019-09.json)](https://bowtie.report/#/implementations/rust-jsonschema)
@@ -63,11 +63,11 @@ The following drafts are supported:
 - [![Draft 6](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft6.json)](https://bowtie.report/#/implementations/rust-jsonschema)
 - [![Draft 4](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft4.json)](https://bowtie.report/#/implementations/rust-jsonschema)
 
-You can check the current status on the [Bowtie Report](https://bowtie.report/#/implementations/rust-jsonschema).
+Per-draft compliance results are on the [Bowtie Report](https://bowtie.report/#/implementations/rust-jsonschema).
 
 ## Playground
 
-If you'd like to try `jsonschema`, you can check the WebAssembly-powered [playground](https://jsonschema.dygalo.dev/) to see the results instantly.
+Try schemas in the browser with the WebAssembly [playground](https://jsonschema.dygalo.dev/).
 
 ## Installation
 
@@ -77,13 +77,13 @@ Add to your Gemfile:
 gem 'jsonschema_rs'
 ```
 
-Pre-built native gems are available for:
+Pre-built native gems:
 
 - **Linux**: `x86_64`, `aarch64` (glibc and musl)
 - **macOS**: `x86_64`, `arm64`
 - **Windows**: `x64` (mingw-ucrt)
 
-If no pre-built gem is available for your platform, it will be compiled from source during installation. You'll need:
+On other platforms, `gem install` compiles from source and needs:
 - Ruby 3.2+
 - Rust toolchain ([rustup](https://rustup.rs/))
 
@@ -91,8 +91,8 @@ If no pre-built gem is available for your platform, it will be compiled from sou
 
 ### Reusable validators
 
-For validating multiple instances against the same schema, create a reusable validator.
-`validator_for` automatically detects the draft version from the `$schema` keyword in the schema and falls back to Draft 2020-12:
+Build a validator once to check many instances against one schema.
+`validator_for` detects the draft from `$schema` and falls back to Draft 2020-12:
 
 ```ruby
 validator = JSONSchema.validator_for({
@@ -108,7 +108,7 @@ validator.valid?({ "name" => "Alice", "age" => 30 })  # => true
 validator.valid?({ "age" => 30 })                      # => false
 ```
 
-You can use draft-specific validators for different JSON Schema versions:
+To pick the draft yourself, use a draft-specific class:
 
 ```ruby
 validator = JSONSchema::Draft7Validator.new(schema)
@@ -118,6 +118,8 @@ validator = JSONSchema::Draft7Validator.new(schema)
 ```
 
 ### Custom format validators
+
+Pass a callable that takes a `String` and returns a boolean via `formats`. Drafts 2019-09 and 2020-12 treat `format` as an annotation, so set `validate_formats: true` to get it checked:
 
 ```ruby
 phone_format = ->(value) { value.match?(/^\+?[1-9]\d{1,14}$/) }
@@ -150,10 +152,10 @@ validator = JSONSchema.validator_for(
 ```
 
 Each custom keyword class must implement:
-- `initialize(parent_schema, value, schema_path)` - called during schema compilation
-- `validate(instance)` - raise on failure, return normally on success
+- `initialize(parent_schema, value, schema_path)`: called once when the validator is built
+- `validate(instance)`: raise to reject the value, return to accept it
 
-A class may also implement `iter_errors(instance)`, returning an array of exceptions, to report several problems from one keyword. `each_error` then surfaces each of them; when the method is absent it falls back to the single error from `validate`:
+To report several problems from one keyword, also implement `iter_errors(instance)` returning an array of exceptions. `each_error` yields each of them. Without it, `each_error` yields the single error from `validate`:
 
 ```ruby
 class AllPositive
@@ -172,7 +174,7 @@ class AllPositive
 end
 ```
 
-When `validate` raises, the original exception is preserved as the `cause` of the `ValidationError`, so callers can inspect it (errors from `iter_errors` keep their exception as `cause` in the same way):
+The resulting `ValidationError` keeps the raised exception as `cause`, for both `validate` and `iter_errors`:
 
 ```ruby
 begin
@@ -185,7 +187,7 @@ end
 
 ### Structured evaluation output
 
-When you need more than a boolean result, use the `evaluate` API to access the [JSON Schema Output v1](https://json-schema.org/draft/2020-12/json-schema-core#name-output-formatting) formats:
+`evaluate` returns the [JSON Schema Output v1](https://json-schema.org/draft/2020-12/json-schema-core#name-output-formatting) formats instead of a boolean:
 
 ```ruby
 schema = {
@@ -203,14 +205,14 @@ evaluation = validator.evaluate({ "age" => "not_an_integer" })
 evaluation.valid?  # => false
 ```
 
-**Flag output** — simplest, just valid/invalid:
+**Flag output**: valid or invalid, nothing else:
 
 ```ruby
 evaluation.flag
 # => {valid: false}
 ```
 
-**List output** — flat list of all evaluation nodes:
+**List output**: every evaluation node in a flat list:
 
 ```ruby
 evaluation.list
@@ -231,7 +233,7 @@ evaluation.list
 #     ]}
 ```
 
-**Hierarchical output** — nested tree following schema structure:
+**Hierarchical output**: the same nodes nested by schema structure:
 
 ```ruby
 evaluation.hierarchical
@@ -255,7 +257,7 @@ evaluation.hierarchical
 #     ]}
 ```
 
-**Collected errors** — flat list of all errors across evaluation nodes:
+**Collected errors**: every error across all nodes:
 
 ```ruby
 evaluation.errors
@@ -266,8 +268,8 @@ evaluation.errors
 #      error: "\"not_an_integer\" is not of type \"integer\""}]
 ```
 
-**Collected annotations** — flat list of annotations from successfully validated nodes.
-When a node fails validation, its annotations appear as `droppedAnnotations` in the list/hierarchical output instead.
+**Collected annotations**: annotations from the nodes that passed.
+A failed node reports its annotations as `droppedAnnotations` in the list and hierarchical output instead.
 
 ```ruby
 valid_eval = validator.evaluate({ "name" => "Alice", "age" => 30 })
@@ -278,7 +280,7 @@ valid_eval.annotations
 
 ### Canonical JSON serialization
 
-Use `Canonical::JSON.to_string` when you need a stable JSON representation:
+`Canonical::JSON.to_string` serializes equal JSON values to the same string, regardless of key order:
 
 ```ruby
 schema_a = { "type" => "object", "properties" => { "b" => { "type" => "integer" }, "a" => { "type" => "string" } } }
@@ -290,7 +292,7 @@ dump_b = JSONSchema::Canonical::JSON.to_string(schema_b)
 dump_a == dump_b # => true
 ```
 
-Main use case: deduplicating equivalent JSON Schemas.
+Use it to deduplicate schemas that differ only in key order.
 
 ## Schema Canonicalization
 
@@ -406,7 +408,7 @@ A reason is a `LiteralReason` (written as `false`), an `EmptyReason` (one part a
 
 ## Schema Bundling and Dereferencing
 
-Produce a Compound Schema Document ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)) by embedding all external `$ref` targets into a draft-appropriate container. The result validates identically to the original.
+Produce a Compound Schema Document ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)) by embedding all external `$ref` targets into a draft-appropriate container. The bundle accepts the same values as the original.
 
 ```ruby
 address_schema = {
@@ -436,7 +438,7 @@ dereferenced = JSONSchema.dereference(schema, registry: registry)
 
 ## Meta-Schema Validation
 
-Validate that a JSON Schema document is itself valid:
+`JSONSchema::Meta` checks a schema against the meta-schema of its draft:
 
 ```ruby
 JSONSchema::Meta.valid?({ "type" => "string" })      # => true
@@ -449,9 +451,24 @@ rescue JSONSchema::ValidationError => e
 end
 ```
 
+For a custom metaschema, register it and point `$schema` at its URI:
+
+```ruby
+metaschema = {
+  "$schema" => "https://json-schema.org/draft/2020-12/schema",
+  "$id" => "https://example.com/meta",
+  "type" => "object",
+  "required" => ["title"]
+}
+meta_registry = JSONSchema::Registry.new([["https://example.com/meta", metaschema]])
+
+JSONSchema::Meta.valid?({ "$schema" => "https://example.com/meta", "title" => "Person" }, registry: meta_registry)  # => true
+JSONSchema::Meta.valid?({ "$schema" => "https://example.com/meta" }, registry: meta_registry)                      # => false
+```
+
 ## External References
 
-By default, `jsonschema` resolves HTTP references and file references from the local file system. You can implement a custom retriever to handle external references:
+By default, `jsonschema_rs` fetches external `$ref` targets over HTTP and from the local file system. Pass a `retriever:` to load them yourself:
 
 ```ruby
 schemas = {
@@ -476,7 +493,7 @@ validator.valid?({ "name" => "Bob" })                  # => false (missing "age"
 
 ## Schema Registry
 
-For applications that frequently use the same schemas, create a registry to store and reference them:
+A `Registry` holds schemas by URI, so a validator resolves `$ref`s to them without fetching anything:
 
 ```ruby
 registry = JSONSchema::Registry.new([
@@ -507,7 +524,7 @@ validator.valid?({
 })  # => true
 ```
 
-The registry also accepts `draft:` and `retriever:` options:
+`Registry` also takes a default `draft:` and a `retriever:` for URIs it does not hold:
 
 ```ruby
 registry = JSONSchema::Registry.new(
@@ -519,7 +536,7 @@ registry = JSONSchema::Registry.new(
 
 ## Regular Expression Configuration
 
-When validating schemas with regex patterns (in `pattern` or `patternProperties`), you can configure the underlying regex engine:
+`pattern_options:` picks the regex engine for `pattern` and `patternProperties` and sets its limits:
 
 ```ruby
 # Default fancy-regex engine with backtracking limits
@@ -546,24 +563,22 @@ validator = JSONSchema.validator_for(
 )
 ```
 
-The available options:
-
-  - `FancyRegexOptions`: Default engine with lookaround and backreferences support
+  - `FancyRegexOptions`: default engine, supports lookaround and backreferences
 
     - `backtrack_limit`: Maximum backtracking steps
     - `size_limit`: Maximum compiled regex size in bytes
     - `dfa_size_limit`: Maximum DFA cache size in bytes
 
-  - `RegexOptions`: Safer engine with linear-time guarantee
+  - `RegexOptions`: matches in linear time, no lookaround or backreferences
 
     - `size_limit`: Maximum compiled regex size in bytes
     - `dfa_size_limit`: Maximum DFA cache size in bytes
 
-This configuration is crucial when working with untrusted schemas where attackers might craft malicious regex patterns.
+If you validate against schemas from untrusted sources, use `RegexOptions`: a crafted pattern cannot make it backtrack.
 
 ## Email Format Configuration
 
-When validating email addresses using `{"format": "email"}`, you can customize the validation behavior:
+`email_options:` makes `{"format": "email"}` stricter or looser than the spec default:
 
 ```ruby
 # Require a top-level domain (reject "user@localhost")
@@ -593,16 +608,14 @@ validator = JSONSchema.validator_for(
 )
 ```
 
-Available options:
-
-  - `require_tld`: Require a top-level domain (e.g., reject "user@localhost")
+  - `require_tld`: Require a top-level domain (e.g., reject "user@localhost") (default: false)
   - `allow_domain_literal`: Allow IP address literals like "user@[127.0.0.1]" (default: true)
   - `allow_display_text`: Allow display names like "Name <user@example.com>" (default: true)
   - `minimum_sub_domains`: Minimum number of domain segments required
 
 ## Error Handling
 
-`jsonschema` provides detailed validation errors through the `ValidationError` class:
+A `ValidationError` carries the message, both locations and a `kind` with keyword-specific details:
 
 ```ruby
 schema = { "type" => "string", "maxLength" => 5 }
@@ -625,7 +638,7 @@ end
 
 ### Error Kind Properties
 
-Each error has a `kind` property with convenient accessors:
+`kind` has generic accessors:
 
 ```ruby
 JSONSchema.each_error({ "minimum" => 5 }, 3).each do |error|
@@ -638,7 +651,7 @@ end
 
 ### Error Message Masking
 
-When working with sensitive data, you can mask instance values in error messages:
+Pass `mask:` to replace instance values in error messages with a placeholder:
 
 ```ruby
 schema = {
@@ -663,19 +676,19 @@ end
 
 ### Exception Classes
 
-- **`JSONSchema::ValidationError`** - raised on validation failure
+- **`JSONSchema::ValidationError`**: raised on validation failure
   - `message`, `verbose_message`, `instance_path`, `schema_path`, `evaluation_path`, `kind`, `instance`
   - JSON Pointer helpers: `instance_path_pointer`, `schema_path_pointer`, `evaluation_path_pointer`
-- **`JSONSchema::ReferencingError`** - raised when `$ref` cannot be resolved
+- **`JSONSchema::ReferencingError`**: raised when a `$ref` cannot be resolved
 
 ## Options Reference
 
-One-off validation methods (`valid?`, `validate!`, `each_error`, `evaluate`) accept these keyword arguments:
+The one-off methods `valid?`, `validate!` and `each_error` accept these keyword arguments:
 
 ```ruby
 JSONSchema.valid?(schema, instance,
   draft: :draft7,                  # Specific draft version (symbol)
-  validate_formats: true,          # Enable format validation (default: false)
+  validate_formats: true,          # Check `format` (default: on up to Draft 7, off for 2019-09 and 2020-12)
   ignore_unknown_formats: true,    # Don't error on unknown formats (default: true)
   base_uri: "https://example.com", # Base URI for reference resolution
   mask: "[REDACTED]",              # Mask sensitive data in error messages
@@ -692,19 +705,19 @@ JSONSchema.valid?(schema, instance,
 
 `evaluate` accepts the same options except `mask` (currently unsupported for evaluation output).
 
-`validator_for` accepts the same options except `draft:` — use draft-specific validators (`Draft7Validator.new`, etc.) to pin a draft version.
+`validator_for` accepts the same options except `draft:`. To pin a draft, use a draft-specific class such as `Draft7Validator.new`.
 
 Valid draft symbols: `:draft4`, `:draft6`, `:draft7`, `:draft201909`, `:draft202012`.
 
 ## Performance
 
-`jsonschema` is designed for high performance, outperforming other Ruby JSON Schema validators in most scenarios:
+Compared with other Ruby validators:
 
 - **28-148x** faster than `json_schemer` for complex schemas and large instances
 - **200-567x** faster than `json-schema` where supported
 - **7-130x** faster than `rj_schema` (RapidJSON/C++)
 
-For detailed benchmarks, see our [full performance comparison](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-rb/BENCHMARKS.md).
+Full results and methodology are in [BENCHMARKS.md](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-rb/BENCHMARKS.md).
 
 ### Compile-Time Validators
 
@@ -720,15 +733,15 @@ A complete extension with its build and test commands lives in
 
 ## Acknowledgements
 
-This library draws API design inspiration from the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. We're grateful to the Python `jsonschema` maintainers and contributors for their pioneering work in JSON Schema validation.
+The API follows the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. Thanks to its maintainers and contributors.
 
 ## Support
 
-If you have questions, need help, or want to suggest improvements, please use [GitHub Discussions](https://github.com/Stranger6667/jsonschema/discussions).
+Ask questions and suggest improvements in [GitHub Discussions](https://github.com/Stranger6667/jsonschema/discussions).
 
 ## Sponsorship
 
-If you find `jsonschema` useful, please consider [sponsoring its development](https://github.com/sponsors/Stranger6667).
+If you find `jsonschema_rs` useful, please consider [sponsoring its development](https://github.com/sponsors/Stranger6667).
 
 ## Contributing
 
