@@ -50,7 +50,7 @@ for error in evaluation.errors():
 
 - 📚 Drafts 4, 6, 7, 2019-09 and 2020-12
 - 🔧 Custom keywords and format validators
-- ⚡ Compile-time validators for your own extension modules
+- ⚡ Compile-time validators for your own extension modules, via the Rust crate
 - 🌐 `$ref` resolution over HTTP and from files
 - 📦 Schema bundling into Compound Schema Documents, and `$ref` dereferencing
 - 🎨 Structured Output v1 reports (flag/list/hierarchical)
@@ -179,19 +179,17 @@ validator = jsonschema_rs.Draft202012Validator(
 validator.is_valid("2023-05-17")  # True
 validator.is_valid("not a date")  # False
 
-# With ignore_unknown_formats=False, using an unknown format will raise an error
+# With ignore_unknown_formats=False, an unknown format raises an error
 invalid_schema = {"type": "string", "format": "unknown"}
 try:
     jsonschema_rs.Draft202012Validator(
         invalid_schema, validate_formats=True, ignore_unknown_formats=False
     )
 except jsonschema_rs.ValidationError as exc:
-    assert str(exc) == '''Unknown format: 'unknown'. Adjust configuration to ignore unrecognized formats
-
-Failed validating "format" in schema
-
-On instance["format"]:
-    "unknown"'''
+    assert exc.message == (
+        "Unknown format: 'unknown'. "
+        "Adjust configuration to ignore unrecognized formats"
+    )
 ```
 
 ### Structured Output with `evaluate`
@@ -207,6 +205,7 @@ schema = {
     "items": {"type": "integer"},
 }
 evaluation = jsonschema_rs.evaluate(schema, ["hello", "oops"])
+type_error = {"type": '"oops" is not of type "integer"'}
 
 assert evaluation.flag() == {"valid": False}
 assert evaluation.list() == {
@@ -242,7 +241,7 @@ assert evaluation.list() == {
             "evaluationPath": "/items/type",
             "instanceLocation": "/1",
             "schemaLocation": "/items/type",
-            "errors": {"type": '"oops" is not of type "integer"'},
+            "errors": type_error,
         },
         {
             "valid": True,
@@ -297,7 +296,7 @@ assert hierarchical == {
                             "evaluationPath": "/items/type",
                             "instanceLocation": "/1",
                             "schemaLocation": "/items/type",
-                            "errors": {"type": '"oops" is not of type "integer"'},
+                            "errors": type_error,
                         }
                     ],
                 }
@@ -364,8 +363,7 @@ try:
 except ValidationError as exc:
     assert exc.kind.expected_value == Decimal("1e10000")
 
-# Extremely large exponents (beyond ~10^1_000_000) are clamped internally to keep parsing
-# predictable, matching the Rust implementation's guardrails.
+# Exponents beyond ~10^1_000_000 are clamped to keep parsing predictable
 ```
 
 ## Schema Bundling and Dereferencing
@@ -390,7 +388,9 @@ schema = {
     "required": ["home"]
 }
 
-registry = jsonschema_rs.Registry([("https://example.com/address.json", address_schema)])
+registry = jsonschema_rs.Registry(
+    [("https://example.com/address.json", address_schema)]
+)
 bundled = jsonschema_rs.bundle(schema, registry=registry)
 ```
 
@@ -410,7 +410,10 @@ dereferenced = jsonschema_rs.dereference(schema, registry=registry)
 import jsonschema_rs
 
 canonical = jsonschema_rs.canonicalize({
-    "allOf": [{"type": "integer", "minimum": 0}, {"minimum": 10, "maximum": 100}]
+    "allOf": [
+        {"type": "integer", "minimum": 0},
+        {"minimum": 10, "maximum": 100},
+    ]
 })
 assert canonical.to_json_schema() == {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -418,12 +421,18 @@ assert canonical.to_json_schema() == {
 }
 
 # However they were written, equivalent schemas compare equal
-assert canonical == jsonschema_rs.canonicalize({"type": "integer", "maximum": 100, "minimum": 10})
+same = jsonschema_rs.canonicalize(
+    {"type": "integer", "maximum": 100, "minimum": 10}
+)
+assert canonical == same
 
 # A schema no value can satisfy collapses
 from jsonschema_rs.canonical import Satisfiability
 
-assert jsonschema_rs.canonicalize({"type": "integer", "minimum": 10, "maximum": 5}).satisfiability() == Satisfiability.NO
+empty = jsonschema_rs.canonicalize(
+    {"type": "integer", "minimum": 10, "maximum": 5}
+)
+assert empty.satisfiability() == Satisfiability.NO
 ```
 
 A schema the canonical form cannot model exactly comes back unchanged, with `kind == CanonicalKind.RAW`. Its `view().reason` names what stopped the run, and `view().pointer` the subschema at fault when a single one is.
@@ -446,14 +455,16 @@ positive.union(bounded).to_json_schema()
 positive.subtract(bounded).to_json_schema()
 # {"type": "integer", "minimum": 101}
 
-# Every value `positive` rejects: other types, negative integers and non-integer numbers
+# Every value `positive` rejects: other types, negative integers
+# and non-integer numbers
 positive.negate().to_json_schema()
 # {"anyOf": [{"type": ["null", "boolean", "string", "array", "object"]},
 #            {"type": "integer", "maximum": -1},
 #            {"type": "number", "not": {"multipleOf": 1}}]}
 
-positive.covers(bounded)        # Containment.NO: `bounded` takes negative integers, `positive` does not
-positive.satisfiability()       # Satisfiability.YES
+# Containment.NO: `bounded` takes negative integers, `positive` does not
+positive.covers(bounded)
+positive.satisfiability()  # Satisfiability.YES
 ```
 
 ### Comparing two versions of a schema
@@ -618,11 +629,11 @@ validator = jsonschema_rs.validator_for(
     )
 )
 
-# Require minimum domain segments
+# Require at least 3 domain segments, e.g. user@sub.example.com
 validator = jsonschema_rs.validator_for(
     {"format": "email", "type": "string"},
     validate_formats=True,
-    email_options=EmailOptions(minimum_sub_domains=3)  # e.g., user@sub.example.com
+    email_options=EmailOptions(minimum_sub_domains=3),
 )
 ```
 
@@ -841,7 +852,8 @@ Pre-built wheels are available for:
 If a source build on Linux fails with linking errors (e.g., undefined symbols from `ring`), use the `mold` linker:
 
 ```bash
-RUSTFLAGS="-C link-arg=-fuse-ld=mold" pip install jsonschema-rs --no-binary :all:
+RUSTFLAGS="-C link-arg=-fuse-ld=mold" \
+  pip install jsonschema-rs --no-binary :all:
 ```
 
 ## Acknowledgements
