@@ -5,6 +5,7 @@
 ### Fixed
 
 - `canonicalize` keeping a reference to a cycle of bare references under `not` or `oneOf` instead of treating it as accepting every value.
+- Validator construction holding the GVL while it retrieves external resources over HTTP or from files.
 
 ## [0.58.4] - 2026-10-01
 

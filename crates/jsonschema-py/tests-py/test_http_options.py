@@ -3,7 +3,10 @@ import socket
 import subprocess
 import sys
 import textwrap
+import threading
 import time
+from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+
 import pytest
 from jsonschema_rs import (
     Draft4Validator,
@@ -221,3 +224,44 @@ def test_http_timeout_triggers(slow_server):
     opts = HttpOptions(timeout=0.5)
     with pytest.raises(ValidationError, match="error sending request"):
         validator_for(schema, http_options=opts)
+
+
+class IntegerSchemaHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = b'{"type": "integer"}'
+        self.send_response(200)
+        self.send_header("Content-Type", "application/json")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
+    def log_message(self, *args):
+        pass
+
+
+@pytest.fixture
+def in_process_schema_url():
+    server = ThreadingHTTPServer(("127.0.0.1", 0), IntegerSchemaHandler)
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    yield f"http://127.0.0.1:{server.server_port}/item"
+    server.shutdown()
+    server.server_close()
+    thread.join()
+
+
+# The server answers from a thread of this process, so the build must not hold the GIL while it waits
+@pytest.mark.parametrize("http_options", [None, HttpOptions(timeout=30.0)], ids=["default", "http_options"])
+@pytest.mark.parametrize(
+    "check",
+    [
+        lambda schema, opts: Draft202012Validator(schema, http_options=opts).is_valid("a"),
+        lambda schema, opts: validator_for(schema, http_options=opts).is_valid("a"),
+        lambda schema, opts: is_valid(schema, "a", http_options=opts),
+    ],
+    ids=["validator", "validator_for", "is_valid"],
+)
+def test_retrieval_from_same_process_server(in_process_schema_url, http_options, check):
+    started = time.monotonic()
+    assert check({"$ref": in_process_schema_url}, http_options) is False
+    assert time.monotonic() - started < 5
