@@ -391,7 +391,8 @@ module JSONSchema
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
     ?email_options: EmailOptions?,
-    ?http_options: HttpOptions?
+    ?http_options: HttpOptions?,
+    ?offline: bool?
   ) -> Validator
 
   # Create a map of validators for all sub-schemas in a JSON Schema.
@@ -408,7 +409,8 @@ module JSONSchema
     ?keywords: ::Hash[::String, untyped]?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
     ?email_options: EmailOptions?,
-    ?http_options: HttpOptions?
+    ?http_options: HttpOptions?,
+    ?offline: bool?
   ) -> ValidatorMap
 
   # Bundle a JSON Schema into a Compound Schema Document.
@@ -421,7 +423,8 @@ module JSONSchema
     ?draft: draft?,
     ?retriever: (^(String) -> untyped)?,
     ?registry: Registry?,
-    ?base_uri: String?
+    ?base_uri: String?,
+    ?offline: bool?
   ) -> Hash[String, untyped]
 
   # Dereference a JSON Schema by recursively replacing all $ref values
@@ -431,7 +434,8 @@ module JSONSchema
     ?draft: draft?,
     ?retriever: (^(String) -> untyped)?,
     ?registry: Registry?,
-    ?base_uri: String?
+    ?base_uri: String?,
+    ?offline: bool?
   ) -> untyped
 
   # Detect the JSON Schema draft for a schema and return the corresponding validator class.
@@ -454,7 +458,8 @@ module JSONSchema
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
     ?email_options: EmailOptions?,
-    ?http_options: HttpOptions?
+    ?http_options: HttpOptions?,
+    ?offline: bool?
   ) -> bool
 
   # One-off validation raising on error.
@@ -473,7 +478,8 @@ module JSONSchema
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
     ?email_options: EmailOptions?,
-    ?http_options: HttpOptions?
+    ?http_options: HttpOptions?,
+    ?offline: bool?
   ) -> nil
 
   # Iterate validation errors. Returns Array when no block given, nil when block given.
@@ -492,7 +498,8 @@ module JSONSchema
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
     ?email_options: EmailOptions?,
-    ?http_options: HttpOptions?
+    ?http_options: HttpOptions?,
+    ?offline: bool?
   ) -> Array[ValidationError]
                       | (
     untyped schema,
@@ -509,7 +516,8 @@ module JSONSchema
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
     ?email_options: EmailOptions?,
-    ?http_options: HttpOptions?
+    ?http_options: HttpOptions?,
+    ?offline: bool?
   ) { (ValidationError) -> void } -> nil
 
   # One-off evaluation returning structured output.
@@ -527,7 +535,8 @@ module JSONSchema
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
     ?email_options: EmailOptions?,
-    ?http_options: HttpOptions?
+    ?http_options: HttpOptions?,
+    ?offline: bool?
   ) -> Evaluation
 
   # Reusable JSON Schema validator.

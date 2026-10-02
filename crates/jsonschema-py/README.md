@@ -682,6 +682,19 @@ validator.is_valid({
 })  # False
 ```
 
+For schemas from untrusted sources, pass `offline=True`. The validator then refuses to fetch any `$ref` target, so a schema cannot reach your network or file system. Schemas held in a `Registry` still resolve:
+
+```python
+try:
+    jsonschema_rs.validator_for(
+        {"$ref": "https://example.com/other.json"}, offline=True
+    )
+except jsonschema_rs.ValidationError as exc:
+    assert "Retrieval is disabled" in str(exc)
+```
+
+`bundle`, `dereference` and `canonicalize` take `offline` too.
+
 ## Schema Registry
 
 A `Registry` holds schemas by URI, so a validator resolves `$ref`s to them without fetching anything:

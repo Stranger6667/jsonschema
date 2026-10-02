@@ -491,6 +491,18 @@ validator.valid?({ "name" => "Alice", "age" => 30 })  # => true
 validator.valid?({ "name" => "Bob" })                  # => false (missing "age")
 ```
 
+For schemas from untrusted sources, pass `offline: true`. The validator then refuses to fetch any `$ref` target, so a schema cannot reach your network or file system. Schemas held in a `Registry` still resolve:
+
+```ruby
+begin
+  JSONSchema.validator_for({ "$ref" => "https://example.com/other.json" }, offline: true)
+rescue JSONSchema::ReferencingError => e
+  e.message  # => "Resource 'https://example.com/other.json' is not present in a registry ..."
+end
+```
+
+`bundle` and `dereference` take `offline:` too.
+
 ## Schema Registry
 
 A `Registry` holds schemas by URI, so a validator resolves `$ref`s to them without fetching anything:
@@ -699,7 +711,8 @@ JSONSchema.valid?(schema, instance,
   vocabularies: ["https://..."],   # Vocabularies implemented by custom keywords
   pattern_options: opts,           # RegexOptions or FancyRegexOptions
   email_options: opts,             # EmailOptions
-  http_options: opts               # HttpOptions
+  http_options: opts,              # HttpOptions
+  offline: false                   # true refuses to fetch $refs; conflicts with retriever:
 )
 ```
 
