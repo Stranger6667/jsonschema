@@ -3,7 +3,6 @@ use jsonschema::canonical::json::{canonical_number, BorrowedNumber};
 use magnus::{
     error::ErrorType,
     exception::ExceptionClass,
-    gc::register_mark_object,
     prelude::*,
     rb_sys::AsRawValue,
     value::{Lazy, ReprValue},
@@ -28,7 +27,7 @@ static BIG_DECIMAL_CLASS: Lazy<RClass> = Lazy::new(|ruby| {
     let cls: RClass = ruby
         .eval("BigDecimal")
         .expect("BigDecimal class must exist");
-    register_mark_object(cls);
+    ruby.gc_register_mark_object(cls);
     cls
 });
 

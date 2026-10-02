@@ -58,7 +58,7 @@ macro_rules! canonical_error_class {
             let exception_class =
                 ExceptionClass::from_value(error_class.as_value()).expect("ExceptionClass");
             // The cached handle is invisible to Ruby's GC; registration pins it across compaction.
-            magnus::gc::register_mark_object(exception_class);
+            ruby.gc_register_mark_object(exception_class);
             exception_class
         });
     };
