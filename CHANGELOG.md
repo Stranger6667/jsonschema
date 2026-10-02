@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `canonicalize` keeping a reference to a cycle of bare references under `not` or `oneOf` instead of treating it as accepting every value.
+
 ## [0.58.4] - 2026-10-01
 
 ### Fixed
