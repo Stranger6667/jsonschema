@@ -42,22 +42,22 @@ for error in evaluation.errors():
     print(f"Error at {error['instanceLocation']}: {error['error']}")
 ```
 
-> ⚠️ **Upgrading from older versions?** Check our [Migration Guide](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/MIGRATION.md) for key changes.
+> ⚠️ **Upgrading from older versions?** See the [Migration Guide](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/MIGRATION.md) for breaking changes.
 
 > **Migrating from `jsonschema`?** See the [jsonschema migration guide](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/MIGRATION_FROM_JSONSCHEMA.md).
 
 ## Highlights
 
-- 📚 Full support for popular JSON Schema drafts
-- 🌐 Remote reference fetching (network/file)
+- 📚 Drafts 4, 6, 7, 2019-09 and 2020-12
 - 🔧 Custom keywords and format validators
-- ✨ Meta-schema validation for schema documents
+- ⚡ Compile-time validators for your own extension modules
+- 🌐 `$ref` resolution over HTTP and from files
 - 📦 Schema bundling into Compound Schema Documents, and `$ref` dereferencing
+- 🎨 Structured Output v1 reports (flag/list/hierarchical)
+- ✨ Meta-schema validation for schema documents, including custom metaschemas
 - 🧮 Experimental schema canonicalization
 
 ### Supported drafts
-
-The following drafts are supported:
 
 - [![Draft 2020-12](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2020-12.json)](https://bowtie.report/#/implementations/rust-jsonschema)
 - [![Draft 2019-09](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2019-09.json)](https://bowtie.report/#/implementations/rust-jsonschema)
@@ -65,15 +65,13 @@ The following drafts are supported:
 - [![Draft 6](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft6.json)](https://bowtie.report/#/implementations/rust-jsonschema)
 - [![Draft 4](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft4.json)](https://bowtie.report/#/implementations/rust-jsonschema)
 
-You can check the current status on the [Bowtie Report](https://bowtie.report/#/implementations/rust-jsonschema).
+Per-draft compliance results are on the [Bowtie Report](https://bowtie.report/#/implementations/rust-jsonschema).
 
 ## Playground
 
-If you'd like to try `jsonschema`, you can check the WebAssembly-powered [playground](https://jsonschema.dygalo.dev/) to see the results instantly.
+Try schemas in the browser with the WebAssembly [playground](https://jsonschema.dygalo.dev/).
 
 ## Installation
-
-To install `jsonschema-rs` via `pip` run the following command:
 
 ```bash
 pip install jsonschema-rs
@@ -81,8 +79,7 @@ pip install jsonschema-rs
 
 ## Usage
 
-If you have a schema as a JSON string, then you could pass it to `validator_for`
-to avoid parsing on the Python side:
+Pass a schema as a JSON string to skip parsing it in Python:
 
 ```python
 import jsonschema_rs
@@ -91,7 +88,7 @@ validator = jsonschema_rs.validator_for('{"minimum": 42}')
 ...
 ```
 
-You can use draft-specific validators for different JSON Schema versions:
+`validator_for` detects the draft from `$schema`. To pick one yourself, use a draft-specific class:
 
 ```python
 import jsonschema_rs
@@ -100,20 +97,15 @@ import jsonschema_rs
 validator = jsonschema_rs.validator_for({"minimum": 42})
 
 # Draft-specific validators
+validator = jsonschema_rs.Draft4Validator({"minimum": 42})
+validator = jsonschema_rs.Draft6Validator({"minimum": 42})
 validator = jsonschema_rs.Draft7Validator({"minimum": 42})
 validator = jsonschema_rs.Draft201909Validator({"minimum": 42})
 validator = jsonschema_rs.Draft202012Validator({"minimum": 42})
 ```
 
-JSON Schema allows for format validation through the `format` keyword. While `jsonschema-rs`
-provides built-in validators for standard formats, you can also define custom format validators
-for domain-specific string formats.
-
-To implement a custom format validator:
-
-1. Define a function that takes a `str` and returns a `bool`.
-2. Pass it with the `formats` argument.
-3. Ensure validate_formats is set appropriately (especially for Draft 2019-09 and 2020-12).
+`jsonschema-rs` ships validators for the standard `format` values. To add your own, pass a function that takes a `str` and returns a `bool` via `formats`.
+Drafts 2019-09 and 2020-12 treat `format` as an annotation, so set `validate_formats=True` to get it checked:
 
 ```python
 import jsonschema_rs
@@ -134,9 +126,8 @@ validator.is_valid("invalid")  # False
 
 ### Custom Keywords
 
-You can extend JSON Schema with custom keywords for domain-specific validation rules.
-Custom keywords are classes that receive the keyword value during schema compilation
-and validate instances at runtime:
+A custom keyword is a class. The validator builds one instance per occurrence of the keyword, passing the parent schema, the keyword value and its schema path.
+Its `validate` method rejects a value by raising any exception, whose message becomes the error message:
 
 ```python
 import jsonschema_rs
@@ -158,7 +149,7 @@ validator.is_valid(9)   # True
 validator.is_valid(10)  # False
 ```
 
-When `validate` raises, the original exception is preserved as the `__cause__` of the `ValidationError`, so callers can inspect it:
+The resulting `ValidationError` keeps that exception as `__cause__`:
 
 ```python
 try:
@@ -168,14 +159,12 @@ except jsonschema_rs.ValidationError as e:
     print(e.__cause__)         # original message
 ```
 
-Additional configuration options are available for fine-tuning the validation process:
+Other options:
 
-- `validate_formats`: Override the draft-specific default behavior for format validation.
-- `ignore_unknown_formats`: Control whether unrecognized formats should be reported as errors.
-- `base_uri` - a base URI for all relative `$ref` in the schema.
-- `vocabularies`: Declare support for vocabularies implemented by custom keywords.
-
-Example usage of these options:
+- `validate_formats`: check `format` regardless of the draft default.
+- `ignore_unknown_formats`: set to `False` to raise on a `format` value with no validator.
+- `base_uri`: base URI for relative `$ref`s in the schema.
+- `vocabularies`: vocabularies your custom keywords implement.
 
 ```python
 import jsonschema_rs
@@ -207,7 +196,7 @@ On instance["format"]:
 
 ### Structured Output with `evaluate`
 
-When you need more than a boolean result, use the `evaluate` API to access the JSON Schema Output v1 formats:
+`evaluate` returns the JSON Schema Output v1 formats instead of a boolean:
 
 ```python
 import jsonschema_rs
@@ -355,8 +344,7 @@ assert evaluation.annotations() == []
 
 ### Arbitrary-Precision Numbers
 
-The Python bindings always include the `arbitrary-precision` support from the Rust validator, so numeric
-values are exposed to Python using the most accurate type available:
+Numbers keep their full precision on the way to Python:
 
 - Integers, regardless of size, are returned as regular `int` objects.
 - Floating-point literals that fit into IEEE-754 become Python `float`s.
@@ -364,9 +352,7 @@ values are exposed to Python using the most accurate type available:
   decimals) fall back to [`decimal.Decimal`](https://docs.python.org/3/library/decimal.html) using
   their original JSON string representation.
 
-This means `ValidationError.kind` attributes may contain `Decimal` instances for very large numbers.
-Import `Decimal` from the standard library if you need to compare against or serialize those
-values exactly:
+So `ValidationError.kind` attributes can hold `Decimal` values:
 
 ```python
 from decimal import Decimal
@@ -384,7 +370,7 @@ except ValidationError as exc:
 
 ## Schema Bundling and Dereferencing
 
-Produce a Compound Schema Document ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)) by embedding all external `$ref` targets into a draft-appropriate container. The result validates identically to the original.
+Produce a Compound Schema Document ([Appendix B](https://json-schema.org/draft/2020-12/json-schema-core#appendix-B)) by embedding all external `$ref` targets into a draft-appropriate container. The bundle accepts the same values as the original.
 
 ```python
 import jsonschema_rs
@@ -530,7 +516,7 @@ A reason is `Literal` (written as `false`), `Empty` (one part admits nothing by 
 
 ## Meta-Schema Validation
 
-JSON Schema documents can be validated against their meta-schemas to ensure they are valid schemas. `jsonschema-rs` provides this functionality through the `meta` module:
+`jsonschema_rs.meta` checks a schema against the meta-schema of its draft:
 
 ```python
 import jsonschema_rs
@@ -562,7 +548,7 @@ except jsonschema_rs.ValidationError as exc:
 
 ## Regular Expression Configuration
 
-When validating schemas with regex patterns (in `pattern` or `patternProperties`), you can configure the underlying regex engine:
+`pattern_options` picks the regex engine for `pattern` and `patternProperties` and sets its limits:
 
 ```python
 import jsonschema_rs
@@ -592,24 +578,22 @@ validator = jsonschema_rs.validator_for(
 )
 ```
 
-The available options:
-
-  - `FancyRegexOptions`: Default engine with lookaround and backreferences support
+  - `FancyRegexOptions`: default engine, supports lookaround and backreferences
 
     - `backtrack_limit`: Maximum backtracking steps
     - `size_limit`: Maximum compiled regex size in bytes
     - `dfa_size_limit`: Maximum DFA cache size in bytes
 
-  - `RegexOptions`: Safer engine with linear-time guarantee
+  - `RegexOptions`: matches in linear time, no lookaround or backreferences
 
     - `size_limit`: Maximum compiled regex size in bytes
     - `dfa_size_limit`: Maximum DFA cache size in bytes
 
-This configuration is crucial when working with untrusted schemas where attackers might craft malicious regex patterns.
+If you validate against schemas from untrusted sources, use `RegexOptions`: a crafted pattern cannot make it backtrack.
 
 ## Email Format Configuration
 
-When validating email addresses using `{"format": "email"}`, you can customize the validation behavior beyond the default JSON Schema spec requirements:
+`email_options` makes `{"format": "email"}` stricter or looser than the spec default:
 
 ```python
 import jsonschema_rs
@@ -642,16 +626,14 @@ validator = jsonschema_rs.validator_for(
 )
 ```
 
-Available options:
-
-  - `require_tld`: Require a top-level domain (e.g., reject "user@localhost")
+  - `require_tld`: Require a top-level domain (e.g., reject "user@localhost") (default: False)
   - `allow_domain_literal`: Allow IP address literals like "user@[127.0.0.1]" (default: True)
   - `allow_display_text`: Allow display names like "Name <user@example.com>" (default: True)
   - `minimum_sub_domains`: Minimum number of domain segments required
 
 ## External References
 
-By default, `jsonschema-rs` resolves HTTP references and file references from the local file system. You can implement a custom retriever to handle external references. Here's an example that uses a static map of schemas:
+By default, `jsonschema-rs` fetches external `$ref` targets over HTTP and from the local file system. Pass a `retriever` to load them yourself. This one serves schemas from a dict:
 
 ```python
 import jsonschema_rs
@@ -691,7 +673,7 @@ validator.is_valid({
 
 ## Schema Registry
 
-For applications that frequently use the same schemas, you can create a registry to store and reference them efficiently:
+A `Registry` holds schemas by URI, so a validator resolves `$ref`s to them without fetching anything:
 
 ```python
 import jsonschema_rs
@@ -727,7 +709,7 @@ assert validator.is_valid({
 })
 ```
 
-The registry can be configured with a draft version and a retriever for external references:
+`Registry` also takes a default draft and a `retriever` for URIs it does not hold:
 
 ```python
 import jsonschema_rs
@@ -746,7 +728,7 @@ registry = jsonschema_rs.Registry(
 
 ## Error Handling
 
-`jsonschema-rs` provides detailed validation errors through the `ValidationError` class, which includes both basic error information and specific details about what caused the validation to fail:
+A `ValidationError` carries the message, both locations and a `kind` with keyword-specific details:
 
 ```python
 import jsonschema_rs
@@ -767,11 +749,11 @@ except jsonschema_rs.ValidationError as error:
         print(f"Exceeded maximum length of {error.kind.limit}")
 ```
 
-For a complete list of all error kinds and their attributes, see the [type definitions file](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/python/jsonschema_rs/__init__.pyi)
+The [type stubs](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/python/jsonschema_rs/__init__.pyi) list every error kind and its attributes.
 
 ### Error Kind Properties
 
-Each error has a `kind` property with convenient accessors:
+`kind` also has generic accessors:
 
 ```python
 for error in jsonschema_rs.iter_errors({"minimum": 5}, 3):
@@ -780,7 +762,7 @@ for error in jsonschema_rs.iter_errors({"minimum": 5}, 3):
     print(error.kind.as_dict()) # {"limit": 5}
 ```
 
-Pattern matching (Python 3.10+):
+Each kind is a class you can `match` on:
 
 ```python
 for error in jsonschema_rs.iter_errors({"minimum": 5}, 3):
@@ -793,8 +775,7 @@ for error in jsonschema_rs.iter_errors({"minimum": 5}, 3):
 
 ### Error Message Masking
 
-When working with sensitive data, you might want to hide actual values from error messages.
-You can mask instance values in error messages by providing a placeholder:
+Pass `mask` to replace instance values in error messages with a placeholder:
 
 ```python
 import jsonschema_rs
@@ -807,7 +788,7 @@ schema = {
     }
 }
 
-# Use default masking (replaces values with "[REDACTED]")
+# Replace instance values with "[REDACTED]"
 validator = jsonschema_rs.validator_for(schema, mask="[REDACTED]")
 
 try:
@@ -826,12 +807,12 @@ On instance["password"]:
 
 ## Performance
 
-`jsonschema-rs` is designed for high performance, outperforming other Python JSON Schema validators in most scenarios:
+Compared with other Python validators:
 
 - **138-10,841x** faster than `jsonschema` for complex schemas and large instances
 - **8-1,848x** faster than `fastjsonschema` on CPython
 
-For detailed benchmarks, see our [full performance comparison](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/BENCHMARKS.md).
+Full results and methodology are in [BENCHMARKS.md](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/BENCHMARKS.md).
 
 ### Compile-Time Validators
 
@@ -857,7 +838,7 @@ Pre-built wheels are available for:
 
 ## Troubleshooting
 
-If you encounter linking errors when building from source on Linux (e.g., undefined symbol errors related to `ring` or crypto), try using the `mold` linker:
+If a source build on Linux fails with linking errors (e.g., undefined symbols from `ring`), use the `mold` linker:
 
 ```bash
 RUSTFLAGS="-C link-arg=-fuse-ld=mold" pip install jsonschema-rs --no-binary :all:
@@ -865,11 +846,11 @@ RUSTFLAGS="-C link-arg=-fuse-ld=mold" pip install jsonschema-rs --no-binary :all
 
 ## Acknowledgements
 
-This library draws API design inspiration from the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. We're grateful to the Python `jsonschema` maintainers and contributors for their pioneering work in JSON Schema validation.
+The API follows the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. Thanks to its maintainers and contributors.
 
 ## Support
 
-If you have questions, need help, or want to suggest improvements, please use [GitHub Discussions](https://github.com/Stranger6667/jsonschema/discussions).
+Ask questions and suggest improvements in [GitHub Discussions](https://github.com/Stranger6667/jsonschema/discussions).
 
 ## Sponsorship
 
@@ -877,7 +858,7 @@ If you find `jsonschema-rs` useful, please consider [sponsoring its development]
 
 ## Contributing
 
-We welcome contributions! Here's how you can help:
+Ways to help:
 
 - Share your use cases
 - Implement missing keywords
