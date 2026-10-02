@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.5] - 2026-10-02
+
 ### Fixed
 
 - `canonicalize` keeping a reference to a cycle of bare references under `not` or `oneOf` instead of treating it as accepting every value.
@@ -642,7 +644,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.4...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.5...HEAD
+[0.58.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.4...ruby-v0.58.5
 [0.58.4]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.3...ruby-v0.58.4
 [0.58.3]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.2...ruby-v0.58.3
 [0.58.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.1...ruby-v0.58.2
