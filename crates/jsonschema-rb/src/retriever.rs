@@ -2,6 +2,7 @@
 use jsonschema::{Retrieve, Uri};
 use magnus::{block::Proc, prelude::*, value::Opaque, Error, Ruby, Value};
 use serde_json::Value as JsonValue;
+use std::{ffi::c_void, panic::AssertUnwindSafe};
 
 use crate::ser::to_value;
 
@@ -97,4 +98,53 @@ pub fn make_retriever(ruby: &Ruby, value: Value) -> Result<Option<RubyRetriever>
     })?;
 
     Ok(Some(RubyRetriever::new(proc)))
+}
+
+/// The built-in HTTP and file retriever, run with the GVL released so other Ruby threads keep running while it waits.
+pub struct DetachedRetriever(pub Option<jsonschema::HttpRetriever>);
+
+type RetrieveResult = Result<JsonValue, Box<dyn std::error::Error + Send + Sync>>;
+
+#[allow(unsafe_code)]
+impl Retrieve for DetachedRetriever {
+    fn retrieve(&self, uri: &Uri<String>) -> RetrieveResult {
+        struct Call<'a> {
+            retriever: &'a DetachedRetriever,
+            uri: &'a Uri<String>,
+            result: Option<std::thread::Result<RetrieveResult>>,
+        }
+
+        unsafe extern "C" fn call(data: *mut c_void) -> *mut c_void {
+            // SAFETY: `data` is the `Call` below, alive until `rb_thread_call_without_gvl` returns
+            let call = unsafe { &mut *data.cast::<Call<'_>>() };
+            call.result = Some(std::panic::catch_unwind(AssertUnwindSafe(|| {
+                match &call.retriever.0 {
+                    Some(retriever) => retriever.retrieve(call.uri),
+                    // A client per retrieval, as the core default retriever does; building one up front would cost every validator build
+                    None => jsonschema::HttpRetriever::new(&jsonschema::HttpOptions::new())?
+                        .retrieve(call.uri),
+                }
+            })));
+            std::ptr::null_mut()
+        }
+
+        let mut data = Call {
+            retriever: self,
+            uri,
+            result: None,
+        };
+        // SAFETY: `call` touches no Ruby objects, so it may run without the GVL
+        unsafe {
+            rb_sys::rb_thread_call_without_gvl(
+                Some(call),
+                (&raw mut data).cast(),
+                None,
+                std::ptr::null_mut(),
+            );
+        }
+        match data.result.expect("Retrieval runs to completion") {
+            Ok(result) => result,
+            Err(panic) => std::panic::resume_unwind(panic),
+        }
+    }
 }

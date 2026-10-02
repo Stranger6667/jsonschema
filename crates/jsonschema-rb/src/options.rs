@@ -19,7 +19,7 @@ use jsonschema::json::{magnus_invalidate_members_cache, Magnus, RbNode};
 
 use crate::{
     registry::Registry,
-    retriever::{make_retriever, RubyRetriever},
+    retriever::{make_retriever, DetachedRetriever, RubyRetriever},
     ser::{map_to_ruby, value_to_ruby},
     static_id::{define_rb_intern, StaticId},
     CUSTOM_KEYWORD_CAUSE, LAST_CALLBACK_ERROR,
@@ -523,7 +523,7 @@ pub fn make_options_from_kwargs(
             "`offline` cannot be used together with `retriever`",
         ));
     }
-    let mut opts = jsonschema::options_for::<Magnus>();
+    let mut opts = jsonschema::options_for::<Magnus>().with_retriever(DetachedRetriever(None));
     let mut registry = None;
     let mut retriever = None;
     let retriever_was_provided = retriever_val.is_some();
@@ -839,9 +839,9 @@ pub fn make_options_from_kwargs(
         if let Some(ref ca_cert) = hopts.ca_cert {
             http_opts = http_opts.add_root_certificate(ca_cert);
         }
-        opts = opts
-            .with_http_options(&http_opts)
+        let retriever = jsonschema::HttpRetriever::new(&http_opts)
             .map_err(|e| Error::new(ruby.exception_arg_error(), e.to_string()))?;
+        opts = opts.with_retriever(DetachedRetriever(Some(retriever)));
     }
 
     if offline {

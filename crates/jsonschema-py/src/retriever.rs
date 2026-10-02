@@ -37,3 +37,25 @@ pub(crate) fn into_retriever(
         })
     })
 }
+
+/// The built-in HTTP and file retriever, run with the GIL released so other Python threads keep running while it waits.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) struct DetachedRetriever(pub(crate) Option<jsonschema::HttpRetriever>);
+
+#[cfg(not(target_arch = "wasm32"))]
+impl Retrieve for DetachedRetriever {
+    fn retrieve(
+        &self,
+        uri: &Uri<String>,
+    ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+        Python::attach(|py| {
+            py.detach(|| match &self.0 {
+                Some(retriever) => retriever.retrieve(uri),
+                // A client per retrieval, as the core default retriever does; building one up front would cost every validator build
+                None => {
+                    jsonschema::HttpRetriever::new(&jsonschema::HttpOptions::new())?.retrieve(uri)
+                }
+            })
+        })
+    }
+}

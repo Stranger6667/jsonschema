@@ -33,6 +33,8 @@ use pyo3::{
     wrap_pyfunction,
 };
 use regex::{FancyRegexOptions, RegexOptions};
+#[cfg(not(target_arch = "wasm32"))]
+use retriever::DetachedRetriever;
 use retriever::{into_retriever, Retriever};
 use ser::to_value;
 use serde::Serialize;
@@ -965,6 +967,10 @@ fn make_options<'a>(
     offline: Option<bool>,
 ) -> PyResult<ValidationOptions<'a, Arc<dyn Retrieve>, Pyo3>> {
     let mut options = jsonschema::options_for::<Pyo3>();
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        options = options.with_retriever(DetachedRetriever(None));
+    }
     if let Some(raw_draft_version) = draft {
         options = options.with_draft(get_draft(raw_draft_version)?);
     }
@@ -1085,9 +1091,10 @@ fn make_options<'a>(
         if let Some(ref ca_cert) = opts.ca_cert {
             http_opts = http_opts.add_root_certificate(ca_cert);
         }
-        options = options.with_http_options(&http_opts).map_err(|e| {
+        let retriever = jsonschema::HttpRetriever::new(&http_opts).map_err(|e| {
             exceptions::PyRuntimeError::new_err(format!("Failed to configure HTTP options: {e}"))
         })?;
+        options = options.with_retriever(DetachedRetriever(Some(retriever)));
     }
     #[cfg(target_arch = "wasm32")]
     if http_options.is_some() {
