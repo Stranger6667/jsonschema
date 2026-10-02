@@ -5,9 +5,17 @@ updates:
     schedule:
       interval: "weekly"
   - package-ecosystem: "cargo"
-    directory: "/"
+    directories:
+      - "/"
+      # Standalone manifest the source gem builds from
+      - "/crates/jsonschema-rb/ext/jsonschema"
     schedule:
       interval: "weekly"
+    groups:
+      # One PR per dependency covering both manifests
+      cargo:
+        patterns: ["*"]
+        group-by: dependency-name
   - package-ecosystem: "pip"
     directory: "/crates/jsonschema-py"
     schedule:
