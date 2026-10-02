@@ -14,7 +14,7 @@ default = []
 retrieve-async = ["dep:async-trait", "dep:futures"]
 
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-getrandom = { version = "0.3.4", features = ["wasm_js"] }
+getrandom = { version = "0.4.3", features = ["wasm_js"] }
 
 [dependencies]
 ahash.workspace = true
