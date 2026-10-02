@@ -871,7 +871,7 @@ RUSTFLAGS="-C link-arg=-fuse-ld=mold" \
 
 ## Acknowledgements
 
-The API follows the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. Thanks to its maintainers and contributors.
+The API design draws on the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. Thanks to its maintainers and contributors.
 
 ## Support
 

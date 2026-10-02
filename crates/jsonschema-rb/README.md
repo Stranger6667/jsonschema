@@ -746,7 +746,7 @@ A complete extension with its build and test commands lives in
 
 ## Acknowledgements
 
-The API follows the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. Thanks to its maintainers and contributors.
+The API design draws on the Python [`jsonschema`](https://github.com/python-jsonschema/jsonschema) package. Thanks to its maintainers and contributors.
 
 ## Support
 
