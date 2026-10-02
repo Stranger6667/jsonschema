@@ -18,7 +18,8 @@ Gem::Specification.new do |spec|
   spec.metadata["homepage_uri"] = spec.homepage
   spec.metadata["source_code_uri"] = "https://github.com/Stranger6667/jsonschema"
   spec.metadata["changelog_uri"] = "https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-rb/CHANGELOG.md"
-  spec.metadata["documentation_uri"] = "https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-rb#readme"
+  spec.metadata["documentation_uri"] =
+    "https://github.com/Stranger6667/jsonschema/blob/ruby-v#{spec.version}/crates/jsonschema-rb/README.md"
   spec.metadata["bug_tracker_uri"] = "https://github.com/Stranger6667/jsonschema/issues"
   spec.metadata["funding_uri"] = "https://github.com/sponsors/Stranger6667"
   spec.metadata["rubygems_mfa_required"] = "true"
