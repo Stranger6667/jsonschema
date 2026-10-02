@@ -654,6 +654,8 @@ jobs:
           libdir="$(ruby -e 'print RbConfig::CONFIG["libdir"]')"
           export LD_LIBRARY_PATH="$libdir${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
           export DYLD_FALLBACK_LIBRARY_PATH="$libdir${DYLD_FALLBACK_LIBRARY_PATH:+:$DYLD_FALLBACK_LIBRARY_PATH}"
+          # rb-sys reruns its build script only when `RUBY` changes; the cache is shared across Ruby versions
+          export RUBY="$(ruby -e 'print RbConfig.ruby')"
           cargo test --no-fail-fast -p jsonschema-value --features "magnus-tests,conformance,arbitrary-precision,macros"
 
       - run: bundle exec rspec --tag '~compaction'
