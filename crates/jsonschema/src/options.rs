@@ -1225,6 +1225,7 @@ mod tests {
     use super::*;
     use referencing::{Registry, Resource, Retrieve, Uri};
     use serde_json::{json, Value};
+    use std::sync::Mutex;
     use test_case::test_case;
 
     fn custom(s: &str) -> bool {
@@ -1357,6 +1358,114 @@ mod tests {
                 Err(format!("unexpected retrieval for {}", uri.as_str()).into())
             }
         }
+    }
+
+    #[derive(Clone, Default)]
+    struct RecordingRetriever(Arc<Mutex<Vec<String>>>);
+
+    impl RecordingRetriever {
+        fn retrieved(&self) -> Vec<String> {
+            self.0.lock().expect("Lock is poisoned").clone()
+        }
+    }
+
+    impl Retrieve for RecordingRetriever {
+        fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            self.0
+                .lock()
+                .expect("Lock is poisoned")
+                .push(uri.as_str().to_string());
+            Ok(json!({"$schema": "https://json-schema.org/draft/2020-12/schema"}))
+        }
+    }
+
+    // A fixed draft makes the `$schema` URI irrelevant, so it is never fetched.
+    #[test_case(Some(Draft::Draft4), &[])]
+    #[test_case(Some(Draft::Draft6), &[])]
+    #[test_case(Some(Draft::Draft7), &[])]
+    #[test_case(Some(Draft::Draft201909), &[])]
+    #[test_case(Some(Draft::Draft202012), &[])]
+    #[test_case(None, &["https://example.com/dialect"])]
+    fn explicit_draft_does_not_retrieve_unknown_meta_schema(
+        draft: Option<Draft>,
+        expected: &[&str],
+    ) {
+        let schema = json!({"$schema": "https://example.com/dialect", "type": "string"});
+        let retriever = RecordingRetriever::default();
+        let mut options = crate::options().with_retriever(retriever.clone());
+        if let Some(draft) = draft {
+            options = options.with_draft(draft);
+        }
+        let validator = options.build(&schema).expect("Validator should build");
+        assert_eq!(retriever.retrieved(), expected);
+        assert!(validator.is_valid(&json!("foo")));
+        assert!(!validator.is_valid(&json!(1)));
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[async_trait::async_trait]
+    impl referencing::AsyncRetrieve for RecordingRetriever {
+        async fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            Retrieve::retrieve(self, uri)
+        }
+    }
+
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[test_case(Some(Draft::Draft202012), &[])]
+    #[test_case(None, &["https://example.com/dialect"])]
+    #[tokio::test]
+    async fn async_explicit_draft_does_not_retrieve_unknown_meta_schema(
+        draft: Option<Draft>,
+        expected: &[&str],
+    ) {
+        let schema = json!({"$schema": "https://example.com/dialect", "type": "string"});
+        let retriever = RecordingRetriever::default();
+        let mut options = crate::async_options().with_retriever(retriever.clone());
+        if let Some(draft) = draft {
+            options = options.with_draft(draft);
+        }
+        let validator = options
+            .build(&schema)
+            .await
+            .expect("Validator should build");
+        assert_eq!(retriever.retrieved(), expected);
+        assert!(validator.is_valid(&json!("foo")));
+        assert!(!validator.is_valid(&json!(1)));
+    }
+
+    // A meta-schema already in the registry still supplies the vocabularies.
+    #[test]
+    fn explicit_draft_uses_registered_meta_schema_vocabularies() {
+        let registry = Registry::new()
+            .add(
+                "https://example.com/dialect",
+                json!({
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "$vocabulary": {
+                        "https://json-schema.org/draft/2020-12/vocab/core": true,
+                        "https://json-schema.org/draft/2020-12/vocab/applicator": true
+                    }
+                }),
+            )
+            .expect("Invalid URI")
+            .prepare()
+            .expect("Registry should prepare");
+        let schema = json!({"$schema": "https://example.com/dialect", "minimum": 10});
+        let retriever = RecordingRetriever::default();
+        let validator = crate::options()
+            .with_draft(Draft::Draft202012)
+            .with_registry(&registry)
+            .with_retriever(retriever.clone())
+            .build(&schema)
+            .expect("Validator should build");
+        assert_eq!(retriever.retrieved(), Vec::<String>::new());
+        assert!(validator.is_valid(&json!(1)));
     }
 
     #[test]

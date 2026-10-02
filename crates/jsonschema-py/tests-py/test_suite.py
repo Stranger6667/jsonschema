@@ -118,6 +118,12 @@ def test_draft(filename, draft, schema, instance, expected, description, is_opti
         kwargs = {"retriever": TESTSUITE_RETRIEVER}
         if is_optional:
             kwargs["validate_formats"] = True
+        # An explicit draft never retrieves `$schema`, so a custom meta-schema must be registered.
+        meta_schema = schema.get("$schema") if isinstance(schema, dict) else None
+        if meta_schema in REMOTE_DOCUMENTS:
+            kwargs["registry"] = jsonschema_rs.Registry(
+                [(meta_schema, json.loads(REMOTE_DOCUMENTS[meta_schema]))], retriever=TESTSUITE_RETRIEVER
+            )
         validator = cls(schema, **kwargs)
 
         result = validator.is_valid(instance)

@@ -91,6 +91,13 @@ RSpec.describe "JSON Schema Test Suite" do
                     validate_formats: is_optional,
                     retriever: SuiteHelpers.build_retriever
                   }
+                  # An explicit draft never retrieves `$schema`, so a custom meta-schema must be registered.
+                  meta_schema = schema.is_a?(Hash) ? SuiteHelpers.build_retriever.call(schema["$schema"]) : nil
+                  if meta_schema
+                    opts[:registry] = JSONSchema::Registry.new(
+                      [[schema["$schema"], meta_schema]], retriever: SuiteHelpers.build_retriever
+                    )
+                  end
                   error_ctx = "Schema: #{JSON.pretty_generate(schema)}\n" \
                               "Instance: #{JSON.pretty_generate(data)}"
 
