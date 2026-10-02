@@ -321,7 +321,7 @@ impl ValueEmitter for Pyo3Emitter {
             quote! {
                 pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
                     __json::inspect(instance.as_borrowed(), false, || {
-                        is_valid(instance.as_borrowed())
+                        run_is_valid(instance.as_borrowed())
                     })
                 }
             }
@@ -332,7 +332,7 @@ impl ValueEmitter for Pyo3Emitter {
                     instance: &'__i __Bound<'__i>,
                 ) -> __py3::PyResult<::std::result::Result<(), __VE<'__i>>> {
                     __json::inspect(instance.as_borrowed(), false, || {
-                        match validate(instance.as_borrowed(), &__paths::LazyLocation::new()) {
+                        match run_validate(instance.as_borrowed()) {
                             Some(e) => Err(e),
                             None => Ok(()),
                         }
@@ -346,13 +346,7 @@ impl ValueEmitter for Pyo3Emitter {
                     instance: &'__i __Bound<'__i>,
                 ) -> __py3::PyResult<__EI<'__i>> {
                     let errors = __json::inspect(instance.as_borrowed(), false, || {
-                        let mut errors = Vec::new();
-                        collect_errors(
-                            instance.as_borrowed(),
-                            &__paths::LazyLocation::new(),
-                            &mut errors,
-                        );
-                        errors
+                        run_collect_errors(instance.as_borrowed())
                     })?;
                     Ok(__err::iterator_from(errors))
                 }

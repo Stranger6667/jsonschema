@@ -13,7 +13,14 @@ match instance {
                         .iter()
                         .all(|(__key, __value)| {
                             let key_str = __key.as_str();
-                            if key_str.starts_with("a") || __jsonschema_regex_0(key_str)
+                            if key_str.starts_with("a")
+                                || __jsonschema_regex_0(
+                                    key_str,
+                                    || __unfinished::schema_site(
+                                        "/patternProperties/^b.c",
+                                        None,
+                                    ),
+                                )
                             {
                                 true
                             } else {

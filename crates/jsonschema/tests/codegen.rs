@@ -5079,3 +5079,339 @@ fn test_methods_one_of_only_is_valid(instance: serde_json::Value) {
         &instance,
     );
 }
+
+#[jsonschema::validator(
+    schema = r#"{"not":{"pattern":"(?<=ab)c"}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedNotOverMatchValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"not":{"pattern":"(?<=x)c"}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedNotOverMissValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"if":{"pattern":"(?<=ab)c"},"then":{"maxLength":1}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedIfPicksBranchValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{"pattern":"(?<=ab)c"},{"type":"string"}]}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedOneOfCountsValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"patternProperties":{"(?<=ab)c":{"type":"integer"}}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedPatternPropertiesValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"patternProperties":{"(?<=ab)c":true},"additionalProperties":false}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedAdditionalPropertiesValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"patternProperties":{"(?<=ab)c":true},"unevaluatedProperties":false}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedUnevaluatedPropertiesValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"abc":true},"patternProperties":{"(?<=ab)c":{"type":"integer"}},"additionalProperties":false}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedDeclaredAdditionalFalseValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"abc":true},"patternProperties":{"(?<=ab)c":{"type":"integer"}},"additionalProperties":{}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedDeclaredAdditionalSchemaValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"anyOf":[{"pattern":"(?<=ab)c"},{"type":"string"}]}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedAnyOfAcceptingValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"anyOf":[{"pattern":"(?<=ab)c"},{"not":{"pattern":"(?<=ab)c"}}]}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedAnyOfNegationValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"if":{"pattern":"(?<=ab)c"},"then":{"minLength":1},"else":{"minLength":1}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedIfEqualBranchesValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"pattern":"(?<=ab)c","maxLength":1}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedSharedErrorValidator;
+
+// With `backtrack_limit = 1` the engine cannot finish matching these patterns against "abc"
+const UNDECIDED: &str = "Error executing regex: Max limit for backtracking count exceeded";
+
+fn undecided() -> (bool, Result<(), String>, Vec<String>) {
+    (false, Err(UNDECIDED.to_owned()), vec![UNDECIDED.to_owned()])
+}
+
+fn shared_max_length_error() -> (bool, Result<(), String>, Vec<String>) {
+    let error = r#""abc" is longer than 1 character"#.to_owned();
+    (false, Err(error.clone()), vec![error])
+}
+
+macro_rules! unfinished_match {
+    ($name:ident, $validator:ty, $instance:expr, $expected:expr) => {
+        #[test]
+        fn $name() {
+            let instance = $instance;
+            assert_eq!(
+                (
+                    <$validator>::is_valid(&instance),
+                    <$validator>::validate(&instance).map_err(|error| error.to_string()),
+                    <$validator>::iter_errors(&instance)
+                        .map(|error| error.to_string())
+                        .collect::<Vec<_>>(),
+                ),
+                $expected
+            );
+        }
+    };
+}
+
+unfinished_match!(
+    test_unfinished_not_over_match,
+    UnfinishedNotOverMatchValidator,
+    serde_json::json!("abc"),
+    undecided()
+);
+unfinished_match!(
+    test_unfinished_not_over_miss,
+    UnfinishedNotOverMissValidator,
+    serde_json::json!("abc"),
+    undecided()
+);
+unfinished_match!(
+    test_unfinished_if_picks_branch,
+    UnfinishedIfPicksBranchValidator,
+    serde_json::json!("abc"),
+    undecided()
+);
+unfinished_match!(
+    test_unfinished_one_of_counts,
+    UnfinishedOneOfCountsValidator,
+    serde_json::json!("abc"),
+    undecided()
+);
+unfinished_match!(
+    test_unfinished_pattern_properties,
+    UnfinishedPatternPropertiesValidator,
+    serde_json::json!({"abc":"x"}),
+    undecided()
+);
+unfinished_match!(
+    test_unfinished_additional_properties,
+    UnfinishedAdditionalPropertiesValidator,
+    serde_json::json!({"abc":1}),
+    undecided()
+);
+unfinished_match!(
+    test_unfinished_unevaluated_properties,
+    UnfinishedUnevaluatedPropertiesValidator,
+    serde_json::json!({"abc":1}),
+    undecided()
+);
+unfinished_match!(
+    test_unfinished_declared_additional_false,
+    UnfinishedDeclaredAdditionalFalseValidator,
+    serde_json::json!({"abc":"x"}),
+    undecided()
+);
+unfinished_match!(
+    test_unfinished_declared_additional_schema,
+    UnfinishedDeclaredAdditionalSchemaValidator,
+    serde_json::json!({"abc":"x"}),
+    undecided()
+);
+unfinished_match!(
+    test_unfinished_any_of_accepting,
+    UnfinishedAnyOfAcceptingValidator,
+    serde_json::json!("abc"),
+    (true, Ok(()), Vec::new())
+);
+unfinished_match!(
+    test_unfinished_any_of_negation,
+    UnfinishedAnyOfNegationValidator,
+    serde_json::json!("abc"),
+    (true, Ok(()), Vec::new())
+);
+unfinished_match!(
+    test_unfinished_if_equal_branches,
+    UnfinishedIfEqualBranchesValidator,
+    serde_json::json!("abc"),
+    (true, Ok(()), Vec::new())
+);
+unfinished_match!(
+    test_unfinished_shared_error,
+    UnfinishedSharedErrorValidator,
+    serde_json::json!("abc"),
+    shared_max_length_error()
+);
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"x":{"pattern":"(?<=ab)c"}}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedNestedPatternValidator;
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"s":{"pattern":"(?<=ab)c"}},"properties":{"x":{"$ref":"#/$defs/s"}}}"##,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedReferencedPatternValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"o":{"patternProperties":{"(?<=ab)c":{"type":"integer"}}}}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedNestedPatternPropertiesValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"o":{"patternProperties":{"(?<=ab)c":true},"additionalProperties":false}}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedNestedAdditionalPropertiesValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"o":{"patternProperties":{"(?<=ab)c":true},"unevaluatedProperties":false}}}"#,
+    pattern_options = {
+        engine = fancy_regex,
+        backtrack_limit = 1,
+    }
+)]
+struct UnfinishedNestedUnevaluatedPropertiesValidator;
+
+macro_rules! unfinished_match_location {
+    ($name:ident, $validator:ty, $schema:literal, $instance:expr) => {
+        #[test]
+        fn $name() {
+            let schema: serde_json::Value =
+                serde_json::from_str($schema).expect("valid schema json");
+            let runtime = jsonschema::options()
+                .with_pattern_options(jsonschema::PatternOptions::fancy_regex().backtrack_limit(1))
+                .build(&schema)
+                .expect("valid schema");
+            let instance = $instance;
+            let locations = |error: jsonschema::ValidationError<'_>| {
+                (
+                    error.schema_path().to_string(),
+                    error.instance_path().to_string(),
+                    error.instance().clone().into_owned(),
+                    error.to_string(),
+                )
+            };
+            assert_eq!(
+                <$validator>::validate(&instance).map_err(locations),
+                runtime.validate(&instance).map_err(locations)
+            );
+        }
+    };
+}
+
+unfinished_match_location!(
+    test_unfinished_match_location_not,
+    UnfinishedNotOverMatchValidator,
+    r#"{"not":{"pattern":"(?<=ab)c"}}"#,
+    serde_json::json!("abc")
+);
+unfinished_match_location!(
+    test_unfinished_match_location_pattern,
+    UnfinishedNestedPatternValidator,
+    r#"{"properties":{"x":{"pattern":"(?<=ab)c"}}}"#,
+    serde_json::json!({"x":"abc"})
+);
+unfinished_match_location!(
+    test_unfinished_match_location_pattern_behind_reference,
+    UnfinishedReferencedPatternValidator,
+    r##"{"$defs":{"s":{"pattern":"(?<=ab)c"}},"properties":{"x":{"$ref":"#/$defs/s"}}}"##,
+    serde_json::json!({"x":"abc"})
+);
+unfinished_match_location!(
+    test_unfinished_match_location_pattern_properties,
+    UnfinishedNestedPatternPropertiesValidator,
+    r#"{"properties":{"o":{"patternProperties":{"(?<=ab)c":{"type":"integer"}}}}}"#,
+    serde_json::json!({"o":{"abc":"x"}})
+);
+unfinished_match_location!(
+    test_unfinished_match_location_additional_properties,
+    UnfinishedNestedAdditionalPropertiesValidator,
+    r#"{"properties":{"o":{"patternProperties":{"(?<=ab)c":true},"additionalProperties":false}}}"#,
+    serde_json::json!({"o":{"abc":1}})
+);
+unfinished_match_location!(
+    test_unfinished_match_location_unevaluated_properties,
+    UnfinishedNestedUnevaluatedPropertiesValidator,
+    r#"{"properties":{"o":{"patternProperties":{"(?<=ab)c":true},"unevaluatedProperties":false}}}"#,
+    serde_json::json!({"o":{"abc":1}})
+);

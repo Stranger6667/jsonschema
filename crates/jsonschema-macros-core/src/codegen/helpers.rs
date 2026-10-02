@@ -148,7 +148,7 @@ pub(crate) fn get_or_create_key_eval_fn<E: ValueEmitter>(
         let body = ctx.with_key_eval_scope(location, |ctx| {
             let schema_value = Value::Object(schema_obj.clone());
             ctx.with_schema_env(&schema_value, schema_base_uri, |ctx| {
-                let compiled = compile_key_evaluated_expr(ctx, schema_obj, true);
+                let compiled = compile_key_evaluated_expr(ctx, schema_obj, true, false);
                 let is_recursive_anchor = ctx.draft.supports_recursive_ref_keyword()
                     && schema_obj.get("$recursiveAnchor").and_then(Value::as_bool) == Some(true);
                 let dynamic_bindings = if ctx.uses_dynamic_ref {

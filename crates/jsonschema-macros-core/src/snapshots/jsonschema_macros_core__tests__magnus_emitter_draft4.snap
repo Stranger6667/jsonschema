@@ -27,6 +27,7 @@ mod __validator_impl {
     use jsonschema::__private::serde_json as __sj;
     use jsonschema::__private::types as __types;
     use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::__private::unfinished_matches as __unfinished;
     use jsonschema::paths as __paths;
     use jsonschema::JsonType as __JT;
     use jsonschema::JsonTypeSet as __JTS;
@@ -106,6 +107,17 @@ mod __validator_impl {
                 );
         }
     }
+    pub(super) fn run_is_valid(instance: __Value<'_>) -> bool {
+        is_valid(instance)
+    }
+    pub(super) fn run_validate<'__i>(instance: __Value<'__i>) -> Option<__VE<'__i>> {
+        validate(instance, &__paths::LazyLocation::new())
+    }
+    pub(super) fn run_collect_errors<'__i>(instance: __Value<'__i>) -> Vec<__VE<'__i>> {
+        let mut errors = Vec::new();
+        collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
+        errors
+    }
     pub(super) fn entry_is_valid(
         instance: &__rb::Value,
     ) -> ::std::result::Result<bool, __rb::Error> {
@@ -116,7 +128,7 @@ mod __validator_impl {
         if let Some(error) = __json::magnus_take_pending_error() {
             return Err(error.into());
         }
-        let result = is_valid(node);
+        let result = run_is_valid(node);
         if let Some(error) = __json::magnus_take_pending_error() {
             return Err(error.into());
         }
@@ -132,7 +144,7 @@ mod __validator_impl {
         if let Some(error) = __json::magnus_take_pending_error() {
             return Err(error.into());
         }
-        let result = match validate(node, &__paths::LazyLocation::new()) {
+        let result = match run_validate(node) {
             Some(e) => Err(e),
             None => Ok(()),
         };
@@ -151,8 +163,7 @@ mod __validator_impl {
         if let Some(error) = __json::magnus_take_pending_error() {
             return Err(error.into());
         }
-        let mut errors = Vec::new();
-        collect_errors(node, &__paths::LazyLocation::new(), &mut errors);
+        let errors = run_collect_errors(node);
         if let Some(error) = __json::magnus_take_pending_error() {
             return Err(error.into());
         }

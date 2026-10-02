@@ -8,7 +8,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     value: &Value,
 ) -> CompiledExpr {
     let err_instance = E::err_instance(format_ident!("instance"));
-    let inner = compile_schema(ctx, value);
+    let inner = ctx.with_schema_path_segment("not", |ctx| compile_schema(ctx, value));
     let schema_path = ctx.schema_path_for_keyword("not");
     let not_schema_json = serde_json::to_string(value).expect("Failed to serialize not schema");
 

@@ -4,7 +4,7 @@ use crate::{
     compiler,
     keywords::pattern_properties::invalid_regex,
     node::SchemaNode,
-    regex::{analyze_pattern, contains_ecma_whitespace, LiteralMatchError, PatternOptimization},
+    regex::{analyze_pattern, contains_ecma_whitespace, PatternOptimization},
     validator::Validate as _,
     Json, Object, SerdeJson, ValidationContext,
 };
@@ -29,7 +29,7 @@ pub(crate) enum CompiledPattern<R> {
 }
 
 impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern<R> {
-    type Error = LiteralMatchError;
+    type Error = R::Error;
 
     #[inline]
     fn is_match(&self, text: &str) -> Result<bool, Self::Error> {
@@ -38,8 +38,36 @@ impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern
             CompiledPattern::Exact(exact) => Ok(text == exact.as_ref()),
             CompiledPattern::Alternation(alts) => Ok(alts.iter().any(|a| a.as_str() == text)),
             CompiledPattern::NoWhitespace => Ok(!contains_ecma_whitespace(text)),
-            // Treat regex errors as non-match for compatibility
-            CompiledPattern::Regex(re) => Ok(re.is_match(text).unwrap_or(false)),
+            CompiledPattern::Regex(re) => re.is_match(text),
+        }
+    }
+}
+
+/// A `patternProperties` pattern matched against property names during validation.
+pub(crate) trait PropertyPattern: crate::regex::RegexEngine {
+    /// Whether `text` matches; `ctx` resolves a match the engine cannot finish, reported at `site`.
+    fn is_match_in(
+        &self,
+        text: &str,
+        ctx: &mut crate::validator::ValidationContext,
+        site: impl FnOnce() -> crate::unfinished_matches::MatchSite,
+    ) -> bool;
+}
+
+impl<R: crate::regex::RegexEngine> PropertyPattern for CompiledPattern<R> {
+    #[inline]
+    fn is_match_in(
+        &self,
+        text: &str,
+        ctx: &mut crate::validator::ValidationContext,
+        site: impl FnOnce() -> crate::unfinished_matches::MatchSite,
+    ) -> bool {
+        match self {
+            CompiledPattern::Prefix(prefix) => text.starts_with(prefix.as_ref()),
+            CompiledPattern::Exact(exact) => text == exact.as_ref(),
+            CompiledPattern::Alternation(alts) => alts.iter().any(|a| a.as_str() == text),
+            CompiledPattern::NoWhitespace => !contains_ecma_whitespace(text),
+            CompiledPattern::Regex(re) => ctx.is_match(re, text, site),
         }
     }
 }

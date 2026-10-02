@@ -5,7 +5,7 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde_json::Value;
 
-use super::super::{compile_regex_match, translate_and_validate_regex, CompileContext};
+use super::super::{compile_regex_match, translate_and_validate_regex, CompileContext, RegexSite};
 use crate::codegen::CompiledExpr;
 
 /// Emitted checks deciding whether a property key is covered by
@@ -29,9 +29,11 @@ impl PatternCoverage {
 
 /// Build the coverage checks for `patternProperties`, or `Err` with the first
 /// invalid-regex diagnostic.
+/// `located` emits the checks into `validate` code, where `__path` is the object's location.
 pub(super) fn build_pattern_coverage<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     pattern_properties: Option<&Value>,
+    located: bool,
 ) -> Result<PatternCoverage, CompiledExpr> {
     let Some(obj) = pattern_properties.and_then(Value::as_object) else {
         return Ok(PatternCoverage {
@@ -42,7 +44,7 @@ pub(super) fn build_pattern_coverage<E: ValueEmitter>(
 
     let mut prefixes: Vec<Cow<'_, str>> = Vec::new();
     let mut literals: Vec<String> = Vec::new();
-    let mut regex_patterns: Vec<String> = Vec::new();
+    let mut regex_patterns: Vec<(String, &str)> = Vec::new();
     let mut predicates: Vec<TokenStream> = Vec::new();
     for pattern in obj.keys() {
         match jsonschema_regex::analyze_pattern(pattern) {
@@ -56,7 +58,7 @@ pub(super) fn build_pattern_coverage<E: ValueEmitter>(
             }),
             None => {
                 let regex = translate_and_validate_regex(ctx, "patternProperties", pattern)?;
-                regex_patterns.push(regex);
+                regex_patterns.push((regex, pattern.as_str()));
             }
         }
     }
@@ -92,7 +94,17 @@ pub(super) fn build_pattern_coverage<E: ValueEmitter>(
     if !regex_patterns.is_empty() {
         let regex_checks: Vec<TokenStream> = regex_patterns
             .iter()
-            .map(|pattern| compile_regex_match(ctx, pattern, &quote! { key_str }))
+            .map(|(regex, pattern)| {
+                let schema_path = ctx.with_schema_path_segment("patternProperties", |ctx| {
+                    ctx.schema_path_for_keyword(pattern)
+                });
+                let site = RegexSite {
+                    schema_path: &schema_path,
+                    pattern: None,
+                    located,
+                };
+                compile_regex_match(ctx, regex, &quote! { key_str }, &site)
+            })
             .collect();
         checks.push(super::combine_or(regex_checks));
     }

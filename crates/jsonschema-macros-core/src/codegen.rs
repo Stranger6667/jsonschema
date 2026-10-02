@@ -12,7 +12,7 @@ use self::{
         collect_dynamic_anchor_bindings, get_or_create_item_eval_fn, get_or_create_key_eval_fn,
     },
     numeric::value_as_u64,
-    regex::{compile_regex_match, translate_and_validate_regex},
+    regex::{compile_regex_match, translate_and_validate_regex, RegexSite},
 };
 use crate::context::{CodegenConfig, CompileContext};
 use errors::{invalid_schema_minimum_expression, invalid_schema_type_expression};

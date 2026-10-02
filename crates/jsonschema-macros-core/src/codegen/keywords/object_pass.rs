@@ -1,6 +1,6 @@
 use super::{
     super::{compile_schema, expr::ValidateBlock, CompileContext, CompiledExpr},
-    pattern_properties::key_match_expr,
+    pattern_properties::{key_match_expr, KeyMatch},
 };
 use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
@@ -11,7 +11,7 @@ pub(crate) struct ClusterSubschemas<'a> {
     pub(crate) properties: Vec<(&'a str, CompiledExpr)>,
     pub(crate) patterns: Vec<(
         &'a str,
-        Result<TokenStream, CompiledExpr>,
+        Result<KeyMatch, CompiledExpr>,
         Option<CompiledExpr>,
     )>,
     pub(crate) additional: Option<CompiledExpr>,
@@ -144,6 +144,7 @@ pub(crate) fn compile_validate<E: ValueEmitter>(
         let Ok(key_match) = key_match else {
             return None;
         };
+        let key_match = &key_match.located;
         let check = check.as_ref().expect("pattern subschema precompiled");
         match &check.validate {
             ValidateBlock::Expr(expr) => pattern_checks.push(quote! {
@@ -266,6 +267,7 @@ pub(crate) fn compile_collect<E: ValueEmitter>(
         let Ok(key_match) = key_match else {
             return None;
         };
+        let key_match = &key_match.located;
         let check = check.as_ref().expect("pattern subschema precompiled");
         match &check.validate {
             ValidateBlock::Expr(_) => {
@@ -413,6 +415,7 @@ pub(crate) fn compile_is_valid<E: ValueEmitter>(
         let Ok(key_match) = key_match else {
             return None;
         };
+        let key_match = &key_match.is_valid;
         let check = check.as_ref().expect("pattern subschema precompiled");
         if check.is_trivially_true() {
             if track_covered {
