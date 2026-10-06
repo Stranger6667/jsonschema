@@ -5,6 +5,7 @@
 ### Fixed
 
 - `\s` in `pattern` missing most Unicode space separators and U+2028.
+- ECMA regex character class literals being interpreted as Rust set operators.
 
 ## [0.58.5] - 2026-10-02
 

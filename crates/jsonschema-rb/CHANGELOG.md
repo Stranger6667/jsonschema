@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- ECMA regex character class literals being interpreted as Rust set operators.
 - Installing the source gem.
 - `\s` in `pattern` missing most Unicode space separators and U+2028.
 
