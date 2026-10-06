@@ -394,6 +394,37 @@ mod tests {
         assert_eq!(validator.validate(&text).is_ok(), is_matching);
     }
 
+    #[test_case(r"^\s$", "\u{3000}", true; "space ideographic")]
+    #[test_case(r"^\s$", "\u{2028}", true; "space line separator")]
+    #[test_case(r"^\s$", "\u{2000}", true; "space en quad")]
+    #[test_case(r"^\s$", "\u{1680}", true; "space ogham")]
+    #[test_case(r"^\s$", "\u{202f}", true; "space narrow no-break")]
+    #[test_case(r"^\s$", "\u{205f}", true; "space medium mathematical")]
+    #[test_case(r"^\s$", "\u{0085}", false; "space next line rejected")]
+    #[test_case(r"^\S$", "\u{3000}", false; "non-space ideographic")]
+    #[test_case(r"^\S$", "\u{2028}", false; "non-space line separator")]
+    #[test_case(r"^\S$", "\u{0085}", true; "non-space next line")]
+    #[test_case(r"^[\s]$", "\u{3000}", true; "set space ideographic")]
+    #[test_case(r"^[^\s]$", "\u{3000}", false; "negated set space ideographic")]
+    #[test_case(r"^[^\s]$", "\u{0085}", true; "negated set next line")]
+    #[test_case(r"^[a\s]$", "\u{2028}", true; "mixed set line separator")]
+    fn space_class_unicode(pattern: &str, text: &str, is_matching: bool) {
+        let schema = json!({"pattern": pattern});
+        let text = json!(text);
+        let fancy = crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex())
+            .build(&schema)
+            .unwrap();
+        let regex = crate::options()
+            .with_pattern_options(PatternOptions::regex())
+            .build(&schema)
+            .unwrap();
+        for validator in [&fancy, &regex] {
+            assert_eq!(validator.is_valid(&text), is_matching);
+            assert_eq!(validator.validate(&text).is_ok(), is_matching);
+        }
+    }
+
     // Error messages must show the original schema pattern, not the ECMA->Rust translated form
     // (e.g. `\S` expanded into a verbose Unicode class).
     fn assert_original_pattern_in_error(validator: &crate::Validator) {

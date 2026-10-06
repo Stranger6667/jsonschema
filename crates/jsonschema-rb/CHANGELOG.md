@@ -5,6 +5,7 @@
 ### Fixed
 
 - Installing the source gem.
+- `\s` in `pattern` missing most Unicode space separators and U+2028.
 
 ## [0.58.5] - 2026-10-02
 
