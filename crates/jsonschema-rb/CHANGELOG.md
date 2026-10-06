@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.6] - 2026-10-06
+
 ### Fixed
 
 - ECMA regex character class literals being interpreted as Rust set operators.
@@ -650,7 +652,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.5...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.6...HEAD
+[0.58.6]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.5...ruby-v0.58.6
 [0.58.5]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.4...ruby-v0.58.5
 [0.58.4]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.3...ruby-v0.58.4
 [0.58.3]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.2...ruby-v0.58.3
