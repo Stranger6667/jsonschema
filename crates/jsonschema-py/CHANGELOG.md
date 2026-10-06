@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.6] - 2026-10-06
+
 ### Fixed
 
 - `\s` in `pattern` missing most Unicode space separators and U+2028.
@@ -1593,7 +1595,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.5...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.6...HEAD
+[0.58.6]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.5...python-v0.58.6
 [0.58.5]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.4...python-v0.58.5
 [0.58.4]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.3...python-v0.58.4
 [0.58.3]: https://github.com/Stranger6667/jsonschema/compare/python-v0.58.2...python-v0.58.3
