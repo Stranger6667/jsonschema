@@ -337,6 +337,17 @@ mod tests {
         assert_eq!(validator.is_valid(&text), is_matching);
     }
 
+    #[test_case(r"^[a-z&&^b]+$", "d"; "class intersection syntax is literal")]
+    #[test_case(r"^[a-z--b]$", "0"; "adjacent ranges with doubled hyphen")]
+    #[test_case(r"^[\w--z]$", "-"; "word class escape before doubled hyphen")]
+    #[test_case(r"^[\d--z]$", "-"; "digit class escape before doubled hyphen")]
+    #[test_case(r"^[a~~b]$", "~"; "class symmetric difference syntax is literal")]
+    #[test_case(r"^[[a]]$", "a]"; "nested class opener is literal")]
+    fn class_set_syntax(pattern: &str, text: &str) {
+        let validator = crate::validator_for(&json!({"pattern": pattern})).unwrap();
+        assert!(validator.is_valid(&json!(text)));
+    }
+
     #[test]
     fn location() {
         tests_util::assert_schema_location(&json!({"pattern": "^f"}), &json!("b"), "/pattern");
