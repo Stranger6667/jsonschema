@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.58.6] - 2026-10-06
+
 ### Fixed
 
 - `\s` in `pattern` missing most Unicode space separators and U+2028.
@@ -1932,7 +1934,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.5...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.6...HEAD
+[0.58.6]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.5...rust-v0.58.6
 [0.58.5]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.4...rust-v0.58.5
 [0.58.4]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.3...rust-v0.58.4
 [0.58.3]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.2...rust-v0.58.3
