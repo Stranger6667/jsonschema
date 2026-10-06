@@ -1,6 +1,6 @@
 mod syntax;
 
-use std::borrow::Cow;
+use std::{borrow::Cow, fmt::Write};
 
 use regex_syntax::{
     ast::{
@@ -133,12 +133,17 @@ impl<'a> Ecma262Translator<'a> {
                 self.replace_impl(&cls.span, replacement);
             }
             ClassPerlKind::Space => {
-                let replacement = &if cls.negated {
-                    "[^ \t\n\r\u{000b}\u{000c}\u{00a0}\u{feff}\u{2003}\u{2029}]"
-                } else {
-                    "[ \t\n\r\u{000b}\u{000c}\u{00a0}\u{feff}\u{2003}\u{2029}]"
-                };
-                self.replace_impl(&cls.span, replacement);
+                let mut replacement = String::from(if cls.negated { "[^" } else { "[" });
+                for (start, end) in ECMA_WHITESPACE_RANGES {
+                    // Writing to a `String` cannot fail.
+                    let _ = write!(
+                        replacement,
+                        "\\x{{{:x}}}-\\x{{{:x}}}",
+                        start as u32, end as u32
+                    );
+                }
+                replacement.push(']');
+                self.replace_impl(&cls.span, &replacement);
             }
         }
     }
@@ -196,22 +201,28 @@ pub enum PatternAnalysis<'a> {
     NoWhitespace,
 }
 
+/// Inclusive ranges of ECMA-262 `\s`: `WhiteSpace` (TAB, VT, FF, every `Zs`, BOM) and `LineTerminator`.
+const ECMA_WHITESPACE_RANGES: [(char, char); 10] = [
+    ('\t', '\r'),
+    (' ', ' '),
+    ('\u{00a0}', '\u{00a0}'),
+    ('\u{1680}', '\u{1680}'),
+    ('\u{2000}', '\u{200a}'),
+    ('\u{2028}', '\u{2029}'),
+    ('\u{202f}', '\u{202f}'),
+    ('\u{205f}', '\u{205f}'),
+    ('\u{3000}', '\u{3000}'),
+    ('\u{feff}', '\u{feff}'),
+];
+
 /// Returns `true` for ECMA-262 whitespace characters (`\s` in ECMA regex): the union of ASCII
 /// whitespace, `\u{00a0}`, and the Unicode space-separator category recognized by the spec.
 #[inline]
 #[must_use]
 pub fn is_ecma_whitespace(c: char) -> bool {
-    matches!(
-        c,
-        '\t' | '\n' | '\x0b' | '\x0c' | '\r' | ' ' | '\u{00a0}' | '\u{1680}' | '\u{2000}'
-            ..='\u{200a}'
-                | '\u{2028}'
-                | '\u{2029}'
-                | '\u{202f}'
-                | '\u{205f}'
-                | '\u{3000}'
-                | '\u{feff}'
-    )
+    ECMA_WHITESPACE_RANGES
+        .iter()
+        .any(|&(start, end)| start <= c && c <= end)
 }
 
 /// Whether `input` holds any character `\s` matches.
@@ -438,6 +449,54 @@ mod tests {
     fn test_ecma262_to_rust_regex(input: &str, expected: &str) {
         let result = to_rust_regex(input).unwrap();
         assert_eq!(result, expected);
+    }
+
+    const ECMA_WHITESPACE: [char; 25] = [
+        '\t', '\n', '\u{b}', '\u{c}', '\r', ' ', '\u{a0}', '\u{1680}', '\u{2000}', '\u{2003}',
+        '\u{200a}', '\u{2028}', '\u{2029}', '\u{202f}', '\u{205f}', '\u{3000}', '\u{feff}',
+        '\u{2001}', '\u{2002}', '\u{2004}', '\u{2005}', '\u{2006}', '\u{2007}', '\u{2008}',
+        '\u{2009}',
+    ];
+    const NOT_ECMA_WHITESPACE: [char; 7] = [
+        '\u{85}', '\u{1c}', '\u{200b}', '\u{180e}', 'a', '0', '\u{2010}',
+    ];
+
+    #[test_case(r"\s", true; "space class")]
+    #[test_case(r"\S", false; "non-space class")]
+    #[test_case(r"[\s]", true; "space class in set")]
+    #[test_case(r"[^\s]", false; "negated set of space class")]
+    #[test_case(r"[a\s]", true; "space class with literal in set")]
+    #[test_case(r"[\S]", false; "non-space class in set")]
+    fn space_class_matches_ecma_whitespace(pattern: &str, matches_whitespace: bool) {
+        let regex =
+            regex::Regex::new(&format!("^(?:{})$", to_rust_regex(pattern).unwrap())).unwrap();
+        for c in ECMA_WHITESPACE {
+            assert_eq!(
+                regex.is_match(&c.to_string()),
+                matches_whitespace,
+                "{pattern} on U+{:04X}",
+                c as u32
+            );
+        }
+        for c in NOT_ECMA_WHITESPACE {
+            let expected = if matches_whitespace {
+                c == 'a' && pattern.starts_with("[a")
+            } else {
+                true
+            };
+            assert_eq!(
+                regex.is_match(&c.to_string()),
+                expected,
+                "{pattern} on U+{:04X}",
+                c as u32
+            );
+        }
+    }
+
+    #[test]
+    fn whitespace_test_set_agrees_with_predicate() {
+        assert!(ECMA_WHITESPACE.into_iter().all(is_ecma_whitespace));
+        assert!(!NOT_ECMA_WHITESPACE.into_iter().any(is_ecma_whitespace));
     }
 
     #[test_case(r"\c"; "incomplete control character")]
