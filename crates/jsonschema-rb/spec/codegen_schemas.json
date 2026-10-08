@@ -13,6 +13,8 @@
     {"type": "integer", "minimum": 0, "even": true},
     {"type": "object", "properties": {"count": {"type": "integer", "even": true}}},
     {"customRange": {"min": 0, "max": 10}},
-    {"all-positive": true}
+    {"all-positive": true},
+    {"not": {"pattern": "^(?:((a|aa)(?=a?))+$|a+!$)"}},
+    {"anyOf": [{"pattern": "^(?:((a|aa)(?=a?))+$|a+!$)"}, {"type": "string"}]}
   ]
 }

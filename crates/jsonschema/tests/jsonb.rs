@@ -422,3 +422,28 @@ fn reporting_a_deep_instance_records_an_error() {
         Some("Exceeded maximum nesting depth (128)")
     );
 }
+
+// The error resolves its instance from a root that a jsonb instance builds rather than borrows.
+#[test]
+fn unfinished_regex_match_error_points_at_the_match() {
+    let validator = jsonschema::options_for::<Jsonb>()
+        .with_pattern_options(jsonschema::PatternOptions::fancy_regex().backtrack_limit(1))
+        .build(&json!({"properties": {"x": {"pattern": "(?<=ab)c"}}}))
+        .expect("schema builds");
+    let jsonb = encode(&json!({"x": "abc"}));
+    let error = validator
+        .validate(Jsonb::root(&jsonb))
+        .expect_err("the outcome depends on the match");
+    assert_eq!(
+        (
+            error.instance_path().to_string(),
+            error.instance().clone().into_owned(),
+            error.to_string(),
+        ),
+        (
+            "/x".to_owned(),
+            json!("abc"),
+            "Error executing regex: Max limit for backtracking count exceeded".to_owned(),
+        )
+    );
+}

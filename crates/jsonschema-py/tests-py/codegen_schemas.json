@@ -26,6 +26,8 @@
     {"all-positive": true},
     {"type": "integer", "minimum": 0, "even": true},
     {"type": "object", "properties": {"count": {"type": "integer", "even": true}}},
-    {"items": {"type": "integer"}}
+    {"items": {"type": "integer"}},
+    {"not": {"pattern": "^(?:((a|aa)(?=a?))+$|a+!$)"}},
+    {"anyOf": [{"pattern": "^(?:((a|aa)(?=a?))+$|a+!$)"}, {"type": "string"}]}
   ]
 }

@@ -47,3 +47,25 @@ def test_pattern_panic_surfaces_as_validation_error(options):
         validator.validate("")
     assert "Regex engine failed to evaluate pattern '^.{0,404600}$'" in str(excinfo.value)
     assert excinfo.value.kind.name == "pattern"
+
+
+# The engine cannot finish the first alternative within the default backtrack limit; the second,
+# `a+!$`, matches
+UNFINISHED_PATTERN = r"^(?:((a|aa)(?=a?))+$|a+!$)"
+UNFINISHED_SUBJECT = "a" * 64 + "!"
+UNDECIDED = "Error executing regex: Max limit for backtracking count exceeded"
+
+
+@pytest.mark.parametrize(
+    ("schema", "expected"),
+    [
+        ({"not": {"pattern": UNFINISHED_PATTERN}}, (False, [UNDECIDED])),
+        ({"anyOf": [{"pattern": UNFINISHED_PATTERN}, {"type": "string"}]}, (True, [])),
+    ],
+    ids=["undecided", "decided"],
+)
+def test_unfinished_regex_match(backend, schema, expected):
+    assert (
+        backend.is_valid(schema, UNFINISHED_SUBJECT),
+        [error.message for error in backend.iter_errors(schema, UNFINISHED_SUBJECT)],
+    ) == expected

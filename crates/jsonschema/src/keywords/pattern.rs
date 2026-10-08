@@ -7,11 +7,9 @@ use crate::{
     keywords::CompilationResult,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{
-        analyze_pattern, contains_ecma_whitespace, PatternOptimization, RegexEngine, RegexError,
-        RegexFailureReason,
-    },
+    regex::{analyze_pattern, contains_ecma_whitespace, PatternOptimization, RegexEngine},
     types::JsonType,
+    unfinished_matches::MatchSite,
     validator::{Validate, ValidationContext},
     Json, Node,
 };
@@ -188,51 +186,41 @@ impl<R: RegexEngine, F: Json> Validate<F> for PatternValidator<R> {
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
-        _ctx: &mut ValidationContext,
+        ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Some(item) = instance.as_string() {
-            match self.regex.is_match(&item) {
-                Ok(is_match) => {
-                    if !is_match {
-                        return Err(ValidationError::pattern(
-                            self.location.clone(),
-                            crate::paths::capture_evaluation_path(tracker, &self.location),
-                            location.into(),
-                            instance.lazy_value(),
-                            self.pattern.clone(),
-                        ));
-                    }
-                }
-                Err(e) => {
-                    let pattern = &self.pattern;
-                    let tracker = crate::paths::capture_evaluation_path(tracker, &self.location);
-                    return Err(match e.into_failure_reason() {
-                        RegexFailureReason::FancyRegex(error) => ValidationError::backtrack_limit(
-                            self.location.clone(),
-                            tracker,
-                            location.into(),
-                            instance.lazy_value(),
-                            error,
-                        ),
-                        RegexFailureReason::Panicked => ValidationError::regex_engine_failure(
-                            self.location.clone(),
-                            tracker,
-                            location.into(),
-                            instance.lazy_value(),
-                            format!("Regex engine failed to evaluate pattern '{pattern}'"),
-                        ),
-                    });
-                }
+            if !self.is_match(&item, ctx, || {
+                MatchSite::located(&self.location, tracker, location)
+            }) {
+                return Err(ValidationError::pattern(
+                    self.location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.location),
+                    location.into(),
+                    instance.lazy_value(),
+                    self.pattern.clone(),
+                ));
             }
         }
         Ok(())
     }
 
-    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
-            return self.regex.is_match(&item).unwrap_or(false);
+            return self.is_match(&item, ctx, || MatchSite::schema(&self.location));
         }
         true
+    }
+}
+
+impl<R: RegexEngine> PatternValidator<R> {
+    #[inline]
+    fn is_match(
+        &self,
+        item: &str,
+        ctx: &mut ValidationContext,
+        site: impl FnOnce() -> MatchSite,
+    ) -> bool {
+        ctx.is_match(&*self.regex, item, || site().pattern(&self.pattern))
     }
 }
 

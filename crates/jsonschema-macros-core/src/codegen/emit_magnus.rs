@@ -334,7 +334,7 @@ impl ValueEmitter for MagnusEmitter {
                     if let Some(error) = __json::magnus_take_pending_error() {
                         return Err(error.into());
                     }
-                    let result = is_valid(node);
+                    let result = run_is_valid(node);
                     if let Some(error) = __json::magnus_take_pending_error() {
                         return Err(error.into());
                     }
@@ -354,7 +354,7 @@ impl ValueEmitter for MagnusEmitter {
                     if let Some(error) = __json::magnus_take_pending_error() {
                         return Err(error.into());
                     }
-                    let result = match validate(node, &__paths::LazyLocation::new()) {
+                    let result = match run_validate(node) {
                         Some(e) => Err(e),
                         None => Ok(()),
                     };
@@ -377,8 +377,7 @@ impl ValueEmitter for MagnusEmitter {
                     if let Some(error) = __json::magnus_take_pending_error() {
                         return Err(error.into());
                     }
-                    let mut errors = Vec::new();
-                    collect_errors(node, &__paths::LazyLocation::new(), &mut errors);
+                    let errors = run_collect_errors(node);
                     if let Some(error) = __json::magnus_take_pending_error() {
                         return Err(error.into());
                     }

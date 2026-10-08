@@ -11,6 +11,7 @@ use crate::{
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
     regex::{analyze_pattern, LiteralMatcher, PatternOptimization, RegexEngine},
     types::JsonType,
+    unfinished_matches::MatchSite,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson,
 };
@@ -26,7 +27,9 @@ impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
         if let Some(object) = instance.as_object() {
             for (re, node) in &self.patterns {
                 for (key, value) in object.members() {
-                    if re.is_match(key.as_ref()).unwrap_or(false) && !node.is_valid(&value, ctx) {
+                    if ctx.is_match(&**re, key.as_ref(), || MatchSite::schema(node.location()))
+                        && !node.is_valid(&value, ctx)
+                    {
                         return false;
                     }
                 }
@@ -47,7 +50,9 @@ impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
         if let Some(object) = instance.as_object() {
             for (key, value) in object.members() {
                 for (re, node) in &self.patterns {
-                    if re.is_match(key.as_ref()).unwrap_or(false) {
+                    if ctx.is_match(&**re, key.as_ref(), || {
+                        MatchSite::located(node.location(), tracker, location)
+                    }) {
                         node.validate(&value, &location.push(key.as_ref()), tracker, ctx)?;
                     }
                 }
@@ -69,7 +74,9 @@ impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
         };
         for (re, node) in &self.patterns {
             for (key, value) in object.members() {
-                if re.is_match(key.as_ref()).unwrap_or(false) {
+                if ctx.is_match(&**re, key.as_ref(), || {
+                    MatchSite::located(node.location(), tracker, location)
+                }) {
                     node.collect_errors(&value, &location.push(key.as_ref()), tracker, ctx, errors);
                 }
             }
@@ -88,7 +95,9 @@ impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
             let mut children = ChildList::default();
             for (pattern, node) in &self.patterns {
                 for (key, value) in object.members() {
-                    if pattern.is_match(key.as_ref()).unwrap_or(false) {
+                    if ctx.is_match(&**pattern, key.as_ref(), || {
+                        MatchSite::located(node.location(), tracker, location)
+                    }) {
                         matched_propnames.push(key.as_ref().to_owned());
                         let child = node.evaluate_instance_below(
                             &value,
@@ -118,8 +127,9 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             for (key, value) in object.members() {
-                if self.regex.is_match(key.as_ref()).unwrap_or(false)
-                    && !self.node.is_valid(&value, ctx)
+                if ctx.is_match(&*self.regex, key.as_ref(), || {
+                    MatchSite::schema(self.node.location())
+                }) && !self.node.is_valid(&value, ctx)
                 {
                     return false;
                 }
@@ -139,7 +149,9 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
     ) -> Result<(), ValidationError<'i>> {
         if let Some(object) = instance.as_object() {
             for (key, value) in object.members() {
-                if self.regex.is_match(key.as_ref()).unwrap_or(false) {
+                if ctx.is_match(&*self.regex, key.as_ref(), || {
+                    MatchSite::located(self.node.location(), tracker, location)
+                }) {
                     self.node
                         .validate(&value, &location.push(key.as_ref()), tracker, ctx)?;
                 }
@@ -160,7 +172,9 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
             return;
         };
         for (key, value) in object.members() {
-            if self.regex.is_match(key.as_ref()).unwrap_or(false) {
+            if ctx.is_match(&*self.regex, key.as_ref(), || {
+                MatchSite::located(self.node.location(), tracker, location)
+            }) {
                 self.node.collect_errors(
                     &value,
                     &location.push(key.as_ref()),
@@ -183,7 +197,9 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
             let mut matched_propnames = Vec::with_capacity(object.len());
             let mut children = ChildList::default();
             for (key, value) in object.members() {
-                if self.regex.is_match(key.as_ref()).unwrap_or(false) {
+                if ctx.is_match(&*self.regex, key.as_ref(), || {
+                    MatchSite::located(self.node.location(), tracker, location)
+                }) {
                     matched_propnames.push(key.as_ref().to_owned());
                     let child = self.node.evaluate_instance_below(
                         &value,
