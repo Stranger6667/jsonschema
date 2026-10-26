@@ -752,27 +752,37 @@ impl<'a, F: Json> Context<'a, F> {
         self.reach_pending(pending)
     }
 
+    /// Register `pending` as the node compiled for `schema`, returning the node it shadows.
+    ///
+    /// The same schema may start compiling again while it is still pending (a reference cycle
+    /// through a full subschema compilation), so entries nest and must be restored in order.
     pub(crate) fn cache_pending_property_validators_for_schema(
         &self,
         schema: &Map<String, Value>,
         pending: PendingPropertyValidators<F>,
-    ) {
+    ) -> Option<PendingPropertyValidators<F>> {
         let key = Self::property_schema_key(schema);
         self.shared
             .pending_property_validators_by_schema
             .borrow_mut()
-            .insert(key, pending);
+            .insert(key, pending)
     }
 
-    pub(crate) fn remove_pending_property_validators_for_schema(
+    /// Finish compiling `schema`, putting back the node returned when it was cached.
+    pub(crate) fn restore_pending_property_validators_for_schema(
         &self,
         schema: &Map<String, Value>,
+        shadowed: Option<PendingPropertyValidators<F>>,
     ) {
         let key = Self::property_schema_key(schema);
-        self.shared
+        let mut pending = self
+            .shared
             .pending_property_validators_by_schema
-            .borrow_mut()
-            .remove(&key);
+            .borrow_mut();
+        match shadowed {
+            Some(shadowed) => pending.insert(key, shadowed),
+            None => pending.remove(&key),
+        };
     }
 
     fn items_schema_key(schema: &Map<String, Value>) -> ItemsValidatorsPendingKey {
@@ -793,24 +803,34 @@ impl<'a, F: Json> Context<'a, F> {
         self.reach_pending(pending)
     }
 
+    /// Register `pending` as the node compiled for `schema`, returning the node it shadows.
+    ///
+    /// The same schema may start compiling again while it is still pending (a reference cycle
+    /// through a full subschema compilation), so entries nest and must be restored in order.
     pub(crate) fn cache_pending_items_validators_for_schema(
         &self,
         schema: &Map<String, Value>,
         pending: PendingItemsValidators<F>,
-    ) {
+    ) -> Option<PendingItemsValidators<F>> {
         let key = Self::items_schema_key(schema);
         self.shared
             .pending_items_validators_by_schema
             .borrow_mut()
-            .insert(key, pending);
+            .insert(key, pending)
     }
 
-    pub(crate) fn remove_pending_items_validators_for_schema(&self, schema: &Map<String, Value>) {
+    /// Finish compiling `schema`, putting back the node returned when it was cached.
+    pub(crate) fn restore_pending_items_validators_for_schema(
+        &self,
+        schema: &Map<String, Value>,
+        shadowed: Option<PendingItemsValidators<F>>,
+    ) {
         let key = Self::items_schema_key(schema);
-        self.shared
-            .pending_items_validators_by_schema
-            .borrow_mut()
-            .remove(&key);
+        let mut pending = self.shared.pending_items_validators_by_schema.borrow_mut();
+        match shadowed {
+            Some(shadowed) => pending.insert(key, shadowed),
+            None => pending.remove(&key),
+        };
     }
 
     /// Validators found here are still compiling.

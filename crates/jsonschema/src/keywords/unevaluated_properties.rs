@@ -459,7 +459,7 @@ fn compile_pending_property_validators<'a, F: Json>(
 ) -> Result<PendingPropertyValidators<F>, ValidationError<'a>> {
     // Create a pending node and cache it before compiling to handle circular refs
     let pending = Arc::new(OnceLock::new());
-    ctx.cache_pending_property_validators_for_schema(parent, pending.clone());
+    let shadowed = ctx.cache_pending_property_validators_for_schema(parent, pending.clone());
 
     let applicator = ctx.has_vocabulary(&Vocabulary::Applicator);
 
@@ -515,8 +515,8 @@ fn compile_pending_property_validators<'a, F: Json>(
         .set(validators)
         .expect("pending node should not be initialized yet");
 
-    // Remove from pending cache
-    ctx.remove_pending_property_validators_for_schema(parent);
+    // Hand the entry back to an outer compilation of the same schema, if any
+    ctx.restore_pending_property_validators_for_schema(parent, shadowed);
 
     Ok(pending)
 }
@@ -1601,5 +1601,35 @@ mod tests {
             "5 is not of types \"boolean\", \"object\"",
             "/unevaluatedProperties",
         );
+    }
+
+    // A cycle back to the root through a nested resource validates as it does without that resource
+    #[test_case("$ref", &json!({}), true; "ref empty")]
+    #[test_case("$ref", &json!({"x": 1}), true; "ref integer property")]
+    #[test_case("$ref", &json!({"x": "a"}), false; "ref string property")]
+    #[test_case("$dynamicRef", &json!({}), true; "dynamic ref empty")]
+    #[test_case("$dynamicRef", &json!({"x": 1}), true; "dynamic ref integer property")]
+    #[test_case("$dynamicRef", &json!({"x": "a"}), false; "dynamic ref string property")]
+    fn ref_cycle_across_resources(reference: &str, instance: &Value, expected: bool) {
+        let schema = |branch_id: Option<&str>| {
+            let mut branch = json!({reference: "https://a.com", "unevaluatedProperties": false});
+            if let Some(id) = branch_id {
+                branch["$id"] = json!(id);
+            }
+            json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://a.com",
+                "anyOf": [branch],
+                "unevaluatedProperties": {"type": "integer"}
+            })
+        };
+        let without_resource = crate::validator_for(&schema(None)).expect("schema compiles");
+
+        let validator =
+            crate::validator_for(&schema(Some("https://b.com"))).expect("schema compiles");
+
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
+        assert_eq!(without_resource.is_valid(instance), expected);
     }
 }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- Stack overflow when building validators for `unevaluated*` schemas with `$ref` cycles across `$id` resources.
+
 ## [0.60.1] - 2026-10-24
 
 ### Fixed
