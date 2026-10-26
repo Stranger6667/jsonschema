@@ -332,7 +332,7 @@ fn compile_pending_items_validators<'a, F: Json>(
 ) -> Result<PendingItemsValidators<F>, ValidationError<'a>> {
     // Create a pending node and cache it before compiling to handle circular refs
     let pending = Arc::new(OnceLock::new());
-    ctx.cache_pending_items_validators_for_schema(parent, pending.clone());
+    let shadowed = ctx.cache_pending_items_validators_for_schema(parent, pending.clone());
 
     let applicator = ctx.has_vocabulary(&Vocabulary::Applicator);
 
@@ -397,7 +397,7 @@ fn compile_pending_items_validators<'a, F: Json>(
     pending
         .set(validators)
         .expect("pending node should not be initialized yet");
-    ctx.remove_pending_items_validators_for_schema(parent);
+    ctx.restore_pending_items_validators_for_schema(parent, shadowed);
 
     Ok(pending)
 }
@@ -1315,5 +1315,35 @@ mod tests {
             "5 is not of types \"boolean\", \"object\"",
             "/unevaluatedItems",
         );
+    }
+
+    // A cycle back to the root through a nested resource validates as it does without that resource
+    #[test_case("$ref", &json!([]), true; "ref empty")]
+    #[test_case("$ref", &json!([1]), true; "ref integer item")]
+    #[test_case("$ref", &json!(["a"]), false; "ref string item")]
+    #[test_case("$dynamicRef", &json!([]), true; "dynamic ref empty")]
+    #[test_case("$dynamicRef", &json!([1]), true; "dynamic ref integer item")]
+    #[test_case("$dynamicRef", &json!(["a"]), false; "dynamic ref string item")]
+    fn ref_cycle_across_resources(reference: &str, instance: &Value, expected: bool) {
+        let schema = |branch_id: Option<&str>| {
+            let mut branch = json!({reference: "https://a.com", "unevaluatedItems": false});
+            if let Some(id) = branch_id {
+                branch["$id"] = json!(id);
+            }
+            json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://a.com",
+                "anyOf": [branch],
+                "unevaluatedItems": {"type": "integer"}
+            })
+        };
+        let without_resource = crate::validator_for(&schema(None)).expect("schema compiles");
+
+        let validator =
+            crate::validator_for(&schema(Some("https://b.com"))).expect("schema compiles");
+
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
+        assert_eq!(without_resource.is_valid(instance), expected);
     }
 }
