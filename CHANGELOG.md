@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.60.2] - 2026-10-26
+
 ### Fixed
 
 - Stack overflow when building validators for `unevaluated*` schemas with `$ref` cycles across `$id` resources.
@@ -2002,7 +2004,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.2...HEAD
+[0.60.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.1...rust-v0.60.2
 [0.60.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.0...rust-v0.60.1
 [0.60.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.59.0...rust-v0.60.0
 [0.59.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.58.6...rust-v0.59.0
