@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.60.3] - 2026-10-27
+
 ## [0.60.2] - 2026-10-27
 
 ### Fixed
@@ -1661,7 +1663,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.60.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.60.3...HEAD
+[0.60.3]: https://github.com/Stranger6667/jsonschema/compare/python-v0.60.2...python-v0.60.3
 [0.60.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.60.1...python-v0.60.2
 [0.60.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.60.0...python-v0.60.1
 [0.60.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.59.0...python-v0.60.0
