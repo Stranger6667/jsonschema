@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.60.2] - 2026-10-27
+
 ### Fixed
 
 - Stack overflow when building validators for `unevaluated*` schemas with `$ref` cycles across `$id` resources.
@@ -695,7 +697,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.2...HEAD
+[0.60.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.1...ruby-v0.60.2
 [0.60.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.0...ruby-v0.60.1
 [0.60.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.59.0...ruby-v0.60.0
 [0.59.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.58.6...ruby-v0.59.0
