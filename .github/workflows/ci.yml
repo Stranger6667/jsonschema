@@ -91,7 +91,7 @@ jobs:
           cache-all-crates: "true"
           key: ${{ matrix.os }}
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
         if: runner.os == 'Windows'
 
       # `jsonschema-value` is excluded here because `--all-features` runs its pyo3 and magnus test
@@ -388,7 +388,7 @@ jobs:
         with:
           tool: cargo-llvm-cov,just
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       # The extensions are built instrumented, so the bindings, the `backend = Pyo3` macro
       # expansions and the validators Python calls into all count toward coverage.
@@ -468,7 +468,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - run: uv run test.py
         working-directory: examples/pyo3-extension
@@ -512,7 +512,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - run: uvx ruff check python tests-py
         working-directory: crates/jsonschema-py
@@ -568,7 +568,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: python
@@ -599,7 +599,7 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         id: python
@@ -941,7 +941,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - run: uv python install "3.12"
 
@@ -980,7 +980,7 @@ jobs:
         with:
           save-if: ${{ github.ref == 'refs/heads/master' }}
 
-      - uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
+      - uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
 
       - run: uv python install ${{ matrix.python_version }}
 
