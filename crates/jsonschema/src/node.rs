@@ -103,7 +103,8 @@ enum NodeValidators<F: Json> {
     /// The result of compiling a schema which is "array valued", e.g the "dependencies" keyword of
     /// draft 7 which can take values which are an array of other property names
     Array {
-        validators: Vec<ArrayValidatorEntry<F>>,
+        validators: Box<[BoxedValidator<F>]>,
+        metadata: Box<[KeywordMetadata]>,
     },
 }
 
@@ -123,9 +124,9 @@ impl<F: Json> NodeValidators<F> {
                     true
                 }
             },
-            NodeValidators::Array { validators } => validators
+            NodeValidators::Array { validators, .. } => validators
                 .iter()
-                .all(|entry| entry.validator.is_valid(instance, ctx)),
+                .all(|validator| validator.is_valid(instance, ctx)),
             NodeValidators::Boolean { validator: Some(_) } => false,
             NodeValidators::Boolean { validator: None } => true,
         }
@@ -207,13 +208,6 @@ impl KeywordMetadata {
             validator,
         )
     }
-}
-
-struct ArrayValidatorEntry<F: Json> {
-    validator: BoxedValidator<F>,
-    location: Location,
-    absolute_location: Option<Arc<Uri<String>>>,
-    formatted_schema_location: OnceLock<Arc<str>>,
 }
 
 impl<F: Json> PendingSchemaNode<F> {
@@ -485,14 +479,11 @@ impl<F: Json> SchemaNode<F> {
     ) -> SchemaNode<F> {
         let location = ctx.location().clone();
         let absolute_path = ctx.absolute_location(&location);
-        let validators = validators
-            .into_iter()
-            .enumerate()
-            .map(|(index, validator)| {
+        let metadata = (0..validators.len())
+            .map(|index| {
                 let location = ctx.location().join(index);
                 let absolute_location = ctx.absolute_location(&location);
-                ArrayValidatorEntry {
-                    validator,
+                KeywordMetadata {
                     location,
                     absolute_location,
                     formatted_schema_location: OnceLock::new(),
@@ -501,7 +492,10 @@ impl<F: Json> SchemaNode<F> {
             .collect();
         SchemaNode {
             inner: Arc::new(SchemaNodeInner {
-                validators: NodeValidators::Array { validators },
+                validators: NodeValidators::Array {
+                    validators: validators.into_boxed_slice(),
+                    metadata,
+                },
                 formatted_schema_location: OnceLock::new(),
             }),
             location,
@@ -521,7 +515,7 @@ impl<F: Json> SchemaNode<F> {
             NodeValidators::Keyword(kvals) => {
                 NodeValidatorsIter::KeywordValidators(kvals.validators.as_slice().iter())
             }
-            NodeValidators::Array { validators } => {
+            NodeValidators::Array { validators, .. } => {
                 NodeValidatorsIter::ArrayValidators(validators.iter())
             }
         }
@@ -866,13 +860,15 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
                         })?;
                 }
             }
-            NodeValidators::Array { validators } => {
-                for entry in validators {
-                    entry
-                        .validator
+            NodeValidators::Array {
+                validators,
+                metadata,
+            } => {
+                for (validator, metadata) in validators.iter().zip(metadata) {
+                    validator
                         .validate(instance, location, tracker, ctx)
                         .map_err(|e| {
-                            e.with_absolute_keyword_location(entry.absolute_location.clone())
+                            e.with_absolute_keyword_location(metadata.absolute_location.clone())
                         })?;
                 }
             }
@@ -920,13 +916,17 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
             NodeValidators::Boolean {
                 validator: None, ..
             } => {}
-            NodeValidators::Array { validators } => {
-                for entry in validators {
+            NodeValidators::Array {
+                validators,
+                metadata,
+            } => {
+                for (validator, metadata) in validators.iter().zip(metadata) {
                     let start = errors.len();
-                    entry
-                        .validator
-                        .collect_errors(instance, location, tracker, ctx, errors);
-                    stamp_absolute_location(&mut errors[start..], entry.absolute_location.as_ref());
+                    validator.collect_errors(instance, location, tracker, ctx, errors);
+                    stamp_absolute_location(
+                        &mut errors[start..],
+                        metadata.absolute_location.as_ref(),
+                    );
                 }
             }
         }
@@ -965,19 +965,15 @@ impl<F: Json> SchemaNode<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         match &self.inner.validators {
-            NodeValidators::Array { ref validators } => Self::evaluate_subschemas(
+            NodeValidators::Array {
+                ref validators,
+                ref metadata,
+            } => Self::evaluate_subschemas(
                 instance,
                 location,
                 instance_loc,
                 tracker,
-                validators.iter().map(|entry| {
-                    (
-                        &entry.location,
-                        entry.absolute_location.as_ref(),
-                        &entry.formatted_schema_location,
-                        &entry.validator,
-                    )
-                }),
+                metadata.iter().zip(validators).map(|(m, v)| m.parts(v)),
                 None,
                 ctx,
             ),
@@ -1037,7 +1033,7 @@ enum NodeValidatorsIter<'a, F: Json> {
     NoValidator,
     BooleanValidators(std::iter::Once<&'a BoxedValidator<F>>),
     KeywordValidators(std::slice::Iter<'a, KeywordValidator<F>>),
-    ArrayValidators(std::slice::Iter<'a, ArrayValidatorEntry<F>>),
+    ArrayValidators(std::slice::Iter<'a, BoxedValidator<F>>),
 }
 
 impl<'a, F: Json> Iterator for NodeValidatorsIter<'a, F> {
@@ -1048,7 +1044,7 @@ impl<'a, F: Json> Iterator for NodeValidatorsIter<'a, F> {
             Self::NoValidator => None,
             Self::BooleanValidators(i) => i.next(),
             Self::KeywordValidators(v) => v.next().map(|entry| &entry.validator),
-            Self::ArrayValidators(v) => v.next().map(|entry| &entry.validator),
+            Self::ArrayValidators(v) => v.next(),
         }
     }
 
@@ -1061,7 +1057,7 @@ impl<'a, F: Json> Iterator for NodeValidatorsIter<'a, F> {
             Self::NoValidator => true,
             Self::BooleanValidators(i) => i.all(f),
             Self::KeywordValidators(v) => v.all(|entry| f(&entry.validator)),
-            Self::ArrayValidators(v) => v.all(|entry| f(&entry.validator)),
+            Self::ArrayValidators(v) => v.all(f),
         }
     }
 }
