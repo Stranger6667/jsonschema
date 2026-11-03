@@ -192,8 +192,7 @@ impl Retrieve for HttpRetriever {
                             std::path::PathBuf::from(path)
                         }
                     };
-                    let file = std::fs::File::open(path)?;
-                    Ok(serde_json::from_reader(file)?)
+                    Ok(serde_json::from_slice(&std::fs::read(path)?)?)
                 }
                 #[cfg(not(feature = "resolve-file"))]
                 {
@@ -273,8 +272,7 @@ impl referencing::AsyncRetrieve for AsyncHttpRetriever {
                                     std::path::PathBuf::from(path)
                                 }
                             };
-                            let file = std::fs::File::open(path)?;
-                            Ok(serde_json::from_reader(file)?)
+                            Ok(serde_json::from_slice(&std::fs::read(path)?)?)
                         },
                     )
                     .await??;
@@ -334,8 +332,7 @@ impl Retrieve for DefaultRetriever {
                             std::path::PathBuf::from(path)
                         }
                     };
-                    let file = std::fs::File::open(path)?;
-                    Ok(serde_json::from_reader(file)?)
+                    Ok(serde_json::from_slice(&std::fs::read(path)?)?)
                 }
                 #[cfg(not(feature = "resolve-file"))]
                 {
@@ -406,8 +403,7 @@ impl referencing::AsyncRetrieve for DefaultRetriever {
                                     std::path::PathBuf::from(path)
                                 }
                             };
-                            let file = std::fs::File::open(path)?;
-                            Ok(serde_json::from_reader(file)?)
+                            Ok(serde_json::from_slice(&std::fs::read(path)?)?)
                         },
                     )
                     .await??;
@@ -568,6 +564,41 @@ mod tests {
 
         let invalid = json!({"user": {}});
         assert!(!validator.is_valid(&invalid));
+    }
+
+    #[test]
+    #[cfg(all(not(target_arch = "wasm32"), feature = "resolve-file"))]
+    fn test_retrieve_file_contents() {
+        use referencing::Retrieve;
+
+        let retrieve = |content: &str| {
+            let dir = tempfile::tempdir().expect("Failed to create temp dir");
+            let path = dir.path().join("schema.json");
+            std::fs::write(&path, content).expect("Failed to write schema");
+            let uri = referencing::uri::from_str(&path_to_uri(&path)).expect("Invalid URI");
+            super::DefaultRetriever
+                .retrieve(&uri)
+                .map_err(|error| error.to_string())
+        };
+
+        // Larger than any read buffer, with multi-byte characters throughout
+        let properties: serde_json::Map<_, _> = (0..2000)
+            .map(|i| {
+                (
+                    format!("prop_{i}_\u{e9}\u{65e5}\u{1f389}"),
+                    json!({"type": "string", "description": format!("{i} \u{4e2d}\u{1f600}")}),
+                )
+            })
+            .collect();
+        let large = json!({"type": "object", "properties": properties});
+        assert_eq!(retrieve(&format!("{large:#}\n")), Ok(large));
+
+        // Parse errors keep their position
+        let error = retrieve("{\n  \"type\": \"string\",\n}").expect_err("Should fail");
+        assert!(error.contains("line 3 column 1"), "{error}");
+        let error = retrieve("{\"type\": \"string\"} []").expect_err("Should fail");
+        assert!(error.contains("trailing characters"), "{error}");
+        assert!(retrieve("").is_err());
     }
 
     #[test]

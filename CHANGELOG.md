@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Building validators that reference `file://` schemas is 10x or more faster, from reading each file in one call instead of one system call per byte.
+
 ## [0.60.2] - 2026-10-26
 
 ### Fixed
