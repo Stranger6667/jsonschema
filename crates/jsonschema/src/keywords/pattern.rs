@@ -7,7 +7,9 @@ use crate::{
     keywords::CompilationResult,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{analyze_pattern, contains_ecma_whitespace, PatternOptimization, RegexEngine},
+    regex::{
+        analyze_pattern, contains_ecma_whitespace, AllMatch, PatternOptimization, RegexEngine,
+    },
     types::JsonType,
     unfinished_matches::MatchSite,
     validator::{Validate, ValidationContext},
@@ -265,6 +267,13 @@ pub(crate) fn compile<'a, F: Json>(
         // Fall back to regex compilation
         match ctx.config().pattern_options() {
             PatternEngineOptions::FancyRegex { .. } => {
+                if let Some(regex) = all_match(ctx, item) {
+                    return Some(Ok(Box::new(PatternValidator {
+                        regex: Arc::new(regex),
+                        pattern: item.clone(),
+                        location: ctx.location().join("pattern"),
+                    })));
+                }
                 let Ok(regex) = ctx.get_or_compile_regex(item) else {
                     return Some(Err(invalid_regex(ctx, schema)));
                 };
@@ -297,6 +306,15 @@ pub(crate) fn compile<'a, F: Json>(
     }
 }
 
+/// Leading lookaheads as separate lookaround-free regexes, when every part compiles as one.
+fn all_match<F: Json>(ctx: &compiler::Context<F>, pattern: &str) -> Option<AllMatch> {
+    jsonschema_regex::split_leading_lookaheads(pattern)?
+        .iter()
+        .map(|part| ctx.get_or_compile_standard_regex(part).ok())
+        .collect::<Option<Box<[_]>>>()
+        .map(AllMatch)
+}
+
 fn invalid_regex<'a, F: Json>(
     ctx: &compiler::Context<F>,
     schema: &'a Value,
@@ -315,6 +333,29 @@ mod tests {
     use crate::{tests_util, PatternOptions};
     use serde_json::json;
     use test_case::test_case;
+
+    // Leading lookaheads must all hold at the start, then the rest must match from there.
+    #[test_case(r"^(?=[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", "word", true; "class and word")]
+    #[test_case(r"^(?=[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", "a,b", false; "excluded character")]
+    #[test_case(r"^(?=[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", "--", false; "no word character")]
+    #[test_case(r"^(?=[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", "a\nb", false; "newline")]
+    #[test_case(r"^(?=[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", "", false; "empty")]
+    #[test_case(r"^(?=[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", "é-1", true; "non-ascii before a digit")]
+    #[test_case(r"^(?=!+[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", "!!word", true; "negated glob")]
+    #[test_case(r"^(?=!+[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", "word", false; "negated glob without bang")]
+    #[test_case(r"^(?=!+[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", "!!", false; "only bangs")]
+    #[test_case(r"^(?=a|b)c", "c", false; "lookahead alternation fails")]
+    #[test_case(r"^(?=a|c)c", "cd", true; "lookahead alternation holds")]
+    #[test_case(r"^(?=.*\d)(?=.*[a-z])\w{4,}$", "ab12", true; "password style")]
+    #[test_case(r"^(?=.*\d)(?=.*[a-z])\w{4,}$", "abcd", false; "password style missing digit")]
+    #[test_case(r"^(?=(a))\1b", "aab", false; "backreference to a lookahead group")]
+    #[test_case(r"^(?=(a))\1b", "ab", true; "backreference to a lookahead group holds")]
+    fn leading_lookaheads_match(pattern: &str, text: &str, is_matching: bool) {
+        let schema = json!({"pattern": pattern});
+        let validator = crate::validator_for(&schema).unwrap();
+        assert_eq!(validator.is_valid(&json!(text)), is_matching);
+        assert_eq!(validator.validate(&json!(text)).is_ok(), is_matching);
+    }
 
     #[test_case("^(?!eo:)", "eo:bands", false)]
     #[test_case("^(?!eo:)", "proj:epsg", true)]

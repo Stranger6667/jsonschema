@@ -528,10 +528,83 @@ pub fn pattern_as_prefix(pattern: &str) -> Option<Cow<'_, str>> {
     }
 }
 
+/// Splits `^(?=X1)...(?=Xn)Z` into `^(?:X1)`, ..., `^(?:Xn)`, `^(?:Z)`: lookaheads at the start all
+/// hold there and consume nothing, so the pattern matches exactly when every part does.
+///
+/// `None` when the pattern is not of that shape, including a top-level `|` (it would split the
+/// anchor from the rest) or a quantifier on a lookahead. Parts may still contain constructs a
+/// lookaround-free engine rejects, such as a backreference into a lookahead group.
+#[must_use]
+pub fn split_leading_lookaheads(pattern: &str) -> Option<Vec<String>> {
+    let mut rest = pattern.strip_prefix('^')?;
+    let mut parts = Vec::new();
+    while let Some(after) = rest.strip_prefix("(?=") {
+        let end = group_end(after)?;
+        parts.push(format!("^(?:{})", &after[..end]));
+        rest = &after[end + 1..];
+    }
+    if parts.is_empty() || rest.starts_with(['*', '+', '?', '{']) || has_top_level_alternation(rest)
+    {
+        return None;
+    }
+    parts.push(format!("^(?:{rest})"));
+    Some(parts)
+}
+
+/// Index of the first character outside escapes and character classes for which `stop` holds,
+/// given the group depth before it; `None` when none does or a `)` has no `(`.
+fn scan_top_level(pattern: &str, mut stop: impl FnMut(char, usize) -> bool) -> Option<usize> {
+    let mut depth = 0_usize;
+    let mut in_class = false;
+    let mut chars = pattern.char_indices();
+    while let Some((idx, ch)) = chars.next() {
+        match ch {
+            '\\' => {
+                chars.next();
+            }
+            '[' if !in_class => in_class = true,
+            ']' if in_class => in_class = false,
+            _ if in_class => {}
+            _ if stop(ch, depth) => return Some(idx),
+            '(' => depth += 1,
+            ')' => depth = depth.checked_sub(1)?,
+            _ => {}
+        }
+    }
+    None
+}
+
+/// Index of the `)` closing a group whose body starts at the beginning of `body`.
+fn group_end(body: &str) -> Option<usize> {
+    scan_top_level(body, |ch, depth| ch == ')' && depth == 0)
+}
+
+fn has_top_level_alternation(pattern: &str) -> bool {
+    scan_top_level(pattern, |ch, depth| ch == '|' && depth == 0).is_some()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use test_case::test_case;
+
+    #[test_case(r"^(?=[^!*,;{}[\]~\n]+$)(?=(.*\w)).+$", Some(vec![r"^(?:[^!*,;{}[\]~\n]+$)", r"^(?:(.*\w))", r"^(?:.+$)"]); "two lookaheads")]
+    #[test_case(r"^(?=a|b)c", Some(vec![r"^(?:a|b)", r"^(?:c)"]); "alternation inside a lookahead")]
+    #[test_case(r"^(?=[)])x", Some(vec![r"^(?:[)])", r"^(?:x)"]); "parenthesis in a class")]
+    #[test_case(r"^(?=\))x", Some(vec![r"^(?:\))", r"^(?:x)"]); "escaped parenthesis")]
+    #[test_case(r"^(?=a)", Some(vec![r"^(?:a)", r"^(?:)"]); "nothing after the lookaheads")]
+    #[test_case(r"^(?=a)b|c", None; "top-level alternation")]
+    #[test_case(r"^(?=a)*b", None; "quantified lookahead")]
+    #[test_case(r"(?=a)b", None; "not anchored")]
+    #[test_case(r"^(?!a)b", None; "negative lookahead")]
+    #[test_case(r"^ab", None; "no lookahead")]
+    #[test_case(r"^(?=a", None; "unbalanced")]
+    fn leading_lookaheads(pattern: &str, expected: Option<Vec<&str>>) {
+        assert_eq!(
+            split_leading_lookaheads(pattern),
+            expected.map(|parts| parts.into_iter().map(String::from).collect::<Vec<_>>())
+        );
+    }
 
     #[test_case(r"\d", "[0-9]"; "digit class")]
     #[test_case(r"\D", "[^0-9]"; "non-digit class")]
