@@ -8,6 +8,11 @@ use crate::{cmp, types::JsonType};
 
 use super::{Array, Json, Node, NodeIdentity, Object};
 
+/// Whether `serde_json` keeps objects in insertion order (its `preserve_order` feature). Its map is then
+/// a hash index over a vector, and scanning the vector beats hashing the key for small objects.
+const INSERTION_ORDERED: bool = std::mem::size_of::<Map<String, Value>>()
+    != std::mem::size_of::<std::collections::BTreeMap<String, Value>>();
+
 pub struct SerdeJson;
 
 impl Json for SerdeJson {
@@ -146,6 +151,12 @@ impl<'a> Object<'a, SerdeJson> for &'a Map<String, Value> {
     }
 
     fn get(&self, key: &String) -> Option<&'a Value> {
+        if INSERTION_ORDERED && Map::len(self) <= 16 {
+            return (*self)
+                .iter()
+                .find(|(name, _)| *name == key)
+                .map(|(_, value)| value);
+        }
         (*self).get(key.as_str())
     }
 
@@ -175,12 +186,12 @@ impl<'a> Array<'a, SerdeJson> for &'a [Value] {
 mod tests {
     use std::borrow::Cow;
 
-    use serde_json::{json, Value};
+    use serde_json::{json, Map, Value};
     use test_case::test_case;
 
     use super::{
         super::{Array, Json, JsonNumber, Node, Object},
-        SerdeJson,
+        SerdeJson, INSERTION_ORDERED,
     };
     use crate::types::JsonType;
 
@@ -313,6 +324,33 @@ mod tests {
             .map(|item| item.as_number().and_then(|number| number.as_u64()))
             .collect();
         assert_eq!(collected, [Some(10), Some(20)]);
+    }
+
+    #[test]
+    fn insertion_order_detection() {
+        let mut map = Map::new();
+        map.insert("b".to_owned(), Value::Null);
+        map.insert("a".to_owned(), Value::Null);
+        assert_eq!(
+            INSERTION_ORDERED,
+            map.keys().next().map(String::as_str) == Some("b")
+        );
+    }
+
+    #[test_case(3; "below the scan threshold")]
+    #[test_case(40; "above the scan threshold")]
+    fn get(size: usize) {
+        let map: Map<String, Value> = (0..size)
+            .map(|index| (format!("key{index}"), json!(index)))
+            .collect();
+        let object = &map;
+        for index in 0..size {
+            let found = Object::get(&object, &SerdeJson::prepare_key(&format!("key{index}")));
+            assert_eq!(found, Some(&json!(index)));
+        }
+        for missing in ["key", "key100", "kez0", ""] {
+            assert_eq!(Object::get(&object, &SerdeJson::prepare_key(missing)), None);
+        }
     }
 
     #[test]

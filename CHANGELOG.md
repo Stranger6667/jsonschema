@@ -15,6 +15,7 @@
 - `pattern` starting with lookaheads (`^(?=...)(?=...)...`) up to 2x faster.
 - `properties` and `additionalProperties` up to 13% faster on schemas declaring 15 or more properties.
 - `properties` up to 12% faster on objects with keys it does not declare.
+- Validation up to 40% faster with `serde_json`'s `preserve_order` feature.
 - Building validators that reference `file://` schemas is 10x or more faster, from reading each file in one call instead of one system call per byte.
 
 ## [0.60.2] - 2026-10-26
