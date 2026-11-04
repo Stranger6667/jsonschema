@@ -407,7 +407,12 @@ mod tests {
     #[test_case(r"^[^\s]$", "\u{3000}", false; "negated set space ideographic")]
     #[test_case(r"^[^\s]$", "\u{0085}", true; "negated set next line")]
     #[test_case(r"^[a\s]$", "\u{2028}", true; "mixed set line separator")]
-    fn space_class_unicode(pattern: &str, text: &str, is_matching: bool) {
+    #[test_case(r"^.$", "\r", false; "dot carriage return")]
+    #[test_case(r"^.$", "\u{2028}", false; "dot line separator")]
+    #[test_case(r"^.$", "\u{2029}", false; "dot paragraph separator")]
+    #[test_case(r"^a.b$", "a\u{85}b", true; "dot next line")]
+    #[test_case(r"^[.]$", "\r", false; "dot in set is literal")]
+    fn unicode_classes(pattern: &str, text: &str, is_matching: bool) {
         let schema = json!({"pattern": pattern});
         let text = json!(text);
         let fancy = crate::options()
