@@ -214,6 +214,13 @@ pub trait Node<'a, F: Json>: Clone {
         self.as_string().map(|string| string.chars().count() as u64)
     }
 
+    /// Whether the length in Unicode code points lies in `min..=max`; override where cheaper bounds
+    /// decide it without counting.
+    fn string_length_within(&self, min: u64, max: u64) -> Option<bool> {
+        self.string_length()
+            .map(|length| (min..=max).contains(&length))
+    }
+
     /// Equality against a `const`/`enum` value; numbers compare mathematically.
     fn equals_value(&self, expected: &Value) -> bool {
         crate::cmp::equal(&self.to_value(), expected)

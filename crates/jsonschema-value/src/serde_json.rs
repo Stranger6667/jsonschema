@@ -97,6 +97,22 @@ impl<'a> Node<'a, SerdeJson> for &'a Value {
         }
     }
 
+    fn string_length_within(&self, min: u64, max: u64) -> Option<bool> {
+        let Value::String(string) = self else {
+            return None;
+        };
+        // A code point takes one to four bytes, so the count lies in `ceil(bytes / 4)..=bytes`.
+        let bytes = string.len() as u64;
+        let fewest = bytes.div_ceil(4);
+        if bytes < min || fewest > max {
+            return Some(false);
+        }
+        if min <= fewest && bytes <= max {
+            return Some(true);
+        }
+        Some((min..=max).contains(&(bytecount::num_chars(string.as_bytes()) as u64)))
+    }
+
     fn equals_value(&self, expected: &Value) -> bool {
         cmp::equal(self, expected)
     }
@@ -224,6 +240,36 @@ mod tests {
     fn string_length_counts_code_points(input: &str, expected: u64) {
         let value = json!(input);
         assert_eq!((&value).string_length(), Some(expected));
+    }
+
+    // Byte length alone decides some cases (`ab`, 2 bytes) and not others (`🦀🦀`, 8 bytes, 2 code points).
+    #[test_case("", 0, 0, Some(true); "empty within zero")]
+    #[test_case("", 1, 5, Some(false); "empty below minimum")]
+    #[test_case("ab", 0, 2, Some(true); "ascii at maximum")]
+    #[test_case("abc", 0, 2, Some(false); "ascii past maximum")]
+    #[test_case("ab", 3, 9, Some(false); "ascii below minimum")]
+    #[test_case("🦀🦀", 0, 2, Some(true); "astral at maximum")]
+    #[test_case("🦀🦀🦀", 0, 2, Some(false); "astral past maximum")]
+    #[test_case("🦀🦀", 3, 9, Some(false); "astral below minimum")]
+    #[test_case("🦀🦀", 2, 2, Some(true); "astral exact")]
+    #[test_case("héllo", 5, 5, Some(true); "mixed exact")]
+    #[test_case("héllo", 6, 9, Some(false); "mixed bytes reach minimum, code points do not")]
+    #[test_case("héllo", 0, 4, Some(false); "mixed bytes past maximum, code points too")]
+    #[test_case("ééé", 0, 3, Some(true); "two-byte bytes past maximum, code points not")]
+    #[test_case("abc", 0, u64::MAX, Some(true); "unbounded")]
+    fn string_length_within_counts_code_points(
+        input: &str,
+        min: u64,
+        max: u64,
+        expected: Option<bool>,
+    ) {
+        let value = json!(input);
+        assert_eq!((&value).string_length_within(min, max), expected);
+    }
+
+    #[test]
+    fn string_length_within_non_string() {
+        assert_eq!((&json!(5)).string_length_within(0, 1), None);
     }
 
     #[test]
