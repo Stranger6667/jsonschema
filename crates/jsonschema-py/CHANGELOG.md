@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `oneOf` / `anyOf` up to 7x faster when branches fix a property with `const` or `enum`.
+
 ## [0.60.3] - 2026-10-27
 
 ## [0.60.2] - 2026-10-27
