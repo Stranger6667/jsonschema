@@ -1,3 +1,5 @@
+use std::sync::Arc;
+
 pub(crate) trait RegexEngine: Sized + Send + Sync {
     type Error: RegexError;
     fn is_match(&self, text: &str) -> Result<bool, Self::Error>;
@@ -104,6 +106,24 @@ impl RegexEngine for regex::Regex {
         .map_err(|_| RegexBackendPanic {
             pattern: self.as_str().into(),
         })
+    }
+}
+
+/// Matches when every part does: the parts [`jsonschema_regex::split_leading_lookaheads`] makes
+/// of a pattern, each compiled without lookaround support.
+pub(crate) struct AllMatch(pub(crate) Box<[Arc<regex::Regex>]>);
+
+impl RegexEngine for AllMatch {
+    type Error = RegexBackendPanic;
+
+    #[inline]
+    fn is_match(&self, text: &str) -> Result<bool, Self::Error> {
+        for part in &self.0 {
+            if !RegexEngine::is_match(&**part, text)? {
+                return Ok(false);
+            }
+        }
+        Ok(true)
     }
 }
 

@@ -8,6 +8,7 @@
 - `oneOf` / `anyOf` skip branches that exclude the instance's value with `not` over `enum` or `const`.
 - `properties` up to 40% faster on objects with a few more keys than it declares.
 - `minLength` / `maxLength` skip counting code points when the byte length decides.
+- `pattern` starting with lookaheads (`^(?=...)(?=...)...`) up to 2x faster.
 - Building validators that reference `file://` schemas is 10x or more faster, from reading each file in one call instead of one system call per byte.
 
 ## [0.60.2] - 2026-10-26

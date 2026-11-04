@@ -8,6 +8,7 @@
 - `oneOf` / `anyOf` skip branches that exclude the instance's value with `not` over `enum` or `const`.
 - `properties` up to 40% faster on objects with a few more keys than it declares.
 - `minLength` / `maxLength` skip counting code points when the byte length decides.
+- `pattern` starting with lookaheads (`^(?=...)(?=...)...`) up to 2x faster.
 
 ## [0.60.3] - 2026-10-27
 
