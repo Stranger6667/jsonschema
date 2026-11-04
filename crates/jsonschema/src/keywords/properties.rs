@@ -10,7 +10,7 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
-    properties::{KeyHead, PropertyName, HASHMAP_THRESHOLD},
+    properties::{scan_members, KeyHead, PropertyName, HASHMAP_THRESHOLD},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson,
@@ -116,8 +116,8 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         let Some(object) = instance.as_object() else {
             return true;
         };
-        // Walk the smaller side: short instance in one pass, wide instance via targeted lookups.
-        if object.len() <= self.properties.len() {
+        // Short instance in one pass, wide instance via targeted lookups.
+        if scan_members(object.len(), self.properties.len()) {
             for (name, value) in object.members() {
                 let name = name.as_ref();
                 let head = KeyHead::of(name);
@@ -152,7 +152,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         let Some(object) = instance.as_object() else {
             return Ok(());
         };
-        if object.len() <= self.properties.len() {
+        if scan_members(object.len(), self.properties.len()) {
             for (name, value) in object.members() {
                 let name = name.as_ref();
                 let head = KeyHead::of(name);
@@ -184,7 +184,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         let Some(object) = instance.as_object() else {
             return;
         };
-        if object.len() <= self.properties.len() {
+        if scan_members(object.len(), self.properties.len()) {
             for (name, value) in object.members() {
                 let name = name.as_ref();
                 let head = KeyHead::of(name);
@@ -218,7 +218,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         };
         let mut matched_props = Vec::with_capacity(object.len());
         let mut children = ChildList::default();
-        if object.len() <= self.properties.len() {
+        if scan_members(object.len(), self.properties.len()) {
             for (name, value) in object.members() {
                 let name = name.as_ref();
                 let head = KeyHead::of(name);
@@ -293,7 +293,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         if object.len() < 2 {
             return false;
         }
-        if object.len() <= self.properties.len() {
+        if scan_members(object.len(), self.properties.len()) {
             // One pass validates matching properties and confirms both required keys.
             let mut seen_first = false;
             let mut seen_second = false;
@@ -340,7 +340,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         let Some(object) = instance.as_object() else {
             return Ok(());
         };
-        if object.len() <= self.properties.len() {
+        if scan_members(object.len(), self.properties.len()) {
             // One pass validates matching properties and confirms both required keys.
             let mut seen_first = false;
             let mut seen_second = false;
@@ -401,7 +401,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
             if object.get(&self.second_key).is_none() {
                 errors.push(self.missing(&self.second, instance, location, tracker));
             }
-            if object.len() <= self.properties.len() {
+            if scan_members(object.len(), self.properties.len()) {
                 for (name, value) in object.members() {
                     let name = name.as_ref();
                     let head = KeyHead::of(name);
@@ -434,7 +434,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         if let Some(object) = instance.as_object() {
             let mut matched_props = Vec::with_capacity(object.len());
             let mut children = ChildList::default();
-            if object.len() <= self.properties.len() {
+            if scan_members(object.len(), self.properties.len()) {
                 for (name, value) in object.members() {
                     let name = name.as_ref();
                     let head = KeyHead::of(name);
@@ -1015,5 +1015,27 @@ mod tests {
             "5 is not of type \"object\"",
             "/properties",
         );
+    }
+
+    // Two declared properties; four keys or fewer per property take the members pass, more take lookups.
+    #[test_case(json!({"a": 1, "b": "x"}), true; "members pass valid")]
+    #[test_case(json!({"a": "x", "b": "x", "c": 0, "d": 0, "e": 0}), false; "members pass invalid")]
+    #[test_case(json!({"a": 1, "b": "x", "c": 0, "d": 0, "e": 0, "f": 0, "g": 0, "h": 0}), true; "members pass at the bound")]
+    #[test_case(json!({"a": 1, "b": "x", "c": 0, "d": 0, "e": 0, "f": 0, "g": 0, "h": 0, "i": 0}), true; "lookups valid")]
+    #[test_case(json!({"a": 1, "b": 2, "c": 0, "d": 0, "e": 0, "f": 0, "g": 0, "h": 0, "i": 0}), false; "lookups invalid")]
+    #[test_case(json!({"c": 0, "d": 0, "e": 0, "f": 0, "g": 0, "h": 0, "i": 0, "j": 0, "k": 0}), true; "lookups none declared")]
+    #[allow(clippy::needless_pass_by_value)]
+    fn verdicts_on_both_sides_of_the_scan_bound(instance: Value, expected: bool) {
+        for required in [json!([]), json!(["a", "b"])] {
+            let schema = json!({
+                "properties": {"a": {"type": "integer"}, "b": {"type": "string"}},
+                "required": required
+            });
+            let validator = crate::validator_for(&schema).expect("schema builds");
+            let expected = expected
+                && (required.as_array().unwrap().is_empty() || instance.get("a").is_some());
+            assert_eq!(validator.is_valid(&instance), expected);
+            assert_eq!(validator.validate(&instance).is_ok(), expected);
+        }
     }
 }
