@@ -86,6 +86,15 @@ pub(crate) trait PropertiesValidatorsMap<F: Json = SerdeJson>: Send + Sync {
 /// Threshold for switching from linear scan to `HashMap`.
 pub(crate) const HASHMAP_THRESHOLD: usize = 15;
 
+/// Whether one pass over an object's members beats a lookup per declared property.
+///
+/// A members pass costs about one cheap `KeyHead` compare per pair; a lookup is a tree descent or a
+/// hash of the key. Past four members per declared property the lookups win under both map orders.
+#[inline]
+pub(crate) fn scan_members(members: usize, properties: usize) -> bool {
+    members <= properties.saturating_mul(4)
+}
+
 /// A name's length with its first and last eight bytes, read as two overlapping words. Names of up
 /// to 16 bytes are decided by the head alone; longer ones only reach `memcmp` when heads agree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
