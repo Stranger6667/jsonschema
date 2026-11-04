@@ -7,6 +7,7 @@
 - `oneOf` / `anyOf` up to 7x faster when branches fix a property with `const` or `enum`.
 - `oneOf` / `anyOf` skip branches that exclude the instance's value with `not` over `enum` or `const`.
 - `properties` up to 40% faster on objects with a few more keys than it declares.
+- `minLength` / `maxLength` skip counting code points when the byte length decides.
 
 ## [0.60.2] - 2026-10-27
 

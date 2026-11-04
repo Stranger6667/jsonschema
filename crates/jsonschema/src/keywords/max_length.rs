@@ -32,12 +32,7 @@ impl MaxLengthValidator {
 
 impl<F: Json> Validate<F> for MaxLengthValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
-        if let Some(length) = instance.string_length() {
-            if length > self.limit {
-                return false;
-            }
-        }
-        true
+        instance.string_length_within(0, self.limit) != Some(false)
     }
 
     fn validate<'i>(
@@ -47,16 +42,14 @@ impl<F: Json> Validate<F> for MaxLengthValidator {
         tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        if let Some(length) = instance.string_length() {
-            if length > self.limit {
-                return Err(ValidationError::max_length(
-                    self.location.clone(),
-                    crate::paths::capture_evaluation_path(tracker, &self.location),
-                    location.into(),
-                    instance.lazy_value(),
-                    self.limit,
-                ));
-            }
+        if instance.string_length_within(0, self.limit) == Some(false) {
+            return Err(ValidationError::max_length(
+                self.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.location),
+                location.into(),
+                instance.lazy_value(),
+                self.limit,
+            ));
         }
         Ok(())
     }
@@ -95,10 +88,30 @@ pub(crate) fn compile<'a, F: Json>(
 #[cfg(test)]
 mod tests {
     use crate::tests_util;
-    use serde_json::json;
+    use serde_json::{json, Value};
+    use test_case::test_case;
 
     #[test]
     fn location() {
         tests_util::assert_schema_location(&json!({"maxLength": 1}), &json!("ab"), "/maxLength");
+    }
+
+    // Lengths count code points: multibyte strings sit at the bounds by code points, not bytes.
+    #[test_case(&json!({"maxLength": 2}), &json!("🦀🦀"), true; "max astral at limit")]
+    #[test_case(&json!({"maxLength": 2}), &json!("🦀🦀🦀"), false; "max astral past limit")]
+    #[test_case(&json!({"maxLength": 3}), &json!("ééé"), true; "max two-byte at limit")]
+    #[test_case(&json!({"maxLength": 2}), &json!("abc"), false; "max ascii past limit")]
+    #[test_case(&json!({"minLength": 3}), &json!("🦀🦀"), false; "min astral below limit")]
+    #[test_case(&json!({"minLength": 2}), &json!("🦀🦀"), true; "min astral at limit")]
+    #[test_case(&json!({"minLength": 6}), &json!("héllo"), false; "min bytes reach limit")]
+    #[test_case(&json!({"minLength": 2, "maxLength": 2}), &json!("🦀🦀"), true; "range astral exact")]
+    #[test_case(&json!({"minLength": 3, "maxLength": 4}), &json!("ééé"), true; "range two-byte inside")]
+    #[test_case(&json!({"minLength": 1, "maxLength": 2}), &json!("ééé"), false; "range two-byte past maximum")]
+    #[test_case(&json!({"minLength": 4, "maxLength": 9}), &json!("ééé"), false; "range two-byte below minimum")]
+    #[test_case(&json!({"maxLength": 0}), &json!(5), true; "non-string")]
+    fn length_counts_code_points(schema: &Value, instance: &Value, expected: bool) {
+        let validator = crate::validator_for(schema).expect("schema builds");
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
     }
 }
