@@ -5,6 +5,7 @@
 ### Performance
 
 - `oneOf` / `anyOf` up to 7x faster when branches fix a property with `const` or `enum`.
+- `oneOf` / `anyOf` skip branches that exclude the instance's value with `not` over `enum` or `const`.
 - Building validators that reference `file://` schemas is 10x or more faster, from reading each file in one call instead of one system call per byte.
 
 ## [0.60.2] - 2026-10-26

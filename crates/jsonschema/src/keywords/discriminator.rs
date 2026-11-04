@@ -26,6 +26,8 @@ pub(crate) struct Discriminator<F: Json> {
 /// The values one branch accepts for a property, and whether it requires the property.
 struct Pin<'a> {
     values: Vec<&'a Value>,
+    /// `values` lists the values the branch rejects rather than the ones it accepts.
+    negated: bool,
     required: bool,
 }
 
@@ -64,7 +66,7 @@ impl<F: Json> Discriminator<F> {
                 .map(|pins| pins.as_ref().and_then(|pins| pins.pin(name)))
                 .collect();
             // Fewer than two leaves nothing to skip.
-            (pins.iter().flatten().count() >= 2).then_some(pins)
+            (pins.iter().flatten().filter(|pin| !pin.negated).count() >= 2).then_some(pins)
         };
         // Required names first: they also reject objects lacking them, and there are few of them.
         let required = ranked(
@@ -86,6 +88,8 @@ impl<F: Json> Discriminator<F> {
         let mut absent = Vec::new();
         let mut strings: AHashMap<String, Vec<usize>> = AHashMap::new();
         let mut integers: AHashMap<i64, Vec<usize>> = AHashMap::new();
+        // Each negated branch with the values it rejects.
+        let mut negated = Vec::new();
         for (idx, (branch, pin)) in branches.iter().zip(&pins).enumerate() {
             if branch.is_none() {
                 continue;
@@ -99,28 +103,41 @@ impl<F: Json> Discriminator<F> {
             if !pin.required {
                 absent.push(idx);
             }
+            if pin.negated {
+                open.push(idx);
+                negated.push((idx, &pin.values));
+            }
             for value in &pin.values {
                 let list = match value {
                     Value::String(string) => strings.entry(string.clone()).or_default(),
                     _ => integers.entry(value.as_i64()?).or_default(),
                 };
-                if list.last() != Some(&idx) {
+                if !pin.negated && list.last() != Some(&idx) {
                     list.push(idx);
                 }
             }
         }
-        let with_open = |mut list: Vec<usize>| {
-            list.extend_from_slice(&open);
+        // Branches that fix the value, then those open to it: every open one but the negated
+        // branches rejecting it.
+        let with_open = |value: &Value, mut list: Vec<usize>| {
+            list.extend(open.iter().copied().filter(|idx| {
+                !negated
+                    .iter()
+                    .any(|(negated, values)| negated == idx && values.contains(&value))
+            }));
             list.sort_unstable();
             list.into_boxed_slice()
         };
         let strings = strings
             .into_iter()
-            .map(|(value, list)| (value, with_open(list)))
+            .map(|(value, list)| {
+                let list = with_open(&Value::String(value.clone()), list);
+                (value, list)
+            })
             .collect();
         let integers = integers
             .into_iter()
-            .map(|(value, list)| (value, with_open(list)))
+            .map(|(value, list)| (value, with_open(&Value::from(value), list)))
             .collect();
         Some(Discriminator {
             key: F::prepare_key(key),
@@ -248,9 +265,14 @@ impl<'a> Pins<'a> {
         self.properties
             .iter()
             .find_map(|(properties, resolver, draft)| {
-                let values = pinned_values(resolver, *draft, Map::get(properties, name)?, 0)?;
+                let schema = Map::get(properties, name)?;
+                let (values, negated) = match pinned_values(resolver, *draft, schema, 0) {
+                    Some(values) => (values, false),
+                    None => (negated_values(resolver, *draft, schema, 0)?, true),
+                };
                 Some(Pin {
                     values,
+                    negated,
                     required: self.required.contains(name),
                 })
             })
@@ -312,6 +334,64 @@ fn pinned_values<'a>(
         (_, Some(Value::Array(values))) if !values.is_empty() && values.iter().all(is_pinnable) => {
             Some(values.iter().collect())
         }
+        _ => None,
+    }
+}
+
+/// The values a subschema rejects through `not` over exactly an `enum` or `const`.
+fn negated_values<'a>(
+    resolver: &Resolver<'a>,
+    draft: Draft,
+    schema: &'a Value,
+    depth: usize,
+) -> Option<Vec<&'a Value>> {
+    let Value::Object(map) = schema else {
+        return None;
+    };
+    if depth > MAX_DEPTH {
+        return None;
+    }
+    if let Some(Value::String(reference)) = map.get("$ref") {
+        if let Some((contents, resolver)) = resolve(resolver, draft, reference) {
+            if let Some(values) = negated_values(&resolver, draft, contents, depth + 1) {
+                return Some(values);
+            }
+        }
+        if matches!(draft, Draft::Draft4 | Draft::Draft6 | Draft::Draft7) {
+            return None;
+        }
+    }
+    exact_values(resolver, draft, map.get("not")?, depth + 1)
+}
+
+/// The values a subschema accepts when `const` or `enum` is all it checks.
+fn exact_values<'a>(
+    resolver: &Resolver<'a>,
+    draft: Draft,
+    schema: &'a Value,
+    depth: usize,
+) -> Option<Vec<&'a Value>> {
+    let Value::Object(map) = schema else {
+        return None;
+    };
+    if depth > MAX_DEPTH {
+        return None;
+    }
+    let mut checks = map.keys().filter(|keyword| {
+        !matches!(
+            keyword.as_str(),
+            "title" | "description" | "$comment" | "examples" | "default"
+        )
+    });
+    match (checks.next().map(String::as_str), checks.next()) {
+        (Some("$ref"), None) => {
+            let Value::String(reference) = &map["$ref"] else {
+                return None;
+            };
+            let (contents, resolver) = resolve(resolver, draft, reference)?;
+            exact_values(&resolver, draft, contents, depth + 1)
+        }
+        (Some("enum" | "const"), None) => pinned_values(resolver, draft, schema, depth),
         _ => None,
     }
 }
@@ -696,6 +776,48 @@ mod tests {
         let (validator, _) = build(&schema, Draft::Draft202012);
         assert_eq!(validator.is_valid(instance), expected);
         assert_eq!(validator.validate(instance).is_ok(), expected);
+    }
+
+    // A branch excluding values with `not` is skipped for them, and tried for any other value.
+    #[test_case(&json!({"aaa": 0, "kind": "b"}), true, 1; "excluded value")]
+    #[test_case(&json!({"aaa": 0, "kind": "z"}), true, 1; "value only the negated branch accepts")]
+    #[test_case(&json!({"aaa": 0, "kind": "x"}), false, 0; "excluded value no branch fixes")]
+    #[test_case(&json!({"aaa": 0, "kind": 1}), false, 1; "other type")]
+    #[test_case(&json!({"aaa": 0}), false, 2; "missing key")]
+    fn negated_values_exclude_a_branch(instance: &Value, expected: bool, expected_calls: usize) {
+        let schema = json!({
+            "$defs": {"known": {"enum": ["a", "b", "c", "x"]}},
+            "oneOf": [
+                optional_branch(&json!({"const": "a"})),
+                optional_branch(&json!({"const": "b"})),
+                optional_branch(&json!({"const": "c"})),
+                optional_branch(&json!({"type": "string", "not": {"$ref": "#/$defs/known"}}))
+            ]
+        });
+        let (validator, calls) = build(&schema, Draft::Draft202012);
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(calls.load(Ordering::Relaxed), expected_calls);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
+    }
+
+    // `not` over more than the values: `a` fails `minLength`, so the negation accepts it.
+    #[test_case(json!({"not": {"enum": ["a"], "minLength": 5}}); "extra keyword")]
+    #[test_case(json!({"not": {"$ref": "#/$defs/short"}}); "extra keyword behind a reference")]
+    #[test_case(json!({"not": {"$ref": "#/$defs/plain", "enum": ["a"]}}); "enum beside a reference")]
+    #[allow(clippy::needless_pass_by_value)]
+    fn partial_negation_does_not_exclude(kind: Value) {
+        let schema = json!({
+            "$defs": {"short": {"enum": ["a"], "minLength": 5}, "plain": {"minLength": 5}},
+            "oneOf": [
+                optional_branch(&json!({"const": "b"})),
+                optional_branch(&json!({"const": "c"})),
+                optional_branch(&json!({"const": "d"})),
+                optional_branch(&kind)
+            ]
+        });
+        let (validator, _) = build(&schema, Draft::Draft202012);
+        assert!(validator.is_valid(&json!({"kind": "a"})));
+        assert!(validator.validate(&json!({"kind": "a"})).is_ok());
     }
 
     // Branches sharing a value are all tried.
