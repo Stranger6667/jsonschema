@@ -11,8 +11,8 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     properties::{
-        compile_big_map, scan_members, BigValidatorsMap, KeyHead, PropertiesValidatorsMap as _,
-        PropertyName, HASHMAP_THRESHOLD,
+        compile_big_map, scan_members, BigValidatorsMap, KeyHead, NameLengths,
+        PropertiesValidatorsMap as _, PropertyName, HASHMAP_THRESHOLD,
     },
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -24,6 +24,7 @@ use std::sync::Arc;
 
 pub(crate) struct SmallPropertiesValidator<F: Json = SerdeJson> {
     pub(crate) properties: Vec<(PropertyName, F::PreparedKey, SchemaNode<F>)>,
+    lengths: NameLengths,
 }
 
 pub(crate) struct BigPropertiesValidator<F: Json = SerdeJson> {
@@ -58,7 +59,10 @@ impl SmallPropertiesValidator {
                 compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
             ));
         }
-        Ok(Box::new(SmallPropertiesValidator { properties }))
+        Ok(Box::new(SmallPropertiesValidator {
+            properties,
+            lengths: NameLengths::of(map.keys().map(String::as_str)),
+        }))
     }
 }
 
@@ -115,6 +119,9 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         if scan_members(object.len(), self.properties.len()) {
             for (name, value) in object.members() {
                 let name = name.as_ref();
+                if !self.lengths.may_contain(name.len()) {
+                    continue;
+                }
                 let head = KeyHead::of(name);
                 for (prop_name, _, node) in &self.properties {
                     if prop_name.matches(head, name) {
@@ -707,6 +714,28 @@ mod tests {
         assert_eq!(validator.is_valid(instance), expected);
         assert_eq!(validator.validate(instance).is_ok(), expected);
         assert_eq!(validator.iter_errors(instance).next().is_none(), expected);
+    }
+
+    // 70 bytes, and 6 bytes: lengths 64 apart share a bit in the length filter.
+    const LONG: &str = "property-name-that-is-seventy-bytes-long-so-that-it-wraps-past-sixty-4";
+
+    #[test_case(&json!({LONG: 1}), true; "long name")]
+    #[test_case(&json!({LONG: "x"}), false; "long name with a wrong value")]
+    #[test_case(&json!({"abcdef": "x"}), false; "short name with a wrong value")]
+    #[test_case(&json!({"ab": "x"}), true; "undeclared name")]
+    #[test_case(&json!({"abcdeg": "x", LONG: 1}), true; "undeclared name sharing a length")]
+    #[test_case(&json!({"property-name-that-is-seventy-bytes-long-so-that-it-wraps-past-sixty-5": "x"}), true; "undeclared long name")]
+    fn names_by_length(instance: &Value, expected: bool) {
+        let schema = json!({
+            "properties": {
+                LONG: {"type": "integer"},
+                "abcdef": {"type": "integer"},
+                "a": {"type": "integer"}
+            }
+        });
+        let validator = crate::validator_for(&schema).unwrap();
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
     }
 
     // SmallPropertiesWithRequired2Validator tests

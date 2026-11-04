@@ -94,6 +94,31 @@ pub(crate) fn scan_members(members: usize, properties: usize) -> bool {
     members <= properties.saturating_mul(4)
 }
 
+/// Lengths of a set of names, one bit per length modulo 64; a key whose length has no bit cannot be
+/// among them.
+#[derive(Debug, Clone, Copy, Default)]
+pub(crate) struct NameLengths(u64);
+
+impl NameLengths {
+    pub(crate) fn of<'a>(names: impl IntoIterator<Item = &'a str>) -> Self {
+        NameLengths(
+            names
+                .into_iter()
+                .fold(0, |bits, name| bits | Self::bit(name.len())),
+        )
+    }
+
+    #[inline]
+    fn bit(len: usize) -> u64 {
+        1 << (len & 63)
+    }
+
+    #[inline]
+    pub(crate) fn may_contain(self, len: usize) -> bool {
+        self.0 & Self::bit(len) != 0
+    }
+}
+
 /// A name's length with its first and last eight bytes, read as two overlapping words. Names of up
 /// to 16 bytes are decided by the head alone; longer ones only reach `memcmp` when heads agree.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
