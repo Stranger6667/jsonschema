@@ -10,12 +10,14 @@ use crate::{
     keywords::CompilationResult,
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
-    properties::{scan_members, KeyHead, PropertyName, HASHMAP_THRESHOLD},
+    properties::{
+        compile_big_map, scan_members, BigValidatorsMap, KeyHead, PropertiesValidatorsMap as _,
+        PropertyName, HASHMAP_THRESHOLD,
+    },
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson,
 };
-use ahash::AHashMap;
 use referencing::{Uri, Vocabulary};
 use serde_json::{Map, Value};
 use std::sync::Arc;
@@ -25,7 +27,7 @@ pub(crate) struct SmallPropertiesValidator<F: Json = SerdeJson> {
 }
 
 pub(crate) struct BigPropertiesValidator<F: Json = SerdeJson> {
-    pub(crate) properties: AHashMap<String, SchemaNode<F>>,
+    pub(crate) properties: BigValidatorsMap<F>,
 }
 
 /// Fused validator for `properties` + `required: [2 items]` (no `additionalProperties: false`).
@@ -66,16 +68,9 @@ impl BigPropertiesValidator {
         ctx: &compiler::Context<F>,
         map: &'a Map<String, Value>,
     ) -> CompilationResult<'a, F> {
-        let ctx = ctx.new_at_location("properties");
-        let mut properties = AHashMap::with_capacity(map.len());
-        for (key, subschema) in map {
-            let pctx = ctx.new_at_location(key.as_str());
-            properties.insert(
-                key.clone(),
-                compiler::compile(&pctx, pctx.as_resource_ref(subschema))?,
-            );
-        }
-        Ok(Box::new(BigPropertiesValidator { properties }))
+        Ok(Box::new(BigPropertiesValidator {
+            properties: compile_big_map(ctx, map)?,
+        }))
     }
 }
 
@@ -513,7 +508,7 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
         if let Some(object) = instance.as_object() {
             // Iterate over instance properties and look up in schema's HashMap
             for (name, prop) in object.members() {
-                if let Some(node) = self.properties.get(name.as_ref()) {
+                if let Some(node) = self.properties.get_validator(name.as_ref()) {
                     if !node.is_valid(&prop, ctx) {
                         return false;
                     }
@@ -534,7 +529,7 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
     ) -> Result<(), ValidationError<'i>> {
         if let Some(object) = instance.as_object() {
             for (name, value) in object.members() {
-                if let Some(node) = self.properties.get(name.as_ref()) {
+                if let Some(node) = self.properties.get_validator(name.as_ref()) {
                     node.validate(&value, &location.push(name.as_ref()), tracker, ctx)?;
                 }
             }
@@ -554,7 +549,7 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
             return;
         };
         for (name, prop) in object.members() {
-            if let Some(node) = self.properties.get(name.as_ref()) {
+            if let Some(node) = self.properties.get_validator(name.as_ref()) {
                 let instance_path = location.push(name.as_ref());
                 node.collect_errors(&prop, &instance_path, tracker, ctx, errors);
             }
@@ -572,7 +567,7 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
             let mut matched_props = Vec::with_capacity(object.len());
             let mut children = ChildList::default();
             for (prop_name, prop) in object.members() {
-                if let Some(node) = self.properties.get(prop_name.as_ref()) {
+                if let Some(node) = self.properties.get_validator(prop_name.as_ref()) {
                     let path = location.push(prop_name.as_ref());
                     matched_props.push(prop_name.as_ref().to_owned());
                     let child = node.evaluate_instance_below(&prop, &path, tracker, ctx);
@@ -678,6 +673,40 @@ mod tests {
             &json!({"foo": {"bar": {}}}),
             "/properties/foo/properties/bar/required",
         );
+    }
+
+    // `same-head*` names share a slot: they differ only in the middle.
+    fn many_properties(additional: Option<bool>) -> Value {
+        let mut properties = Map::new();
+        for index in 0..20 {
+            properties.insert(format!("p{index}"), json!({"const": index}));
+        }
+        for middle in ["A", "B", "C"] {
+            let name = format!("same-head{middle}same-tail");
+            properties.insert(name.clone(), json!({"const": name}));
+        }
+        let mut schema = json!({ "properties": properties });
+        if let Some(additional) = additional {
+            schema["additionalProperties"] = json!(additional);
+        }
+        schema
+    }
+
+    #[test_case(None, &json!({"p0": 0, "p19": 19}), true; "declared names")]
+    #[test_case(None, &json!({"p7": 8}), false; "declared name with a wrong value")]
+    #[test_case(None, &json!({"same-headBsame-tail": "same-headBsame-tail"}), true; "same head")]
+    #[test_case(None, &json!({"same-headBsame-tail": "same-headCsame-tail"}), false; "same head, other value")]
+    #[test_case(None, &json!({"same-headDsame-tail": 1, "p20": 1, "": 1}), true; "undeclared names")]
+    #[test_case(Some(false), &json!({"p3": 3, "same-headAsame-tail": "same-headAsame-tail"}), true; "closed, declared names")]
+    #[test_case(Some(false), &json!({"same-headBsame-tail": "same-headBsame-tail", "same-headCsame-tail": "same-headCsame-tail"}), true; "closed, every name with the same head")]
+    #[test_case(Some(false), &json!({"same-headDsame-tail": 1}), false; "closed, undeclared name with a declared head")]
+    #[test_case(Some(false), &json!({"p20": 1}), false; "closed, undeclared name")]
+    #[test_case(Some(false), &json!({"p2": 3}), false; "closed, declared name with a wrong value")]
+    fn many_properties_lookup(additional: Option<bool>, instance: &Value, expected: bool) {
+        let validator = crate::validator_for(&many_properties(additional)).unwrap();
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
+        assert_eq!(validator.iter_errors(instance).next().is_none(), expected);
     }
 
     // SmallPropertiesWithRequired2Validator tests

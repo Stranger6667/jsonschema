@@ -13,6 +13,7 @@
 - `properties` up to 40% faster on objects with a few more keys than it declares.
 - `minLength` / `maxLength` skip counting code points when the byte length decides.
 - `pattern` starting with lookaheads (`^(?=...)(?=...)...`) up to 2x faster.
+- `properties` and `additionalProperties` up to 13% faster on schemas declaring 15 or more properties.
 
 ## [0.60.3] - 2026-10-27
 
