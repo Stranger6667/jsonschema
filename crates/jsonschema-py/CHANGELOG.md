@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `.` in `pattern` and `patternProperties` matched `\r`, U+2028 and U+2029 (it should reject every line terminator).
+
 ### Performance
 
 - `oneOf` / `anyOf` up to 7x faster when branches fix a property with `const` or `enum`.

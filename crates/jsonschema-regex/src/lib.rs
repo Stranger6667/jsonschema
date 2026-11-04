@@ -22,7 +22,7 @@ pub use syntax::is_valid_ecma_regex;
 #[allow(clippy::result_unit_err)]
 pub fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
     let mut pattern = escape_class_set_syntax(pattern);
-    let mut ast = loop {
+    let ast = loop {
         match Parser::new().parse(&pattern) {
             Ok(ast) => break ast,
             Err(error) if *error.kind() == ErrorKind::EscapeUnrecognized => {
@@ -66,22 +66,7 @@ pub fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
             }
         };
     };
-    let mut has_changes;
-    loop {
-        let translator = Ecma262Translator::new(pattern);
-        (pattern, has_changes) = ast::visit(&ast, translator).map_err(|_| ())?;
-        if !has_changes {
-            return Ok(pattern);
-        }
-        match Parser::new().parse(&pattern) {
-            Ok(updated_ast) => {
-                ast = updated_ast;
-            }
-            Err(_) => {
-                return Err(());
-            }
-        }
-    }
+    ast::visit(&ast, Ecma262Translator::new(pattern)).map_err(|_| ())
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -207,7 +192,6 @@ fn escape_class_set_syntax(pattern: &str) -> Cow<'_, str> {
 struct Ecma262Translator<'a> {
     pattern: Cow<'a, str>,
     offset: usize,
-    has_changes: bool,
 }
 
 impl<'a> Ecma262Translator<'a> {
@@ -215,7 +199,6 @@ impl<'a> Ecma262Translator<'a> {
         Self {
             pattern: input,
             offset: 0,
-            has_changes: false,
         }
     }
 
@@ -235,7 +218,6 @@ impl<'a> Ecma262Translator<'a> {
             }
         }
         self.offset += replacement.len() - (end.offset - start.offset);
-        self.has_changes = true;
     }
 
     fn replace(&mut self, cls: &ClassPerl) {
@@ -270,11 +252,11 @@ impl<'a> Ecma262Translator<'a> {
 }
 
 impl<'a> Visitor for Ecma262Translator<'a> {
-    type Output = (Cow<'a, str>, bool);
+    type Output = Cow<'a, str>;
     type Err = ast::Error;
 
     fn finish(self) -> Result<Self::Output, Self::Err> {
-        Ok((self.pattern, self.has_changes))
+        Ok(self.pattern)
     }
 
     fn visit_class_set_item_pre(&mut self, item: &ast::ClassSetItem) -> Result<(), Self::Err> {
@@ -284,12 +266,13 @@ impl<'a> Visitor for Ecma262Translator<'a> {
         Ok(())
     }
     fn visit_post(&mut self, ast: &Ast) -> Result<(), Self::Err> {
-        if self.has_changes {
-            return Ok(());
-        }
         match ast {
             Ast::ClassPerl(perl) => {
                 self.replace(perl);
+            }
+            // ECMA-262 `.` rejects every line terminator, Rust's only `\n`.
+            Ast::Dot(span) => {
+                self.replace_impl(span, r"[^\n\r\x{2028}\x{2029}]");
             }
             Ast::Literal(literal) => {
                 if let Literal {
@@ -576,6 +559,7 @@ mod tests {
     #[test_case(r"[\[\]]", r"[\[\]]"; "escaped brackets are unchanged")]
     #[test_case(r"[^&]", r"[^&]"; "single ampersand is unchanged")]
     #[test_case(r"a&&b", r"a&&b"; "operator syntax outside a class is unchanged")]
+    #[test_case(r"\d.[\w.]\D.", r"[0-9][^\n\r\x{2028}\x{2029}][[A-Za-z0-9_].][^0-9][^\n\r\x{2028}\x{2029}]"; "dots mixed with class escapes")]
     fn test_ecma262_to_rust_regex(input: &str, expected: &str) {
         let result = to_rust_regex(input).unwrap();
         assert_eq!(result, expected);
@@ -621,6 +605,19 @@ mod tests {
                 c as u32
             );
         }
+    }
+
+    #[test_case("\n", false; "line feed")]
+    #[test_case("\r", false; "carriage return")]
+    #[test_case("\u{2028}", false; "line separator")]
+    #[test_case("\u{2029}", false; "paragraph separator")]
+    #[test_case("a", true; "letter")]
+    #[test_case("\t", true; "tab")]
+    #[test_case("\u{85}", true; "next line")]
+    #[test_case("\u{1f600}", true; "astral character")]
+    fn dot_rejects_line_terminators(input: &str, expected: bool) {
+        let regex = regex::Regex::new(&to_rust_regex("^.$").unwrap()).unwrap();
+        assert_eq!(regex.is_match(input), expected);
     }
 
     #[test]
