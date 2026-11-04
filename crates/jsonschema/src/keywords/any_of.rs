@@ -66,8 +66,9 @@ impl<F: Json, D: Dispatch<F>> Validate<F> for AnyOfValidator<F, D> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         match self.dispatch.candidates(instance) {
             Candidates::All => self.schemas.iter().any(|s| s.is_valid(instance, ctx)),
-            Candidates::One(idx) => self.schemas[idx].is_valid(instance, ctx),
-            Candidates::None => false,
+            Candidates::Only(branches) => branches
+                .iter()
+                .any(|&idx| self.schemas[idx].is_valid(instance, ctx)),
         }
     }
 
