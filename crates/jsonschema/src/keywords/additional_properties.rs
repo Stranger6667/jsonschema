@@ -9,7 +9,9 @@
 use crate::{
     compiler,
     error::ValidationError,
-    evaluation::{Annotations, ChildList, ErrorDescription, EvaluationNode},
+    evaluation::{
+        format_keyword_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
+    },
     keywords::CompilationResult,
     node::SchemaNode,
     options::PatternEngineOptions,
@@ -552,6 +554,29 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                     unexpected.push(property.as_ref().to_owned());
                 }
             }
+            // `required` is fused in, so its failure is a child node at the `required` location.
+            if !found_required {
+                let error = ErrorDescription::from_validation_error(&ValidationError::required(
+                    self.required_location.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &self.required_location),
+                    location.into(),
+                    instance.lazy_value(),
+                    Value::String(self.required.clone()),
+                ));
+                let child = EvaluationNode::invalid(
+                    crate::paths::evaluation_path(tracker, &self.required_location, ctx),
+                    self.required_absolute_location.clone(),
+                    format_keyword_location(
+                        &self.required_location,
+                        self.required_absolute_location.as_ref(),
+                    ),
+                    location.into(),
+                    None,
+                    vec![error],
+                    ChildList::default(),
+                );
+                children.push(&mut ctx.arena, child);
+            }
             let mut result = EvaluationResult::from_children(children);
             if !unexpected.is_empty() {
                 let eval_path = crate::paths::capture_evaluation_path(tracker, &self.location);
@@ -562,19 +587,6 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                         location.into(),
                         instance.lazy_value(),
                         unexpected,
-                    ),
-                ));
-            }
-            if !found_required {
-                let eval_path =
-                    crate::paths::capture_evaluation_path(tracker, &self.required_location);
-                result.mark_errored(ErrorDescription::from_validation_error(
-                    &ValidationError::required(
-                        self.required_location.clone(),
-                        eval_path,
-                        location.into(),
-                        instance.lazy_value(),
-                        Value::String(self.required.clone()),
                     ),
                 ));
             }
@@ -2083,6 +2095,25 @@ mod tests {
     use crate::{properties::HASHMAP_THRESHOLD, tests_util, PatternOptions};
     use serde_json::{json, Map, Value};
     use test_case::test_case;
+
+    // `required` with one name is fused into `additionalProperties: false`
+    #[test_case(&json!({}), &[("/required", "\"a\" is a required property")]; "missing")]
+    #[test_case(&json!({"z": 1}), &[("/additionalProperties", "Additional properties are not allowed ('z' was unexpected)"), ("/required", "\"a\" is a required property")]; "missing beside an undeclared member")]
+    fn fused_single_required_evaluate_location(instance: &Value, expected: &[(&str, &str)]) {
+        let schema =
+            json!({"properties": {"a": {}}, "additionalProperties": false, "required": ["a"]});
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+        let evaluation = validator.evaluate(instance);
+        let errors: Vec<_> = evaluation
+            .iter_errors()
+            .map(|entry| (entry.schema_location.to_owned(), entry.error.to_string()))
+            .collect();
+        let expected: Vec<_> = expected
+            .iter()
+            .map(|(location, message)| ((*location).to_owned(), (*message).to_owned()))
+            .collect();
+        assert_eq!(errors, expected);
+    }
 
     #[test_case(&json!({"ab": 1}), true ; "covered key")]
     #[test_case(&json!({"a b": 1}), false ; "key with whitespace")]
