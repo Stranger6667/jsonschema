@@ -407,6 +407,12 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
     fn canonical_location(&self) -> Option<(&Location, Option<&Arc<Uri<String>>>)> {
         None
     }
+
+    /// Whether `is_valid` answers for this keyword alone. `false` when it lets through instances a
+    /// sibling keyword always rejects, so it cannot stand in for `validate`.
+    fn is_valid_alone(&self) -> bool {
+        true
+    }
 }
 
 /// `evaluate` for a keyword that asserts on the instance alone and annotates nothing: a valid

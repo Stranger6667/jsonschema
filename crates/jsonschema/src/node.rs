@@ -452,10 +452,9 @@ impl<F: Json> SchemaNode<F> {
                     absolute_location,
                     formatted_schema_location: OnceLock::new(),
                 };
-                let validator = KeywordValidator {
-                    validator,
-                    is_leaf: crate::keywords::keyword_is_leaf(&keyword),
-                };
+                let is_leaf =
+                    crate::keywords::keyword_is_leaf(&keyword) && validator.is_valid_alone();
+                let validator = KeywordValidator { validator, is_leaf };
                 (metadata, validator)
             })
             .unzip();

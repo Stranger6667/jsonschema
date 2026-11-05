@@ -4,11 +4,11 @@ use std::borrow::Cow;
 use crate::{
     compiler,
     error::ValidationError,
-    keywords::CompilationResult,
+    keywords::{BoxedValidator, CompilationResult},
     paths::{LazyLocation, Location, RefTracker},
     properties::{KeyHead, PropertyName, HASHMAP_THRESHOLD},
     types::JsonType,
-    validator::{Validate, ValidationContext},
+    validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson,
 };
 use referencing::Vocabulary;
@@ -16,6 +16,84 @@ use serde_json::{Map, Value};
 
 /// Longest `required` array scanned in one pass; beyond it the comparisons outgrow the lookups.
 const MAX_SCANNED_REQUIRED: usize = 16;
+
+/// `required` naming every property of an object closed by `additionalProperties: false`. That
+/// keyword rejects undeclared members, so as many members as declared names means all are present;
+/// anything else the schema rejects regardless of `required`.
+struct EveryDeclaredRequiredValidator<F: Json> {
+    inner: BoxedValidator<F>,
+    declared: usize,
+}
+
+impl<F: Json> Validate<F> for EveryDeclaredRequiredValidator<F> {
+    fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        instance
+            .as_object()
+            .is_none_or(|object| object.len() == self.declared)
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        self.inner.validate(instance, location, tracker, ctx)
+    }
+
+    fn collect_errors<'i>(
+        &self,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        self.inner
+            .collect_errors(instance, location, tracker, ctx, errors);
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: &Location,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        self.inner
+            .evaluate_with_location(instance, location, instance_location, tracker, ctx)
+    }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        self.inner.evaluate(instance, location, tracker, ctx)
+    }
+
+    fn is_valid_alone(&self) -> bool {
+        false
+    }
+}
+
+/// Whether `required` lists exactly the declared property names.
+fn names_every_declared(required: &[Value], properties: &Map<String, Value>) -> bool {
+    let mut names = ahash::AHashSet::with_capacity(required.len());
+    for item in required {
+        match item.as_str() {
+            Some(name) if properties.contains_key(name) => {
+                names.insert(name);
+            }
+            _ => return false,
+        }
+    }
+    names.len() == properties.len()
+}
 
 pub(crate) struct RequiredValidator<F: Json = SerdeJson> {
     required: Vec<(PropertyName, F::PreparedKey)>,
@@ -499,6 +577,25 @@ pub(crate) fn compile<'a, F: Json>(
             return None;
         }
 
+        if items.len() >= 2
+            && additional_props_false
+            && !has_pattern_properties
+            && !ctx.is_keyword_overridden("additionalProperties")
+            && !ctx.is_keyword_overridden("properties")
+        {
+            if let Some(Value::Object(properties)) = parent.get("properties") {
+                if names_every_declared(items, properties) {
+                    let declared = properties.len();
+                    return Some(
+                        compile_with_path(schema, ctx.location().join("required"))?.map(|inner| {
+                            Box::new(EveryDeclaredRequiredValidator { inner, declared })
+                                as BoxedValidator<F>
+                        }),
+                    );
+                }
+            }
+        }
+
         // Case 2: properties + required: [2 items], no additionalProperties, no patternProperties
         // Handled by SmallPropertiesWithRequired2Validator — only when the map is below the
         // threshold; above it BigPropertiesValidator is used and does not include required checks.
@@ -605,6 +702,130 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Map, Value};
     use test_case::test_case;
+
+    type Outcome = (
+        bool,
+        Option<String>,
+        Vec<(String, String)>,
+        Vec<(String, String)>,
+    );
+
+    // `is_valid`, the first `validate` error, `iter_errors` and `evaluate()` errors
+    fn outcome(schema: &Value, instance: &Value) -> Outcome {
+        let validator = crate::validator_for(schema).expect("schema compiles");
+        let evaluation = validator.evaluate(instance);
+        (
+            validator.is_valid(instance),
+            validator
+                .validate(instance)
+                .err()
+                .map(|error| error.to_string()),
+            validator
+                .iter_errors(instance)
+                .map(|error| (error.schema_path().to_string(), error.to_string()))
+                .collect(),
+            evaluation
+                .iter_errors()
+                .map(|entry| (entry.schema_location.to_owned(), entry.error.to_string()))
+                .collect(),
+        )
+    }
+
+    // `required` names every declared property of a closed object
+    fn closed(required: &[&str], declared: usize, extra: &Value) -> Value {
+        let mut properties = Map::new();
+        for name in ["a", "b", "c"].into_iter().take(declared.min(3)) {
+            properties.insert(name.to_owned(), json!({"type": "integer"}));
+        }
+        for index in 3..declared {
+            properties.insert(format!("p{index}"), json!({}));
+        }
+        let mut schema =
+            json!({"properties": properties, "additionalProperties": false, "required": required});
+        for (keyword, value) in extra.as_object().expect("object") {
+            schema[keyword] = value.clone();
+        }
+        schema
+    }
+
+    const MISSING_B: &str = "\"b\" is a required property";
+    const MISSING_C: &str = "\"c\" is a required property";
+    const UNEXPECTED_Z: &str = "Additional properties are not allowed ('z' was unexpected)";
+
+    fn errors(entries: &[(&str, &str)]) -> Vec<(String, String)> {
+        entries
+            .iter()
+            .map(|(path, message)| ((*path).to_owned(), (*message).to_owned()))
+            .collect()
+    }
+
+    #[test]
+    fn every_declared_name_present() {
+        let schema = closed(&["a", "b", "c"], 3, &json!({}));
+        assert_eq!(
+            outcome(&schema, &json!({"a": 1, "b": 2, "c": 3})),
+            (true, None, vec![], vec![])
+        );
+    }
+
+    #[test]
+    fn every_declared_name_one_missing() {
+        let schema = closed(&["a", "b", "c"], 3, &json!({}));
+        let expected = errors(&[("/required", MISSING_B)]);
+        assert_eq!(
+            outcome(&schema, &json!({"a": 1, "c": 3})),
+            (
+                false,
+                Some(MISSING_B.to_owned()),
+                expected.clone(),
+                expected
+            )
+        );
+    }
+
+    // As many members as declared names, one of them undeclared
+    #[test]
+    fn every_declared_name_count_matches_with_undeclared_member() {
+        let schema = closed(&["a", "b", "c"], 3, &json!({}));
+        let expected = errors(&[
+            ("/required", MISSING_C),
+            ("/additionalProperties", UNEXPECTED_Z),
+        ]);
+        assert_eq!(
+            outcome(&schema, &json!({"a": 1, "b": 2, "z": 3})),
+            (
+                false,
+                Some(MISSING_C.to_owned()),
+                expected.clone(),
+                expected
+            )
+        );
+    }
+
+    #[test_case(&["a", "b"], &json!({"a": 1, "b": 2}), true; "two names present")]
+    #[test_case(&["a", "b"], &json!({"a": 1, "z": 2}), false; "two names, count matches with undeclared")]
+    #[test_case(&["b", "a"], &json!({"b": 2, "a": 1}), true; "names in another order")]
+    #[test_case(&["a", "b"], &json!({"a": 1}), false; "two names, one missing")]
+    #[test_case(&["a", "b"], &json!("a"), true; "not an object")]
+    fn every_declared_name(required: &[&str], instance: &Value, expected: bool) {
+        let schema = closed(required, 2, &json!({}));
+        assert_eq!(outcome(&schema, instance).0, expected);
+    }
+
+    // `patternProperties` admits undeclared members, so the count says nothing
+    #[test]
+    fn every_declared_name_beside_pattern_properties() {
+        let schema = closed(&["a", "b"], 2, &json!({"patternProperties": {"^x-": {}}}));
+        assert!(!outcome(&schema, &json!({"a": 1, "x-1": 2})).0);
+        assert!(outcome(&schema, &json!({"a": 1, "b": 2, "x-1": 3})).0);
+    }
+
+    #[test]
+    fn every_declared_name_in_a_big_map() {
+        let schema = closed(&["a", "b", "c"], HASHMAP_THRESHOLD + 5, &json!({}));
+        assert!(!outcome(&schema, &json!({"a": 1, "b": 2, "z": 3})).0);
+        assert!(outcome(&schema, &json!({"a": 1, "b": 2, "c": 3})).0);
+    }
 
     #[test_case(&json!({"required": ["a"]}), &json!({}), "/required")]
     #[test_case(&json!({"required": ["a", "b"]}), &json!({}), "/required")]

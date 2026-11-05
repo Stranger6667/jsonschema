@@ -10,7 +10,6 @@ use ahash::AHashSet;
 use referencing::Vocabulary;
 use serde_json::{Map, Value};
 use std::{
-    borrow::Cow,
     fmt,
     sync::{Arc, OnceLock},
 };
@@ -20,6 +19,7 @@ use crate::{
     evaluation::{ChildList, ErrorDescription},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    regex::{analyze_pattern, LiteralMatcher},
     unfinished_matches::MatchSite,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson, ValidationError,
@@ -58,6 +58,7 @@ impl StaticEvaluated {
 /// One list per engine keeps the engine choice out of the per-pattern loop.
 #[derive(Clone, Default)]
 struct Patterns {
+    literal: Vec<Pattern<LiteralMatcher>>,
     fancy: Vec<Pattern<fancy_regex::Regex>>,
     standard: Vec<Pattern<regex::Regex>>,
 }
@@ -71,6 +72,13 @@ struct Pattern<R> {
 
 impl Patterns {
     fn push<F: Json>(&mut self, ctx: &compiler::Context<'_, F>, pattern: &str) -> Result<(), ()> {
+        if let Some(optimization) = analyze_pattern(pattern) {
+            self.literal.push(Pattern {
+                regex: Arc::new(LiteralMatcher::from(optimization)),
+                location: ctx.location().clone(),
+            });
+            return Ok(());
+        }
         match ctx.config().pattern_options() {
             crate::options::PatternEngineOptions::FancyRegex { .. } => {
                 self.fancy.push(Pattern {
@@ -89,12 +97,13 @@ impl Patterns {
     }
 
     fn extend(&mut self, other: &Patterns) {
+        self.literal.extend(other.literal.iter().cloned());
         self.fancy.extend(other.fancy.iter().cloned());
         self.standard.extend(other.standard.iter().cloned());
     }
 
     fn is_empty(&self) -> bool {
-        self.fancy.is_empty() && self.standard.is_empty()
+        self.literal.is_empty() && self.fancy.is_empty() && self.standard.is_empty()
     }
 
     #[inline]
@@ -104,9 +113,13 @@ impl Patterns {
         ctx: &mut ValidationContext,
         site: impl Fn(&Location) -> MatchSite,
     ) -> bool {
-        self.fancy
+        self.literal
             .iter()
             .any(|pattern| ctx.is_match(&*pattern.regex, property, || site(&pattern.location)))
+            || self
+                .fancy
+                .iter()
+                .any(|pattern| ctx.is_match(&*pattern.regex, property, || site(&pattern.location)))
             || self
                 .standard
                 .iter()
@@ -116,6 +129,55 @@ impl Patterns {
 
 /// Holds compiled validators for property evaluation in unevaluatedProperties.
 /// This structure is built during schema compilation and used during validation.
+/// Members of one object already evaluated, by their position in it.
+struct Evaluated {
+    first: u64,
+    rest: Vec<u64>,
+    count: usize,
+}
+
+impl Evaluated {
+    fn new(members: usize) -> Self {
+        Evaluated {
+            first: 0,
+            rest: vec![0; members.saturating_sub(1) / 64],
+            count: 0,
+        }
+    }
+
+    #[inline]
+    fn contains(&self, index: usize) -> bool {
+        let word = match index / 64 {
+            0 => self.first,
+            word => self.rest[word - 1],
+        };
+        word & (1 << (index % 64)) != 0
+    }
+
+    #[inline]
+    fn insert(&mut self, index: usize) {
+        let bit = 1 << (index % 64);
+        let word = match index / 64 {
+            0 => &mut self.first,
+            word => &mut self.rest[word - 1],
+        };
+        if *word & bit == 0 {
+            *word |= bit;
+            self.count += 1;
+        }
+    }
+
+    fn insert_all(&mut self, members: usize) {
+        self.first = u64::MAX;
+        self.rest.fill(u64::MAX);
+        self.count = members;
+    }
+
+    fn count(&self) -> usize {
+        self.count
+    }
+}
+
 pub(crate) struct PropertyValidators<F: Json = SerdeJson> {
     /// Property names from "properties" keyword for O(1) lookup
     properties: AHashSet<String>,
@@ -247,10 +309,10 @@ impl<F: Json> PropertyValidators<F> {
     /// properties validated by `unevaluatedProperties` itself — needed so nested schemas
     /// can propagate evaluations upward. When `false` (used by `evaluate`), those properties
     /// are left unmarked so `evaluate_instance()` is called on them to collect annotations.
-    fn mark_evaluated_properties_impl<'i>(
+    fn mark_evaluated_properties_impl(
         &self,
-        instance: &F::Node<'i>,
-        properties: &mut AHashSet<Cow<'i, str>>,
+        instance: &F::Node<'_>,
+        properties: &mut Evaluated,
         ctx: &mut ValidationContext,
         include_unevaluated: bool,
     ) {
@@ -267,10 +329,10 @@ impl<F: Json> PropertyValidators<F> {
         }
     }
 
-    fn mark_evaluated_properties_inner<'i>(
+    fn mark_evaluated_properties_inner(
         &self,
-        instance: &F::Node<'i>,
-        properties: &mut AHashSet<Cow<'i, str>>,
+        instance: &F::Node<'_>,
+        properties: &mut Evaluated,
         ctx: &mut ValidationContext,
         include_unevaluated: bool,
     ) {
@@ -292,23 +354,23 @@ impl<F: Json> PropertyValidators<F> {
         // Process properties on the instance
         if let Some(obj) = instance.as_object() {
             // Mark properties from "properties" keyword (O(1) lookup)
-            for (property, _) in obj.members() {
+            for (index, (property, _)) in obj.members().enumerate() {
                 if self.properties.contains(property.as_ref()) {
-                    properties.insert(property.into());
+                    properties.insert(index);
                 }
             }
 
             // Check "patternProperties" keyword - mark if property name matches
             if !self.pattern_properties.is_empty() {
-                for (property, _) in obj.members() {
-                    if properties.contains(property.as_ref()) {
+                for (index, (property, _)) in obj.members().enumerate() {
+                    if properties.contains(index) {
                         continue; // Already marked by "properties"
                     }
                     if self
                         .pattern_properties
                         .is_match(property.as_ref(), ctx, MatchSite::schema)
                     {
-                        properties.insert(property.into());
+                        properties.insert(index);
                     }
                 }
             }
@@ -316,12 +378,7 @@ impl<F: Json> PropertyValidators<F> {
             // Check "additionalProperties" keyword - applies to properties NOT in properties/patternProperties
             // This must be done after marking all properties/patternProperties to avoid order dependency
             if self.additional.is_some() {
-                for (property, _) in obj.members() {
-                    // Only mark if not already marked by properties or patternProperties
-                    if !properties.contains(property.as_ref()) {
-                        properties.insert(property.into());
-                    }
-                }
+                properties.insert_all(obj.len());
             }
 
             // Check "unevaluatedProperties" keyword - marks properties that validate successfully.
@@ -330,13 +387,13 @@ impl<F: Json> PropertyValidators<F> {
             // Skipped when called from evaluate() so evaluate_instance() can collect annotations.
             if include_unevaluated {
                 if let Some(unevaluated) = &self.unevaluated {
-                    for (property, value) in obj.members() {
+                    for (index, (_, value)) in obj.members().enumerate() {
                         // Skip if already marked - avoid redundant validation
-                        if properties.contains(property.as_ref()) {
+                        if properties.contains(index) {
                             continue;
                         }
                         if unevaluated.is_valid(&value, ctx) {
-                            properties.insert(property.into());
+                            properties.insert(index);
                         }
                     }
                 }
@@ -390,10 +447,10 @@ impl<F: Json> PropertyValidators<F> {
     }
 
     /// Mark all properties evaluated by this schema (including by `unevaluatedProperties` itself).
-    fn mark_evaluated_properties<'i>(
+    fn mark_evaluated_properties(
         &self,
-        instance: &F::Node<'i>,
-        properties: &mut AHashSet<Cow<'i, str>>,
+        instance: &F::Node<'_>,
+        properties: &mut Evaluated,
         ctx: &mut ValidationContext,
     ) {
         self.mark_evaluated_properties_impl(instance, properties, ctx, true);
@@ -403,10 +460,10 @@ impl<F: Json> PropertyValidators<F> {
     ///
     /// Used in `evaluate()` so that properties that would be covered by `unevaluatedProperties`
     /// are still visited by `evaluate_instance()`, allowing their annotations to be collected.
-    fn mark_evaluated_by_other_keywords<'i>(
+    fn mark_evaluated_by_other_keywords(
         &self,
-        instance: &F::Node<'i>,
-        properties: &mut AHashSet<Cow<'i, str>>,
+        instance: &F::Node<'_>,
+        properties: &mut Evaluated,
         ctx: &mut ValidationContext,
     ) {
         self.mark_evaluated_properties_impl(instance, properties, ctx, false);
@@ -414,10 +471,10 @@ impl<F: Json> PropertyValidators<F> {
 }
 
 impl<F: Json> ConditionalValidators<F> {
-    fn mark_evaluated_properties<'i>(
+    fn mark_evaluated_properties(
         &self,
-        instance: &F::Node<'i>,
-        properties: &mut AHashSet<Cow<'i, str>>,
+        instance: &F::Node<'_>,
+        properties: &mut Evaluated,
         ctx: &mut ValidationContext,
     ) {
         if self.condition.is_valid(instance, ctx) {
@@ -932,21 +989,21 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                     unevaluated,
                 ));
             }
-            let mut evaluated = AHashSet::with_capacity(object.len());
+            let mut evaluated = Evaluated::new(object.len());
 
             // Mark all evaluated properties
             self.validators
                 .mark_evaluated_properties(instance, &mut evaluated, ctx);
 
             // Early return if all properties are evaluated
-            if evaluated.len() == object.len() {
+            if evaluated.count() == object.len() {
                 return Ok(());
             }
 
             // Check for unevaluated properties
             let mut unevaluated = Vec::new();
-            for (property, value) in object.members() {
-                if evaluated.contains(property.as_ref()) {
+            for (index, (property, value)) in object.members().enumerate() {
+                if evaluated.contains(index) {
                     continue;
                 }
                 // Check against unevaluatedProperties schema
@@ -990,17 +1047,17 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                 }
                 return true;
             }
-            let mut evaluated = AHashSet::with_capacity(object.len());
+            let mut evaluated = Evaluated::new(object.len());
             self.validators
                 .mark_evaluated_properties(instance, &mut evaluated, ctx);
 
             // Early return if all properties are evaluated
-            if evaluated.len() == object.len() {
+            if evaluated.count() == object.len() {
                 return true;
             }
 
-            for (property, value) in object.members() {
-                if evaluated.contains(property.as_ref()) {
+            for (index, (_, value)) in object.members().enumerate() {
+                if evaluated.contains(index) {
                     continue;
                 }
                 if let Some(unevaluated_schema) = &self.validators.unevaluated {
@@ -1023,15 +1080,15 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         if let Some(object) = instance.as_object() {
-            let mut evaluated = AHashSet::with_capacity(object.len());
+            let mut evaluated = Evaluated::new(object.len());
             self.validators
                 .mark_evaluated_by_other_keywords(instance, &mut evaluated, ctx);
             let mut children = ChildList::default();
             let mut unevaluated = Vec::new();
             let mut invalid = false;
 
-            for (property, value) in object.members() {
-                if evaluated.contains(property.as_ref()) {
+            for (index, (property, value)) in object.members().enumerate() {
+                if evaluated.contains(index) {
                     continue;
                 }
                 if let Some(validator) = &self.validators.unevaluated {
@@ -1140,6 +1197,67 @@ mod tests {
             evaluation.flag().valid,
             evaluation_errors,
         )
+    }
+
+    // Past 64 members the evaluated set spans more than one word; `if: true` forces the walk.
+    #[test_case(None, None; "every member declared")]
+    #[test_case(Some(66), Some("Unevaluated properties are not allowed ('k66' was unexpected)"); "undeclared member past the first word")]
+    #[test_case(Some(3), Some("Unevaluated properties are not allowed ('k3' was unexpected)"); "undeclared member in the first word")]
+    fn wide_object(undeclared: Option<usize>, expected: Option<&str>) {
+        let names: Vec<String> = (0..70).map(|index| format!("k{index}")).collect();
+        let properties: serde_json::Map<String, Value> = names
+            .iter()
+            .enumerate()
+            .filter(|(index, _)| Some(*index) != undeclared)
+            .map(|(_, name)| (name.clone(), json!({})))
+            .collect();
+        let schema =
+            json!({"if": true, "then": {"properties": properties}, "unevaluatedProperties": false});
+        let instance: Value = names
+            .iter()
+            .map(|name| (name.clone(), json!(1)))
+            .collect::<serde_json::Map<_, _>>()
+            .into();
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+        assert_eq!(validator.is_valid(&instance), expected.is_none());
+        assert_eq!(
+            validator
+                .validate(&instance)
+                .err()
+                .map(|error| error.to_string())
+                .as_deref(),
+            expected
+        );
+        assert_eq!(
+            validator.evaluate(&instance).flag().valid,
+            expected.is_none()
+        );
+    }
+
+    // Literal patterns: a prefix, an alternation and an exact name, with and without the walk
+    #[test_case(false, "x-tag", true; "prefix")]
+    #[test_case(false, "b", true; "alternation")]
+    #[test_case(false, "exact", true; "exact")]
+    #[test_case(false, "exactly", false; "longer than exact")]
+    #[test_case(false, "y-tag", false; "other prefix")]
+    #[test_case(true, "x-tag", true; "prefix in the walk")]
+    #[test_case(true, "a", true; "alternation in the walk")]
+    #[test_case(true, "exactly", false; "longer than exact in the walk")]
+    #[test_case(true, "ab", false; "joined alternatives in the walk")]
+    fn literal_patterns(walk: bool, name: &str, expected: bool) {
+        let mut schema = json!({
+            "$defs": {"extensions": {"patternProperties": {"^x-": true, "^(a|b)$": true, "^exact$": true}}},
+            "$ref": "#/$defs/extensions",
+            "unevaluatedProperties": false
+        });
+        if walk {
+            schema["if"] = json!(true);
+        }
+        let instance = json!({ name: 1 });
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+        assert_eq!(validator.is_valid(&instance), expected);
+        assert_eq!(validator.validate(&instance).is_ok(), expected);
+        assert_eq!(validator.evaluate(&instance).flag().valid, expected);
     }
 
     const A_UNEXPECTED: &[(&str, &str)] = &[(
