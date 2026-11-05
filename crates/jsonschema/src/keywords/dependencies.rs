@@ -61,7 +61,7 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             for (property, node) in &self.dependencies {
-                if object.get(property).is_some() && !node.is_valid(instance, ctx) {
+                if object.get(property).is_some() && !node.is_valid_child(instance, ctx) {
                     return false;
                 }
             }
@@ -209,7 +209,7 @@ impl<F: Json> Validate<F> for DependentRequiredValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             for (property, node) in &self.dependencies {
-                if object.get(property).is_some() && !node.is_valid(instance, ctx) {
+                if object.get(property).is_some() && !node.is_valid_child(instance, ctx) {
                     return false;
                 }
             }
@@ -327,7 +327,7 @@ impl<F: Json> Validate<F> for DependentSchemasValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             for (property, node) in &self.dependencies {
-                if object.get(property).is_some() && !node.is_valid(instance, ctx) {
+                if object.get(property).is_some() && !node.is_valid_child(instance, ctx) {
                     return false;
                 }
             }

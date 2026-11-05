@@ -35,7 +35,7 @@ impl<F: Json> Validate<F> for AdditionalItemsObjectValidator<F> {
             array
                 .elements()
                 .skip(self.items_count)
-                .all(|item| self.node.is_valid(&item, ctx))
+                .all(|item| self.node.is_valid_child(&item, ctx))
         } else {
             true
         }

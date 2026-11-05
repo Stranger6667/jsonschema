@@ -67,7 +67,9 @@ impl ContainsValidator {
 impl<F: Json> Validate<F> for ContainsValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
-            array.elements().any(|item| self.node.is_valid(&item, ctx))
+            array
+                .elements()
+                .any(|item| self.node.is_valid_child(&item, ctx))
         } else {
             true
         }

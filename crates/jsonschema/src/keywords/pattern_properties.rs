@@ -28,7 +28,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
             for (re, node) in &self.patterns {
                 for (key, value) in object.members() {
                     if ctx.is_match(&**re, key.as_ref(), || MatchSite::schema(node.location()))
-                        && !node.is_valid(&value, ctx)
+                        && !node.is_valid_child(&value, ctx)
                     {
                         return false;
                     }
@@ -129,7 +129,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
             for (key, value) in object.members() {
                 if ctx.is_match(&*self.regex, key.as_ref(), || {
                     MatchSite::schema(self.node.location())
-                }) && !self.node.is_valid(&value, ctx)
+                }) && !self.node.is_valid_child(&value, ctx)
                 {
                     return false;
                 }

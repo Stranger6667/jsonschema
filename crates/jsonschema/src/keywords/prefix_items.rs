@@ -38,7 +38,7 @@ impl<F: Json> Validate<F> for PrefixItemsValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(array) = instance.as_array() {
             for (schema, item) in self.schemas.iter().zip(array.elements()) {
-                if !schema.is_valid(&item, ctx) {
+                if !schema.is_valid_child(&item, ctx) {
                     return false;
                 }
             }

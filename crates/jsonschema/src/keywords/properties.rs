@@ -125,7 +125,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
                 let head = KeyHead::of(name);
                 for (prop_name, _, node) in &self.properties {
                     if prop_name.matches(head, name) {
-                        if !node.is_valid(&value, ctx) {
+                        if !node.is_valid_child(&value, ctx) {
                             return false;
                         }
                         break;
@@ -135,7 +135,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         } else {
             for (_, key, node) in &self.properties {
                 if let Some(prop) = object.get(key) {
-                    if !node.is_valid(&prop, ctx) {
+                    if !node.is_valid_child(&prop, ctx) {
                         return false;
                     }
                 }
@@ -309,7 +309,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                 }
                 for (prop_name, _, node) in &self.properties {
                     if prop_name.matches(head, name) {
-                        if !node.is_valid(&value, ctx) {
+                        if !node.is_valid_child(&value, ctx) {
                             return false;
                         }
                         break;
@@ -323,7 +323,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
             }
             for (_, key, node) in &self.properties {
                 if let Some(prop) = object.get(key) {
-                    if !node.is_valid(&prop, ctx) {
+                    if !node.is_valid_child(&prop, ctx) {
                         return false;
                     }
                 }
@@ -516,7 +516,7 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
             // Iterate over instance properties and look up in schema's HashMap
             for (name, prop) in object.members() {
                 if let Some(node) = self.properties.get_validator(name.as_ref()) {
-                    if !node.is_valid(&prop, ctx) {
+                    if !node.is_valid_child(&prop, ctx) {
                         return false;
                     }
                 }
@@ -672,6 +672,85 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Map, Value};
     use test_case::test_case;
+
+    // Member subschemas that only check `type`, against every kind of value
+    #[test_case(&json!({"type": "string"}), &json!(null), false; "string child, null")]
+    #[test_case(&json!({"type": "string"}), &json!(true), false; "string child, true")]
+    #[test_case(&json!({"type": "string"}), &json!(1), false; "string child, 1")]
+    #[test_case(&json!({"type": "string"}), &json!(1.0), false; "string child, 1.0")]
+    #[test_case(&json!({"type": "string"}), &json!(1.5), false; "string child, 1.5")]
+    #[test_case(&json!({"type": "string"}), &json!("s"), true; "string child, string")]
+    #[test_case(&json!({"type": "string"}), &json!([]), false; "string child, array")]
+    #[test_case(&json!({"type": "string"}), &json!({}), false; "string child, object")]
+    #[test_case(&json!({"type": ["null", "object"]}), &json!(null), true; "null or object child, null")]
+    #[test_case(&json!({"type": ["null", "object"]}), &json!(true), false; "null or object child, true")]
+    #[test_case(&json!({"type": ["null", "object"]}), &json!(1), false; "null or object child, 1")]
+    #[test_case(&json!({"type": ["null", "object"]}), &json!(1.0), false; "null or object child, 1.0")]
+    #[test_case(&json!({"type": ["null", "object"]}), &json!(1.5), false; "null or object child, 1.5")]
+    #[test_case(&json!({"type": ["null", "object"]}), &json!("s"), false; "null or object child, string")]
+    #[test_case(&json!({"type": ["null", "object"]}), &json!([]), false; "null or object child, array")]
+    #[test_case(&json!({"type": ["null", "object"]}), &json!({}), true; "null or object child, object")]
+    #[test_case(&json!({"type": "number"}), &json!(null), false; "number child, null")]
+    #[test_case(&json!({"type": "number"}), &json!(true), false; "number child, true")]
+    #[test_case(&json!({"type": "number"}), &json!(1), true; "number child, 1")]
+    #[test_case(&json!({"type": "number"}), &json!(1.0), true; "number child, 1.0")]
+    #[test_case(&json!({"type": "number"}), &json!(1.5), true; "number child, 1.5")]
+    #[test_case(&json!({"type": "number"}), &json!("s"), false; "number child, string")]
+    #[test_case(&json!({"type": "number"}), &json!([]), false; "number child, array")]
+    #[test_case(&json!({"type": "number"}), &json!({}), false; "number child, object")]
+    #[test_case(&json!({"type": "integer"}), &json!(null), false; "integer child, null")]
+    #[test_case(&json!({"type": "integer"}), &json!(true), false; "integer child, true")]
+    #[test_case(&json!({"type": "integer"}), &json!(1), true; "integer child, 1")]
+    #[test_case(&json!({"type": "integer"}), &json!(1.0), true; "integer child, 1.0")]
+    #[test_case(&json!({"type": "integer"}), &json!(1.5), false; "integer child, 1.5")]
+    #[test_case(&json!({"type": "integer"}), &json!("s"), false; "integer child, string")]
+    #[test_case(&json!({"type": "integer"}), &json!([]), false; "integer child, array")]
+    #[test_case(&json!({"type": "integer"}), &json!({}), false; "integer child, object")]
+    #[test_case(&json!(true), &json!(null), true; "true child, null")]
+    #[test_case(&json!(true), &json!(true), true; "true child, true")]
+    #[test_case(&json!(true), &json!(1), true; "true child, 1")]
+    #[test_case(&json!(true), &json!(1.0), true; "true child, 1.0")]
+    #[test_case(&json!(true), &json!(1.5), true; "true child, 1.5")]
+    #[test_case(&json!(true), &json!("s"), true; "true child, string")]
+    #[test_case(&json!(true), &json!([]), true; "true child, array")]
+    #[test_case(&json!(true), &json!({}), true; "true child, object")]
+    #[test_case(&json!(false), &json!(null), false; "false child, null")]
+    #[test_case(&json!(false), &json!(true), false; "false child, true")]
+    #[test_case(&json!(false), &json!(1), false; "false child, 1")]
+    #[test_case(&json!(false), &json!(1.0), false; "false child, 1.0")]
+    #[test_case(&json!(false), &json!(1.5), false; "false child, 1.5")]
+    #[test_case(&json!(false), &json!("s"), false; "false child, string")]
+    #[test_case(&json!(false), &json!([]), false; "false child, array")]
+    #[test_case(&json!(false), &json!({}), false; "false child, object")]
+    #[test_case(&json!({}), &json!(null), true; "empty child, null")]
+    #[test_case(&json!({}), &json!(true), true; "empty child, true")]
+    #[test_case(&json!({}), &json!(1), true; "empty child, 1")]
+    #[test_case(&json!({}), &json!(1.0), true; "empty child, 1.0")]
+    #[test_case(&json!({}), &json!(1.5), true; "empty child, 1.5")]
+    #[test_case(&json!({}), &json!("s"), true; "empty child, string")]
+    #[test_case(&json!({}), &json!([]), true; "empty child, array")]
+    #[test_case(&json!({}), &json!({}), true; "empty child, object")]
+    fn child_matches_is_valid(child: &Value, value: &Value, expected: bool) {
+        let schema = json!({"properties": {"a": child}});
+        let instance = json!({"a": value});
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+        assert_eq!(validator.is_valid(&instance), expected);
+        assert_eq!(validator.validate(&instance).is_ok(), expected);
+        assert_eq!(validator.evaluate(&instance).flag().valid, expected);
+    }
+
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-04/schema#", "properties": {"a": {"type": "integer"}}}), &json!({"a": 1.0}), false; "draft 4 integer rejects 1.0")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema#", "definitions": {"s": {"type": "string"}}, "properties": {"a": {"$ref": "#/definitions/s", "type": "number"}}}), &json!({"a": "x"}), true; "draft 7 ignores type beside ref")]
+    #[test_case(&json!({"properties": {"a": {"type": "string"}}, "additionalProperties": {"type": "integer"}}), &json!({"a": "x", "b": 2}), true; "additional properties typed")]
+    #[test_case(&json!({"properties": {"a": {"type": "string"}}, "additionalProperties": {"type": "integer"}}), &json!({"a": "x", "b": "y"}), false; "additional properties wrong type")]
+    #[test_case(&json!({"patternProperties": {"^x-": {"type": "boolean"}}}), &json!({"x-a": true}), true; "pattern properties typed")]
+    #[test_case(&json!({"patternProperties": {"^x-": {"type": "boolean"}}}), &json!({"x-a": 1}), false; "pattern properties wrong type")]
+    fn typed_members(schema: &Value, instance: &Value, expected: bool) {
+        let validator = crate::validator_for(schema).expect("schema compiles");
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
+        assert_eq!(validator.evaluate(instance).flag().valid, expected);
+    }
 
     #[test]
     fn location() {

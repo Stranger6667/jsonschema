@@ -58,6 +58,10 @@ impl MultipleTypesValidator {
 }
 
 impl<F: Json> Validate<F> for MultipleTypesValidator {
+    fn accepted_types(&self) -> Option<JsonTypeSet> {
+        Some(self.types)
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         self.types.contains_value_type::<F>(instance)
     }
@@ -108,6 +112,10 @@ impl NullTypeValidator {
 }
 
 impl<F: Json> Validate<F> for NullTypeValidator {
+    fn accepted_types(&self) -> Option<JsonTypeSet> {
+        Some(JsonTypeSet::empty().insert(JsonType::Null))
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.is_null()
     }
@@ -160,6 +168,10 @@ impl BooleanTypeValidator {
 }
 
 impl<F: Json> Validate<F> for BooleanTypeValidator {
+    fn accepted_types(&self) -> Option<JsonTypeSet> {
+        Some(JsonTypeSet::empty().insert(JsonType::Boolean))
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.as_boolean().is_some()
     }
@@ -212,6 +224,10 @@ impl StringTypeValidator {
 }
 
 impl<F: Json> Validate<F> for StringTypeValidator {
+    fn accepted_types(&self) -> Option<JsonTypeSet> {
+        Some(JsonTypeSet::empty().insert(JsonType::String))
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.is_string()
     }
@@ -265,6 +281,10 @@ impl ArrayTypeValidator {
 }
 
 impl<F: Json> Validate<F> for ArrayTypeValidator {
+    fn accepted_types(&self) -> Option<JsonTypeSet> {
+        Some(JsonTypeSet::empty().insert(JsonType::Array))
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.as_array().is_some()
     }
@@ -318,6 +338,10 @@ impl ObjectTypeValidator {
 }
 
 impl<F: Json> Validate<F> for ObjectTypeValidator {
+    fn accepted_types(&self) -> Option<JsonTypeSet> {
+        Some(JsonTypeSet::empty().insert(JsonType::Object))
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.as_object().is_some()
     }
@@ -370,6 +394,10 @@ impl NumberTypeValidator {
 }
 
 impl<F: Json> Validate<F> for NumberTypeValidator {
+    fn accepted_types(&self) -> Option<JsonTypeSet> {
+        Some(JsonTypeSet::empty().insert(JsonType::Number))
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         instance.is_number()
     }
