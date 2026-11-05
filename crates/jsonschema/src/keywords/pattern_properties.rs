@@ -251,6 +251,10 @@ pub(crate) fn compile<'a, F: Json>(
         return Some(validator);
     }
 
+    if let Some(validator) = try_compile_as_sequences(&ctx, map) {
+        return Some(validator);
+    }
+
     // Fall back to regex compilation
     let result = match ctx.config().pattern_options() {
         PatternEngineOptions::FancyRegex { .. } => {
@@ -296,6 +300,29 @@ fn try_compile_as_literals<'a, F: Json>(
             Err(e) => return Some(Err(e)),
         };
         entries.push((Arc::new(matcher), node));
+    }
+    Some(Ok(build_validator_from_entries(entries, |regex, node| {
+        Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate<F>>
+    })))
+}
+
+/// Compile the patterns as sequences when every one of them is.
+fn try_compile_as_sequences<'a, F: Json>(
+    ctx: &compiler::Context<F>,
+    map: &'a Map<String, Value>,
+) -> Option<CompilationResult<'a, F>> {
+    let sequences = map
+        .keys()
+        .map(|pattern| ctx.sequence_without_limits(pattern))
+        .collect::<Option<Vec<_>>>()?;
+    let mut entries = Vec::with_capacity(map.len());
+    for (sequence, (pattern, subschema)) in sequences.into_iter().zip(map) {
+        let pctx = ctx.new_at_location(pattern.as_str());
+        let node = match compiler::compile(&pctx, pctx.as_resource_ref(subschema)) {
+            Ok(node) => node,
+            Err(e) => return Some(Err(e)),
+        };
+        entries.push((sequence, node));
     }
     Some(Ok(build_validator_from_entries(entries, |regex, node| {
         Box::new(SingleValuePatternPropertiesValidator { regex, node }) as Box<dyn Validate<F>>

@@ -8,7 +8,8 @@ use crate::{
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
     regex::{
-        analyze_pattern, contains_ecma_whitespace, AllMatch, PatternOptimization, RegexEngine,
+        analyze_pattern, contains_ecma_whitespace, AllMatch, Part, PatternOptimization,
+        RegexEngine, SequenceMatcher,
     },
     types::JsonType,
     unfinished_matches::MatchSite,
@@ -208,6 +209,9 @@ impl<R: RegexEngine, F: Json> Validate<F> for PatternValidator<R> {
 
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
+            if R::MATCH_OUT_OF_LINE {
+                return self.is_match_out_of_line(&item, ctx);
+            }
             return self.is_match(&item, ctx, || MatchSite::schema(&self.location));
         }
         true
@@ -215,6 +219,11 @@ impl<R: RegexEngine, F: Json> Validate<F> for PatternValidator<R> {
 }
 
 impl<R: RegexEngine> PatternValidator<R> {
+    #[inline(never)]
+    fn is_match_out_of_line(&self, item: &str, ctx: &mut ValidationContext) -> bool {
+        self.is_match(item, ctx, || MatchSite::schema(&self.location))
+    }
+
     #[inline]
     fn is_match(
         &self,
@@ -264,6 +273,38 @@ pub(crate) fn compile<'a, F: Json>(
             }
             None => {}
         }
+        if let Some(sequence) = ctx.get_or_compile_sequence(item) {
+            let location = ctx.location().join("pattern");
+            let options = ctx.config().pattern_options();
+            if !options.has_limits() {
+                return Some(Ok(Box::new(PatternValidator {
+                    regex: sequence,
+                    pattern: item.clone(),
+                    location,
+                })));
+            }
+            let sequence = Arc::clone(&sequence.sequence);
+            return Some(match options {
+                PatternEngineOptions::FancyRegex { .. } => match ctx.get_or_compile_regex(item) {
+                    Ok(fallback) => Ok(Box::new(PatternValidator {
+                        regex: Arc::new(SequenceMatcher { sequence, fallback }),
+                        pattern: item.clone(),
+                        location,
+                    })),
+                    Err(()) => Err(invalid_regex(ctx, schema)),
+                },
+                PatternEngineOptions::Regex { .. } => {
+                    match ctx.get_or_compile_standard_regex(item) {
+                        Ok(fallback) => Ok(Box::new(PatternValidator {
+                            regex: Arc::new(SequenceMatcher { sequence, fallback }),
+                            pattern: item.clone(),
+                            location,
+                        })),
+                        Err(()) => Err(invalid_regex(ctx, schema)),
+                    }
+                }
+            });
+        }
         // Fall back to regex compilation
         match ctx.config().pattern_options() {
             PatternEngineOptions::FancyRegex { .. } => {
@@ -310,7 +351,13 @@ pub(crate) fn compile<'a, F: Json>(
 fn all_match<F: Json>(ctx: &compiler::Context<F>, pattern: &str) -> Option<AllMatch> {
     jsonschema_regex::split_leading_lookaheads(pattern)?
         .iter()
-        .map(|part| ctx.get_or_compile_standard_regex(part).ok())
+        .map(|part| match ctx.get_or_compile_sequence(part) {
+            Some(sequence) => Some(Part::Sequence(sequence)),
+            None => ctx
+                .get_or_compile_standard_regex(part)
+                .ok()
+                .map(Part::Regex),
+        })
         .collect::<Option<Box<[_]>>>()
         .map(AllMatch)
 }

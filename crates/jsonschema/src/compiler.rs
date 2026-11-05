@@ -12,6 +12,7 @@ use crate::{
     node::{PendingSchemaNode, SchemaNode},
     options::{PatternEngineOptions, ValidationOptions},
     paths::{Location, LocationSegment},
+    regex::{LazyRegex, SequenceMatcher},
     types::{JsonType, JsonTypeSet},
     validator::Validate,
     Json, LazyInstance, SerdeJson, ValidationError, Validator, ValidatorMap,
@@ -314,6 +315,8 @@ struct PatternCacheEntry {
     translated: Arc<str>,
     fancy: Option<Arc<fancy_regex::Regex>>,
     standard: Option<Arc<regex::Regex>>,
+    /// Holds `None` once the pattern is known not to be a sequence.
+    sequence: std::cell::OnceCell<Option<Arc<SequenceMatcher<LazyRegex>>>>,
 }
 
 impl<F: Json> SharedContextState<'_, F> {
@@ -521,6 +524,7 @@ impl<'a, F: Json> Context<'a, F> {
                 translated: Arc::clone(&translated),
                 fancy: None,
                 standard: None,
+                sequence: std::cell::OnceCell::new(),
             },
         );
         Ok(translated)
@@ -899,6 +903,39 @@ impl<'a, F: Json> Context<'a, F> {
         }
 
         Ok(regex)
+    }
+
+    /// The pattern as a [`SequenceMatcher`] with a lazily built fallback, if it is a sequence.
+    pub(crate) fn get_or_compile_sequence(
+        &self,
+        pattern: &str,
+    ) -> Option<Arc<SequenceMatcher<LazyRegex>>> {
+        let translated = self.translated_pattern(pattern).ok()?;
+        let cache = self.shared.pattern_cache.borrow();
+        let entry = cache.get(pattern)?;
+        entry
+            .sequence
+            .get_or_init(|| {
+                jsonschema_regex::Sequence::compile(&translated).map(|sequence| {
+                    Arc::new(SequenceMatcher {
+                        sequence: Arc::new(sequence),
+                        fallback: LazyRegex::new(translated),
+                    })
+                })
+            })
+            .clone()
+    }
+
+    /// The pattern's sequence when it is one and no engine limits are configured: with limits,
+    /// the engine must still see every pattern at build time.
+    pub(crate) fn sequence_without_limits(
+        &self,
+        pattern: &str,
+    ) -> Option<Arc<SequenceMatcher<LazyRegex>>> {
+        if self.config.pattern_options().has_limits() {
+            return None;
+        }
+        self.get_or_compile_sequence(pattern)
     }
 
     /// Get a cached compiled standard regex, or compile and cache it if not present.

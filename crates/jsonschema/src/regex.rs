@@ -1,7 +1,10 @@
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 
 pub(crate) trait RegexEngine: Sized + Send + Sync {
     type Error: RegexError;
+    /// Whether callers keep the match out of line. An inlined sequence match costs the callers'
+    /// non-string exits their prologue-free path.
+    const MATCH_OUT_OF_LINE: bool = false;
     fn is_match(&self, text: &str) -> Result<bool, Self::Error>;
     /// The compiled pattern its errors name, for engines that can fail.
     fn pattern(&self) -> Option<&str> {
@@ -109,9 +112,91 @@ impl RegexEngine for regex::Regex {
     }
 }
 
+impl<R: RegexEngine> RegexEngine for Arc<R> {
+    type Error = R::Error;
+
+    fn pattern(&self) -> Option<&str> {
+        (**self).pattern()
+    }
+
+    #[inline]
+    fn is_match(&self, text: &str) -> Result<bool, Self::Error> {
+        (**self).is_match(text)
+    }
+}
+
+/// A [`jsonschema_regex::Sequence`], with `fallback` deciding the subjects it cannot.
+#[derive(Debug)]
+pub(crate) struct SequenceMatcher<R> {
+    pub(crate) sequence: Arc<jsonschema_regex::Sequence>,
+    pub(crate) fallback: R,
+}
+
+impl<R: RegexEngine> RegexEngine for SequenceMatcher<R> {
+    type Error = R::Error;
+    const MATCH_OUT_OF_LINE: bool = true;
+
+    fn pattern(&self) -> Option<&str> {
+        self.fallback.pattern()
+    }
+
+    #[inline]
+    fn is_match(&self, text: &str) -> Result<bool, Self::Error> {
+        match self.sequence.is_match(text.as_bytes()) {
+            Some(matched) => Ok(matched),
+            None => self.fallback.is_match(text),
+        }
+    }
+}
+
+impl From<RegexBackendPanic> for FancyRegexError {
+    fn from(panic: RegexBackendPanic) -> Self {
+        Self::Panicked {
+            pattern: panic.pattern,
+        }
+    }
+}
+
+/// A `regex::Regex` built on its first match. Only for patterns `Sequence::compile` accepts, whose
+/// size budget keeps them far below the engine's default size limit.
+#[derive(Debug)]
+pub(crate) struct LazyRegex {
+    translated: Arc<str>,
+    regex: OnceLock<regex::Regex>,
+}
+
+impl LazyRegex {
+    pub(crate) fn new(translated: Arc<str>) -> Self {
+        Self {
+            translated,
+            regex: OnceLock::new(),
+        }
+    }
+}
+
+impl RegexEngine for LazyRegex {
+    type Error = RegexBackendPanic;
+
+    fn pattern(&self) -> Option<&str> {
+        Some(&self.translated)
+    }
+
+    fn is_match(&self, text: &str) -> Result<bool, Self::Error> {
+        let regex = self.regex.get_or_init(|| {
+            regex::Regex::new(&self.translated).expect("sequence patterns build without limits")
+        });
+        RegexEngine::is_match(regex, text)
+    }
+}
+
+pub(crate) enum Part {
+    Sequence(Arc<SequenceMatcher<LazyRegex>>),
+    Regex(Arc<regex::Regex>),
+}
+
 /// Matches when every part does: the parts [`jsonschema_regex::split_leading_lookaheads`] makes
 /// of a pattern, each compiled without lookaround support.
-pub(crate) struct AllMatch(pub(crate) Box<[Arc<regex::Regex>]>);
+pub(crate) struct AllMatch(pub(crate) Box<[Part]>);
 
 impl RegexEngine for AllMatch {
     type Error = RegexBackendPanic;
@@ -119,7 +204,11 @@ impl RegexEngine for AllMatch {
     #[inline]
     fn is_match(&self, text: &str) -> Result<bool, Self::Error> {
         for part in &self.0 {
-            if !RegexEngine::is_match(&**part, text)? {
+            let matched = match part {
+                Part::Sequence(sequence) => sequence.is_match(text)?,
+                Part::Regex(regex) => RegexEngine::is_match(&**regex, text)?,
+            };
+            if !matched {
                 return Ok(false);
             }
         }

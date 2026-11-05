@@ -1,3 +1,4 @@
+mod sequence;
 mod syntax;
 
 use std::{borrow::Cow, fmt::Write};
@@ -10,6 +11,7 @@ use regex_syntax::{
     hir::{Class, Hir, HirKind},
 };
 
+pub use sequence::Sequence;
 pub use syntax::is_valid_ecma_regex;
 
 /// Convert ECMA Script 262 regex to Rust regex on the best effort basis.

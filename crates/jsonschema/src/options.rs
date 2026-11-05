@@ -887,6 +887,22 @@ pub(crate) enum PatternEngineOptions {
     },
 }
 
+impl PatternEngineOptions {
+    pub(crate) fn has_limits(self) -> bool {
+        match self {
+            Self::FancyRegex {
+                backtrack_limit,
+                size_limit,
+                dfa_size_limit,
+            } => backtrack_limit.is_some() || size_limit.is_some() || dfa_size_limit.is_some(),
+            Self::Regex {
+                size_limit,
+                dfa_size_limit,
+            } => size_limit.is_some() || dfa_size_limit.is_some(),
+        }
+    }
+}
+
 /// Marker for using the `fancy-regex` engine that includes advanced features like lookarounds.
 pub struct FancyRegex;
 /// Marker for using the `regex` engine, that has fewer features than `fancy-regex` but guarantees
