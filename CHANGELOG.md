@@ -5,6 +5,7 @@
 ### Fixed
 
 - `.` in `pattern` and `patternProperties` matched `\r`, U+2028 and U+2029 (it should reject every line terminator).
+- `evaluate()` reported a missing single `required` name beside `additionalProperties: false` at `/additionalProperties` (it should be `/required`).
 
 ### Performance
 
