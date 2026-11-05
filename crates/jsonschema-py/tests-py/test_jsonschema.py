@@ -1230,6 +1230,16 @@ def test_custom_meta_schema_registered():
         ({"exclusiveMaximum": -9223372036854775808}, -9223372036854775809, True),
         ({"minimum": 18446744073709551615}, 18446744073709551616, True),
         ({"maximum": 18446744073709551615}, 18446744073709551616, False),
+        # whole floats past 2^53 hold a different integer than their shortest text names
+        ({"exclusiveMinimum": 22734393525036408}, float(22734393525036408), False),
+        ({"minimum": 22734393525036408}, float(22734393525036408), True),
+        ({"maximum": 22734393525036408}, float(22734393525036408), True),
+        ({"exclusiveMaximum": 22734393525036408}, float(22734393525036408), False),
+        ({"const": 22734393525036408}, float(22734393525036408), True),
+        ({"enum": [22734393525036408]}, float(22734393525036408), True),
+        ({"multipleOf": 8}, float(22734393525036408), True),
+        ({"minimum": -9223372036854775808}, float(-(2**63)), True),
+        ({"const": 2**70}, float(2**70), True),
     ],
 )
 def test_large_integer_validation(schema, instance, expected):
