@@ -10,6 +10,7 @@
 
 ### Performance
 
+- `pattern` and `patternProperties` match anchored character-class patterns such as `^[a-z0-9-]+$` without a regex engine.
 - `oneOf` / `anyOf` up to 7x faster when branches fix a property with `const` or `enum`.
 - `oneOf` / `anyOf` skip branches that exclude the instance's value with `not` over `enum` or `const`.
 - `properties` up to 40% faster on objects with a few more keys than it declares.
