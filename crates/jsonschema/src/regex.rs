@@ -142,6 +142,7 @@ impl RegexError for LiteralMatchError {
 }
 
 /// [`RegexEngine`] for literal patterns — either `starts_with` (prefix) or `==` (exact).
+#[derive(Clone)]
 pub(crate) enum LiteralMatcher {
     Prefix {
         literal: String,
@@ -184,6 +185,19 @@ pub(crate) enum PatternOptimization {
     Alternation(Vec<String>),
     /// `^\S*$` — no ECMA-262 whitespace characters.
     NoWhitespace,
+}
+
+impl From<PatternOptimization> for LiteralMatcher {
+    fn from(optimization: PatternOptimization) -> Self {
+        match optimization {
+            PatternOptimization::Prefix(literal) => LiteralMatcher::Prefix { literal },
+            PatternOptimization::Exact(exact) => LiteralMatcher::Exact { exact },
+            PatternOptimization::Alternation(alternatives) => {
+                LiteralMatcher::Alternation { alternatives }
+            }
+            PatternOptimization::NoWhitespace => LiteralMatcher::NoWhitespace,
+        }
+    }
 }
 
 pub(crate) use jsonschema_regex::contains_ecma_whitespace;
