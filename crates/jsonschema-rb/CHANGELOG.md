@@ -17,6 +17,7 @@
 - `properties` and `additionalProperties` up to 13% faster on schemas declaring 15 or more properties.
 - `properties` up to 12% faster on objects with keys it does not declare.
 - `unevaluatedProperties` up to 10% faster on schemas that combine it with `patternProperties` or applicators.
+- `required` up to 40% faster when it lists every property of an object closed by `additionalProperties: false`.
 
 ## [0.60.2] - 2026-10-27
 
