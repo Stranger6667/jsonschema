@@ -918,11 +918,8 @@ jobs:
 
       - uses: dtolnay/rust-toolchain@stable
 
-      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
-        with:
-          save-if: ${{ github.ref == 'refs/heads/master' }}
-          cache-all-crates: "true"
-
+      # No cache: the packages unpack under an unchanged version, so cargo would reuse the restored
+      # sources and builds of an earlier commit instead of verifying this one.
       # One invocation: separate dry-runs would need every dependency version already on crates.io.
       - run: cargo publish --dry-run -p referencing -p jsonschema-value -p jsonschema-regex -p jsonschema-macros-core -p jsonschema-macros -p jsonschema -p jsonschema-cli
 

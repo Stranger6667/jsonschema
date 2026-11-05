@@ -4,7 +4,10 @@ use crate::{
     compiler,
     keywords::pattern_properties::invalid_regex,
     node::SchemaNode,
-    regex::{analyze_pattern, contains_ecma_whitespace, Compiled, PatternOptimization},
+    regex::{
+        analyze_pattern, contains_ecma_whitespace, Compiled, LazyRegex, PatternOptimization,
+        RegexBackendPanic, SequenceMatcher,
+    },
     Json, Object, SerdeJson, ValidationContext,
 };
 use serde_json::{Map, Value};
@@ -22,11 +25,16 @@ pub(crate) enum CompiledPattern<R> {
     Alternation(Arc<[String]>),
     /// `^\S*$` — no ECMA-262 whitespace characters.
     NoWhitespace,
+    /// An anchored class/literal sequence, with a lazily built regex for what it cannot decide.
+    Sequence(Arc<SequenceMatcher<LazyRegex>>),
     /// Full regex pattern.
     Regex(R),
 }
 
-impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern<R> {
+impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern<R>
+where
+    R::Error: From<RegexBackendPanic>,
+{
     type Error = R::Error;
 
     #[inline]
@@ -36,6 +44,7 @@ impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern
             CompiledPattern::Exact(exact) => Ok(text == exact.as_ref()),
             CompiledPattern::Alternation(alts) => Ok(alts.iter().any(|a| a.as_str() == text)),
             CompiledPattern::NoWhitespace => Ok(!contains_ecma_whitespace(text)),
+            CompiledPattern::Sequence(sequence) => sequence.is_match(text).map_err(Into::into),
             CompiledPattern::Regex(re) => re.is_match(text),
         }
     }
@@ -52,7 +61,10 @@ pub(crate) trait PropertyPattern: crate::regex::RegexEngine {
     ) -> bool;
 }
 
-impl<R: crate::regex::RegexEngine> PropertyPattern for CompiledPattern<R> {
+impl<R: crate::regex::RegexEngine> PropertyPattern for CompiledPattern<R>
+where
+    R::Error: From<RegexBackendPanic>,
+{
     #[inline]
     fn is_match_in(
         &self,
@@ -65,6 +77,7 @@ impl<R: crate::regex::RegexEngine> PropertyPattern for CompiledPattern<R> {
             CompiledPattern::Exact(exact) => text == exact.as_ref(),
             CompiledPattern::Alternation(alts) => alts.iter().any(|a| a.as_str() == text),
             CompiledPattern::NoWhitespace => !contains_ecma_whitespace(text),
+            CompiledPattern::Sequence(sequence) => ctx.is_match(&**sequence, text, site),
             CompiledPattern::Regex(re) => ctx.is_match(re, text, site),
         }
     }
@@ -372,10 +385,14 @@ pub(crate) fn compile_fancy_regex_patterns<'a, F: Json>(
             }
             Some(PatternOptimization::NoWhitespace) => CompiledPattern::NoWhitespace,
             None => {
-                let regex = ctx
-                    .get_or_compile_regex(pattern)
-                    .map_err(|()| invalid_regex(&pctx, pattern))?;
-                CompiledPattern::Regex((*regex).clone())
+                if let Some(sequence) = ctx.sequence_without_limits(pattern) {
+                    CompiledPattern::Sequence(sequence)
+                } else {
+                    let regex = ctx
+                        .get_or_compile_regex(pattern)
+                        .map_err(|()| invalid_regex(&pctx, pattern))?;
+                    CompiledPattern::Regex((*regex).clone())
+                }
             }
         };
         let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
@@ -403,10 +420,14 @@ pub(crate) fn compile_regex_patterns<'a, F: Json>(
             }
             Some(PatternOptimization::NoWhitespace) => CompiledPattern::NoWhitespace,
             None => {
-                let regex = ctx
-                    .get_or_compile_standard_regex(pattern)
-                    .map_err(|()| invalid_regex(&pctx, pattern))?;
-                CompiledPattern::Regex((*regex).clone())
+                if let Some(sequence) = ctx.sequence_without_limits(pattern) {
+                    CompiledPattern::Sequence(sequence)
+                } else {
+                    let regex = ctx
+                        .get_or_compile_standard_regex(pattern)
+                        .map_err(|()| invalid_regex(&pctx, pattern))?;
+                    CompiledPattern::Regex((*regex).clone())
+                }
             }
         };
         let node = compiler::compile(&pctx, pctx.as_resource_ref(subschema))?;
