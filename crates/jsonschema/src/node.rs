@@ -452,8 +452,14 @@ impl<F: Json> SchemaNode<F> {
                     absolute_location,
                     formatted_schema_location: OnceLock::new(),
                 };
-                let is_leaf =
-                    crate::keywords::keyword_is_leaf(&keyword) && validator.is_valid_alone();
+                // Only `required` may lean on a sibling keyword; asking every validator costs a call each.
+                let is_leaf = crate::keywords::keyword_is_leaf(&keyword)
+                    && (!matches!(
+                        keyword,
+                        crate::keywords::Keyword::Builtin(
+                            crate::keywords::BuiltinKeyword::Required
+                        )
+                    ) || validator.is_valid_alone());
                 let validator = KeywordValidator { validator, is_leaf };
                 (metadata, validator)
             })

@@ -83,16 +83,14 @@ impl<F: Json> Validate<F> for EveryDeclaredRequiredValidator<F> {
 
 /// Whether `required` lists exactly the declared property names.
 fn names_every_declared(required: &[Value], properties: &Map<String, Value>) -> bool {
-    let mut names = ahash::AHashSet::with_capacity(required.len());
-    for item in required {
-        match item.as_str() {
-            Some(name) if properties.contains_key(name) => {
-                names.insert(name);
-            }
-            _ => return false,
-        }
-    }
-    names.len() == properties.len()
+    required.len() == properties.len()
+        && required.iter().all(|item| {
+            item.as_str()
+                .is_some_and(|name| properties.contains_key(name))
+        })
+        && properties
+            .keys()
+            .all(|name| required.iter().any(|item| item.as_str() == Some(name)))
 }
 
 pub(crate) struct RequiredValidator<F: Json = SerdeJson> {

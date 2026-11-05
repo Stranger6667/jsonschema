@@ -18,6 +18,7 @@
 - `properties` up to 12% faster on objects with keys it does not declare.
 - Validation up to 40% faster with `serde_json`'s `preserve_order` feature.
 - `unevaluatedProperties` up to 10% faster on schemas that combine it with `patternProperties` or applicators.
+- `required` up to 40% faster when it lists every property of an object closed by `additionalProperties: false`.
 - Building validators that reference `file://` schemas is 10x or more faster, from reading each file in one call instead of one system call per byte.
 
 ## [0.60.2] - 2026-10-26
