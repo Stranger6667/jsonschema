@@ -10,7 +10,7 @@ use crate::{
         format::{builtin_format, Format},
     },
     paths::Location,
-    regex::Compiled,
+    regex::{Compiled, LazyRegex, SequenceMatcher},
     retriever::DefaultRetriever,
     Json, Keyword, SerdeJson, ValidationError, Validator,
 };
@@ -930,8 +930,8 @@ pub(crate) enum PatternEngineOptions {
 /// [`ValidationOptions::with_pattern_cache`].
 ///
 /// Clones share one cache. It also remembers patterns that failed to compile, so they fail without
-/// compiling again. Entries are keyed by the pattern and the [`PatternOptions`] it was compiled
-/// with, and live as long as any clone does.
+/// compiling again. Entries are keyed by the pattern and, when a regex engine compiled it, the
+/// [`PatternOptions`] it was compiled with, and live as long as any clone does.
 #[derive(Debug, Clone, Default)]
 pub struct PatternCache {
     inner: Arc<Mutex<CompiledPatterns>>,
@@ -944,6 +944,8 @@ type CompiledByOptions<R> = AHashMap<PatternEngineOptions, AHashMap<Arc<str>, Re
 struct CompiledPatterns {
     fancy: CompiledByOptions<Compiled<fancy_regex::Regex>>,
     standard: CompiledByOptions<Compiled<regex::Regex>>,
+    /// The same for every engine option. `Err` records a pattern that is not a sequence.
+    sequences: AHashMap<Arc<str>, Result<Arc<SequenceMatcher<LazyRegex>>, ()>>,
 }
 
 impl PatternCache {
@@ -1001,6 +1003,23 @@ impl PatternCache {
             .insert(Arc::from(pattern), regex);
     }
 
+    /// The sequence compile of `pattern`, or `None` when it was never attempted.
+    pub(crate) fn sequence(
+        &self,
+        pattern: &str,
+    ) -> Option<Result<Arc<SequenceMatcher<LazyRegex>>, ()>> {
+        self.lock().sequences.get(pattern).cloned()
+    }
+
+    pub(crate) fn insert_sequence(
+        &self,
+        pattern: &str,
+        sequence: Result<Arc<SequenceMatcher<LazyRegex>>, ()>,
+    ) {
+        self.lock().sequences.insert(Arc::from(pattern), sequence);
+    }
+
+    /// Engine compiles held, failed ones included.
     #[cfg(test)]
     pub(crate) fn len(&self) -> usize {
         let compiled = self.lock();
@@ -1014,6 +1033,22 @@ impl PatternCache {
                 .values()
                 .map(|patterns| patterns.len())
                 .sum::<usize>()
+    }
+}
+
+impl PatternEngineOptions {
+    pub(crate) fn has_limits(self) -> bool {
+        match self {
+            Self::FancyRegex {
+                backtrack_limit,
+                size_limit,
+                dfa_size_limit,
+            } => backtrack_limit.is_some() || size_limit.is_some() || dfa_size_limit.is_some(),
+            Self::Regex {
+                size_limit,
+                dfa_size_limit,
+            } => size_limit.is_some() || dfa_size_limit.is_some(),
+        }
     }
 }
 

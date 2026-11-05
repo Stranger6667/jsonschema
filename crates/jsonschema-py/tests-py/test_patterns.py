@@ -69,3 +69,11 @@ def test_unfinished_regex_match(backend, schema, expected):
         backend.is_valid(schema, UNFINISHED_SUBJECT),
         [error.message for error in backend.iter_errors(schema, UNFINISHED_SUBJECT)],
     ) == expected
+
+
+@pytest.mark.parametrize(
+    ("instance", "expected"),
+    [("café", True), ("Café", False), ("cafe", True)],
+)
+def test_non_ascii_subject_on_sequence_pattern(instance, expected):
+    assert jsonschema_rs.validator_for({"pattern": "^[a-zé]+$"}).is_valid(instance) is expected

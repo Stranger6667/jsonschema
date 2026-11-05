@@ -14,6 +14,7 @@
 ### Performance
 
 - `pattern` and `patternProperties` with a large bounded count over one character class, such as `^.{0,262144}$` or `[^\p{C}]{1,2048}`, build without unrolling the count and fit the default size limit.
+- `pattern` and `patternProperties` match anchored character-class patterns such as `^[a-z0-9-]+$` without a regex engine.
 
 ## [0.61.0] - 2026-11-08
 
