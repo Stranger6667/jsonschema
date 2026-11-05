@@ -675,7 +675,7 @@ fn number_of(node: PyNode<'_>) -> Option<Number> {
         }
         ObjType::Float => {
             let value = unsafe { ffi::PyFloat_AsDouble(node.as_ptr()) };
-            Number::from_f64(value)
+            crate::numeric::number_from_f64(value)
         }
         ObjType::Decimal => obj_str_number(node),
         ObjType::Enum => number_of(resolved(node)),
@@ -1476,6 +1476,32 @@ mod tests {
             let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
             assert_eq!(node.is_number(), want);
             assert_eq!(node.is_number(), node.as_number().is_some());
+        });
+    }
+
+    // Past 2^53 the shortest text of a float names a different integer than the float holds.
+    #[cfg(feature = "arbitrary-precision")]
+    #[test_case("float(22734393525036408)", 22_734_393_525_036_408.0; "past 2^53")]
+    #[test_case("float(2**63)", 9_223_372_036_854_775_808.0; "2^63")]
+    #[test_case("float(-2**63)", -9_223_372_036_854_775_808.0; "minus 2^63")]
+    fn integral_float_compares_as_its_value(expr: &str, limit: f64) {
+        Python::attach(|py| {
+            let owned = py
+                .eval(CString::new(expr).unwrap().as_c_str(), None, None)
+                .expect("eval");
+            let node = unsafe { Borrowed::from_ptr(py, owned.as_ptr()) };
+            let number = node.as_number().expect("number");
+            assert_eq!(
+                [
+                    crate::numeric::ge(&number, limit),
+                    crate::numeric::gt(&number, limit),
+                    crate::numeric::le(&number, limit),
+                    crate::numeric::lt(&number, limit),
+                ],
+                [true, false, true, false]
+            );
+            let exact: Number = format!("{}", limit as i128).parse().expect("integer");
+            assert!(cmp::equal_numbers(&number, &exact));
         });
     }
 

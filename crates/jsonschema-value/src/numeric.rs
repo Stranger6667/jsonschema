@@ -229,6 +229,20 @@ pub fn is_multiple_of_float<N: crate::JsonNumber>(value: &N, multiple: f64) -> b
 /// Beyond this value, f64 loses precision and arithmetic operations become unreliable.
 const MAX_SAFE_INTEGER: u64 = 1u64 << 53;
 
+/// A finite `f64` as a JSON number holding the value the float holds.
+///
+/// From 2^53 up, the shortest text of a whole float can name a neighbouring integer:
+/// `22734393525036408.0` prints as `2.273439352503641e16`. Those keep their exact digits.
+#[cfg(any(feature = "pyo3", feature = "magnus"))]
+pub(crate) fn number_from_f64(value: f64) -> Option<serde_json::Number> {
+    #[cfg(feature = "arbitrary-precision")]
+    if value.fract() == 0.0 && value.abs() >= MAX_SAFE_INTEGER as f64 {
+        let integer = <num_bigint::BigInt as num_traits::FromPrimitive>::from_f64(value)?;
+        return format!("{integer}.0").parse().ok();
+    }
+    serde_json::Number::from_f64(value)
+}
+
 /// Whether the number written in `text` is exactly zero: `0e5` is, `1e-400` is not.
 fn decimal_is_zero(text: &str) -> bool {
     let mantissa = text.split(['e', 'E']).next().unwrap_or(text);

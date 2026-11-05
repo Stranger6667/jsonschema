@@ -497,7 +497,7 @@ impl JsonNumber for RbNumber {
 fn number_of(value: VALUE) -> Option<Number> {
     match value_kind(value) {
         Kind::Fixnum => Some(Number::from(fixnum_of(value))),
-        Kind::Float => float_of(value).and_then(Number::from_f64),
+        Kind::Float => float_of(value).and_then(crate::numeric::number_from_f64),
         Kind::Bignum => big_number(value),
         Kind::Decimal => big_decimal_number(value),
         _ => None,
@@ -1295,6 +1295,8 @@ mod tests {
         equals_value_compares_every_shape(&ruby);
         wide_objects_use_the_owned_snapshot(&ruby);
         number_accessors_cover_every_kind(&ruby);
+        #[cfg(feature = "arbitrary-precision")]
+        integral_float_compares_as_its_value(&ruby);
         error_path_helpers_walk_the_instance(&ruby);
         pending_errors_nest(&ruby);
         unsupported_values_are_recorded_where_read(&ruby);
@@ -1474,6 +1476,30 @@ mod tests {
         assert_eq!(node.to_value().into_owned()["k7"], json!(7));
         assert!(node.equals_value(&node.to_value()));
         assert_eq!(pending(), None);
+    }
+
+    // Past 2^53 the shortest text of a float names a different integer than the float holds.
+    #[cfg(feature = "arbitrary-precision")]
+    fn integral_float_compares_as_its_value(ruby: &Ruby) {
+        for (code, limit) in [
+            ("22734393525036408.0", 22_734_393_525_036_408.0),
+            ("2.0**63", 9_223_372_036_854_775_808.0),
+            ("-(2.0**63)", -9_223_372_036_854_775_808.0),
+        ] {
+            let number = RbNode::new(eval(ruby, code)).as_number().expect("float");
+            assert_eq!(
+                [
+                    crate::numeric::ge(&number, limit),
+                    crate::numeric::gt(&number, limit),
+                    crate::numeric::le(&number, limit),
+                    crate::numeric::lt(&number, limit),
+                ],
+                [true, false, true, false],
+                "{code}"
+            );
+            let exact: Number = format!("{}", limit as i128).parse().expect("integer");
+            assert!(cmp::equal_numbers(&number, &exact), "{code}");
+        }
     }
 
     fn number_accessors_cover_every_kind(ruby: &Ruby) {
