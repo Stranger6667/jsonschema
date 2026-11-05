@@ -65,10 +65,10 @@ impl AnyOfValidator<SerdeJson> {
 impl<F: Json, D: Dispatch<F>> Validate<F> for AnyOfValidator<F, D> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         match self.dispatch.candidates(instance) {
-            Candidates::All => self.schemas.iter().any(|s| s.is_valid(instance, ctx)),
+            Candidates::All => self.schemas.iter().any(|s| s.is_valid_child(instance, ctx)),
             Candidates::Only(branches) => branches
                 .iter()
-                .any(|&idx| self.schemas[idx].is_valid(instance, ctx)),
+                .any(|&idx| self.schemas[idx].is_valid_child(instance, ctx)),
         }
     }
 
@@ -203,7 +203,7 @@ impl SingleAnyOfValidator<SerdeJson> {
 
 impl<F: Json> Validate<F> for SingleAnyOfValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
-        self.node.is_valid(instance, ctx)
+        self.node.is_valid_child(instance, ctx)
     }
 
     fn validate<'i>(

@@ -70,7 +70,7 @@ impl<F: Json> Validate<F> for AdditionalPropertiesValidator<F> {
             if let Some(validator) = self.node.single_validator() {
                 values.all(|(_, value)| validator.is_valid(&value, ctx))
             } else {
-                values.all(|(_, value)| self.node.is_valid(&value, ctx))
+                values.all(|(_, value)| self.node.is_valid_child(&value, ctx))
             }
         } else {
             true
@@ -444,7 +444,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                 {
                     deferred[count] = Some((node, value));
                     count += 1;
-                } else if !node.is_valid(&value, ctx) {
+                } else if !node.is_valid_child(&value, ctx) {
                     return false;
                 }
             }
@@ -801,12 +801,12 @@ impl<F: Json, R: PropertyPattern> Validate<F> for AdditionalPropertiesWithPatter
                         MatchSite::schema(node.location())
                     }) {
                         has_match = true;
-                        if !node.is_valid(&value, ctx) {
+                        if !node.is_valid_child(&value, ctx) {
                             return false;
                         }
                     }
                 }
-                if !has_match && !self.node.is_valid(&value, ctx) {
+                if !has_match && !self.node.is_valid_child(&value, ctx) {
                     return false;
                 }
             }
@@ -980,7 +980,7 @@ impl<F: Json, R: PropertyPattern> Validate<F>
                         MatchSite::schema(node.location())
                     }) {
                         has_match = true;
-                        if !node.is_valid(&value, ctx) {
+                        if !node.is_valid_child(&value, ctx) {
                             return false;
                         }
                     }
@@ -1176,7 +1176,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
         if let Some(object) = instance.as_object() {
             for (property, value) in object.members() {
                 if let Some(node) = self.properties.get_validator(property.as_ref()) {
-                    if !node.is_valid(&value, ctx) {
+                    if !node.is_valid_child(&value, ctx) {
                         return false;
                     }
                     // Use pre-computed pattern indices - no regex at runtime
@@ -1210,12 +1210,12 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                             MatchSite::schema(node.location())
                         }) {
                             has_match = true;
-                            if !node.is_valid(&value, ctx) {
+                            if !node.is_valid_child(&value, ctx) {
                                 return false;
                             }
                         }
                     }
-                    if !has_match && !self.node.is_valid(&value, ctx) {
+                    if !has_match && !self.node.is_valid_child(&value, ctx) {
                         return false;
                     }
                 }
@@ -1478,7 +1478,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
         if let Some(object) = instance.as_object() {
             for (property, value) in object.members() {
                 if let Some(node) = self.properties.get_validator(property.as_ref()) {
-                    if !node.is_valid(&value, ctx) {
+                    if !node.is_valid_child(&value, ctx) {
                         return false;
                     }
                     // Use pre-computed pattern indices - no regex at runtime for known properties
@@ -1512,7 +1512,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                             MatchSite::schema(node.location())
                         }) {
                             has_match = true;
-                            if !node.is_valid(&value, ctx) {
+                            if !node.is_valid_child(&value, ctx) {
                                 return false;
                             }
                         }

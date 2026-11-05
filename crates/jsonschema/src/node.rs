@@ -3,6 +3,7 @@ use crate::{
     evaluation::{Annotations, ChildList, EvaluationNode},
     keywords::{items::AbsorbedKeywords, BoxedValidator, BuiltinKeyword, Keyword},
     paths::{LazyLocation, Location, RefTracker},
+    types::{JsonType, JsonTypeSet},
     validator::{EvaluationResult, Validate, ValidationContext},
     Array, Json, Node, SerdeJson, ValidationError,
 };
@@ -14,8 +15,17 @@ use std::{
 };
 
 struct SchemaNodeInner<F: Json> {
+    /// The types this node accepts when it only checks `type`, itself or through `$ref`s to owned
+    /// targets, so a parent can decide it without entering it.
+    accepted_types: Option<JsonTypeSet>,
     validators: NodeValidators<F>,
     formatted_schema_location: OnceLock<Arc<str>>,
+}
+
+/// Numbers need their value checked: `integer` looks at the fraction, and a backend may report a
+/// non-finite number as `number` while rejecting it. Sets with either never get a type shortcut.
+fn type_shortcut(types: JsonTypeSet) -> Option<JsonTypeSet> {
+    (!types.contains(JsonType::Number) && !types.contains(JsonType::Integer)).then_some(types)
 }
 
 impl<F: Json> fmt::Debug for SchemaNodeInner<F> {
@@ -410,6 +420,7 @@ impl<F: Json> SchemaNode<F> {
         let absolute_path = ctx.absolute_location(&location);
         SchemaNode {
             inner: Arc::new(SchemaNodeInner {
+                accepted_types: None,
                 validators: NodeValidators::Boolean { validator },
                 formatted_schema_location: OnceLock::new(),
             }),
@@ -464,6 +475,13 @@ impl<F: Json> SchemaNode<F> {
                 (metadata, validator)
             })
             .unzip();
+        let accepted_types = match validators.as_slice() {
+            [only] => match only.validator.owned_ref_target() {
+                Some(target) => target.inner.accepted_types,
+                None => only.validator.accepted_types().and_then(type_shortcut),
+            },
+            _ => None,
+        };
         let validators = if validators.len() == 1 {
             KeywordList::One(validators.pop().expect("one validator"))
         } else {
@@ -471,6 +489,7 @@ impl<F: Json> SchemaNode<F> {
         };
         SchemaNode {
             inner: Arc::new(SchemaNodeInner {
+                accepted_types,
                 validators: NodeValidators::Keyword(KeywordValidators {
                     unmatched_keywords,
                     validators,
@@ -506,6 +525,7 @@ impl<F: Json> SchemaNode<F> {
             .collect();
         SchemaNode {
             inner: Arc::new(SchemaNodeInner {
+                accepted_types: None,
                 validators: NodeValidators::Array { validators },
                 formatted_schema_location: OnceLock::new(),
             }),
@@ -825,7 +845,27 @@ impl<F: Json> SchemaNode<F> {
     }
 }
 
+impl<F: Json> SchemaNode<F> {
+    /// `is_valid` for a child a parent iterates over: shortcut nodes are decided without entering
+    /// them. `is_valid` itself stays as is, since every call site inlines it.
+    #[inline]
+    pub(crate) fn is_valid_child(
+        &self,
+        instance: &F::Node<'_>,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        match self.inner.accepted_types {
+            Some(types) => types.contains(instance.json_type()),
+            None => self.inner.validators.is_valid(instance, ctx),
+        }
+    }
+}
+
 impl<F: Json> Validate<F> for SchemaNode<F> {
+    fn as_owned_node(&self) -> Option<&SchemaNode<F>> {
+        Some(self)
+    }
+
     #[inline]
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         self.inner.validators.is_valid(instance, ctx)
@@ -1079,5 +1119,154 @@ impl<F: Json> ExactSizeIterator for NodeValidatorsIter<'_, F> {
             Self::KeywordValidators(v) => v.len(),
             Self::ArrayValidators(v) => v.len(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{json, Value};
+    use test_case::test_case;
+
+    // Applicators over subschemas that only check `type`
+    #[test_case(&json!({"allOf": [{"type": "string"}, {"type": ["string", "null"]}]}), &json!("a"), true; "allOf both")]
+    #[test_case(&json!({"allOf": [{"type": "string"}, {"type": ["string", "null"]}]}), &json!(null), false; "allOf one")]
+    #[test_case(&json!({"anyOf": [{"type": "string"}, {"type": "array"}]}), &json!([]), true; "anyOf second")]
+    #[test_case(&json!({"anyOf": [{"type": "string"}, {"type": "array"}]}), &json!(1), false; "anyOf none")]
+    #[test_case(&json!({"oneOf": [{"type": "integer"}, {"type": "number"}]}), &json!(1), false; "oneOf both numeric")]
+    #[test_case(&json!({"oneOf": [{"type": "integer"}, {"type": "number"}]}), &json!(1.5), true; "oneOf number only")]
+    #[test_case(&json!({"oneOf": [{"type": "string"}, {"type": "null"}]}), &json!(true), false; "oneOf none")]
+    #[test_case(&json!({"items": {"type": "string"}}), &json!(["a", "b"]), true; "items all")]
+    #[test_case(&json!({"items": {"type": "string"}}), &json!(["a", 1]), false; "items one wrong")]
+    #[test_case(&json!({"prefixItems": [{"type": "null"}, {"type": "boolean"}]}), &json!([null, true, 3]), true; "prefixItems")]
+    #[test_case(&json!({"prefixItems": [{"type": "null"}, {"type": "boolean"}]}), &json!([null, 1]), false; "prefixItems wrong")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema#", "items": [{"type": "null"}], "additionalItems": {"type": "string"}}), &json!([null, "a"]), true; "additionalItems")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema#", "items": [{"type": "null"}], "additionalItems": {"type": "string"}}), &json!([null, 2]), false; "additionalItems wrong")]
+    #[test_case(&json!({"contains": {"type": "object"}}), &json!([1, {}]), true; "contains")]
+    #[test_case(&json!({"contains": {"type": "object"}}), &json!([1, 2]), false; "contains none")]
+    #[test_case(&json!({"propertyNames": {"type": "string"}}), &json!({"a": 1}), true; "propertyNames")]
+    #[test_case(&json!({"dependentSchemas": {"a": {"type": "object"}}}), &json!({"a": 1}), true; "dependentSchemas")]
+    #[test_case(&json!({"not": {"type": "null"}}), &json!(null), false; "not")]
+    #[test_case(&json!({"not": {"type": "null"}}), &json!(1), true; "not other")]
+    #[test_case(&json!({"if": {"type": "string"}, "then": {"type": "string"}, "else": {"type": "integer"}}), &json!(1.0), true; "if else integer value")]
+    #[test_case(&json!({"if": {"type": "string"}, "then": {"type": "string"}, "else": {"type": "integer"}}), &json!(1.5), false; "if else fraction")]
+    #[test_case(&json!({"$defs": {"s": {"type": "string"}}, "$ref": "#/$defs/s"}), &json!("a"), true; "ref")]
+    #[test_case(&json!({"$defs": {"s": {"type": "string"}}, "$ref": "#/$defs/s"}), &json!(1), false; "ref wrong")]
+    fn child_loops_match_is_valid(schema: &Value, instance: &Value, expected: bool) {
+        let validator = crate::validator_for(schema).expect("schema compiles");
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
+        assert_eq!(validator.evaluate(instance).flag().valid, expected);
+    }
+
+    // Typed subschemas with more keywords, as `anyOf` branches beside `{"type": "boolean"}`
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!(null), false; "string min length, null")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!(true), true; "string min length, true")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!(1), false; "string min length, 1")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!(1.0), false; "string min length, 1.0")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!(1.5), false; "string min length, 1.5")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!(-1), false; "string min length, negative")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!("a"), false; "string min length, short string")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!("ab"), true; "string min length, string")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!([]), false; "string min length, empty array")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!([1]), false; "string min length, array")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!({}), false; "string min length, empty object")]
+    #[test_case(&json!({"type": "string", "minLength": 2}), &json!({"a": 1}), false; "string min length, object")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!(null), false; "object required, null")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!(true), true; "object required, true")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!(1), false; "object required, 1")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!(1.0), false; "object required, 1.0")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!(1.5), false; "object required, 1.5")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!(-1), false; "object required, negative")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!("a"), false; "object required, short string")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!("ab"), false; "object required, string")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!([]), false; "object required, empty array")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!([1]), false; "object required, array")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!({}), false; "object required, empty object")]
+    #[test_case(&json!({"type": "object", "required": ["a"]}), &json!({"a": 1}), true; "object required, object")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!(null), true; "array or null min items, null")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!(true), true; "array or null min items, true")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!(1), false; "array or null min items, 1")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!(1.0), false; "array or null min items, 1.0")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!(1.5), false; "array or null min items, 1.5")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!(-1), false; "array or null min items, negative")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!("a"), false; "array or null min items, short string")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!("ab"), false; "array or null min items, string")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!([]), false; "array or null min items, empty array")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!([1]), true; "array or null min items, array")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!({}), false; "array or null min items, empty object")]
+    #[test_case(&json!({"type": ["array", "null"], "minItems": 1}), &json!({"a": 1}), false; "array or null min items, object")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!(null), false; "integer minimum, null")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!(true), true; "integer minimum, true")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!(1), true; "integer minimum, 1")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!(1.0), true; "integer minimum, 1.0")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!(1.5), false; "integer minimum, 1.5")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!(-1), false; "integer minimum, negative")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!("a"), false; "integer minimum, short string")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!("ab"), false; "integer minimum, string")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!([]), false; "integer minimum, empty array")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!([1]), false; "integer minimum, array")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!({}), false; "integer minimum, empty object")]
+    #[test_case(&json!({"type": "integer", "minimum": 0}), &json!({"a": 1}), false; "integer minimum, object")]
+    fn typed_child_rejects_other_kinds(child: &Value, instance: &Value, expected: bool) {
+        let schema = json!({"anyOf": [child, {"type": "boolean"}]});
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
+        assert_eq!(validator.evaluate(instance).flag().valid, expected);
+    }
+
+    fn chain(hops: usize, end: &Value, draft: &str) -> Value {
+        let mut defs = serde_json::Map::new();
+        for hop in 0..hops {
+            defs.insert(
+                format!("d{hop}"),
+                json!({"$ref": format!("#/$defs/d{}", hop + 1)}),
+            );
+        }
+        defs.insert(format!("d{hops}"), end.clone());
+        json!({"$schema": draft, "$defs": defs, "properties": {"a": {"$ref": "#/$defs/d0"}}})
+    }
+
+    const DRAFT7: &str = "http://json-schema.org/draft-07/schema#";
+    const DRAFT2020: &str = "https://json-schema.org/draft/2020-12/schema";
+
+    // Members reached through chains of `$ref`-only subschemas
+    #[test_case(1, &json!({"type": "string"}), &json!("x"), true; "one hop to a type")]
+    #[test_case(1, &json!({"type": "string"}), &json!(1), false; "one hop to a type, wrong")]
+    #[test_case(2, &json!({"type": "string"}), &json!("x"), true; "two hops to a type")]
+    #[test_case(2, &json!({"type": "string"}), &json!(1), false; "two hops to a type, wrong")]
+    #[test_case(3, &json!({"minLength": 2}), &json!("ab"), true; "three hops to a keyword")]
+    #[test_case(3, &json!({"minLength": 2}), &json!("a"), false; "three hops to a keyword, wrong")]
+    #[test_case(2, &json!(false), &json!(1), false; "two hops to false")]
+    #[test_case(2, &json!(true), &json!(1), true; "two hops to true")]
+    fn ref_chains_match_is_valid(hops: usize, end: &Value, value: &Value, expected: bool) {
+        for draft in [DRAFT7, DRAFT2020] {
+            let schema = chain(hops, end, draft);
+            let instance = json!({"a": value});
+            let validator = crate::validator_for(&schema).expect("schema compiles");
+            assert_eq!(validator.is_valid(&instance), expected, "{draft}");
+            assert_eq!(validator.validate(&instance).is_ok(), expected, "{draft}");
+            assert_eq!(
+                validator.evaluate(&instance).flag().valid,
+                expected,
+                "{draft}"
+            );
+        }
+    }
+
+    #[test_case(&json!({"n": {"n": {"n": {"v": 1}}}}), true; "deep valid")]
+    #[test_case(&json!({"n": {"n": {"n": {"v": "x"}}}}), false; "deep invalid")]
+    fn ref_cycle_matches_is_valid(instance: &Value, expected: bool) {
+        let schema = json!({
+            "$defs": {
+                "node": {"properties": {"n": {"$ref": "#/$defs/next"}, "v": {"type": "integer"}}},
+                "next": {"$ref": "#/$defs/node"}
+            },
+            "$ref": "#/$defs/node"
+        });
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
+        assert_eq!(validator.evaluate(instance).flag().valid, expected);
     }
 }

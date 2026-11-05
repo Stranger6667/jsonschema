@@ -36,8 +36,8 @@ impl IfThenValidator<SerdeJson> {
 
 impl<F: Json> Validate<F> for IfThenValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
-        if self.schema.is_valid(instance, ctx) {
-            self.then_schema.is_valid(instance, ctx)
+        if self.schema.is_valid_child(instance, ctx) {
+            self.then_schema.is_valid_child(instance, ctx)
         } else {
             true
         }
@@ -137,10 +137,10 @@ impl IfElseValidator<SerdeJson> {
 
 impl<F: Json> Validate<F> for IfElseValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
-        if self.schema.is_valid(instance, ctx) {
+        if self.schema.is_valid_child(instance, ctx) {
             true
         } else {
-            self.else_schema.is_valid(instance, ctx)
+            self.else_schema.is_valid_child(instance, ctx)
         }
     }
 
@@ -241,10 +241,10 @@ impl IfThenElseValidator<SerdeJson> {
 
 impl<F: Json> Validate<F> for IfThenElseValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
-        if self.schema.is_valid(instance, ctx) {
-            self.then_schema.is_valid(instance, ctx)
+        if self.schema.is_valid_child(instance, ctx) {
+            self.then_schema.is_valid_child(instance, ctx)
         } else {
-            self.else_schema.is_valid(instance, ctx)
+            self.else_schema.is_valid_child(instance, ctx)
         }
     }
 

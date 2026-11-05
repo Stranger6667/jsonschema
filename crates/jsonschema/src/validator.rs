@@ -413,6 +413,21 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
     fn is_valid_alone(&self) -> bool {
         true
     }
+
+    /// The types this validator accepts when all it checks is `type`.
+    fn accepted_types(&self) -> Option<crate::types::JsonTypeSet> {
+        None
+    }
+
+    /// The compiled target when this validator is a `$ref` that owns it.
+    fn owned_ref_target(&self) -> Option<&crate::node::SchemaNode<F>> {
+        None
+    }
+
+    /// This validator as a compiled node, for `owned_ref_target`.
+    fn as_owned_node(&self) -> Option<&crate::node::SchemaNode<F>> {
+        None
+    }
 }
 
 /// `evaluate` for a keyword that asserts on the instance alone and annotates nothing: a valid

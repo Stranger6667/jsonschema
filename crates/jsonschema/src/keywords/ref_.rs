@@ -107,6 +107,10 @@ struct DirectRefValidator<T> {
 }
 
 impl<F: Json, T: Validate<F>> Validate<F> for DirectRefValidator<T> {
+    fn owned_ref_target(&self) -> Option<&crate::node::SchemaNode<F>> {
+        self.inner.as_owned_node()
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         self.inner.is_valid(instance, ctx)
     }

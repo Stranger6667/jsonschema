@@ -18,6 +18,7 @@
 - `properties` up to 12% faster on objects with keys it does not declare.
 - `unevaluatedProperties` up to 10% faster on schemas that combine it with `patternProperties` or applicators.
 - `required` up to 40% faster when it lists every property of an object closed by `additionalProperties: false`.
+- `properties`, `anyOf` and other applicators faster on subschemas that only check a non-numeric `type`, directly or through `$ref`.
 
 ## [0.60.3] - 2026-10-27
 

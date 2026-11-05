@@ -31,7 +31,7 @@ impl NotValidator<SerdeJson> {
 
 impl<F: Json> Validate<F> for NotValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
-        !self.node.is_valid(instance, ctx)
+        !self.node.is_valid_child(instance, ctx)
     }
 
     fn validate<'i>(

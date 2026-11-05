@@ -69,6 +69,8 @@ impl<F: Json, D: Dispatch<F>> OneOfValidator<F, D> {
         self.dispatch.candidates(instance)
     }
 
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
     fn get_first_valid(
         &self,
         instance: &F::Node<'_>,
@@ -92,6 +94,8 @@ impl<F: Json, D: Dispatch<F>> OneOfValidator<F, D> {
     }
 
     #[allow(clippy::arithmetic_side_effects)]
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
     fn are_others_valid(
         &self,
         instance: &F::Node<'_>,

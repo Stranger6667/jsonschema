@@ -5,7 +5,6 @@ use crate::{
     keywords::pattern_properties::invalid_regex,
     node::SchemaNode,
     regex::{analyze_pattern, contains_ecma_whitespace, PatternOptimization},
-    validator::Validate as _,
     Json, Object, SerdeJson, ValidationContext,
 };
 use serde_json::{Map, Value};
@@ -344,7 +343,7 @@ where
 {
     for (property, instance) in object.members() {
         if let Some(validator) = prop_map.get_validator(property.as_ref()) {
-            if !validator.is_valid(&instance, ctx) {
+            if !validator.is_valid_child(&instance, ctx) {
                 return false;
             }
         } else if !check(&instance, ctx) {

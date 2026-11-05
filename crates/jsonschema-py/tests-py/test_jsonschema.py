@@ -1434,3 +1434,20 @@ def test_large_integer_in_union_type_all_drafts(validator_cls):
     assert validator.is_valid("hello")
     assert not validator.is_valid(1.5)
     assert not validator.is_valid([])
+
+
+@pytest.mark.parametrize(
+    ("schema", "instance", "expected"),
+    [
+        ({"properties": {"a": {"type": "number"}}}, {"a": float("nan")}, False),
+        ({"properties": {"a": {"type": "number"}}}, {"a": float("inf")}, False),
+        ({"properties": {"a": {"type": "number"}}}, {"a": Decimal("NaN")}, False),
+        ({"properties": {"a": {"type": ["number", "string"]}}}, {"a": float("nan")}, False),
+        ({"anyOf": [{"type": "number"}, {"type": "string"}]}, float("nan"), False),
+        ({"not": {"type": "number"}}, float("nan"), True),
+    ],
+)
+def test_non_finite_numbers_in_typed_subschemas(schema, instance, expected):
+    validator = validator_for(schema)
+    assert validator.is_valid(instance) is expected
+    assert (next(validator.iter_errors(instance), None) is None) is expected
