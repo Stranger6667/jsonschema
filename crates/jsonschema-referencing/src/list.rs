@@ -21,6 +21,10 @@ impl<T: std::fmt::Debug> std::fmt::Debug for List<T> {
 
 impl<T: PartialEq> PartialEq for List<T> {
     fn eq(&self, other: &Self) -> bool {
+        match (&self.head, &other.head) {
+            (Some(left), Some(right)) if Arc::ptr_eq(left, right) => return true,
+            _ => {}
+        }
         self.iter().eq(other.iter())
     }
 }
