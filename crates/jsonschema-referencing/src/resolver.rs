@@ -66,6 +66,20 @@ impl<'r> Resolver<'r> {
     ///
     /// If the reference cannot be resolved or is invalid.
     pub fn lookup(&self, reference: &str) -> Result<Resolved<'r>, Error> {
+        let target = self.lookup_target(reference)?;
+        self.enter(&target)
+    }
+    /// Resolve a reference to a target that [`Resolver::enter`] turns into what
+    /// [`Resolver::lookup`] returns.
+    #[doc(hidden)]
+    ///
+    /// The target depends only on the base URI and the reference, not on the dynamic scope, so
+    /// any resolver with this base URI can enter it.
+    ///
+    /// # Errors
+    ///
+    /// If the reference cannot be resolved or is invalid.
+    pub fn lookup_target(&self, reference: &str) -> Result<Target<'r>, Error> {
         let (uri, fragment) = if let Some(reference) = reference.strip_prefix('#') {
             (self.base_uri.clone(), reference)
         } else {
@@ -87,22 +101,71 @@ impl<'r> Resolver<'r> {
         };
 
         if fragment.starts_with('/') {
-            let resolver = self.evolve(uri);
-            return retrieved.pointer(fragment, resolver);
+            let resolved = retrieved.pointer(fragment, self.evolve(Arc::clone(&uri)))?;
+            return Ok(Target {
+                #[cfg(debug_assertions)]
+                origin: Arc::clone(&self.base_uri),
+                document: uri,
+                kind: TargetKind::Resolved {
+                    contents: resolved.contents,
+                    base_uri: resolved.resolver.base_uri,
+                    draft: resolved.draft,
+                },
+            });
         }
 
         if !fragment.is_empty() {
-            let retrieved = self.lookup_anchor(&uri, fragment)?;
-            let resolver = self.evolve(uri);
-            return retrieved.resolve(resolver);
+            let kind = match self.lookup_anchor(&uri, fragment)? {
+                Anchor::Default { resource, .. } => TargetKind::Resolved {
+                    contents: resource.contents(),
+                    base_uri: Arc::clone(&uri),
+                    draft: resource.draft(),
+                },
+                anchor @ Anchor::Dynamic { .. } => TargetKind::DynamicAnchor(anchor),
+            };
+            return Ok(Target {
+                #[cfg(debug_assertions)]
+                origin: Arc::clone(&self.base_uri),
+                document: uri,
+                kind,
+            });
         }
 
-        let resolver = self.evolve(uri);
-        Ok(Resolved::new(
-            retrieved.contents(),
-            resolver,
-            retrieved.draft(),
-        ))
+        Ok(Target {
+            #[cfg(debug_assertions)]
+            origin: Arc::clone(&self.base_uri),
+            kind: TargetKind::Resolved {
+                contents: retrieved.contents(),
+                base_uri: Arc::clone(&uri),
+                draft: retrieved.draft(),
+            },
+            document: uri,
+        })
+    }
+    /// Enter a target returned by [`Resolver::lookup_target`] on a resolver with this base URI.
+    #[doc(hidden)]
+    ///
+    /// # Errors
+    ///
+    /// If the target is a dynamic anchor that cannot be resolved in this dynamic scope.
+    pub fn enter(&self, target: &Target<'r>) -> Result<Resolved<'r>, Error> {
+        #[cfg(debug_assertions)]
+        assert_eq!(
+            target.origin, self.base_uri,
+            "a target is entered on a resolver with the base URI it was resolved from"
+        );
+        let mut resolver = self.evolve(Arc::clone(&target.document));
+        match &target.kind {
+            TargetKind::Resolved {
+                contents,
+                base_uri,
+                draft,
+            } => {
+                resolver.base_uri = Arc::clone(base_uri);
+                Ok(Resolved::new(contents, resolver, *draft))
+            }
+            TargetKind::DynamicAnchor(anchor) => anchor.resolve(resolver),
+        }
     }
     /// Resolve a recursive reference.
     ///
@@ -231,6 +294,29 @@ impl<'r> Resolver<'r> {
         }
         self.registry.find_vocabularies(draft, contents)
     }
+}
+
+/// A reference resolved by [`Resolver::lookup_target`], before entering the dynamic scope.
+#[doc(hidden)]
+#[derive(Debug, Clone)]
+pub struct Target<'r> {
+    /// The base URI the reference was resolved from.
+    #[cfg(debug_assertions)]
+    origin: Arc<Uri<String>>,
+    /// The document the reference names.
+    document: Arc<Uri<String>>,
+    kind: TargetKind<'r>,
+}
+
+#[derive(Debug, Clone)]
+enum TargetKind<'r> {
+    Resolved {
+        contents: &'r Value,
+        base_uri: Arc<Uri<String>>,
+        draft: Draft,
+    },
+    /// Its target depends on the dynamic scope it is entered in.
+    DynamicAnchor(Anchor<'r>),
 }
 
 /// A reference resolved to its contents by a [`Resolver`].

@@ -275,20 +275,13 @@ fn compile_reference_validator<'a, F: Json>(
     if reference.is_empty() {
         return None;
     }
-    let (alias, ref_target_base) = match ctx
-        .ref_target(reference, extract_ref_target_base)
-        .map_err(ValidationError::from)
-    {
-        Ok(target) => target,
-        Err(error) => return Some(Err(error)),
-    };
+    let ((alias, ref_target_base), resolved) =
+        match ctx.resolve_ref_target(reference, extract_ref_target_base) {
+            Ok(target) => target,
+            Err(error) => return Some(Err(ValidationError::from(error))),
+        };
 
     let ref_suffix = ctx.suffix().join(keyword);
-
-    let resolved = match ctx.lookup(reference) {
-        Ok(resolved) => resolved,
-        Err(error) => return Some(Err(ValidationError::from(error))),
-    };
     // A pointer counts from the resource the reference names, an anchor from the one it is in.
     let (ref_target_base, target_location, resource_start) = if is_named(&alias) {
         match named_target_base(ctx, &resolved) {
@@ -325,22 +318,16 @@ fn compile_reference_validator<'a, F: Json>(
         return None;
     }
 
-    match ctx.lookup_maybe_recursive(reference, resolved.resolver()) {
-        Ok(Some(validator)) => {
-            return Some(Ok(Box::new(RefValidator {
-                inner: validator,
-                ref_suffix,
-                ref_target_base,
-                target_location,
-            })));
-        }
-        Ok(None) => {}
-        Err(error) => return Some(Err(error)),
+    if let Some(validator) = ctx.lookup_maybe_recursive(&alias, resolved.resolver()) {
+        return Some(Ok(Box::new(RefValidator {
+            inner: validator,
+            ref_suffix,
+            ref_target_base,
+            target_location,
+        })));
     }
 
-    if let Err(error) = ctx.mark_seen(reference) {
-        return Some(Err(ValidationError::from(error)));
-    }
+    ctx.mark_seen(&alias);
 
     if ctx.defers_ref_target(&resolved, &alias) {
         let placeholder = ctx.defer_ref_target(resolved, ref_target_base.clone(), alias);
@@ -397,22 +384,16 @@ fn compile_recursive_validator<'a, F: Json>(
         .map_err(ValidationError::from)?;
     let target_location = target_location(&resolved.resolver().base_uri(), &ref_target_base);
 
-    match ctx.lookup_maybe_recursive(reference, resolved.resolver()) {
-        Ok(Some(validator)) => {
-            return Ok(Box::new(RefValidator {
-                inner: validator,
-                ref_suffix,
-                ref_target_base,
-                target_location,
-            }));
-        }
-        Ok(None) => {}
-        Err(error) => return Err(error),
+    if let Some(validator) = ctx.lookup_maybe_recursive(&alias, resolved.resolver()) {
+        return Ok(Box::new(RefValidator {
+            inner: validator,
+            ref_suffix,
+            ref_target_base,
+            target_location,
+        }));
     }
 
-    if let Err(error) = ctx.mark_seen(reference) {
-        return Err(ValidationError::from(error));
-    }
+    ctx.mark_seen(&alias);
 
     let (contents, resolver, draft) = resolved.into_inner();
     let vocabularies = resolver.find_vocabularies(draft, contents);
