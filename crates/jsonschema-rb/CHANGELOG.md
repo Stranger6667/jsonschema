@@ -15,6 +15,7 @@
 
 - Gems built from source up to 12% faster, from compiling the extension with link-time optimization.
 - Building validators up to 15% faster on schemas that repeat the same `$ref`, from resolving each reference once.
+- `Evaluation#list` up to 1.8x and `Evaluation#hierarchical` up to 3x faster, from building output units directly as Ruby objects.
 - Building registries up to 30% faster and validators up to 3% faster, from a cheaper walk over schema documents.
 - Building validators up to 25% faster on schemas that declare a base URI, from building absolute keyword locations on first use.
 - Building validators up to 3% faster, from cheaper compilation cache keys.
