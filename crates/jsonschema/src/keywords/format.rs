@@ -365,10 +365,13 @@ fn is_leap_year(year: u16) -> bool {
 #[inline]
 fn parse_four_digits(bytes: &[u8]) -> Option<u16> {
     // Little-endian layout: bytes[0] lands in the lowest byte of the u32.
-    // Check if all bytes are ASCII digits
+    // After subtracting '0' from each byte, a digit lane holds 0..=9: its high nibble is 0
+    // with and without +6. A lane below '0' holds 0xCF..=0xFF even after a borrow from the
+    // lane below, so `sub` alone flags it; the borrow and carries only disturb lanes above
+    // one that is already flagged.
     let value = u32::from_le_bytes([bytes[0], bytes[1], bytes[2], bytes[3]]);
     let sub = value.wrapping_sub(0x3030_3030);
-    if sub.wrapping_add(0x0606_0606) & 0xF0F0_F0F0 != 0 {
+    if (sub | sub.wrapping_add(0x0606_0606)) & 0xF0F0_F0F0 != 0 {
         return None;
     }
     let val = (sub & 0x0F0F_0F0F).wrapping_mul(2561) >> 8;
@@ -378,10 +381,10 @@ fn parse_four_digits(bytes: &[u8]) -> Option<u16> {
 #[inline]
 fn parse_two_digits(bytes: &[u8]) -> Option<u8> {
     // Little-endian layout: bytes[0] lands in the low byte of the u16.
-    // Check if all bytes are ASCII digits
+    // Same digit test as `parse_four_digits`.
     let value = u16::from_le_bytes([bytes[0], bytes[1]]);
     let sub = value.wrapping_sub(0x3030);
-    if sub.wrapping_add(0x0606) & 0xF0F0 != 0 {
+    if (sub | sub.wrapping_add(0x0606)) & 0xF0F0 != 0 {
         return None;
     }
     Some(((sub & 0x0F0F).wrapping_mul(2561) >> 8) as u8)
@@ -1774,7 +1777,7 @@ pub(crate) fn compile<'a, F: Json>(
 mod tests {
     use referencing::Draft;
     use serde_json::json;
-    use test_case::test_case;
+    use test_case::{test_case, test_matrix};
 
     use crate::{tests_util, EmailOptions};
 
@@ -2199,6 +2202,67 @@ mod tests {
     #[test]
     fn test_is_valid_datetime() {
         assert!(!is_valid_datetime(""));
+    }
+
+    fn digits_reference(bytes: &[u8]) -> Option<u32> {
+        bytes.iter().try_fold(0, |acc, byte| {
+            byte.is_ascii_digit()
+                .then(|| acc * 10 + u32::from(byte - b'0'))
+        })
+    }
+
+    #[test]
+    fn parse_two_digits_agrees_with_reference_on_every_pair() {
+        for value in 0..=u16::MAX {
+            let bytes = value.to_le_bytes();
+            assert_eq!(
+                parse_two_digits(&bytes).map(u32::from),
+                digits_reference(&bytes),
+                "{bytes:?}"
+            );
+        }
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    #[hegel::test(test_cases = 20_000)]
+    fn parse_four_digits_agrees_with_reference(tc: hegel::TestCase) {
+        let byte = || hegel::generators::sampled_from((b'('..=b';').collect::<Vec<u8>>());
+        let bytes = [
+            tc.draw(byte()),
+            tc.draw(byte()),
+            tc.draw(byte()),
+            tc.draw(byte()),
+        ];
+        assert_eq!(
+            parse_four_digits(&bytes).map(u32::from),
+            digits_reference(&bytes),
+            "{bytes:?}"
+        );
+    }
+
+    // Replaces one digit of a valid date-time with a byte just below '0'.
+    #[test_matrix(
+        [0, 1, 2, 3, 5, 6, 8, 9, 11, 12, 14, 15, 17, 18, 20, 21, 23, 24],
+        [b'+', b',', b'-', b'.', b'/']
+    )]
+    fn datetime_rejects_non_digit(position: usize, byte: u8) {
+        let mut bytes = b"2026-11-06T10:00:00+01:30".to_vec();
+        bytes[position] = byte;
+        let datetime = String::from_utf8(bytes).expect("ASCII");
+        assert!(!is_valid_datetime(&datetime));
+    }
+
+    #[test_case("2026-11-06T10:00:00+01:30", true)]
+    #[test_case("2026-11-06T10:00:00Z", true)]
+    #[test_case("-----11-06T10:00:00Z", false)]
+    #[test_case("2026-11-0/T10:00:00Z", false)]
+    #[test_case("2026-11-06T10:00:0/Z", false)]
+    fn datetime_format(input: &str, expected: bool) {
+        let validator = crate::options()
+            .should_validate_formats(true)
+            .build(&json!({"format": "date-time"}))
+            .expect("Invalid schema");
+        assert_eq!(validator.is_valid(&json!(input)), expected);
     }
 
     #[test_case("127.0.0.1", true)]
