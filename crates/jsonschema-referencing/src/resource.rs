@@ -95,9 +95,14 @@ impl<'r> ResourceRef<'r> {
         let mut contents = self.contents;
         let mut segments = Segments::new();
         let original_pointer = pointer;
-        let pointer = percent_encoding::percent_decode_str(&pointer[1..])
-            .decode_utf8()
-            .map_err(|err| Error::invalid_percent_encoding(original_pointer, err))?;
+        let pointer = &pointer[1..];
+        let pointer = if pointer.contains('%') {
+            percent_encoding::percent_decode_str(pointer)
+                .decode_utf8()
+                .map_err(|err| Error::invalid_percent_encoding(original_pointer, err))?
+        } else {
+            Cow::Borrowed(pointer)
+        };
         for segment in pointer.split('/') {
             if let Some(array) = contents.as_array() {
                 let idx = segment

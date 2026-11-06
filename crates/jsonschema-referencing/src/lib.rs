@@ -29,6 +29,8 @@ pub use path::{write_escaped_str, write_index};
 pub use path::{JsonPointerNode, JsonPointerSegment};
 pub use pointer::{parse_index, pointer};
 pub use registry::{IntoRegistryResource, Registry, RegistryBuilder, SPECIFICATIONS};
+#[doc(hidden)]
+pub use resolver::Target;
 pub use resolver::{Resolved, Resolver};
 pub use resource::{unescape_segment, Resource, ResourceRef};
 pub use retriever::{DefaultRetriever, Retrieve};

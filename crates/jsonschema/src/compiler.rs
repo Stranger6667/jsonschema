@@ -18,7 +18,7 @@ use crate::{
 };
 use ahash::{AHashMap, AHashSet};
 use referencing::{
-    uri, write_escaped_str, Draft, List, Registry, Resolved, Resolver, ResourceRef, Uri,
+    uri, write_escaped_str, Draft, List, Registry, Resolved, Resolver, ResourceRef, Target, Uri,
     Vocabulary, VocabularySet,
 };
 use serde_json::{Map, Value};
@@ -184,6 +184,13 @@ pub(crate) struct AliasCacheKey {
 /// A `$ref`'s resolved URI and the location its target starts at.
 type RefTarget = (Arc<Uri<String>>, Location);
 
+/// What a `$ref` resolves to from one base URI.
+struct RefTargetEntry<'a> {
+    target: RefTarget,
+    /// Filled by the first `$ref` that looks the reference up.
+    lookup: Option<Target<'a>>,
+}
+
 /// Base URIs are interned, so identity keys them without hashing the whole URI. Holding the `Arc`
 /// keeps the address from being reused.
 #[derive(Clone)]
@@ -288,7 +295,7 @@ struct SharedContextState<'a, F: Json = SerdeJson> {
     pending_items_validators_by_schema:
         SharedCache<ItemsValidatorsPendingKey, PendingItemsValidators<F>>,
     pattern_cache: SharedCache<Arc<str>, PatternCacheEntry>,
-    ref_targets: SharedCache<BaseUriKey, AHashMap<Box<str>, RefTarget>>,
+    ref_targets: SharedCache<BaseUriKey, AHashMap<Box<str>, RefTargetEntry<'a>>>,
     /// Locations of anchor-bearing schemas, keyed by their resource root's address and then
     /// by their own. Roots stay borrowed until this cache is dropped.
     anchor_locations: SharedCache<usize, AHashMap<usize, Location>>,
@@ -609,21 +616,8 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
         self.config.get_format(format)
     }
-    pub(crate) fn is_circular_reference(
-        &self,
-        reference: &str,
-    ) -> Result<bool, referencing::Error> {
-        let uri = self
-            .resolver
-            .resolve_uri(&self.resolver.base_uri().borrow(), reference)?;
-        Ok(self.shared.seen.borrow().contains(&*uri))
-    }
-    pub(crate) fn mark_seen(&self, reference: &str) -> Result<(), referencing::Error> {
-        let uri = self
-            .resolver
-            .resolve_uri(&self.resolver.base_uri().borrow(), reference)?;
-        self.shared.seen.borrow_mut().insert(uri);
-        Ok(())
+    pub(crate) fn mark_seen(&self, alias: &Arc<Uri<String>>) {
+        self.shared.seen.borrow_mut().insert(Arc::clone(alias));
     }
 
     pub(crate) fn lookup_recursive_reference(&self) -> Result<Resolved<'a>, referencing::Error> {
@@ -662,14 +656,14 @@ impl<'a, F: Json> Context<'a, F> {
         target_base: impl FnOnce(&Uri<String>) -> Location,
     ) -> Result<RefTarget, referencing::Error> {
         let base_uri = BaseUriKey(self.resolver.base_uri());
-        if let Some(target) = self
+        if let Some(entry) = self
             .shared
             .ref_targets
             .borrow()
             .get(&base_uri)
             .and_then(|by_reference| by_reference.get(reference))
         {
-            return Ok(target.clone());
+            return Ok(entry.target.clone());
         }
         let alias = self.resolve_reference_uri(reference)?;
         let target = (Arc::clone(&alias), target_base(&alias));
@@ -678,8 +672,47 @@ impl<'a, F: Json> Context<'a, F> {
             .borrow_mut()
             .entry(base_uri)
             .or_default()
-            .insert(reference.into(), target.clone());
+            .insert(
+                reference.into(),
+                RefTargetEntry {
+                    target: target.clone(),
+                    lookup: None,
+                },
+            );
         Ok(target)
+    }
+
+    /// [`Context::ref_target`] together with what `reference` resolves to.
+    pub(crate) fn resolve_ref_target(
+        &self,
+        reference: &str,
+        target_base: impl FnOnce(&Uri<String>) -> Location,
+    ) -> Result<(RefTarget, Resolved<'a>), referencing::Error> {
+        let base_uri = BaseUriKey(self.resolver.base_uri());
+        if let Some(entry) = self
+            .shared
+            .ref_targets
+            .borrow()
+            .get(&base_uri)
+            .and_then(|by_reference| by_reference.get(reference))
+        {
+            if let Some(lookup) = &entry.lookup {
+                return Ok((entry.target.clone(), self.resolver.enter(lookup)?));
+            }
+        }
+        let target = self.ref_target(reference, target_base)?;
+        let lookup = self.resolver.lookup_target(reference)?;
+        let resolved = self.resolver.enter(&lookup)?;
+        if let Some(entry) = self
+            .shared
+            .ref_targets
+            .borrow_mut()
+            .get_mut(&base_uri)
+            .and_then(|by_reference| by_reference.get_mut(reference))
+        {
+            entry.lookup = Some(lookup);
+        }
+        Ok((target, resolved))
     }
 
     /// Record that the node compiling now reaches an unsettled node.
@@ -944,26 +977,23 @@ impl<'a, F: Json> Context<'a, F> {
     /// scope it was compiled in, which is the target's, not this context's.
     pub(crate) fn lookup_maybe_recursive(
         &self,
-        reference: &str,
+        alias: &Arc<Uri<String>>,
         target: &Resolver<'_>,
-    ) -> Result<Option<Box<dyn Validate<F>>>, ValidationError<'static>> {
-        if self.is_circular_reference(reference)? {
-            let uri = self
-                .resolve_reference_uri(reference)
-                .map_err(ValidationError::from)?;
+    ) -> Option<Box<dyn Validate<F>>> {
+        if self.shared.seen.borrow().contains(alias) {
             let key = AliasCacheKey {
-                uri: Arc::clone(&uri),
+                uri: Arc::clone(alias),
                 dynamic_scope: target.dynamic_scope(),
             };
             if let Some(node) = self.cached_alias_node(&key) {
-                return Ok(Some(self.reuse(node).into_validator()));
+                return Some(self.reuse(node).into_validator());
             }
-            if let Some(node) = self.cached_alias_placeholder(&uri) {
+            if let Some(node) = self.cached_alias_placeholder(alias) {
                 self.reach_unsettled();
-                return Ok(Some(Box::new(node)));
+                return Some(Box::new(node));
             }
         }
-        Ok(None)
+        None
     }
 
     /// Whether the target of `alias` goes to the worklist: the call stack holds too many `$ref`
