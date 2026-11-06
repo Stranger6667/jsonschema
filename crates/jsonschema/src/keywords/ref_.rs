@@ -1418,6 +1418,12 @@ mod tests {
         ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
             match uri.as_str() {
                 "file:///ext.yaml" => Ok(json!({
+                    "responses": {
+                        "200": {
+                            "$defs": {"x": {"$anchor": "num", "type": "integer"}},
+                            "$ref": "#num"
+                        }
+                    },
                     "components": {
                         "schemas": {
                             "c3": {
@@ -1497,6 +1503,29 @@ mod tests {
 
         assert!(validator.is_valid(&json!({"p": 42})));
         assert!(!validator.is_valid(&json!({"p": "string"})));
+    }
+
+    // A `$ref` pointer through a numeric object key (an OpenAPI response code) reaches the
+    // references nested under its target
+    #[test_case("#/paths/~1x/responses/200", json!({"/x": {"responses": {"200": {"$ref": "ext.yaml#/components/schemas/c3"}}}}); "numeric key")]
+    #[test_case("#/paths/~1x/responses/0", json!({"/x": {"responses": {"0": {"$ref": "ext.yaml#/components/schemas/c3"}}}}); "zero key")]
+    #[test_case("ext.yaml#/responses/200", json!({}); "external numeric key")]
+    #[test_case("#/paths/~1x/responses/ok", json!({"/x": {"responses": {"ok": {"$ref": "ext.yaml#/components/schemas/c3"}}}}); "string key")]
+    #[allow(clippy::needless_pass_by_value)]
+    fn test_ref_through_numeric_object_key(reference: &str, paths: Value) {
+        let schema = json!({
+            "$id": "file:///tmp",
+            "$ref": reference,
+            "paths": paths
+        });
+
+        let validator = crate::options()
+            .with_retriever(IndirectExternalRetrieve)
+            .build(&schema)
+            .expect("Failed to build validator - external resource was not discovered");
+
+        assert!(validator.is_valid(&json!(42)));
+        assert!(!validator.is_valid(&json!("string")));
     }
 
     struct CrossFileRetrieve;

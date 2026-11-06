@@ -1281,14 +1281,7 @@ fn resolve_deferred_target<'a>(
     };
 
     for segment in &pointer.segments {
-        let Some(next) = (match segment {
-            ParsedPointerSegment::Key(key) => current
-                .as_object()
-                .and_then(|object| object.get(key.as_ref())),
-            ParsedPointerSegment::Index(index) => {
-                current.as_array().and_then(|array| array.get(*index))
-            }
-        }) else {
+        let Some(next) = segment.step(current) else {
             return Ok(None);
         };
         current = next;
@@ -1672,6 +1665,28 @@ mod tests {
             "http://localhost:1234/baseUriChangeFolderInSubschema/folderInteger.json"
         ));
         assert!(!registry.contains_resource("http://localhost:1234/folderInteger.json"));
+    }
+
+    // A local `$ref` target holding a remote `$ref`, at a path the crawl may or may not walk
+    #[test_case(json!({"$ref": "#/allOf/x", "allOf": {"x": {"$ref": "remote.json"}}}); "object under an array keyword")]
+    #[test_case(json!({"$ref": "#/not/properties/p", "not": {"properties": {"p": {"$ref": "remote.json"}}}}); "under a single subschema keyword")]
+    #[test_case(json!({"$ref": "#/paths/~1x/200", "paths": {"/x": {"200": {"$ref": "remote.json"}}}}); "numeric object key")]
+    #[test_case(json!({"$ref": "#/properties/200", "properties": {"200": {"$ref": "remote.json"}}}); "numeric property name")]
+    #[test_case(json!({"$ref": "#/items/0", "items": [{"$ref": "remote.json"}]}); "array index under a non-array keyword")]
+    #[test_case(json!({"$schema": "http://json-schema.org/draft-07/schema#", "allOf": [{"$ref": "#/dependencies/c"}], "dependencies": {"a": ["b"], "c": {"$ref": "remote.json"}}}); "dependencies beside a property list")]
+    #[allow(clippy::needless_pass_by_value)]
+    fn test_prepare_collects_refs_under_local_ref_targets(schema: Value) {
+        let registry = Registry::new()
+            .retriever(create_test_retriever(&[(
+                "http://a/remote.json",
+                json!({"type": "integer"}),
+            )]))
+            .add("http://a/root.json", &schema)
+            .expect("Schema should be accepted")
+            .prepare()
+            .expect("Registry should prepare");
+
+        assert!(registry.contains_resource("http://a/remote.json"));
     }
 
     #[test]
