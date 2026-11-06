@@ -1180,7 +1180,7 @@ fn canonicalization_error(
 ) -> PyErr {
     use jsonschema::canonical::CanonicalizationError;
     if let CanonicalizationError::ValidationError(validation) = error {
-        return crate::into_py_err(py, validation, None).unwrap_or_else(|err| err);
+        return crate::into_py_err(py, validation, None, None).unwrap_or_else(|err| err);
     }
     let name = match &error {
         CanonicalizationError::InvalidSchemaType(_) => "InvalidSchemaType",
