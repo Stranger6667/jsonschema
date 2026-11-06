@@ -6,7 +6,7 @@ A benchmarking suite for comparing different Python JSON Schema implementations.
 
 - `jsonschema-rs` (latest version in this repo)
 - [jsonschema](https://pypi.org/project/jsonschema/) (v4.26.0)
-- [fastjsonschema](https://pypi.org/project/fastjsonschema/) (v2.22.2)
+- [fastjsonschema](https://pypi.org/project/fastjsonschema/) (v2.22.3)
 
 ## Usage
 
@@ -48,14 +48,14 @@ Sources:
 
 | Benchmark     | fastjsonschema | jsonschema    | jsonschema-rs (validate) | jsonschema-rs codegen (validate) |
 |---------------|----------------|---------------|--------------------------|----------------------------------|
-| OpenAPI       | 116.96 ms (**x65.05**) | 554.47 ms (**x308.39**) | 1.80 ms | 915.97 µs |
-| Swagger       | 73.26 ms (**x32.49**) | 995.91 ms (**x441.72**) | 2.25 ms | 1.28 ms |
-| Canada (GeoJSON) | 9.72 ms (**x15.78**) | 745.86 ms (**x1,210.63**) | 616.09 µs | 304.44 µs |
-| CITM Catalog  | 4.54 ms (**x11.54**) | 77.97 ms (**x198.25**) | 393.28 µs | 201.68 µs |
-| Fast (Valid)  | 2.02 µs (**x11.25**) | 33.16 µs (**x184.27**) | 179.96 ns | 130.00 ns |
-| Fast (Invalid) | 901.00 ns (**x0.87**) | 5.05 µs (**x4.90**) | 1.03 µs | 500.00 ns |
-| FHIR          | 2.02 ms (**x1,848.12**) | 11.85 ms (**x10,841.72**) | 1.09 µs | 601.00 ns |
-| Recursive     | 1.03 ms (**x122.73**) | 1.20 s (**x142,801**) | 8.42 µs | 1.77 µs |
+| OpenAPI       | 115.89 ms (**x75.93**) | 562.58 ms (**x368.57**) | 1.53 ms | 985.04 µs |
+| Swagger       | 73.20 ms (**x33.64**) | 994.87 ms (**x457.18**) | 2.18 ms | 1.34 ms |
+| Canada (GeoJSON) | 9.82 ms (**x14.71**) | 776.35 ms (**x1,162.93**) | 667.58 µs | 339.17 µs |
+| CITM Catalog  | 4.48 ms (**x10.89**) | 77.58 ms (**x188.49**) | 411.55 µs | 220.03 µs |
+| Fast (Valid)  | 2.06 µs (**x10.57**) | 33.66 µs (**x172.45**) | 195.19 ns | 160.00 ns |
+| Fast (Invalid) | 902.00 ns (**x0.87**) | 5.21 µs (**x5.00**) | 1.04 µs | 521.00 ns |
+| FHIR          | 2.02 ms (**x1,924.30**) | 12.16 ms (**x11,557.69**) | 1.05 µs | 711.00 ns |
+| Recursive     | 1.03 ms (**x188.20**) | 1.22 s (**x224,068.26**) | 5.46 µs | 1.97 µs |
 
 The codegen column is a validator compiled into an extension module at build time; see
 [Compile-time Validators](#compile-time-validators).
@@ -68,19 +68,19 @@ time, which is the trade for the numbers below.
 
 | Benchmark     | `is_valid` (runtime) | `is_valid` (codegen) | `validate` (runtime) | `validate` (codegen) |
 |---------------|----------------------|----------------------|----------------------|----------------------|
-| OpenAPI       | 1.77 ms | 918.77 µs (**x1.93**) | 1.80 ms | 915.97 µs (**x1.96**) |
-| Swagger       | 2.20 ms | 1.32 ms (**x1.67**) | 2.25 ms | 1.28 ms (**x1.76**) |
-| Canada (GeoJSON) | 608.92 µs | 306.84 µs (**x1.98**) | 616.09 µs | 304.44 µs (**x2.02**) |
-| CITM Catalog  | 382.88 µs | 188.89 µs (**x2.03**) | 393.28 µs | 201.68 µs (**x1.95**) |
-| Fast (Valid)  | 220.00 ns | 130.00 ns (**x1.69**) | 179.96 ns | 130.00 ns (**x1.38**) |
-| Fast (Invalid) | 229.99 ns | 142.06 ns (**x1.62**) | 1.03 µs | 500.00 ns (**x2.06**) |
-| FHIR          | 1.10 µs | 611.00 ns (**x1.79**) | 1.09 µs | 601.00 ns (**x1.82**) |
-| Recursive     | 8.23 µs | 1.77 µs (**x4.64**) | 8.42 µs | 1.77 µs (**x4.75**) |
+| OpenAPI       | 1.52 ms | 993.41 µs (**x1.53**) | 1.53 ms | 985.04 µs (**x1.55**) |
+| Swagger       | 2.06 ms | 1.33 ms (**x1.55**) | 2.18 ms | 1.34 ms (**x1.62**) |
+| Canada (GeoJSON) | 622.62 µs | 339.49 µs (**x1.83**) | 667.58 µs | 339.17 µs (**x1.97**) |
+| CITM Catalog  | 422.17 µs | 213.93 µs (**x1.97**) | 411.55 µs | 220.03 µs (**x1.87**) |
+| Fast (Valid)  | 231.00 ns | 150.00 ns (**x1.54**) | 195.19 ns | 160.00 ns (**x1.22**) |
+| Fast (Invalid) | 280.00 ns | 152.09 ns (**x1.84**) | 1.04 µs | 521.00 ns (**x2.00**) |
+| FHIR          | 1.05 µs | 702.00 ns (**x1.50**) | 1.05 µs | 711.00 ns (**x1.48**) |
+| Recursive     | 5.34 µs | 1.96 µs (**x2.72**) | 5.46 µs | 1.97 µs (**x2.77**) |
 
-Compiled validators also skip schema preparation, where `validator_for` takes from 11.19 µs (Fast)
-to 21.71 ms (FHIR).
+Compiled validators also skip schema preparation, where `validator_for` takes from 11.15 µs (Fast)
+to 19.13 ms (FHIR).
 
-You can find benchmark code in [benches/](benches/), Python version `3.14.7`, Rust version `1.98.0`.
+You can find benchmark code in [benches/](benches/), Python version `3.14.7`, Rust version `1.99.0`.
 
 ## Contributing
 

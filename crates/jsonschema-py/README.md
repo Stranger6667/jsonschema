@@ -833,8 +833,8 @@ On instance["password"]:
 
 Compared with other Python validators:
 
-- **138-10,841x** faster than `jsonschema` for complex schemas and large instances
-- **8-1,848x** faster than `fastjsonschema` on CPython
+- **188-11,557x** faster than `jsonschema` for complex schemas and large instances
+- **10-1,924x** faster than `fastjsonschema` on CPython
 
 Full results and methodology are in [BENCHMARKS.md](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/BENCHMARKS.md).
 
