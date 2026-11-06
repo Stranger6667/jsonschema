@@ -421,6 +421,14 @@ def test_validation_error_handles_huge_scientific_numbers():
     assert exc.value.kind.expected_value == Decimal("1e10000")
 
 
+# A whole float past 2^53 in the schema comes back as the same float, not a `Decimal`
+@pytest.mark.parametrize("value", [2.0**55, -(2.0**55), 2.0**62])
+def test_validation_error_returns_whole_float_past_2_53(value):
+    with pytest.raises(ValidationError) as exc:
+        validator_for({"const": value}).validate(0)
+    assert repr(exc.value.kind.expected_value) == repr(value)
+
+
 @pytest.mark.parametrize(
     ["schema", "instance", "kind", "attrs"],
     [
@@ -1300,6 +1308,19 @@ def test_custom_meta_schema_registered():
         ({"multipleOf": 8}, float(22734393525036408), True),
         ({"minimum": -9223372036854775808}, float(-(2**63)), True),
         ({"const": 2**70}, float(2**70), True),
+        # whole floats past 2^53 in the schema hold the integer they are, not their shortest text
+        ({"maximum": 2.0**55}, 2**55, True),
+        ({"maximum": 2.0**55}, 2**55 + 1, False),
+        ({"minimum": 2.0**55}, 2**55 - 1, False),
+        ({"exclusiveMaximum": 2.0**55}, 2**55, False),
+        ({"exclusiveMinimum": 2.0**55}, 2**55 + 1, True),
+        ({"const": 2.0**55}, 2**55, True),
+        ({"enum": [2.0**55]}, 2**55, True),
+        ({"multipleOf": 2.0**62}, 2**62, True),
+        ({"minimum": -(2.0**55)}, -(2**55) - 1, False),
+        ({"const": -(2.0**55)}, -(2**55), True),
+        ({"maximum": 2.0**52}, 2**52 + 1, False),
+        ({"const": 2.0**52}, 2**52, True),
     ],
 )
 def test_large_integer_validation(schema, instance, expected):

@@ -23,6 +23,8 @@ use pyo3::ffi::{
 };
 
 pub const RECURSION_LIMIT: u8 = 255;
+/// 2^53, from which consecutive integers are no longer all representable as `f64`.
+const MAX_SAFE_INTEGER_F64: f64 = 9_007_199_254_740_992.0;
 // Ends a walk that `walk` redoes holding; the message is never shown.
 pub(crate) const REDO_HOLDING: &str = "Walk redone holding";
 
@@ -474,7 +476,15 @@ impl<const HOLDING: bool> Serialize for SerializePyObject<HOLDING> {
                 serializer.serialize_i64(value)
             }
             ObjectType::Float => {
-                serializer.serialize_f64(unsafe { pyfloat_as_double(self.object) })
+                let value = unsafe { pyfloat_as_double(self.object) };
+                // From 2^53 up, the shortest text of a whole float can name a neighbouring
+                // integer: `2.0**55` prints as `3.602879701896397e16`. Keep its exact digits.
+                if value.fract() == 0.0 && value.abs() >= MAX_SAFE_INTEGER_F64 {
+                    let number = serde_json::Number::from_str(&format!("{value:.1}"))
+                        .map_err(ser::Error::custom)?;
+                    return number.serialize(serializer);
+                }
+                serializer.serialize_f64(value)
             }
             ObjectType::Bool => serializer.serialize_bool(self.object == unsafe { types::TRUE }),
             ObjectType::None => serializer.serialize_unit(),

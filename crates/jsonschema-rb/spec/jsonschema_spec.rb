@@ -1839,6 +1839,34 @@ RSpec.describe "BigDecimal and large numbers" do
     expect(JSONSchema.valid?({ "maximum" => max_u64 }, max_u64 + 1)).to be false
   end
 
+  # Whole floats past 2^53 in the schema hold the integer they are, not their shortest text.
+  [
+    [{ "maximum" => 2.0**55 }, (2**55) + 1, false],
+    [{ "exclusiveMaximum" => 2.0**55 }, 2**55, false],
+    [{ "exclusiveMinimum" => 2.0**55 }, (2**55) + 1, true],
+    [{ "const" => 2.0**55 }, 2**55, true],
+    [{ "enum" => [2.0**55] }, 2**55, true],
+    [{ "multipleOf" => 2.0**62 }, 2**62, true],
+    [{ "minimum" => -(2.0**55) }, -(2**55) - 1, false],
+    [{ "const" => -(2.0**55) }, -(2**55), true],
+    [{ "maximum" => 2.0**52 }, (2**52) + 1, false],
+    [{ "const" => 2.0**52 }, 2**52, true]
+  ].each do |schema, instance, expected|
+    it "judges #{instance} against #{schema} as #{expected}" do
+      expect(JSONSchema.valid?(schema, instance)).to be expected
+    end
+  end
+
+  [2.0**55, -(2.0**55), 2.0**62].each do |value|
+    it "returns #{value} from the schema as the same Float" do
+      expect { JSONSchema.validate!({ "const" => value }, 0) }.to raise_error(JSONSchema::ValidationError) do |error|
+        actual = error.kind.value[:expected_value]
+        expect(actual).to be_a(Float)
+        expect(actual).to eq(value)
+      end
+    end
+  end
+
   it "preserves large integer precision in ValidationError#instance" do
     value = 10**100
     expect { JSONSchema.validate!({ "type" => "string" }, value) }.to raise_error(JSONSchema::ValidationError) do |error|

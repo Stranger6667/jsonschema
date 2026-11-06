@@ -82,12 +82,16 @@ fn referencing_error_type(py: Python<'_>) -> PyResult<Bound<'_, PyType>> {
 
 /// Whether `text` is the number `value` writes back to, i.e. a Python float carries the literal.
 fn float_spells(value: f64, text: &str) -> bool {
-    let mut buffer = zmij::Buffer::new();
-    let written = buffer.format_finite(value);
     // Two written forms of one value share a canonical form, so this compares values, not text: `1e20`
     // and `100000000000000000000` agree, while `100000000000000000000.1` differs from both.
-    canonical_number(written).as_deref().unwrap_or(written)
-        == canonical_number(text).as_deref().unwrap_or(text)
+    let same_value = |written: &str| {
+        canonical_number(written).as_deref().unwrap_or(written)
+            == canonical_number(text).as_deref().unwrap_or(text)
+    };
+    let mut buffer = zmij::Buffer::new();
+    // A whole float past 2^53 may be written with its exact digits, which its shortest text can miss.
+    same_value(buffer.format_finite(value))
+        || (value.fract() == 0.0 && same_value(&format!("{value:.1}")))
 }
 
 /// Convert a serde_json::Value to a Python object, properly handling arbitrary precision numbers
