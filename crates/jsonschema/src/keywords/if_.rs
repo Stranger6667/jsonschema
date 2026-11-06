@@ -101,8 +101,8 @@ impl<F: Json> Validate<F> for IfThenValidator<F> {
                 ctx,
             );
             let mut children = ChildList::default();
-            children.push(&mut ctx.arena, if_node);
-            children.push(&mut ctx.arena, then_node);
+            children.push(ctx.arena(), if_node);
+            children.push(ctx.arena(), then_node);
             EvaluationResult::from_children(children)
         } else {
             EvaluationResult::valid_empty()
@@ -194,7 +194,7 @@ impl<F: Json> Validate<F> for IfElseValidator<F> {
             self.schema
                 .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
         if if_node.valid {
-            EvaluationResult::from_children(ChildList::of(&mut ctx.arena, if_node))
+            EvaluationResult::from_children(ChildList::of(ctx.arena(), if_node))
         } else {
             let else_node = self.else_schema.evaluate_instance_at(
                 instance,
@@ -203,7 +203,7 @@ impl<F: Json> Validate<F> for IfElseValidator<F> {
                 tracker,
                 ctx,
             );
-            EvaluationResult::from_children(ChildList::of(&mut ctx.arena, else_node))
+            EvaluationResult::from_children(ChildList::of(ctx.arena(), else_node))
         }
     }
 }
@@ -309,8 +309,8 @@ impl<F: Json> Validate<F> for IfThenElseValidator<F> {
                 ctx,
             );
             let mut children = ChildList::default();
-            children.push(&mut ctx.arena, if_node);
-            children.push(&mut ctx.arena, then_node);
+            children.push(ctx.arena(), if_node);
+            children.push(ctx.arena(), then_node);
             EvaluationResult::from_children(children)
         } else {
             let else_node = self.else_schema.evaluate_instance_at(
@@ -320,7 +320,7 @@ impl<F: Json> Validate<F> for IfThenElseValidator<F> {
                 tracker,
                 ctx,
             );
-            EvaluationResult::from_children(ChildList::of(&mut ctx.arena, else_node))
+            EvaluationResult::from_children(ChildList::of(ctx.arena(), else_node))
         }
     }
 }

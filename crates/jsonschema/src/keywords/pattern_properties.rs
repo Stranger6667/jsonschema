@@ -105,7 +105,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for PatternPropertiesValidator<R, F> {
                             tracker,
                             ctx,
                         );
-                        children.push(&mut ctx.arena, child);
+                        children.push(ctx.arena(), child);
                     }
                 }
             }
@@ -207,7 +207,7 @@ impl<F: Json, R: RegexEngine> Validate<F> for SingleValuePatternPropertiesValida
                         tracker,
                         ctx,
                     );
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 }
             }
             let mut result = EvaluationResult::from_children(children);

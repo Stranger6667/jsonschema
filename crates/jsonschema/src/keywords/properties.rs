@@ -229,7 +229,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
                         let path = location.push(name);
                         matched_props.push(prop_name.as_str().to_owned());
                         let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
-                        children.push(&mut ctx.arena, child);
+                        children.push(ctx.arena(), child);
                         break;
                     }
                 }
@@ -240,7 +240,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
                     let path = location.push(prop_name.as_str());
                     matched_props.push(prop_name.as_str().to_owned());
                     let child = node.evaluate_instance_below(&prop, &path, tracker, ctx);
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 }
             }
         }
@@ -445,7 +445,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                             let path = location.push(name);
                             matched_props.push(prop_name.as_str().to_owned());
                             let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
-                            children.push(&mut ctx.arena, child);
+                            children.push(ctx.arena(), child);
                             break;
                         }
                     }
@@ -456,7 +456,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                         let path = location.push(prop_name.as_str());
                         matched_props.push(prop_name.as_str().to_owned());
                         let child = node.evaluate_instance_below(&prop, &path, tracker, ctx);
-                        children.push(&mut ctx.arena, child);
+                        children.push(ctx.arena(), child);
                     }
                 }
             }
@@ -499,7 +499,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                     required_errors,
                     ChildList::default(),
                 );
-                children.push(&mut ctx.arena, child);
+                children.push(ctx.arena(), child);
             }
             let mut application = EvaluationResult::from_children(children);
             application.annotate(Annotations::new(Value::from(matched_props)));
@@ -578,7 +578,7 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
                     let path = location.push(prop_name.as_ref());
                     matched_props.push(prop_name.as_ref().to_owned());
                     let child = node.evaluate_instance_below(&prop, &path, tracker, ctx);
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 }
             }
             let mut application = EvaluationResult::from_children(children);

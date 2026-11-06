@@ -115,7 +115,7 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
                     .evaluate_instance_below(&item, &path, tracker, ctx);
                 if result.valid {
                     indices.push(idx);
-                    results.push(&mut ctx.arena, result);
+                    results.push(ctx.arena(), result);
                 }
             }
             if indices.is_empty() {

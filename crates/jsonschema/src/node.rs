@@ -735,7 +735,7 @@ impl<F: Json> SchemaNode<F> {
         let mut children = ChildList::default();
         let node =
             keywords.evaluate_type::<F>(instance, count.is_some(), instance_loc, tracker, ctx);
-        children.push(&mut ctx.arena, node);
+        children.push(ctx.arena(), node);
         let (before, after) = validators.split_at(absorbed.counts_at);
         let (metadata_before, metadata_after) = metadata.split_at(absorbed.counts_at);
         Self::push_subschemas(
@@ -852,7 +852,7 @@ impl<F: Json> SchemaNode<F> {
                     )
                 }
             };
-            children.push(&mut ctx.arena, child_node);
+            children.push(ctx.arena(), child_node);
         }
         invalid
     }

@@ -833,7 +833,7 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
                         invalid = true;
                         unevaluated.push(item.to_value().to_string());
                     }
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 } else {
                     invalid = true;
                     unevaluated.push(item.to_value().to_string());

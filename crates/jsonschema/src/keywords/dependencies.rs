@@ -135,7 +135,7 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
                         tracker,
                         ctx,
                     );
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 }
             }
             EvaluationResult::from_children(children)
@@ -283,7 +283,7 @@ impl<F: Json> Validate<F> for DependentRequiredValidator<F> {
                         tracker,
                         ctx,
                     );
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 }
             }
             EvaluationResult::from_children(children)
@@ -401,7 +401,7 @@ impl<F: Json> Validate<F> for DependentSchemasValidator<F> {
                         tracker,
                         ctx,
                     );
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 }
             }
             EvaluationResult::from_children(children)

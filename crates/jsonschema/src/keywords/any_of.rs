@@ -159,7 +159,7 @@ impl<F: Json, D: Dispatch<F>> Validate<F> for AnyOfValidator<F, D> {
             for node in &self.schemas {
                 let child =
                     node.evaluate_instance_at(instance, location, instance_location, tracker, ctx);
-                failures.push(&mut ctx.arena, child);
+                failures.push(ctx.arena(), child);
             }
             EvaluationResult::from_children(failures)
         } else {
@@ -172,7 +172,7 @@ impl<F: Json, D: Dispatch<F>> Validate<F> for AnyOfValidator<F, D> {
                     tracker,
                     ctx,
                 );
-                valid_results.push(&mut ctx.arena, child);
+                valid_results.push(ctx.arena(), child);
             }
             EvaluationResult::from_children(valid_results)
         }
@@ -275,7 +275,7 @@ impl<F: Json> Validate<F> for SingleAnyOfValidator<F> {
         let node =
             self.node
                 .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
-        EvaluationResult::from_node(&mut ctx.arena, node)
+        EvaluationResult::from_node(ctx.arena(), node)
     }
 }
 

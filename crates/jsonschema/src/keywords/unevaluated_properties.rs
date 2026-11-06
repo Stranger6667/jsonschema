@@ -1102,7 +1102,7 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                         invalid = true;
                         unevaluated.push(property.as_ref().to_owned());
                     }
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 } else {
                     invalid = true;
                     unevaluated.push(property.as_ref().to_owned());

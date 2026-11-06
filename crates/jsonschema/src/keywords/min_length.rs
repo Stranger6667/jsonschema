@@ -164,7 +164,7 @@ impl<F: Json> Validate<F> for LengthRangeValidator {
                 error,
                 ctx,
             );
-            children.push(&mut ctx.arena, child);
+            children.push(ctx.arena(), child);
         }
         let mut result = EvaluationResult::from_children(children);
         if length < self.minimum {

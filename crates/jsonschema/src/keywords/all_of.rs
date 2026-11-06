@@ -89,7 +89,7 @@ impl<F: Json> Validate<F> for AllOfValidator<F> {
         for node in &self.schemas {
             let child =
                 node.evaluate_instance_at(instance, location, instance_location, tracker, ctx);
-            children.push(&mut ctx.arena, child);
+            children.push(ctx.arena(), child);
         }
         EvaluationResult::from_children(children)
     }
@@ -160,7 +160,7 @@ impl<F: Json> Validate<F> for SingleValueAllOfValidator<F> {
         let node =
             self.node
                 .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
-        EvaluationResult::from_node(&mut ctx.arena, node)
+        EvaluationResult::from_node(ctx.arena(), node)
     }
 }
 

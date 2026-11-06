@@ -33,6 +33,7 @@
 - `properties`, `anyOf` and other applicators faster on subschemas that only check a non-numeric `type`, directly or through `$ref`.
 - Building validators that reference `file://` schemas is 10x or more faster, from reading each file in one call instead of one system call per byte.
 - `evaluate()` up to 20% faster on instances with many errors, from fewer allocations per error.
+- `is_valid()` and `validate()` up to 14% faster on small instances, from a cheaper per-call validation context.
 
 ## [0.60.2] - 2026-10-26
 
