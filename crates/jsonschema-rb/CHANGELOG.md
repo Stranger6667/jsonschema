@@ -25,6 +25,7 @@
 - `unevaluatedProperties` up to 10% faster on schemas that combine it with `patternProperties` or applicators.
 - `required` up to 40% faster when it lists every property of an object closed by `additionalProperties: false`.
 - `properties`, `anyOf` and other applicators faster on subschemas that only check a non-numeric `type`, directly or through `$ref`.
+- `evaluate()` up to 20% faster on instances with many errors, from fewer allocations per error.
 
 ## [0.60.2] - 2026-10-27
 

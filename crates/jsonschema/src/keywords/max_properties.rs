@@ -64,11 +64,11 @@ impl<F: Json> Validate<F> for MaxPropertiesValidator {
     fn evaluate(
         &self,
         instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        evaluate_assertion::<F, _>(self, instance, location, tracker, ctx)
+        evaluate_assertion::<F, _>(self, instance, ctx)
     }
 }
 

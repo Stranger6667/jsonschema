@@ -378,12 +378,14 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
     fn evaluate(
         &self,
         instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
         let mut collected = Vec::new();
-        self.collect_errors(instance, location, tracker, ctx, &mut collected);
+        // An `ErrorDescription` keeps only the keyword and the message, which depend on the error
+        // kind and the instance alone, so collecting at the root renders no paths.
+        self.collect_errors(instance, &LazyLocation::new(), None, ctx, &mut collected);
         let errors: Vec<ErrorDescription> = collected
             .iter()
             .map(ErrorDescription::from_validation_error)
@@ -435,14 +437,13 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
 pub(crate) fn evaluate_assertion<F: Json, V: Validate<F>>(
     validator: &V,
     instance: &F::Node<'_>,
-    location: &LazyLocation,
-    tracker: Option<&RefTracker>,
     ctx: &mut ValidationContext,
 ) -> EvaluationResult {
     if validator.is_valid(instance, ctx) {
         return EvaluationResult::valid_empty();
     }
-    match validator.validate(instance, location, tracker, ctx) {
+    // The description depends on the error kind and the instance alone; see `Validate::evaluate`.
+    match validator.validate(instance, &LazyLocation::new(), None, ctx) {
         Ok(()) => EvaluationResult::valid_empty(),
         Err(error) => {
             EvaluationResult::invalid_empty(vec![ErrorDescription::from_validation_error(&error)])
@@ -1415,6 +1416,26 @@ mod tests {
         assert_eq!(error.to_string(), "\"foo\" is not of type \"number\"");
     }
 
+    // Messages shorter and longer than the buffer `evaluate` formats into first.
+    #[test_case(&json!({"const": "x"}); "short")]
+    #[test_case(&json!({"const": "x".repeat(113)}); "fills the buffer")]
+    #[test_case(&json!({"const": "x".repeat(114)}); "one past the buffer")]
+    #[test_case(&json!({"const": "x".repeat(300)}); "far past the buffer")]
+    fn evaluate_message_matches_validate(schema: &Value) {
+        let validator = crate::validator_for(schema).expect("Valid schema");
+        let instance = json!("y");
+        let expected = validator
+            .validate(&instance)
+            .expect_err("Should fail")
+            .to_string();
+        let evaluation = validator.evaluate(&instance);
+        let messages: Vec<_> = evaluation
+            .iter_errors()
+            .map(|entry| entry.error.message())
+            .collect();
+        assert_eq!(messages, vec![expected.as_str()]);
+    }
+
     #[test]
     fn custom_keyword_validation_error_paths() {
         struct AlwaysFailValidator;
@@ -1454,6 +1475,13 @@ mod tests {
             "/properties/name/alwaysFail"
         );
         assert_eq!(error.kind().keyword(), "alwaysFail");
+
+        let evaluation = validator.evaluate(&instance);
+        let descriptions: Vec<_> = evaluation
+            .iter_errors()
+            .map(|entry| (entry.error.keyword(), entry.error.message()))
+            .collect();
+        assert_eq!(descriptions, vec![("alwaysFail", "always fails")]);
     }
 
     #[test]
