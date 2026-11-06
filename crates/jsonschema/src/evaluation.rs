@@ -9,7 +9,7 @@ use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Serialize,
 };
-use std::{fmt, sync::Arc};
+use std::{borrow::Cow, fmt, sync::Arc};
 
 /// Annotations associated with an output unit.
 #[derive(Debug, Clone, PartialEq)]
@@ -54,16 +54,16 @@ impl serde::Serialize for Annotations {
 /// Description of a validation error used within evaluation outputs.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct ErrorDescription {
-    keyword: String,
+    keyword: Cow<'static, str>,
     message: String,
 }
 
 impl ErrorDescription {
     #[inline]
     #[must_use]
-    pub(crate) fn new(keyword: impl Into<String>, message: String) -> Self {
+    pub(crate) fn new(keyword: &'static str, message: String) -> Self {
         Self {
-            keyword: keyword.into(),
+            keyword: Cow::Borrowed(keyword),
             message,
         }
     }
@@ -73,8 +73,11 @@ impl ErrorDescription {
     #[must_use]
     pub(crate) fn from_validation_error(e: &ValidationError<'_>) -> Self {
         ErrorDescription {
-            keyword: e.kind().keyword().to_owned(),
-            message: e.to_string(),
+            keyword: match e.kind().keyword_name() {
+                Ok(keyword) => Cow::Borrowed(keyword),
+                Err(custom) => Cow::Owned(custom.to_owned()),
+            },
+            message: render_message(e),
         }
     }
 
@@ -97,6 +100,50 @@ impl ErrorDescription {
     #[must_use]
     pub fn message(&self) -> &str {
         &self.message
+    }
+}
+
+/// Formats `error` into a stack buffer first, so the message is allocated once at its final length
+/// instead of growing through every power of two below it.
+fn render_message(error: &ValidationError<'_>) -> String {
+    let mut writer = MessageWriter {
+        buffer: [0; MESSAGE_BUFFER],
+        len: 0,
+        spilled: None,
+    };
+    fmt::write(&mut writer, format_args!("{error}")).expect("formatting into memory cannot fail");
+    match writer.spilled {
+        Some(message) => message,
+        None => std::str::from_utf8(&writer.buffer[..writer.len])
+            .expect("only whole `str` pieces are written")
+            .to_owned(),
+    }
+}
+
+const MESSAGE_BUFFER: usize = 128;
+
+struct MessageWriter {
+    buffer: [u8; MESSAGE_BUFFER],
+    len: usize,
+    spilled: Option<String>,
+}
+
+impl fmt::Write for MessageWriter {
+    fn write_str(&mut self, piece: &str) -> fmt::Result {
+        if let Some(message) = &mut self.spilled {
+            message.push_str(piece);
+        } else if let Some(slot) = self.buffer.get_mut(self.len..self.len + piece.len()) {
+            slot.copy_from_slice(piece.as_bytes());
+            self.len += piece.len();
+        } else {
+            let written = std::str::from_utf8(&self.buffer[..self.len])
+                .expect("only whole `str` pieces are written");
+            let mut message = String::with_capacity(self.len + piece.len());
+            message.push_str(written);
+            message.push_str(piece);
+            self.spilled = Some(message);
+        }
+        Ok(())
     }
 }
 

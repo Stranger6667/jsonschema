@@ -1124,15 +1124,23 @@ macro_rules! impl_format_evaluate {
         fn evaluate(
             &self,
             instance: &F::Node<'_>,
-            location: &LazyLocation,
-            tracker: Option<&RefTracker>,
+            _location: &LazyLocation,
+            _tracker: Option<&RefTracker>,
             ctx: &mut ValidationContext,
         ) -> EvaluationResult {
             if !instance.is_string() {
                 return EvaluationResult::valid_empty();
             }
             let mut collected = Vec::new();
-            Validate::<F>::collect_errors(self, instance, location, tracker, ctx, &mut collected);
+            // The description depends on the error kind and the instance alone; see `Validate::evaluate`.
+            Validate::<F>::collect_errors(
+                self,
+                instance,
+                &LazyLocation::new(),
+                None,
+                ctx,
+                &mut collected,
+            );
             let errors: Vec<_> = collected
                 .iter()
                 .map(crate::evaluation::ErrorDescription::from_validation_error)
