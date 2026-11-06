@@ -1,6 +1,7 @@
 # frozen_string_literal: true
 
 require "spec_helper"
+require "bigdecimal"
 require "weakref"
 require_relative "support/codegen_backend"
 
@@ -417,6 +418,44 @@ RSpec.describe JSONSchema::ValidationError do
       expect(e.message).to eq('42 is not of type "string"')
       expect(e.instance_path).to eq([])
       expect(e.schema_path).to eq(["type"])
+    end
+  end
+
+  describe "#instance" do
+    [
+      [{ "type" => "array" }, { "a" => [42] }, []],
+      [{ "properties" => { "a" => { "type" => "object" } } }, { "a" => [42, "x", nil, 1.5, true, 2**70] }, ["a"]],
+      [{ "items" => { "type" => "string" } }, [{ "b" => { "c" => 1 } }], [0]],
+      [{ "properties" => { "200" => { "type" => "string" } } }, { "200" => [1] }, ["200"]],
+      [{ "properties" => { "a/b~" => { "type" => "string" } } }, { "a/b~" => [1] }, ["a/b~"]]
+    ].each do |schema, instance, path|
+      it "is the validated object at #{path.inspect}" do
+        expected = path.empty? ? instance : instance.dig(*path)
+        expect { JSONSchema.validate!(schema, instance) }
+          .to raise_error(JSONSchema::ValidationError) { |e| expect(e.instance).to equal(expected) }
+        expect(JSONSchema.each_error(schema, instance).first.instance).to equal(expected)
+      end
+    end
+
+    # Values Ruby and JSON represent differently keep the JSON form.
+    [
+      [{ a: 1 }, { "a" => 1 }],
+      [[:sym], ["sym"]],
+      [[BigDecimal("1.5")], [1.5]]
+    ].each do |value, expected|
+      it "keeps the JSON form of #{value.inspect}" do
+        expect { JSONSchema.validate!({ "properties" => { "a" => { "type" => "string" } } }, { "a" => value }) }
+          .to raise_error(JSONSchema::ValidationError) { |e|
+            expect(e.instance).to eq(expected)
+            expect(e.instance).not_to equal(value)
+          }
+      end
+    end
+
+    it "is not the validated object for a string in another encoding" do
+      value = [String.new("\xE9t\xE9", encoding: "ISO-8859-1")]
+      expect { JSONSchema.validate!({ "properties" => { "a" => { "type" => "string" } } }, { "a" => value }) }
+        .to raise_error(JSONSchema::ValidationError) { |e| expect(e.instance).not_to equal(value) }
     end
   end
 

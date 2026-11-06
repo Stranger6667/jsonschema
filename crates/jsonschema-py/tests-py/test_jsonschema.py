@@ -752,6 +752,66 @@ def test_error_instance():
         assert exc.instance == instance["a"]
 
 
+@pytest.mark.parametrize(
+    ("schema", "instance", "path"),
+    [
+        ({"type": "array"}, {"a": [42]}, []),
+        ({"properties": {"a": {"type": "object"}}}, {"a": [42, "x", None, 1.5, True]}, ["a"]),
+        ({"items": {"type": "string"}}, [{"b": {"c": 2**70}}], [0]),
+        ({"items": {"type": "string"}}, ({"b": 1},), [0]),
+        ({"properties": {"200": {"type": "string"}}}, {"200": [1]}, ["200"]),
+        ({"properties": {"a/b~": {"type": "string"}}}, {"a/b~": [1]}, ["a/b~"]),
+    ],
+)
+def test_error_instance_is_the_validated_object(schema, instance, path):
+    expected = instance
+    for segment in path:
+        expected = expected[segment]
+    with pytest.raises(ValidationError) as exc:
+        validate(schema, instance)
+    assert exc.value.instance is expected
+    assert next(iter_errors(schema, instance)).instance is expected
+
+
+def test_any_of_context_instance_is_the_validated_object():
+    instance = {"a": {"b": 1}}
+    with pytest.raises(ValidationError) as exc:
+        validate({"properties": {"a": {"anyOf": [{"type": "string"}, {"required": ["c"]}]}}}, instance)
+    assert exc.value.instance is instance["a"]
+    assert [error.instance is instance["a"] for branch in exc.value.kind.context for error in branch] == [True, True]
+
+
+class Color(E.Enum):
+    RED = "red"
+
+
+# Values Python and JSON represent differently keep the JSON form.
+@pytest.mark.parametrize(
+    ("value", "expected"),
+    [
+        ((1, 2), [1, 2]),
+        ([Color.RED], ["red"]),
+        ([Decimal("1.5")], [1.5]),
+        ({"k": (1,)}, {"k": [1]}),
+        ([OrderedDict(k=1)], [{"k": 1}]),
+    ],
+)
+def test_error_instance_keeps_the_json_form(value, expected):
+    with pytest.raises(ValidationError) as exc:
+        validate({"properties": {"a": {"type": "string"}}}, {"a": value})
+    assert exc.value.instance == expected
+    assert type(exc.value.instance) is type(expected)
+    assert [type(item) for item in exc.value.instance] == [type(item) for item in expected]
+
+
+def test_property_names_error_instance():
+    instance = {"ab": 1}
+    with pytest.raises(ValidationError) as exc:
+        validate({"propertyNames": {"maxLength": 1}}, instance)
+    assert exc.value.instance is instance
+    assert exc.value.kind.error.instance == "ab"
+
+
 SCHEMA = {"properties": {"foo": {"type": "integer"}, "bar": {"type": "string"}}}
 
 

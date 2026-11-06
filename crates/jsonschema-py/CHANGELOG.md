@@ -13,6 +13,7 @@
 ### Performance
 
 - Building registries up to 30% faster and validators up to 3% faster, from a cheaper walk over schema documents.
+- Validation errors on large values up to 40% faster, from returning the validated object as `ValidationError.instance` instead of a copy.
 - `oneOf` / `anyOf` up to 7x faster when branches fix a property with `const` or `enum`.
 - `oneOf` / `anyOf` skip branches that exclude the instance's value with `not` over `enum` or `const`.
 - `properties` up to 40% faster on objects with a few more keys than it declares.

@@ -24,16 +24,18 @@ use jsonschema::{
     ValidationOptions,
 };
 use magnus::{
+    encoding::Coderange,
     error::ErrorType,
     function, method,
     prelude::*,
+    r_hash::ForEach,
     rb_sys::AsRawValue,
     scan_args::scan_args,
     value::{Lazy, ReprValue},
-    DataTypeFunctions, Error, Exception, ExceptionClass, RClass, RHash, RModule, RObject, RString,
-    Ruby, Value,
+    DataTypeFunctions, Error, Exception, ExceptionClass, RArray, RClass, RHash, RModule, RObject,
+    RString, Ruby, Value,
 };
-use referencing::unescape_segment;
+use referencing::{parse_index, unescape_segment};
 use std::{
     cell::RefCell,
     collections::VecDeque,
@@ -386,6 +388,77 @@ fn error_message(error: &jsonschema::ValidationError<'_>, mask: Option<&str>) ->
     }
 }
 
+// The object at `location` under `root`, when it and everything in it are plain JSON types, which
+// convert to and from JSON unchanged. Other values keep their JSON form.
+fn plain_instance_at(ruby: &Ruby, root: RbNode<'_>, location: &str) -> Option<Value> {
+    #[allow(unsafe_code)]
+    let mut current: Value = unsafe { magnus::rb_sys::FromRawValue::from_raw(root.raw()) };
+    for segment in location.split('/').skip(1) {
+        current = if let Some(hash) = RHash::from_value(current) {
+            if hash.class().as_raw() != ruby.class_hash().as_raw() {
+                return None;
+            }
+            hash.get(unescape_segment(segment).as_ref())?
+        } else {
+            let array = RArray::from_value(current)?;
+            let index = parse_index(segment)?;
+            if index >= array.len() {
+                return None;
+            }
+            array.entry(isize::try_from(index).ok()?).ok()?
+        };
+    }
+    is_plain_json(ruby, current, 0).then_some(current)
+}
+
+fn is_plain_json(ruby: &Ruby, value: Value, depth: u16) -> bool {
+    // Deeper values, cycles included, keep the conversion that reports the nesting limit.
+    if depth >= ser::RECURSION_LIMIT {
+        return false;
+    }
+    if value.is_nil()
+        || value.is_kind_of(ruby.class_true_class())
+        || value.is_kind_of(ruby.class_false_class())
+    {
+        return true;
+    }
+    let class = value.class().as_raw();
+    let is = |expected: RClass| class == expected.as_raw();
+    if is(ruby.class_integer()) || is(ruby.class_float()) {
+        return true;
+    }
+    if is(ruby.class_string()) {
+        let string = RString::from_value(value).expect("an instance of String");
+        return string.is_utf8_compatible_encoding()
+            && string.enc_coderange_scan() != Coderange::Broken;
+    }
+    if is(ruby.class_array()) {
+        let array = RArray::from_value(value).expect("an instance of Array");
+        return (0..array.len()).all(|index| {
+            isize::try_from(index)
+                .ok()
+                .and_then(|index| array.entry::<Value>(index).ok())
+                .is_some_and(|item| is_plain_json(ruby, item, depth + 1))
+        });
+    }
+    if is(ruby.class_hash()) {
+        let hash = RHash::from_value(value).expect("an instance of Hash");
+        let mut plain = true;
+        let _ = hash.foreach(|key: Value, item: Value| {
+            plain = key.class().as_raw() == ruby.class_string().as_raw()
+                && is_plain_json(ruby, key, depth + 1)
+                && is_plain_json(ruby, item, depth + 1);
+            Ok(if plain {
+                ForEach::Continue
+            } else {
+                ForEach::Stop
+            })
+        });
+        return plain;
+    }
+    false
+}
+
 /// Convert a jsonschema `ValidationError` to a Ruby `ValidationError`.
 fn into_ruby_error(
     ruby: &Ruby,
@@ -422,7 +495,16 @@ fn into_ruby_error(
     };
 
     let kind_obj = ValidationErrorKind::new(ruby, &parts.kind, mask)?;
-    let rb_instance = ser::value_to_ruby(ruby, parts.instance.as_ref())?;
+    // Scalars convert faster than the path to them is followed.
+    let original = match parts.instance.as_ref() {
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => root_instance
+            .and_then(|root| plain_instance_at(ruby, root, parts.instance_path.as_str())),
+        _ => None,
+    };
+    let rb_instance = match original {
+        Some(instance) => instance,
+        None => ser::value_to_ruby(ruby, parts.instance.as_ref())?,
+    };
 
     let exc_class = ruby.get_inner(&VALIDATION_ERROR_CLASS);
 
