@@ -14,6 +14,62 @@ pub(crate) mod ids;
 
 use serde_json::{Map, Value};
 
+use crate::{draft::Draft, path::JsonPointerSegment, Error};
+
+/// How a keyword's value holds subschemas.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Children {
+    None,
+    /// The value itself is a subschema.
+    Single,
+    /// Every item of an array value is a subschema.
+    Array,
+    /// Every member of an object value is a subschema.
+    Object,
+    /// Every object-valued member of an object value is a subschema.
+    ObjectOfObjects,
+}
+
+/// Call `f` for every subschema of `schema`, passing `draft` through unchanged.
+#[inline]
+pub(crate) fn walk_children<'a>(
+    schema: &'a Map<String, Value>,
+    draft: Draft,
+    children: fn(&str, &Value) -> Children,
+    f: &mut impl FnMut(&'a str, Option<JsonPointerSegment<'a>>, &'a Value, Draft) -> Result<(), Error>,
+) -> Result<(), Error> {
+    for (key, value) in schema {
+        match children(key, value) {
+            Children::None => {}
+            Children::Single => f(key, None, value, draft)?,
+            Children::Array => {
+                if let Some(items) = value.as_array() {
+                    for (index, item) in items.iter().enumerate() {
+                        f(key, Some(index.into()), item, draft)?;
+                    }
+                }
+            }
+            Children::Object => {
+                if let Some(members) = value.as_object() {
+                    for (member_key, member) in members {
+                        f(key, Some(member_key.as_str().into()), member, draft)?;
+                    }
+                }
+            }
+            Children::ObjectOfObjects => {
+                if let Some(members) = value.as_object() {
+                    for (member_key, member) in members {
+                        if member.is_object() {
+                            f(key, Some(member_key.as_str().into()), member, draft)?;
+                        }
+                    }
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
 /// Shared metadata extracted from one schema object.
 pub(crate) struct ObjectAnalysis<'a> {
     pub(crate) id: Option<&'a str>,

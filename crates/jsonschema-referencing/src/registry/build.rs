@@ -18,7 +18,9 @@ use crate::{
     cache::UriCache,
     meta::{metas_for_draft, META_SCHEMAS_ALL},
     path::JsonPointerSegment,
-    pointer::{pointer, ParsedPointer, ParsedPointerSegment},
+    pointer::{parse_index, pointer, ParsedPointer, ParsedPointerSegment},
+    resource::unescape_segment,
+    spec::Children,
     uri, Draft, Error, JsonPointerNode, Retrieve,
 };
 
@@ -108,14 +110,9 @@ struct CrawlTask {
 }
 
 /// A deferred local `$ref` target.
-///
-/// Like [`CrawlTask`] but carries the pre-resolved value address (`schema_ptr`) obtained
-/// for free during the `pointer()` call at push time. Used in [`process_deferred_refs`] to
-/// skip already-visited targets without a second `pointer()` traversal.
 struct PendingLocalRef {
     document_root_uri: Arc<Uri<String>>,
     pointer: String,
-    schema_ptr: usize,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -125,13 +122,17 @@ struct VisitedSchemaContext {
     draft: Draft,
 }
 
-type DeferredTarget<'a> = (Arc<Uri<String>>, Draft, &'a Value);
+struct DeferredTarget<'a> {
+    base: Arc<Uri<String>>,
+    draft: Draft,
+    contents: &'a Value,
+}
 
 /// Lifetime-free traversal state passed to external-resource collection helpers.
 struct CrawlState {
     external: AHashSet<(String, Uri<String>, ReferenceKind)>,
     found_metaschema_ref: bool,
-    /// Tracks schema/base/draft traversal contexts we have already processed.
+    /// Schema/base/draft contexts already walked by `record_refs_recursive`.
     visited_schemas: AHashSet<VisitedSchemaContext>,
     deferred_refs: Vec<PendingLocalRef>,
     /// Whether a resource whose draft is known has its `$schema` retrieved.
@@ -480,14 +481,22 @@ fn process_deferred_refs<'a>(
         for PendingLocalRef {
             document_root_uri: doc_key,
             pointer: pointer_path,
-            schema_ptr,
         } in batch
         {
             let Some(document) = documents.get(&doc_key) else {
                 continue;
             };
             let root = document.contents();
-            let Some((effective_base_uri, draft, contents)) = resolve_deferred_target(
+            // A target under subschema keywords only (e.g. `#/definitions/Foo`) was walked by
+            // the crawl of the document root, which already recorded its references.
+            if is_crawled_path(root, document.draft(), &pointer_path) {
+                continue;
+            }
+            let Some(DeferredTarget {
+                base: effective_base_uri,
+                draft,
+                contents,
+            }) = resolve_deferred_target(
                 &doc_key,
                 root,
                 &pointer_path,
@@ -497,25 +506,8 @@ fn process_deferred_refs<'a>(
             else {
                 continue;
             };
-
-            // Fast path: if this target was already visited by the main BFS traversal
-            // (e.g. a `#/definitions/Foo` that `walk_children_with_path` descended into),
-            // all its subresources were processed and `record_refs_from_object` was already
-            // called on each — skip without a redundant `pointer()` traversal.
-            if state
-                .crawl
-                .visited_schemas
-                .contains(&visited_schema_context_from_ptr(
-                    &effective_base_uri,
-                    draft,
-                    schema_ptr,
-                ))
-            {
-                continue;
-            }
             record_refs_recursive(
                 &effective_base_uri,
-                root,
                 contents,
                 &mut state.crawl,
                 resolution_cache,
@@ -675,7 +667,6 @@ struct DeferredBorrowed<'v> {
 
 // Traversal state shared across the borrowed crawl, bundled so the hot recursive call stays small.
 struct BorrowedCrawl<'v, 'a> {
-    document_root: &'v Value,
     document_root_uri: &'a Arc<Uri<String>>,
     state: &'a mut BuildState<'v>,
     known_resources: &'a mut KnownResources,
@@ -704,7 +695,6 @@ fn crawl_borrowed_at<'r>(
     };
 
     let mut crawl = BorrowedCrawl {
-        document_root,
         document_root_uri,
         state,
         known_resources,
@@ -742,7 +732,7 @@ fn crawl_schema<'v>(
     let Some(object) = subschema.as_object() else {
         return Ok(());
     };
-    let analysis = draft.analyze_object(object);
+    let (draft, analysis) = analyze_child(draft, object, depth != 0);
 
     if let Some(id) = analysis.id {
         let ResolvedId {
@@ -763,16 +753,9 @@ fn crawl_schema<'v>(
             .register_borrowed_subresource(&base, draft, false, subschema);
     }
 
-    if crawl
-        .state
-        .crawl
-        .visited_schemas
-        .insert(visited_schema_context(&base, draft, subschema))
-        && (analysis.dollar_ref.is_some() || analysis.meta_schema.is_some())
-    {
+    if analysis.dollar_ref.is_some() || analysis.meta_schema.is_some() {
         record_refs(
             &base,
-            crawl.document_root,
             analysis.dollar_ref,
             analysis.meta_schema,
             &mut crawl.state.crawl,
@@ -788,7 +771,7 @@ fn crawl_schema<'v>(
             crawl.deferred.push(DeferredBorrowed {
                 base: Arc::clone(&base),
                 subschema: child,
-                draft: child_draft,
+                draft: child_draft.detect(child),
             });
             Ok(())
         } else {
@@ -836,7 +819,6 @@ fn crawl_owned_at<'r>(
 
     crawl_owned_schema(
         current_base_uri,
-        document_root,
         subschema,
         draft,
         pointer_path.is_empty(),
@@ -861,7 +843,6 @@ fn crawl_owned_at<'r>(
     {
         crawl_owned_schema(
             base,
-            document_root,
             subschema,
             draft,
             false,
@@ -899,7 +880,6 @@ fn absolute_pointer(
 #[allow(clippy::too_many_arguments)]
 fn crawl_owned_schema<'r, 'doc>(
     mut base: Arc<Uri<String>>,
-    document_root: &'doc Value,
     subschema: &'doc Value,
     draft: Draft,
     is_document_root: bool,
@@ -917,7 +897,7 @@ fn crawl_owned_schema<'r, 'doc>(
     let Some(object) = subschema.as_object() else {
         return Ok(());
     };
-    let analysis = draft.analyze_object(object);
+    let (draft, analysis) = analyze_child(draft, object, depth != 0);
 
     if let Some(id) = analysis.id {
         let ResolvedId {
@@ -945,15 +925,9 @@ fn crawl_owned_schema<'r, 'doc>(
             .register_owned_subresource(&base, document, &pointer, draft, false, subschema);
     }
 
-    if state
-        .crawl
-        .visited_schemas
-        .insert(visited_schema_context(&base, draft, subschema))
-        && (analysis.dollar_ref.is_some() || analysis.meta_schema.is_some())
-    {
+    if analysis.dollar_ref.is_some() || analysis.meta_schema.is_some() {
         record_refs(
             &base,
-            document_root,
             analysis.dollar_ref,
             analysis.meta_schema,
             &mut state.crawl,
@@ -970,14 +944,13 @@ fn crawl_owned_schema<'r, 'doc>(
                 deferred.push(DeferredOwned {
                     base: Arc::clone(&base),
                     subschema: child_value,
-                    draft: child_draft,
+                    draft: child_draft.detect(child_value),
                     pointer: absolute_pointer(base_pointer, child_path),
                 });
                 Ok(())
             } else {
                 crawl_owned_schema(
                     Arc::clone(&base),
-                    document_root,
                     child_value,
                     child_draft,
                     false,
@@ -995,6 +968,26 @@ fn crawl_owned_schema<'r, 'doc>(
             }
         })
     })
+}
+
+// Children arrive with their parent's draft; a child's own `$schema` switches it. Entry nodes
+// (depth 0) already carry the draft their caller settled on, which may be a forced override.
+#[inline]
+fn analyze_child(
+    draft: Draft,
+    object: &serde_json::Map<String, Value>,
+    inherited: bool,
+) -> (Draft, crate::spec::ObjectAnalysis<'_>) {
+    let analysis = draft.analyze_object(object);
+    if inherited {
+        if let Some(meta_schema) = analysis.meta_schema {
+            let own = Draft::from_schema_uri(meta_schema);
+            if own != draft {
+                return (own, own.analyze_object(object));
+            }
+        }
+    }
+    (draft, analysis)
 }
 
 fn with_owned_child_path<R>(
@@ -1019,7 +1012,6 @@ fn with_owned_child_path<R>(
 
 fn record_refs<'doc>(
     base: &Arc<Uri<String>>,
-    root: &'doc Value,
     dollar_ref: Option<&'doc str>,
     meta_schema: Option<&'doc str>,
     crawl: &mut CrawlState,
@@ -1034,8 +1026,10 @@ fn record_refs<'doc>(
         let Some(reference) = reference else {
             continue;
         };
-        if reference.starts_with("https://json-schema.org/draft/")
-            || reference.starts_with("http://json-schema.org/draft-")
+        let is_local = reference.starts_with('#');
+        if (!is_local
+            && (reference.starts_with("https://json-schema.org/draft/")
+                || reference.starts_with("http://json-schema.org/draft-")))
             || base.as_str().starts_with("https://json-schema.org/draft/")
         {
             if key == "$ref" {
@@ -1043,20 +1037,12 @@ fn record_refs<'doc>(
             }
             continue;
         }
-        if reference == "#" {
-            continue;
-        }
-        if reference.starts_with('#') {
-            if record_local_ref_visit(visited, base, reference) {
-                let pointer_path = reference.trim_start_matches('#');
-                if let Some(referenced) = pointer(root, pointer_path) {
-                    let schema_ptr = std::ptr::from_ref::<Value>(referenced) as usize;
-                    crawl.deferred_refs.push(PendingLocalRef {
-                        document_root_uri: Arc::clone(doc_key),
-                        pointer: pointer_path.to_string(),
-                        schema_ptr,
-                    });
-                }
+        if is_local {
+            if reference.len() > 1 && record_local_ref_visit(visited, base, reference) {
+                crawl.deferred_refs.push(PendingLocalRef {
+                    document_root_uri: Arc::clone(doc_key),
+                    pointer: reference.trim_start_matches('#').to_string(),
+                });
             }
             continue;
         }
@@ -1076,7 +1062,6 @@ fn record_refs<'doc>(
 
 fn record_refs_from_object<'doc>(
     base: &Arc<Uri<String>>,
-    root: &'doc Value,
     contents: &'doc Value,
     crawl: &mut CrawlState,
     resolution_cache: &mut UriCache,
@@ -1093,7 +1078,6 @@ fn record_refs_from_object<'doc>(
         if dollar_ref.is_some() || meta_schema.is_some() {
             record_refs(
                 base,
-                root,
                 dollar_ref,
                 meta_schema,
                 crawl,
@@ -1109,7 +1093,6 @@ fn record_refs_from_object<'doc>(
 
 fn record_refs_recursive<'doc>(
     base: &Arc<Uri<String>>,
-    root: &'doc Value,
     contents: &'doc Value,
     crawl: &mut CrawlState,
     resolution_cache: &mut UriCache,
@@ -1131,7 +1114,6 @@ fn record_refs_recursive<'doc>(
 
     record_refs_from_object(
         &current_base,
-        root,
         contents,
         crawl,
         resolution_cache,
@@ -1144,7 +1126,6 @@ fn record_refs_recursive<'doc>(
         let subresource_draft = draft.detect(subresource);
         record_refs_recursive(
             &current_base,
-            root,
             subresource,
             crawl,
             resolution_cache,
@@ -1292,7 +1273,11 @@ fn resolve_deferred_target<'a>(
 
     let pointer = ParsedPointer::from_json_pointer(pointer_path);
     let Some(pointer) = pointer.as_ref() else {
-        return Ok(Some((current_base, current_draft, current)));
+        return Ok(Some(DeferredTarget {
+            base: current_base,
+            draft: current_draft,
+            contents: current,
+        }));
     };
 
     for segment in &pointer.segments {
@@ -1313,7 +1298,55 @@ fn resolve_deferred_target<'a>(
         }
     }
 
-    Ok(Some((current_base, current_draft, current)))
+    Ok(Some(DeferredTarget {
+        base: current_base,
+        draft: current_draft,
+        contents: current,
+    }))
+}
+
+/// Whether `pointer_path` leads from the document root to a node the crawl of that root visits
+/// with the base URI and draft `resolve_deferred_target` computes for it: every step enters a
+/// subschema keyword of the enclosing schema the way `Draft::walk_children` does, and no
+/// container of subschemas carries a `$schema` or an id.
+fn is_crawled_path(root: &Value, root_draft: Draft, pointer_path: &str) -> bool {
+    let Some(rest) = pointer_path.strip_prefix('/') else {
+        return pointer_path.is_empty();
+    };
+    let mut current = root;
+    // Draft of the schema enclosing `current`.
+    let mut draft = root_draft;
+    let mut pending = Children::None;
+    for token in rest.split('/').map(unescape_segment) {
+        let index = parse_index(&token);
+        let next = match (current, index) {
+            (Value::Object(object), None) => object.get(&*token),
+            (Value::Array(items), Some(index)) => items.get(index),
+            _ => None,
+        };
+        let Some(next) = next else {
+            return false;
+        };
+        pending = match pending {
+            Children::None => match draft.children(&token, next) {
+                Children::Single => Children::None,
+                Children::None => return false,
+                many => many,
+            },
+            Children::Array if index.is_some() => Children::None,
+            Children::Object => Children::None,
+            Children::ObjectOfObjects if next.is_object() => Children::None,
+            _ => return false,
+        };
+        current = next;
+        let own = draft.detect(current);
+        if pending == Children::None {
+            draft = own;
+        } else if own != draft || draft.id_of(current).is_some() {
+            return false;
+        }
+    }
+    pending == Children::None
 }
 
 fn visited_schema_context(
@@ -1323,18 +1356,6 @@ fn visited_schema_context(
 ) -> VisitedSchemaContext {
     VisitedSchemaContext {
         schema_ptr: schema_ptr(schema),
-        base_ptr: base_uri_ptr(base),
-        draft,
-    }
-}
-
-fn visited_schema_context_from_ptr(
-    base: &Arc<Uri<String>>,
-    draft: Draft,
-    schema_ptr: usize,
-) -> VisitedSchemaContext {
-    VisitedSchemaContext {
-        schema_ptr: NonZeroUsize::new(schema_ptr).expect("Value pointer should never be null"),
         base_ptr: base_uri_ptr(base),
         draft,
     }

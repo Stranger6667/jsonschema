@@ -1,56 +1,31 @@
 use core::slice;
 use std::iter::FlatMap;
 
-use serde_json::{Map, Value};
+use serde_json::Value;
 
-use crate::{
-    draft::Draft, path::JsonPointerSegment, segments::Segment, Error, Resolver, ResourceRef,
-    Segments,
-};
+use crate::{segments::Segment, Error, Resolver, ResourceRef, Segments};
 
-pub(crate) fn walk_children<'a>(
-    schema: &'a Map<String, Value>,
-    draft: Draft,
-    f: &mut impl FnMut(&'a str, Option<JsonPointerSegment<'a>>, &'a Value, Draft) -> Result<(), Error>,
-) -> Result<(), Error> {
-    for (key, value) in schema {
-        match key.as_str() {
-            "additionalProperties"
-            | "contains"
-            | "contentSchema"
-            | "else"
-            | "if"
-            | "items"
-            | "not"
-            | "propertyNames"
-            | "then"
-            | "unevaluatedItems"
-            | "unevaluatedProperties" => {
-                f(key, None, value, draft.detect(value))?;
-            }
-            "allOf" | "anyOf" | "oneOf" | "prefixItems" => {
-                if let Some(arr) = value.as_array() {
-                    for (index, item) in arr.iter().enumerate() {
-                        f(key, Some(index.into()), item, draft.detect(item))?;
-                    }
-                }
-            }
-            "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
-                if let Some(obj) = value.as_object() {
-                    for (child_key, child_value) in obj {
-                        f(
-                            key,
-                            Some(child_key.as_str().into()),
-                            child_value,
-                            draft.detect(child_value),
-                        )?;
-                    }
-                }
-            }
-            _ => {}
+use super::Children;
+
+pub(crate) fn children(key: &str, _value: &Value) -> Children {
+    match key {
+        "additionalProperties"
+        | "contains"
+        | "contentSchema"
+        | "else"
+        | "if"
+        | "items"
+        | "not"
+        | "propertyNames"
+        | "then"
+        | "unevaluatedItems"
+        | "unevaluatedProperties" => Children::Single,
+        "allOf" | "anyOf" | "oneOf" | "prefixItems" => Children::Array,
+        "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
+            Children::Object
         }
+        _ => Children::None,
     }
-    Ok(())
 }
 
 type ObjectChildIter<'a> = FlatMap<
