@@ -56,7 +56,9 @@ impl<F: Json> Discriminator<F> {
             .iter()
             .map(|item| {
                 let mut pins = Pins::default();
-                pins.collect(ctx.resolver(), ctx.draft(), item, 0);
+                if let Some(resolver) = enter(ctx.resolver(), ctx.draft(), item) {
+                    pins.collect(&resolver, ctx.draft(), item, 0);
+                }
                 (!pins.rejects_objects).then_some(pins)
             })
             .collect();
@@ -248,7 +250,9 @@ impl<'a> Pins<'a> {
         }
         if let Some(Value::Array(all_of)) = map.get("allOf") {
             for item in all_of {
-                self.collect(resolver, draft, item, depth + 1);
+                if let Some(resolver) = enter(resolver, draft, item) {
+                    self.collect(&resolver, draft, item, depth + 1);
+                }
             }
         }
     }
@@ -266,6 +270,7 @@ impl<'a> Pins<'a> {
             .iter()
             .find_map(|(properties, resolver, draft)| {
                 let schema = Map::get(properties, name)?;
+                let resolver = &enter(resolver, *draft, schema)?;
                 let (values, negated) = match pinned_values(resolver, *draft, schema, 0) {
                     Some(values) => (values, false),
                     None => (negated_values(resolver, *draft, schema, 0)?, true),
@@ -361,7 +366,8 @@ fn negated_values<'a>(
             return None;
         }
     }
-    exact_values(resolver, draft, map.get("not")?, depth + 1)
+    let negated = map.get("not")?;
+    exact_values(&enter(resolver, draft, negated)?, draft, negated, depth + 1)
 }
 
 /// The values a subschema accepts when `const` or `enum` is all it checks.
@@ -394,6 +400,14 @@ fn exact_values<'a>(
         (Some("enum" | "const"), None) => pinned_values(resolver, draft, schema, depth),
         _ => None,
     }
+}
+
+/// The resolver inside `schema`, whose own id, if any, rebases the references it holds. Targets
+/// `resolve` returns are already entered.
+fn enter<'a>(resolver: &Resolver<'a>, draft: Draft, schema: &'a Value) -> Option<Resolver<'a>> {
+    resolver
+        .in_subresource(draft.create_resource_ref(schema))
+        .ok()
 }
 
 // A target under another draft reads keywords differently, so it contributes nothing.
@@ -574,6 +588,33 @@ mod tests {
         let (validator, calls) = build(&schema, Draft::Draft202012);
         assert!(validator.is_valid(&json!({"aaa": 0, "kind": "a"})));
         assert_eq!(calls.load(Ordering::Relaxed), 1);
+    }
+
+    // A subschema's `$id` changes what the `$ref`s inside it point to: `k.json` is `real` there.
+    #[test_case(json!({"properties": {"kind": {"$id": "inner/", "$ref": "k.json"}}}), &json!({"kind": "real"}), true; "beside the reference")]
+    #[test_case(json!({"properties": {"kind": {"$id": "inner/", "$ref": "k.json"}}}), &json!({"kind": "decoy"}), false; "beside the reference, other value")]
+    #[test_case(json!({"$id": "inner/", "properties": {"kind": {"$ref": "k.json"}}}), &json!({"kind": "real"}), true; "on the branch")]
+    #[test_case(json!({"allOf": [{"$id": "inner/", "properties": {"kind": {"$ref": "k.json"}}}]}), &json!({"kind": "real"}), true; "on an allOf item")]
+    #[test_case(json!({"properties": {"kind": {"not": {"$id": "inner/", "$ref": "k.json"}}}}), &json!({"kind": "decoy"}), true; "under not")]
+    #[test_case(json!({"properties": {"kind": {"not": {"$id": "inner/", "$ref": "k.json"}}}}), &json!({"kind": "real"}), false; "under not, excluded value")]
+    #[allow(clippy::needless_pass_by_value)]
+    fn id_rebases_references(branch: Value, instance: &Value, expected: bool) {
+        let schema = json!({
+            "$id": "http://example.com/root.json",
+            "$defs": {
+                "decoy": {"$id": "http://example.com/k.json", "const": "decoy"},
+                "real": {"$id": "http://example.com/inner/k.json", "const": "real"}
+            },
+            "oneOf": [
+                branch,
+                {"properties": {"kind": {"const": "b"}}, "required": ["kind"]},
+                {"properties": {"kind": {"const": "c"}}, "required": ["kind"]}
+            ]
+        });
+        let validator = crate::validator_for(&schema).expect("schema builds");
+        assert_eq!(validator.is_valid(instance), expected);
+        assert_eq!(validator.validate(instance).is_ok(), expected);
+        assert_eq!(validator.evaluate(instance).flag().valid, expected);
     }
 
     // `flavor` sorts first but only one branch pins it; `kind` is pinned by all of them.
