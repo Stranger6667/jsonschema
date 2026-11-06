@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `Evaluation::root()` and `OutputUnit` for walking evaluation output units without serializing them.
+
 ### Fixed
 
 - `.` in `pattern` and `patternProperties` matched `\r`, U+2028 and U+2029 (it should reject every line terminator).
