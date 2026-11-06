@@ -8,6 +8,7 @@
 - `evaluate()` reported a missing single `required` name beside `additionalProperties: false` at `/additionalProperties` (it should be `/required`).
 - Numeric keywords misjudging whole floats past 2^53. [#1825](https://github.com/Stranger6667/jsonschema/issues/1825)
 - Building a validator with an explicit draft retrieving the schema's `$schema` URI.
+- `format: "date-time"`, `"date"` and `"time"` accepting `+`, `,`, `-`, `.` or `/` where RFC 3339 requires a digit. [#1829](https://github.com/Stranger6667/jsonschema/issues/1829)
 
 ### Performance
 
