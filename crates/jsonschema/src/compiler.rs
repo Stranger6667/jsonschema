@@ -48,6 +48,7 @@ fn resolve_absolute_location(
 }
 
 /// [`Context::absolute_location`] for a location resolved after compilation.
+#[derive(Clone)]
 pub(crate) struct DeferredAbsoluteLocation {
     base: Arc<Uri<String>>,
     resource_start: usize,
@@ -133,7 +134,7 @@ impl<R, F: Json> CompilationOptions<F> for ValidationOptions<'_, R, F> {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub(crate) struct LocationCacheKey {
     pub(crate) base_uri: Arc<Uri<String>>,
     location: Arc<str>,
@@ -143,10 +144,17 @@ pub(crate) struct LocationCacheKey {
 /// Named anchors can share a base URI and output location without naming the same schema.
 /// The node cache lives only for one root compilation: input/registry values stay borrowed
 /// and immovable until that cache is dropped. This pointer is never persisted or dereferenced.
-#[derive(Hash, PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub(crate) struct NodeCacheKey {
     location: LocationCacheKey,
     schema_ptr: usize,
+}
+
+/// The schema address almost always tells keys apart on its own; equality compares the rest.
+impl std::hash::Hash for NodeCacheKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.schema_ptr.hash(state);
+    }
 }
 
 #[derive(Hash, PartialEq, Eq, Clone, Copy, Debug)]
@@ -175,10 +183,17 @@ impl ItemsValidatorsPendingKey {
     }
 }
 
-#[derive(Hash, PartialEq, Eq, Clone, Debug)]
+#[derive(PartialEq, Eq, Clone, Debug)]
 pub(crate) struct AliasCacheKey {
     uri: Arc<Uri<String>>,
     dynamic_scope: List<Uri<String>>,
+}
+
+/// Keys for one URI differ only by dynamic scope, which equality compares.
+impl std::hash::Hash for AliasCacheKey {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.uri.hash(state);
+    }
 }
 
 /// A `$ref`'s resolved URI and the location its target starts at.

@@ -18,6 +18,8 @@
 
 - Building validators up to 15% faster on schemas that repeat the same `$ref`, from resolving each reference once.
 - Building registries up to 30% faster and validators up to 3% faster, from a cheaper walk over schema documents.
+- Building validators up to 25% faster on schemas that declare a base URI, from building absolute keyword locations on first use.
+- Building validators up to 3% faster, from cheaper compilation cache keys.
 - `oneOf` / `anyOf` up to 7x faster when branches fix a property with `const` or `enum`.
 - `oneOf` / `anyOf` skip branches that exclude the instance's value with `not` over `enum` or `const`.
 - `properties` up to 40% faster on objects with a few more keys than it declares.
