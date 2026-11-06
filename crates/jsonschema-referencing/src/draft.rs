@@ -141,11 +141,23 @@ impl Draft {
         ) -> Result<(), Error>,
     ) -> Result<(), Error> {
         match self {
-            Draft::Draft4 => draft4::walk_children(contents, self, f),
-            Draft::Draft6 => draft6::walk_children(contents, self, f),
-            Draft::Draft7 => draft7::walk_children(contents, self, f),
-            Draft::Draft201909 => draft201909::walk_children(contents, self, f),
-            Draft::Draft202012 | Draft::Unknown => draft202012::walk_children(contents, self, f),
+            Draft::Draft4 => spec::walk_children(contents, self, draft4::children, f),
+            Draft::Draft6 => spec::walk_children(contents, self, draft6::children, f),
+            Draft::Draft7 => spec::walk_children(contents, self, draft7::children, f),
+            Draft::Draft201909 => spec::walk_children(contents, self, draft201909::children, f),
+            Draft::Draft202012 | Draft::Unknown => {
+                spec::walk_children(contents, self, draft202012::children, f)
+            }
+        }
+    }
+    /// How the value of `key` holds subschemas in a schema object of this draft.
+    pub(crate) fn children(self, key: &str, value: &Value) -> spec::Children {
+        match self {
+            Draft::Draft4 => draft4::children(key, value),
+            Draft::Draft6 => draft6::children(key, value),
+            Draft::Draft7 => draft7::children(key, value),
+            Draft::Draft201909 => draft201909::children(key, value),
+            Draft::Draft202012 | Draft::Unknown => draft202012::children(key, value),
         }
     }
     pub(crate) fn anchors(self, contents: &Value) -> impl Iterator<Item = Anchor<'_>> {

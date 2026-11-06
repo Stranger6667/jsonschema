@@ -1,72 +1,29 @@
-use serde_json::{Map, Value};
+use serde_json::Value;
 
-use crate::{draft::Draft, path::JsonPointerSegment, Error, Resolver, ResourceRef, Segments};
+use crate::{Error, Resolver, ResourceRef, Segments};
 
-use super::draft202012::{self, ChildIterInner};
+use super::{
+    draft202012::{self, ChildIterInner},
+    Children,
+};
 
-pub(crate) fn walk_children<'a>(
-    schema: &'a Map<String, Value>,
-    draft: Draft,
-    f: &mut impl FnMut(&'a str, Option<JsonPointerSegment<'a>>, &'a Value, Draft) -> Result<(), Error>,
-) -> Result<(), Error> {
-    for (key, value) in schema {
-        match key.as_str() {
-            "additionalItems"
-            | "additionalProperties"
-            | "contains"
-            | "else"
-            | "if"
-            | "not"
-            | "propertyNames"
-            | "then" => {
-                f(key, None, value, draft.detect(value))?;
-            }
-            "allOf" | "anyOf" | "oneOf" => {
-                if let Some(arr) = value.as_array() {
-                    for (index, item) in arr.iter().enumerate() {
-                        f(key, Some(index.into()), item, draft.detect(item))?;
-                    }
-                }
-            }
-            "definitions" | "patternProperties" | "properties" => {
-                if let Some(obj) = value.as_object() {
-                    for (child_key, child_value) in obj {
-                        f(
-                            key,
-                            Some(child_key.as_str().into()),
-                            child_value,
-                            draft.detect(child_value),
-                        )?;
-                    }
-                }
-            }
-            "items" => match value {
-                Value::Array(arr) => {
-                    for (index, item) in arr.iter().enumerate() {
-                        f(key, Some(index.into()), item, draft.detect(item))?;
-                    }
-                }
-                _ => f(key, None, value, draft.detect(value))?,
-            },
-            "dependencies" => {
-                if let Some(obj) = value.as_object() {
-                    for (child_key, child_value) in obj {
-                        if !child_value.is_object() {
-                            continue;
-                        }
-                        f(
-                            key,
-                            Some(child_key.as_str().into()),
-                            child_value,
-                            draft.detect(child_value),
-                        )?;
-                    }
-                }
-            }
-            _ => {}
-        }
+pub(crate) fn children(key: &str, value: &Value) -> Children {
+    match key {
+        "items" if value.is_array() => Children::Array,
+        "additionalItems"
+        | "additionalProperties"
+        | "contains"
+        | "else"
+        | "items"
+        | "if"
+        | "not"
+        | "propertyNames"
+        | "then" => Children::Single,
+        "allOf" | "anyOf" | "oneOf" => Children::Array,
+        "definitions" | "patternProperties" | "properties" => Children::Object,
+        "dependencies" => Children::ObjectOfObjects,
+        _ => Children::None,
     }
-    Ok(())
 }
 
 pub(crate) fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> ChildIterInner<'a> {
