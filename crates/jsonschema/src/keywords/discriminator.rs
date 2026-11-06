@@ -826,13 +826,44 @@ mod tests {
     #[test_case(&json!({"aaa": 0, "kind": 1}), false, 1; "other type")]
     #[test_case(&json!({"aaa": 0}), false, 2; "missing key")]
     fn negated_values_exclude_a_branch(instance: &Value, expected: bool, expected_calls: usize) {
+        for negated in [
+            json!({"type": "string", "not": {"$ref": "#/$defs/known"}}),
+            json!({"$ref": "#/$defs/unknown"}),
+        ] {
+            let schema = json!({
+                "$defs": {
+                    "known": {"enum": ["a", "b", "c", "x"]},
+                    "unknown": {"type": "string", "not": {"$ref": "#/$defs/known"}}
+                },
+                "oneOf": [
+                    optional_branch(&json!({"const": "a"})),
+                    optional_branch(&json!({"const": "b"})),
+                    optional_branch(&json!({"const": "c"})),
+                    optional_branch(&negated)
+                ]
+            });
+            let (validator, calls) = build(&schema, Draft::Draft202012);
+            assert_eq!(validator.is_valid(instance), expected, "{negated}");
+            assert_eq!(calls.load(Ordering::Relaxed), expected_calls, "{negated}");
+            assert_eq!(validator.validate(instance).is_ok(), expected, "{negated}");
+        }
+    }
+
+    // `not` over a reference cycle stops at the depth limit and excludes nothing.
+    #[test_case(&json!({"aaa": 0, "kind": "b"}), true, 2; "fixed value")]
+    #[test_case(&json!({"aaa": 0, "kind": "z"}), false, 1; "other value")]
+    fn negated_reference_cycle_is_not_dispatched(
+        instance: &Value,
+        expected: bool,
+        expected_calls: usize,
+    ) {
         let schema = json!({
-            "$defs": {"known": {"enum": ["a", "b", "c", "x"]}},
+            "$defs": {"cycle": {"$ref": "#/$defs/cycle"}},
             "oneOf": [
                 optional_branch(&json!({"const": "a"})),
                 optional_branch(&json!({"const": "b"})),
                 optional_branch(&json!({"const": "c"})),
-                optional_branch(&json!({"type": "string", "not": {"$ref": "#/$defs/known"}}))
+                optional_branch(&json!({"not": {"$ref": "#/$defs/cycle"}}))
             ]
         });
         let (validator, calls) = build(&schema, Draft::Draft202012);
@@ -842,6 +873,7 @@ mod tests {
     }
 
     // `not` over more than the values: `a` fails `minLength`, so the negation accepts it.
+    #[test_case(json!({"not": false}); "boolean")]
     #[test_case(json!({"not": {"enum": ["a"], "minLength": 5}}); "extra keyword")]
     #[test_case(json!({"not": {"$ref": "#/$defs/short"}}); "extra keyword behind a reference")]
     #[test_case(json!({"not": {"$ref": "#/$defs/plain", "enum": ["a"]}}); "enum beside a reference")]

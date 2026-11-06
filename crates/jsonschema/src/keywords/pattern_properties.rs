@@ -467,6 +467,9 @@ mod tests {
     #[test_case("^x-", "custom", false)]
     #[test_case("^eo_", "eo_bands", true)]
     #[test_case("^eo_", "proj_epsg", false)]
+    #[test_case(r"^\S*$", "x-custom", true)]
+    #[test_case(r"^\S*$", "x custom", false)]
+    #[test_case(r"^\S*$", "x\u{2028}custom", false)]
     fn test_prefix_pattern_validation(pattern: &str, key: &str, should_match: bool) {
         let schema = json!({
             "patternProperties": {
