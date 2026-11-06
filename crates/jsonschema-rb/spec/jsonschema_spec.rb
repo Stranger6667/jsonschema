@@ -452,10 +452,18 @@ RSpec.describe JSONSchema::ValidationError do
       end
     end
 
-    it "is not the validated object for a string in another encoding" do
-      value = [String.new("\xE9t\xE9", encoding: "ISO-8859-1")]
-      expect { JSONSchema.validate!({ "properties" => { "a" => { "type" => "string" } } }, { "a" => value }) }
-        .to raise_error(JSONSchema::ValidationError) { |e| expect(e.instance).not_to equal(value) }
+    # Values JSON cannot hold raise, even when only the error instance carries them.
+    [
+      ["a string in another encoding", [String.new("\xE9t\xE9", encoding: "ISO-8859-1")], EncodingError,
+       /String is not valid UTF-8/],
+      ["an unsupported type", [Object.new], TypeError, /Unsupported type: 'Object'/],
+      ["an integer hash key", { 1 => 2 }, TypeError, /Hash keys must be strings or symbols/]
+    ].each do |label, value, error, message|
+      it "raises #{error} for #{label}" do
+        schema = { "properties" => { "a" => { "type" => "string" } } }
+        expect { JSONSchema.validate!(schema, { "a" => value }) }.to raise_error(error, message)
+        expect { JSONSchema.each_error(schema, { "a" => value }).to_a }.to raise_error(error, message)
+      end
     end
   end
 
