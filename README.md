@@ -150,7 +150,7 @@ You can opt into using `ring` as the TLS provider:
 ```toml
 [dependencies]
 jsonschema = {
-    version = "0.42",
+    version = "0.60",
     default-features = false,
     features = ["resolve-http", "resolve-file", "tls-ring"]
 }
