@@ -35,6 +35,8 @@ pub(crate) const RECURSION_LIMIT: u16 = 255;
 const I64_LOWER_INCLUSIVE_F64: f64 = -9_223_372_036_854_775_808.0;
 const I64_UPPER_EXCLUSIVE_F64: f64 = 9_223_372_036_854_775_808.0;
 const U64_UPPER_EXCLUSIVE_F64: f64 = 18_446_744_073_709_551_616.0;
+/// 2^53, from which consecutive integers are no longer all representable as `f64`.
+const MAX_SAFE_INTEGER_F64: f64 = 9_007_199_254_740_992.0;
 const IEEE754_F64_FRAC_BITS: u32 = 52;
 const IEEE754_F64_EXP_BIAS: i32 = 1023;
 const DECIMAL_BASE_U64: u64 = 1_000_000_000;
@@ -128,6 +130,14 @@ fn to_value_typed(
 #[inline]
 fn convert_float(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
     let float = f64::try_convert(value)?;
+    // From 2^53 up, the shortest text of a whole float can name a neighbouring integer:
+    // `2.0**55` prints as `3.602879701896397e16`. Keep its exact digits.
+    if float.fract() == 0.0 && float.abs() >= MAX_SAFE_INTEGER_F64 {
+        return format!("{float:.1}")
+            .parse()
+            .map(JsonValue::Number)
+            .map_err(|error| Error::new(ruby.exception_arg_error(), error.to_string()));
+    }
     Number::from_f64(float)
         .map(JsonValue::Number)
         .ok_or_else(|| {
@@ -812,8 +822,10 @@ fn number_string_to_ruby(ruby: &Ruby, number: &str) -> Result<Value, Error> {
     }
 
     if let Ok(f) = number.parse::<f64>() {
+        // A whole float past 2^53 is written with its exact digits, which its shortest text can miss.
         if f.is_finite()
-            && Number::from_f64(f).is_some_and(|roundtrip| roundtrip.to_string() == number)
+            && (Number::from_f64(f).is_some_and(|roundtrip| roundtrip.to_string() == number)
+                || (f.fract() == 0.0 && format!("{f:.1}") == number))
         {
             return Ok(ruby.into_value(f));
         }
