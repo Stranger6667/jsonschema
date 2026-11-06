@@ -1,7 +1,7 @@
 //! Building a JSON Schema validator.
 //! The main idea is to create a tree from the input JSON Schema. This tree will contain
 //! everything needed to perform such validation in runtime.
-use std::{collections::hash_map::Entry, sync::Arc};
+use std::{collections::hash_map::Entry, mem::ManuallyDrop, sync::Arc};
 
 use crate::{
     error::ErrorIterator,
@@ -70,21 +70,48 @@ pub struct ValidationContext {
     /// used to break cycles from self-referential `$dynamicRef`/`$recursiveRef` under
     /// `unevaluatedProperties`/`unevaluatedItems`.
     marking: Vec<(usize, NodeIdentity)>,
-    /// Lazy-initialized cache for recursive schema validation.
+    /// Lazy-initialized cache for recursive schema validation; kept out of `lazy` because every
+    /// `$ref` visit reads it.
     is_valid_cache: Option<AHashMap<(usize, NodeIdentity), bool>>,
     /// Visits to `$ref` targets so far; a visit's share of it decides whether its result is cached.
     ref_visits: u32,
-    /// Lazy-initialized cache for ECMA regex transformation results during format "regex" validation.
-    ecma_regex_cache: Option<AHashMap<String, bool>>,
-    evaluation_path_cache: Option<Box<EvaluationPathCache>>,
     evaluation_path_calls: u32,
     /// Instance location of the node being evaluated; only the `evaluate` path sets it.
     instance_location: Option<Location>,
-    /// Holds every node of the tree the `evaluate` path builds.
-    pub(crate) arena: EvaluationArena,
+    /// State most `is_valid` and `validate` calls never create, behind one pointer: each call
+    /// creates and drops a context, and dropping an empty one is a single check.
+    lazy: Lazy,
     /// Outcomes this run assumes for regex matches the engine could not finish; boxed and only
     /// created once one is met, so validation without them carries a single null pointer.
     matches: Option<Box<MatchAssumptions>>,
+}
+
+/// Checks for the state inline when dropped: the drop glue of a plain `Option<Box<_>>` is an
+/// out-of-line call even when there is nothing to free.
+#[derive(Default)]
+struct Lazy(ManuallyDrop<Option<Box<LazyState>>>);
+
+impl Drop for Lazy {
+    #[inline]
+    fn drop(&mut self) {
+        if let Some(state) = self.0.take() {
+            release(state);
+        }
+    }
+}
+
+#[cold]
+fn release(state: Box<LazyState>) {
+    drop(state);
+}
+
+#[derive(Default)]
+struct LazyState {
+    /// Cache for ECMA regex transformation results during format "regex" validation.
+    ecma_regex_cache: Option<AHashMap<String, bool>>,
+    evaluation_path_cache: Option<EvaluationPathCache>,
+    /// Holds every node of the tree the `evaluate` path builds.
+    arena: EvaluationArena,
 }
 
 /// Runs `run` in a fresh context that assumes the outcomes in `matches`.
@@ -170,6 +197,17 @@ impl ValidationContext {
         self.matches
             .get_or_insert_with(Box::default)
             .resolve(subject, error, site)
+    }
+
+    #[inline]
+    fn lazy(&mut self) -> &mut LazyState {
+        self.lazy.0.get_or_insert_with(Box::default)
+    }
+
+    /// Holds every node of the tree the `evaluate` path builds.
+    #[inline]
+    pub(crate) fn arena(&mut self) -> &mut EvaluationArena {
+        &mut self.lazy().arena
     }
 
     #[inline]
@@ -295,20 +333,27 @@ impl ValidationContext {
         if self.evaluation_path_calls < EVALUATION_PATH_CACHE_THRESHOLD {
             return tracker.evaluation_path_with_prefix(tracker.prefix(), location);
         }
-        self.evaluation_path_cache
-            .get_or_insert_with(Box::default)
+        self.lazy()
+            .evaluation_path_cache
+            .get_or_insert_with(EvaluationPathCache::default)
             .evaluation_path(tracker, location)
     }
 
     /// Check if an ECMA regex pattern is valid.
     pub(crate) fn is_valid_ecma_regex(&mut self, pattern: &str) -> bool {
-        if let Some(cache) = &self.ecma_regex_cache {
+        if let Some(cache) = self
+            .lazy
+            .0
+            .as_ref()
+            .and_then(|lazy| lazy.ecma_regex_cache.as_ref())
+        {
             if let Some(&result) = cache.get(pattern) {
                 return result;
             }
         }
         let result = jsonschema_regex::is_valid_ecma_regex(pattern);
-        self.ecma_regex_cache
+        self.lazy()
+            .ecma_regex_cache
             .get_or_insert_with(AHashMap::new)
             .insert(pattern.to_owned(), result);
         result
@@ -745,8 +790,9 @@ impl<F: Json> Validator<F> {
             .evaluate_instance(&instance, &LazyLocation::new(), None, &mut ctx);
         match ctx.matches.take() {
             None => {
-                let root = ctx.arena.push(root);
-                Evaluation::new(std::mem::take(&mut ctx.arena), root)
+                let arena = ctx.arena();
+                let root = arena.push(root);
+                Evaluation::new(std::mem::take(arena), root)
             }
             // What the instance evaluates to depends on the unfinished matches; only the errors
             // shared by every outcome are known.

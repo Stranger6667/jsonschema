@@ -190,7 +190,7 @@ impl<F: Json> Validate<F> for SingleOneOfValidator<F> {
         let node =
             self.node
                 .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
-        EvaluationResult::from_node(&mut ctx.arena, node)
+        EvaluationResult::from_node(ctx.arena(), node)
     }
 }
 
@@ -273,7 +273,7 @@ impl<F: Json, D: Dispatch<F>> Validate<F> for OneOfValidator<F, D> {
             for node in &self.schemas {
                 let child =
                     node.evaluate_instance_at(instance, location, instance_location, tracker, ctx);
-                failures.push(&mut ctx.arena, child);
+                failures.push(ctx.arena(), child);
             }
             return EvaluationResult::Invalid {
                 errors: Vec::new(),
@@ -294,7 +294,7 @@ impl<F: Json, D: Dispatch<F>> Validate<F> for OneOfValidator<F, D> {
                         ctx,
                     );
                     if child.valid {
-                        successes.push(&mut ctx.arena, child);
+                        successes.push(ctx.arena(), child);
                     }
                 }
             }
@@ -314,7 +314,7 @@ impl<F: Json, D: Dispatch<F>> Validate<F> for OneOfValidator<F, D> {
                 tracker,
                 ctx,
             );
-            EvaluationResult::from_node(&mut ctx.arena, child)
+            EvaluationResult::from_node(ctx.arena(), child)
         }
     }
 }

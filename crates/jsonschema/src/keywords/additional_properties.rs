@@ -126,7 +126,7 @@ impl<F: Json> Validate<F> for AdditionalPropertiesValidator<F> {
                     tracker,
                     ctx,
                 );
-                children.push(&mut ctx.arena, child);
+                children.push(ctx.arena(), child);
             }
             let mut result = EvaluationResult::from_children(children);
             let annotated_props = object
@@ -323,7 +323,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                         tracker,
                         ctx,
                     );
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 } else {
                     unexpected.push(property.as_ref().to_owned());
                 }
@@ -546,7 +546,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                         tracker,
                         ctx,
                     );
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                     if property.as_ref() == self.required.as_str() {
                         found_required = true;
                     }
@@ -575,7 +575,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                     vec![error],
                     ChildList::default(),
                 );
-                children.push(&mut ctx.arena, child);
+                children.push(ctx.arena(), child);
             }
             let mut result = EvaluationResult::from_children(children);
             if !unexpected.is_empty() {
@@ -739,12 +739,12 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                 {
                     let child =
                         property_validators.evaluate_instance_below(&value, &path, tracker, ctx);
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 } else {
                     let child = self
                         .node
                         .evaluate_instance_below(&value, &path, tracker, ctx);
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                     matched_propnames.push(property.as_ref().to_owned());
                 }
             }
@@ -902,7 +902,7 @@ impl<F: Json, R: PropertyPattern> Validate<F> for AdditionalPropertiesWithPatter
                         has_match = true;
                         pattern_matched_propnames.push(property.as_ref().to_owned());
                         let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
-                        children.push(&mut ctx.arena, child);
+                        children.push(ctx.arena(), child);
                     }
                 }
                 if !has_match {
@@ -910,7 +910,7 @@ impl<F: Json, R: PropertyPattern> Validate<F> for AdditionalPropertiesWithPatter
                     let child = self
                         .node
                         .evaluate_instance_below(&value, &path, tracker, ctx);
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                 }
             }
             if !pattern_matched_propnames.is_empty() {
@@ -927,7 +927,7 @@ impl<F: Json, R: PropertyPattern> Validate<F> for AdditionalPropertiesWithPatter
                     Some(annotation),
                     ChildList::default(),
                 );
-                children.push(&mut ctx.arena, child);
+                children.push(ctx.arena(), child);
             }
             let mut result = EvaluationResult::from_children(children);
             if !additional_matched_propnames.is_empty() {
@@ -1090,7 +1090,7 @@ impl<F: Json, R: PropertyPattern> Validate<F>
                         has_match = true;
                         pattern_matched_props.push(property.as_ref().to_owned());
                         let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
-                        children.push(&mut ctx.arena, child);
+                        children.push(ctx.arena(), child);
                     }
                 }
                 if !has_match {
@@ -1111,7 +1111,7 @@ impl<F: Json, R: PropertyPattern> Validate<F>
                     Some(annotation),
                     ChildList::default(),
                 );
-                children.push(&mut ctx.arena, child);
+                children.push(ctx.arena(), child);
             }
             let mut result = EvaluationResult::from_children(children);
             if !unexpected.is_empty() {
@@ -1376,7 +1376,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                 let path = location.push(property.as_ref());
                 if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
                     let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                     // Use pre-computed pattern indices - no regex at runtime
                     if let Some(pattern_indices) =
                         self.property_pattern_indices.get(property.as_ref())
@@ -1402,7 +1402,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                             let child = self.patterns[idx]
                                 .1
                                 .evaluate_instance_below(&value, &path, tracker, ctx);
-                            children.push(&mut ctx.arena, child);
+                            children.push(ctx.arena(), child);
                         }
                     }
                 } else {
@@ -1414,7 +1414,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                         }) {
                             has_match = true;
                             let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
-                            children.push(&mut ctx.arena, child);
+                            children.push(ctx.arena(), child);
                         }
                     }
                     if !has_match {
@@ -1422,7 +1422,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                         let child = self
                             .node
                             .evaluate_instance_below(&value, &path, tracker, ctx);
-                        children.push(&mut ctx.arena, child);
+                        children.push(ctx.arena(), child);
                     }
                 }
             }
@@ -1685,7 +1685,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                 let path = location.push(property.as_ref());
                 if let Some((_name, node)) = self.properties.get_key_validator(property.as_ref()) {
                     let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                     // Use pre-computed pattern indices - no regex at runtime
                     if let Some(pattern_indices) =
                         self.property_pattern_indices.get(property.as_ref())
@@ -1711,7 +1711,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                             let child = self.patterns[idx]
                                 .1
                                 .evaluate_instance_below(&value, &path, tracker, ctx);
-                            children.push(&mut ctx.arena, child);
+                            children.push(ctx.arena(), child);
                         }
                     }
                 } else {
@@ -1723,7 +1723,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                         }) {
                             has_match = true;
                             let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
-                            children.push(&mut ctx.arena, child);
+                            children.push(ctx.arena(), child);
                         }
                     }
                     if !has_match {

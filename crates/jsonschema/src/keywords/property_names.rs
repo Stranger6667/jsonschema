@@ -120,7 +120,7 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
                 let child = F::with_string_node(&mut buffer, name.as_ref(), |node| {
                     self.node.evaluate_instance(&node, location, tracker, ctx)
                 });
-                children.push(&mut ctx.arena, child);
+                children.push(ctx.arena(), child);
             }
             EvaluationResult::from_children(children)
         } else {

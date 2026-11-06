@@ -99,7 +99,7 @@ impl<F: Json> Validate<F> for PrefixItemsValidator<F> {
                         tracker,
                         ctx,
                     );
-                    children.push(&mut ctx.arena, child);
+                    children.push(ctx.arena(), child);
                     max_index_applied = idx;
                 }
                 let annotation = if children.len() == array.len() {

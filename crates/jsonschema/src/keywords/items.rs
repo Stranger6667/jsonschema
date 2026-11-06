@@ -92,7 +92,7 @@ impl<F: Json> Validate<F> for ItemsArrayValidator<F> {
             let mut children = ChildList::default();
             for (idx, (item, node)) in array.elements().zip(self.items.iter()).enumerate() {
                 let child = node.evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
-                children.push(&mut ctx.arena, child);
+                children.push(ctx.arena(), child);
             }
             EvaluationResult::from_children(children)
         } else {
@@ -115,7 +115,7 @@ fn evaluate_each_item<F: Json>(
     let mut children = ChildList::default();
     for (idx, item) in array.elements().enumerate() {
         let child = node.evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
-        children.push(&mut ctx.arena, child);
+        children.push(ctx.arena(), child);
     }
     let mut result = EvaluationResult::from_children(children);
     result.annotate(Annotations::new(serde_json::json!(array.len() != 0)));
@@ -280,7 +280,7 @@ impl<F: Json> Validate<F> for ItemsObjectSkipPrefixValidator<F> {
                 let child =
                     self.node
                         .evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
-                children.push(&mut ctx.arena, child);
+                children.push(ctx.arena(), child);
             }
             let schema_was_applied = array.len() > self.skip_prefix;
             let mut result = EvaluationResult::from_children(children);
@@ -476,7 +476,7 @@ impl<T: ItemType, F: Json> ItemsTypeValidator<T, F> {
             ),
         };
         let valid = type_node.valid;
-        let children = ChildList::of(&mut ctx.arena, type_node);
+        let children = ChildList::of(ctx.arena(), type_node);
         if valid {
             EvaluationNode::valid(
                 keyword_location,
@@ -580,7 +580,7 @@ impl<T: ItemType, F: Json> Validate<F> for ItemsTypeValidator<T, F> {
         let mut children = ChildList::default();
         for (idx, item) in array.elements().enumerate() {
             let child = self.evaluate_item(&item, &location.push(idx), tracker, ctx);
-            children.push(&mut ctx.arena, child);
+            children.push(ctx.arena(), child);
         }
         let mut result = EvaluationResult::from_children(children);
         result.annotate(Annotations::new(serde_json::json!(array.len() != 0)));
@@ -783,7 +783,7 @@ impl AbsorbedKeywords {
                     ))
                 });
             let node = unit(&constraint.site, error, instance_location, tracker, ctx);
-            children.push(&mut ctx.arena, node);
+            children.push(ctx.arena(), node);
         }
         if let Some(constraint) = &self.max_items {
             let error = count
@@ -796,7 +796,7 @@ impl AbsorbedKeywords {
                     ))
                 });
             let node = unit(&constraint.site, error, instance_location, tracker, ctx);
-            children.push(&mut ctx.arena, node);
+            children.push(ctx.arena(), node);
         }
     }
 }
