@@ -20,3 +20,7 @@ strum = "0.28.0"
 zmij = "1"
 
 [workspace]
+
+[profile.release]
+lto = "fat"
+codegen-units = 1
