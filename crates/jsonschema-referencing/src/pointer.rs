@@ -51,16 +51,7 @@ impl ParsedPointer {
     pub(crate) fn lookup<'a>(&self, document: &'a Value) -> Option<&'a Value> {
         self.segments
             .iter()
-            .try_fold(document, |target, token| match token {
-                ParsedPointerSegment::Key(key) => match target {
-                    Value::Object(map) => map.get(&**key),
-                    _ => None,
-                },
-                ParsedPointerSegment::Index(index) => match target {
-                    Value::Array(list) => list.get(*index),
-                    _ => None,
-                },
-            })
+            .try_fold(document, |target, token| token.step(target))
     }
 }
 
@@ -68,6 +59,22 @@ impl ParsedPointer {
 pub(crate) enum ParsedPointerSegment {
     Key(Box<str>),
     Index(usize),
+}
+
+impl ParsedPointerSegment {
+    /// The child of `target` this segment names.
+    #[inline]
+    pub(crate) fn step<'a>(&self, target: &'a Value) -> Option<&'a Value> {
+        match (self, target) {
+            (ParsedPointerSegment::Key(key), Value::Object(map)) => map.get(&**key),
+            (ParsedPointerSegment::Index(index), Value::Array(list)) => list.get(*index),
+            // A numeric token also names an object member, e.g. `/responses/200`
+            (ParsedPointerSegment::Index(index), Value::Object(map)) => {
+                map.get(index.to_string().as_str())
+            }
+            _ => None,
+        }
+    }
 }
 
 /// Look up a value by a JSON Pointer.

@@ -10,6 +10,7 @@
 - Building a validator with an explicit draft retrieving the schema's `$schema` URI.
 - `format: "date-time"`, `"date"` and `"time"` accepting `+`, `,`, `-`, `.` or `/` where RFC 3339 requires a digit. [#1829](https://github.com/Stranger6667/jsonschema/issues/1829)
 - Numeric keywords misjudging instances against whole floats past 2^53 in the schema. [#1825](https://github.com/Stranger6667/jsonschema/issues/1825)
+- `$ref` pointers through a numeric object key (`#/responses/200`) skipping the references under their target.
 
 ### Performance
 
