@@ -170,6 +170,7 @@ impl EvaluationArena {
     }
 }
 
+#[derive(Debug)]
 pub(crate) struct ChildIndices<'a> {
     arena: &'a EvaluationArena,
     current: u32,
@@ -361,8 +362,39 @@ impl Evaluation {
         Evaluation::new(arena, root)
     }
 
-    fn root(&self) -> &EvaluationNode {
+    fn root_node(&self) -> &EvaluationNode {
         self.arena.node(self.root)
+    }
+    /// Returns the root output unit, from which every other unit is reachable through
+    /// [`OutputUnit::children`].
+    ///
+    /// [`Evaluation::hierarchical`] serializes this tree as is, and [`Evaluation::list`] serializes
+    /// its units in pre-order.
+    ///
+    /// # Examples
+    ///
+    /// ```rust
+    /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
+    /// use serde_json::json;
+    ///
+    /// let validator = jsonschema::validator_for(&json!({"items": {"type": "integer"}}))?;
+    /// let evaluation = validator.evaluate(&json!([1, "oops"]));
+    ///
+    /// let root = evaluation.root();
+    /// assert!(!root.valid());
+    /// let items = root.children().next().expect("`items` unit");
+    /// assert_eq!(items.evaluation_path().as_str(), "/items");
+    /// let failed = items.children().nth(1).expect("unit for the second item");
+    /// assert_eq!(failed.instance_location().as_str(), "/1");
+    /// # Ok(())
+    /// # }
+    /// ```
+    #[must_use]
+    pub fn root(&self) -> OutputUnit<'_> {
+        OutputUnit {
+            arena: &self.arena,
+            index: self.root,
+        }
     }
     /// Returns the flag output format.
     ///
@@ -391,7 +423,7 @@ impl Evaluation {
     #[must_use]
     pub fn flag(&self) -> FlagOutput {
         FlagOutput {
-            valid: self.root().valid,
+            valid: self.root_node().valid,
         }
     }
     /// Whether the instance is valid against the schema.
@@ -411,7 +443,7 @@ impl Evaluation {
     /// ```
     #[must_use]
     pub fn is_valid(&self) -> bool {
-        self.root().valid
+        self.root_node().valid
     }
     /// Returns the list output format.
     ///
@@ -843,6 +875,87 @@ pub(crate) fn format_keyword_location(
     absolute: Option<&Arc<Uri<String>>>,
 ) -> Arc<str> {
     absolute.map_or_else(|| location.as_arc(), |uri| Arc::from(uri.as_str()))
+}
+
+/// One output unit of an [`Evaluation`]: a node of the hierarchical output, or one entry of the
+/// list output.
+#[derive(Clone, Copy, Debug)]
+pub struct OutputUnit<'a> {
+    arena: &'a EvaluationArena,
+    index: u32,
+}
+
+impl<'a> OutputUnit<'a> {
+    #[inline]
+    fn node(&self) -> &'a EvaluationNode {
+        self.arena.node(self.index)
+    }
+    /// Whether the instance is valid at this unit.
+    #[inline]
+    #[must_use]
+    pub fn valid(&self) -> bool {
+        self.node().valid
+    }
+    /// The path of keywords followed to reach this unit (`evaluationPath`).
+    #[inline]
+    #[must_use]
+    pub fn evaluation_path(&self) -> &'a Location {
+        &self.node().keyword_location
+    }
+    /// The keyword's absolute URI when it has one, otherwise its JSON Pointer (`schemaLocation`).
+    #[inline]
+    #[must_use]
+    pub fn schema_location(&self) -> &'a str {
+        &self.node().schema_location
+    }
+    /// The location in the instance this unit evaluated (`instanceLocation`).
+    #[inline]
+    #[must_use]
+    pub fn instance_location(&self) -> &'a Location {
+        &self.node().instance_location
+    }
+    /// Annotations this unit produced (`annotations`).
+    #[inline]
+    #[must_use]
+    pub fn annotations(&self) -> Option<&'a Annotations> {
+        self.node().annotations.as_ref()
+    }
+    /// Annotations this unit produced and then dropped because it failed (`droppedAnnotations`).
+    #[inline]
+    #[must_use]
+    pub fn dropped_annotations(&self) -> Option<&'a Annotations> {
+        self.node().dropped_annotations.as_ref()
+    }
+    /// Errors this unit reported, in the order they were produced (`errors`).
+    #[inline]
+    #[must_use]
+    pub fn errors(&self) -> &'a [ErrorDescription] {
+        &self.node().errors
+    }
+    /// Output units of the subschemas evaluated below this one (`details`).
+    #[inline]
+    #[must_use]
+    pub fn children(&self) -> OutputUnitChildren<'a> {
+        OutputUnitChildren {
+            indices: self.arena.child_indices(self.index),
+        }
+    }
+}
+
+/// Iterator over the children of an [`OutputUnit`].
+#[derive(Debug)]
+pub struct OutputUnitChildren<'a> {
+    indices: ChildIndices<'a>,
+}
+
+impl<'a> Iterator for OutputUnitChildren<'a> {
+    type Item = OutputUnit<'a>;
+
+    #[inline]
+    fn next(&mut self) -> Option<OutputUnit<'a>> {
+        let arena = self.indices.arena;
+        self.indices.next().map(|index| OutputUnit { arena, index })
+    }
 }
 
 struct ListEntry<'a> {

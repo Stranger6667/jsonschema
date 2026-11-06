@@ -13,6 +13,7 @@
 ### Performance
 
 - Building validators up to 15% faster on schemas that repeat the same `$ref`, from resolving each reference once.
+- `Evaluation.list()` up to 4x and `Evaluation.hierarchical()` up to 6x faster, from building output units directly as Python objects.
 - Building registries up to 30% faster and validators up to 3% faster, from a cheaper walk over schema documents.
 - Validation errors on large values up to 40% faster, from returning the validated object as `ValidationError.instance` instead of a copy.
 - `oneOf` / `anyOf` up to 7x faster when branches fix a property with `const` or `enum`.

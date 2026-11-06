@@ -38,7 +38,6 @@ use regex::{FancyRegexOptions, RegexOptions};
 use retriever::DetachedRetriever;
 use retriever::{into_retriever, Retriever};
 use ser::to_value;
-use serde::Serialize;
 #[macro_use]
 extern crate pyo3_built;
 
@@ -47,6 +46,7 @@ mod clone;
 mod email;
 #[cfg(not(target_arch = "wasm32"))]
 mod http;
+mod output;
 mod regex;
 mod registry;
 mod retriever;
@@ -168,16 +168,6 @@ fn map_to_python(
     Ok(py_dict.into_any().unbind())
 }
 
-fn evaluation_output_to_python<T>(py: Python<'_>, output: &T) -> PyResult<Py<PyAny>>
-where
-    T: Serialize + ?Sized,
-{
-    let json_value = serde_json::to_value(output).map_err(|err| {
-        PyValueError::new_err(format!("Failed to serialize evaluation output: {err}"))
-    })?;
-    value_to_python(py, &json_value)
-}
-
 fn annotation_entry_to_py(
     py: Python<'_>,
     entry: jsonschema::AnnotationEntry<'_>,
@@ -231,20 +221,19 @@ impl PyEvaluation {
 
     /// Return the flag output representation as a Python object.
     fn flag(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let flag = self.inner.flag();
-        evaluation_output_to_python(py, &flag)
+        Ok(output::flag(py, self.inner.is_valid())?.into_any().unbind())
     }
 
     /// Return the list output representation as a Python object.
     fn list(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let list_output = self.inner.list();
-        evaluation_output_to_python(py, &list_output)
+        Ok(output::list(py, self.inner.root())?.into_any().unbind())
     }
 
     /// Return the hierarchical output representation as a Python object.
     fn hierarchical(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        let hierarchical_output = self.inner.hierarchical();
-        evaluation_output_to_python(py, &hierarchical_output)
+        Ok(output::hierarchical(py, self.inner.root())?
+            .into_any()
+            .unbind())
     }
 
     /// Return collected annotations for all evaluated nodes.
