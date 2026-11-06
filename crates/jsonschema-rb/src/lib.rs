@@ -647,11 +647,12 @@ fn surface_pending_errors<T>(
     if let Some(error) = magnus_take_pending_error() {
         return Err(Error::from(error));
     }
-    let result = run(node)?;
+    // Checked before `run`'s own error: converting a validation error records what it cannot read.
+    let result = run(node);
     if let Some(error) = magnus_take_pending_error() {
         return Err(Error::from(error));
     }
-    Ok(result)
+    result
 }
 
 /// Wrapper around `jsonschema::Validator`.
