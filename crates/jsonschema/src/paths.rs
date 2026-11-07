@@ -36,6 +36,9 @@ impl fmt::Display for LocationSegment<'_> {
 /// memory until required by storing each segment on the stack.
 pub type LazyLocation<'a, 'b> = JsonPointerNode<'a, 'b>;
 
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+const _: () = assert!(std::mem::size_of::<LazyLocation<'static, 'static>>() == 32);
+
 /// Cached empty location - very common for root-level errors.
 static EMPTY_LOCATION: OnceLock<Location> = OnceLock::new();
 
@@ -629,6 +632,9 @@ impl<'a> From<LocationSegment<'a>> for JsonPointerSegment<'a> {
 /// A cheap to clone JSON pointer that represents location with a JSON value.
 #[derive(Debug, Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct Location(Arc<str>);
+
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+const _: () = assert!(std::mem::size_of::<Location>() == 16);
 
 impl serde::Serialize for Location {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>

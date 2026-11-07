@@ -169,6 +169,10 @@ pub(crate) struct EvaluationNode {
     pub(crate) next_sibling: u32,
 }
 
+// Kept under 128 bytes so moves stay inline copies rather than `memcpy` calls.
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+const _: () = assert!(std::mem::size_of::<EvaluationNode>() == 112);
+
 /// Nodes per chunk. A power of two so the index split is a shift and a mask.
 const CHUNK: usize = 32;
 
