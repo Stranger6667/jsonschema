@@ -544,11 +544,19 @@ fn compile_items<'a, F: Json>(
             || ctx.draft() == Draft::Draft6
             || ctx.draft() == Draft::Draft4
         {
-            // Older drafts: items can be array or object
-            let limit = if parent.contains_key("additionalItems") || subschema.is_object() {
-                usize::MAX
-            } else {
-                subschema.as_array().map_or(usize::MAX, std::vec::Vec::len)
+            let limit = match subschema {
+                Value::Array(items) => {
+                    if parent.contains_key("additionalItems") {
+                        usize::MAX
+                    } else {
+                        items.len()
+                    }
+                }
+                // Schema-form `items` applies to every element.
+                Value::Object(_) | Value::Bool(_) => usize::MAX,
+                // A non-schema `items` is ignored and evaluates nothing, as is any
+                // `additionalItems` beside it.
+                _ => return Ok((None, false)),
             };
             Ok((Some(limit), false))
         } else {
@@ -884,9 +892,29 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
+    use crate::tests_util;
     use referencing::Draft;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // A non-schema `items` is ignored, as is any `additionalItems` beside it, so neither
+    // evaluates a single element. Only a registry resource can carry such a value, since
+    // top-level builds are meta-validated.
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "items": 42, "unevaluatedItems": false}); "invalid items alone")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "items": 42, "additionalItems": false, "unevaluatedItems": false}); "beside additionalItems")]
+    fn ignored_items_evaluates_nothing(resource: &Value) {
+        let registry = crate::Registry::new()
+            .add("https://example.com/tail", resource)
+            .expect("resource accepted")
+            .prepare()
+            .expect("registry build failed");
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&json!({"$ref": "https://example.com/tail"}))
+            .expect("schema compiles");
+        tests_util::is_valid_with(&validator, &json!([]));
+        tests_util::is_not_valid_with(&validator, &json!([1]));
+    }
 
     fn errors(schema: &Value, instance: &Value) -> Vec<(String, String, String)> {
         let validator = crate::validator_for(schema).expect("schema compiles");

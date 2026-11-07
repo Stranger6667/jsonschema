@@ -12,6 +12,7 @@
 - Numeric keywords misjudging instances against whole floats past 2^53 in the schema. [#1825](https://github.com/Stranger6667/jsonschema/issues/1825)
 - `$ref` pointers through a numeric object key (`#/responses/200`) skipping the references under their target.
 - `oneOf` / `anyOf` rejecting valid instances when a `$ref` inside a branch sits under an `$id`.
+- `unevaluatedItems` treated every element as evaluated beside a non-schema `items` value (it should evaluate none).
 - `validate!` raising `ValidationError` with an emptied `instance` for a value JSON cannot hold, where `each_error` and `evaluate` raise `EncodingError` or `TypeError`.
 
 ### Performance
