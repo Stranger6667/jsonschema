@@ -59,6 +59,9 @@ pub struct ValidationError<'a> {
     repr: Box<ValidationErrorRepr<'a>>,
 }
 
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+const _: () = assert!(std::mem::size_of::<ValidationError<'static>>() == 8);
+
 struct ValidationErrorRepr<'a> {
     instance: LazyInstance<'a>,
     kind: ValidationErrorKind,

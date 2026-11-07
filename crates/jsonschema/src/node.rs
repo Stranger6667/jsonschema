@@ -24,6 +24,9 @@ struct SchemaNodeInner<F: Json> {
     schema_location: OnceLock<SchemaLocation>,
 }
 
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+const _: () = assert!(std::mem::size_of::<SchemaNodeInner<SerdeJson>>() == 128);
+
 /// The `schemaLocation` an evaluation reports for a subschema, and its absolute location.
 struct SchemaLocation {
     formatted: Arc<str>,
@@ -72,6 +75,9 @@ pub(crate) struct SchemaNode<F: Json = SerdeJson> {
     inner: Arc<SchemaNodeInner<F>>,
     location: Location,
 }
+
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+const _: () = assert!(std::mem::size_of::<SchemaNode>() == 24);
 
 impl<F: Json> Clone for SchemaNode<F> {
     fn clone(&self) -> Self {
@@ -144,6 +150,9 @@ enum NodeValidators<F: Json> {
         validators: Vec<ArrayValidatorEntry<F>>,
     },
 }
+
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+const _: () = assert!(std::mem::size_of::<NodeValidators<SerdeJson>>() == 72);
 
 impl<F: Json> NodeValidators<F> {
     #[allow(clippy::inline_always)]
@@ -221,6 +230,9 @@ struct KeywordValidator<F: Json> {
     /// Asserts on the instance itself, so `is_valid` may run ahead of `validate`.
     is_leaf: bool,
 }
+
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+const _: () = assert!(std::mem::size_of::<KeywordValidator<SerdeJson>>() == 24);
 
 struct KeywordMetadata {
     location: Location,

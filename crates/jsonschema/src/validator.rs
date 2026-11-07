@@ -86,6 +86,9 @@ pub struct ValidationContext {
     matches: Option<Box<MatchAssumptions>>,
 }
 
+#[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
+const _: () = assert!(std::mem::size_of::<ValidationContext>() == 152);
+
 /// Checks for the state inline when dropped: the drop glue of a plain `Option<Box<_>>` is an
 /// out-of-line call even when there is nothing to free.
 #[derive(Default)]
