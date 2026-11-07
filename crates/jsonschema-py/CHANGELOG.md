@@ -33,6 +33,7 @@
 - `required` up to 40% faster when it lists every property of an object closed by `additionalProperties: false`.
 - `properties`, `anyOf` and other applicators faster on subschemas that only check a non-numeric `type`, directly or through `$ref`.
 - `evaluate()` up to 20% faster on instances with many errors, from fewer allocations per error.
+- `evaluate()` up to 20% faster, from rendering instance locations only when the output reads them.
 - `is_valid()` and `validate()` up to 14% faster on small instances, from a cheaper per-call validation context.
 
 ## [0.60.3] - 2026-10-27

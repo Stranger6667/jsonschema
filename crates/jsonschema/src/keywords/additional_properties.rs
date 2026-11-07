@@ -570,7 +570,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
                         &self.required_location,
                         self.required_absolute_location.as_ref(),
                     ),
-                    location.into(),
+                    ctx.instance_position(location),
                     None,
                     vec![error],
                     ChildList::default(),
@@ -923,7 +923,7 @@ impl<F: Json, R: PropertyPattern> Validate<F> for AdditionalPropertiesWithPatter
                     self.pattern_keyword_path.clone(),
                     self.pattern_keyword_absolute_location.clone(),
                     schema_location,
-                    location.into(),
+                    ctx.instance_position(location),
                     Some(annotation),
                     ChildList::default(),
                 );
@@ -1107,7 +1107,7 @@ impl<F: Json, R: PropertyPattern> Validate<F>
                     self.pattern_keyword_path.clone(),
                     self.pattern_keyword_absolute_location.clone(),
                     schema_location,
-                    location.into(),
+                    ctx.instance_position(location),
                     Some(annotation),
                     ChildList::default(),
                 );

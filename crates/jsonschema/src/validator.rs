@@ -7,6 +7,7 @@ use crate::{
     error::ErrorIterator,
     evaluation::{
         Annotations, ChildList, ErrorDescription, Evaluation, EvaluationArena, EvaluationNode,
+        InstancePosition,
     },
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -77,7 +78,7 @@ pub struct ValidationContext {
     ref_visits: u32,
     evaluation_path_calls: u32,
     /// Instance location of the node being evaluated; only the `evaluate` path sets it.
-    instance_location: Option<Location>,
+    instance_location: Option<InstancePosition>,
     /// State most `is_valid` and `validate` calls never create, behind one pointer: each call
     /// creates and drops a context, and dropping an empty one is a single check.
     lazy: Lazy,
@@ -87,7 +88,7 @@ pub struct ValidationContext {
 }
 
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
-const _: () = assert!(std::mem::size_of::<ValidationContext>() == 152);
+const _: () = assert!(std::mem::size_of::<ValidationContext>() == 144);
 
 /// Checks for the state inline when dropped: the drop glue of a plain `Option<Box<_>>` is an
 /// out-of-line call even when there is nothing to free.
@@ -204,7 +205,16 @@ impl ValidationContext {
 
     #[inline]
     fn lazy(&mut self) -> &mut LazyState {
-        self.lazy.0.get_or_insert_with(Box::default)
+        if self.lazy.0.is_none() {
+            self.create_lazy();
+        }
+        self.lazy.0.as_mut().expect("created above")
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn create_lazy(&mut self) {
+        *self.lazy.0 = Some(Box::default());
     }
 
     /// Holds every node of the tree the `evaluate` path builds.
@@ -214,18 +224,32 @@ impl ValidationContext {
     }
 
     #[inline]
-    pub(crate) fn instance_location(&self) -> Option<&Location> {
-        self.instance_location.as_ref()
+    pub(crate) fn enter_instance_location(
+        &mut self,
+        position: InstancePosition,
+    ) -> Option<InstancePosition> {
+        self.instance_location.replace(position)
     }
 
     #[inline]
-    pub(crate) fn enter_instance_location(&mut self, location: Location) -> Option<Location> {
-        self.instance_location.replace(location)
-    }
-
-    #[inline]
-    pub(crate) fn leave_instance_location(&mut self, previous: Option<Location>) {
+    pub(crate) fn leave_instance_location(&mut self, previous: Option<InstancePosition>) {
         self.instance_location = previous;
+    }
+
+    /// The position of `location`, rendered now since its parent position is not known.
+    pub(crate) fn instance_position(&mut self, location: &LazyLocation) -> InstancePosition {
+        if location.parent().is_none() {
+            return InstancePosition::ROOT;
+        }
+        self.arena().rendered_position(location.into())
+    }
+
+    /// The position one segment below the one being evaluated, rendered only when read.
+    pub(crate) fn instance_position_below(&mut self, location: &LazyLocation) -> InstancePosition {
+        match self.instance_location {
+            Some(parent) => self.arena().position_below(parent, location.segment()),
+            None => self.instance_position(location),
+        }
     }
 
     /// Returns `true` if cycle detected. `None` identity disables cycle tracking for this node.
@@ -415,7 +439,7 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
-        instance_location: &Location,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
@@ -810,6 +834,7 @@ impl<F: Json> Validator<F> {
     fn evaluation_from_errors(errors: Vec<ValidationError<'_>>) -> Evaluation {
         let root_location = crate::evaluation::format_keyword_location(&Location::new(), None);
         let mut arena = EvaluationArena::default();
+        let root = arena.rendered_position(Location::new());
         if errors.is_empty() {
             return Evaluation::with_root(
                 arena,
@@ -817,7 +842,7 @@ impl<F: Json> Validator<F> {
                     Location::new(),
                     None,
                     root_location,
-                    Location::new(),
+                    root,
                     None,
                     ChildList::default(),
                 ),
@@ -825,13 +850,14 @@ impl<F: Json> Validator<F> {
         }
         let mut children = ChildList::default();
         for error in &errors {
+            let position = arena.rendered_position(error.instance_path().clone());
             children.push(
                 &mut arena,
                 EvaluationNode::invalid(
                     error.evaluation_path().clone(),
                     None,
                     crate::evaluation::format_keyword_location(error.schema_path(), None),
-                    error.instance_path().clone(),
+                    position,
                     None,
                     vec![ErrorDescription::from_validation_error(error)],
                     ChildList::default(),
@@ -844,7 +870,7 @@ impl<F: Json> Validator<F> {
                 Location::new(),
                 None,
                 root_location,
-                Location::new(),
+                root,
                 None,
                 Vec::new(),
                 children,

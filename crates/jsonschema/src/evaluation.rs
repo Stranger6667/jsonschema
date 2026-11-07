@@ -4,12 +4,16 @@ use crate::{
     ValidationError,
 };
 use ahash::AHashMap;
-use referencing::Uri;
+use referencing::{JsonPointerSegment, Uri};
 use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Serialize,
 };
-use std::{borrow::Cow, fmt, sync::Arc};
+use std::{
+    borrow::Cow,
+    fmt,
+    sync::{Arc, OnceLock},
+};
 
 /// Annotations associated with an output unit.
 #[derive(Debug, Clone, PartialEq)]
@@ -155,12 +159,113 @@ impl fmt::Display for ErrorDescription {
 
 pub(crate) const NO_NODE: u32 = u32::MAX;
 
+/// An instance position recorded during evaluation. Its JSON Pointer is rendered on first read,
+/// since most positions are never shown.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct InstancePosition(u32);
+
+impl InstancePosition {
+    /// The instance itself, implicit in every arena.
+    pub(crate) const ROOT: InstancePosition = InstancePosition(0);
+}
+
+#[derive(Debug, Clone, Copy)]
+struct Position {
+    parent: u32,
+    segment: PositionSegment,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum PositionSegment {
+    /// A byte range of `InstancePositions::keys`.
+    Key {
+        start: u32,
+        end: u32,
+    },
+    Index(usize),
+    /// An index into `InstancePositions::prerendered`, for positions whose parent is unknown.
+    Rendered(u32),
+}
+
+#[derive(Debug, Default)]
+struct InstancePositions {
+    /// Every position but the root, which is implicit. Parents come before their children, so one
+    /// forward pass renders every position. Chunks are never resized, so growth copies nothing.
+    entries: Vec<Vec<Position>>,
+    len: usize,
+    /// Every property name below a recorded position, so recording one allocates nothing per node.
+    keys: String,
+    prerendered: Vec<Location>,
+    /// Every position's pointer, rendered together on the first read.
+    rendered: OnceLock<Box<[Location]>>,
+}
+
+impl InstancePositions {
+    fn push(&mut self, position: Position) -> InstancePosition {
+        debug_assert!(
+            self.rendered.get().is_none(),
+            "positions are recorded before any is read"
+        );
+        let id = u32::try_from(self.len + 1).expect("evaluation exceeded u32 positions");
+        if self.len % POSITION_CHUNK == 0 {
+            self.entries.push(Vec::with_capacity(POSITION_CHUNK));
+        }
+        self.entries
+            .last_mut()
+            .expect("a chunk was just reserved")
+            .push(position);
+        self.len += 1;
+        InstancePosition(id)
+    }
+
+    fn below(&self, parent: &Location, segment: PositionSegment) -> Location {
+        match segment {
+            PositionSegment::Key { start, end } => parent.join_pointer_segment(
+                &JsonPointerSegment::Key(Cow::Borrowed(&self.keys[start as usize..end as usize])),
+            ),
+            PositionSegment::Index(index) => {
+                parent.join_pointer_segment(&JsonPointerSegment::Index(index))
+            }
+            PositionSegment::Rendered(index) => self.prerendered[index as usize].clone(),
+        }
+    }
+
+    fn location(&self, position: InstancePosition) -> &Location {
+        let rendered = self.rendered.get_or_init(|| {
+            let mut rendered: Vec<Location> = Vec::with_capacity(self.len + 1);
+            rendered.push(Location::new());
+            for entry in self.entries.iter().flatten() {
+                let location = match entry.segment {
+                    PositionSegment::Rendered(index) => self.prerendered[index as usize].clone(),
+                    segment => self.below(&rendered[entry.parent as usize], segment),
+                };
+                rendered.push(location);
+            }
+            rendered.into_boxed_slice()
+        });
+        &rendered[position.0 as usize]
+    }
+
+    /// Renders one position without caching it, for reads while positions are still recorded.
+    fn render(&self, position: InstancePosition) -> Location {
+        if position == InstancePosition::ROOT {
+            return Location::new();
+        }
+        let index = position.0 as usize - 1;
+        let entry = self.entries[index / POSITION_CHUNK][index % POSITION_CHUNK];
+        match entry.segment {
+            PositionSegment::Rendered(index) => self.prerendered[index as usize].clone(),
+            segment => self.below(&self.render(InstancePosition(entry.parent)), segment),
+        }
+    }
+}
+
 #[derive(Debug, PartialEq)]
 pub(crate) struct EvaluationNode {
     pub(crate) keyword_location: Location,
     pub(crate) absolute_keyword_location: Option<Arc<Uri<String>>>,
     pub(crate) schema_location: Arc<str>,
-    pub(crate) instance_location: Location,
+    pub(crate) instance_location: InstancePosition,
     pub(crate) valid: bool,
     pub(crate) annotations: Option<Annotations>,
     pub(crate) dropped_annotations: Option<Annotations>,
@@ -171,7 +276,10 @@ pub(crate) struct EvaluationNode {
 
 // Kept under 128 bytes so moves stay inline copies rather than `memcpy` calls.
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
-const _: () = assert!(std::mem::size_of::<EvaluationNode>() == 112);
+const _: () = assert!(std::mem::size_of::<EvaluationNode>() == 96);
+
+/// Positions per chunk of `InstancePositions::entries`.
+const POSITION_CHUNK: usize = 256;
 
 /// Nodes per chunk. A power of two so the index split is a shift and a mask.
 const CHUNK: usize = 32;
@@ -184,9 +292,55 @@ const CHUNK: usize = 32;
 pub(crate) struct EvaluationArena {
     chunks: Vec<Vec<EvaluationNode>>,
     len: usize,
+    positions: InstancePositions,
 }
 
 impl EvaluationArena {
+    /// Records a position whose pointer is already rendered.
+    pub(crate) fn rendered_position(&mut self, location: Location) -> InstancePosition {
+        let index = u32::try_from(self.positions.prerendered.len())
+            .expect("evaluation exceeded u32 positions");
+        self.positions.prerendered.push(location);
+        self.positions.push(Position {
+            parent: NO_NODE,
+            segment: PositionSegment::Rendered(index),
+        })
+    }
+
+    /// Records the position one `segment` below `parent`.
+    pub(crate) fn position_below(
+        &mut self,
+        parent: InstancePosition,
+        segment: &JsonPointerSegment<'_>,
+    ) -> InstancePosition {
+        let segment = match segment {
+            JsonPointerSegment::Key(key) => {
+                let start = self.positions.keys.len();
+                self.positions.keys.push_str(key);
+                PositionSegment::Key {
+                    start: u32::try_from(start).expect("evaluation exceeded u32 key bytes"),
+                    end: u32::try_from(self.positions.keys.len())
+                        .expect("evaluation exceeded u32 key bytes"),
+                }
+            }
+            JsonPointerSegment::Index(index) => PositionSegment::Index(*index),
+        };
+        self.positions.push(Position {
+            parent: parent.0,
+            segment,
+        })
+    }
+
+    /// The pointer of `position`, once every position is recorded.
+    pub(crate) fn location(&self, position: InstancePosition) -> &Location {
+        self.positions.location(position)
+    }
+
+    /// The pointer of `position`, while positions are still being recorded.
+    pub(crate) fn render(&self, position: InstancePosition) -> Location {
+        self.positions.render(position)
+    }
+
     #[inline]
     pub(crate) fn push(&mut self, node: EvaluationNode) -> u32 {
         let index = u32::try_from(self.len).expect("evaluation exceeded u32 nodes");
@@ -310,7 +464,7 @@ impl EvaluationNode {
         keyword_location: Location,
         absolute_keyword_location: Option<Arc<Uri<String>>>,
         schema_location: impl Into<Arc<str>>,
-        instance_location: Location,
+        instance_location: InstancePosition,
         annotations: Option<Annotations>,
         children: ChildList,
     ) -> Self {
@@ -333,7 +487,7 @@ impl EvaluationNode {
         keyword_location: Location,
         absolute_keyword_location: Option<Arc<Uri<String>>>,
         schema_location: impl Into<Arc<str>>,
-        instance_location: Location,
+        instance_location: InstancePosition,
         annotations: Option<Annotations>,
         errors: Vec<ErrorDescription>,
         children: ChildList,
@@ -880,7 +1034,10 @@ where
     state.serialize_field("valid", &node.valid)?;
     state.serialize_field("evaluationPath", node.keyword_location.as_str())?;
     state.serialize_field("schemaLocation", node.schema_location.as_ref())?;
-    state.serialize_field("instanceLocation", node.instance_location.as_str())?;
+    state.serialize_field(
+        "instanceLocation",
+        arena.location(node.instance_location).as_str(),
+    )?;
     if let Some(annotations) = &node.annotations {
         state.serialize_field("annotations", annotations)?;
     }
@@ -910,7 +1067,7 @@ pub(crate) fn absorbed_error_node(
         crate::paths::evaluation_path(tracker, keyword_location, ctx),
         absolute_location.cloned(),
         format_keyword_location(keyword_location, absolute_location),
-        location.into(),
+        ctx.instance_position(location),
         None,
         vec![error],
         ChildList::default(),
@@ -963,7 +1120,7 @@ impl<'a> OutputUnit<'a> {
     #[inline]
     #[must_use]
     pub fn instance_location(&self) -> &'a Location {
-        &self.node().instance_location
+        self.arena.location(self.node().instance_location)
     }
     /// Annotations this unit produced (`annotations`).
     #[inline]
@@ -1270,7 +1427,7 @@ impl<'a> Iterator for AnnotationIter<'a> {
                 return Some(AnnotationEntry {
                     schema_location: &node.schema_location,
                     absolute_keyword_location: node.absolute_keyword_location.as_deref(),
-                    instance_location: &node.instance_location,
+                    instance_location: self.nodes.arena.location(node.instance_location),
                     annotations,
                 });
             }
@@ -1337,7 +1494,7 @@ impl<'a> Iterator for ErrorIter<'a> {
                     let entry = ErrorEntry {
                         schema_location: &node.schema_location,
                         absolute_keyword_location: node.absolute_keyword_location.as_deref(),
-                        instance_location: &node.instance_location,
+                        instance_location: self.nodes.arena.location(node.instance_location),
                         error: &node.errors[idx],
                     };
                     self.current = Some((node, idx + 1));
@@ -1419,7 +1576,7 @@ mod tests {
             loc(),
             None,
             schema.to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(ann)),
             ChildList::default(),
         )
@@ -1430,7 +1587,7 @@ mod tests {
             loc(),
             None,
             schema.to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             vec![ErrorDescription::from_string(msg)],
             ChildList::default(),
@@ -1445,7 +1602,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"root": true}))),
             ChildList::from_nodes(&mut arena, vec![child]),
         );
@@ -1464,7 +1621,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             vec![ErrorDescription::from_string("root error")],
             ChildList::from_nodes(&mut arena, vec![child]),
@@ -1483,7 +1640,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             ChildList::default(),
         );
@@ -1499,7 +1656,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             vec![ErrorDescription::from_string("error")],
             ChildList::default(),
@@ -1516,7 +1673,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             ChildList::default(),
         );
@@ -1533,7 +1690,7 @@ mod tests {
             loc(),
             None,
             "#".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             ChildList::default(),
         );
@@ -1565,7 +1722,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"root": true}))),
             ChildList::from_nodes(&mut arena, vec![child1, child2]),
         );
@@ -1611,7 +1768,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"root": "annotation"}))),
             ChildList::from_nodes(&mut arena, vec![child]),
         );
@@ -1642,11 +1799,13 @@ mod tests {
     #[test]
     fn outputs_include_errors_and_dropped_annotations() {
         let mut arena = EvaluationArena::default();
+        let second_item =
+            arena.position_below(InstancePosition::ROOT, &JsonPointerSegment::Index(1));
         let invalid_child = EvaluationNode::invalid(
             loc(),
             None,
             "/items/type".to_string(),
-            Location::new().join(1usize),
+            second_item,
             None,
             vec![ErrorDescription::from_string("child error")],
             ChildList::default(),
@@ -1656,7 +1815,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"dropped": true}))),
             vec![ErrorDescription::from_string("root failure")],
             ChildList::from_nodes(&mut arena, vec![invalid_child, prefix_child]),
@@ -1731,7 +1890,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             ChildList::default(),
         );
@@ -1755,7 +1914,7 @@ mod tests {
             loc(),
             None,
             "/level2".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"level": 2}))),
             ChildList::from_nodes(&mut arena, vec![level3]),
         );
@@ -1763,7 +1922,7 @@ mod tests {
             loc(),
             None,
             "/level1".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"level": 1}))),
             ChildList::from_nodes(&mut arena, vec![level2]),
         );
@@ -1771,7 +1930,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"level": 0}))),
             ChildList::from_nodes(&mut arena, vec![level1]),
         );
@@ -1800,7 +1959,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"root": true}))),
             children,
         );
@@ -1822,7 +1981,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             errors,
             ChildList::default(),
@@ -1846,7 +2005,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"attempted": true}))),
             vec![ErrorDescription::from_string("root failed")],
             ChildList::from_nodes(&mut arena, vec![valid_child, invalid_child]),
@@ -1869,7 +2028,7 @@ mod tests {
             loc(),
             None,
             "/no_ann".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             ChildList::default(),
         );
@@ -1879,7 +2038,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             ChildList::from_nodes(&mut arena, vec![no_annotation, with_annotation]),
         );
@@ -1897,7 +2056,7 @@ mod tests {
             loc(),
             None,
             "/no_error".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             Some(annotation(json!({"ok": true}))),
             ChildList::default(),
         );
@@ -1907,7 +2066,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             ChildList::from_nodes(&mut arena, vec![no_error, with_error]),
         );
@@ -1980,7 +2139,7 @@ mod tests {
             loc(),
             None,
             "/required".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             None,
             errors,
             ChildList::default(),
@@ -2032,7 +2191,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             annotations.clone(),
             vec![ErrorDescription::from_string("failed")],
             ChildList::default(),
@@ -2054,7 +2213,7 @@ mod tests {
             loc(),
             None,
             "/root".to_string(),
-            loc(),
+            InstancePosition::ROOT,
             annotations.clone(),
             ChildList::default(),
         );

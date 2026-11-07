@@ -494,7 +494,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
                         &self.required_location,
                         self.required_absolute_location.as_ref(),
                     ),
-                    location.into(),
+                    ctx.instance_position(location),
                     None,
                     required_errors,
                     ChildList::default(),

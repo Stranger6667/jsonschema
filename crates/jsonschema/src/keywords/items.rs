@@ -2,6 +2,7 @@ use crate::{
     compiler::{self, DeferredAbsoluteLocation},
     evaluation::{
         format_keyword_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
+        InstancePosition,
     },
     keywords::{BoxedValidator, CompilationResult},
     node::SchemaNode,
@@ -429,20 +430,17 @@ impl<T: ItemType, F: Json> ItemsTypeValidator<T, F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationNode {
-        let instance_location = match ctx.instance_location() {
-            Some(parent) => parent.join_pointer_segment(location.segment()),
-            None => location.into(),
-        };
+        let instance_location = ctx.instance_position_below(location);
         let keyword_location = crate::paths::evaluation_path(tracker, &self.items.location, ctx);
         // A matching element passes `type` with no annotations, so its keyword node needs no call.
         let type_result = if T::matches::<F>(item) {
             EvaluationResult::valid_empty()
         } else {
-            let previous = ctx.enter_instance_location(instance_location.clone());
+            let previous = ctx.enter_instance_location(instance_location);
             let result = self.type_validator.evaluate_with_location(
                 item,
                 location,
-                &instance_location,
+                instance_location,
                 tracker,
                 ctx,
             );
@@ -457,7 +455,7 @@ impl<T: ItemType, F: Json> ItemsTypeValidator<T, F> {
                 crate::paths::evaluation_path(tracker, &self.type_.location, ctx),
                 self.type_.absolute_location().cloned(),
                 self.type_.schema_location(),
-                instance_location.clone(),
+                instance_location,
                 annotations,
                 children,
             ),
@@ -469,7 +467,7 @@ impl<T: ItemType, F: Json> ItemsTypeValidator<T, F> {
                 crate::paths::evaluation_path(tracker, &self.type_.location, ctx),
                 self.type_.absolute_location().cloned(),
                 self.type_.schema_location(),
-                instance_location.clone(),
+                instance_location,
                 annotations,
                 errors,
                 children,
@@ -748,7 +746,7 @@ impl AbsorbedKeywords {
         &self,
         instance: &F::Node<'_>,
         is_array: bool,
-        instance_location: &Location,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationNode {
@@ -767,7 +765,7 @@ impl AbsorbedKeywords {
         &self,
         instance: &F::Node<'_>,
         count: Option<u64>,
-        instance_location: &Location,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
         children: &mut ChildList,
@@ -778,7 +776,7 @@ impl AbsorbedKeywords {
                 .then(|| {
                     ErrorDescription::from_validation_error(&self.min_items_error::<F>(
                         instance,
-                        instance_location.clone(),
+                        ctx.arena().render(instance_location),
                         tracker,
                     ))
                 });
@@ -791,7 +789,7 @@ impl AbsorbedKeywords {
                 .then(|| {
                     ErrorDescription::from_validation_error(&self.max_items_error::<F>(
                         instance,
-                        instance_location.clone(),
+                        ctx.arena().render(instance_location),
                         tracker,
                     ))
                 });
@@ -805,7 +803,7 @@ impl AbsorbedKeywords {
 fn unit(
     site: &SchemaSite,
     error: Option<ErrorDescription>,
-    instance_location: &Location,
+    instance_location: InstancePosition,
     tracker: Option<&RefTracker>,
     ctx: &mut ValidationContext,
 ) -> EvaluationNode {
@@ -815,7 +813,7 @@ fn unit(
             evaluation_path,
             site.absolute_location().cloned(),
             site.schema_location(),
-            instance_location.clone(),
+            instance_location,
             None,
             ChildList::default(),
         ),
@@ -823,7 +821,7 @@ fn unit(
             evaluation_path,
             site.absolute_location().cloned(),
             site.schema_location(),
-            instance_location.clone(),
+            instance_location,
             None,
             vec![error],
             ChildList::default(),

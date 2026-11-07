@@ -1,6 +1,6 @@
 use crate::{
     compiler::{Context, DeferredAbsoluteLocation},
-    evaluation::{Annotations, ChildList, EvaluationNode},
+    evaluation::{Annotations, ChildList, EvaluationNode, InstancePosition},
     keywords::{items::AbsorbedKeywords, BoxedValidator, BuiltinKeyword, Keyword},
     paths::{LazyLocation, Location, RefTracker},
     types::{JsonType, JsonTypeSet},
@@ -453,14 +453,20 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+        self.evaluate_with_location(
+            instance,
+            location,
+            ctx.instance_position(location),
+            tracker,
+            ctx,
+        )
     }
 
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
-        instance_location: &Location,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
@@ -628,8 +634,8 @@ impl<F: Json> SchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationNode {
-        let instance_location: Location = location.into();
-        self.evaluate_instance_at(instance, location, &instance_location, tracker, ctx)
+        let instance_location = ctx.instance_position(location);
+        self.evaluate_instance_at(instance, location, instance_location, tracker, ctx)
     }
 
     /// [`Self::evaluate_instance`] for a position one segment below the one being evaluated.
@@ -642,12 +648,12 @@ impl<F: Json> SchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationNode {
-        let instance_location = match ctx.instance_location() {
-            Some(parent) => parent.join_pointer_segment(location.segment()),
-            None => location.into(),
-        };
-        debug_assert_eq!(instance_location, Location::from(location));
-        self.evaluate_instance_at(instance, location, &instance_location, tracker, ctx)
+        let instance_location = ctx.instance_position_below(location);
+        debug_assert_eq!(
+            ctx.arena().render(instance_location),
+            Location::from(location)
+        );
+        self.evaluate_instance_at(instance, location, instance_location, tracker, ctx)
     }
 
     /// [`Self::evaluate_instance`] for a caller that already rendered this instance position.
@@ -655,20 +661,18 @@ impl<F: Json> SchemaNode<F> {
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
-        instance_location: &Location,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationNode {
-        let instance_location = instance_location.clone();
-
         let keyword_location = crate::paths::evaluation_path(tracker, &self.location, ctx);
         let SchemaLocation {
             formatted: schema_location,
             absolute,
         } = self.schema_location();
 
-        let previous = ctx.enter_instance_location(instance_location.clone());
-        let result = self.evaluate_at(instance, location, &instance_location, tracker, ctx);
+        let previous = ctx.enter_instance_location(instance_location);
+        let result = self.evaluate_at(instance, location, instance_location, tracker, ctx);
         ctx.leave_instance_location(previous);
 
         match result {
@@ -703,7 +707,7 @@ impl<F: Json> SchemaNode<F> {
     fn evaluate_subschemas<'a, 'i, I>(
         instance: &F::Node<'i>,
         location: &LazyLocation,
-        instance_loc: &Location,
+        instance_loc: InstancePosition,
         tracker: Option<&RefTracker>,
         subschemas: I,
         annotations: Option<Annotations>,
@@ -733,7 +737,7 @@ impl<F: Json> SchemaNode<F> {
     fn evaluate_with_absorbed(
         instance: &F::Node<'_>,
         location: &LazyLocation,
-        instance_loc: &Location,
+        instance_loc: InstancePosition,
         tracker: Option<&RefTracker>,
         validators: &[KeywordValidator<F>],
         metadata: &[KeywordMetadata],
@@ -804,7 +808,7 @@ impl<F: Json> SchemaNode<F> {
     fn push_subschemas<'a, 'i, I>(
         instance: &F::Node<'i>,
         location: &LazyLocation,
-        instance_loc: &Location,
+        instance_loc: InstancePosition,
         tracker: Option<&RefTracker>,
         subschemas: I,
         children: &mut ChildList,
@@ -843,7 +847,7 @@ impl<F: Json> SchemaNode<F> {
                     eval_path,
                     absolute_location,
                     formatted_schema_location,
-                    instance_loc.clone(),
+                    instance_loc,
                     annotations,
                     children,
                 ),
@@ -857,7 +861,7 @@ impl<F: Json> SchemaNode<F> {
                         eval_path,
                         absolute_location,
                         formatted_schema_location,
-                        instance_loc.clone(),
+                        instance_loc,
                         annotations,
                         errors,
                         children,
@@ -1083,14 +1087,20 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        self.evaluate_at(instance, location, &location.into(), tracker, ctx)
+        self.evaluate_at(
+            instance,
+            location,
+            ctx.instance_position(location),
+            tracker,
+            ctx,
+        )
     }
 
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
-        instance_location: &Location,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
@@ -1104,7 +1114,7 @@ impl<F: Json> SchemaNode<F> {
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
-        instance_loc: &Location,
+        instance_loc: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {

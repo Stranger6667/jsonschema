@@ -1,4 +1,4 @@
-use crate::LazyInstance;
+use crate::{evaluation::InstancePosition, LazyInstance};
 use std::borrow::Cow;
 
 use crate::{
@@ -113,14 +113,20 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+        self.evaluate_with_location(
+            instance,
+            location,
+            ctx.instance_position(location),
+            tracker,
+            ctx,
+        )
     }
 
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
-        instance_location: &Location,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
@@ -261,14 +267,20 @@ impl<F: Json> Validate<F> for DependentRequiredValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+        self.evaluate_with_location(
+            instance,
+            location,
+            ctx.instance_position(location),
+            tracker,
+            ctx,
+        )
     }
 
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
-        instance_location: &Location,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
@@ -379,14 +391,20 @@ impl<F: Json> Validate<F> for DependentSchemasValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        self.evaluate_with_location(instance, location, &location.into(), tracker, ctx)
+        self.evaluate_with_location(
+            instance,
+            location,
+            ctx.instance_position(location),
+            tracker,
+            ctx,
+        )
     }
 
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
-        instance_location: &Location,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
