@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-11-08
+
 ### Added
 
 - `Evaluation::root()` and `OutputUnit` for walking evaluation output units without serializing them.
@@ -2041,7 +2043,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.0...HEAD
+[0.61.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.2...rust-v0.61.0
 [0.60.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.1...rust-v0.60.2
 [0.60.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.0...rust-v0.60.1
 [0.60.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.59.0...rust-v0.60.0
