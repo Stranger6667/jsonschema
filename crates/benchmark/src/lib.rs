@@ -75,6 +75,7 @@ struct BenchData {
 pub struct BenchInstance {
     pub name: String,
     pub data: Value,
+    pub valid: bool,
 }
 
 pub struct BenchmarkSuite {
@@ -91,6 +92,7 @@ impl BenchmarkSuite {
                     instances: vec![BenchInstance {
                         name: "Zuora".to_string(),
                         data: read_json(ZUORA),
+                        valid: true,
                     }],
                 }),
                 LazyLock::new(|| BenchData {
@@ -99,6 +101,7 @@ impl BenchmarkSuite {
                     instances: vec![BenchInstance {
                         name: "Kubernetes".to_string(),
                         data: read_json(KUBERNETES),
+                        valid: true,
                     }],
                 }),
                 LazyLock::new(|| BenchData {
@@ -107,6 +110,7 @@ impl BenchmarkSuite {
                     instances: vec![BenchInstance {
                         name: "Canada".to_string(),
                         data: read_json(CANADA),
+                        valid: true,
                     }],
                 }),
                 LazyLock::new(|| BenchData {
@@ -115,6 +119,7 @@ impl BenchmarkSuite {
                     instances: vec![BenchInstance {
                         name: "Catalog".to_string(),
                         data: read_json(CITM),
+                        valid: true,
                     }],
                 }),
                 LazyLock::new(|| BenchData {
@@ -124,10 +129,12 @@ impl BenchmarkSuite {
                         BenchInstance {
                             name: "Valid".to_string(),
                             data: read_json(FAST_VALID),
+                            valid: true,
                         },
                         BenchInstance {
                             name: "Invalid".to_string(),
                             data: read_json(FAST_INVALID),
+                            valid: false,
                         },
                     ],
                 }),
@@ -137,6 +144,7 @@ impl BenchmarkSuite {
                     instances: vec![BenchInstance {
                         name: "Fhir".to_string(),
                         data: read_json(FHIR),
+                        valid: true,
                     }],
                 }),
                 LazyLock::new(|| BenchData {
@@ -145,6 +153,7 @@ impl BenchmarkSuite {
                     instances: vec![BenchInstance {
                         name: "StructuredContent".to_string(),
                         data: read_json(RECURSIVE_INSTANCE),
+                        valid: true,
                     }],
                 }),
                 LazyLock::new(|| BenchData {
@@ -153,6 +162,7 @@ impl BenchmarkSuite {
                     instances: vec![BenchInstance {
                         name: "Petstore".to_string(),
                         data: read_json(PETSTORE_31),
+                        valid: true,
                     }],
                 }),
             ],
@@ -184,13 +194,15 @@ static KEYWORD_BENCHMARKS: LazyLock<Vec<KeywordBenchmark>> =
 
 pub fn run_keyword_benchmarks(bench: &mut BenchFunc) {
     for kb in KEYWORD_BENCHMARKS.iter() {
-        for (prefix, values) in [("valid", &kb.valid), ("invalid", &kb.invalid)] {
+        for (prefix, valid, values) in [("valid", true, &kb.valid), ("invalid", false, &kb.invalid)]
+        {
             let instances: Vec<_> = values
                 .iter()
                 .enumerate()
                 .map(|(idx, instance)| BenchInstance {
                     name: format!("{prefix}/{idx}"),
                     data: instance.clone(),
+                    valid,
                 })
                 .collect();
             bench(&kb.name, &kb.schema, &instances);
