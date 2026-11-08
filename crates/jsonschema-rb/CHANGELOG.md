@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.61.0] - 2026-11-08
+
 ### Fixed
 
 - `.` in `pattern` and `patternProperties` matched `\r`, U+2028 and U+2029 (it should reject every line terminator).
@@ -733,7 +735,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.0...HEAD
+[0.61.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.2...ruby-v0.61.0
 [0.60.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.1...ruby-v0.60.2
 [0.60.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.0...ruby-v0.60.1
 [0.60.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.59.0...ruby-v0.60.0
