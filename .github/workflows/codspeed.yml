@@ -67,7 +67,7 @@ jobs:
 
       - run: cargo codspeed build -p ${{ matrix.package }} ${{ matrix.features }} ${{ matrix.benches }}
 
-      - uses: CodSpeedHQ/action@61efe07e57e55bedeab750c434504de272a56e8c # v5.6.1
+      - uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5.6.3
         with:
           run: cargo codspeed run -p ${{ matrix.package }}
           mode: "simulation"
@@ -100,7 +100,7 @@ jobs:
           uv venv --python 3.14
           uv pip install ".[bench]" ../jsonschema-bench-pyo3
 
-      - uses: CodSpeedHQ/action@61efe07e57e55bedeab750c434504de272a56e8c # v5.6.1
+      - uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5.6.3
         with:
           working-directory: crates/jsonschema-py
           run: .venv/bin/pytest benches/bench.py -k '(jsonschema-rs or not jsonschema) and not py-parse' --codspeed
@@ -141,7 +141,7 @@ jobs:
         env:
           JSONSCHEMA_RB_CODEGEN_BENCH: ${{ matrix.codegen }}
 
-      - uses: CodSpeedHQ/action@61efe07e57e55bedeab750c434504de272a56e8c # v5.6.1
+      - uses: CodSpeedHQ/action@af75f77f17a054769abefaa42fe8dc2975469b5f # v5.6.3
         with:
           working-directory: crates/jsonschema-rb
           config: crates/jsonschema-rb/codspeed-${{ matrix.group }}.yml
