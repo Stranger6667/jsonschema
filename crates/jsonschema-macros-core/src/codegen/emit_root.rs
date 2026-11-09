@@ -60,6 +60,26 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
         .iter()
         .map(|(name, pattern)| {
             let helper_ident = format_ident!("{}", name);
+            if ctx.repeated_classes.contains(pattern) {
+                let params = match ctx.config.pattern_options {
+                    PatternEngineConfig::FancyRegex { .. } => quote! {
+                        subject: &str,
+                        _schema_path: &str,
+                        _pattern: Option<&str>,
+                        _instance_path: Option<&__paths::LazyLocation>,
+                    },
+                    PatternEngineConfig::Regex { .. } => quote! { subject: &str },
+                };
+                // The engine would unroll the count into as many copies of the class.
+                return quote! {
+                    #[inline]
+                    fn #helper_ident(#params) -> bool {
+                        static CLASS: __Lazy<Option<__re::RepeatedClass>> =
+                            __Lazy::new(|| __re::RepeatedClass::from_translated(#pattern));
+                        CLASS.as_ref().is_some_and(|class| class.is_match(subject))
+                    }
+                };
+            }
             match ctx.config.pattern_options {
                 PatternEngineConfig::FancyRegex {
                     backtrack_limit,

@@ -441,6 +441,42 @@ mod tests {
         );
     }
 
+    const HUGE_COUNT: &str = r"^[^\p{C}]{1,204800}$";
+
+    // The engine would unroll the count past the default size limit; every site that takes a
+    // pattern counts characters instead, and tells a matching key from a control character.
+    #[test_case(&json!({"patternProperties": {HUGE_COUNT: {"type": "string"}}}), &json!({"\u{1}": 1}), &json!({"ab": 1}); "plain")]
+    #[test_case(&json!({"patternProperties": {"^x": {}, HUGE_COUNT: {"type": "string"}}}), &json!({"\u{1}": 1}), &json!({"ab": 1}); "plain many")]
+    #[test_case(&json!({"patternProperties": {"a+": {}, HUGE_COUNT: {"type": "string"}}}), &json!({"\u{1}": 1}), &json!({"ab": 1}); "plain beside a regex")]
+    #[test_case(&json!({"additionalProperties": true, "patternProperties": {"a+": {}, HUGE_COUNT: {"type": "string"}}}), &json!({"\u{1}": 1}), &json!({"ab": 1}); "additional true beside a regex")]
+    #[test_case(&json!({"unevaluatedProperties": false, "patternProperties": {"a+": {}, HUGE_COUNT: {}}}), &json!({"ab": 1}), &json!({"\u{1}": 1}); "unevaluated beside a regex")]
+    #[test_case(&json!({"additionalProperties": true, "patternProperties": {HUGE_COUNT: {"type": "string"}}}), &json!({"\u{1}": 1}), &json!({"ab": 1}); "additional true")]
+    #[test_case(&json!({"additionalProperties": false, "patternProperties": {HUGE_COUNT: {}}}), &json!({"ab": 1}), &json!({"\u{1}": 1}); "additional false")]
+    #[test_case(&json!({"additionalProperties": {"type": "integer"}, "patternProperties": {HUGE_COUNT: {"type": "string"}}}), &json!({"\u{1}": 1}), &json!({"ab": 1}); "additional schema")]
+    #[test_case(&json!({"properties": {"foo": {}}, "additionalProperties": false, "patternProperties": {HUGE_COUNT: {}}}), &json!({"ab": 1}), &json!({"\u{1}": 1}); "properties additional false")]
+    #[test_case(&json!({"properties": {"foo": {}}, "additionalProperties": {"type": "integer"}, "patternProperties": {HUGE_COUNT: {"type": "string"}}}), &json!({"\u{1}": 1}), &json!({"ab": 1}); "properties additional schema")]
+    #[test_case(&with_many_properties(json!({"additionalProperties": false, "patternProperties": {HUGE_COUNT: {}}})), &json!({"ab": 1}), &json!({"\u{1}": 1}); "many properties additional false")]
+    #[test_case(&with_many_properties(json!({"additionalProperties": {"type": "integer"}, "patternProperties": {HUGE_COUNT: {"type": "string"}}})), &json!({"\u{1}": 1}), &json!({"ab": 1}); "many properties additional schema")]
+    #[test_case(&json!({"unevaluatedProperties": false, "patternProperties": {HUGE_COUNT: {}}}), &json!({"ab": 1}), &json!({"\u{1}": 1}); "unevaluated")]
+    #[test_case(&json!({"propertyNames": {"pattern": HUGE_COUNT}}), &json!({"ab": 1}), &json!({"\u{1}": 1}); "property names")]
+    #[test_case(&json!({"pattern": HUGE_COUNT}), &json!("ab"), &json!("\u{1}"); "pattern")]
+    fn huge_count_at_default_limits(schema: &Value, valid: &Value, invalid: &Value) {
+        let fancy = crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex())
+            .build(schema)
+            .expect("builds within the default size limit");
+        let regex = crate::options()
+            .with_pattern_options(PatternOptions::regex())
+            .build(schema)
+            .expect("builds within the default size limit");
+        for validator in [&fancy, &regex] {
+            assert!(validator.is_valid(valid));
+            assert!(validator.validate(valid).is_ok());
+            assert!(!validator.is_valid(invalid));
+            assert!(validator.validate(invalid).is_err());
+        }
+    }
+
     #[test]
     fn test_analyze_pattern() {
         use PatternOptimization::{Exact, Prefix};

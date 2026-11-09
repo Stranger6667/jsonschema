@@ -331,7 +331,7 @@ fn invalid_regex<'a, F: Json>(
 #[cfg(test)]
 mod tests {
     use crate::{tests_util, PatternOptions};
-    use serde_json::json;
+    use serde_json::{json, Value};
     use test_case::test_case;
 
     // Leading lookaheads must all hold at the start, then the rest must match from there.
@@ -350,6 +350,10 @@ mod tests {
     #[test_case(r"^(?=.*\d)(?=.*[a-z])\w{4,}$", "abcd", false; "password style missing digit")]
     #[test_case(r"^(?=(a))\1b", "aab", false; "backreference to a lookahead group")]
     #[test_case(r"^(?=(a))\1b", "ab", true; "backreference to a lookahead group holds")]
+    #[test_case(r"^(?=.{1,262144}$)[a-z]", "ab", true; "huge count in a lookahead")]
+    #[test_case(r"^(?=.{1,262144}$)[a-z]", "a\nb", false; "huge count in a lookahead on a line feed")]
+    #[test_case(r"^(?=.*[A-Z])(?=.*\d)[\s\S]{8,204800}$", "Abcdefg1", true; "huge count after lookaheads")]
+    #[test_case(r"^(?=.*[A-Z])(?=.*\d)[\s\S]{8,204800}$", "Abcdef1", false; "huge count after lookaheads under min")]
     fn leading_lookaheads_match(pattern: &str, text: &str, is_matching: bool) {
         let schema = json!({"pattern": pattern});
         let validator = crate::validator_for(&schema).unwrap();
@@ -470,6 +474,93 @@ mod tests {
         }
     }
 
+    // The engine unrolls a bounded count into as many copies of the class, past the default size
+    // limit; anchored at both ends the count is checked by counting characters, and at one edge
+    // it collapses to its minimum, which matches the same strings.
+    #[test_case(r"^.{0,262144}$", "", true; "zero minimum on empty")]
+    #[test_case(r"^.{0,262144}$", "a\nb", false; "line feed under dot")]
+    #[test_case(r"^.{0,262144}$", "a\u{85}b", true; "next line under dot")]
+    #[test_case(r"^[\s\S]{1,204800}$", "a\nb", true; "every character")]
+    #[test_case(r"^[\s\S]{1,204800}$", "", false; "every character under min")]
+    #[test_case(r"^[\S\s]{0,2147483647}$", "x", true; "largest count")]
+    #[test_case(r"^[\x09\x0a\x0d -ÿ]{1,2097152}$", "ÿ\t", true; "range class at its last character")]
+    #[test_case(r"^[\x09\x0a\x0d -ÿ]{1,2097152}$", "Ā", false; "range class past its last character")]
+    #[test_case(r"[^\p{C}]{1,2048}", "\u{1}a", true; "unanchored count collapses")]
+    #[test_case(r"[^\p{C}]{1,2048}", "\u{1}\n", false; "unanchored count rejects controls")]
+    #[test_case(r"^.{1,2097152}", "", false; "anchored start on empty")]
+    #[test_case(r"^.{1,2097152}", "\na", false; "anchored start on a line feed")]
+    #[test_case(r"^.{1,2097152}", "a", true; "anchored start on a letter")]
+    #[test_case(r"^(.){0,262144}$", "ab", true; "capture group around the class")]
+    #[test_case(r"^(.{0,262144})$", "a\nb", false; "capture group around the count")]
+    fn huge_counts_at_default_limits(pattern: &str, text: &str, is_matching: bool) {
+        let schema = json!({"pattern": pattern});
+        let text = json!(text);
+        let fancy = crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex())
+            .build(&schema)
+            .expect("builds within the default size limit");
+        let regex = crate::options()
+            .with_pattern_options(PatternOptions::regex())
+            .build(&schema)
+            .expect("builds within the default size limit");
+        for validator in [&fancy, &regex] {
+            assert_eq!(validator.is_valid(&text), is_matching);
+            assert_eq!(validator.validate(&text).is_ok(), is_matching);
+        }
+    }
+
+    // A zero minimum drops its atom from the search, but the engine still rejects the atom.
+    #[test_case(r"^[\p{Lettr}]{0,64}"; "unknown property in a class")]
+    #[test_case(r"x\p{Bogus}{0,3}"; "unknown property")]
+    fn unknown_property_under_a_zero_minimum(pattern: &str) {
+        let schema = json!({"pattern": pattern});
+        assert!(crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex())
+            .build(&schema)
+            .is_err());
+        assert!(crate::options()
+            .with_pattern_options(PatternOptions::regex())
+            .build(&schema)
+            .is_err());
+    }
+
+    #[test]
+    fn huge_count_error_shows_the_pattern() {
+        let validator = crate::validator_for(&json!({"pattern": r"^.{0,262144}$"})).unwrap();
+        let instance = json!("a\n");
+        let error = validator.validate(&instance).expect_err("line feed");
+        assert_eq!(error.to_string(), r#""a\n" does not match "^.{0,262144}$""#);
+        assert_eq!(error.schema_path().as_str(), "/pattern");
+    }
+
+    // Patterns answered without the regex engine: a character count, an ECMA whitespace scan and
+    // a list of alternatives. `evaluate` reaches the keyword whatever the instance, so all three
+    // entry points must agree on every instance type.
+    #[test_case(r"^.{0,262144}$", &json!(42), true; "repeated class ignores numbers")]
+    #[test_case(r"^.{0,262144}$", &json!("ab"), true; "repeated class matches")]
+    #[test_case(r"^.{0,262144}$", &json!("a\n"), false; "repeated class mismatches")]
+    #[test_case(r"^\S*$", &json!(null), true; "no whitespace ignores null")]
+    #[test_case(r"^\S*$", &json!("ab"), true; "no whitespace matches")]
+    #[test_case(r"^\S*$", &json!("a\u{a0}b"), false; "no whitespace mismatches")]
+    #[test_case(r"^(ab|cd)$", &json!(["ab"]), true; "alternation ignores arrays")]
+    #[test_case(r"^(ab|cd)$", &json!("cd"), true; "alternation matches")]
+    #[test_case(r"^(ab|cd)$", &json!("abcd"), false; "alternation mismatches")]
+    fn patterns_without_the_engine_agree_across_entry_points(
+        pattern: &str,
+        instance: &Value,
+        expected: bool,
+    ) {
+        let validator = crate::validator_for(&json!({"pattern": pattern})).unwrap();
+        assert_eq!(
+            (
+                validator.is_valid(instance),
+                validator.validate(instance).is_ok(),
+                validator.evaluate(instance).flag().valid,
+            ),
+            (expected, expected, expected)
+        );
+    }
+
     // Error messages must show the original schema pattern, not the ECMA->Rust translated form
     // (e.g. `\S` expanded into a verbose Unicode class).
     fn assert_original_pattern_in_error(validator: &crate::Validator) {
@@ -477,12 +568,12 @@ mod tests {
         let error = validator
             .validate(&instance)
             .expect_err("expected a validation error");
-        assert_eq!(error.to_string(), r#""" does not match "^[\S]{1,5}$""#);
+        assert_eq!(error.to_string(), r#""" does not match "^[\S]+$""#);
     }
 
     #[test]
     fn original_pattern_in_error() {
-        let schema = json!({"pattern": r"^[\S]{1,5}$"});
+        let schema = json!({"pattern": r"^[\S]+$"});
         assert_original_pattern_in_error(
             &crate::options()
                 .with_pattern_options(PatternOptions::fancy_regex())
@@ -517,7 +608,7 @@ mod tests {
     #[test]
     fn empty_string_with_large_bounded_quantifier_fancy_regex() {
         // Recovery for https://github.com/rust-lang/regex/issues/1344.
-        let schema = json!({"type": "string", "pattern": r"^.{0,404600}$"});
+        let schema = json!({"type": "string", "pattern": r"^x?.{0,404600}$"});
         let validator = crate::options()
             .with_pattern_options(PatternOptions::fancy_regex().size_limit(1_000_000_000))
             .build(&schema)
@@ -531,7 +622,7 @@ mod tests {
             .expect_err("expected a validation error");
         assert_eq!(
             error.to_string(),
-            "Regex engine failed to evaluate pattern '^.{0,404600}$'"
+            "Regex engine failed to evaluate pattern '^x?.{0,404600}$'"
         );
     }
 
@@ -565,7 +656,7 @@ mod tests {
     #[test]
     fn empty_string_with_large_bounded_quantifier_regex() {
         // Recovery for https://github.com/rust-lang/regex/issues/1344.
-        let schema = json!({"type": "string", "pattern": r"^.{0,404600}$"});
+        let schema = json!({"type": "string", "pattern": r"^x?.{0,404600}$"});
         let validator = crate::options()
             .with_pattern_options(PatternOptions::regex().size_limit(1_000_000_000))
             .build(&schema)
@@ -579,7 +670,7 @@ mod tests {
             .expect_err("expected a validation error");
         assert_eq!(
             error.to_string(),
-            "Regex engine failed to evaluate pattern '^.{0,404600}$'"
+            "Regex engine failed to evaluate pattern '^x?.{0,404600}$'"
         );
     }
 
@@ -605,7 +696,7 @@ mod tests {
     fn build_with_cache(
         cache: &crate::PatternCache,
         options: PatternOptions<crate::FancyRegex>,
-        schema: &serde_json::Value,
+        schema: &Value,
     ) -> bool {
         crate::options()
             .with_pattern_options(options)
@@ -651,7 +742,7 @@ mod tests {
     fn shared_pattern_cache_keeps_failed_compiles() {
         let cache = crate::PatternCache::new();
         let tiny = || PatternOptions::fancy_regex().size_limit(10);
-        let schema = json!({"pattern": "[a-c]{1,1000}x"});
+        let schema = json!({"pattern": "^[a-c]{1,1000}x$"});
         assert!(!build_with_cache(&cache, tiny(), &schema));
         assert!(!build_with_cache(&cache, tiny(), &schema));
         assert_eq!(cache.len(), 1);
@@ -675,7 +766,7 @@ mod tests {
     #[test]
     fn shared_pattern_cache_is_keyed_by_engine_options() {
         let cache = crate::PatternCache::new();
-        let schema = json!({"pattern": "[a-c]{1,1000}x"});
+        let schema = json!({"pattern": "^[a-c]{1,1000}x$"});
         assert!(!build_with_cache(
             &cache,
             PatternOptions::fancy_regex().size_limit(10),

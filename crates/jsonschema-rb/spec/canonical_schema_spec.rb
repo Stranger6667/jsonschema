@@ -728,7 +728,7 @@ RSpec.describe "JSONSchema.canonicalize" do
 
   describe "pattern_options" do
     # A pattern whose compiled size exceeds the default regex limit; real AWS schemas carry these.
-    large_pattern = { "type" => "string", "pattern" => "^.{0,100000}$" }
+    large_pattern = { "type" => "string", "pattern" => "^x?.{0,100000}$" }
 
     it "rejects an oversized pattern by default" do
       expect { JSONSchema.canonicalize(large_pattern) }.to raise_error(JSONSchema::Canonical::InvalidPattern)

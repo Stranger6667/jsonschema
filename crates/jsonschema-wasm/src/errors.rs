@@ -647,7 +647,7 @@ mod tests {
     #[test]
     fn regex_engine_panic_recovery_maps_to_regex_engine_failure_kind() {
         // Recovered `regex-automata` panic: https://github.com/rust-lang/regex/issues/1344.
-        let schema = json!({"type": "string", "pattern": r"^.{0,404600}$"});
+        let schema = json!({"type": "string", "pattern": r"^x?.{0,404600}$"});
         let validator = options()
             .with_pattern_options(PatternOptions::fancy_regex().size_limit(1_000_000_000))
             .build(&schema)
@@ -657,12 +657,12 @@ mod tests {
             errors_of(&validator, &instance),
             json!([
                 {
-                    "message": "Regex engine failed to evaluate pattern '^.{0,404600}$'",
+                    "message": "Regex engine failed to evaluate pattern '^x?.{0,404600}$'",
                     "instancePath": [],
                     "schemaPath": ["pattern"],
                     "kind": {
                         "type": "regexEngineFailure",
-                        "message": "Regex engine failed to evaluate pattern '^.{0,404600}$'"
+                        "message": "Regex engine failed to evaluate pattern '^x?.{0,404600}$'"
                     }
                 }
             ])

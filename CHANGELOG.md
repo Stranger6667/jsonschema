@@ -9,6 +9,11 @@
 ### Fixed
 
 - `dereference` following `$ref` in keywords that hold data, such as `const` and `examples`. [#1858](https://github.com/Stranger6667/jsonschema/issues/1858)
+- `pattern` over one character class under a large bounded count, such as `^.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
+
+### Performance
+
+- `pattern` and `patternProperties` with a large bounded count over one character class, such as `^.{0,262144}$` or `[^\p{C}]{1,2048}`, build without unrolling the count and fit the default size limit.
 
 ## [0.61.0] - 2026-11-08
 

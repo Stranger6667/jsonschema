@@ -583,6 +583,71 @@ fn test_pattern_validate_parity() {
     );
 }
 
+// The engine would unroll a huge count past the default size limit; the runtime counts characters
+// or collapses the count instead, and so does generated code.
+#[jsonschema::validator(schema = r#"{"pattern":"^.{0,262144}$"}"#)]
+struct HugeCountPatternValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"pattern":"^.{0,262144}$"}"#,
+    pattern_options = {
+        engine = regex
+    }
+)]
+struct HugeCountPatternRegexValidator;
+
+#[jsonschema::validator(schema = r#"{"pattern":"[^\\p{C}]{1,204800}"}"#)]
+struct HugeEdgeCountPatternValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"patternProperties":{"a+":{},"^[^\\p{C}]{1,204800}$":{"type":"string"}}}"#
+)]
+struct HugeCountPatternPropertiesValidator;
+
+#[test_case(serde_json::json!("ab") ; "matches")]
+#[test_case(serde_json::json!("a\nb") ; "line feed")]
+#[test_case(serde_json::json!("\u{1}") ; "control character")]
+#[test_case(serde_json::json!(42) ; "not a string")]
+fn test_huge_count_pattern_parity(instance: serde_json::Value) {
+    let schema = serde_json::json!({"pattern":"^.{0,262144}$"});
+    assert_validate_parity_for(
+        &schema,
+        HugeCountPatternValidator::is_valid(&instance),
+        HugeCountPatternValidator::validate(&instance),
+        &instance,
+    );
+    let runtime = jsonschema::options()
+        .with_pattern_options(jsonschema::PatternOptions::regex())
+        .build(&schema)
+        .expect("valid schema");
+    assert_validate_parity(
+        HugeCountPatternRegexValidator::is_valid(&instance),
+        HugeCountPatternRegexValidator::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    let schema = serde_json::json!({"pattern":"[^\\p{C}]{1,204800}"});
+    assert_validate_parity_for(
+        &schema,
+        HugeEdgeCountPatternValidator::is_valid(&instance),
+        HugeEdgeCountPatternValidator::validate(&instance),
+        &instance,
+    );
+}
+
+#[test_case(serde_json::json!({"ab": 1}) ; "matching key")]
+#[test_case(serde_json::json!({"ab": "x"}) ; "matching key with a string")]
+#[test_case(serde_json::json!({"\u{1}": 1}) ; "control character key")]
+fn test_huge_count_pattern_properties_parity(instance: serde_json::Value) {
+    let schema = serde_json::json!({"patternProperties":{"a+":{},"^[^\\p{C}]{1,204800}$":{"type":"string"}}});
+    assert_validate_parity_for(
+        &schema,
+        HugeCountPatternPropertiesValidator::is_valid(&instance),
+        HugeCountPatternPropertiesValidator::validate(&instance),
+        &instance,
+    );
+}
+
 #[jsonschema::validator(schema = r#"{"type":"string","format":"ipv4"}"#, draft = referencing::Draft::Draft7, validate_formats = true)]
 struct FormatBuiltinParityValidator;
 

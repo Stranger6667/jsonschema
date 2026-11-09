@@ -38,14 +38,14 @@ def test_regex_engine_validation():
     ids=["fancy_regex", "regex"],
 )
 def test_pattern_panic_surfaces_as_validation_error(options):
-    schema = {"type": "string", "pattern": r"^.{0,404600}$"}
+    schema = {"type": "string", "pattern": r"^x?.{0,404600}$"}
     validator = jsonschema_rs.validator_for(schema, pattern_options=options)
 
     assert validator.is_valid("x")
     assert not validator.is_valid("")
     with pytest.raises(jsonschema_rs.ValidationError) as excinfo:
         validator.validate("")
-    assert "Regex engine failed to evaluate pattern '^.{0,404600}$'" in str(excinfo.value)
+    assert "Regex engine failed to evaluate pattern '^x?.{0,404600}$'" in str(excinfo.value)
     assert excinfo.value.kind.name == "pattern"
 
 

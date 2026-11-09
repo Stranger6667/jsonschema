@@ -12,6 +12,7 @@ use crate::{
     node::{PendingSchemaNode, SchemaNode},
     options::{PatternCache, PatternEngineOptions, ValidationOptions},
     paths::{Location, LocationSegment},
+    regex::Compiled,
     types::{JsonType, JsonTypeSet},
     validator::Validate,
     Json, LazyInstance, SerdeJson, ValidationError, Validator, ValidatorMap,
@@ -339,8 +340,8 @@ impl<F: Json> fmt::Debug for SharedContextState<'_, F> {
 #[derive(Debug, Clone)]
 struct PatternCacheEntry {
     translated: Arc<str>,
-    fancy: Option<Arc<fancy_regex::Regex>>,
-    standard: Option<Arc<regex::Regex>>,
+    fancy: Option<Arc<Compiled<fancy_regex::Regex>>>,
+    standard: Option<Arc<Compiled<regex::Regex>>>,
 }
 
 impl<F: Json> SharedContextState<'_, F> {
@@ -920,7 +921,7 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn get_or_compile_regex(
         &self,
         pattern: &str,
-    ) -> Result<Arc<fancy_regex::Regex>, ()> {
+    ) -> Result<Arc<Compiled<fancy_regex::Regex>>, ()> {
         let translated = self.translated_pattern(pattern)?;
         {
             let cache = self.shared.pattern_cache.borrow();
@@ -945,6 +946,7 @@ impl<'a, F: Json> Context<'a, F> {
                 PatternEngineOptions::Regex { .. } => (None, None, None),
             };
             let compiled = crate::regex::build_fancy_regex(
+                pattern,
                 translated.as_ref(),
                 backtrack_limit,
                 size_limit,
@@ -968,7 +970,7 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn get_or_compile_standard_regex(
         &self,
         pattern: &str,
-    ) -> Result<Arc<regex::Regex>, ()> {
+    ) -> Result<Arc<Compiled<regex::Regex>>, ()> {
         let translated = self.translated_pattern(pattern)?;
         {
             let cache = self.shared.pattern_cache.borrow();
@@ -992,9 +994,13 @@ impl<'a, F: Json> Context<'a, F> {
                 } => (size_limit, dfa_size_limit),
                 PatternEngineOptions::FancyRegex { .. } => (None, None),
             };
-            let compiled =
-                crate::regex::build_standard_regex(translated.as_ref(), size_limit, dfa_size_limit)
-                    .map(Arc::new);
+            let compiled = crate::regex::build_standard_regex(
+                pattern,
+                translated.as_ref(),
+                size_limit,
+                dfa_size_limit,
+            )
+            .map(Arc::new);
             if let Some(cache) = shared {
                 cache.insert_standard(options, pattern, compiled.clone());
             }

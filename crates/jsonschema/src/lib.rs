@@ -3530,7 +3530,7 @@ pub mod __private {
         pub use fancy_regex::{Regex, RegexBuilder};
     }
     pub mod regex {
-        pub use jsonschema_regex::contains_ecma_whitespace;
+        pub use jsonschema_regex::{contains_ecma_whitespace, RepeatedClass};
         pub use regex::{Regex, RegexBuilder};
     }
     /// Regex matching for generated code: a match the engine cannot finish is resolved by running

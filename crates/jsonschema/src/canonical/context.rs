@@ -13,6 +13,7 @@ use referencing::Draft;
 use crate::{
     canonical::{ir::Schema, schema::DefinitionMap},
     options::PatternEngineOptions,
+    regex::{Compiled, RegexEngine},
 };
 
 /// Past this many remembered pairs a run keeps recomputing rather than grow without end.
@@ -25,15 +26,15 @@ const FACET_CACHE_CAPACITY: usize = 1 << 16;
 pub(crate) type SharedRegexes = Arc<Mutex<AHashMap<Arc<str>, Option<Arc<CompiledMatcher>>>>>;
 
 pub(crate) enum CompiledMatcher {
-    Regex(regex::Regex),
-    FancyRegex(fancy_regex::Regex),
+    Regex(Compiled<regex::Regex>),
+    FancyRegex(Compiled<fancy_regex::Regex>),
 }
 
 impl CompiledMatcher {
     /// `None` where the engine cannot finish the match, e.g. on reaching the backtrack limit.
     fn is_match(&self, text: &str) -> Option<bool> {
         match self {
-            Self::Regex(regex) => Some(regex.is_match(text)),
+            Self::Regex(regex) => regex.is_match(text).ok(),
             Self::FancyRegex(regex) => regex.is_match(text).ok(),
         }
     }
@@ -417,7 +418,7 @@ fn compile(options: PatternEngineOptions, pattern: &str) -> Option<CompiledMatch
         PatternEngineOptions::Regex {
             size_limit,
             dfa_size_limit,
-        } => crate::regex::build_standard_regex(&translated, size_limit, dfa_size_limit)
+        } => crate::regex::build_standard_regex(pattern, &translated, size_limit, dfa_size_limit)
             .ok()
             .map(CompiledMatcher::Regex),
         PatternEngineOptions::FancyRegex {
@@ -425,6 +426,7 @@ fn compile(options: PatternEngineOptions, pattern: &str) -> Option<CompiledMatch
             size_limit,
             dfa_size_limit,
         } => crate::regex::build_fancy_regex(
+            pattern,
             &translated,
             backtrack_limit,
             size_limit,
