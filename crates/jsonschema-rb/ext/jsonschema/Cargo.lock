@@ -842,9 +842,9 @@ checksum = "5e5032e24019045c762d3c0f28f5b6b8bbf38563a65908389bf7978758920897"
 
 [[package]]
 name = "magnus"
-version = "0.9.1"
+version = "0.9.3"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "4c01bef153b8d0f086991f0e166474a1d57b738221f9a9c11405d498ac95a44d"
+checksum = "40ef424404d166cbb71c8b8d19c9c589c748c4547c1afa1928c5504299f6c713"
 dependencies = [
  "magnus-macros",
  "rb-sys",
