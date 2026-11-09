@@ -17,7 +17,11 @@ use ahash::{AHashMap, AHashSet};
 use email_address::Options as EmailAddressOptions;
 use referencing::{Draft, Retrieve};
 use serde_json::Value;
-use std::{fmt, marker::PhantomData, sync::Arc};
+use std::{
+    fmt,
+    marker::PhantomData,
+    sync::{Arc, Mutex, PoisonError},
+};
 
 /// Configuration options for JSON Schema validation.
 ///
@@ -38,6 +42,7 @@ pub struct ValidationOptions<'i, R = Arc<dyn Retrieve>, F: Json = SerdeJson> {
     keywords: AHashMap<String, Arc<dyn KeywordFactory<F>>>,
     vocabularies: AHashSet<String>,
     pattern_options: PatternEngineOptions,
+    pattern_cache: Option<PatternCache>,
     email_options: Option<EmailAddressOptions>,
     representation: PhantomData<F>,
 }
@@ -61,6 +66,7 @@ impl<R: Clone, F: Json> Clone for ValidationOptions<'_, R, F> {
             keywords: self.keywords.clone(),
             vocabularies: self.vocabularies.clone(),
             pattern_options: self.pattern_options,
+            pattern_cache: self.pattern_cache.clone(),
             email_options: self.email_options,
             representation: PhantomData,
         }
@@ -83,6 +89,7 @@ impl<F: Json> Default for ValidationOptions<'_, Arc<dyn Retrieve>, F> {
             keywords: AHashMap::default(),
             vocabularies: AHashSet::default(),
             pattern_options: PatternEngineOptions::default(),
+            pattern_cache: None,
             email_options: None,
             representation: PhantomData,
         }
@@ -106,6 +113,7 @@ impl<F: Json> Default for ValidationOptions<'_, Arc<dyn referencing::AsyncRetrie
             keywords: AHashMap::default(),
             vocabularies: AHashSet::default(),
             pattern_options: PatternEngineOptions::default(),
+            pattern_cache: None,
             email_options: None,
             representation: PhantomData,
         }
@@ -115,6 +123,10 @@ impl<F: Json> Default for ValidationOptions<'_, Arc<dyn referencing::AsyncRetrie
 impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     pub(crate) fn compiler_pattern_options(&self) -> PatternEngineOptions {
         self.pattern_options
+    }
+
+    pub(crate) fn compiler_pattern_cache(&self) -> Option<&PatternCache> {
+        self.pattern_cache.as_ref()
     }
 
     pub(crate) fn compiler_email_options(&self) -> Option<&EmailAddressOptions> {
@@ -719,6 +731,31 @@ impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
         self
     }
 
+    /// Share compiled regular expressions with every other build given the same [`PatternCache`].
+    ///
+    /// Each build compiles a `pattern` once however often its schema repeats it. Building many
+    /// validators whose schemas share patterns compiles each of them once across all builds.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use serde_json::json;
+    /// use jsonschema::PatternCache;
+    ///
+    /// let cache = PatternCache::new();
+    /// for schema in [json!({"pattern": "^[a-z]+$"}), json!({"items": {"pattern": "^[a-z]+$"}})] {
+    ///     let validator = jsonschema::options()
+    ///         .with_pattern_cache(cache.clone())
+    ///         .build(&schema)
+    ///         .expect("A valid schema");
+    /// }
+    /// ```
+    #[must_use]
+    pub fn with_pattern_cache(mut self, cache: PatternCache) -> Self {
+        self.pattern_cache = Some(cache);
+        self
+    }
+
     /// Set email validation options to customize email format validation behavior.
     ///
     /// # Example
@@ -817,6 +854,7 @@ impl<'i, F: Json> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> 
             keywords: self.keywords,
             vocabularies: self.vocabularies,
             pattern_options: self.pattern_options,
+            pattern_cache: self.pattern_cache,
             email_options: self.email_options,
             representation: PhantomData,
         }
@@ -885,6 +923,97 @@ pub(crate) enum PatternEngineOptions {
         size_limit: Option<usize>,
         dfa_size_limit: Option<usize>,
     },
+}
+
+/// Compiled regular expressions shared between validator builds, see
+/// [`ValidationOptions::with_pattern_cache`].
+///
+/// Clones share one cache. It also remembers patterns that failed to compile, so they fail without
+/// compiling again. Entries are keyed by the pattern and the [`PatternOptions`] it was compiled
+/// with, and live as long as any clone does.
+#[derive(Debug, Clone, Default)]
+pub struct PatternCache {
+    inner: Arc<Mutex<CompiledPatterns>>,
+}
+
+/// Compile results by engine options, then by pattern. `Err` records a failed compile.
+type CompiledByOptions<R> = AHashMap<PatternEngineOptions, AHashMap<Arc<str>, Result<Arc<R>, ()>>>;
+
+#[derive(Debug, Default)]
+struct CompiledPatterns {
+    fancy: CompiledByOptions<fancy_regex::Regex>,
+    standard: CompiledByOptions<regex::Regex>,
+}
+
+impl PatternCache {
+    /// Create an empty cache.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn lock(&self) -> std::sync::MutexGuard<'_, CompiledPatterns> {
+        self.inner.lock().unwrap_or_else(PoisonError::into_inner)
+    }
+
+    /// The `fancy-regex` compile of `pattern`, or `None` when it was never compiled.
+    pub(crate) fn fancy(
+        &self,
+        options: PatternEngineOptions,
+        pattern: &str,
+    ) -> Option<Result<Arc<fancy_regex::Regex>, ()>> {
+        self.lock().fancy.get(&options)?.get(pattern).cloned()
+    }
+
+    pub(crate) fn insert_fancy(
+        &self,
+        options: PatternEngineOptions,
+        pattern: &str,
+        regex: Result<Arc<fancy_regex::Regex>, ()>,
+    ) {
+        self.lock()
+            .fancy
+            .entry(options)
+            .or_default()
+            .insert(Arc::from(pattern), regex);
+    }
+
+    /// The `regex` compile of `pattern`, or `None` when it was never compiled.
+    pub(crate) fn standard(
+        &self,
+        options: PatternEngineOptions,
+        pattern: &str,
+    ) -> Option<Result<Arc<regex::Regex>, ()>> {
+        self.lock().standard.get(&options)?.get(pattern).cloned()
+    }
+
+    pub(crate) fn insert_standard(
+        &self,
+        options: PatternEngineOptions,
+        pattern: &str,
+        regex: Result<Arc<regex::Regex>, ()>,
+    ) {
+        self.lock()
+            .standard
+            .entry(options)
+            .or_default()
+            .insert(Arc::from(pattern), regex);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn len(&self) -> usize {
+        let compiled = self.lock();
+        compiled
+            .fancy
+            .values()
+            .map(|patterns| patterns.len())
+            .sum::<usize>()
+            + compiled
+                .standard
+                .values()
+                .map(|patterns| patterns.len())
+                .sum::<usize>()
+    }
 }
 
 /// Marker for using the `fancy-regex` engine that includes advanced features like lookarounds.

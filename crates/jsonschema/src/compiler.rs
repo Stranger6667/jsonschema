@@ -10,7 +10,7 @@ use crate::{
         BoxedValidator, BuiltinKeyword, Keyword,
     },
     node::{PendingSchemaNode, SchemaNode},
-    options::{PatternEngineOptions, ValidationOptions},
+    options::{PatternCache, PatternEngineOptions, ValidationOptions},
     paths::{Location, LocationSegment},
     types::{JsonType, JsonTypeSet},
     validator::Validate,
@@ -86,6 +86,7 @@ pub(crate) trait CompilationOptions<F: Json> {
     fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory<F>>>;
     fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)>;
     fn pattern_options(&self) -> PatternEngineOptions;
+    fn pattern_cache(&self) -> Option<&PatternCache>;
     fn email_options(&self) -> Option<&email_address::Options>;
 }
 
@@ -127,6 +128,10 @@ impl<R, F: Json> CompilationOptions<F> for ValidationOptions<'_, R, F> {
 
     fn pattern_options(&self) -> PatternEngineOptions {
         ValidationOptions::compiler_pattern_options(self)
+    }
+
+    fn pattern_cache(&self) -> Option<&PatternCache> {
+        ValidationOptions::compiler_pattern_cache(self)
     }
 
     fn email_options(&self) -> Option<&email_address::Options> {
@@ -926,21 +931,31 @@ impl<'a, F: Json> Context<'a, F> {
             }
         }
 
-        let (backtrack_limit, size_limit, dfa_size_limit) = match self.config.pattern_options() {
-            PatternEngineOptions::FancyRegex {
+        let options = self.config.pattern_options();
+        let shared = self.config.pattern_cache();
+        let regex = if let Some(cached) = shared.and_then(|cache| cache.fancy(options, pattern)) {
+            cached?
+        } else {
+            let (backtrack_limit, size_limit, dfa_size_limit) = match options {
+                PatternEngineOptions::FancyRegex {
+                    backtrack_limit,
+                    size_limit,
+                    dfa_size_limit,
+                } => (backtrack_limit, size_limit, dfa_size_limit),
+                PatternEngineOptions::Regex { .. } => (None, None, None),
+            };
+            let compiled = crate::regex::build_fancy_regex(
+                translated.as_ref(),
                 backtrack_limit,
                 size_limit,
                 dfa_size_limit,
-            } => (backtrack_limit, size_limit, dfa_size_limit),
-            PatternEngineOptions::Regex { .. } => (None, None, None),
+            )
+            .map(Arc::new);
+            if let Some(cache) = shared {
+                cache.insert_fancy(options, pattern, compiled.clone());
+            }
+            compiled?
         };
-
-        let regex = Arc::new(crate::regex::build_fancy_regex(
-            translated.as_ref(),
-            backtrack_limit,
-            size_limit,
-            dfa_size_limit,
-        )?);
 
         if let Some(entry) = self.shared.pattern_cache.borrow_mut().get_mut(pattern) {
             entry.fancy = Some(Arc::clone(&regex));
@@ -964,19 +979,27 @@ impl<'a, F: Json> Context<'a, F> {
             }
         }
 
-        let (size_limit, dfa_size_limit) = match self.config.pattern_options() {
-            PatternEngineOptions::Regex {
-                size_limit,
-                dfa_size_limit,
-            } => (size_limit, dfa_size_limit),
-            PatternEngineOptions::FancyRegex { .. } => (None, None),
+        let options = self.config.pattern_options();
+        let shared = self.config.pattern_cache();
+        let regex = if let Some(cached) = shared.and_then(|cache| cache.standard(options, pattern))
+        {
+            cached?
+        } else {
+            let (size_limit, dfa_size_limit) = match options {
+                PatternEngineOptions::Regex {
+                    size_limit,
+                    dfa_size_limit,
+                } => (size_limit, dfa_size_limit),
+                PatternEngineOptions::FancyRegex { .. } => (None, None),
+            };
+            let compiled =
+                crate::regex::build_standard_regex(translated.as_ref(), size_limit, dfa_size_limit)
+                    .map(Arc::new);
+            if let Some(cache) = shared {
+                cache.insert_standard(options, pattern, compiled.clone());
+            }
+            compiled?
         };
-
-        let regex = Arc::new(crate::regex::build_standard_regex(
-            translated.as_ref(),
-            size_limit,
-            dfa_size_limit,
-        )?);
 
         if let Some(entry) = self.shared.pattern_cache.borrow_mut().get_mut(pattern) {
             entry.standard = Some(Arc::clone(&regex));
