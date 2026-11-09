@@ -4,7 +4,7 @@ use crate::{
     compiler,
     keywords::pattern_properties::invalid_regex,
     node::SchemaNode,
-    regex::{analyze_pattern, contains_ecma_whitespace, PatternOptimization},
+    regex::{analyze_pattern, contains_ecma_whitespace, Compiled, PatternOptimization},
     Json, Object, SerdeJson, ValidationContext,
 };
 use serde_json::{Map, Value};
@@ -71,9 +71,9 @@ impl<R: crate::regex::RegexEngine> PropertyPattern for CompiledPattern<R> {
 }
 
 pub(crate) type FancyRegexValidators<F = SerdeJson> =
-    Vec<(CompiledPattern<fancy_regex::Regex>, SchemaNode<F>)>;
+    Vec<(CompiledPattern<Compiled<fancy_regex::Regex>>, SchemaNode<F>)>;
 pub(crate) type RegexValidators<F = SerdeJson> =
-    Vec<(CompiledPattern<regex::Regex>, SchemaNode<F>)>;
+    Vec<(CompiledPattern<Compiled<regex::Regex>>, SchemaNode<F>)>;
 
 /// A value that can look up property validators by name.
 pub(crate) trait PropertiesValidatorsMap<F: Json = SerdeJson>: Send + Sync {

@@ -253,6 +253,8 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     /// by their own. Roots live in the registry for the whole expansion.
     pub(crate) anchor_pointers: HashMap<usize, HashMap<usize, String>>,
     pub(crate) translated_regex_cache: HashMap<String, String>,
+    /// Translated patterns matched by counting characters, see [`jsonschema_regex::RepeatedClass`].
+    pub(crate) repeated_classes: HashSet<String>,
     pub(crate) regex_helpers: Vec<(String, String)>,
     pub(crate) regex_counter: usize,
     pub(crate) custom_keyword_counter: usize,
@@ -305,6 +307,7 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             regex_to_helper: HashMap::new(),
             anchor_pointers: HashMap::new(),
             translated_regex_cache: HashMap::new(),
+            repeated_classes: HashSet::new(),
             regex_helpers: Vec::new(),
             regex_counter: 0,
             custom_keyword_counter: 0,

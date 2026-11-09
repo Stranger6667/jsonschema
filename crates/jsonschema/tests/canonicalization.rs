@@ -1832,6 +1832,19 @@ fn pattern_engine_selects_dialect() {
     ));
 }
 
+// The engine would unroll the count past the default size limit; counting characters needs none,
+// and the values the pattern rejects leave the `enum`.
+#[test_case(r"^[^\p{C}]{1,204800}$"; "repeated class")]
+#[test_case(r"^([^\p{C}]{1,204800})$"; "repeated class in a capture group")]
+fn pattern_with_a_huge_count_canonicalizes(pattern: &str) {
+    let schema = json!({"type": "string", "pattern": pattern, "enum": ["", "ab", "\u{1}"]});
+    let canonical = canonicalize(&schema).expect("canonicalizes");
+    assert_eq!(
+        canonical.to_json_schema(),
+        json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "const": "ab"})
+    );
+}
+
 // The suite checks only the error variant; the `Display` message is exercised here.
 #[test_case(&json!(42), "schema must be a boolean or object, got: 42"; "invalid schema type")]
 #[test_case(&json!({"pattern": "["}), "invalid regular expression: \"[\""; "invalid pattern")]

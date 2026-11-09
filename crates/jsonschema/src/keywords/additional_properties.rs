@@ -22,7 +22,7 @@ use crate::{
         CompiledPattern, PropertiesValidatorsMap, PropertyPattern, SmallValidatorsMap,
         HASHMAP_THRESHOLD,
     },
-    regex::RegexEngine,
+    regex::{Compiled, RegexEngine},
     types::JsonType,
     unfinished_matches::MatchSite,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -1885,7 +1885,7 @@ pub(crate) fn compile<'a, F: Json>(
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
                                     compile_pattern_non_empty_false::<
-                                        CompiledPattern<fancy_regex::Regex>,
+                                        CompiledPattern<Compiled<fancy_regex::Regex>>,
                                         F,
                                     >(ctx, map, patterns)
                                 } else {
@@ -1917,7 +1917,7 @@ pub(crate) fn compile<'a, F: Json>(
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
                                     compile_pattern_non_empty::<
-                                        CompiledPattern<fancy_regex::Regex>,
+                                        CompiledPattern<Compiled<fancy_regex::Regex>>,
                                         F,
                                     >(ctx, map, patterns, schema)
                                 } else {
@@ -1958,7 +1958,7 @@ pub(crate) fn compile<'a, F: Json>(
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
                                     compile_pattern_non_empty_false::<
-                                        CompiledPattern<regex::Regex>,
+                                        CompiledPattern<Compiled<regex::Regex>>,
                                         F,
                                     >(ctx, map, patterns)
                                 } else {
@@ -1989,9 +1989,10 @@ pub(crate) fn compile<'a, F: Json>(
                         _ => {
                             if let Some(properties) = properties {
                                 if let Value::Object(map) = properties {
-                                    compile_pattern_non_empty::<CompiledPattern<regex::Regex>, F>(
-                                        ctx, map, patterns, schema,
-                                    )
+                                    compile_pattern_non_empty::<
+                                        CompiledPattern<Compiled<regex::Regex>>,
+                                        F,
+                                    >(ctx, map, patterns, schema)
                                 } else {
                                     let location = ctx.location().join("properties");
                                     Some(Err(ValidationError::compile_error(

@@ -10,6 +10,7 @@ use crate::{
         format::{builtin_format, Format},
     },
     paths::Location,
+    regex::Compiled,
     retriever::DefaultRetriever,
     Json, Keyword, SerdeJson, ValidationError, Validator,
 };
@@ -941,8 +942,8 @@ type CompiledByOptions<R> = AHashMap<PatternEngineOptions, AHashMap<Arc<str>, Re
 
 #[derive(Debug, Default)]
 struct CompiledPatterns {
-    fancy: CompiledByOptions<fancy_regex::Regex>,
-    standard: CompiledByOptions<regex::Regex>,
+    fancy: CompiledByOptions<Compiled<fancy_regex::Regex>>,
+    standard: CompiledByOptions<Compiled<regex::Regex>>,
 }
 
 impl PatternCache {
@@ -961,7 +962,7 @@ impl PatternCache {
         &self,
         options: PatternEngineOptions,
         pattern: &str,
-    ) -> Option<Result<Arc<fancy_regex::Regex>, ()>> {
+    ) -> Option<Result<Arc<Compiled<fancy_regex::Regex>>, ()>> {
         self.lock().fancy.get(&options)?.get(pattern).cloned()
     }
 
@@ -969,7 +970,7 @@ impl PatternCache {
         &self,
         options: PatternEngineOptions,
         pattern: &str,
-        regex: Result<Arc<fancy_regex::Regex>, ()>,
+        regex: Result<Arc<Compiled<fancy_regex::Regex>>, ()>,
     ) {
         self.lock()
             .fancy
@@ -983,7 +984,7 @@ impl PatternCache {
         &self,
         options: PatternEngineOptions,
         pattern: &str,
-    ) -> Option<Result<Arc<regex::Regex>, ()>> {
+    ) -> Option<Result<Arc<Compiled<regex::Regex>>, ()>> {
         self.lock().standard.get(&options)?.get(pattern).cloned()
     }
 
@@ -991,7 +992,7 @@ impl PatternCache {
         &self,
         options: PatternEngineOptions,
         pattern: &str,
-        regex: Result<Arc<regex::Regex>, ()>,
+        regex: Result<Arc<Compiled<regex::Regex>>, ()>,
     ) {
         self.lock()
             .standard

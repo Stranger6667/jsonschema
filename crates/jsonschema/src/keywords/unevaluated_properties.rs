@@ -19,7 +19,7 @@ use crate::{
     evaluation::{ChildList, ErrorDescription},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
-    regex::{analyze_pattern, LiteralMatcher},
+    regex::{analyze_pattern, Compiled, LiteralMatcher},
     unfinished_matches::MatchSite,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson, ValidationError,
@@ -59,8 +59,8 @@ impl StaticEvaluated {
 #[derive(Clone, Default)]
 struct Patterns {
     literal: Vec<Pattern<LiteralMatcher>>,
-    fancy: Vec<Pattern<fancy_regex::Regex>>,
-    standard: Vec<Pattern<regex::Regex>>,
+    fancy: Vec<Pattern<Compiled<fancy_regex::Regex>>>,
+    standard: Vec<Pattern<Compiled<regex::Regex>>>,
 }
 
 #[derive(Clone)]
@@ -1638,7 +1638,7 @@ mod tests {
     }
 
     // Exceeds the engines' default size limit
-    const LARGE_PATTERN: &str = r"^\p{L}{300}$";
+    const LARGE_PATTERN: &str = r"^x?\p{L}{300}$";
 
     #[test_case(true, "direct")]
     #[test_case(true, "allOf")]

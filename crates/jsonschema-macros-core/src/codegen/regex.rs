@@ -17,7 +17,17 @@ pub(super) fn translate_and_validate_regex<E: ValueEmitter>(
     let Ok(translated) = jsonschema_regex::to_rust_regex(pattern) else {
         return Err(invalid_regex_expression(keyword, pattern));
     };
-    let translated = translated.into_owned();
+    let translated = match jsonschema_regex::search_form(pattern, &translated) {
+        Some(jsonschema_regex::Search::RepeatedClass(_)) => {
+            let translated = translated.into_owned();
+            ctx.repeated_classes.insert(translated.clone());
+            ctx.translated_regex_cache
+                .insert(pattern.to_string(), translated.clone());
+            return Ok(translated);
+        }
+        Some(jsonschema_regex::Search::Collapsed(collapsed)) => collapsed,
+        None => translated.into_owned(),
+    };
     let valid = match ctx.config.pattern_options {
         PatternEngineConfig::FancyRegex {
             backtrack_limit,

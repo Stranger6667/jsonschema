@@ -562,7 +562,7 @@ def test_string_canonical_forms(schema, expected):
 
 
 # A pattern whose compiled size exceeds the default regex limit; real AWS schemas carry these.
-LARGE_PATTERN_SCHEMA = {"type": "string", "pattern": "^.{0,100000}$"}
+LARGE_PATTERN_SCHEMA = {"type": "string", "pattern": "^x?.{0,100000}$"}
 
 
 def test_large_pattern_is_rejected_by_default():
