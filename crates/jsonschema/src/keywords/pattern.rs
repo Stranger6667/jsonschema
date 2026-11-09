@@ -601,4 +601,98 @@ mod tests {
             "/pattern",
         );
     }
+
+    fn build_with_cache(
+        cache: &crate::PatternCache,
+        options: PatternOptions<crate::FancyRegex>,
+        schema: &serde_json::Value,
+    ) -> bool {
+        crate::options()
+            .with_pattern_options(options)
+            .with_pattern_cache(cache.clone())
+            .build(schema)
+            .is_ok()
+    }
+
+    #[test]
+    fn shared_pattern_cache_compiles_each_pattern_once() {
+        let cache = crate::PatternCache::new();
+        let pattern = "^[a-c]+x$";
+        let mut compiled = Vec::new();
+        for schema in [
+            json!({"pattern": pattern}),
+            json!({"properties": {"name": {"pattern": pattern}}}),
+            json!({"patternProperties": {(pattern): {"type": "string"}}}),
+        ] {
+            let validator = crate::options()
+                .with_pattern_cache(cache.clone())
+                .build(&schema)
+                .expect("valid schema");
+            let instance = if schema.get("pattern").is_some() {
+                json!("abx")
+            } else {
+                json!({"name": "abx", "abx": "s"})
+            };
+            assert!(validator.is_valid(&instance));
+            compiled.push(
+                cache
+                    .fancy(crate::options::PatternEngineOptions::default(), pattern)
+                    .expect("cached")
+                    .expect("compiled"),
+            );
+        }
+        assert!(compiled
+            .windows(2)
+            .all(|pair| std::sync::Arc::ptr_eq(&pair[0], &pair[1])));
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn shared_pattern_cache_keeps_failed_compiles() {
+        let cache = crate::PatternCache::new();
+        let tiny = || PatternOptions::fancy_regex().size_limit(10);
+        let schema = json!({"pattern": "[a-c]{1,1000}x"});
+        assert!(!build_with_cache(&cache, tiny(), &schema));
+        assert!(!build_with_cache(&cache, tiny(), &schema));
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn shared_pattern_cache_reports_cached_failure_without_compiling() {
+        let cache = crate::PatternCache::new();
+        cache.insert_fancy(
+            crate::options::PatternEngineOptions::default(),
+            "^[a-c]+x$",
+            Err(()),
+        );
+        assert!(!build_with_cache(
+            &cache,
+            PatternOptions::fancy_regex(),
+            &json!({"pattern": "^[a-c]+x$"})
+        ));
+    }
+
+    #[test]
+    fn shared_pattern_cache_is_keyed_by_engine_options() {
+        let cache = crate::PatternCache::new();
+        let schema = json!({"pattern": "[a-c]{1,1000}x"});
+        assert!(!build_with_cache(
+            &cache,
+            PatternOptions::fancy_regex().size_limit(10),
+            &schema
+        ));
+        assert!(build_with_cache(
+            &cache,
+            PatternOptions::fancy_regex(),
+            &schema
+        ));
+        let validator = crate::options()
+            .with_pattern_options(PatternOptions::regex())
+            .with_pattern_cache(cache.clone())
+            .build(&schema)
+            .expect("valid schema");
+        assert!(validator.is_valid(&json!("abx")));
+        assert!(!validator.is_valid(&json!("x")));
+        assert_eq!(cache.len(), 3);
+    }
 }

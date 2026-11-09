@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `PatternCache` and `ValidationOptions::with_pattern_cache` to compile each regex once across validator builds.
+
 ## [0.61.0] - 2026-11-08
 
 ### Added

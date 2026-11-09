@@ -1370,7 +1370,9 @@ pub use http::HttpOptions;
 #[cfg(feature = "macros")]
 pub use jsonschema_macros::validator;
 pub use keywords::custom::Keyword;
-pub use options::{EmailOptions, FancyRegex, PatternOptions, Regex, ValidationOptions};
+pub use options::{
+    EmailOptions, FancyRegex, PatternCache, PatternOptions, Regex, ValidationOptions,
+};
 pub use referencing::{
     uri, Draft, Error as ReferencingError, Registry, RegistryBuilder, Resource, Retrieve, Uri,
 };
