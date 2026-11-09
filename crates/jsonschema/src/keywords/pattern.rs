@@ -536,15 +536,15 @@ mod tests {
     // Patterns answered without the regex engine: a character count, an ECMA whitespace scan and
     // a list of alternatives. `evaluate` reaches the keyword whatever the instance, so all three
     // entry points must agree on every instance type.
-    #[test_case(r"^.{0,262144}$", &json!(42), true; "repeated class ignores numbers")]
-    #[test_case(r"^.{0,262144}$", &json!("ab"), true; "repeated class matches")]
-    #[test_case(r"^.{0,262144}$", &json!("a\n"), false; "repeated class mismatches")]
-    #[test_case(r"^\S*$", &json!(null), true; "no whitespace ignores null")]
-    #[test_case(r"^\S*$", &json!("ab"), true; "no whitespace matches")]
-    #[test_case(r"^\S*$", &json!("a\u{a0}b"), false; "no whitespace mismatches")]
-    #[test_case(r"^(ab|cd)$", &json!(["ab"]), true; "alternation ignores arrays")]
-    #[test_case(r"^(ab|cd)$", &json!("cd"), true; "alternation matches")]
-    #[test_case(r"^(ab|cd)$", &json!("abcd"), false; "alternation mismatches")]
+    #[test_case(r"^.{0,262144}$", &json!(42), true; "repeated class accepts numbers")]
+    #[test_case(r"^.{0,262144}$", &json!("ab"), true; "repeated class accepts a string in the class")]
+    #[test_case(r"^.{0,262144}$", &json!("a\n"), false; "repeated class rejects a line feed")]
+    #[test_case(r"^\S*$", &json!(null), true; "no whitespace accepts null")]
+    #[test_case(r"^\S*$", &json!("ab"), true; "no whitespace accepts a string without spaces")]
+    #[test_case(r"^\S*$", &json!("a\u{a0}b"), false; "no whitespace rejects a no-break space")]
+    #[test_case(r"^(ab|cd)$", &json!(["ab"]), true; "alternation accepts arrays")]
+    #[test_case(r"^(ab|cd)$", &json!("cd"), true; "alternation accepts a listed string")]
+    #[test_case(r"^(ab|cd)$", &json!("abcd"), false; "alternation rejects an unlisted string")]
     fn patterns_without_the_engine_agree_across_entry_points(
         pattern: &str,
         instance: &Value,

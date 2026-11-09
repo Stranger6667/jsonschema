@@ -131,11 +131,19 @@ fn collapse_to_minimum(repetition: &ast::Repetition, min: u32) -> Edit {
 pub struct RepeatedClass {
     /// One bit per ASCII code point in `X`.
     ascii: u128,
-    /// Every member of `X`, as sorted and disjoint ranges.
-    ranges: Box<[(char, char)]>,
+    /// For each block of 256 code points in the BMP, the position of its bits in `blocks`.
+    block_index: Box<[u8; 256]>,
+    /// The distinct blocks, one bit per code point in `X`.
+    blocks: Box<[Block]>,
+    /// Members of `X` past the BMP, as sorted and disjoint ranges.
+    astral: Box<[(char, char)]>,
     min: usize,
     max: usize,
 }
+
+type Block = [u64; 4];
+
+const BMP_END: u32 = 0xFFFF;
 
 impl RepeatedClass {
     /// The matcher for a translated pattern shaped `^X{m,n}$`, or `None` for any other shape. The
@@ -165,20 +173,43 @@ impl RepeatedClass {
         let HirKind::Class(Class::Unicode(class)) = uncaptured(&repetition.sub).kind() else {
             return None;
         };
-        let ranges: Box<[(char, char)]> = class
-            .ranges()
-            .iter()
-            .map(|range| (range.start(), range.end()))
-            .collect();
-        let mut ascii = 0_u128;
-        for &(start, end) in &ranges {
-            for code in u32::from(start)..=u32::from(end).min(0x7F) {
-                ascii |= 1 << code;
+        let mut bmp = [[0_u64; 4]; 256];
+        let mut astral = Vec::new();
+        for range in class.ranges() {
+            let (start, end) = (u32::from(range.start()), u32::from(range.end()));
+            if end > BMP_END {
+                astral.push((range.start().max('\u{10000}'), range.end()));
+            }
+            // A word at a time; a range past the BMP sets none.
+            let end = end.min(BMP_END);
+            for word in start / 64..=end / 64 {
+                let low = if word == start / 64 { start % 64 } else { 0 };
+                let high = if word == end / 64 { end % 64 } else { 63 };
+                bmp[(word / 4) as usize][(word % 4) as usize] |=
+                    (u64::MAX << low) & (u64::MAX >> (63 - high));
             }
         }
+        let mut block_index = Box::new([0_u8; 256]);
+        let mut blocks: Vec<Block> = Vec::new();
+        let mut previous = 0;
+        for (block, position) in bmp.iter().zip(block_index.iter_mut()) {
+            // Neighbouring blocks often hold the same script or the same gap.
+            let found = if blocks.get(previous) == Some(block) {
+                previous
+            } else if let Some(found) = blocks.iter().position(|known| known == block) {
+                found
+            } else {
+                blocks.push(*block);
+                blocks.len() - 1
+            };
+            *position = u8::try_from(found).ok()?;
+            previous = found;
+        }
         Some(Self {
-            ascii,
-            ranges,
+            ascii: u128::from(bmp[0][0]) | (u128::from(bmp[0][1]) << 64),
+            block_index,
+            blocks: blocks.into_boxed_slice(),
+            astral: astral.into_boxed_slice(),
             min: usize::try_from(repetition.min).ok()?,
             max: usize::try_from(repetition.max?).ok()?,
         })
@@ -201,11 +232,16 @@ impl RepeatedClass {
     }
 
     fn contains(&self, c: char) -> bool {
-        if c.is_ascii() {
-            return (self.ascii >> u32::from(c)) & 1 == 1;
+        let code = u32::from(c);
+        if code < 0x80 {
+            return (self.ascii >> code) & 1 == 1;
         }
-        let next = self.ranges.partition_point(|&(_, end)| end < c);
-        self.ranges.get(next).is_some_and(|&(start, _)| start <= c)
+        if code <= BMP_END {
+            let block = &self.blocks[usize::from(self.block_index[(code >> 8) as usize])];
+            return (block[((code >> 6) & 3) as usize] >> (code & 63)) & 1 == 1;
+        }
+        let next = self.astral.partition_point(|&(_, end)| end < c);
+        self.astral.get(next).is_some_and(|&(start, _)| start <= c)
     }
 }
 
@@ -488,6 +524,31 @@ mod tests {
                 class.is_match(&text),
                 regex.is_match(&text),
                 "{pattern} on {text:?}"
+            );
+        }
+    }
+
+    // Inputs are translated classes, in Rust syntax. Every character of the BMP, and every 17th
+    // past it.
+    #[test_case(r"\p{L}"; "letters")]
+    #[test_case(r"[^\p{C}]"; "negated property")]
+    #[test_case(r"[\p{L}\p{N}]"; "letters and numbers")]
+    #[test_case(r"\w"; "word characters")]
+    #[test_case(r"[^\n\r\x{2028}\x{2029}]"; "dot")]
+    #[test_case(r"[\x{7E}-\x{81}\x{FF}-\x{101}\x{13F}-\x{140}\x{FFFF}-\x{10001}]"; "ranges across block and plane edges")]
+    #[test_case(r"[\x{10000}-\x{10FFFF}]"; "only past the BMP")]
+    #[test_case(r"[a-z]"; "only ascii")]
+    fn repeated_class_agrees_with_the_engine_on_every_character(class: &str) {
+        let pattern = format!("^{class}{{1,2}}$");
+        let repeated = RepeatedClass::from_translated(&pattern).expect("repeated class");
+        let regex = regex::Regex::new(&pattern).unwrap();
+        let codes = (0..=0xFFFF).chain((0x1_0000..=0x10_FFFF).step_by(17));
+        for c in codes.filter_map(char::from_u32) {
+            let text = c.to_string();
+            assert_eq!(
+                repeated.is_match(&text),
+                regex.is_match(&text),
+                "{class} on {c:?}"
             );
         }
     }

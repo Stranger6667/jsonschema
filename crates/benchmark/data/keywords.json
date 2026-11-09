@@ -747,6 +747,18 @@
         ]
     },
     {
+        "name": "pattern_repeated_class",
+        "schema": {
+            "pattern": "^\\p{L}{2,50}$"
+        },
+        "valid": [
+            "Привет"
+        ],
+        "invalid": [
+            "Привет1"
+        ]
+    },
+    {
         "name": "pattern_properties",
         "schema": {
             "patternProperties": {
