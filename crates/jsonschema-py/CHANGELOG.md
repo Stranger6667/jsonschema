@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `dereference` following `$ref` in keywords that hold data, such as `const` and `examples`. [#1858](https://github.com/Stranger6667/jsonschema/issues/1858)
+
 ## [0.61.0] - 2026-11-08
 
 ### Fixed

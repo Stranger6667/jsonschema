@@ -1,4 +1,4 @@
-use std::sync::Arc;
+use std::{ptr, sync::Arc};
 
 use ahash::AHashSet;
 use jsonschema_value::Json;
@@ -73,6 +73,9 @@ fn walk(
         Value::Object(obj) => {
             // Update resolver context for embedded resources (handles nested $id)
             let resolver = resolver.in_subresource(draft.create_resource_ref(value))?;
+            // Only subresources are schemas; every other keyword value is data, even if it holds `$ref`
+            let subschemas: AHashSet<*const Value> =
+                draft.subresources_of(value).map(ptr::from_ref).collect();
 
             if let Some(Value::String(ref_str)) = obj.get("$ref") {
                 let resolved = resolver.lookup(ref_str)?;
@@ -103,7 +106,7 @@ fn walk(
                     for (k, v) in obj {
                         if k != "$ref" && !merged.contains_key(k.as_str()) {
                             // walk sibling values so nested $refs within siblings are also resolved
-                            let walked = walk(v, draft, &resolver, visited)?;
+                            let walked = walk_keyword(v, &subschemas, draft, &resolver, visited)?;
                             merged.insert(k.clone(), walked);
                         }
                     }
@@ -112,21 +115,39 @@ fn walk(
                     Ok(inlined)
                 }
             } else {
-                // No $ref: recurse into all values
-                let mut result = Map::with_capacity(obj.len());
-                for (k, v) in obj {
-                    result.insert(k.clone(), walk(v, draft, &resolver, visited)?);
-                }
-                Ok(Value::Object(result))
+                walk_keyword(value, &subschemas, draft, &resolver, visited)
             }
         }
-        Value::Array(arr) => {
-            let items: Result<Vec<_>, _> = arr
-                .iter()
-                .map(|v| walk(v, draft, resolver, visited))
-                .collect();
-            Ok(Value::Array(items?))
+        _ => Ok(value.clone()),
+    }
+}
+
+/// Rebuild a keyword value, dereferencing only the subschemas found in it.
+fn walk_keyword(
+    value: &Value,
+    subschemas: &AHashSet<*const Value>,
+    draft: Draft,
+    resolver: &Resolver<'_>,
+    visited: &mut AHashSet<String>,
+) -> Result<Value, referencing::Error> {
+    if subschemas.contains(&ptr::from_ref(value)) {
+        return walk(value, draft, resolver, visited);
+    }
+    match value {
+        Value::Object(obj) => {
+            let mut result = Map::with_capacity(obj.len());
+            for (k, v) in obj {
+                result.insert(
+                    k.clone(),
+                    walk_keyword(v, subschemas, draft, resolver, visited)?,
+                );
+            }
+            Ok(Value::Object(result))
         }
+        Value::Array(arr) => arr
+            .iter()
+            .map(|v| walk_keyword(v, subschemas, draft, resolver, visited))
+            .collect(),
         _ => Ok(value.clone()),
     }
 }

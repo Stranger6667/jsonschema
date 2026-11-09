@@ -246,6 +246,60 @@ fn registry_with_address() -> jsonschema::Registry<'static> {
     });
     "draft4_schema"
 )]
+#[test_case(
+    json!({
+        "$defs": {"int": {"type": "integer"}},
+        "properties": {"x": {"const": {"$ref": "#/$defs/int"}}}
+    }),
+    json!({
+        "$defs": {"int": {"type": "integer"}},
+        "properties": {"x": {"const": {"$ref": "#/$defs/int"}}}
+    });
+    "ref_in_const_is_data"
+)]
+#[test_case(
+    json!({
+        "$defs": {"int": {"type": "integer"}},
+        "enum": [{"$ref": "#/$defs/int"}, 1]
+    }),
+    json!({
+        "$defs": {"int": {"type": "integer"}},
+        "enum": [{"$ref": "#/$defs/int"}, 1]
+    });
+    "ref_in_enum_is_data"
+)]
+#[test_case(
+    json!({"default": {"$ref": "#/$defs/missing"}}),
+    json!({"default": {"$ref": "#/$defs/missing"}});
+    "ref_in_default_is_data"
+)]
+#[test_case(
+    json!({"properties": {"x": {"examples": [{"$ref": "#/$defs/missing"}]}}}),
+    json!({"properties": {"x": {"examples": [{"$ref": "#/$defs/missing"}]}}});
+    "ref_in_examples_is_data"
+)]
+#[test_case(
+    json!({
+        "$defs": {"int": {"type": "integer"}},
+        "properties": {"x": {"$ref": "#/$defs/int", "default": {"$ref": "#/$defs/missing"}}}
+    }),
+    json!({
+        "$defs": {"int": {"type": "integer"}},
+        "properties": {"x": {"type": "integer", "default": {"$ref": "#/$defs/missing"}}}
+    });
+    "ref_in_sibling_default_is_data"
+)]
+#[test_case(
+    json!({
+        "$defs": {"int": {"type": "integer"}},
+        "properties": {"const": {"$ref": "#/$defs/int"}}
+    }),
+    json!({
+        "$defs": {"int": {"type": "integer"}},
+        "properties": {"const": {"type": "integer"}}
+    });
+    "property_named_const_inlined"
+)]
 #[allow(clippy::needless_pass_by_value)]
 fn test_dereference(schema: Value, expected: Value) {
     assert_eq!(jsonschema::dereference(&schema).unwrap(), expected);
