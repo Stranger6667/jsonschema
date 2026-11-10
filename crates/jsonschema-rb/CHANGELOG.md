@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.61.1] - 2026-11-10
+
 ### Fixed
 
 - `dereference` following `$ref` in keywords that hold data, such as `const` and `examples`. [#1858](https://github.com/Stranger6667/jsonschema/issues/1858)
@@ -745,7 +747,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.1...HEAD
+[0.61.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.0...ruby-v0.61.1
 [0.61.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.2...ruby-v0.61.0
 [0.60.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.1...ruby-v0.60.2
 [0.60.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.0...ruby-v0.60.1
