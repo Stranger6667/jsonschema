@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.61.1] - 2026-11-10
+
 ### Added
 
 - `PatternCache` and `ValidationOptions::with_pattern_cache` to compile each regex once across validator builds.
@@ -2057,7 +2059,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.1...HEAD
+[0.61.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.0...rust-v0.61.1
 [0.61.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.2...rust-v0.61.0
 [0.60.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.1...rust-v0.60.2
 [0.60.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.0...rust-v0.60.1
