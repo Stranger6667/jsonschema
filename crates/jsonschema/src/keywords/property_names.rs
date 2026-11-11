@@ -9,6 +9,7 @@ use crate::{
     Json, Node, Object,
 };
 use serde_json::{Map, Value};
+use std::{convert::Infallible, ops::ControlFlow};
 
 pub(crate) struct PropertyNamesObjectValidator<F: Json> {
     node: SchemaNode<F>,
@@ -31,14 +32,15 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             let mut buffer = F::StringBuffer::default();
-            for (name, _) in object.members() {
-                let valid = F::with_string_node(&mut buffer, name.as_ref(), |node| {
-                    self.node.is_valid_child(&node, ctx)
-                });
-                if !valid {
-                    return false;
-                }
-            }
+            return object
+                .try_for_each_name_node(&mut buffer, |node| {
+                    if self.node.is_valid_child(&node, ctx) {
+                        ControlFlow::Continue(())
+                    } else {
+                        ControlFlow::Break(())
+                    }
+                })
+                .is_continue();
         }
         true
     }
@@ -52,22 +54,21 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
     ) -> Result<(), ValidationError<'i>> {
         if let Some(object) = instance.as_object() {
             let mut buffer = F::StringBuffer::default();
-            for (name, _) in object.members() {
-                let result = F::with_string_node(&mut buffer, name.as_ref(), |node| {
-                    self.node
-                        .validate(&node, location, tracker, ctx)
-                        .map_err(ValidationError::to_owned)
-                });
-                if let Err(error) = result {
-                    let schema_path = error.schema_path().clone();
-                    return Err(ValidationError::property_names(
-                        schema_path.clone(),
-                        crate::paths::capture_evaluation_path(tracker, &schema_path),
-                        location.into(),
-                        instance.lazy_value(),
-                        error,
-                    ));
+            let flow = object.try_for_each_name_node(&mut buffer, |node| {
+                match self.node.validate(&node, location, tracker, ctx) {
+                    Ok(()) => ControlFlow::Continue(()),
+                    Err(error) => ControlFlow::Break(error.to_owned()),
                 }
+            });
+            if let ControlFlow::Break(error) = flow {
+                let schema_path = error.schema_path().clone();
+                return Err(ValidationError::property_names(
+                    schema_path.clone(),
+                    crate::paths::capture_evaluation_path(tracker, &schema_path),
+                    location.into(),
+                    instance.lazy_value(),
+                    error,
+                ));
             }
         }
         Ok(())
@@ -85,25 +86,24 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
             return;
         };
         let mut buffer = F::StringBuffer::default();
-        let mut name_errors = Vec::new();
-        for (name, _) in object.members() {
-            F::with_string_node(&mut buffer, name.as_ref(), |node| {
+        let ControlFlow::Continue(()) =
+            object.try_for_each_name_node::<Infallible>(&mut buffer, |node| {
                 let mut collected = Vec::new();
                 self.node
                     .collect_errors(&node, location, tracker, ctx, &mut collected);
-                name_errors.extend(collected.into_iter().map(ValidationError::to_owned));
+                for error in collected {
+                    let error = error.to_owned();
+                    let schema_path = error.schema_path().clone();
+                    errors.push(ValidationError::property_names(
+                        schema_path.clone(),
+                        crate::paths::capture_evaluation_path(tracker, &schema_path),
+                        location.into(),
+                        instance.lazy_value(),
+                        error,
+                    ));
+                }
+                ControlFlow::Continue(())
             });
-            for error in name_errors.drain(..) {
-                let schema_path = error.schema_path().clone();
-                errors.push(ValidationError::property_names(
-                    schema_path.clone(),
-                    crate::paths::capture_evaluation_path(tracker, &schema_path),
-                    location.into(),
-                    instance.lazy_value(),
-                    error,
-                ));
-            }
-        }
     }
 
     fn evaluate(
@@ -116,12 +116,12 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
         if let Some(object) = instance.as_object() {
             let mut children = ChildList::default();
             let mut buffer = F::StringBuffer::default();
-            for (name, _) in object.members() {
-                let child = F::with_string_node(&mut buffer, name.as_ref(), |node| {
-                    self.node.evaluate_instance(&node, location, tracker, ctx)
+            let ControlFlow::Continue(()) =
+                object.try_for_each_name_node::<Infallible>(&mut buffer, |node| {
+                    let child = self.node.evaluate_instance(&node, location, tracker, ctx);
+                    children.push(ctx.arena(), child);
+                    ControlFlow::Continue(())
                 });
-                children.push(ctx.arena(), child);
-            }
             EvaluationResult::from_children(children)
         } else {
             EvaluationResult::valid_empty()
