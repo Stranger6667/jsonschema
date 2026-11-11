@@ -14,7 +14,7 @@ float-roundtrip = ["serde_json/float_roundtrip"]
 bench = []
 
 [dependencies]
-fancy-regex = "0.20.1"
+fancy-regex = "0.20.2"
 indexmap = "2"
 jsonschema-regex = { version = "0.61.1", path = "../jsonschema-regex" }
 percent-encoding = "2.3"

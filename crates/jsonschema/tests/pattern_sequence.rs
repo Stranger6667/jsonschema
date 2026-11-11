@@ -81,6 +81,7 @@ fn property_answers(pattern: &str, key: &str) -> Vec<bool> {
 #[test_case(r"^\d+[:-]\d+$", "8080:80", true; "port mapping")]
 #[test_case(r"^\d+[:-]\d+$", "8080", false; "port mapping missing")]
 #[test_case(r"^[a-z]{1,100}$", "abcdefghij", true; "long single class")]
+#[test_case(r"^.?a?.?$", "aba", false; "optional literal between optional items")]
 fn property_patterns(pattern: &str, key: &str, matches: bool) {
     assert_eq!(property_answers(pattern, key), vec![matches; 6]);
 }
