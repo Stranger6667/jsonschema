@@ -68,7 +68,9 @@ impl<F: Json> Validate<F> for AdditionalPropertiesValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             let mut values = object.members();
-            if let Some(validator) = self.node.single_validator() {
+            if let Some(types) = self.node.shortcut_types() {
+                values.all(|(_, value)| types.contains(value.json_type()))
+            } else if let Some(validator) = self.node.single_validator() {
                 values.all(|(_, value)| validator.is_valid(&value, ctx))
             } else {
                 values.all(|(_, value)| self.node.is_valid_child(&value, ctx))
@@ -3019,6 +3021,23 @@ mod tests {
                 "\"b\" is a required property",
             ],
         );
+    }
+
+    // Values under an `additionalProperties` that only checks `type`, directly or through `$ref`.
+    #[test_case(&json!({"additionalProperties": {"type": "string"}}), &json!({"a": "x", "b": "y"}), true; "string accepted")]
+    #[test_case(&json!({"additionalProperties": {"type": "string"}}), &json!({"a": "x", "b": 1}), false; "string rejected")]
+    #[test_case(&json!({"additionalProperties": {"type": ["string", "null"]}}), &json!({"a": null}), true; "union accepted")]
+    #[test_case(&json!({"additionalProperties": {"type": ["string", "null"]}}), &json!({"a": true}), false; "union rejected")]
+    #[test_case(&json!({"additionalProperties": {"$ref": "#/definitions/o"}, "definitions": {"o": {"type": "object"}}}), &json!({"a": []}), false; "through ref rejected")]
+    #[test_case(&json!({"additionalProperties": {"type": "number"}}), &json!({"a": 1.5}), true; "number accepted")]
+    #[test_case(&json!({"additionalProperties": {"type": "integer"}}), &json!({"a": 1.5}), false; "integer rejected")]
+    #[test_case(&json!({"additionalProperties": {"type": "string"}}), &json!([1]), true; "not an object")]
+    fn additional_values_checking_only_type(schema: &Value, instance: &Value, valid: bool) {
+        if valid {
+            tests_util::is_valid(schema, instance);
+        } else {
+            tests_util::is_not_valid(schema, instance);
+        }
     }
 
     fn with_many_properties(mut schema: Value) -> Value {
