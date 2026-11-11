@@ -460,21 +460,32 @@ impl Drop for PendingErrorScope {
 
 // PyPy runs `PyDict_Next` over one key snapshot per dict and drops it when any loop over that dict
 // finishes, so a loop nested over the same dict ends the outer one. There each cursor walks its own.
-// The value under `key`, or null; lookups by a string key never raise.
+// The value under `key`, or null. A key comparison that raises counts as a miss.
 #[inline]
 fn dict_get(dict: *mut ffi::PyObject, key: *mut ffi::PyObject) -> *mut ffi::PyObject {
     #[cfg(Py_GIL_DISABLED)]
     {
         let mut value: *mut ffi::PyObject = std::ptr::null_mut();
-        if unsafe { ffi::PyDict_GetItemRef(dict, key, &raw mut value) } > 0 {
-            hold(value)
-        } else {
-            std::ptr::null_mut()
+        match unsafe { ffi::PyDict_GetItemRef(dict, key, &raw mut value) } {
+            1 => hold(value),
+            0 => std::ptr::null_mut(),
+            _ => {
+                unsafe { ffi::PyErr_Clear() };
+                std::ptr::null_mut()
+            }
         }
     }
     #[cfg(not(Py_GIL_DISABLED))]
     {
-        held(unsafe { ffi::PyDict_GetItem(dict, key) })
+        // Unlike `PyDict_GetItem`, leaves the exception state alone unless a comparison raises.
+        let value = unsafe { ffi::PyDict_GetItemWithError(dict, key) };
+        if value.is_null() {
+            if unsafe { !ffi::PyErr_Occurred().is_null() } {
+                unsafe { ffi::PyErr_Clear() };
+            }
+            return value;
+        }
+        held(value)
     }
 }
 

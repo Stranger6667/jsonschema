@@ -920,6 +920,21 @@ def test_enums(backend, type_, value, expected):
     assert backend.is_valid(schema, instance) is expected
 
 
+class RaisingEqualityKey:
+    # Hashes like "name", so a lookup for "name" compares against it.
+    def __hash__(self):
+        return hash("name")
+
+    def __eq__(self, other):
+        raise RuntimeError("comparison failed")
+
+
+@pytest.mark.filterwarnings("error::pytest.PytestUnraisableExceptionWarning")
+def test_lookup_through_raising_key_comparison_is_a_miss():
+    validator = validator_for({"properties": {"inner": {"required": ["name"]}}})
+    assert validator.is_valid({"inner": {RaisingEqualityKey(): 1}}) is False
+
+
 def test_dict_with_non_str_keys(backend):
     schema = {"type": "object"}
     instance = {uuid.uuid4(): "foo"}
