@@ -1,6 +1,6 @@
 //! `serde_json::Value` representation: borrow-only accessors that monomorphize to direct `&Value` code.
 
-use std::borrow::Cow;
+use std::{borrow::Cow, cell::Cell};
 
 use serde_json::{Map, Value};
 
@@ -18,7 +18,7 @@ pub struct SerdeJson;
 impl Json for SerdeJson {
     type Node<'a> = &'a Value;
     type PreparedKey = String;
-    type StringBuffer = Value;
+    type StringBuffer = ();
 
     // `Map` is a `BTreeMap`, so a lookup orders keys and reaches `memcmp` on every probe.
     const KEYS_PER_LOOKUP: usize = 2;
@@ -28,15 +28,20 @@ impl Json for SerdeJson {
         key.to_owned()
     }
 
-    fn with_string_node<T>(buffer: &mut Value, string: &str, f: impl FnOnce(&Value) -> T) -> T {
-        // Reuses the buffer's allocation across calls instead of building a fresh `String` per name.
-        if let Value::String(existing) = buffer {
-            existing.clear();
-            existing.push_str(string);
-        } else {
-            *buffer = Value::String(string.to_owned());
+    fn with_string_node<T>((): &mut (), string: &str, f: impl FnOnce(&Value) -> T) -> T {
+        thread_local! {
+            // Backs every name node on this thread, so names allocate only while it grows.
+            static NAME: Cell<String> = const { Cell::new(String::new()) };
         }
-        f(buffer)
+        let mut name = NAME.take();
+        name.clear();
+        name.push_str(string);
+        let node = Value::String(name);
+        let result = f(&node);
+        if let Value::String(name) = node {
+            NAME.set(name);
+        }
+        result
     }
 }
 
