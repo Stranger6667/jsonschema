@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- References inside a registered resource resolving against the URI it was registered under instead of its `$id`. [#1862](https://github.com/Stranger6667/jsonschema/issues/1862)
+
 ### Performance
 
 - Validation of deeply nested instances against recursive schemas takes time linear in their nesting depth.

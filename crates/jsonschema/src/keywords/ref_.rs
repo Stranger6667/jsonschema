@@ -1941,6 +1941,30 @@ mod tests {
         }
     }
 
+    // A registered resource's `$id` is the base for its references, however the resource is reached
+    #[test_case("child.json", json!({"$id": "nested/child.json", "$ref": "../leaf.json"}); "relative id")]
+    #[test_case("child.json", json!({"$id": "file:///schemas/nested/child.json", "$ref": "../leaf.json"}); "absolute id")]
+    #[test_case("child.json#/$defs/name", json!({"$id": "nested/child.json", "$defs": {"name": {"$ref": "../leaf.json"}}}); "pointer")]
+    #[test_case("child.json#name", json!({"$id": "nested/child.json", "$defs": {"name": {"$anchor": "name", "$ref": "../leaf.json"}}}); "anchor")]
+    #[test_case("nested/child.json", json!({"$id": "nested/child.json", "$ref": "../leaf.json"}); "reached by id")]
+    fn registered_resource_id_is_reference_base(reference: &str, child: Value) {
+        let registry = crate::Registry::new()
+            .add("file:///schemas/child.json", child)
+            .expect("Invalid resource")
+            .add("file:///schemas/leaf.json", json!({"type": "string"}))
+            .expect("Invalid resource")
+            .prepare()
+            .expect("Invalid registry");
+        let validator = crate::options()
+            .with_base_uri("file:///schemas/root.json")
+            .with_registry(&registry)
+            .build(&json!({"properties": {"name": {"$ref": reference}}}))
+            .expect("Invalid schema");
+
+        assert!(validator.is_valid(&json!({"name": "hello"})));
+        assert!(!validator.is_valid(&json!({"name": 1})));
+    }
+
     #[test]
     fn evaluation_path_triple_nested_ref() {
         // Three levels of $ref
