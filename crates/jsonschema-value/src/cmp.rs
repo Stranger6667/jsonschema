@@ -49,6 +49,10 @@ pub fn equal_numbers<L: crate::JsonNumber>(left: &L, right: &serde_json::Number)
         use crate::numeric::bignum;
         use fraction::BigFraction;
 
+        // Integers both sides hold exactly need none of the decimal forms below.
+        if let (Some(a), Some(b)) = (left.as_i64(), right.as_i64()) {
+            return a == b;
+        }
         let (left_text, right_text) = (left.as_str(), right.as_str());
         if bignum::exceeds_digit_budget(&left_text) || bignum::exceeds_digit_budget(right_text) {
             return bignum::Decimal::parse(&left_text) == bignum::Decimal::parse(right_text);

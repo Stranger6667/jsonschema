@@ -17,6 +17,7 @@
 - Literal-prefix patterns rejecting a property name on its first byte before comparing the rest.
 - `propertyNames` reusing one buffer per thread for the names it checks instead of allocating one per object.
 - `propertyNames` on the `jsonb` instance representation reusing one buffer per thread for the names it checks.
+- Integer `const` and `enum` values compared directly instead of through their decimal forms with `arbitrary-precision`.
 
 ## [0.61.1] - 2026-11-10
 
