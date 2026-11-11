@@ -11,7 +11,7 @@ pub mod encode;
 
 use std::{
     borrow::Cow,
-    cell::RefCell,
+    cell::{Cell, RefCell},
     fmt::Write as _,
     hash::{Hash, Hasher},
     sync::OnceLock,
@@ -209,7 +209,7 @@ impl JsonbNode<'_> {
 impl Json for Jsonb {
     type Node<'a> = JsonbNode<'a>;
     type PreparedKey = Box<[u8]>;
-    type StringBuffer = Vec<u8>;
+    type StringBuffer = ();
 
     const ACYCLIC: bool = true;
 
@@ -217,18 +217,21 @@ impl Json for Jsonb {
         key.as_bytes().into()
     }
 
-    fn with_string_node<T>(
-        buffer: &mut Vec<u8>,
-        string: &str,
-        f: impl FnOnce(JsonbNode<'_>) -> T,
-    ) -> T {
+    fn with_string_node<T>((): &mut (), string: &str, f: impl FnOnce(JsonbNode<'_>) -> T) -> T {
+        thread_local! {
+            // Backs every name node on this thread, so names allocate only while it grows.
+            static NAME: Cell<Vec<u8>> = const { Cell::new(Vec::new()) };
+        }
+        let mut buffer = NAME.take();
         buffer.clear();
         buffer.reserve(string.len().max(1));
         buffer.extend_from_slice(string.as_bytes());
-        f(JsonbNode {
-            data: &*buffer,
+        let result = f(JsonbNode {
+            data: &buffer,
             kind: JENTRY_ISSTRING,
-        })
+        });
+        NAME.set(buffer);
+        result
     }
 }
 
