@@ -9,6 +9,7 @@
 ### Performance
 
 - Validation of deeply nested instances against recursive schemas takes time linear in their nesting depth.
+- `unevaluatedProperties` next to `if`, `dependentSchemas`, `anyOf` or `oneOf` checked in one pass over the object by `is_valid`, without validating those subschemas again.
 
 ## [0.61.1] - 2026-11-10
 

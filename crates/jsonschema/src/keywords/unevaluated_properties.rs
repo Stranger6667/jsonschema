@@ -43,6 +43,21 @@ struct StaticEvaluated {
 }
 
 impl StaticEvaluated {
+    /// Whether everything `self` evaluates, `other` evaluates too.
+    fn is_within(&self, other: &StaticEvaluated) -> bool {
+        other.saturated
+            || (!self.saturated
+                && self.names.iter().all(|name| other.names.contains(name))
+                && self
+                    .patterns
+                    .sources()
+                    .all(|source| other.patterns.sources().any(|other| other == source)))
+    }
+
+    fn is_empty(&self) -> bool {
+        !self.saturated && self.names.is_empty() && self.patterns.is_empty()
+    }
+
     #[inline]
     fn covers(
         &self,
@@ -53,6 +68,61 @@ impl StaticEvaluated {
         self.names.contains(property) || self.patterns.is_match(property, ctx, site)
     }
 }
+
+/// Evaluated properties as a set that holds for every instance plus parts that hold under conditions.
+///
+/// Only the true/false answer is exact: a sibling keyword that fails fails the schema anyway, so
+/// the parts assume every `allOf` branch and every present `dependentSchemas` entry validates.
+struct Contributions<F: Json> {
+    base: StaticEvaluated,
+    parts: Vec<Part<F>>,
+}
+
+struct Part<F: Json> {
+    conditions: Vec<Condition<F>>,
+    evaluated: StaticEvaluated,
+}
+
+enum Condition<F: Json> {
+    Present(Arc<F::PreparedKey>),
+    Valid(SchemaNode<F>),
+    Invalid(SchemaNode<F>),
+}
+
+impl<F: Json> Clone for Condition<F> {
+    fn clone(&self) -> Self {
+        match self {
+            Condition::Present(key) => Condition::Present(Arc::clone(key)),
+            Condition::Valid(node) => Condition::Valid(node.clone()),
+            Condition::Invalid(node) => Condition::Invalid(node.clone()),
+        }
+    }
+}
+
+impl<F: Json> Condition<F> {
+    fn holds<'i>(
+        &self,
+        instance: &F::Node<'i>,
+        object: &<F::Node<'i> as Node<'i, F>>::Object,
+        ctx: &mut ValidationContext,
+    ) -> bool {
+        match self {
+            Condition::Present(key) => object.get(key).is_some(),
+            Condition::Valid(node) => node.is_valid(instance, ctx),
+            Condition::Invalid(node) => !node.is_valid(instance, ctx),
+        }
+    }
+}
+
+/// What a set of sibling branches may evaluate, which must already be in the base set.
+struct Collected<F: Json> {
+    parts: Vec<Part<F>>,
+    /// `anyOf` / `oneOf` branches: which of them holds is not tracked.
+    within_base: Vec<StaticEvaluated>,
+}
+
+/// Parts beyond this many make the walk the cheaper path.
+const MAX_PARTS: usize = 64;
 
 /// `patternProperties` regexes built with the configured engine, as `patternProperties` builds them.
 /// One list per engine keeps the engine choice out of the per-pattern loop.
@@ -68,6 +138,7 @@ struct Pattern<R> {
     regex: Arc<R>,
     /// The `patternProperties` subschema for this pattern.
     location: Location,
+    source: Arc<str>,
 }
 
 impl Patterns {
@@ -76,6 +147,7 @@ impl Patterns {
             self.literal.push(Pattern {
                 regex: Arc::new(LiteralMatcher::from(optimization)),
                 location: ctx.location().clone(),
+                source: pattern.into(),
             });
             return Ok(());
         }
@@ -84,12 +156,14 @@ impl Patterns {
                 self.fancy.push(Pattern {
                     regex: ctx.get_or_compile_regex(pattern)?,
                     location: ctx.location().clone(),
+                    source: pattern.into(),
                 });
             }
             crate::options::PatternEngineOptions::Regex { .. } => {
                 self.standard.push(Pattern {
                     regex: ctx.get_or_compile_standard_regex(pattern)?,
                     location: ctx.location().clone(),
+                    source: pattern.into(),
                 });
             }
         }
@@ -104,6 +178,14 @@ impl Patterns {
 
     fn is_empty(&self) -> bool {
         self.literal.is_empty() && self.fancy.is_empty() && self.standard.is_empty()
+    }
+
+    fn sources(&self) -> impl Iterator<Item = &str> {
+        self.literal
+            .iter()
+            .map(|pattern| &*pattern.source)
+            .chain(self.fancy.iter().map(|pattern| &*pattern.source))
+            .chain(self.standard.iter().map(|pattern| &*pattern.source))
     }
 
     #[inline]
@@ -262,6 +344,121 @@ impl<F: Json> fmt::Debug for ConditionalValidators<F> {
 }
 
 impl<F: Json> PropertyValidators<F> {
+    /// Collects what this schema evaluates into `out` and, under `conditions`, into parts;
+    /// `false` if the set depends on the instance in a way the parts cannot express.
+    fn collect_contributions(
+        &self,
+        root: bool,
+        out: &mut StaticEvaluated,
+        conditions: &[Condition<F>],
+        collected: &mut Collected<F>,
+        path: &mut Vec<usize>,
+    ) -> bool {
+        if self.dynamic_ref.is_some()
+            || self.recursive_ref.is_some()
+            || (!root && self.unevaluated.is_some())
+        {
+            return false;
+        }
+        // A cycle returns to a node this path is already collecting.
+        let id = std::ptr::from_ref(self) as usize;
+        if path.contains(&id) {
+            return true;
+        }
+        path.push(id);
+        let collected_all = self.collect_contributions_inner(out, conditions, collected, path);
+        path.pop();
+        collected_all
+    }
+
+    fn collect_contributions_inner(
+        &self,
+        out: &mut StaticEvaluated,
+        conditions: &[Condition<F>],
+        collected: &mut Collected<F>,
+        path: &mut Vec<usize>,
+    ) -> bool {
+        out.names.extend(self.properties.iter().cloned());
+        out.patterns.extend(&self.pattern_properties);
+        out.saturated |= self.additional.is_some();
+        for (_, branch) in &self.all_of {
+            if !branch.collect_contributions(false, out, conditions, collected, path) {
+                return false;
+            }
+        }
+        if let Some(ref_) = &self.ref_ {
+            if !initialized(ref_).collect_contributions(false, out, conditions, collected, path) {
+                return false;
+            }
+        }
+        for (key, dependent) in &self.dependent {
+            let mut nested = conditions.to_vec();
+            nested.push(Condition::Present(Arc::clone(key)));
+            if !Self::collect_part(dependent, nested, collected, path) {
+                return false;
+            }
+        }
+        if let Some(conditional) = &self.conditional {
+            let mut when_valid = conditions.to_vec();
+            when_valid.push(Condition::Valid(conditional.condition.clone()));
+            let mut evaluated = StaticEvaluated::default();
+            for branch in [&conditional.if_, &conditional.then_].into_iter().flatten() {
+                if !branch.collect_contributions(
+                    false,
+                    &mut evaluated,
+                    &when_valid,
+                    collected,
+                    path,
+                ) {
+                    return false;
+                }
+            }
+            collected.parts.push(Part {
+                conditions: when_valid,
+                evaluated,
+            });
+            if let Some(else_) = &conditional.else_ {
+                let mut when_invalid = conditions.to_vec();
+                when_invalid.push(Condition::Invalid(conditional.condition.clone()));
+                if !Self::collect_part(else_, when_invalid, collected, path) {
+                    return false;
+                }
+            }
+        }
+        for (_, branch) in self.any_of.iter().chain(&self.one_of) {
+            let mut evaluated = StaticEvaluated::default();
+            let mut nested = Collected {
+                parts: Vec::new(),
+                within_base: Vec::new(),
+            };
+            if !branch.collect_contributions(false, &mut evaluated, &[], &mut nested, path)
+                || !nested.parts.iter().all(|part| part.evaluated.is_empty())
+            {
+                return false;
+            }
+            collected.within_base.push(evaluated);
+            collected.within_base.extend(nested.within_base);
+        }
+        true
+    }
+
+    fn collect_part(
+        branch: &PropertyValidators<F>,
+        conditions: Vec<Condition<F>>,
+        collected: &mut Collected<F>,
+        path: &mut Vec<usize>,
+    ) -> bool {
+        let mut evaluated = StaticEvaluated::default();
+        if !branch.collect_contributions(false, &mut evaluated, &conditions, collected, path) {
+            return false;
+        }
+        collected.parts.push(Part {
+            conditions,
+            evaluated,
+        });
+        true
+    }
+
     /// Collects evaluated properties into `out`; `false` if any applicator makes the set
     /// instance-dependent. `root` skips the `unevaluatedProperties` being optimized.
     fn collect_static(
@@ -914,6 +1111,7 @@ pub(crate) struct UnevaluatedPropertiesValidator<F: Json = SerdeJson> {
     validators: PropertyValidators<F>,
     /// Filled on first use: `$ref` targets are wired up only after compilation.
     static_evaluated: OnceLock<Option<StaticEvaluated>>,
+    contributions: OnceLock<Option<Contributions<F>>>,
 }
 
 impl<F: Json> UnevaluatedPropertiesValidator<F> {
@@ -926,6 +1124,38 @@ impl<F: Json> UnevaluatedPropertiesValidator<F> {
                 self.validators
                     .collect_static(true, &mut evaluated, &mut Vec::new())
                     .then_some(evaluated)
+            })
+            .as_ref()
+    }
+
+    /// Only for callers that need the true/false answer, as [`Self::static_evaluated`].
+    fn contributions(&self) -> Option<&Contributions<F>> {
+        self.contributions
+            .get_or_init(|| {
+                let mut base = StaticEvaluated::default();
+                let mut collected = Collected {
+                    parts: Vec::new(),
+                    within_base: Vec::new(),
+                };
+                if !self.validators.collect_contributions(
+                    true,
+                    &mut base,
+                    &[],
+                    &mut collected,
+                    &mut Vec::new(),
+                ) || !collected
+                    .within_base
+                    .iter()
+                    .all(|evaluated| evaluated.is_within(&base))
+                {
+                    return None;
+                }
+                let parts: Vec<_> = collected
+                    .parts
+                    .into_iter()
+                    .filter(|part| !part.evaluated.is_within(&base))
+                    .collect();
+                (parts.len() <= MAX_PARTS).then_some(Contributions { base, parts })
             })
             .as_ref()
     }
@@ -949,6 +1179,7 @@ impl UnevaluatedPropertiesValidator {
             location: ctx.location().join("unevaluatedProperties"),
             validators,
             static_evaluated: OnceLock::new(),
+            contributions: OnceLock::new(),
         }))
     }
 }
@@ -1032,6 +1263,40 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
 
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
+            if let Some(contributions) = self.contributions() {
+                if contributions.base.saturated {
+                    return true;
+                }
+                let mut active = 0u64;
+                for (index, part) in contributions.parts.iter().enumerate() {
+                    if part
+                        .conditions
+                        .iter()
+                        .all(|condition| condition.holds(instance, &object, ctx))
+                    {
+                        if part.evaluated.saturated {
+                            return true;
+                        }
+                        active |= 1 << index;
+                    }
+                }
+                for (property, value) in object.members() {
+                    let property = property.as_ref();
+                    if contributions.base.covers(property, ctx, MatchSite::schema)
+                        || contributions.parts.iter().enumerate().any(|(index, part)| {
+                            active & (1 << index) != 0
+                                && part.evaluated.covers(property, ctx, MatchSite::schema)
+                        })
+                    {
+                        continue;
+                    }
+                    match &self.validators.unevaluated {
+                        Some(schema) if schema.is_valid(&value, ctx) => {}
+                        _ => return false,
+                    }
+                }
+                return true;
+            }
             if let Some(evaluated) = self.static_evaluated() {
                 if evaluated.saturated {
                     return true;
@@ -1286,6 +1551,10 @@ mod tests {
     #[test_case(&json!({"properties": {"a": true}}), &[]; "properties true")]
     #[test_case(&json!({"patternProperties": {"^a": true}}), &[]; "patternProperties true")]
     #[test_case(&json!({"additionalProperties": true}), &[]; "additionalProperties true")]
+    #[test_case(&json!({"if": {"required": ["a"]}, "then": {"additionalProperties": true}}), &[]; "then additionalProperties true")]
+    #[test_case(&json!({"if": {"required": ["b"]}, "then": {"additionalProperties": true}}), A_UNEXPECTED; "failing if with then additionalProperties true")]
+    #[test_case(&json!({"if": {"required": ["b"]}, "else": {"additionalProperties": true}}), &[]; "else additionalProperties true")]
+    #[test_case(&json!({"dependentSchemas": {"a": {"additionalProperties": true}}}), &[]; "dependentSchemas additionalProperties true")]
     fn boolean_subschemas(applicator: &Value, expected: &[(&str, &str)]) {
         let expected: Vec<_> = expected
             .iter()
