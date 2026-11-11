@@ -1,3 +1,4 @@
+use super::all_of::ObjectPart;
 use crate::{
     compiler,
     error::ValidationError,
@@ -338,6 +339,11 @@ impl ObjectTypeValidator {
 }
 
 impl<F: Json> Validate<F> for ObjectTypeValidator {
+    fn collect_object_part<'a>(&'a self, part: &mut ObjectPart<'a, F>) -> bool {
+        part.object_only = true;
+        true
+    }
+
     fn accepted_types(&self) -> Option<JsonTypeSet> {
         Some(JsonTypeSet::empty().insert(JsonType::Object))
     }

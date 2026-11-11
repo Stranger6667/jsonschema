@@ -369,6 +369,17 @@ impl<F: Json> WeakTarget<F> {
 /// A `Strong` target validates as a direct child. Every `$ref` cycle passes a `Weak` target,
 /// whose guard stops re-entry.
 impl<F: Json> Validate<F> for PendingSchemaNode<F> {
+    fn collect_object_part<'a>(
+        &'a self,
+        part: &mut crate::keywords::all_of::ObjectPart<'a, F>,
+    ) -> bool {
+        match self.target() {
+            PendingTarget::Strong(node) => node.collect_object_part(part),
+            // A cycle: its members recurse into the same branches.
+            PendingTarget::Weak(_) => false,
+        }
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let target = match self.target() {
             PendingTarget::Strong(node) => return node.is_valid(instance, ctx),
@@ -952,6 +963,14 @@ impl<F: Json> SchemaNode<F> {
 impl<F: Json> Validate<F> for SchemaNode<F> {
     fn as_owned_node(&self) -> Option<&SchemaNode<F>> {
         Some(self)
+    }
+
+    fn collect_object_part<'a>(
+        &'a self,
+        part: &mut crate::keywords::all_of::ObjectPart<'a, F>,
+    ) -> bool {
+        self.validators()
+            .all(|validator| validator.collect_object_part(part))
     }
 
     #[inline]

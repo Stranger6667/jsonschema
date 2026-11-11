@@ -208,9 +208,12 @@ impl PropertyName {
 
 pub(crate) type SmallValidatorsMap<F = SerdeJson> = Vec<(PropertyName, SchemaNode<F>)>;
 
-/// Declared names bucketed by a multiply-shift of their `KeyHead`.
-pub(crate) struct BigValidatorsMap<F: Json = SerdeJson> {
-    entries: Box<[(PropertyName, SchemaNode<F>)]>,
+/// `properties` subschemas by declared name, for maps past `HASHMAP_THRESHOLD`.
+pub(crate) type BigValidatorsMap<F = SerdeJson> = NameBuckets<SchemaNode<F>>;
+
+/// Declared names bucketed by a multiply-shift of their `KeyHead`, each with a `T`.
+pub(crate) struct NameBuckets<T> {
+    pub(crate) entries: Box<[(PropertyName, T)]>,
     /// `entries[starts[slot]..starts[slot + 1]]` is the bucket of `slot`.
     starts: Box<[u32]>,
     seed: u64,
@@ -231,8 +234,8 @@ fn slot(fold: u64, seed: u64, shift: u32) -> usize {
     (fold.wrapping_mul(seed) >> shift) as usize
 }
 
-impl<F: Json> BigValidatorsMap<F> {
-    pub(crate) fn new(names: Vec<(PropertyName, SchemaNode<F>)>) -> Self {
+impl<T> NameBuckets<T> {
+    pub(crate) fn new(names: Vec<(PropertyName, T)>) -> Self {
         let bits = names.len().next_power_of_two().trailing_zeros() + 1;
         let shift = 64 - bits;
         let slots = 1_usize << bits;
@@ -264,7 +267,7 @@ impl<F: Json> BigValidatorsMap<F> {
         for index in 1..=slots {
             starts[index] += starts[index - 1];
         }
-        BigValidatorsMap {
+        NameBuckets {
             entries: entries.into_boxed_slice(),
             starts: starts.into_boxed_slice(),
             seed,
@@ -273,7 +276,7 @@ impl<F: Json> BigValidatorsMap<F> {
     }
 
     #[inline]
-    fn find(&self, key: &str) -> Option<&(PropertyName, SchemaNode<F>)> {
+    pub(crate) fn find(&self, key: &str) -> Option<&(PropertyName, T)> {
         let head = KeyHead::of(key);
         let slot = slot(head.fold(), self.seed, self.shift);
         let bucket = self.starts[slot] as usize..self.starts[slot + 1] as usize;

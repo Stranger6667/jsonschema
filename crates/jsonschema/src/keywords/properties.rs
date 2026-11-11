@@ -22,6 +22,8 @@ use referencing::{Uri, Vocabulary};
 use serde_json::{Map, Value};
 use std::sync::Arc;
 
+use super::all_of::ObjectPart;
+
 pub(crate) struct SmallPropertiesValidator<F: Json = SerdeJson> {
     pub(crate) properties: Vec<(PropertyName, F::PreparedKey, SchemaNode<F>)>,
     lengths: NameLengths,
@@ -111,6 +113,15 @@ impl SmallPropertiesWithRequired2Validator {
 }
 
 impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
+    fn collect_object_part<'a>(&'a self, part: &mut ObjectPart<'a, F>) -> bool {
+        part.properties.extend(
+            self.properties
+                .iter()
+                .map(|(name, _, node)| (name.as_str(), node)),
+        );
+        true
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let Some(object) = instance.as_object() else {
             return true;
@@ -288,6 +299,17 @@ impl<F: Json> SmallPropertiesWithRequired2Validator<F> {
 }
 
 impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
+    fn collect_object_part<'a>(&'a self, part: &mut ObjectPart<'a, F>) -> bool {
+        part.properties.extend(
+            self.properties
+                .iter()
+                .map(|(name, _, node)| (name.as_str(), node)),
+        );
+        part.required.push(self.first.as_str());
+        part.required.push(self.second.as_str());
+        true
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         let Some(object) = instance.as_object() else {
             return true;
@@ -511,6 +533,16 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
 }
 
 impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
+    fn collect_object_part<'a>(&'a self, part: &mut ObjectPart<'a, F>) -> bool {
+        part.properties.extend(
+            self.properties
+                .entries
+                .iter()
+                .map(|(name, node)| (name.as_str(), node)),
+        );
+        true
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             // Iterate over instance properties and look up in schema's HashMap
