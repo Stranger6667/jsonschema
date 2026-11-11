@@ -113,6 +113,10 @@ pub trait Json: Sized + Send + Sync + 'static {
     /// probe on lookups.
     const KEYS_PER_LOOKUP: usize = 0;
 
+    /// No node is ever its own descendant, so a `$ref` cycle can only revisit the instance being
+    /// validated.
+    const ACYCLIC: bool = false;
+
     /// Scratch storage for [`Json::with_string_node`], reusable across calls.
     type StringBuffer: Default;
 

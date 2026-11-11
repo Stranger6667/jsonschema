@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Validation of deeply nested instances against recursive schemas takes time linear in their nesting depth.
+
 ## [0.61.1] - 2026-11-10
 
 ### Fixed
