@@ -494,9 +494,8 @@ fn null_is_recognised(value: Value, expected: bool) {
 
 #[test]
 fn string_nodes_reuse_the_buffer() {
-    let mut buffer = Vec::new();
     for expected in ["héllo", "", "second"] {
-        Jsonb::with_string_node(&mut buffer, expected, |node| {
+        Jsonb::with_string_node(&mut (), expected, |node| {
             assert_eq!(node.json_type(), JsonType::String);
             assert_eq!(node.as_string().as_deref(), Some(expected));
         });
@@ -778,10 +777,8 @@ fn adjacent_zero_length_scalars_have_distinct_identities(instance: &Value) {
 
 #[test]
 fn simultaneous_synthetic_empty_strings_have_distinct_stable_identities() {
-    let mut first_buffer = Vec::new();
-    let mut second_buffer = Vec::new();
-    Jsonb::with_string_node(&mut first_buffer, "", |first| {
-        Jsonb::with_string_node(&mut second_buffer, "", |second| {
+    Jsonb::with_string_node(&mut (), "", |first| {
+        Jsonb::with_string_node(&mut (), "", |second| {
             let first_identity = first.identity();
             let second_identity = second.identity();
             assert!(first_identity.is_some() && second_identity.is_some());
@@ -789,6 +786,16 @@ fn simultaneous_synthetic_empty_strings_have_distinct_stable_identities() {
             assert_eq!(second_identity, second.identity());
             assert_ne!(first_identity, second_identity);
         });
+    });
+}
+
+#[test]
+fn nested_string_nodes_keep_their_own_contents() {
+    Jsonb::with_string_node(&mut (), "outer name", |outer| {
+        Jsonb::with_string_node(&mut (), "ab", |inner| {
+            assert_eq!(inner.as_string().as_deref(), Some("ab"));
+        });
+        assert_eq!(outer.as_string().as_deref(), Some("outer name"));
     });
 }
 
