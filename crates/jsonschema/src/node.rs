@@ -914,6 +914,13 @@ fn stamp_absolute_location(errors: &mut [ValidationError<'_>], uri: Option<&Arc<
 }
 
 impl<F: Json> SchemaNode<F> {
+    /// The types this node accepts when it checks nothing but `type`, for loops that decide many
+    /// values by type alone.
+    #[inline]
+    pub(crate) fn shortcut_types(&self) -> Option<JsonTypeSet> {
+        self.inner.accepted_types
+    }
+
     /// The node's only validator, for loops that run the node on many values.
     #[inline]
     pub(crate) fn single_validator(&self) -> Option<&dyn Validate<F>> {
