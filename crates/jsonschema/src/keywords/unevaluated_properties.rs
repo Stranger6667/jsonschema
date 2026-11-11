@@ -19,6 +19,7 @@ use crate::{
     evaluation::{ChildList, ErrorDescription},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
+    properties::NameSet,
     regex::{analyze_pattern, Compiled, LiteralMatcher},
     unfinished_matches::MatchSite,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -35,6 +36,8 @@ pub(crate) type PendingPropertyValidators<F = SerdeJson> = Arc<OnceLock<Property
 #[derive(Default)]
 struct StaticEvaluated {
     names: AHashSet<String>,
+    /// `names` for lookups during validation, built by `freeze` once the set is complete.
+    lookup: NameSet,
     patterns: Patterns,
     /// `additionalProperties` anywhere evaluates everything.
     saturated: bool,
@@ -58,6 +61,11 @@ impl StaticEvaluated {
         !self.saturated && self.names.is_empty() && self.patterns.is_empty()
     }
 
+    fn freeze(mut self) -> Self {
+        self.lookup = NameSet::new(self.names.iter().map(String::as_str));
+        self
+    }
+
     #[inline]
     fn covers(
         &self,
@@ -65,7 +73,7 @@ impl StaticEvaluated {
         ctx: &mut ValidationContext,
         site: impl Fn(&Location) -> MatchSite,
     ) -> bool {
-        self.names.contains(property) || self.patterns.is_match(property, ctx, site)
+        self.lookup.contains(property) || self.patterns.is_match(property, ctx, site)
     }
 }
 
@@ -1123,7 +1131,7 @@ impl<F: Json> UnevaluatedPropertiesValidator<F> {
                 let mut evaluated = StaticEvaluated::default();
                 self.validators
                     .collect_static(true, &mut evaluated, &mut Vec::new())
-                    .then_some(evaluated)
+                    .then(|| evaluated.freeze())
             })
             .as_ref()
     }
@@ -1154,8 +1162,15 @@ impl<F: Json> UnevaluatedPropertiesValidator<F> {
                     .parts
                     .into_iter()
                     .filter(|part| !part.evaluated.is_within(&base))
+                    .map(|part| Part {
+                        evaluated: part.evaluated.freeze(),
+                        ..part
+                    })
                     .collect();
-                (parts.len() <= MAX_PARTS).then_some(Contributions { base, parts })
+                (parts.len() <= MAX_PARTS).then(|| Contributions {
+                    base: base.freeze(),
+                    parts,
+                })
             })
             .as_ref()
     }
@@ -1418,9 +1433,54 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::error::ValidationErrorKind;
-    use serde_json::{json, Value};
+    use crate::{error::ValidationErrorKind, tests_util};
+    use serde_json::{json, Map, Value};
     use test_case::test_case;
+
+    const LONG: &str = "aaaaaaaaXXbbbbbbbb";
+    const LONG_OTHER_MIDDLE: &str = "aaaaaaaaYYbbbbbbbb";
+
+    fn declaring(names: &[&str], extra: usize) -> Value {
+        let mut properties: Map<String, Value> = names
+            .iter()
+            .map(|name| ((*name).to_owned(), json!({})))
+            .collect();
+        properties.extend((0..extra).map(|index| (format!("p{index}"), json!({}))));
+        json!({"properties": properties, "unevaluatedProperties": false})
+    }
+
+    fn declaring_conditionally(names: &[&str]) -> Value {
+        let properties: Map<String, Value> = names
+            .iter()
+            .map(|name| ((*name).to_owned(), json!({})))
+            .collect();
+        json!({
+            "properties": {"kind": {}},
+            "if": {"required": ["kind"]},
+            "then": {"properties": properties},
+            "unevaluatedProperties": false
+        })
+    }
+
+    // Names of every length class, in a small set, a set past the bucket threshold, and a set
+    // that applies under a condition.
+    #[test_case(&declaring(&["ab", "parameters", LONG], 0), &json!({"ab": 1, "parameters": 1, LONG: 1}), true; "small set, declared")]
+    #[test_case(&declaring(&["ab", "parameters", LONG], 0), &json!({"abc": 1}), false; "small set, longer short name")]
+    #[test_case(&declaring(&["ab", "parameters", LONG], 0), &json!({"parameterz": 1}), false; "small set, same length")]
+    #[test_case(&declaring(&["ab", "parameters", LONG], 0), &json!({LONG_OTHER_MIDDLE: 1}), false; "small set, other middle")]
+    #[test_case(&declaring(&["ab", "parameters", LONG], 20), &json!({"p19": 1, LONG: 1}), true; "big set, declared")]
+    #[test_case(&declaring(&["ab", "parameters", LONG], 20), &json!({"p20": 1}), false; "big set, undeclared")]
+    #[test_case(&declaring(&["ab", "parameters", LONG], 20), &json!({LONG_OTHER_MIDDLE: 1}), false; "big set, other middle")]
+    #[test_case(&declaring_conditionally(&["parameters", LONG]), &json!({"kind": 1, LONG: 1}), true; "condition holds")]
+    #[test_case(&declaring_conditionally(&["parameters", LONG]), &json!({"kind": 1, LONG_OTHER_MIDDLE: 1}), false; "condition holds, other middle")]
+    #[test_case(&declaring_conditionally(&["parameters", LONG]), &json!({LONG: 1}), false; "condition fails")]
+    fn names_evaluated_by_properties(schema: &Value, instance: &Value, valid: bool) {
+        if valid {
+            tests_util::is_valid(schema, instance);
+        } else {
+            tests_util::is_not_valid(schema, instance);
+        }
+    }
 
     fn errors(schema: &Value, instance: &Value) -> Vec<(String, String, String)> {
         let validator = crate::validator_for(schema).expect("schema compiles");

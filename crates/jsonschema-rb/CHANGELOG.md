@@ -13,6 +13,7 @@
 - `allOf` branches that only check `properties`, `required` or `type: object` checked in one pass over the object by `is_valid`.
 - `required` beside `properties` and `additionalProperties: false` checked in the same pass over the object by `is_valid`.
 - `$ref`s to a subschema another `$ref` already compiled dispatched once instead of twice.
+- `unevaluatedProperties` matching property names by their first and last bytes instead of hashing them.
 - `additionalProperties` that only checks `type` decided without entering the subschema for each value by `is_valid`.
 - Literal-prefix patterns rejecting a property name on its first byte before comparing the rest.
 - Integer `const` and `enum` values compared directly instead of through their decimal forms.
