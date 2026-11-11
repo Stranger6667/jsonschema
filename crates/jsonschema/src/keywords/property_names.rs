@@ -193,8 +193,22 @@ mod tests {
     // Each key is validated on its own, not concatenated with the ones before it
     #[test_case(&json!({"propertyNames": {"maxLength": 3}}), &json!({"abc": 1, "de": 1}))]
     #[test_case(&json!({"propertyNames": {"maxLength": 3}}), &json!({"a": 1, "bc": 1, "def": 1}))]
+    #[test_case(&json!({"propertyNames": {"maxLength": 2}, "additionalProperties": {"propertyNames": {"maxLength": 6}}}), &json!({"a": {"abcdef": 1}, "b": {"cd": 1}}); "across nested objects")]
     fn keys_validate_independently(schema: &Value, instance: &Value) {
         tests_util::is_valid(schema, instance);
+    }
+
+    // Names from one validation do not carry over into the next
+    #[test]
+    fn keys_validate_independently_across_validations() {
+        tests_util::is_valid(
+            &json!({"propertyNames": {"maxLength": 6}}),
+            &json!({"abcdef": 1}),
+        );
+        tests_util::is_valid(
+            &json!({"propertyNames": {"maxLength": 2}}),
+            &json!({"ab": 1}),
+        );
     }
 
     #[test_case(&json!({"propertyNames": {"maxLength": 2}}), &json!({"ab": 1, "cde": 1}))]
