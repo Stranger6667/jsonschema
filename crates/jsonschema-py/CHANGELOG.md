@@ -10,6 +10,7 @@
 
 - Validation of deeply nested instances against recursive schemas takes time linear in their nesting depth.
 - `unevaluatedProperties` next to `if`, `dependentSchemas`, `anyOf` or `oneOf` checked in one pass over the object by `is_valid`, without validating those subschemas again.
+- Validation of Python instances checks the common value types inline.
 
 ## [0.61.1] - 2026-11-10
 
