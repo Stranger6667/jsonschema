@@ -616,6 +616,16 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
     fn as_owned_node(&self) -> Option<&crate::node::SchemaNode<F>> {
         None
     }
+
+    /// Adds what this validator checks to `part` when it checks nothing but an object's members,
+    /// so `allOf` can check such branches in one pass over the object.
+    fn collect_object_part<'a>(
+        &'a self,
+        part: &mut crate::keywords::all_of::ObjectPart<'a, F>,
+    ) -> bool {
+        let _ = part;
+        false
+    }
 }
 
 /// `evaluate` for a keyword that asserts on the instance alone and annotates nothing: a valid

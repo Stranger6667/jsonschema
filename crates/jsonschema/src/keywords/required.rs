@@ -1,3 +1,4 @@
+use super::all_of::ObjectPart;
 use crate::{evaluation::InstancePosition, LazyInstance};
 use std::borrow::Cow;
 
@@ -158,6 +159,12 @@ impl<F: Json> RequiredValidator<F> {
 }
 
 impl<F: Json> Validate<F> for RequiredValidator<F> {
+    fn collect_object_part<'a>(&'a self, part: &mut ObjectPart<'a, F>) -> bool {
+        part.required
+            .extend(self.required.iter().map(|(name, _)| name.as_str()));
+        true
+    }
+
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
             if object.len() < self.required.len() {
@@ -267,6 +274,11 @@ impl SingleItemRequiredValidator {
 }
 
 impl<F: Json> Validate<F> for SingleItemRequiredValidator<F> {
+    fn collect_object_part<'a>(&'a self, part: &mut ObjectPart<'a, F>) -> bool {
+        part.required.push(&self.value);
+        true
+    }
+
     fn validate<'i>(
         &self,
         instance: &F::Node<'i>,
