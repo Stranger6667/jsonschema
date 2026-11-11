@@ -211,6 +211,8 @@ impl Json for Jsonb {
     type PreparedKey = Box<[u8]>;
     type StringBuffer = Vec<u8>;
 
+    const ACYCLIC: bool = true;
+
     fn prepare_key(key: &str) -> Box<[u8]> {
         key.as_bytes().into()
     }

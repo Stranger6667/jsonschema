@@ -116,6 +116,10 @@ struct LazyState {
     evaluation_path_cache: Option<EvaluationPathCache>,
     /// Holds every node of the tree the `evaluate` path builds.
     arena: EvaluationArena,
+    /// Cycle-guard entries per instance, for representations whose nodes can repeat on their own
+    /// path: from when the guard outgrows `SCANNED_GUARD_ENTRIES` until it shrinks to
+    /// `COUNTED_GUARD_FLOOR`.
+    guarded_instances: Option<AHashMap<NodeIdentity, u32>>,
 }
 
 /// Runs `run` in a fresh context that assumes the outcomes in `matches`.
@@ -143,6 +147,16 @@ const MEMO_MIN_VISITS: u32 = 16;
 ///
 /// Small evaluations show little path reuse, so below this threshold the map costs more than it saves.
 const EVALUATION_PATH_CACHE_THRESHOLD: u32 = 4096;
+
+/// Cycle-guard entries scanned before per-instance counts replace the scan, where nodes can repeat
+/// on their own path.
+///
+/// On Python instances the counts cost more than the scan up to 64 entries and less from 128.
+const SCANNED_GUARD_ENTRIES: usize = 64;
+
+/// Counts outlive the scan until the guard shrinks to this many entries, so each rebuild is paid
+/// for by the entries pushed since the previous one.
+const COUNTED_GUARD_FLOOR: usize = SCANNED_GUARD_ENTRIES / 2;
 
 impl ValidationContext {
     pub(crate) fn new() -> Self {
@@ -254,7 +268,7 @@ impl ValidationContext {
 
     /// Returns `true` if cycle detected. `None` identity disables cycle tracking for this node.
     #[inline]
-    pub(crate) fn enter(
+    pub(crate) fn enter<F: Json>(
         &mut self,
         node_id: usize,
         instance_identity: Option<NodeIdentity>,
@@ -263,15 +277,98 @@ impl ValidationContext {
             return false;
         };
         let key = (node_id, identity);
+        if F::ACYCLIC {
+            if self.topmost_entries(key).is_none() {
+                return true;
+            }
+            self.validating.push(key);
+            return false;
+        }
+        if self.validating.len() > SCANNED_GUARD_ENTRIES
+            || (self.validating.len() > COUNTED_GUARD_FLOOR && self.has_guard_counts())
+        {
+            return self.enter_counted(key);
+        }
         if self.validating.contains(&key) {
             return true;
         }
         self.validating.push(key);
+        if self.validating.len() > SCANNED_GUARD_ENTRIES {
+            self.count_guarded_instances();
+        }
         false
     }
 
+    /// How many entries on top of the guard hold `key`'s instance, or `None` if one of them is
+    /// `key` itself.
+    ///
+    /// Validation only descends, so the entries for an instance being validated are the topmost.
     #[inline]
-    pub(crate) fn exit(&mut self, node_id: usize, instance_identity: Option<NodeIdentity>) {
+    fn topmost_entries(&self, key: (usize, NodeIdentity)) -> Option<u32> {
+        let mut topmost = 0;
+        for &entered in self.validating.iter().rev() {
+            if entered.1 != key.1 {
+                break;
+            }
+            if entered == key {
+                return None;
+            }
+            topmost += 1;
+        }
+        Some(topmost)
+    }
+
+    #[inline]
+    fn has_guard_counts(&self) -> bool {
+        self.lazy
+            .0
+            .as_ref()
+            .is_some_and(|state| state.guarded_instances.is_some())
+    }
+
+    fn guarded_instances(&mut self) -> &mut AHashMap<NodeIdentity, u32> {
+        self.lazy()
+            .guarded_instances
+            .as_mut()
+            .expect("counted past the scan")
+    }
+
+    /// [`Self::enter`] once the guard is counted, where nodes can repeat on their own path.
+    #[cold]
+    #[inline(never)]
+    fn enter_counted(&mut self, key: (usize, NodeIdentity)) -> bool {
+        let Some(topmost) = self.topmost_entries(key) else {
+            return true;
+        };
+        // The instance can also sit deeper on its own path, as in a self-referencing list.
+        let deeper = self
+            .guarded_instances()
+            .get(&key.1)
+            .is_some_and(|&count| count > topmost);
+        if deeper && self.validating.contains(&key) {
+            return true;
+        }
+        *self.guarded_instances().entry(key.1).or_insert(0) += 1;
+        self.validating.push(key);
+        false
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn count_guarded_instances(&mut self) {
+        let mut counts = AHashMap::with_capacity(self.validating.len());
+        for &(_, identity) in &self.validating {
+            *counts.entry(identity).or_insert(0) += 1;
+        }
+        self.lazy().guarded_instances = Some(counts);
+    }
+
+    #[inline]
+    pub(crate) fn exit<F: Json>(
+        &mut self,
+        node_id: usize,
+        instance_identity: Option<NodeIdentity>,
+    ) {
         let Some(identity) = instance_identity else {
             return;
         };
@@ -281,6 +378,23 @@ impl ValidationContext {
             Some((node_id, identity)),
             "ValidationContext::exit called out of order"
         );
+        if !F::ACYCLIC && self.validating.len() >= COUNTED_GUARD_FLOOR && self.has_guard_counts() {
+            self.exit_counted(identity);
+        }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn exit_counted(&mut self, identity: NodeIdentity) {
+        if self.validating.len() == COUNTED_GUARD_FLOOR {
+            self.lazy().guarded_instances = None;
+        } else if let Entry::Occupied(mut count) = self.guarded_instances().entry(identity) {
+            if *count.get() == 1 {
+                count.remove();
+            } else {
+                *count.get_mut() -= 1;
+            }
+        }
     }
 
     /// Returns `true` if this `(validators, instance)` pair is already being marked (cycle).

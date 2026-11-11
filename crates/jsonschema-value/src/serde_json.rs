@@ -22,6 +22,7 @@ impl Json for SerdeJson {
 
     // `Map` is a `BTreeMap`, so a lookup orders keys and reaches `memcmp` on every probe.
     const KEYS_PER_LOOKUP: usize = 2;
+    const ACYCLIC: bool = true;
 
     fn prepare_key(key: &str) -> String {
         key.to_owned()
