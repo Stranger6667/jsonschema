@@ -35,7 +35,7 @@ pub use pyo3::{inspect, narrow_array, narrow_object, object_values, stock_enum_v
 #[cfg(feature = "serde_json")]
 pub use serde_json::SerdeJson;
 
-use std::{borrow::Cow, fmt, sync::OnceLock};
+use std::{borrow::Cow, fmt, ops::ControlFlow, sync::OnceLock};
 
 use ::serde_json::Value;
 
@@ -268,6 +268,21 @@ pub trait Object<'a, F: Json> {
     }
     fn get(&self, key: &F::PreparedKey) -> Option<Self::Node>;
     fn members(&self) -> Self::MembersIter;
+
+    /// Call `f` with a node holding each member name until it breaks. Representations whose keys
+    /// are already nodes can hand the keys over instead of building string nodes.
+    fn try_for_each_name_node<B>(
+        &self,
+        buffer: &mut F::StringBuffer,
+        mut f: impl FnMut(F::Node<'_>) -> ControlFlow<B>,
+    ) -> ControlFlow<B> {
+        for (name, _) in self.members() {
+            if let ControlFlow::Break(value) = F::with_string_node(buffer, name.as_ref(), &mut f) {
+                return ControlFlow::Break(value);
+            }
+        }
+        ControlFlow::Continue(())
+    }
 }
 
 // `len` bounds validation; no caller probes emptiness.

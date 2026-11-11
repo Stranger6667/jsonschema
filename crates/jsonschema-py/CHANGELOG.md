@@ -11,6 +11,7 @@
 - Validation of deeply nested instances against recursive schemas takes time linear in their nesting depth.
 - `unevaluatedProperties` next to `if`, `dependentSchemas`, `anyOf` or `oneOf` checked in one pass over the object by `is_valid`, without validating those subschemas again.
 - Validation of Python instances checks the common value types inline.
+- `propertyNames` validating each `str` key itself instead of a new string built from its text.
 - `allOf` branches that only check `properties`, `required` or `type: object` checked in one pass over the object by `is_valid`.
 - `required` beside `properties` and `additionalProperties: false` checked in the same pass over the object by `is_valid`.
 - `$ref`s to a subschema another `$ref` already compiled dispatched once instead of twice.

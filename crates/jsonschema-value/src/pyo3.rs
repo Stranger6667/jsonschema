@@ -14,6 +14,7 @@ use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
     hash::{Hash, Hasher},
+    ops::ControlFlow,
     str::FromStr,
     sync::atomic::{AtomicPtr, Ordering},
 };
@@ -1083,6 +1084,31 @@ impl<'py> Object<'py, Pyo3> for Borrowed<'py, 'py, PyDict> {
 
     fn members(&self) -> PyMembers<'py> {
         PyMembers(DictCursor::new(*self))
+    }
+
+    fn try_for_each_name_node<B>(
+        &self,
+        buffer: &mut (),
+        mut f: impl FnMut(PyNode<'_>) -> ControlFlow<B>,
+    ) -> ControlFlow<B> {
+        let py = self.py();
+        let mut cursor = DictCursor::new(*self);
+        while let Some((key, _)) = cursor.next() {
+            let flow = if unsafe { ffi::Py_TYPE(key) } == types(py).str_ {
+                // The key is already a string node; reading its text records any decoding error.
+                match unsafe { str_ref_ptr(key) } {
+                    Some(_) => f(unsafe { Borrowed::from_ptr(py, key) }),
+                    None => Pyo3::with_string_node(buffer, "", &mut f),
+                }
+            } else {
+                let name = key_to_string(unsafe { Borrowed::from_ptr(py, key) });
+                Pyo3::with_string_node(buffer, &name, &mut f)
+            };
+            if let ControlFlow::Break(value) = flow {
+                return ControlFlow::Break(value);
+            }
+        }
+        ControlFlow::Continue(())
     }
 }
 
