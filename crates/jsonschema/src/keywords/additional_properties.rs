@@ -6,6 +6,7 @@
 //!   - `patternProperties`
 //!
 //! Each valid combination of these keywords has a validator here.
+use super::required;
 use crate::{
     compiler,
     error::ValidationError,
@@ -239,6 +240,79 @@ impl<F: Json> AdditionalPropertiesNotEmptyFalseValidator<BigValidatorsMap<F>> {
         }))
     }
 }
+
+/// A closed object whose walk also checks `required` names for `is_valid`; see
+/// `required::checked_by_closed_object`. The other modes report as the plain closed object.
+pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequiredValidator<M> {
+    closed: AdditionalPropertiesNotEmptyFalseValidator<M>,
+    /// A bit per `required` name, by the position of its entry in the properties map.
+    by_entry: Box<[u64]>,
+    all: u64,
+}
+
+/// A bit per `required` name for each declared name, in entry order.
+fn required_bits<'n>(names: impl Iterator<Item = &'n str>, required: &[Value]) -> Box<[u64]> {
+    names
+        .map(|name| {
+            required
+                .iter()
+                .position(|item| item.as_str() == Some(name))
+                .map_or(0, |position| 1 << position)
+        })
+        .collect()
+}
+
+impl<M> AdditionalPropertiesNotEmptyFalseWithRequiredValidator<M> {
+    fn new(closed: AdditionalPropertiesNotEmptyFalseValidator<M>, by_entry: Box<[u64]>) -> Self {
+        let all = by_entry.iter().fold(0, |all, bits| all | bits);
+        AdditionalPropertiesNotEmptyFalseWithRequiredValidator {
+            closed,
+            by_entry,
+            all,
+        }
+    }
+}
+
+impl<F: Json> AdditionalPropertiesNotEmptyFalseWithRequiredValidator<SmallValidatorsMap<F>> {
+    pub(crate) fn compile<'a>(
+        map: &'a Map<String, Value>,
+        ctx: &compiler::Context<F>,
+        required: &[Value],
+    ) -> CompilationResult<'a, F> {
+        let closed = AdditionalPropertiesNotEmptyFalseValidator {
+            properties: compile_small_map(ctx, map)?,
+            location: ctx.location().join("additionalProperties"),
+        };
+        let by_entry = required_bits(
+            closed.properties.iter().map(|(name, _)| name.as_str()),
+            required,
+        );
+        Ok(Box::new(Self::new(closed, by_entry)))
+    }
+}
+
+impl<F: Json> AdditionalPropertiesNotEmptyFalseWithRequiredValidator<BigValidatorsMap<F>> {
+    pub(crate) fn compile<'a>(
+        map: &'a Map<String, Value>,
+        ctx: &compiler::Context<F>,
+        required: &[Value],
+    ) -> CompilationResult<'a, F> {
+        let closed = AdditionalPropertiesNotEmptyFalseValidator {
+            properties: compile_big_map(ctx, map)?,
+            location: ctx.location().join("additionalProperties"),
+        };
+        let by_entry = required_bits(
+            closed
+                .properties
+                .entries
+                .iter()
+                .map(|(name, _)| name.as_str()),
+            required,
+        );
+        Ok(Box::new(Self::new(closed, by_entry)))
+    }
+}
+
 impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
     for AdditionalPropertiesNotEmptyFalseValidator<M>
 {
@@ -350,6 +424,63 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
 
 // Container members `is_valid` holds back; past this many they are validated as they come.
 const DEFERRED_MEMBERS: usize = 4;
+
+impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
+    for AdditionalPropertiesNotEmptyFalseWithRequiredValidator<M>
+{
+    fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        let Some(object) = instance.as_object() else {
+            return true;
+        };
+        let mut seen = 0;
+        for (property, value) in object.members() {
+            let Some((index, node)) = self
+                .closed
+                .properties
+                .get_indexed_validator(property.as_ref())
+            else {
+                return false;
+            };
+            if !node.is_valid_child(&value, ctx) {
+                return false;
+            }
+            seen |= self.by_entry[index];
+        }
+        seen == self.all
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        self.closed.validate(instance, location, tracker, ctx)
+    }
+
+    fn collect_errors<'i>(
+        &self,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        self.closed
+            .collect_errors(instance, location, tracker, ctx, errors);
+    }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        self.closed.evaluate(instance, location, tracker, ctx)
+    }
+}
 
 /// Fused validator for properties + additionalProperties: false + required
 /// Eliminates separate required validation pass by tracking the required property during iteration.
@@ -2065,6 +2196,19 @@ pub(crate) fn compile<'a, F: Json>(
                             }
                         }
                     }
+                    if let (Some(required), Value::Object(map)) =
+                        (required::checked_by_closed_object(ctx, parent), properties)
+                    {
+                        return Some(if map.len() < HASHMAP_THRESHOLD {
+                            AdditionalPropertiesNotEmptyFalseWithRequiredValidator::<
+                                SmallValidatorsMap<F>,
+                            >::compile(map, ctx, required)
+                        } else {
+                            AdditionalPropertiesNotEmptyFalseWithRequiredValidator::<
+                                BigValidatorsMap<F>,
+                            >::compile(map, ctx, required)
+                        });
+                    }
                     compile_dynamic_prop_map_validator!(
                         AdditionalPropertiesNotEmptyFalseValidator,
                         properties,
@@ -2829,6 +2973,54 @@ mod tests {
     const EXTRA: &str = "Additional properties are not allowed ('extra' was unexpected)";
 
     /// Adds enough integer `properties` for them to be looked up in a hash map.
+    // `required` names checked in the closed object's own pass, below and past the bucket threshold.
+    #[test_case(&json!({"properties": {"a": {}, "b": {}, "c": {}}, "additionalProperties": false, "required": ["a", "b"]}), &json!({"a": 1, "b": 2}), true; "small, required present")]
+    #[test_case(&json!({"properties": {"a": {}, "b": {}, "c": {}}, "additionalProperties": false, "required": ["a", "b"]}), &json!({"a": 1, "c": 2}), false; "small, required missing")]
+    #[test_case(&json!({"properties": {"a": {}, "b": {}, "c": {}}, "additionalProperties": false, "required": ["a", "b"]}), &json!({"a": 1, "b": 2, "x": 3}), false; "small, undeclared member")]
+    #[test_case(&json!({"properties": {"a": {}, "b": {}, "c": {}}, "additionalProperties": false, "required": ["a", "b"]}), &json!(1), true; "small, not an object")]
+    #[test_case(&with_many_properties(json!({"additionalProperties": false, "required": ["p1", "p2"]})), &json!({"p1": 1, "p2": 2}), true; "big, required present")]
+    #[test_case(&with_many_properties(json!({"additionalProperties": false, "required": ["p1", "p2"]})), &json!({"p1": 1, "p3": 2}), false; "big, required missing")]
+    fn closed_object_checks_required(schema: &Value, instance: &Value, valid: bool) {
+        if valid {
+            tests_util::is_valid(schema, instance);
+        } else {
+            tests_util::is_not_valid(schema, instance);
+        }
+    }
+
+    // Past 64 `required` names the walk has no bit for each, so `required` checks them itself.
+    #[test_case(65, true; "all present")]
+    #[test_case(64, false; "last missing")]
+    fn closed_object_with_more_required_names_than_bits(present: usize, valid: bool) {
+        let properties: Map<String, Value> =
+            (0..66).map(|idx| (format!("p{idx}"), json!({}))).collect();
+        let required: Vec<Value> = (0..65).map(|idx| json!(format!("p{idx}"))).collect();
+        let schema =
+            json!({"properties": properties, "additionalProperties": false, "required": required});
+        let instance = Value::Object(
+            (0..present)
+                .map(|idx| (format!("p{idx}"), json!(1)))
+                .collect(),
+        );
+        if valid {
+            tests_util::is_valid(&schema, &instance);
+        } else {
+            tests_util::is_not_valid(&schema, &instance);
+        }
+    }
+
+    #[test]
+    fn closed_object_reports_each_missing_required_name() {
+        tests_util::expect_errors(
+            &json!({"properties": {"a": {}, "b": {}, "c": {}}, "additionalProperties": false, "required": ["a", "b"]}),
+            &json!({"c": 1}),
+            &[
+                "\"a\" is a required property",
+                "\"b\" is a required property",
+            ],
+        );
+    }
+
     fn with_many_properties(mut schema: Value) -> Value {
         let properties: Map<String, Value> = (0..HASHMAP_THRESHOLD)
             .map(|idx| (format!("p{idx}"), json!({"type": "integer"})))

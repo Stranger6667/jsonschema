@@ -82,6 +82,96 @@ impl<F: Json> Validate<F> for EveryDeclaredRequiredValidator<F> {
     }
 }
 
+/// `required` checked by the walk of a closed object's `additionalProperties: false`, which visits
+/// every member anyway; only `is_valid` leans on it.
+struct CheckedByClosedObjectValidator<F: Json> {
+    inner: BoxedValidator<F>,
+}
+
+impl<F: Json> Validate<F> for CheckedByClosedObjectValidator<F> {
+    fn is_valid(&self, _instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
+        true
+    }
+
+    fn validate<'i>(
+        &self,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> Result<(), ValidationError<'i>> {
+        self.inner.validate(instance, location, tracker, ctx)
+    }
+
+    fn collect_errors<'i>(
+        &self,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        self.inner
+            .collect_errors(instance, location, tracker, ctx, errors);
+    }
+
+    fn evaluate_with_location(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        instance_location: InstancePosition,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        self.inner
+            .evaluate_with_location(instance, location, instance_location, tracker, ctx)
+    }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        self.inner.evaluate(instance, location, tracker, ctx)
+    }
+
+    fn is_valid_alone(&self) -> bool {
+        false
+    }
+}
+
+/// The `required` names that the walk of a closed object checks in its own pass: all declared, at
+/// least two and no more than bits in a word. `additionalProperties` and `required` both compile
+/// from this, so one never skips what the other does not check.
+pub(crate) fn checked_by_closed_object<'a, F: Json>(
+    ctx: &compiler::Context<F>,
+    parent: &'a Map<String, Value>,
+) -> Option<&'a [Value]> {
+    let Some(Value::Array(required)) = parent.get("required") else {
+        return None;
+    };
+    let Some(Value::Object(properties)) = parent.get("properties") else {
+        return None;
+    };
+    (required.len() >= 2
+        && required.len() <= u64::BITS as usize
+        && matches!(parent.get("additionalProperties"), Some(Value::Bool(false)))
+        && !parent.contains_key("patternProperties")
+        && ctx.has_vocabulary(&Vocabulary::Applicator)
+        && ctx.has_vocabulary(&Vocabulary::Validation)
+        && !ctx.is_keyword_overridden("additionalProperties")
+        && !ctx.is_keyword_overridden("properties")
+        && !ctx.is_keyword_overridden("required")
+        && required.iter().all(|item| {
+            item.as_str()
+                .is_some_and(|name| properties.contains_key(name))
+        })
+        && !names_every_declared(required, properties))
+    .then_some(required.as_slice())
+}
+
 /// Whether `required` lists exactly the declared property names.
 fn names_every_declared(required: &[Value], properties: &Map<String, Value>) -> bool {
     required.len() == properties.len()
@@ -585,6 +675,14 @@ pub(crate) fn compile<'a, F: Json>(
             && !ctx.is_keyword_overridden("additionalProperties")
         {
             return None;
+        }
+
+        if checked_by_closed_object(ctx, parent).is_some() {
+            return Some(
+                compile_with_path(schema, ctx.location().join("required"))?.map(|inner| {
+                    Box::new(CheckedByClosedObjectValidator { inner }) as BoxedValidator<F>
+                }),
+            );
         }
 
         if items.len() >= 2

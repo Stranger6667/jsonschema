@@ -92,6 +92,8 @@ pub(crate) type RegexValidators<F = SerdeJson> =
 pub(crate) trait PropertiesValidatorsMap<F: Json = SerdeJson>: Send + Sync {
     fn get_validator(&self, property: &str) -> Option<&SchemaNode<F>>;
     fn get_key_validator(&self, property: &str) -> Option<(&str, &SchemaNode<F>)>;
+    /// The entry for `property` and its position, for data kept beside the map.
+    fn get_indexed_validator(&self, property: &str) -> Option<(usize, &SchemaNode<F>)>;
 }
 
 /// Threshold for switching from linear scan to `HashMap`.
@@ -284,6 +286,17 @@ impl<T> NameBuckets<T> {
             .iter()
             .find(|(name, _)| name.matches(head, key))
     }
+
+    #[inline]
+    pub(crate) fn find_index(&self, key: &str) -> Option<usize> {
+        let head = KeyHead::of(key);
+        let slot = slot(head.fold(), self.seed, self.shift);
+        let start = self.starts[slot] as usize;
+        self.entries[start..self.starts[slot + 1] as usize]
+            .iter()
+            .position(|(name, _)| name.matches(head, key))
+            .map(|offset| start + offset)
+    }
 }
 
 impl<F: Json> PropertiesValidatorsMap<F> for SmallValidatorsMap<F> {
@@ -307,6 +320,14 @@ impl<F: Json> PropertiesValidatorsMap<F> for SmallValidatorsMap<F> {
         }
         None
     }
+
+    #[inline]
+    fn get_indexed_validator(&self, property: &str) -> Option<(usize, &SchemaNode<F>)> {
+        let head = KeyHead::of(property);
+        self.iter()
+            .position(|(prop, _)| prop.matches(head, property))
+            .map(|index| (index, &self[index].1))
+    }
 }
 
 impl<F: Json> PropertiesValidatorsMap<F> for BigValidatorsMap<F> {
@@ -319,6 +340,12 @@ impl<F: Json> PropertiesValidatorsMap<F> for BigValidatorsMap<F> {
     fn get_key_validator(&self, property: &str) -> Option<(&str, &SchemaNode<F>)> {
         self.find(property)
             .map(|(name, node)| (name.as_str(), node))
+    }
+
+    #[inline]
+    fn get_indexed_validator(&self, property: &str) -> Option<(usize, &SchemaNode<F>)> {
+        self.find_index(property)
+            .map(|index| (index, &self.entries[index].1))
     }
 }
 
