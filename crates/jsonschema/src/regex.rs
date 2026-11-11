@@ -276,10 +276,16 @@ pub(crate) enum LiteralMatcher {
 impl RegexEngine for LiteralMatcher {
     type Error = LiteralMatchError;
 
-    #[inline]
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
     fn is_match(&self, text: &str) -> Result<bool, Self::Error> {
         match self {
-            Self::Prefix { literal } => Ok(text.starts_with(literal.as_str())),
+            // Most keys differ in the first byte, which spares the comparison call.
+            Self::Prefix { literal } => Ok(literal
+                .as_bytes()
+                .first()
+                .is_none_or(|first| text.as_bytes().first() == Some(first))
+                && text.starts_with(literal.as_str())),
             Self::Exact { exact } => Ok(text == exact.as_str()),
             Self::Alternation { alternatives } => {
                 Ok(alternatives.iter().any(|a| a.as_str() == text))
@@ -394,8 +400,23 @@ pub(crate) fn analyze_pattern(pattern: &str) -> Option<PatternOptimization> {
 
 #[cfg(test)]
 mod tests {
-    use super::{analyze_pattern, PatternOptimization};
+    use super::{analyze_pattern, LiteralMatcher, PatternOptimization, RegexEngine};
     use test_case::test_case;
+
+    #[test_case("x-", "x-foo", true; "prefix present")]
+    #[test_case("x-", "x-", true; "prefix only")]
+    #[test_case("x-", "y-foo", false; "different first byte")]
+    #[test_case("x-", "xy", false; "same first byte")]
+    #[test_case("x-", "x", false; "shorter than prefix")]
+    #[test_case("x-", "", false; "empty key")]
+    #[test_case("", "anything", true; "empty prefix")]
+    #[test_case("", "", true; "empty prefix and key")]
+    fn literal_prefix(literal: &str, text: &str, expected: bool) {
+        let matcher = LiteralMatcher::Prefix {
+            literal: literal.to_owned(),
+        };
+        assert_eq!(matcher.is_match(text).unwrap(), expected);
+    }
 
     #[test_case(r"^\S*$", Some(PatternOptimization::NoWhitespace) ; "no whitespace sentinel")]
     #[test_case(

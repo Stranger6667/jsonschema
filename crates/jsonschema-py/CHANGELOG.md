@@ -15,6 +15,7 @@
 - `required` beside `properties` and `additionalProperties: false` checked in the same pass over the object by `is_valid`.
 - `$ref`s to a subschema another `$ref` already compiled dispatched once instead of twice.
 - `additionalProperties` that only checks `type` decided without entering the subschema for each value by `is_valid`.
+- Literal-prefix patterns rejecting a property name on its first byte before comparing the rest.
 
 ## [0.61.1] - 2026-11-10
 
