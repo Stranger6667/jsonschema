@@ -18,6 +18,7 @@
 - Literal-prefix patterns rejecting a property name on its first byte before comparing the rest.
 - Integer `const` and `enum` values compared directly instead of through their decimal forms.
 - Root dictionary keys checked with one type comparison each before validation.
+- Dictionary lookups leaving the exception state untouched unless a key comparison raises.
 
 ## [0.61.1] - 2026-11-10
 
