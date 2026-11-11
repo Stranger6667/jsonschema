@@ -272,6 +272,13 @@ impl<F: Json> Clone for CachedNode<F> {
 }
 
 /// A node found for a `$ref` target and whether its referrer may own it.
+/// A reference target found by `lookup_cached_target`.
+pub(crate) enum CachedTarget<F: Json> {
+    Node(TargetNode<F>),
+    /// A deferred target, not compiled yet.
+    Placeholder(PendingSchemaNode<F>),
+}
+
 pub(crate) enum TargetNode<F: Json> {
     /// Compiled in the current round, or settled.
     Owned(SchemaNode<F>),
@@ -1068,17 +1075,30 @@ impl<'a, F: Json> Context<'a, F> {
         alias: &Arc<Uri<String>>,
         target: &Resolver<'_>,
     ) -> Option<Box<dyn Validate<F>>> {
+        self.lookup_cached_target(alias, target)
+            .map(|target| match target {
+                CachedTarget::Node(node) => node.into_validator(),
+                CachedTarget::Placeholder(placeholder) => Box::new(placeholder),
+            })
+    }
+
+    /// The target of `alias` among the nodes compiled or deferred so far.
+    pub(crate) fn lookup_cached_target(
+        &self,
+        alias: &Arc<Uri<String>>,
+        target: &Resolver<'_>,
+    ) -> Option<CachedTarget<F>> {
         if self.shared.seen.borrow().contains(alias) {
             let key = AliasCacheKey {
                 uri: Arc::clone(alias),
                 dynamic_scope: target.dynamic_scope(),
             };
             if let Some(node) = self.cached_alias_node(&key) {
-                return Some(self.reuse(node).into_validator());
+                return Some(CachedTarget::Node(self.reuse(node)));
             }
             if let Some(node) = self.cached_alias_placeholder(alias) {
                 self.reach_unsettled();
-                return Some(Box::new(node));
+                return Some(CachedTarget::Placeholder(node));
             }
         }
         None
