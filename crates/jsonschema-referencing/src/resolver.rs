@@ -99,6 +99,23 @@ impl<'r> Resolver<'r> {
                     .into(),
             ));
         };
+        // Under its retrieval URI, a resource is based at its `$id`. Under its `$id` URI it already
+        // is, and resolving a relative `$id` again would not lead back to the same resource.
+        let uri = match retrieved.id() {
+            Some(id) => {
+                let canonical = self.registry.resolve_uri(&uri.borrow(), id)?;
+                if self
+                    .registry
+                    .resource_by_uri(&canonical)
+                    .is_some_and(|resource| std::ptr::eq(resource.contents(), retrieved.contents()))
+                {
+                    canonical
+                } else {
+                    uri
+                }
+            }
+            None => uri,
+        };
 
         if fragment.starts_with('/') {
             let resolved = retrieved.pointer(fragment, self.evolve(Arc::clone(&uri)))?;

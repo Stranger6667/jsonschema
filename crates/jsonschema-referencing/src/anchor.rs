@@ -429,7 +429,6 @@ mod tests {
     fn test_multiple_lookup_recursive_ref_with_nonrecursive_ref() {
         let one = Draft::Draft201909.create_resource(json!({"$recursiveAnchor": true}));
         let two = Draft::Draft201909.create_resource(json!({
-            "$id": "http://example.com",
             "$recursiveAnchor": true,
             "$defs": {
                 "foo": {
