@@ -12,6 +12,7 @@
 - `unevaluatedProperties` next to `if`, `dependentSchemas`, `anyOf` or `oneOf` checked in one pass over the object by `is_valid`, without validating those subschemas again.
 - `allOf` branches that only check `properties`, `required` or `type: object` checked in one pass over the object by `is_valid`.
 - `required` beside `properties` and `additionalProperties: false` checked in the same pass over the object by `is_valid`.
+- `$ref`s to a subschema another `$ref` already compiled dispatched once instead of twice.
 
 ## [0.61.1] - 2026-11-10
 
