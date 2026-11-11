@@ -136,6 +136,8 @@ fn types_init(py: Python<'_>) -> &'static TypePtrs {
     t
 }
 
+// Inlined into each accessor: one validation classifies a node several times.
+#[inline]
 fn object_type(node: Borrowed<'_, '_, PyAny>) -> ObjType {
     let ptr = node.as_ptr();
     let t = types(node.py());
@@ -156,7 +158,14 @@ fn object_type(node: Borrowed<'_, '_, PyAny>) -> ObjType {
         ObjType::Bool
     } else if ty == t.float {
         ObjType::Float
-    } else if ty == t.tuple {
+    } else {
+        uncommon_type(ty, t)
+    }
+}
+
+#[inline(never)]
+fn uncommon_type(ty: *mut ffi::PyTypeObject, t: &TypePtrs) -> ObjType {
+    if ty == t.tuple {
         ObjType::Tuple
     } else if !t.decimal.is_null() && ty == t.decimal {
         ObjType::Decimal
