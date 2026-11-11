@@ -210,6 +210,44 @@ impl PropertyName {
 
 pub(crate) type SmallValidatorsMap<F = SerdeJson> = Vec<(PropertyName, SchemaNode<F>)>;
 
+/// Names tested for membership by many keys: scanned by head when few, bucketed when many.
+pub(crate) enum NameSet {
+    Scan(Box<[PropertyName]>),
+    Buckets(NameBuckets<()>),
+}
+
+impl Default for NameSet {
+    fn default() -> Self {
+        NameSet::Scan(Box::default())
+    }
+}
+
+impl NameSet {
+    pub(crate) fn new<'a>(names: impl Iterator<Item = &'a str>) -> Self {
+        let names: Vec<PropertyName> = names
+            .map(|name| PropertyName::new(name.to_owned()))
+            .collect();
+        if names.len() < HASHMAP_THRESHOLD {
+            NameSet::Scan(names.into_boxed_slice())
+        } else {
+            NameSet::Buckets(NameBuckets::new(
+                names.into_iter().map(|name| (name, ())).collect(),
+            ))
+        }
+    }
+
+    #[inline]
+    pub(crate) fn contains(&self, key: &str) -> bool {
+        match self {
+            NameSet::Scan(names) => {
+                let head = KeyHead::of(key);
+                names.iter().any(|name| name.matches(head, key))
+            }
+            NameSet::Buckets(buckets) => buckets.find(key).is_some(),
+        }
+    }
+}
+
 /// `properties` subschemas by declared name, for maps past `HASHMAP_THRESHOLD`.
 pub(crate) type BigValidatorsMap<F = SerdeJson> = NameBuckets<SchemaNode<F>>;
 
