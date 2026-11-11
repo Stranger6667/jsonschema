@@ -43,35 +43,33 @@ Sources:
 
 | Benchmark | Dynamic `is_valid` | Codegen `is_valid` | Speedup |
 |-----------|---------------------|--------------------|---------|
-| OpenAPI   | 969.45 µs           | 517.78 µs          | **1.87x** |
-| Swagger   | 1.08 ms             | 529.94 µs          | **2.04x** |
-| GeoJSON   | 139.46 µs           | 69.01 µs           | **2.02x** |
-| CITM      | 210.40 µs           | 88.71 µs           | **2.37x** |
-| Fast (Valid) | 50.97 ns            | 11.85 ns           | **4.30x** |
-| Fast (Invalid) | 8.09 ns             | 1.25 ns            | **6.48x** |
-| FHIR      | 463.56 ns           | 269.19 ns          | **1.72x** |
-| Recursive | 2.65 µs             | 547.69 ns          | **4.83x** |
+| OpenAPI   | 976.26 µs           | 536.43 µs          | **1.82x** |
+| Swagger   | 1.08 ms             | 525.78 µs          | **2.06x** |
+| GeoJSON   | 147.78 µs           | 82.37 µs           | **1.79x** |
+| CITM      | 217.41 µs           | 96.04 µs           | **2.26x** |
+| Fast (Valid) | 52.18 ns            | 12.44 ns           | **4.19x** |
+| Fast (Invalid) | 6.85 ns             | 1.27 ns            | **5.40x** |
+| FHIR      | 340.88 ns           | 251.13 ns          | **1.36x** |
+| Recursive | 2.68 µs             | 574.24 ns          | **4.66x** |
 
 ### Comparison with Other Libraries
 
 | Benchmark     | jsonschema_valid | valico        | boon          | jsonschema (validate) |
 |---------------|------------------|---------------|---------------|------------------------|
-| OpenAPI       | -                | -             | 6.15 ms (**x6.35**) | 969.28 µs              |
-| Swagger       | -                | 103.66 ms (**x88.08**) | 8.98 ms (**x7.63**) | 1.18 ms                |
-| GeoJSON       | 16.09 ms (**x116.82**) | 254.95 ms (**x1850.82**) | 15.63 ms (**x113.47**) | 137.75 µs              |
-| CITM Catalog  | 2.63 ms (**x11.43**) | 24.95 ms (**x108.44**) | 1.01 ms (**x4.37**) | 230.08 µs              |
-| Fast (Valid)  | 1.00 µs (**x16.77**) | 3.21 µs (**x53.80**) | 284.76 ns (**x4.77**) | 59.67 ns               |
-| Fast (Invalid) | 224.23 ns (**x5.64**) | 3.31 µs (**x83.13**) | 365.34 ns (**x9.19**) | 39.77 ns               |
-| FHIR          | 553.94 ms (**x1123633.34**) | 1.59 ms (**x3235.16**) | 168.29 µs (**x341.37**) | 492.99 ns              |
-| Recursive     | -                | -             | 25.03 ms (**x9331.20**) | 2.68 µs                |
+| OpenAPI       | 646.67 ms (**x653.59**) | - | 6.44 ms (**x6.51**) | 989.41 µs              |
+| Swagger       | - | - | 9.34 ms (**x8.14**) | 1.15 ms                |
+| GeoJSON       | 16.24 ms (**x112.68**) | 260.16 ms (**x1805.04**) | 16.03 ms (**x111.24**) | 144.13 µs              |
+| CITM Catalog  | 2.57 ms (**x10.69**) | 25.34 ms (**x105.39**) | 1.02 ms (**x4.25**) | 240.44 µs              |
+| Fast (Valid)  | 988.65 ns (**x16.40**) | 3.22 µs (**x53.47**) | 293.44 ns (**x4.87**) | 60.28 ns               |
+| Fast (Invalid) | 222.48 ns (**x4.93**) | 3.34 µs (**x74.01**) | 379.49 ns (**x8.41**) | 45.13 ns               |
+| FHIR          | 551.44 ms (**x1538444.37**) | 1.63 ms (**x4549.16**) | 171.63 µs (**x478.82**) | 358.44 ns              |
+| Recursive     | - | - | 25.91 ms (**x9656.69**) | 2.68 µs                |
 
 Notes:
 
-1. `jsonschema_valid` and `valico` do not handle valid path instances matching the `^\\/` regex.
+1. `valico` does not support the Draft 4 schemas (OpenAPI, Swagger): it rejects a boolean `exclusiveMinimum` and accepts any value at a `$ref` to the Draft 4 meta-schema. It also ignores 2020-12 keywords (Recursive).
 
-2. `jsonschema_valid` fails to resolve local references (e.g. `#/definitions/definitions`) in OpenAPI/Swagger schemas.
-
-3. `jsonschema_valid` and `valico` fail to resolve local references in the Recursive schema.
+2. `jsonschema_valid` rejects valid Swagger instances under Draft 4 and panics while building the Recursive schema.
 
 You can find benchmark code in [benches/](benches/) and in the main `jsonschema` crate. Rust version is `1.99.0`.
 

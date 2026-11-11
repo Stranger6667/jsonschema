@@ -726,9 +726,9 @@ Valid draft symbols: `:draft4`, `:draft6`, `:draft7`, `:draft201909`, `:draft202
 
 Compared with other Ruby validators:
 
-- **95-1,241x** faster than `json_schemer` for complex schemas and large instances
-- **960-1,033x** faster than `json-schema` where supported
-- **24-179x** faster than `rj_schema` (RapidJSON/C++)
+- **103-1,560x** faster than `json_schemer` for complex schemas and large instances
+- **1,021-1,040x** faster than `json-schema` where supported
+- **25-160x** faster than `rj_schema` (RapidJSON/C++)
 
 Full results and methodology are in [BENCHMARKS.md](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-rb/BENCHMARKS.md).
 
@@ -737,7 +737,7 @@ Full results and methodology are in [BENCHMARKS.md](https://github.com/Stranger6
 If you ship your own extension and know the schema at build time, the Rust crate's
 `#[jsonschema::validator(..., backend = Magnus)]` macro compiles it into a validator that reads
 Ruby objects directly, so nothing is parsed or compiled when your extension is loaded, and
-validation runs up to 3.5x faster than with a validator built at run time. See the
+validation runs up to 2.6x faster than with a validator built at run time. See the
 [macro documentation](https://docs.rs/jsonschema/latest/jsonschema/#ruby-extension-modules).
 
 This is not available from the `jsonschema_rs` gem, which takes its schemas at run time.
