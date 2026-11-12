@@ -576,6 +576,9 @@ struct MembersCache {
     // Held by the GC, so compaction updates the members in place instead of invalidating them.
     entries: VALUE,
     busy: bool,
+    // The object walked last without the cache. Filling the cache costs more than a stack snapshot,
+    // so only a repeat walk fills it; a stale identity only decides whether to fill.
+    seen: VALUE,
 }
 
 thread_local! {
@@ -622,8 +625,10 @@ impl Members {
             Members::Inline { pairs, .. } => return pairs[index],
             Members::Owned { entries, .. } | Members::Shared { entries, .. } => *entries,
         };
-        let base = (index * 2) as c_long;
-        unsafe { (rb_ary_entry(entries, base), rb_ary_entry(entries, base + 1)) }
+        // In bounds: the array was created at its full length and never resized.
+        debug_assert!(index * 2 + 1 < unsafe { rb_sys::RARRAY_LEN(entries) } as usize);
+        let pairs = unsafe { rb_sys::RARRAY_CONST_PTR(entries) };
+        unsafe { (*pairs.add(index * 2), *pairs.add(index * 2 + 1)) }
     }
 
     fn iter(&self) -> impl Iterator<Item = (VALUE, VALUE)> + '_ {
@@ -650,8 +655,11 @@ unsafe extern "C" fn collect(key: VALUE, value: VALUE, arg: VALUE) -> std::os::r
     match members {
         Members::Inline { pairs, .. } => pairs[collector.index] = (key, value),
         Members::Owned { entries, .. } | Members::Shared { entries, .. } => unsafe {
-            rb_ary_store(*entries, (collector.index * 2) as c_long, key);
-            rb_ary_store(*entries, (collector.index * 2 + 1) as c_long, value);
+            let base = (collector.index * 2) as isize;
+            // Within the length the GC traces, so compaction updates every stored member.
+            debug_assert!(base + 1 < rb_sys::RARRAY_LEN(*entries) as isize);
+            rb_sys::RARRAY_ASET(*entries, base, key);
+            rb_sys::RARRAY_ASET(*entries, base + 1, value);
         },
     }
     collector.index += 1;
@@ -673,6 +681,15 @@ fn member_named(hash: VALUE, key: VALUE) -> Option<VALUE> {
         .map(|(_, value)| value)
 }
 
+// An array with room for `pairs` members at its full length, so members are written in place
+// rather than appended.
+fn snapshot_array(pairs: usize) -> VALUE {
+    let slots = (pairs * 2) as c_long;
+    let entries = unsafe { rb_ary_new_capa(slots) };
+    unsafe { rb_ary_store(entries, slots - 1, special_consts::Qnil as VALUE) };
+    entries
+}
+
 fn hash_len(value: VALUE) -> usize {
     fixnum_of(unsafe { rb_hash_size(value) }).max(0) as usize
 }
@@ -684,7 +701,7 @@ fn raw_members(value: VALUE) -> Members {
     }
     let mut members = if len > INLINE_MEMBERS {
         Members::Owned {
-            entries: unsafe { rb_ary_new_capa((len * 2) as c_long) },
+            entries: snapshot_array(len),
             len,
         }
     } else {
@@ -724,11 +741,10 @@ fn cached_members(value: VALUE, len: usize) -> Option<Members> {
     if len == 0 || len > INLINE_MEMBERS {
         return None;
     }
-    let gc_count = unsafe { rb_gc_count() } as usize;
     MEMBERS_CACHE.with(|cache| {
         let mut cache = cache.borrow_mut();
         let cache = cache.get_or_insert_with(|| {
-            let entries = unsafe { rb_ary_new_capa((INLINE_MEMBERS * 2) as c_long) };
+            let entries = snapshot_array(INLINE_MEMBERS);
             unsafe { rb_gc_register_mark_object(entries) };
             MembersCache {
                 hash: special_consts::Qnil as VALUE,
@@ -736,11 +752,17 @@ fn cached_members(value: VALUE, len: usize) -> Option<Members> {
                 len: 0,
                 entries,
                 busy: false,
+                seen: special_consts::Qnil as VALUE,
             }
         });
         if cache.busy {
             return None;
         }
+        if cache.hash != value && cache.seen != value {
+            cache.seen = value;
+            return None;
+        }
+        let gc_count = unsafe { rb_gc_count() } as usize;
         if cache.hash != value || cache.gc_count != gc_count || cache.len != len {
             // Written straight into the cache; staging first would walk every member twice.
             let mut target = Members::Owned {
