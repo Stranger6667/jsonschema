@@ -308,8 +308,8 @@ fn inert(py: Python<'_>) -> PyNode<'_> {
 // extension module.
 struct CallState {
     // First error raised while inspecting an instance; the binding clears it before a call and
-    // raises it after.
-    pending: Cell<Option<PyErr>>,
+    // raises it after. Boxed, so each call moves a pointer rather than the error.
+    pending: Cell<Option<Box<PyErr>>>,
     // Strong references to the objects a call reads. Python code the call runs (an `Enum` member's
     // `value` override, a custom keyword or format) or, without the GIL, another thread can drop a
     // container's own references mid-call, so nodes keep these until the call's scope ends.
@@ -334,7 +334,7 @@ thread_local! {
 
 fn record_error(error: PyErr) {
     CALL.with(|call| {
-        let first = call.pending.take().unwrap_or(error);
+        let first = call.pending.take().unwrap_or_else(|| Box::new(error));
         call.pending.set(Some(first));
     });
 }
@@ -344,9 +344,17 @@ fn record_value_error(message: &str) {
 }
 
 /// Take the error recorded while inspecting an instance, if any.
+#[cfg(test)]
 #[must_use]
 pub(crate) fn take_pending_error() -> Option<PyErr> {
-    CALL.with(|call| call.pending.take())
+    CALL.with(|call| call.pending.take()).map(|error| *error)
+}
+
+// The current thread's call state, looked up once per call: each lookup costs a call in an
+// extension module.
+fn call_state() -> &'static CallState {
+    // The state outlives every call on its thread, and a call never leaves the thread it began on.
+    CALL.with(|call| unsafe { &*std::ptr::from_ref(call) })
 }
 
 /// Run `run` over `instance`.
@@ -363,27 +371,21 @@ pub fn inspect<T>(
     holding: bool,
     mut run: impl FnMut() -> T,
 ) -> PyResult<T> {
+    let call = call_state();
     let mut holding = holding;
     loop {
-        let _scope = PendingErrorScope::enter(holding);
+        let _scope = PendingErrorScope::enter(call, holding);
         probe_root(instance);
-        if let Some(error) = take_pending_error() {
-            return Err(error);
+        if let Some(error) = call.pending.take() {
+            return Err(*error);
         }
         let result = run();
-        let (redo, error) = CALL.with(|call| {
-            if !holding && call.needs_holding.get() {
-                (true, None)
-            } else {
-                (false, call.pending.take())
-            }
-        });
-        if redo {
+        if !holding && call.needs_holding.get() {
             holding = true;
             continue;
         }
-        if let Some(error) = error {
-            return Err(error);
+        if let Some(error) = call.pending.take() {
+            return Err(*error);
         }
         return Ok(result);
     }
@@ -435,41 +437,44 @@ fn hold_borrowed(object: *mut ffi::PyObject) -> *mut ffi::PyObject {
 // keyword that re-enters validation cannot consume the outer call's error. Objects the call holds
 // are released when it ends.
 struct PendingErrorScope {
-    saved: Option<PyErr>,
+    call: &'static CallState,
+    saved: Option<Box<PyErr>>,
     held: usize,
     holding: bool,
     needs_holding: bool,
 }
 
 impl PendingErrorScope {
-    fn enter(holding: bool) -> Self {
+    fn enter(call: &'static CallState, holding: bool) -> Self {
         if holding {
             #[cfg(not(Py_GIL_DISABLED))]
             HOLDING_CALLS.fetch_add(1, Ordering::Relaxed);
         }
-        CALL.with(|call| Self {
+        Self {
+            call,
             saved: call.pending.take(),
             held: call.held.borrow().len(),
             holding: call.holding.replace(holding),
             needs_holding: call.needs_holding.replace(false),
-        })
+        }
     }
 }
 
 impl Drop for PendingErrorScope {
     fn drop(&mut self) {
-        let (was_holding, released) = CALL.with(|call| {
-            call.pending.set(self.saved.take());
-            call.needs_holding.set(self.needs_holding);
+        let call = self.call;
+        call.pending.set(self.saved.take());
+        call.needs_holding.set(self.needs_holding);
+        let released = {
             let mut held = call.held.borrow_mut();
             // `split_off` at zero reallocates, so a call that held nothing skips it.
-            let released = if held.len() > self.held {
+            if held.len() > self.held {
                 held.split_off(self.held)
             } else {
                 Vec::new()
-            };
-            (call.holding.replace(self.holding), released)
-        });
+            }
+        };
+        let was_holding = call.holding.replace(self.holding);
         if was_holding {
             #[cfg(not(Py_GIL_DISABLED))]
             HOLDING_CALLS.fetch_sub(1, Ordering::Relaxed);

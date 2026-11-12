@@ -2079,12 +2079,13 @@ impl Validator {
     ///
     /// The output is a boolean value, that indicates whether the instance is valid or not.
     fn is_valid(&self, instance: &Bound<'_, PyAny>) -> PyResult<bool> {
-        surface_pending_errors(instance, self.holding, || {
+        // The panic is mapped after the call, so the call itself carries no `PyResult`.
+        inspect(instance.as_borrowed(), self.holding, || {
             panic::catch_unwind(AssertUnwindSafe(|| {
-                Ok(self.validator.is_valid(instance.as_borrowed()))
+                self.validator.is_valid(instance.as_borrowed())
             }))
-            .map_err(handle_format_checked_panic)?
-        })
+        })?
+        .map_err(handle_format_checked_panic)
     }
     /// validate(instance)
     ///
