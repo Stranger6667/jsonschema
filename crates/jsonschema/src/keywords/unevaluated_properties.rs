@@ -26,7 +26,11 @@ use crate::{
     Json, Node, Object, SerdeJson, ValidationError,
 };
 
-use super::{pattern_properties::invalid_regex, CompilationResult};
+use super::{
+    pattern_properties::invalid_regex,
+    properties::{checked_by_unevaluated, SmallPropertiesValidator},
+    CompilationResult,
+};
 
 /// Lazy property validators that are compiled on first access.
 /// Used for $recursiveRef and circular references to handle cycles during compilation.
@@ -1145,12 +1149,25 @@ fn compile_dependent<'a, F: Json>(
 pub(crate) struct UnevaluatedPropertiesValidator<F: Json = SerdeJson> {
     location: Location,
     validators: PropertyValidators<F>,
+    /// The sibling `properties`, which `is_valid` checks in its own walk instead of `properties`.
+    own: Option<SmallPropertiesValidator<F>>,
     /// Filled on first use: `$ref` targets are wired up only after compilation.
     static_evaluated: OnceLock<Option<StaticEvaluated>>,
     contributions: OnceLock<Option<Contributions<F>>>,
 }
 
 impl<F: Json> UnevaluatedPropertiesValidator<F> {
+    #[inline]
+    fn own_node(&self, property: &str) -> Option<&SchemaNode<F>> {
+        self.own.as_ref()?.find(property)
+    }
+
+    fn own_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
+        self.own
+            .as_ref()
+            .is_none_or(|own| own.is_valid(instance, ctx))
+    }
+
     /// Only for callers that need the true/false answer. A failing `allOf` branch fails the
     /// schema anyway, so including it cannot change that answer, but it can drop errors.
     fn static_evaluated(&self) -> Option<&StaticEvaluated> {
@@ -1217,10 +1234,15 @@ impl UnevaluatedPropertiesValidator {
     ) -> CompilationResult<'a, F> {
         let validators =
             compile_property_validators(ctx, parent).map_err(ValidationError::to_owned)?;
+        let own = checked_by_unevaluated(ctx, parent)
+            .map(|properties| SmallPropertiesValidator::new(ctx, properties))
+            .transpose()
+            .map_err(ValidationError::to_owned)?;
 
         Ok(Box::new(UnevaluatedPropertiesValidator {
             location: ctx.location().join("unevaluatedProperties"),
             validators,
+            own,
             static_evaluated: OnceLock::new(),
             contributions: OnceLock::new(),
         }))
@@ -1308,7 +1330,7 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
         if let Some(object) = instance.as_object() {
             if let Some(contributions) = self.contributions() {
                 if contributions.base.saturated {
-                    return true;
+                    return self.own_valid(instance, ctx);
                 }
                 let mut active = 0u64;
                 for (index, part) in contributions.parts.iter().enumerate() {
@@ -1318,13 +1340,19 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                         .all(|condition| condition.holds(instance, &object, ctx))
                     {
                         if part.evaluated.saturated {
-                            return true;
+                            return self.own_valid(instance, ctx);
                         }
                         active |= 1 << index;
                     }
                 }
                 for (property, value) in object.members() {
                     let property = property.as_ref();
+                    if let Some(node) = self.own_node(property) {
+                        if !node.is_valid_child(&value, ctx) {
+                            return false;
+                        }
+                        continue;
+                    }
                     if contributions.base.covers(property, ctx, MatchSite::schema)
                         || contributions.parts.iter().enumerate().any(|(index, part)| {
                             active & (1 << index) != 0
@@ -1342,10 +1370,17 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
             }
             if let Some(evaluated) = self.static_evaluated() {
                 if evaluated.saturated {
-                    return true;
+                    return self.own_valid(instance, ctx);
                 }
                 for (property, value) in object.members() {
-                    if evaluated.covers(property.as_ref(), ctx, MatchSite::schema) {
+                    let property = property.as_ref();
+                    if let Some(node) = self.own_node(property) {
+                        if !node.is_valid_child(&value, ctx) {
+                            return false;
+                        }
+                        continue;
+                    }
+                    if evaluated.covers(property, ctx, MatchSite::schema) {
                         continue;
                     }
                     match &self.validators.unevaluated {
@@ -1354,6 +1389,9 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                     }
                 }
                 return true;
+            }
+            if !self.own_valid(instance, ctx) {
+                return false;
             }
             let mut evaluated = Evaluated::new(object.len());
             self.validators
@@ -1508,6 +1546,13 @@ mod tests {
         } else {
             tests_util::is_not_valid(schema, instance);
         }
+    }
+
+    // Declared properties stay checked where something else evaluates every name
+    #[test_case(&json!({"properties": {"a": {"type": "string"}}, "allOf": [{"additionalProperties": true}], "unevaluatedProperties": false}), &json!({"a": 1}); "every name evaluated")]
+    #[test_case(&json!({"properties": {"a": {"type": "string"}}, "if": {"required": ["k"]}, "then": {"additionalProperties": true}, "unevaluatedProperties": false}), &json!({"k": 1, "a": 1}); "every name evaluated under a condition")]
+    fn declared_property_checked_when_every_name_is_evaluated(schema: &Value, instance: &Value) {
+        tests_util::is_not_valid(schema, instance);
     }
 
     fn errors(schema: &Value, instance: &Value) -> Vec<(String, String, String)> {

@@ -82,13 +82,14 @@ impl<F: Json> Validate<F> for EveryDeclaredRequiredValidator<F> {
     }
 }
 
-/// `required` checked by the walk of a closed object's `additionalProperties: false`, which visits
-/// every member anyway; only `is_valid` leans on it.
-struct CheckedByClosedObjectValidator<F: Json> {
-    inner: BoxedValidator<F>,
+/// A keyword checked by the walk of a sibling that visits every member anyway: `required` under a
+/// closed object's `additionalProperties: false`, `properties` under `unevaluatedProperties`. Only
+/// `is_valid` leans on that walk.
+pub(crate) struct CheckedBySiblingValidator<F: Json> {
+    pub(crate) inner: BoxedValidator<F>,
 }
 
-impl<F: Json> Validate<F> for CheckedByClosedObjectValidator<F> {
+impl<F: Json> Validate<F> for CheckedBySiblingValidator<F> {
     fn is_valid(&self, _instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         true
     }
@@ -680,7 +681,7 @@ pub(crate) fn compile<'a, F: Json>(
         if checked_by_closed_object(ctx, parent).is_some() {
             return Some(
                 compile_with_path(schema, ctx.location().join("required"))?.map(|inner| {
-                    Box::new(CheckedByClosedObjectValidator { inner }) as BoxedValidator<F>
+                    Box::new(CheckedBySiblingValidator { inner }) as BoxedValidator<F>
                 }),
             );
         }

@@ -7,7 +7,7 @@ use crate::{
     evaluation::{
         format_keyword_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
     },
-    keywords::CompilationResult,
+    keywords::{required::CheckedBySiblingValidator, BoxedValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     properties::{
@@ -18,7 +18,7 @@ use crate::{
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson,
 };
-use referencing::{Uri, Vocabulary};
+use referencing::{Draft, Uri, Vocabulary};
 use serde_json::{Map, Value};
 use std::sync::Arc;
 
@@ -51,6 +51,15 @@ impl SmallPropertiesValidator {
         ctx: &compiler::Context<F>,
         map: &'a Map<String, Value>,
     ) -> CompilationResult<'a, F> {
+        Ok(Box::new(SmallPropertiesValidator::new(ctx, map)?))
+    }
+}
+
+impl<F: Json> SmallPropertiesValidator<F> {
+    pub(crate) fn new<'a>(
+        ctx: &compiler::Context<F>,
+        map: &'a Map<String, Value>,
+    ) -> Result<Self, ValidationError<'a>> {
         let ctx = ctx.new_at_location("properties");
         let mut properties = Vec::with_capacity(map.len());
         for (key, subschema) in map {
@@ -61,11 +70,53 @@ impl SmallPropertiesValidator {
                 compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
             ));
         }
-        Ok(Box::new(SmallPropertiesValidator {
+        Ok(SmallPropertiesValidator {
             properties,
             lengths: NameLengths::of(map.keys().map(String::as_str)),
-        }))
+        })
     }
+
+    /// The subschema declared for `name`, if any.
+    #[inline]
+    pub(crate) fn find(&self, name: &str) -> Option<&SchemaNode<F>> {
+        if !self.lengths.may_contain(name.len()) {
+            return None;
+        }
+        let head = KeyHead::of(name);
+        self.properties
+            .iter()
+            .find(|(prop_name, _, _)| prop_name.matches(head, name))
+            .map(|(_, _, node)| node)
+    }
+}
+
+/// The `properties` that a sibling `unevaluatedProperties` checks in its own walk: a few names
+/// compiled the plain way, next to an `unevaluatedProperties` that compiles to a validator. Both
+/// keywords compile from this, so one never skips what the other does not check.
+pub(crate) fn checked_by_unevaluated<'a, F: Json>(
+    ctx: &compiler::Context<F>,
+    parent: &'a Map<String, Value>,
+) -> Option<&'a Map<String, Value>> {
+    let Some(Value::Object(properties)) = parent.get("properties") else {
+        return None;
+    };
+    let unevaluated_compiles = match ctx.draft() {
+        Draft::Draft201909 => true,
+        Draft::Draft202012 | Draft::Unknown => ctx.has_vocabulary(&Vocabulary::Unevaluated),
+        _ => false,
+    };
+    (unevaluated_compiles
+        && ctx.has_vocabulary(&Vocabulary::Applicator)
+        && matches!(
+            parent.get("unevaluatedProperties"),
+            Some(Value::Bool(false) | Value::Object(_))
+        )
+        && !parent.contains_key("additionalProperties")
+        && properties.len() < HASHMAP_THRESHOLD
+        && extract_required2(ctx, parent).is_none()
+        && !ctx.is_keyword_overridden("properties")
+        && !ctx.is_keyword_overridden("unevaluatedProperties"))
+    .then_some(properties)
 }
 
 impl BigPropertiesValidator {
@@ -673,6 +724,11 @@ pub(crate) fn compile<'a, F: Json>(
         }
         _ => {
             if let Value::Object(map) = schema {
+                if checked_by_unevaluated(ctx, parent).is_some() {
+                    return Some(SmallPropertiesValidator::compile(ctx, map).map(|inner| {
+                        Box::new(CheckedBySiblingValidator { inner }) as BoxedValidator<F>
+                    }));
+                }
                 if map.len() < HASHMAP_THRESHOLD {
                     // Try fused validator for properties + required: [2 items]
                     if let Some((first, second)) = extract_required2(ctx, parent) {
