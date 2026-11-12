@@ -9,6 +9,7 @@
 ### Performance
 
 - `Hash` instances with up to 16 members read without copying them into a Ruby array on the first walk, and the copy kept for repeated walks read and written in place.
+- `Hash` member snapshots built in place and filled without a GC write barrier per member.
 
 ## [0.61.2] - 2026-11-12
 
