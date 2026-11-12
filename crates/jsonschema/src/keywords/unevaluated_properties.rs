@@ -20,7 +20,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     properties::NameSet,
-    regex::{analyze_pattern, Compiled, LiteralMatcher},
+    regex::{analyze_pattern, Compiled, LazyRegex, LiteralMatcher, SequenceMatcher},
     unfinished_matches::MatchSite,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson, ValidationError,
@@ -137,11 +137,11 @@ const MAX_PARTS: usize = 64;
 #[derive(Clone, Default)]
 struct Patterns {
     literal: Vec<Pattern<LiteralMatcher>>,
+    sequence: Vec<Pattern<SequenceMatcher<LazyRegex>>>,
     fancy: Vec<Pattern<Compiled<fancy_regex::Regex>>>,
     standard: Vec<Pattern<Compiled<regex::Regex>>>,
 }
 
-#[derive(Clone)]
 struct Pattern<R> {
     regex: Arc<R>,
     /// The `patternProperties` subschema for this pattern.
@@ -149,11 +149,30 @@ struct Pattern<R> {
     source: Arc<str>,
 }
 
+// Not derived: that would require `R: Clone`, while only the `Arc` is cloned.
+impl<R> Clone for Pattern<R> {
+    fn clone(&self) -> Self {
+        Pattern {
+            regex: Arc::clone(&self.regex),
+            location: self.location.clone(),
+            source: Arc::clone(&self.source),
+        }
+    }
+}
+
 impl Patterns {
     fn push<F: Json>(&mut self, ctx: &compiler::Context<'_, F>, pattern: &str) -> Result<(), ()> {
         if let Some(optimization) = analyze_pattern(pattern) {
             self.literal.push(Pattern {
                 regex: Arc::new(LiteralMatcher::from(optimization)),
+                location: ctx.location().clone(),
+                source: pattern.into(),
+            });
+            return Ok(());
+        }
+        if let Some(sequence) = ctx.sequence_without_limits(pattern) {
+            self.sequence.push(Pattern {
+                regex: sequence,
                 location: ctx.location().clone(),
                 source: pattern.into(),
             });
@@ -180,18 +199,23 @@ impl Patterns {
 
     fn extend(&mut self, other: &Patterns) {
         self.literal.extend(other.literal.iter().cloned());
+        self.sequence.extend(other.sequence.iter().cloned());
         self.fancy.extend(other.fancy.iter().cloned());
         self.standard.extend(other.standard.iter().cloned());
     }
 
     fn is_empty(&self) -> bool {
-        self.literal.is_empty() && self.fancy.is_empty() && self.standard.is_empty()
+        self.literal.is_empty()
+            && self.sequence.is_empty()
+            && self.fancy.is_empty()
+            && self.standard.is_empty()
     }
 
     fn sources(&self) -> impl Iterator<Item = &str> {
         self.literal
             .iter()
             .map(|pattern| &*pattern.source)
+            .chain(self.sequence.iter().map(|pattern| &*pattern.source))
             .chain(self.fancy.iter().map(|pattern| &*pattern.source))
             .chain(self.standard.iter().map(|pattern| &*pattern.source))
     }
@@ -206,6 +230,10 @@ impl Patterns {
         self.literal
             .iter()
             .any(|pattern| ctx.is_match(&*pattern.regex, property, || site(&pattern.location)))
+            || self
+                .sequence
+                .iter()
+                .any(|pattern| ctx.is_match(&*pattern.regex, property, || site(&pattern.location)))
             || self
                 .fancy
                 .iter()

@@ -5,6 +5,7 @@
 ### Performance
 
 - `pattern` and `patternProperties` with alternations of anchored sequences, such as `^[1-5](?:[0-9]{2}|XX)$`, matched in one pass without a regex engine.
+- `unevaluatedProperties` matching names against sequence-shaped `patternProperties`, such as `^[a-z0-9-]+$` or `^[1-5](?:[0-9]{2}|XX)$`, without a regex engine.
 
 ## [0.61.2] - 2026-11-12
 
