@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.61.2] - 2026-11-12
+
 ### Fixed
 
 - References inside a registered resource resolving against the URI it was registered under instead of its `$id`. [#1862](https://github.com/Stranger6667/jsonschema/issues/1862)
@@ -2077,7 +2079,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.2...HEAD
+[0.61.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.1...rust-v0.61.2
 [0.61.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.0...rust-v0.61.1
 [0.61.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.2...rust-v0.61.0
 [0.60.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.1...rust-v0.60.2
