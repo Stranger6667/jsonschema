@@ -6,6 +6,10 @@
 
 - Non-string keys of a root `Hash` raising only when validation reads them, like keys of nested ones, instead of on every call.
 
+### Performance
+
+- `Hash` instances with up to 16 members read without copying them into a Ruby array on the first walk, and the copy kept for repeated walks read and written in place.
+
 ## [0.61.2] - 2026-11-12
 
 ### Fixed
