@@ -15,6 +15,7 @@ use std::{
     cell::RefCell,
     hash::{Hash, Hasher},
     marker::PhantomData,
+    ops::ControlFlow,
     os::raw::c_long,
     str::FromStr,
     sync::{
@@ -1021,6 +1022,27 @@ impl<'a> Object<'a, Magnus> for RbHash<'a> {
             marker: PhantomData,
         }
     }
+
+    fn try_for_each_name_node<B>(
+        &self,
+        (): &mut (),
+        mut f: impl FnMut(RbNode<'_>) -> ControlFlow<B>,
+    ) -> ControlFlow<B> {
+        for (name, _) in self.members() {
+            // A `String` key whose text decoded is already a string node; a symbol's name needs one.
+            let decoded = value_kind(name.key) == Kind::Str
+                && name.text.len() == unsafe { rb_sys::RSTRING_LEN(name.key) } as usize;
+            let flow = if decoded {
+                f(RbNode::new(name.key))
+            } else {
+                f(string_node(name.text))
+            };
+            if let ControlFlow::Break(value) = flow {
+                return ControlFlow::Break(value);
+            }
+        }
+        ControlFlow::Continue(())
+    }
 }
 
 // Carries the key itself alongside its text: the `VALUE` on the stack is conservatively marked, so
@@ -1028,7 +1050,7 @@ impl<'a> Object<'a, Magnus> for RbHash<'a> {
 pub struct RbName<'a> {
     // Keeps the key on the stack, where conservative marking pins it, so `text` stays valid.
     // Removing this field would let compaction move the bytes out from under the borrow.
-    _key: VALUE,
+    key: VALUE,
     text: &'a str,
 }
 
@@ -1036,12 +1058,9 @@ impl<'a> RbName<'a> {
     fn new(key: VALUE) -> Self {
         let Some(text) = text_of(key) else {
             record_unusable_key(key);
-            return RbName {
-                _key: key,
-                text: "",
-            };
+            return RbName { key, text: "" };
         };
-        RbName { _key: key, text }
+        RbName { key, text }
     }
 }
 
