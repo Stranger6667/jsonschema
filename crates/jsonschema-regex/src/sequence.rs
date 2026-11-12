@@ -7,9 +7,11 @@ const MAX_SINGLE_BOUND: u32 = 1000;
 /// accepted pattern far below the `regex` crate's default size limit (Unicode `\w`, about 770
 /// ranges, compiles to about 45 KB).
 const MAX_RANGE_BUDGET: u64 = 16_384;
+/// Branches an alternation expands into.
+const MAX_BRANCHES: usize = 8;
 
 /// An anchored sequence of ASCII character classes, each matched once, optionally or any number of
-/// times, decided without a regex engine for ASCII subjects.
+/// times, or a few alternatives of one, decided without a regex engine for ASCII subjects.
 #[derive(Debug, Clone)]
 pub struct Sequence {
     form: Form,
@@ -23,10 +25,12 @@ enum Form {
         min: usize,
         max: Option<usize>,
     },
-    /// One state bit per slot boundary; bit `n` (after the last slot) accepts.
+    /// One state bit per slot boundary. Branches sit side by side, each followed by its accepting
+    /// bit; no byte fills that bit, so a state never moves from one branch into the next.
     Parallel {
         /// The slots each byte can fill.
         table: Box<[u64; 128]>,
+        start: u64,
         star: u64,
         skippable: u64,
         longest_skip_run: u32,
@@ -46,12 +50,12 @@ struct Atom {
 
 impl Sequence {
     /// Compile a pattern already translated by [`crate::to_rust_regex`]. `None` when it is not an
-    /// anchored sequence of literals, classes and their repetitions within the size limits.
+    /// anchored sequence of literals, classes and their repetitions, or a few alternatives of one,
+    /// within the size limits.
     #[must_use]
     pub fn compile(translated: &str) -> Option<Sequence> {
-        // Skip parsing what is never a sequence: no leading `^`, alternations, quantified groups.
+        // Skip parsing what is never a sequence: no leading `^` or quantified groups.
         if !translated.starts_with('^')
-            || translated.contains('|')
             || translated
                 .as_bytes()
                 .windows(2)
@@ -62,49 +66,42 @@ impl Sequence {
         let hir = regex_syntax::Parser::new().parse(translated).ok()?;
         let mut items = Vec::new();
         flatten(&hir, &mut items);
-        let (first, rest) = items.split_first()?;
-        if !matches!(first.kind(), HirKind::Look(Look::Start)) {
-            return None;
-        }
-        let (anchored_end, middle) = match rest.split_last() {
-            Some((last, middle)) if matches!(last.kind(), HirKind::Look(Look::End)) => {
-                (true, middle)
+        let mut budget = 0;
+        let mut anchored_end = None;
+        let mut branches = Vec::new();
+        for branch in expand(&items)? {
+            let (end, atoms) = branch_atoms(&branch, &mut budget)?;
+            // One state decides every branch, so they all end the same way.
+            if *anchored_end.get_or_insert(end) != end {
+                return None;
             }
-            _ => (false, rest),
-        };
-        let mut atoms = Vec::new();
-        for item in middle {
-            push_atoms(item, &mut atoms)?;
+            branches.push(atoms);
         }
-        let budget: u64 = atoms
-            .iter()
-            .map(|atom| {
-                let repetitions = atom.max.map_or(u64::from(atom.min) + 1, u64::from);
-                atom.ranges.saturating_mul(repetitions.max(1))
-            })
-            .fold(0, u64::saturating_add);
         if budget > MAX_RANGE_BUDGET {
             return None;
         }
-        if let [atom] = atoms.as_slice() {
-            if anchored_end
-                && atom.min <= MAX_SINGLE_BOUND
-                && atom.max.is_none_or(|max| max <= MAX_SINGLE_BOUND)
-            {
-                let mut members = Box::new([false; 128]);
-                for (byte, member) in members.iter_mut().enumerate() {
-                    *member = atom.class >> byte & 1 == 1;
+        let anchored_end = anchored_end?;
+        if let [atoms] = branches.as_slice() {
+            if let [atom] = atoms.as_slice() {
+                if anchored_end
+                    && atom.min <= MAX_SINGLE_BOUND
+                    && atom.max.is_none_or(|max| max <= MAX_SINGLE_BOUND)
+                {
+                    let mut members = Box::new([false; 128]);
+                    for (byte, member) in members.iter_mut().enumerate() {
+                        *member = atom.class >> byte & 1 == 1;
+                    }
+                    return Some(Sequence {
+                        form: Form::Single {
+                            members,
+                            min: atom.min as usize,
+                            max: atom.max.map(|max| max as usize),
+                        },
+                    });
                 }
-                return Some(Sequence {
-                    form: Form::Single {
-                        members,
-                        min: atom.min as usize,
-                        max: atom.max.map(|max| max as usize),
-                    },
-                });
             }
         }
-        parallel(&atoms, anchored_end).map(|form| Sequence { form })
+        parallel(&branches, anchored_end).map(|form| Sequence { form })
     }
 
     /// `None` when the answer needs the regex engine: a non-ASCII byte was reached before the
@@ -126,6 +123,7 @@ impl Sequence {
             }
             Form::Parallel {
                 table,
+                start,
                 star,
                 skippable,
                 longest_skip_run,
@@ -138,7 +136,7 @@ impl Sequence {
                     }
                     state
                 };
-                let mut state = close(1);
+                let mut state = close(*start);
                 for &byte in text {
                     if !anchored_end && state & accept != 0 {
                         return Some(true);
@@ -153,6 +151,58 @@ impl Sequence {
             }
         }
     }
+}
+
+// One branch: whether it is anchored at the end, and its literals, classes and repetitions.
+fn branch_atoms(items: &[&Hir], budget: &mut u64) -> Option<(bool, Vec<Atom>)> {
+    let (first, rest) = items.split_first()?;
+    if !matches!(first.kind(), HirKind::Look(Look::Start)) {
+        return None;
+    }
+    let (anchored_end, middle) = match rest.split_last() {
+        Some((last, middle)) if matches!(last.kind(), HirKind::Look(Look::End)) => (true, middle),
+        _ => (false, rest),
+    };
+    let mut atoms = Vec::new();
+    for item in middle {
+        push_atoms(item, &mut atoms)?;
+    }
+    *budget = atoms
+        .iter()
+        .map(|atom| {
+            let repetitions = atom.max.map_or(u64::from(atom.min) + 1, u64::from);
+            atom.ranges.saturating_mul(repetitions.max(1))
+        })
+        .fold(*budget, u64::saturating_add);
+    Some((anchored_end, atoms))
+}
+
+// Every way through the alternations among `items`, as a list of items without any.
+fn expand<'h>(items: &[&'h Hir]) -> Option<Vec<Vec<&'h Hir>>> {
+    let mut branches = vec![Vec::new()];
+    for &item in items {
+        let HirKind::Alternation(alternatives) = item.kind() else {
+            for branch in &mut branches {
+                branch.push(item);
+            }
+            continue;
+        };
+        let mut next = Vec::new();
+        for alternative in alternatives {
+            let mut sub = Vec::new();
+            flatten(alternative, &mut sub);
+            for tail in expand(&sub)? {
+                for head in &branches {
+                    if next.len() == MAX_BRANCHES {
+                        return None;
+                    }
+                    next.push(head.iter().chain(&tail).copied().collect());
+                }
+            }
+        }
+        branches = next;
+    }
+    Some(branches)
 }
 
 fn flatten<'h>(hir: &'h Hir, items: &mut Vec<&'h Hir>) {
@@ -233,61 +283,93 @@ fn class_members(class: &Class) -> Option<(u128, u64)> {
     Some((members, class.ranges().len() as u64))
 }
 
-fn parallel(atoms: &[Atom], anchored_end: bool) -> Option<Form> {
-    let mut table = Box::new([0u64; 128]);
-    let (mut star, mut skippable) = (0u64, 0u64);
-    let (mut slots, mut run, mut longest_skip_run) = (0usize, 0u32, 0u32);
-    let mut push = |class: u128, repeat: Repeat| -> Option<()> {
-        if slots == MAX_SLOTS {
+// Slots laid out so far, in bit order.
+struct Layout {
+    table: Box<[u64; 128]>,
+    star: u64,
+    skippable: u64,
+    slots: usize,
+    run: u32,
+    longest_skip_run: u32,
+}
+
+impl Layout {
+    fn push(&mut self, class: u128, repeat: Repeat) -> Option<()> {
+        if self.slots == MAX_SLOTS {
             return None;
         }
-        let bit = 1u64 << slots;
-        for (byte, slot) in table.iter_mut().enumerate() {
+        let bit = 1u64 << self.slots;
+        for (byte, slot) in self.table.iter_mut().enumerate() {
             if class >> byte & 1 == 1 {
                 *slot |= bit;
             }
         }
         if matches!(repeat, Repeat::Once) {
-            run = 0;
+            self.run = 0;
         } else {
-            skippable |= bit;
-            run += 1;
-            longest_skip_run = longest_skip_run.max(run);
-            if run > MAX_SKIP_RUN {
+            self.skippable |= bit;
+            self.run += 1;
+            self.longest_skip_run = self.longest_skip_run.max(self.run);
+            if self.run > MAX_SKIP_RUN {
                 return None;
             }
         }
         if matches!(repeat, Repeat::Star) {
-            star |= bit;
+            self.star |= bit;
         }
-        slots += 1;
+        self.slots += 1;
         Some(())
+    }
+}
+
+fn parallel(branches: &[Vec<Atom>], anchored_end: bool) -> Option<Form> {
+    let mut layout = Layout {
+        table: Box::new([0u64; 128]),
+        star: 0,
+        skippable: 0,
+        slots: 0,
+        run: 0,
+        longest_skip_run: 0,
     };
-    for atom in atoms {
-        if atom.min as usize > MAX_SLOTS {
+    let (mut start, mut accept) = (0u64, 0u64);
+    for atoms in branches {
+        if layout.slots > MAX_SLOTS {
             return None;
         }
-        for _ in 0..atom.min {
-            push(atom.class, Repeat::Once)?;
-        }
-        match atom.max {
-            None => push(atom.class, Repeat::Star)?,
-            Some(max) => {
-                if (max - atom.min) as usize > MAX_SLOTS {
-                    return None;
-                }
-                for _ in atom.min..max {
-                    push(atom.class, Repeat::Optional)?;
+        start |= 1 << layout.slots;
+        layout.run = 0;
+        for atom in atoms {
+            if atom.min as usize > MAX_SLOTS {
+                return None;
+            }
+            for _ in 0..atom.min {
+                layout.push(atom.class, Repeat::Once)?;
+            }
+            match atom.max {
+                None => layout.push(atom.class, Repeat::Star)?,
+                Some(max) => {
+                    if (max - atom.min) as usize > MAX_SLOTS {
+                        return None;
+                    }
+                    for _ in atom.min..max {
+                        layout.push(atom.class, Repeat::Optional)?;
+                    }
                 }
             }
         }
+        if layout.slots > MAX_SLOTS {
+            return None;
+        }
+        accept |= 1 << layout.slots;
+        layout.slots += 1;
     }
     Some(Form::Parallel {
-        table,
-        star,
-        skippable,
-        longest_skip_run,
-        accept: 1 << slots,
+        table: layout.table,
+        start,
+        star: layout.star,
+        skippable: layout.skippable,
+        longest_skip_run: layout.longest_skip_run,
+        accept,
         anchored_end,
     })
 }
@@ -348,6 +430,20 @@ mod tests {
     #[test_case(r"^[a-z]{1,100}$", &"a".repeat(101), Some(false); "single class long over max")]
     #[test_case(r"^[a-z]{1,1000}$", "a", Some(true); "single class at cap")]
     #[test_case(r"^\p{L}+[0-9]$", "ab1", Some(true); "wide class within the range budget")]
+    #[test_case(r"^[1-5](?:[0-9]{2}|XX)$", "200", Some(true); "alternation first branch")]
+    #[test_case(r"^[1-5](?:[0-9]{2}|XX)$", "4XX", Some(true); "alternation second branch")]
+    #[test_case(r"^[1-5](?:[0-9]{2}|XX)$", "6XX", Some(false); "alternation shared head fails")]
+    #[test_case(r"^[1-5](?:[0-9]{2}|XX)$", "20", Some(false); "alternation too short")]
+    #[test_case(r"^[1-5](?:[0-9]{2}|XX)$", "2XXX", Some(false); "alternation too long")]
+    #[test_case(r"^(?:ab|cde)f$", "cdef", Some(true); "alternation of different lengths")]
+    #[test_case(r"^(ab|cd)$", "cd", Some(true); "capturing alternation")]
+    #[test_case(r"^a(?:b(?:cc|dd)|ee)$", "abdd", Some(true); "nested alternation")]
+    #[test_case(r"^a(?:b(?:cc|dd)|ee)$", "aee", Some(true); "nested alternation outer branch")]
+    #[test_case(r"^a(?:b(?:cc|dd)|ee)$", "abee", Some(false); "nested alternation mixed")]
+    #[test_case(r"^(?:ab|cd)", "cdz", Some(true); "alternation with unanchored end")]
+    #[test_case(r"^(?:\d\d|xx)$", "\u{661}\u{661}", None; "undecided branch needs the engine")]
+    #[test_case(r"^(?:\d\d|xx)$", "xx", Some(true); "decided branch wins over undecided")]
+    #[test_case(r"^(?:a|bc)$", "abc", Some(false); "no state crosses into the next branch")]
     fn matches(pattern: &str, text: &str, expected: Option<bool>) {
         let sequence = compile(pattern).expect("compiles");
         assert_eq!(sequence.is_match(text.as_bytes()), expected);
@@ -369,6 +465,9 @@ mod tests {
     #[test_case(r"^[a-z]{1001,}$"; "single class open over cap")]
     #[test_case(r"^\bx$"; "word boundary")]
     #[test_case(r"^\p{L}{1,1000}$"; "wide class over the range budget")]
+    #[test_case(r"^(?:aa|bb)(?:cc|dd)(?:ee|ff)(?:gg|hh)$"; "sixteen branches")]
+    #[test_case(r"^ab|cd$"; "branch without the start anchor")]
+    #[test_case(r"^(?:ab$|cd)"; "branches ending differently")]
     fn declined(pattern: &str) {
         assert!(compile(pattern).is_none());
     }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- `pattern` and `patternProperties` with alternations of anchored sequences, such as `^[1-5](?:[0-9]{2}|XX)$`, matched in one pass without a regex engine.
+
 ## [0.61.2] - 2026-11-12
 
 ### Fixed
