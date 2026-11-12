@@ -9,6 +9,8 @@ const MAX_SINGLE_BOUND: u32 = 1000;
 const MAX_RANGE_BUDGET: u64 = 16_384;
 /// Branches an alternation expands into.
 const MAX_BRANCHES: usize = 8;
+/// ASCII members from which a class is wide: `.`, `\S` or a negated class.
+const WIDE_CLASS_MEMBERS: u32 = 32;
 
 /// An anchored sequence of ASCII character classes, each matched once, optionally or any number of
 /// times, or a few alternatives of one, decided without a regex engine for ASCII subjects.
@@ -21,6 +23,15 @@ pub struct Sequence {
 enum Form {
     /// One class repeated between `min` and `max` times, up to the end of input.
     Single {
+        members: Box<[bool; 128]>,
+        min: usize,
+        max: Option<usize>,
+    },
+    /// Classes matched once each, then one class repeated between `min` and `max` times, up to the
+    /// end of input.
+    Headed {
+        /// Bit `b` of entry `i` set when ASCII byte `b` may be the `i`-th byte.
+        head: Box<[u128]>,
         members: Box<[bool; 128]>,
         min: usize,
         max: Option<usize>,
@@ -54,12 +65,13 @@ impl Sequence {
     /// within the size limits.
     #[must_use]
     pub fn compile(translated: &str) -> Option<Sequence> {
-        // Skip parsing what is never a sequence: no leading `^` or quantified groups.
-        if !translated.starts_with('^')
+        // Skip parsing what is never a sequence: no leading `^` or group, or a group repeated
+        // without bound.
+        if !(translated.starts_with('^') || translated.starts_with('('))
             || translated
                 .as_bytes()
                 .windows(2)
-                .any(|pair| pair[0] == b')' && matches!(pair[1], b'?' | b'*' | b'+' | b'{'))
+                .any(|pair| pair[0] == b')' && matches!(pair[1], b'*' | b'+'))
         {
             return None;
         }
@@ -80,10 +92,25 @@ impl Sequence {
         if budget > MAX_RANGE_BUDGET {
             return None;
         }
+        // Across branches the engine's scan, or its check of a literal suffix, outpaces this one
+        // over the long subjects an unbounded wide class admits, when the match must reach their
+        // end. Without an end anchor, a match ends at the first accepting slot.
+        if anchored_end == Some(true)
+            && branches.len() > 1
+            && branches
+                .iter()
+                .flatten()
+                .any(|atom| atom.max.is_none() && atom.class.count_ones() >= WIDE_CLASS_MEMBERS)
+        {
+            return None;
+        }
         let anchored_end = anchored_end?;
         if let [atoms] = branches.as_slice() {
-            if let [atom] = atoms.as_slice() {
+            if let Some((atom, head)) = atoms.split_last() {
+                // A head pays off over a run of varying length; fixed lengths stay parallel.
                 if anchored_end
+                    && (head.is_empty() || atom.max != Some(atom.min))
+                    && head.iter().all(|step| step.min == 1 && step.max == Some(1))
                     && atom.min <= MAX_SINGLE_BOUND
                     && atom.max.is_none_or(|max| max <= MAX_SINGLE_BOUND)
                 {
@@ -91,13 +118,18 @@ impl Sequence {
                     for (byte, member) in members.iter_mut().enumerate() {
                         *member = atom.class >> byte & 1 == 1;
                     }
-                    return Some(Sequence {
-                        form: Form::Single {
+                    let (min, max) = (atom.min as usize, atom.max.map(|max| max as usize));
+                    let form = if head.is_empty() {
+                        Form::Single { members, min, max }
+                    } else {
+                        Form::Headed {
+                            head: head.iter().map(|step| step.class).collect(),
                             members,
-                            min: atom.min as usize,
-                            max: atom.max.map(|max| max as usize),
-                        },
-                    });
+                            min,
+                            max,
+                        }
+                    };
+                    return Some(Sequence { form });
                 }
             }
         }
@@ -121,6 +153,12 @@ impl Sequence {
                 }
                 Some(max.is_none_or(|max| text.len() <= max))
             }
+            Form::Headed {
+                head,
+                members,
+                min,
+                max,
+            } => headed_match(head, members, *min, *max, text),
             Form::Parallel {
                 table,
                 start,
@@ -153,6 +191,35 @@ impl Sequence {
     }
 }
 
+// Out of line: keeps `Sequence::is_match` as small as its other forms need.
+#[inline(never)]
+fn headed_match(
+    head: &[u128],
+    members: &[bool; 128],
+    min: usize,
+    max: Option<usize>,
+    text: &[u8],
+) -> Option<bool> {
+    if text.len() < head.len() + min {
+        return Some(false);
+    }
+    let (start, rest) = text.split_at(head.len());
+    for (&class, &byte) in head.iter().zip(start) {
+        if byte >= 128 {
+            return None;
+        }
+        if class >> byte & 1 == 0 {
+            return Some(false);
+        }
+    }
+    for &byte in rest {
+        if !*members.get(byte as usize)? {
+            return Some(false);
+        }
+    }
+    Some(max.is_none_or(|max| rest.len() <= max))
+}
+
 // One branch: whether it is anchored at the end, and its literals, classes and repetitions.
 fn branch_atoms(items: &[&Hir], budget: &mut u64) -> Option<(bool, Vec<Atom>)> {
     let (first, rest) = items.split_first()?;
@@ -177,32 +244,85 @@ fn branch_atoms(items: &[&Hir], budget: &mut u64) -> Option<(bool, Vec<Atom>)> {
     Some((anchored_end, atoms))
 }
 
-// Every way through the alternations among `items`, as a list of items without any.
+// Every way through the alternations and repeated groups among `items`, as a list of items
+// without any.
 fn expand<'h>(items: &[&'h Hir]) -> Option<Vec<Vec<&'h Hir>>> {
     let mut branches = vec![Vec::new()];
     for &item in items {
-        let HirKind::Alternation(alternatives) = item.kind() else {
-            for branch in &mut branches {
-                branch.push(item);
+        let tails = match item.kind() {
+            HirKind::Alternation(alternatives) => {
+                let mut tails = Vec::new();
+                for alternative in alternatives {
+                    tails.extend(expand(&flattened(alternative))?);
+                }
+                tails
             }
-            continue;
+            HirKind::Repetition(repetition) if !is_atom(&repetition.sub) => {
+                let group = flattened(&repetition.sub);
+                match (repetition.min, repetition.max) {
+                    // A run of varying length inside marks long subjects, which the engine scans
+                    // faster.
+                    (0, Some(1)) if !group.iter().any(|item| varies(item)) => {
+                        let mut tails = expand(&group)?;
+                        tails.push(Vec::new());
+                        tails
+                    }
+                    (count, Some(max)) if count == max && count as usize <= MAX_SLOTS => {
+                        let repeated: Vec<&Hir> =
+                            (0..count).flat_map(|_| group.iter().copied()).collect();
+                        expand(&repeated)?
+                    }
+                    _ => return None,
+                }
+            }
+            _ => {
+                for branch in &mut branches {
+                    branch.push(item);
+                }
+                continue;
+            }
         };
         let mut next = Vec::new();
-        for alternative in alternatives {
-            let mut sub = Vec::new();
-            flatten(alternative, &mut sub);
-            for tail in expand(&sub)? {
-                for head in &branches {
-                    if next.len() == MAX_BRANCHES {
-                        return None;
-                    }
-                    next.push(head.iter().chain(&tail).copied().collect());
+        for tail in &tails {
+            for head in &branches {
+                if next.len() == MAX_BRANCHES {
+                    return None;
                 }
+                next.push(head.iter().chain(tail).copied().collect());
             }
         }
         branches = next;
     }
     Some(branches)
+}
+
+fn flattened(hir: &Hir) -> Vec<&Hir> {
+    let mut items = Vec::new();
+    flatten(hir, &mut items);
+    items
+}
+
+// Whether `hir` repeats something a varying number of times.
+fn varies(hir: &Hir) -> bool {
+    match hir.kind() {
+        HirKind::Repetition(repetition) => {
+            repetition.max != Some(repetition.min) || varies(&repetition.sub)
+        }
+        HirKind::Capture(capture) => varies(&capture.sub),
+        HirKind::Concat(subs) | HirKind::Alternation(subs) => subs.iter().any(varies),
+        _ => false,
+    }
+}
+
+// What `push_atoms` repeats directly: a class or a single character.
+fn is_atom(hir: &Hir) -> bool {
+    match hir.kind() {
+        HirKind::Class(_) => true,
+        HirKind::Literal(literal) => {
+            std::str::from_utf8(&literal.0).is_ok_and(|text| text.chars().count() == 1)
+        }
+        _ => false,
+    }
 }
 
 fn flatten<'h>(hir: &'h Hir, items: &mut Vec<&'h Hir>) {
@@ -236,7 +356,7 @@ fn push_atoms(hir: &Hir, atoms: &mut Vec<Atom>) -> Option<()> {
             });
         }
         HirKind::Repetition(repetition) => {
-            // `compile` declines quantified groups before parsing, so no capture wraps `sub`.
+            // `expand` resolves repeated groups, so `sub` is a class or a single character.
             let (class, ranges) = match repetition.sub.kind() {
                 HirKind::Class(class) => class_members(class)?,
                 HirKind::Literal(literal) => {
@@ -387,6 +507,9 @@ mod tests {
     use crate::to_rust_regex;
     use test_case::test_case;
 
+    const GUID_OR_VERSION: &str =
+        r"(^([0-9]+)\.([0-9]+)$)|(^\{[A-F0-9]{8}(-[A-F0-9]{4}){3}-[A-F0-9]{12}\}$)";
+
     fn compile(pattern: &str) -> Option<Sequence> {
         Sequence::compile(&to_rust_regex(pattern).expect("translates"))
     }
@@ -444,6 +567,24 @@ mod tests {
     #[test_case(r"^(?:\d\d|xx)$", "\u{661}\u{661}", None; "undecided branch needs the engine")]
     #[test_case(r"^(?:\d\d|xx)$", "xx", Some(true); "decided branch wins over undecided")]
     #[test_case(r"^(?:a|bc)$", "abc", Some(false); "no state crosses into the next branch")]
+    #[test_case(r"^[a-z][a-z0-9-_]{1,63}$", "a1", Some(true); "head then long run")]
+    #[test_case(r"^[a-z][a-z0-9-_]{1,63}$", "a", Some(false); "head without the run")]
+    #[test_case(r"^[a-z][a-z0-9-_]{1,63}$", "1a", Some(false); "head class mismatch")]
+    #[test_case(r"^[a-z][a-z0-9-_]{1,63}$", &format!("a{}", "b".repeat(63)), Some(true); "long run at max")]
+    #[test_case(r"^[a-z][a-z0-9-_]{1,63}$", &format!("a{}", "b".repeat(64)), Some(false); "long run over max")]
+    #[test_case(r"^[a-z][0-9]+$", "\u{e9}1", None; "non-ascii head needs the engine")]
+    #[test_case(r"^ab[0-9]*$", "ab", Some(true); "literal head, empty run")]
+    #[test_case(r"^(ab){2}$", "abab", Some(true); "group repeated exactly")]
+    #[test_case(r"^(ab){2}$", "ab", Some(false); "group repeated too few times")]
+    #[test_case(r"^[Ee][Ss]2016(\.[Aa][Rr][Rr][Aa][Yy])?$", "ES2016.Array", Some(true); "optional group taken")]
+    #[test_case(r"^[Ee][Ss]2016(\.[Aa][Rr][Rr][Aa][Yy])?$", "es2016", Some(true); "optional group skipped")]
+    #[test_case(r"^[Ee][Ss]2016(\.[Aa][Rr][Rr][Aa][Yy])?$", "es2016.", Some(false); "optional group cut short")]
+    #[test_case(GUID_OR_VERSION, "4.27", Some(true); "leading group, first branch")]
+    #[test_case(GUID_OR_VERSION, "{0123ABCD-0123-4567-89AB-0123456789AB}", Some(true); "leading group, second branch")]
+    #[test_case(GUID_OR_VERSION, "{0123ABCD-0123-4567-0123456789AB}", Some(false); "leading group, repeat short")]
+    #[test_case(GUID_OR_VERSION, "4.", Some(false); "leading group, no branch")]
+    #[test_case(r"^(?:https?:|\?)[\w\W]*", "https://example.com", Some(true); "wide run after branches, open end")]
+    #[test_case(r"^(?:https?:|\?)[\w\W]*", "ftp://example.com", Some(false); "wide run after branches, no branch")]
     fn matches(pattern: &str, text: &str, expected: Option<bool>) {
         let sequence = compile(pattern).expect("compiles");
         assert_eq!(sequence.is_match(text.as_bytes()), expected);
@@ -451,11 +592,14 @@ mod tests {
 
     #[test_case(r"[a-z]+"; "unanchored start")]
     #[test_case(r"^a|b$"; "alternation")]
-    #[test_case(r"^(ab){2}$"; "quantified group")]
+    #[test_case(r"^(ab){2,}$"; "group repeated without bound")]
+    #[test_case(r"^(ab){1,3}$"; "group repeated a range of times")]
+    #[test_case(r"^.*\.(?:txt|trie)(?:\.gz)?$"; "wide unbounded class across branches")]
+    #[test_case(r"^\d{2}(?:\.\d+)?Z$"; "optional group of varying length")]
     #[test_case(r"^(?:\.[a-z]+)*$"; "quantified sequence group")]
     #[test_case(r"a^b"; "anchor in the middle")]
     #[test_case(r"^(a)+$"; "quantified group around one class")]
-    #[test_case(r"^[a-z][a-z0-9-_]{1,63}$"; "62 optional slots in a row")]
+    #[test_case(r"^[a-z]{1,63}x$"; "62 optional slots in a row")]
     #[test_case(r"^a{32}b{32}$"; "64 slots")]
     #[test_case(r"^*abc"; "quantified start anchor")]
     #[test_case(r"^a\b*c$"; "quantified assertion")]
