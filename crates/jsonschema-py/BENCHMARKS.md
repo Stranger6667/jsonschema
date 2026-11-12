@@ -48,14 +48,14 @@ Sources:
 
 | Benchmark     | fastjsonschema | jsonschema    | jsonschema-rs (validate) | jsonschema-rs codegen (validate) |
 |---------------|----------------|---------------|--------------------------|----------------------------------|
-| OpenAPI       | 116.40 ms (**x84.16**) | 564.67 ms (**x408.30**) | 1.38 ms | 923.15 µs |
-| Swagger       | 74.00 ms (**x39.30**) | 1.00 s (**x533.64**) | 1.88 ms | 1.26 ms |
-| Canada (GeoJSON) | 9.86 ms (**x18.57**) | 771.32 ms (**x1,453.04**) | 530.83 µs | 338.40 µs |
-| CITM Catalog  | 4.52 ms (**x12.36**) | 80.06 ms (**x218.74**) | 366.01 µs | 204.06 µs |
-| Fast (Valid)  | 1.98 µs (**x12.17**) | 33.38 µs (**x204.85**) | 162.97 ns | 149.99 ns |
-| Fast (Invalid) | 862.00 ns (**x0.89**) | 4.97 µs (**x5.11**) | 972.00 ns | 490.01 ns |
-| FHIR          | 2.02 ms (**x2,618.84**) | 12.29 ms (**x15,939.98**) | 770.99 ns | 610.99 ns |
-| Recursive     | 1.02 ms (**x227.05**) | 1.21 s (**x269,141.80**) | 4.50 µs | 1.63 µs |
+| OpenAPI       | 117.31 ms (**x86.36**) | 558.98 ms (**x411.53**) | 1.36 ms | 903.38 µs |
+| Swagger       | 72.14 ms (**x38.84**) | 999.11 ms (**x537.93**) | 1.86 ms | 1.22 ms |
+| Canada (GeoJSON) | 9.81 ms (**x17.73**) | 762.98 ms (**x1,378.66**) | 553.42 µs | 339.82 µs |
+| CITM Catalog  | 4.48 ms (**x12.40**) | 77.67 ms (**x214.81**) | 361.58 µs | 202.45 µs |
+| Fast (Valid)  | 1.98 µs (**x12.40**) | 33.17 µs (**x207.37**) | 159.97 ns | 139.99 ns |
+| Fast (Invalid) | 880.97 ns (**x0.87**) | 4.96 µs (**x4.91**) | 1.01 µs | 511.01 ns |
+| FHIR          | 2.02 ms (**x2,622.53**) | 12.10 ms (**x15,698.66**) | 770.99 ns | 600.99 ns |
+| Recursive     | 1.03 ms (**x226.39**) | 1.22 s (**x267,516.04**) | 4.55 µs | 1.51 µs |
 
 The codegen column is a validator compiled into an extension module at build time; see
 [Compile-time Validators](#compile-time-validators).
@@ -68,17 +68,17 @@ time, which is the trade for the numbers below.
 
 | Benchmark     | `is_valid` (runtime) | `is_valid` (codegen) | `validate` (runtime) | `validate` (codegen) |
 |---------------|----------------------|----------------------|----------------------|----------------------|
-| OpenAPI       | 1.36 ms | 917.26 µs (**x1.49**) | 1.38 ms | 923.15 µs (**x1.50**) |
-| Swagger       | 1.81 ms | 1.23 ms (**x1.48**) | 1.88 ms | 1.26 ms (**x1.49**) |
-| Canada (GeoJSON) | 530.71 µs | 345.53 µs (**x1.54**) | 530.83 µs | 338.40 µs (**x1.57**) |
-| CITM Catalog  | 379.75 µs | 193.51 µs (**x1.96**) | 366.01 µs | 204.06 µs (**x1.79**) |
-| Fast (Valid)  | 199.99 ns | 139.99 ns (**x1.43**) | 162.97 ns | 149.99 ns (**x1.09**) |
-| Fast (Invalid) | 240.00 ns | 149.66 ns (**x1.60**) | 972.00 ns | 490.01 ns (**x1.98**) |
-| FHIR          | 771.00 ns | 621.00 ns (**x1.24**) | 770.99 ns | 610.99 ns (**x1.26**) |
-| Recursive     | 4.41 µs | 1.62 µs (**x2.72**) | 4.50 µs | 1.63 µs (**x2.75**) |
+| OpenAPI       | 1.33 ms | 901.55 µs (**x1.47**) | 1.36 ms | 903.38 µs (**x1.50**) |
+| Swagger       | 1.76 ms | 1.19 ms (**x1.47**) | 1.86 ms | 1.22 ms (**x1.53**) |
+| Canada (GeoJSON) | 542.27 µs | 339.40 µs (**x1.60**) | 553.42 µs | 339.82 µs (**x1.63**) |
+| CITM Catalog  | 376.09 µs | 193.42 µs (**x1.94**) | 361.58 µs | 202.45 µs (**x1.79**) |
+| Fast (Valid)  | 199.97 ns | 120.00 ns (**x1.67**) | 159.97 ns | 139.99 ns (**x1.14**) |
+| Fast (Invalid) | 239.99 ns | 153.97 ns (**x1.56**) | 1.01 µs | 511.01 ns (**x1.98**) |
+| FHIR          | 751.00 ns | 600.99 ns (**x1.25**) | 770.99 ns | 600.99 ns (**x1.28**) |
+| Recursive     | 4.34 µs | 1.52 µs (**x2.85**) | 4.55 µs | 1.51 µs (**x3.01**) |
 
-Compiled validators also skip schema preparation, where `validator_for` takes from 10.51 µs (Fast)
-to 17.23 ms (FHIR).
+Compiled validators also skip schema preparation, where `validator_for` takes from 10.28 µs (Fast)
+to 16.66 ms (FHIR).
 
 You can find benchmark code in [benches/](benches/), Python version `3.14.7`, Rust version `1.99.0`.
 

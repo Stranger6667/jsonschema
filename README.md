@@ -109,10 +109,10 @@ You can check the current status on the [Bowtie Report](https://bowtie.report/#/
 
 `jsonschema` outperforms other Rust JSON Schema validators in most scenarios. The numbers below are for the runtime validator, which compiles a schema into a reusable `Validator`:
 
-- **105-1,805x** faster than `valico` and **11-654x** faster than `jsonschema_valid` for complex schemas (**>1,000,000x** on FHIR)
-- Generally **4.3-111x** faster than `boon`, **>470x** on FHIR, and **>9000x** for recursive schemas
+- **112-1,843x** faster than `valico` and **11-656x** faster than `jsonschema_valid` for complex schemas (**>1,000,000x** on FHIR)
+- Generally **4.3-114x** faster than `boon`, **>450x** on FHIR, and **>9000x** for recursive schemas
 
-When the schema is known at build time, the `#[jsonschema::validator]` macro (`macros` feature) generates a specialized validator at compile time. This avoids schema compilation at runtime and validates roughly **1.4-5.4x** faster than the runtime validator across our benchmark schemas.
+When the schema is known at build time, the `#[jsonschema::validator]` macro (`macros` feature) generates a specialized validator at compile time. This avoids schema compilation at runtime and validates roughly **1.4-4.5x** faster than the runtime validator across our benchmark schemas.
 
 For detailed benchmarks, see our [full performance comparison](https://github.com/Stranger6667/jsonschema/tree/master/crates/benchmark-suite).
 

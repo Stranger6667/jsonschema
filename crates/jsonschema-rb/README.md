@@ -726,9 +726,9 @@ Valid draft symbols: `:draft4`, `:draft6`, `:draft7`, `:draft201909`, `:draft202
 
 Compared with other Ruby validators:
 
-- **103-1,560x** faster than `json_schemer` for complex schemas and large instances
-- **1,021-1,040x** faster than `json-schema` where supported
-- **25-160x** faster than `rj_schema` (RapidJSON/C++)
+- **96-1,189x** faster than `json_schemer` for complex schemas and large instances
+- **987-1,081x** faster than `json-schema` where supported
+- **25-161x** faster than `rj_schema` (RapidJSON/C++)
 
 Full results and methodology are in [BENCHMARKS.md](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-rb/BENCHMARKS.md).
 
