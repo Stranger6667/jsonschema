@@ -658,8 +658,9 @@ unsafe extern "C" fn collect(key: VALUE, value: VALUE, arg: VALUE) -> std::os::r
             let base = (collector.index * 2) as isize;
             // Within the length the GC traces, so compaction updates every stored member.
             debug_assert!(base + 1 < rb_sys::RARRAY_LEN(*entries) as isize);
-            rb_sys::RARRAY_ASET(*entries, base, key);
-            rb_sys::RARRAY_ASET(*entries, base + 1, value);
+            let slots = rb_sys::RARRAY_CONST_PTR(*entries).cast_mut();
+            *slots.offset(base) = key;
+            *slots.offset(base + 1) = value;
         },
     }
     collector.index += 1;
@@ -682,11 +683,13 @@ fn member_named(hash: VALUE, key: VALUE) -> Option<VALUE> {
 }
 
 // An array with room for `pairs` members at its full length, so members are written in place
-// rather than appended.
+// rather than appended. Exempt from write barriers: the GC rescans it at every collection, so the
+// members are stored without one.
 fn snapshot_array(pairs: usize) -> VALUE {
     let slots = (pairs * 2) as c_long;
     let entries = unsafe { rb_ary_new_capa(slots) };
     unsafe { rb_ary_store(entries, slots - 1, special_consts::Qnil as VALUE) };
+    unsafe { rb_sys::rb_gc_writebarrier_unprotect(entries) };
     entries
 }
 
@@ -694,6 +697,8 @@ fn hash_len(value: VALUE) -> usize {
     fixnum_of(unsafe { rb_hash_size(value) }).max(0) as usize
 }
 
+#[allow(clippy::inline_always)]
+#[inline(always)]
 fn raw_members(value: VALUE) -> Members {
     let len = hash_len(value);
     if let Some(members) = cached_members(value, len) {
@@ -1019,6 +1024,8 @@ impl<'a> Object<'a, Magnus> for RbHash<'a> {
         (!is_undef(found)).then(|| RbNode::new(found))
     }
 
+    #[allow(clippy::inline_always)]
+    #[inline(always)]
     fn members(&self) -> RbMembers<'a> {
         let entries = raw_members(self.value);
         RbMembers {
