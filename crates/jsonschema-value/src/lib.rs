@@ -113,6 +113,11 @@ pub trait Json: Sized + Send + Sync + 'static {
     /// probe on lookups.
     const KEYS_PER_LOOKUP: usize = 0;
 
+    /// Object members a pass over the object may visit per declared property it checks, before
+    /// the pass costs more than a lookup per property. A pass over an in-memory map costs about
+    /// one cheap compare per member, against a tree descent or a key hash per lookup.
+    const MEMBERS_PER_PROPERTY: usize = 4;
+
     /// No node is ever its own descendant, so a `$ref` cycle can only revisit the instance being
     /// validated.
     const ACYCLIC: bool = false;
