@@ -438,6 +438,34 @@ def test_nested_validation_keeps_outer_error():
     assert calls == [True]
 
 
+def test_nested_validation_keeps_outer_holding():
+    class Renamed(E.Enum):
+        A = 1
+
+        @property
+        def value(self):
+            return 2
+
+    class Nested:
+        def __init__(self, schema, *args, **kwargs):
+            pass
+
+        def is_valid(self, instance):
+            return is_valid({"type": "string"}, "inner")
+
+        def validate(self, instance):
+            self.is_valid(instance)
+            return iter(())
+
+    # The keyword makes the outer call hold what it reads, the nested call holds nothing, and the
+    # outer call reads the overridden `value` after it
+    validator = validator_for(
+        {"allOf": [{"nested": 1}, {"properties": {"a": {"const": 2}}}]},
+        keywords={"nested": Nested},
+    )
+    assert validator.is_valid({"a": Renamed.A})
+
+
 def test_paths():
     with pytest.raises(ValidationError) as exc:
         validate({"prefixItems": [{"type": "string"}]}, [1])

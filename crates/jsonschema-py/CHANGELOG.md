@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Performance
+
+- Lower fixed cost of each validation call.
+
 ## [0.61.2] - 2026-11-12
 
 ### Fixed
