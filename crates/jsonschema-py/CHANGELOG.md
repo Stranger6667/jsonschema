@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Non-`str` keys of a root `dict` raising only when validation reads them, like keys of nested ones, instead of on every call.
+
 ### Performance
 
 - Lower fixed cost of each validation call.

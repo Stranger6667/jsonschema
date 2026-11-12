@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Changed
+
+- Non-string keys of a root `Hash` raising only when validation reads them, like keys of nested ones, instead of on every call.
+
 ## [0.61.2] - 2026-11-12
 
 ### Fixed

@@ -964,10 +964,16 @@ def test_lookup_through_raising_key_comparison_is_a_miss():
 
 
 def test_dict_with_non_str_keys(backend):
-    schema = {"type": "object"}
+    schema = {"properties": {"a": {"type": "string"}}}
     instance = {uuid.uuid4(): "foo"}
     with pytest.raises(ValueError, match="Dict key must be str or str enum. Got 'UUID'"):
         backend.validate(schema, instance)
+
+
+# Keys are checked where validation reads them
+@pytest.mark.parametrize("instance", [{uuid.uuid4(): "foo"}, {"a": {uuid.uuid4(): "foo"}}], ids=["root", "nested"])
+def test_unread_non_str_keys_are_accepted(backend, instance):
+    assert backend.is_valid({"type": "object"}, instance)
 
 
 class MyDict(dict):

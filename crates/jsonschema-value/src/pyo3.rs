@@ -668,22 +668,6 @@ pub(crate) fn probe_root(node: Borrowed<'_, '_, PyAny>) {
         ObjType::Str => drop(str_ref(node)),
         ObjType::Enum => drop(resolved(node)),
         ObjType::Unknown => record_unsupported(node),
-        // Key types only.
-        ObjType::Dict => {
-            let str_type = types(node.py()).str_;
-            let mut cursor = DictCursor::new(unsafe { node.cast_unchecked::<PyDict>() });
-            while let Some((key, _)) = cursor.next() {
-                // Almost every key is an exact `str`, which needs no further classification.
-                if unsafe { ffi::Py_TYPE(key) } == str_type {
-                    continue;
-                }
-                let key = unsafe { Borrowed::from_ptr(node.py(), key) };
-                if !key_is_usable(key) {
-                    record_unusable_key(key);
-                    break;
-                }
-            }
-        }
         _ => {}
     }
 }
