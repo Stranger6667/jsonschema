@@ -45,6 +45,10 @@ impl Json for Pyo3 {
     type PreparedKey = Py<PyString>;
     type StringBuffer = ();
 
+    // A pass calls into the interpreter for every member and every key's text, while a lookup is
+    // one probe with the key's cached hash.
+    const MEMBERS_PER_PROPERTY: usize = 1;
+
     fn prepare_key(key: &str) -> Py<PyString> {
         Python::attach(|py| PyString::intern(py, key).unbind())
     }

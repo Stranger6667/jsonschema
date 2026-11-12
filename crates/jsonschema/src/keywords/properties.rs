@@ -178,7 +178,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
             return true;
         };
         // Short instance in one pass, wide instance via targeted lookups.
-        if scan_members(object.len(), self.properties.len()) {
+        if scan_members::<F>(object.len(), self.properties.len()) {
             for (name, value) in object.members() {
                 let name = name.as_ref();
                 if !self.lengths.may_contain(name.len()) {
@@ -216,7 +216,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         let Some(object) = instance.as_object() else {
             return Ok(());
         };
-        if scan_members(object.len(), self.properties.len()) {
+        if scan_members::<F>(object.len(), self.properties.len()) {
             for (name, value) in object.members() {
                 let name = name.as_ref();
                 let head = KeyHead::of(name);
@@ -248,7 +248,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         let Some(object) = instance.as_object() else {
             return;
         };
-        if scan_members(object.len(), self.properties.len()) {
+        if scan_members::<F>(object.len(), self.properties.len()) {
             for (name, value) in object.members() {
                 let name = name.as_ref();
                 let head = KeyHead::of(name);
@@ -282,7 +282,7 @@ impl<F: Json> Validate<F> for SmallPropertiesValidator<F> {
         };
         let mut matched_props = Vec::with_capacity(object.len());
         let mut children = ChildList::default();
-        if scan_members(object.len(), self.properties.len()) {
+        if scan_members::<F>(object.len(), self.properties.len()) {
             for (name, value) in object.members() {
                 let name = name.as_ref();
                 let head = KeyHead::of(name);
@@ -368,7 +368,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         if object.len() < 2 {
             return false;
         }
-        if scan_members(object.len(), self.properties.len()) {
+        if scan_members::<F>(object.len(), self.properties.len()) {
             // One pass validates matching properties and confirms both required keys.
             let mut seen_first = false;
             let mut seen_second = false;
@@ -415,7 +415,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         let Some(object) = instance.as_object() else {
             return Ok(());
         };
-        if scan_members(object.len(), self.properties.len()) {
+        if scan_members::<F>(object.len(), self.properties.len()) {
             // One pass validates matching properties and confirms both required keys.
             let mut seen_first = false;
             let mut seen_second = false;
@@ -468,7 +468,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         let Some(object) = instance.as_object() else {
             return;
         };
-        if scan_members(object.len(), self.properties.len()) {
+        if scan_members::<F>(object.len(), self.properties.len()) {
             // One pass collects property errors and confirms both required keys.
             let start = errors.len();
             let mut seen_first = false;
@@ -528,7 +528,7 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         if let Some(object) = instance.as_object() {
             let mut matched_props = Vec::with_capacity(object.len());
             let mut children = ChildList::default();
-            if scan_members(object.len(), self.properties.len()) {
+            if scan_members::<F>(object.len(), self.properties.len()) {
                 for (name, value) in object.members() {
                     let name = name.as_ref();
                     let head = KeyHead::of(name);
