@@ -265,9 +265,6 @@ impl Drop for PendingErrorScope {
 pub fn probe_root(node: RbNode<'_>) {
     match value_kind(node.value) {
         Kind::Str => drop(str_ref(node.value)),
-        Kind::Hash => {
-            unsafe { rb_hash_foreach(node.value, Some(probe_key), 0) };
-        }
         // Records when the float is not finite; deeper ones surface where a keyword reads them.
         Kind::Float => {
             let _ = float_of(node.value);
@@ -343,10 +340,6 @@ fn text_of<'a>(value: VALUE) -> Option<&'a str> {
         Kind::Symbol => symbol_str(value),
         _ => None,
     }
-}
-
-fn key_is_usable(value: VALUE) -> bool {
-    matches!(value_kind(value), Kind::Str | Kind::Symbol)
 }
 
 // A non-finite float has no JSON form, matching what the eager conversion rejects.
@@ -663,15 +656,6 @@ unsafe extern "C" fn collect(key: VALUE, value: VALUE, arg: VALUE) -> std::os::r
     }
     collector.index += 1;
     0
-}
-
-// Stops at the first key that cannot name a property; reads tags only, so it never allocates.
-unsafe extern "C" fn probe_key(key: VALUE, _value: VALUE, _arg: VALUE) -> std::os::raw::c_int {
-    if key_is_usable(key) {
-        return 0;
-    }
-    record_unusable_key(key);
-    1
 }
 
 // Keyed lookup first; a symbol and a string spelling the same name denote one property, so a miss
@@ -1303,7 +1287,6 @@ mod tests {
         is_number_matches_as_number(&ruby);
         string_length_counts_code_points(&ruby);
         invalid_utf8_is_recorded(&ruby);
-        unusable_key_is_recorded(&ruby);
         unsupported_type_is_recorded(&ruby);
         cyclic_hash_to_value_reports_depth(&ruby);
         cyclic_array_to_value_reports_depth(&ruby);
@@ -1849,16 +1832,6 @@ mod tests {
 
         assert!(node.as_string().is_none());
         assert_eq!(pending().as_deref(), Some("String is not valid UTF-8"));
-    }
-
-    fn unusable_key_is_recorded(ruby: &Ruby) {
-        let node = RbNode::new(eval(ruby, "{ 1 => 2 }"));
-
-        probe_root(node);
-        assert_eq!(
-            pending().as_deref(),
-            Some("Hash keys must be strings or symbols. Got 'Integer'")
-        );
     }
 
     fn unsupported_type_is_recorded(ruby: &Ruby) {

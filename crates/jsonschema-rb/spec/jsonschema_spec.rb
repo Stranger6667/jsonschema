@@ -2188,8 +2188,16 @@ RSpec.describe "Type coercion errors" do
       end
 
       it "raises for non-string hash keys" do
-        expect { backend.validate!({ "type" => "object" }, { 1 => 2 }) }
+        schema = { "type" => "object", "properties" => { "name" => { "type" => "string" } }, "required" => ["name"] }
+        expect { backend.validate!(schema, { "name" => "x", 1 => 2 }) }
           .to raise_error(TypeError, /Hash keys must be strings or symbols. Got 'Integer'/)
+      end
+
+      # Keys are checked where validation reads them
+      [{ 1 => 2 }, { "a" => { 1 => 2 } }].each do |instance|
+        it "accepts unread non-string hash keys in #{instance.inspect}" do
+          expect(backend.valid?({ "type" => "object" }, instance)).to be(true)
+        end
       end
 
       it "raises for strings that are not valid UTF-8" do
