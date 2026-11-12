@@ -17,6 +17,7 @@
 - `additionalProperties` that only checks `type` decided without entering the subschema for each value by `is_valid`.
 - Literal-prefix patterns rejecting a property name on its first byte before comparing the rest.
 - Integer `const` and `enum` values compared directly instead of through their decimal forms.
+- `propertyNames` validating each `String` key itself instead of a new string built from its text.
 
 ## [0.61.1] - 2026-11-10
 
