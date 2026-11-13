@@ -182,7 +182,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     }
 
     let func_name =
-        get_or_create_is_valid_fn(ctx, &resolved.location, &resolved.schema, resolved.base_uri);
+        get_or_create_is_valid_fn(ctx, &resolved.location, resolved.schema, resolved.base_uri);
     let func_ident = format_ident!("{}", func_name);
     let call_scope_bindings = if ctx.uses_dynamic_ref {
         collect_dynamic_anchor_bindings(ctx, ctx.current_base_uri.clone())
@@ -308,7 +308,7 @@ pub(crate) fn compile_dynamic<E: ValueEmitter>(
         return fallback;
     };
 
-    let Some(anchor_name) = dynamic_ref_anchor_name(reference, &resolved.schema) else {
+    let Some(anchor_name) = dynamic_ref_anchor_name(reference, resolved.schema) else {
         return fallback;
     };
 

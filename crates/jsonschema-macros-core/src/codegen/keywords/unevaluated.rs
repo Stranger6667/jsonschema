@@ -356,13 +356,13 @@ impl EvalKind {
             EvalKind::Key => get_or_create_key_eval_fn(
                 ctx,
                 &resolved.location,
-                &resolved.schema,
+                resolved.schema,
                 resolved.base_uri.clone(),
             ),
             EvalKind::Item => get_or_create_item_eval_fn(
                 ctx,
                 &resolved.location,
-                &resolved.schema,
+                resolved.schema,
                 resolved.base_uri.clone(),
             ),
         };
@@ -523,7 +523,7 @@ fn push_ref_dispatch<E: ValueEmitter>(
                     let func_ident = kind.create_eval_fn(ctx, &resolved);
                     quote! { #func_ident(#call_args) }
                 };
-                if let Some(anchor_name) = dynamic_ref_anchor_name(reference, &resolved.schema) {
+                if let Some(anchor_name) = dynamic_ref_anchor_name(reference, resolved.schema) {
                     ctx.uses_dynamic_ref = true;
                     let stack = kind.dynamic_stack();
                     let guarded = cycle_guarded_dispatch(
