@@ -8,6 +8,7 @@
 
 ### Performance
 
+- Lower cost of collecting errors over the valid parts of an instance.
 - `Hash` instances with up to 16 members read without copying them into a Ruby array on the first walk, and the copy kept for repeated walks read and written in place.
 - `Hash` member snapshots built in place and filled without a GC write barrier per member.
 - `pattern` and `patternProperties` with alternations of anchored sequences, such as `^[1-5](?:[0-9]{2}|XX)$`, matched in one pass without a regex engine.
