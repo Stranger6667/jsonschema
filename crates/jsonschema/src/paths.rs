@@ -273,7 +273,7 @@ impl<'a> RefTracker<'a> {
     ///
     /// # Arguments
     /// - `suffix`: The `$ref` keyword's path relative to its resource base
-    ///   (precomputed at compile time via `ctx.suffix()`)
+    ///   (precomputed at compile time via `ctx.suffix_with(keyword)`)
     /// - `target_base`: The resource base of the `$ref` target
     ///   (e.g., `/$defs/Person` when `$ref` points to `#/$defs/Person`)
     /// - `parent`: The parent tracker, or `None` if this is the first `$ref`
@@ -656,6 +656,15 @@ impl Location {
 
     pub(crate) fn from_escaped(escaped: &str) -> Self {
         Self(Arc::from(escaped))
+    }
+
+    /// `escaped` followed by `property` as one more segment.
+    pub(crate) fn from_escaped_with(escaped: &str, property: &str) -> Self {
+        build_location(escaped.len() + property.len() + 1, |buffer| {
+            buffer.push_str(escaped);
+            buffer.push('/');
+            write_escaped_str(buffer, property);
+        })
     }
 
     /// Append a raw JSON pointer suffix (already escaped).

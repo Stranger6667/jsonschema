@@ -235,7 +235,9 @@ struct KeywordValidator<F: Json> {
 const _: () = assert!(std::mem::size_of::<KeywordValidator<SerdeJson>>() == 24);
 
 struct KeywordMetadata {
-    location: Location,
+    keyword: Keyword,
+    /// The node's location joined with `keyword`; only errors and evaluation read it.
+    location: OnceLock<Location>,
     /// Read by errors; evaluation reads `schema_location`.
     absolute_location: OnceLock<Arc<Uri<String>>>,
     schema_location: OnceLock<SchemaLocation>,
@@ -269,21 +271,31 @@ impl<F: Json> EntryParts<'_, F> {
 }
 
 impl KeywordMetadata {
+    fn location(&self, node: &Location) -> &Location {
+        self.location.get_or_init(|| node.join(&self.keyword))
+    }
+
     #[inline]
     fn absolute_location(
         &self,
         base: Option<&DeferredAbsoluteLocation>,
+        node: &Location,
     ) -> Option<&Arc<Uri<String>>> {
-        absolute_location(base, &self.absolute_location, &self.location)
+        let base = base?;
+        Some(
+            self.absolute_location
+                .get_or_init(|| base.resolve(self.location(node))),
+        )
     }
 
     fn parts<'a, F: Json>(
         &'a self,
+        node: &'a Location,
         validator: &'a BoxedValidator<F>,
         absolute_base: Option<&'a DeferredAbsoluteLocation>,
     ) -> EntryParts<'a, F> {
         EntryParts {
-            location: &self.location,
+            location: self.location(node),
             absolute_base,
             absolute_location: &self.absolute_location,
             schema_location: &self.schema_location,
@@ -526,58 +538,61 @@ impl<F: Json> SchemaNode<F> {
     }
 
     /// `absorbed` holds the keywords a fused validator in `validators` checks on its own.
-    pub(crate) fn from_keywords(
+    pub(crate) fn from_keywords<V>(
         ctx: &Context<'_, F>,
-        mut validators: Vec<(Keyword, BoxedValidator<F>)>,
+        mut validators: V,
         absorbed: Option<Arc<AbsorbedKeywords>>,
         unmatched_keywords: Option<Arc<Value>>,
-    ) -> SchemaNode<F> {
+    ) -> SchemaNode<F>
+    where
+        V: AsMut<[(Keyword, BoxedValidator<F>)]>
+            + IntoIterator<Item = (Keyword, BoxedValidator<F>)>,
+    {
+        let sorted = validators.as_mut();
         // Sort validators by priority (lower = execute first).
         // This enables "fail fast" by running cheap validators (type, const)
         // before expensive ones (allOf, $ref).
-        validators.sort_by_key(|(keyword, _)| crate::keywords::keyword_priority(keyword));
+        sorted.sort_by_key(|(keyword, _)| crate::keywords::keyword_priority(keyword));
         let absorbed = absorbed.map(|keywords| {
             // Nothing sorts between `minItems` and `maxItems`, and nothing before `type`.
             let priority = crate::keywords::keyword_priority(&BuiltinKeyword::MinItems.into());
             AbsorbedUnits {
                 keywords,
-                counts_at: validators.partition_point(|(keyword, _)| {
+                counts_at: sorted.partition_point(|(keyword, _)| {
                     crate::keywords::keyword_priority(keyword) < priority
                 }),
             }
         });
+        let count = sorted.len();
 
-        let (metadata, mut validators): (Vec<_>, Vec<_>) = validators
-            .into_iter()
-            .map(|(keyword, validator)| {
-                let metadata = KeywordMetadata {
-                    location: ctx.location().join(&keyword),
-                    absolute_location: OnceLock::new(),
-                    schema_location: OnceLock::new(),
-                };
-                // Only `required` may lean on a sibling keyword; asking every validator costs a call each.
-                let is_leaf = crate::keywords::keyword_is_leaf(&keyword)
-                    && (!matches!(
-                        keyword,
-                        crate::keywords::Keyword::Builtin(
-                            crate::keywords::BuiltinKeyword::Required
-                        )
-                    ) || validator.is_valid_alone());
-                let validator = KeywordValidator { validator, is_leaf };
-                (metadata, validator)
-            })
-            .unzip();
-        let accepted_types = match validators.as_slice() {
-            [only] => match only.validator.owned_ref_target() {
+        let mut metadata = Vec::with_capacity(count);
+        let mut entries = validators.into_iter().map(|(keyword, validator)| {
+            // Only `required` may lean on a sibling keyword; asking every validator costs a call each.
+            let is_leaf = crate::keywords::keyword_is_leaf(&keyword)
+                && (!matches!(
+                    keyword,
+                    crate::keywords::Keyword::Builtin(crate::keywords::BuiltinKeyword::Required)
+                ) || validator.is_valid_alone());
+            metadata.push(KeywordMetadata {
+                keyword,
+                location: OnceLock::new(),
+                absolute_location: OnceLock::new(),
+                schema_location: OnceLock::new(),
+            });
+            KeywordValidator { validator, is_leaf }
+        });
+        // A lone validator is stored inline, so it never needs a heap slice.
+        let validators = if count == 1 {
+            KeywordList::One(entries.next().expect("one validator"))
+        } else {
+            KeywordList::Many(entries.collect())
+        };
+        let accepted_types = match &validators {
+            KeywordList::One(only) => match only.validator.owned_ref_target() {
                 Some(target) => target.inner.accepted_types,
                 None => only.validator.accepted_types().and_then(type_shortcut),
             },
-            _ => None,
-        };
-        let validators = if validators.len() == 1 {
-            KeywordList::One(validators.pop().expect("one validator"))
-        } else {
-            KeywordList::Many(validators.into_boxed_slice())
+            KeywordList::Many(_) => None,
         };
         SchemaNode {
             inner: Arc::new(SchemaNodeInner {
@@ -752,6 +767,7 @@ impl<F: Json> SchemaNode<F> {
         tracker: Option<&RefTracker>,
         validators: &[KeywordValidator<F>],
         metadata: &[KeywordMetadata],
+        node_location: &Location,
         absolute_base: Option<&DeferredAbsoluteLocation>,
         absorbed: &AbsorbedUnits,
         annotations: Option<Annotations>,
@@ -773,7 +789,7 @@ impl<F: Json> SchemaNode<F> {
             metadata_before
                 .iter()
                 .zip(before)
-                .map(|(m, v)| m.parts(&v.validator, absolute_base)),
+                .map(|(m, v)| m.parts(node_location, &v.validator, absolute_base)),
             &mut children,
             ctx,
         );
@@ -786,7 +802,7 @@ impl<F: Json> SchemaNode<F> {
             metadata_after
                 .iter()
                 .zip(after)
-                .map(|(m, v)| m.parts(&v.validator, absolute_base)),
+                .map(|(m, v)| m.parts(node_location, &v.validator, absolute_base)),
             &mut children,
             ctx,
         );
@@ -1018,7 +1034,10 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
                     .map_err(|e| {
                         e.with_absolute_keyword_location(
                             kvs.metadata[0]
-                                .absolute_location(self.inner.absolute_base.as_ref())
+                                .absolute_location(
+                                    self.inner.absolute_base.as_ref(),
+                                    &self.location,
+                                )
                                 .cloned(),
                         )
                     });
@@ -1034,7 +1053,10 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
                         .map_err(|e| {
                             e.with_absolute_keyword_location(
                                 metadata
-                                    .absolute_location(self.inner.absolute_base.as_ref())
+                                    .absolute_location(
+                                        self.inner.absolute_base.as_ref(),
+                                        &self.location,
+                                    )
                                     .cloned(),
                             )
                         })?;
@@ -1088,7 +1110,8 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
                         .validator
                         .collect_errors(instance, location, tracker, ctx, errors);
                     stamp_absolute_location(&mut errors[start..], || {
-                        metadata.absolute_location(self.inner.absolute_base.as_ref())
+                        metadata
+                            .absolute_location(self.inner.absolute_base.as_ref(), &self.location)
                     });
                 }
             }
@@ -1200,6 +1223,7 @@ impl<F: Json> SchemaNode<F> {
                         tracker,
                         validators,
                         metadata,
+                        &self.location,
                         absolute_base,
                         absorbed,
                         annotations,
@@ -1214,7 +1238,7 @@ impl<F: Json> SchemaNode<F> {
                         metadata
                             .iter()
                             .zip(validators)
-                            .map(|(m, v)| m.parts(&v.validator, absolute_base)),
+                            .map(|(m, v)| m.parts(&self.location, &v.validator, absolute_base)),
                         annotations,
                         ctx,
                     )

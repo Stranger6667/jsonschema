@@ -393,9 +393,9 @@ pub(crate) struct Context<'a, F: Json = SerdeJson> {
     /// Schema: { "$ref": "#/$defs/Item", "$defs": { "Item": { "type": "string" } } }
     ///
     /// When compiling the "type" keyword inside "Item":
-    ///   location      = /$defs/Item/type
-    ///   resource_base = /$defs/Item
-    ///   suffix()      = /type
+    ///   location             = /$defs/Item
+    ///   resource_base        = /$defs/Item
+    ///   suffix_with("type")  = /type
     /// ```
     resource_base: Location,
     /// Length of the `location` prefix outside the resource the base URI names.
@@ -1192,7 +1192,7 @@ impl<'a, F: Json> Context<'a, F> {
         &self.location
     }
 
-    /// Returns the current location relative to the resource base.
+    /// Returns the current location relative to the resource base, followed by `keyword`.
     ///
     /// This "suffix" is used for evaluation path computation. When an error occurs
     /// inside a `$ref` target, we combine the `$ref` traversal chain (prefix) with
@@ -1216,21 +1216,21 @@ impl<'a, F: Json> Context<'a, F> {
     /// }
     ///
     /// When compiling the "type" keyword inside "Person":
-    ///   location()      = /$defs/Person/properties/age/type
-    ///   resource_base   = /$defs/Person
-    ///   suffix()        = /properties/age/type
+    ///   location()           = /$defs/Person/properties/age
+    ///   resource_base        = /$defs/Person
+    ///   suffix_with("type")  = /properties/age/type
     ///
     /// At validation time, if reached via /properties/user/$ref:
     ///   tracker = /properties/user/$ref + /properties/age/type
     ///                   = /properties/user/$ref/properties/age/type
     /// ```
-    pub(crate) fn suffix(&self) -> Location {
+    pub(crate) fn suffix_with(&self, keyword: &str) -> Location {
         let suffix = self
             .location
             .as_str()
             .strip_prefix(self.resource_base.as_str())
             .expect("location must start with resource_base");
-        Location::from_escaped(suffix)
+        Location::from_escaped_with(suffix, keyword)
     }
 
     pub(crate) fn has_vocabulary(&self, vocabulary: &Vocabulary) -> bool {
@@ -1746,7 +1746,7 @@ fn compile_without_cache<'a, F: Json>(
                     return if let Some(validator) =
                         keywords::ref_::compile_ref(ctx, schema, reference)
                     {
-                        let validators = vec![(BuiltinKeyword::Ref.into(), validator?)];
+                        let validators = [(BuiltinKeyword::Ref.into(), validator?)];
                         Ok(SchemaNode::from_keywords(ctx, validators, None, None))
                     } else {
                         // Infinite reference to the same location
