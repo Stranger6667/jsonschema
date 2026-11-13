@@ -63,6 +63,23 @@ pub(crate) async fn dereference_with_options_async<F: Json>(
     dereference_from_registry(schema, draft, &registry, &base_uri)
 }
 
+// `$ref` siblings that neither validate nor change how adjacent keywords apply
+const MERGEABLE_SIBLINGS: &[&str] = &[
+    "$schema",
+    "$id",
+    "$anchor",
+    "$comment",
+    "$defs",
+    "definitions",
+    "title",
+    "description",
+    "default",
+    "examples",
+    "deprecated",
+    "readOnly",
+    "writeOnly",
+];
+
 fn walk(
     value: &Value,
     draft: Draft,
@@ -106,8 +123,10 @@ fn walk(
                 match inlined {
                     Value::Object(mut merged)
                         if !keep_siblings
-                            || !obj.iter().any(|(k, v)| {
-                                k != "$ref" && merged.get(k.as_str()).is_some_and(|t| t != v)
+                            || obj.iter().all(|(k, v)| {
+                                k == "$ref"
+                                    || (MERGEABLE_SIBLINGS.contains(&k.as_str())
+                                        && merged.get(k.as_str()).is_none_or(|t| t == v))
                             }) =>
                     {
                         for (k, v) in obj {
@@ -121,7 +140,7 @@ fn walk(
                         Ok(Value::Object(merged))
                     }
                     target if !keep_siblings => Ok(target),
-                    // Merging would lose a sibling, so the target goes under `allOf`
+                    // Merging could lose a sibling or change what it accepts, so the target goes under `allOf`
                     target => {
                         let mut siblings = Map::with_capacity(obj.len());
                         for (k, v) in obj {
