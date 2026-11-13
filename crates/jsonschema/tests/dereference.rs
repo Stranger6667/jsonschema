@@ -373,6 +373,49 @@ fn registry_with_address() -> jsonschema::Registry<'static> {
 )]
 #[test_case(
     json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {"money": {"type": "number"}},
+        "properties": {"subtotal": {"$ref": "#/definitions/money", "minimum": 0}}
+    }),
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {"money": {"type": "number"}},
+        "properties": {"subtotal": {"type": "number"}}
+    });
+    "draft7_validating_sibling_ignored"
+)]
+#[test_case(
+    json!({
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "definitions": {"money": {"type": "number"}},
+        "properties": {"subtotal": {"$ref": "#/definitions/money", "minimum": 0}}
+    }),
+    json!({
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "definitions": {"money": {"type": "number"}},
+        "properties": {"subtotal": {"type": "number"}}
+    });
+    "draft4_validating_sibling_ignored"
+)]
+// Draft 7 ignores `$id` beside `$ref`, so it must not become the base URI of the result
+#[test_case(
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "$id": "https://example.com/root.json",
+        "definitions": {"int": {"type": "integer"}},
+        "description": "d",
+        "$ref": "#/definitions/int"
+    }),
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {"int": {"type": "integer"}},
+        "description": "d",
+        "type": "integer"
+    });
+    "draft7_id_sibling_ignored"
+)]
+#[test_case(
+    json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://example.com/root.json",
         "$anchor": "root",
