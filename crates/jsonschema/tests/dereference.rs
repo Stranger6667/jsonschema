@@ -371,8 +371,60 @@ fn registry_with_address() -> jsonschema::Registry<'static> {
     });
     "draft7_colliding_sibling_ignored"
 )]
+#[test_case(
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://example.com/root.json",
+        "$anchor": "root",
+        "$comment": "c",
+        "$defs": {"int": {"type": "integer"}},
+        "definitions": {},
+        "title": "t",
+        "description": "d",
+        "default": 1,
+        "examples": [1],
+        "deprecated": true,
+        "readOnly": true,
+        "writeOnly": false,
+        "$ref": "#/$defs/int"
+    }),
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://example.com/root.json",
+        "$anchor": "root",
+        "$comment": "c",
+        "$defs": {"int": {"type": "integer"}},
+        "definitions": {},
+        "title": "t",
+        "description": "d",
+        "default": 1,
+        "examples": [1],
+        "deprecated": true,
+        "readOnly": true,
+        "writeOnly": false,
+        "type": "integer"
+    });
+    "non_validating_siblings_merged"
+)]
 #[allow(clippy::needless_pass_by_value)]
 fn test_dereference(schema: Value, expected: Value) {
+    assert_eq!(jsonschema::dereference(&schema).unwrap(), expected);
+}
+
+// Merging these would let a sibling change what the target accepts, or the reverse
+#[test_case(json!({"additionalProperties": false}), json!({"properties": {"b": {}}}); "additional_properties_beside_properties")]
+#[test_case(json!({"unevaluatedProperties": false}), json!({"properties": {"b": {}}}); "unevaluated_properties_beside_properties")]
+#[test_case(json!({"items": false}), json!({"prefixItems": [{}]}); "items_beside_prefix_items")]
+#[test_case(json!({"then": {"minimum": 0}}), json!({"if": {"type": "number"}}); "then_beside_if")]
+#[test_case(json!({"contains": {"type": "string"}}), json!({"minContains": 2}); "contains_beside_min_contains")]
+#[allow(clippy::needless_pass_by_value)]
+fn test_dereference_keeps_target_apart_from_validating_siblings(target: Value, siblings: Value) {
+    let mut schema = json!({"$defs": {"target": target.clone()}, "$ref": "#/$defs/target"});
+    let mut expected = json!({"$defs": {"target": target.clone()}, "allOf": [target]});
+    for (key, value) in siblings.as_object().expect("siblings are an object") {
+        schema[key] = value.clone();
+        expected[key] = value.clone();
+    }
     assert_eq!(jsonschema::dereference(&schema).unwrap(), expected);
 }
 

@@ -9,6 +9,7 @@
 ### Fixed
 
 - `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
+- `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
 
 ### Performance
 
