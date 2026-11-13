@@ -1561,6 +1561,34 @@ RSpec.describe "base_uri option" do
   end
 end
 
+RSpec.describe "pattern syntax" do
+  [JSONSchema::RegexOptions, JSONSchema::FancyRegexOptions].each do |options|
+    describe options do
+      it "defaults to ECMA 262" do
+        expect(options.new.syntax).to eq(:ecma262)
+      end
+
+      it "translates ECMA 262 patterns" do
+        validator = JSONSchema.validator_for({ "pattern" => "^\\d+$" }, pattern_options: options.new(syntax: :ecma262))
+        expect(validator.valid?("٣")).to be false
+      end
+
+      it "passes patterns to the engine unchanged" do
+        opts = options.new(syntax: :engine)
+        expect(opts.syntax).to eq(:engine)
+        expect(JSONSchema.validator_for({ "pattern" => "^\\d+$" }, pattern_options: opts).valid?("٣")).to be true
+        schema = { "patternProperties" => { "^\\d+$" => {} }, "additionalProperties" => false }
+        expect(JSONSchema.validator_for(schema, pattern_options: opts).valid?({ "٣" => 1 })).to be true
+      end
+
+      it "rejects an unknown syntax" do
+        expect { options.new(syntax: :pcre) }
+          .to raise_error(ArgumentError, "Unknown pattern syntax: :pcre. Expected :ecma262 or :engine")
+      end
+    end
+  end
+end
+
 RSpec.describe JSONSchema::RegexOptions do
   it "creates options with defaults" do
     opts = JSONSchema::RegexOptions.new
@@ -1584,7 +1612,7 @@ RSpec.describe JSONSchema::RegexOptions do
 
   it "has inspect output" do
     opts = JSONSchema::RegexOptions.new(size_limit: 1024)
-    expect(opts.inspect).to eq("#<JSONSchema::RegexOptions size_limit=1024, dfa_size_limit=nil>")
+    expect(opts.inspect).to eq("#<JSONSchema::RegexOptions size_limit=1024, dfa_size_limit=nil, syntax=:ecma262>")
   end
 
   # Recovery for https://github.com/rust-lang/regex/issues/1344.
@@ -1625,7 +1653,7 @@ RSpec.describe JSONSchema::FancyRegexOptions do
 
   it "has inspect output" do
     opts = JSONSchema::FancyRegexOptions.new(backtrack_limit: 1000)
-    expect(opts.inspect).to eq("#<JSONSchema::FancyRegexOptions backtrack_limit=1000, size_limit=nil, dfa_size_limit=nil>")
+    expect(opts.inspect).to eq("#<JSONSchema::FancyRegexOptions backtrack_limit=1000, size_limit=nil, dfa_size_limit=nil, syntax=:ecma262>")
   end
 
   # Recovery for https://github.com/rust-lang/regex/issues/1344.

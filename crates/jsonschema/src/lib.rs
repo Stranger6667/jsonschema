@@ -829,9 +829,30 @@
 //!     .expect("A valid schema");
 //! ```
 //!
+//! ### Example: Patterns in the Engine's Own Syntax
+//!
+//! Patterns are read as ECMA 262 and translated for the engine: `\d` matches `0-9` only. With
+//! [`PatternSyntax::Engine`] they reach the engine unchanged, so `\d` matches every Unicode
+//! decimal digit, as it does in the `regex` crate.
+//!
+//! ```rust
+//! use serde_json::json;
+//! use jsonschema::{PatternOptions, PatternSyntax};
+//!
+//! let schema = json!({"pattern": r"^\d+$"});
+//!
+//! let validator = jsonschema::options()
+//!     .with_pattern_options(PatternOptions::regex().syntax(PatternSyntax::Engine))
+//!     .build(&schema)
+//!     .expect("A valid schema");
+//!
+//! assert!(validator.is_valid(&json!("٣")));
+//! ```
+//!
 //! ### Notes
 //!
 //! - If neither engine is explicitly set, `fancy-regex` is used by default.
+//! - If no syntax is set, patterns are ECMA 262.
 //! - Regular expressions that rely on advanced features like `(?<=...)` (lookbehind) or backreferences (`\1`) will fail with the `regex` engine.
 //!
 //! # Custom Keywords
@@ -1371,7 +1392,7 @@ pub use http::HttpOptions;
 pub use jsonschema_macros::validator;
 pub use keywords::custom::Keyword;
 pub use options::{
-    EmailOptions, FancyRegex, PatternCache, PatternOptions, Regex, ValidationOptions,
+    EmailOptions, FancyRegex, PatternCache, PatternOptions, PatternSyntax, Regex, ValidationOptions,
 };
 pub use referencing::{
     uri, Draft, Error as ReferencingError, Registry, RegistryBuilder, Resource, Retrieve, Uri,
@@ -3779,11 +3800,11 @@ pub mod __private {
         #[cfg(feature = "idna")]
         pub use crate::keywords::format::is_valid_idn_hostname;
         pub use crate::keywords::format::{
-            is_valid_date, is_valid_datetime, is_valid_duration, is_valid_hostname,
-            is_valid_hostname_rfc1034, is_valid_ipv4, is_valid_ipv6, is_valid_iri,
-            is_valid_iri_reference, is_valid_json_pointer, is_valid_regex,
-            is_valid_relative_json_pointer, is_valid_time, is_valid_uri, is_valid_uri_reference,
-            is_valid_uri_template, is_valid_uuid,
+            is_valid_date, is_valid_datetime, is_valid_duration, is_valid_fancy_regex_engine_regex,
+            is_valid_hostname, is_valid_hostname_rfc1034, is_valid_ipv4, is_valid_ipv6,
+            is_valid_iri, is_valid_iri_reference, is_valid_json_pointer, is_valid_regex,
+            is_valid_regex_engine_regex, is_valid_relative_json_pointer, is_valid_time,
+            is_valid_uri, is_valid_uri_reference, is_valid_uri_template, is_valid_uuid,
         };
 
         // Without `idna` the format is unknown, and an unknown format admits every instance.

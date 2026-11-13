@@ -8,8 +8,7 @@ use crate::{
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
     regex::{
-        analyze_pattern, contains_ecma_whitespace, AllMatch, Part, PatternOptimization,
-        RegexEngine, SequenceMatcher,
+        contains_ecma_whitespace, AllMatch, Part, PatternOptimization, RegexEngine, SequenceMatcher,
     },
     types::JsonType,
     unfinished_matches::MatchSite,
@@ -243,7 +242,7 @@ pub(crate) fn compile<'a, F: Json>(
 ) -> Option<CompilationResult<'a, F>> {
     if let Value::String(item) = schema {
         // Try literal optimizations before compiling a full regex.
-        match analyze_pattern(item) {
+        match ctx.analyze_pattern(item) {
             Some(PatternOptimization::Exact(exact)) => {
                 return Some(Ok(Box::new(ExactPatternValidator {
                     exact,
@@ -349,6 +348,7 @@ pub(crate) fn compile<'a, F: Json>(
 
 /// Leading lookaheads as separate lookaround-free regexes, when every part compiles as one.
 fn all_match<F: Json>(ctx: &compiler::Context<F>, pattern: &str) -> Option<AllMatch> {
+    ctx.ecma_262()?;
     jsonschema_regex::split_leading_lookaheads(pattern)?
         .iter()
         .map(|part| match ctx.get_or_compile_sequence(part) {
@@ -377,7 +377,7 @@ fn invalid_regex<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{tests_util, PatternOptions};
+    use crate::{tests_util, PatternOptions, PatternSyntax};
     use serde_json::{json, Value};
     use test_case::test_case;
 
@@ -862,5 +862,62 @@ mod tests {
         assert!(validator.is_valid(&json!("abx")));
         assert!(!validator.is_valid(&json!("x")));
         assert_eq!(cache.len(), 3);
+    }
+
+    #[test_case(&json!({"pattern": r"^\d+$"}), &json!("٣"), true; "digit class")]
+    #[test_case(&json!({"pattern": r"^\w+$"}), &json!("é"), true; "word class")]
+    #[test_case(&json!({"pattern": r"^\S*$"}), &json!("\u{feff}"), true; "non-whitespace class")]
+    #[test_case(&json!({"pattern": r"^\s$"}), &json!("\u{85}"), true; "whitespace class")]
+    #[test_case(&json!({"pattern": r"^.$"}), &json!("\r"), true; "dot")]
+    #[test_case(&json!({"pattern": r"^[a-c&&[^b]]$"}), &json!("a"), true; "class intersection")]
+    #[test_case(&json!({"pattern": r"^\d{1,3}$"}), &json!("٣٣"), true; "counted digit class")]
+    #[test_case(&json!({"pattern": r"^\d+-\d+$"}), &json!("٣-٣"), true; "digit sequence")]
+    #[test_case(&json!({"patternProperties": {r"^\d+$": false}}), &json!({"٣": 1}), false; "patternProperties")]
+    #[test_case(&json!({"patternProperties": {r"^\S*$": false}}), &json!({"\u{feff}": 1}), false; "patternProperties non-whitespace class")]
+    #[test_case(&json!({"patternProperties": {r"^\d+$": {}}, "additionalProperties": false}), &json!({"٣": 1}), true; "additionalProperties")]
+    #[test_case(&json!({"patternProperties": {r"^\d+$": {}}, "unevaluatedProperties": false}), &json!({"٣": 1}), true; "unevaluatedProperties")]
+    #[test_case(&json!({"properties": {"a": {}}, "patternProperties": {r"^\d+$": {}}, "additionalProperties": false}), &json!({"٣": 1}), true; "additionalProperties with properties")]
+    fn engine_syntax(schema: &Value, instance: &Value, expected: bool) {
+        let fancy = crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex().syntax(PatternSyntax::Engine))
+            .build(schema)
+            .unwrap();
+        let regex = crate::options()
+            .with_pattern_options(PatternOptions::regex().syntax(PatternSyntax::Engine))
+            .build(schema)
+            .unwrap();
+        for validator in [&fancy, &regex] {
+            assert_eq!(validator.is_valid(instance), expected);
+            assert_eq!(validator.validate(instance).is_ok(), expected);
+        }
+        let ecma = crate::options()
+            .with_pattern_options(PatternOptions::regex().syntax(PatternSyntax::Ecma262))
+            .build(schema)
+            .unwrap();
+        assert_eq!(ecma.is_valid(instance), !expected);
+    }
+
+    // Lookbehind is ECMA 262 and `fancy-regex` syntax; a `(?P<name>...)` group is neither ECMA 262 nor rejected by an engine.
+    #[test_case(PatternOptions::regex(), r"(?<=a)b", true; "ecma lookbehind")]
+    #[test_case(PatternOptions::regex(), r"(?P<name>a)", false; "ecma named group")]
+    #[test_case(PatternOptions::regex().syntax(PatternSyntax::Engine), r"(?<=a)b", false; "regex lookbehind")]
+    #[test_case(PatternOptions::regex().syntax(PatternSyntax::Engine), r"(?P<name>a)", true; "regex named group")]
+    fn regex_format_follows_syntax<E>(options: PatternOptions<E>, instance: &str, expected: bool) {
+        let validator = crate::options()
+            .should_validate_formats(true)
+            .with_pattern_options(options)
+            .build(&json!({"format": "regex"}))
+            .unwrap();
+        let instance = json!(instance);
+        assert_eq!(validator.is_valid(&instance), expected);
+        assert_eq!(validator.validate(&instance).is_ok(), expected);
+    }
+
+    #[test]
+    fn engine_syntax_rejects_ecma_only_pattern() {
+        assert!(crate::options()
+            .with_pattern_options(PatternOptions::regex().syntax(PatternSyntax::Engine))
+            .build(&json!({"pattern": r"^(?=a)a$"}))
+            .is_err());
     }
 }

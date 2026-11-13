@@ -1,5 +1,18 @@
-use jsonschema::{FancyRegex, PatternOptions, Regex};
-use pyo3::{exceptions::PyTypeError, prelude::*};
+use jsonschema::{FancyRegex, PatternOptions, PatternSyntax, Regex};
+use pyo3::{
+    exceptions::{PyTypeError, PyValueError},
+    prelude::*,
+};
+
+fn parse_syntax(syntax: &str) -> PyResult<PatternSyntax> {
+    match syntax {
+        "ecma262" => Ok(PatternSyntax::Ecma262),
+        "engine" => Ok(PatternSyntax::Engine),
+        _ => Err(PyValueError::new_err(format!(
+            "Unknown pattern syntax: '{syntax}'. Expected 'ecma262' or 'engine'"
+        ))),
+    }
+}
 
 /// A `pattern_options` argument resolved to a concrete engine.
 pub(crate) enum PyPatternOptions {
@@ -24,7 +37,7 @@ pub(crate) fn extract_pattern_options(value: &Bound<'_, PyAny>) -> PyResult<PyPa
     }
 }
 
-/// FancyRegexOptions(backtrack_limit=None, size_limit=None, dfa_size_limit=None)
+/// FancyRegexOptions(backtrack_limit=None, size_limit=None, dfa_size_limit=None, syntax="ecma262")
 ///
 /// Configuration for the fancy-regex engine, which supports advanced regex features like
 /// lookaround assertions and backreferences.
@@ -38,34 +51,38 @@ pub(crate) fn extract_pattern_options(value: &Bound<'_, PyAny>) -> PyResult<PyPa
 ///     backtrack_limit: Maximum number of backtracking steps
 ///     size_limit: Maximum compiled pattern size in bytes
 ///     dfa_size_limit: Maximum regex DFA cache size in bytes
+///     syntax: "ecma262" translates patterns for the engine, "engine" passes them to it unchanged
 #[pyclass(module = "jsonschema_rs")]
 #[allow(clippy::struct_field_names)]
 pub(crate) struct FancyRegexOptions {
     pub(crate) backtrack_limit: Option<usize>,
     pub(crate) size_limit: Option<usize>,
     pub(crate) dfa_size_limit: Option<usize>,
+    pub(crate) syntax: PatternSyntax,
 }
 
 #[pymethods]
 impl FancyRegexOptions {
     #[new]
-    #[pyo3(signature = (backtrack_limit=None, size_limit=None, dfa_size_limit=None))]
+    #[pyo3(signature = (backtrack_limit=None, size_limit=None, dfa_size_limit=None, syntax="ecma262"))]
     fn new(
         backtrack_limit: Option<usize>,
         size_limit: Option<usize>,
         dfa_size_limit: Option<usize>,
-    ) -> Self {
-        Self {
+        syntax: &str,
+    ) -> PyResult<Self> {
+        Ok(Self {
             backtrack_limit,
             size_limit,
             dfa_size_limit,
-        }
+            syntax: parse_syntax(syntax)?,
+        })
     }
 }
 
 impl FancyRegexOptions {
     pub(crate) fn to_pattern_options(&self) -> PatternOptions<FancyRegex> {
-        let mut options = PatternOptions::fancy_regex();
+        let mut options = PatternOptions::fancy_regex().syntax(self.syntax);
         if let Some(limit) = self.backtrack_limit {
             options = options.backtrack_limit(limit);
         }
@@ -79,7 +96,7 @@ impl FancyRegexOptions {
     }
 }
 
-/// RegexOptions(size_limit=None, dfa_size_limit=None)
+/// RegexOptions(size_limit=None, dfa_size_limit=None, syntax="ecma262")
 ///
 /// Configuration for the standard regex engine, which guarantees linear-time matching
 /// to prevent regex DoS attacks but supports fewer features.
@@ -92,29 +109,36 @@ impl FancyRegexOptions {
 /// Parameters:
 ///     size_limit: Maximum compiled pattern size in bytes
 ///     dfa_size_limit: Maximum regex DFA cache size in bytes
+///     syntax: "ecma262" translates patterns for the engine, "engine" passes them to it unchanged
 ///
 /// Note: Unlike FancyRegexOptions, this engine doesn't support lookaround or backreferences.
 #[pyclass(module = "jsonschema_rs")]
 pub(crate) struct RegexOptions {
     pub(crate) size_limit: Option<usize>,
     pub(crate) dfa_size_limit: Option<usize>,
+    pub(crate) syntax: PatternSyntax,
 }
 
 #[pymethods]
 impl RegexOptions {
     #[new]
-    #[pyo3(signature = (size_limit=None, dfa_size_limit=None))]
-    fn new(size_limit: Option<usize>, dfa_size_limit: Option<usize>) -> Self {
-        Self {
+    #[pyo3(signature = (size_limit=None, dfa_size_limit=None, syntax="ecma262"))]
+    fn new(
+        size_limit: Option<usize>,
+        dfa_size_limit: Option<usize>,
+        syntax: &str,
+    ) -> PyResult<Self> {
+        Ok(Self {
             size_limit,
             dfa_size_limit,
-        }
+            syntax: parse_syntax(syntax)?,
+        })
     }
 }
 
 impl RegexOptions {
     pub(crate) fn to_pattern_options(&self) -> PatternOptions<Regex> {
-        let mut options = PatternOptions::regex();
+        let mut options = PatternOptions::regex().syntax(self.syntax);
         if let Some(limit) = self.size_limit {
             options = options.size_limit(limit);
         }

@@ -919,11 +919,26 @@ pub(crate) enum PatternEngineOptions {
         backtrack_limit: Option<usize>,
         size_limit: Option<usize>,
         dfa_size_limit: Option<usize>,
+        syntax: PatternSyntax,
     },
     Regex {
         size_limit: Option<usize>,
         dfa_size_limit: Option<usize>,
+        syntax: PatternSyntax,
     },
+}
+
+/// The syntax `pattern` and `patternProperties` keys are written in.
+#[derive(Debug, Clone, Copy, Default, Hash, PartialEq, Eq, PartialOrd, Ord)]
+#[non_exhaustive]
+pub enum PatternSyntax {
+    /// ECMA 262, translated for the engine.
+    #[default]
+    Ecma262,
+    /// The syntax of the selected engine, [`regex`](https://docs.rs/regex/latest/regex/#syntax)
+    /// or [`fancy-regex`](https://docs.rs/fancy-regex/latest/fancy_regex/#syntax). Patterns reach
+    /// the engine unchanged.
+    Engine,
 }
 
 /// Compiled regular expressions shared between validator builds, see
@@ -1043,11 +1058,19 @@ impl PatternEngineOptions {
                 backtrack_limit,
                 size_limit,
                 dfa_size_limit,
+                ..
             } => backtrack_limit.is_some() || size_limit.is_some() || dfa_size_limit.is_some(),
             Self::Regex {
                 size_limit,
                 dfa_size_limit,
+                ..
             } => size_limit.is_some() || dfa_size_limit.is_some(),
+        }
+    }
+
+    pub(crate) fn syntax(self) -> PatternSyntax {
+        match self {
+            Self::FancyRegex { syntax, .. } | Self::Regex { syntax, .. } => syntax,
         }
     }
 }
@@ -1058,6 +1081,18 @@ pub struct FancyRegex;
 /// linear time performance.
 pub struct Regex;
 
+impl<E> PatternOptions<E> {
+    /// Set the syntax patterns are written in. Default is [`PatternSyntax::Ecma262`].
+    #[must_use]
+    pub fn syntax(mut self, value: PatternSyntax) -> Self {
+        match &mut self.inner {
+            PatternEngineOptions::FancyRegex { syntax, .. }
+            | PatternEngineOptions::Regex { syntax, .. } => *syntax = value,
+        }
+        self
+    }
+}
+
 impl PatternOptions<FancyRegex> {
     /// Create a pattern configuration based on the `fancy-regex` engine.
     #[must_use]
@@ -1067,6 +1102,7 @@ impl PatternOptions<FancyRegex> {
                 backtrack_limit: None,
                 size_limit: None,
                 dfa_size_limit: None,
+                syntax: PatternSyntax::Ecma262,
             },
             _marker: PhantomData,
         }
@@ -1120,6 +1156,7 @@ impl PatternOptions<Regex> {
             inner: PatternEngineOptions::Regex {
                 size_limit: None,
                 dfa_size_limit: None,
+                syntax: PatternSyntax::Ecma262,
             },
             _marker: PhantomData,
         }
@@ -1155,6 +1192,7 @@ impl Default for PatternEngineOptions {
             backtrack_limit: None,
             size_limit: None,
             dfa_size_limit: None,
+            syntax: PatternSyntax::Ecma262,
         }
     }
 }
@@ -1658,6 +1696,7 @@ mod tests {
             backtrack_limit,
             size_limit,
             dfa_size_limit,
+            ..
         } = options.inner
         {
             assert_eq!(backtrack_limit, Some(1_000_000));
@@ -1694,6 +1733,7 @@ mod tests {
         if let PatternEngineOptions::Regex {
             size_limit,
             dfa_size_limit,
+            ..
         } = options.inner
         {
             assert_eq!(size_limit, Some(20_000));

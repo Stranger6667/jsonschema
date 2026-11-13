@@ -10,7 +10,7 @@ use magnus::{
     prelude::*,
     scan_args::{get_kwargs, scan_args, KwArgs},
     value::Opaque,
-    Error, Exception, RArray, RHash, RModule, Ruby, TryConvert, Value,
+    Error, Exception, RArray, RHash, RModule, Ruby, Symbol, TryConvert, Value,
 };
 
 use jsonschema::json::{magnus_invalidate_members_cache, Magnus, RbNode};
@@ -48,6 +48,7 @@ define_rb_intern!(static KW_MINIMUM_SUB_DOMAINS: "minimum_sub_domains");
 define_rb_intern!(static KW_SIZE_LIMIT: "size_limit");
 define_rb_intern!(static KW_DFA_SIZE_LIMIT: "dfa_size_limit");
 define_rb_intern!(static KW_BACKTRACK_LIMIT: "backtrack_limit");
+define_rb_intern!(static KW_SYNTAX: "syntax");
 // HttpOptions kwargs
 define_rb_intern!(static KW_TIMEOUT: "timeout");
 define_rb_intern!(static KW_CONNECT_TIMEOUT: "connect_timeout");
@@ -936,19 +937,47 @@ impl EmailOptions {
 pub struct RegexOptions {
     pub size_limit: Option<usize>,
     pub dfa_size_limit: Option<usize>,
+    pub syntax: jsonschema::PatternSyntax,
+}
+
+fn parse_syntax(ruby: &Ruby, syntax: Option<Symbol>) -> Result<jsonschema::PatternSyntax, Error> {
+    let Some(syntax) = syntax else {
+        return Ok(jsonschema::PatternSyntax::Ecma262);
+    };
+    match &*syntax.name()? {
+        "ecma262" => Ok(jsonschema::PatternSyntax::Ecma262),
+        "engine" => Ok(jsonschema::PatternSyntax::Engine),
+        name => Err(Error::new(
+            ruby.exception_arg_error(),
+            format!("Unknown pattern syntax: :{name}. Expected :ecma262 or :engine"),
+        )),
+    }
+}
+
+fn syntax_name(syntax: jsonschema::PatternSyntax) -> &'static str {
+    match syntax {
+        jsonschema::PatternSyntax::Engine => "engine",
+        _ => "ecma262",
+    }
 }
 
 impl RegexOptions {
-    fn new_impl(args: &[Value]) -> Result<Self, Error> {
+    #[allow(clippy::type_complexity)]
+    fn new_impl(ruby: &Ruby, args: &[Value]) -> Result<Self, Error> {
         let parsed = scan_args::<(), (), (), (), _, ()>(args)?;
-        let ids = [*KW_SIZE_LIMIT, *KW_DFA_SIZE_LIMIT];
-        let kw: KwArgs<(), (Option<usize>, Option<usize>), ()> =
+        let ids = [*KW_SIZE_LIMIT, *KW_DFA_SIZE_LIMIT, *KW_SYNTAX];
+        let kw: KwArgs<(), (Option<usize>, Option<usize>, Option<Symbol>), ()> =
             get_kwargs(parsed.keywords, &[], &ids)?;
-        let (size_limit, dfa_size_limit) = kw.optional;
+        let (size_limit, dfa_size_limit, syntax) = kw.optional;
         Ok(RegexOptions {
             size_limit,
             dfa_size_limit,
+            syntax: parse_syntax(ruby, syntax)?,
         })
+    }
+
+    fn syntax(ruby: &Ruby, rb_self: &Self) -> Symbol {
+        ruby.to_symbol(syntax_name(rb_self.syntax))
     }
 
     fn size_limit(&self) -> Option<usize> {
@@ -971,7 +1000,7 @@ impl RegexOptions {
             Some(n) => write!(s, "{n}").expect("Failed to write dfa_size_limit"),
             None => s.push_str("nil"),
         }
-        s.push('>');
+        write!(s, ", syntax=:{}>", syntax_name(self.syntax)).expect("Failed to write syntax");
         s
     }
 }
@@ -984,7 +1013,7 @@ pub(crate) enum RbPatternOptions {
 
 pub(crate) fn extract_pattern_options(ruby: &Ruby, val: Value) -> Result<RbPatternOptions, Error> {
     if let Ok(fancy_opts) = <&FancyRegexOptions>::try_convert(val) {
-        let mut po = jsonschema::PatternOptions::fancy_regex();
+        let mut po = jsonschema::PatternOptions::fancy_regex().syntax(fancy_opts.syntax);
         if let Some(limit) = fancy_opts.backtrack_limit {
             po = po.backtrack_limit(limit);
         }
@@ -996,7 +1025,7 @@ pub(crate) fn extract_pattern_options(ruby: &Ruby, val: Value) -> Result<RbPatte
         }
         Ok(RbPatternOptions::Fancy(po))
     } else if let Ok(regex_opts) = <&RegexOptions>::try_convert(val) {
-        let mut po = jsonschema::PatternOptions::regex();
+        let mut po = jsonschema::PatternOptions::regex().syntax(regex_opts.syntax);
         if let Some(limit) = regex_opts.size_limit {
             po = po.size_limit(limit);
         }
@@ -1017,21 +1046,32 @@ pub struct FancyRegexOptions {
     pub backtrack_limit: Option<usize>,
     pub size_limit: Option<usize>,
     pub dfa_size_limit: Option<usize>,
+    pub syntax: jsonschema::PatternSyntax,
 }
 
 impl FancyRegexOptions {
     #[allow(clippy::type_complexity)]
-    fn new_impl(args: &[Value]) -> Result<Self, Error> {
+    fn new_impl(ruby: &Ruby, args: &[Value]) -> Result<Self, Error> {
         let parsed = scan_args::<(), (), (), (), _, ()>(args)?;
-        let ids = [*KW_BACKTRACK_LIMIT, *KW_SIZE_LIMIT, *KW_DFA_SIZE_LIMIT];
-        let kw: KwArgs<(), (Option<usize>, Option<usize>, Option<usize>), ()> =
+        let ids = [
+            *KW_BACKTRACK_LIMIT,
+            *KW_SIZE_LIMIT,
+            *KW_DFA_SIZE_LIMIT,
+            *KW_SYNTAX,
+        ];
+        let kw: KwArgs<(), (Option<usize>, Option<usize>, Option<usize>, Option<Symbol>), ()> =
             get_kwargs(parsed.keywords, &[], &ids)?;
-        let (backtrack_limit, size_limit, dfa_size_limit) = kw.optional;
+        let (backtrack_limit, size_limit, dfa_size_limit, syntax) = kw.optional;
         Ok(FancyRegexOptions {
             backtrack_limit,
             size_limit,
             dfa_size_limit,
+            syntax: parse_syntax(ruby, syntax)?,
         })
+    }
+
+    fn syntax(ruby: &Ruby, rb_self: &Self) -> Symbol {
+        ruby.to_symbol(syntax_name(rb_self.syntax))
     }
 
     fn backtrack_limit(&self) -> Option<usize> {
@@ -1063,7 +1103,7 @@ impl FancyRegexOptions {
             Some(n) => write!(s, "{n}").expect("Failed to write dfa_size_limit"),
             None => s.push_str("nil"),
         }
-        s.push('>');
+        write!(s, ", syntax=:{}>", syntax_name(self.syntax)).expect("Failed to write syntax");
         s
     }
 }
@@ -1159,6 +1199,7 @@ pub fn define_classes(ruby: &Ruby, module: &RModule) -> Result<(), Error> {
     regex_class.define_singleton_method("new", function!(RegexOptions::new_impl, -1))?;
     regex_class.define_method("size_limit", method!(RegexOptions::size_limit, 0))?;
     regex_class.define_method("dfa_size_limit", method!(RegexOptions::dfa_size_limit, 0))?;
+    regex_class.define_method("syntax", method!(RegexOptions::syntax, 0))?;
     regex_class.define_method("inspect", method!(RegexOptions::inspect, 0))?;
 
     let fancy_regex_class = module.define_class("FancyRegexOptions", ruby.class_object())?;
@@ -1172,6 +1213,7 @@ pub fn define_classes(ruby: &Ruby, module: &RModule) -> Result<(), Error> {
         "dfa_size_limit",
         method!(FancyRegexOptions::dfa_size_limit, 0),
     )?;
+    fancy_regex_class.define_method("syntax", method!(FancyRegexOptions::syntax, 0))?;
     fancy_regex_class.define_method("inspect", method!(FancyRegexOptions::inspect, 0))?;
 
     let http_class = module.define_class("HttpOptions", ruby.class_object())?;

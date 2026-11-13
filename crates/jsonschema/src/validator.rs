@@ -112,7 +112,7 @@ fn release(state: Box<LazyState>) {
 #[derive(Default)]
 struct LazyState {
     /// Cache for ECMA regex transformation results during format "regex" validation.
-    ecma_regex_cache: Option<AHashMap<String, bool>>,
+    regex_validity_cache: Option<AHashMap<String, bool>>,
     evaluation_path_cache: Option<EvaluationPathCache>,
     /// Holds every node of the tree the `evaluate` path builds.
     arena: EvaluationArena,
@@ -480,21 +480,26 @@ impl ValidationContext {
             .evaluation_path(tracker, location)
     }
 
-    /// Check if an ECMA regex pattern is valid.
-    pub(crate) fn is_valid_ecma_regex(&mut self, pattern: &str) -> bool {
+    /// Whether `pattern` is a valid regex as `check` reads it. One validator always passes the
+    /// same `check`.
+    pub(crate) fn is_valid_regex(
+        &mut self,
+        pattern: &str,
+        check: impl FnOnce(&str) -> bool,
+    ) -> bool {
         if let Some(cache) = self
             .lazy
             .0
             .as_ref()
-            .and_then(|lazy| lazy.ecma_regex_cache.as_ref())
+            .and_then(|lazy| lazy.regex_validity_cache.as_ref())
         {
             if let Some(&result) = cache.get(pattern) {
                 return result;
             }
         }
-        let result = jsonschema_regex::is_valid_ecma_regex(pattern);
+        let result = check(pattern);
         self.lazy()
-            .ecma_regex_cache
+            .regex_validity_cache
             .get_or_insert_with(AHashMap::new)
             .insert(pattern.to_owned(), result);
         result

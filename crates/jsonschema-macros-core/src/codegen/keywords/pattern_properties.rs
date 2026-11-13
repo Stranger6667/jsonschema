@@ -1,7 +1,7 @@
 use super::{
     super::{
-        compile_regex_match, errors::invalid_schema_type_expression, expr::ValidateBlock,
-        translate_and_validate_regex, CompileContext, CompiledExpr, RegexSite,
+        analyze_pattern, compile_regex_match, errors::invalid_schema_type_expression,
+        expr::ValidateBlock, translate_and_validate_regex, CompileContext, CompiledExpr, RegexSite,
     },
     object_pass::ClusterSubschemas,
 };
@@ -101,7 +101,7 @@ pub(crate) fn key_match_expr<E: ValueEmitter>(
         is_valid: condition.clone(),
         located: condition,
     };
-    match jsonschema_regex::analyze_pattern(pattern) {
+    match analyze_pattern(ctx, pattern) {
         Some(jsonschema_regex::PatternAnalysis::Prefix(prefix)) => {
             let prefix: &str = prefix.as_ref();
             Ok(literal(quote! { #key_as_str.starts_with(#prefix) }))

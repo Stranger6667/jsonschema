@@ -77,3 +77,28 @@ def test_unfinished_regex_match(backend, schema, expected):
 )
 def test_non_ascii_subject_on_sequence_pattern(instance, expected):
     assert jsonschema_rs.validator_for({"pattern": "^[a-zé]+$"}).is_valid(instance) is expected
+
+
+@pytest.mark.parametrize("options", [FancyRegexOptions, RegexOptions], ids=["fancy_regex", "regex"])
+@pytest.mark.parametrize(
+    ("syntax", "expected"),
+    [("ecma262", False), ("engine", True)],
+)
+@pytest.mark.parametrize(
+    ("schema", "instance"),
+    [
+        ({"pattern": r"^\d+$"}, "٣"),
+        ({"patternProperties": {r"^\d+$": {}}, "additionalProperties": False}, {"٣": 1}),
+    ],
+    ids=["pattern", "patternProperties"],
+)
+def test_pattern_syntax(options, syntax, expected, schema, instance):
+    validator = jsonschema_rs.validator_for(schema, pattern_options=options(syntax=syntax))
+
+    assert validator.is_valid(instance) is expected
+
+
+@pytest.mark.parametrize("options", [FancyRegexOptions, RegexOptions], ids=["fancy_regex", "regex"])
+def test_unknown_pattern_syntax(options):
+    with pytest.raises(ValueError, match="Unknown pattern syntax: 'pcre'. Expected 'ecma262' or 'engine'"):
+        options(syntax="pcre")

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `syntax: :engine` on `RegexOptions` and `FancyRegexOptions` to match `pattern` and `patternProperties` in the regex engine's own syntax, without the ECMA 262 translation. [#1895](https://github.com/Stranger6667/jsonschema/issues/1895)
+
 ### Changed
 
 - Non-string keys of a root `Hash` raising only when validation reads them, like keys of nested ones, instead of on every call.

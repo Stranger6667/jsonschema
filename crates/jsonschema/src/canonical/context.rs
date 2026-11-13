@@ -1,5 +1,6 @@
 //! Shared state for one canonicalization run: draft, pattern engine, and a compiled-regex cache.
 use std::{
+    borrow::Cow,
     cell::{Cell, RefCell},
     cmp::Ordering,
     collections::BTreeSet,
@@ -11,8 +12,12 @@ use ahash::AHashMap;
 use referencing::Draft;
 
 use crate::{
-    canonical::{ir::Schema, schema::DefinitionMap},
-    options::PatternEngineOptions,
+    canonical::{
+        ir::{Schema, StringFormat},
+        schema::DefinitionMap,
+    },
+    keywords::format::BuiltinFormat,
+    options::{PatternEngineOptions, PatternSyntax},
     regex::{Compiled, RegexEngine},
 };
 
@@ -167,6 +172,19 @@ impl CanonicalizationContext {
 
     pub(crate) fn pattern_options(&self) -> PatternEngineOptions {
         self.pattern_options
+    }
+
+    /// Whether `text` meets `format`, or `None` when the format is not one of the built-ins.
+    pub(crate) fn format_admits(&self, format: &StringFormat, text: &str) -> Option<bool> {
+        if self.pattern_options.syntax() == PatternSyntax::Engine
+            && matches!(format, StringFormat::Builtin(BuiltinFormat::Regex))
+        {
+            return Some(crate::keywords::format::engine_accepts_regex(
+                self.pattern_options,
+                text,
+            ));
+        }
+        format.is_valid(text)
     }
 
     /// The body `uri` names, or `None` where this run reads no targets and where reading through
@@ -413,24 +431,37 @@ fn intersection_key(left: Schema, right: Schema) -> (Schema, Schema) {
 }
 
 fn compile(options: PatternEngineOptions, pattern: &str) -> Option<CompiledMatcher> {
-    let translated = jsonschema_regex::to_rust_regex(pattern).ok()?;
+    let syntax = options.syntax();
+    let translated = match syntax {
+        PatternSyntax::Ecma262 => jsonschema_regex::to_rust_regex(pattern).ok()?,
+        PatternSyntax::Engine => Cow::Borrowed(pattern),
+    };
     match options {
         PatternEngineOptions::Regex {
             size_limit,
             dfa_size_limit,
-        } => crate::regex::build_standard_regex(pattern, &translated, size_limit, dfa_size_limit)
-            .ok()
-            .map(CompiledMatcher::Regex),
+            ..
+        } => crate::regex::build_standard_regex(
+            pattern,
+            &translated,
+            size_limit,
+            dfa_size_limit,
+            syntax,
+        )
+        .ok()
+        .map(CompiledMatcher::Regex),
         PatternEngineOptions::FancyRegex {
             backtrack_limit,
             size_limit,
             dfa_size_limit,
+            ..
         } => crate::regex::build_fancy_regex(
             pattern,
             &translated,
             backtrack_limit,
             size_limit,
             dfa_size_limit,
+            syntax,
         )
         .ok()
         .map(CompiledMatcher::FancyRegex),

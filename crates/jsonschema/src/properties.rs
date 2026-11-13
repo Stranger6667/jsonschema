@@ -5,8 +5,8 @@ use crate::{
     keywords::pattern_properties::invalid_regex,
     node::SchemaNode,
     regex::{
-        analyze_pattern, contains_ecma_whitespace, Compiled, LazyRegex, PatternOptimization,
-        RegexBackendPanic, SequenceMatcher,
+        contains_ecma_whitespace, Compiled, LazyRegex, PatternOptimization, RegexBackendPanic,
+        SequenceMatcher,
     },
     Json, Object, SerdeJson, ValidationContext,
 };
@@ -445,7 +445,7 @@ pub(crate) fn compile_fancy_regex_patterns<'a, F: Json>(
     let mut compiled_patterns = Vec::with_capacity(obj.len());
     for (pattern, subschema) in obj {
         let pctx = kctx.new_at_location(pattern.as_str());
-        let compiled_pattern = match analyze_pattern(pattern) {
+        let compiled_pattern = match ctx.analyze_pattern(pattern) {
             Some(PatternOptimization::Prefix(prefix)) => CompiledPattern::Prefix(Arc::from(prefix)),
             Some(PatternOptimization::Exact(exact)) => CompiledPattern::Exact(Arc::from(exact)),
             Some(PatternOptimization::Alternation(alts)) => {
@@ -480,7 +480,7 @@ pub(crate) fn compile_regex_patterns<'a, F: Json>(
     let mut compiled_patterns = Vec::with_capacity(obj.len());
     for (pattern, subschema) in obj {
         let pctx = kctx.new_at_location(pattern.as_str());
-        let compiled_pattern = match analyze_pattern(pattern) {
+        let compiled_pattern = match ctx.analyze_pattern(pattern) {
             Some(PatternOptimization::Prefix(prefix)) => CompiledPattern::Prefix(Arc::from(prefix)),
             Some(PatternOptimization::Exact(exact)) => CompiledPattern::Exact(Arc::from(exact)),
             Some(PatternOptimization::Alternation(alts)) => {

@@ -1,0 +1,5 @@
+error: Unknown pattern syntax. Expected `ecma262` or `engine`
+ --> tests/ui/unknown_pattern_syntax.rs:3:34
+  |
+3 |     pattern_options = { syntax = bogus }
+  |                                  ^^^^^

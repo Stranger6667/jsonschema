@@ -18,6 +18,7 @@ use crate::{
     error::ValidationError,
     evaluation::Annotations,
     keywords::{rfc3986, CompilationResult},
+    options::{PatternEngineOptions, PatternSyntax},
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -1081,29 +1082,111 @@ pub fn is_valid_uuid(uuid: &str) -> bool {
     parse_hyphenated(uuid.as_bytes(), Out::from_mut(&mut out)).is_ok()
 }
 
+/// The latest checks of one thread, so a repeated string is not parsed again.
+struct RecentChecks<K> {
+    entries: Vec<(K, bool)>,
+    next: usize,
+}
+
+impl<K> RecentChecks<K> {
+    const SIZE: usize = 16;
+
+    const fn new() -> Self {
+        Self {
+            entries: Vec::new(),
+            next: 0,
+        }
+    }
+
+    fn get_or_check(
+        &mut self,
+        is_key: impl Fn(&K) -> bool,
+        key: impl FnOnce() -> K,
+        check: impl FnOnce() -> bool,
+    ) -> bool {
+        if let Some((_, valid)) = self.entries.iter().find(|(candidate, _)| is_key(candidate)) {
+            return *valid;
+        }
+        let valid = check();
+        if self.entries.len() < Self::SIZE {
+            self.entries.push((key(), valid));
+        } else {
+            self.entries[self.next] = (key(), valid);
+            self.next = (self.next + 1) % Self::SIZE;
+        }
+        valid
+    }
+}
+
 /// Validate that a string is a valid ECMAScript regular expression.
 #[must_use]
 pub fn is_valid_regex(pattern: &str) -> bool {
-    const CACHE_SIZE: usize = 16;
     thread_local! {
-        static CACHE: std::cell::RefCell<(Vec<(String, bool)>, usize)> =
-            const { std::cell::RefCell::new((Vec::new(), 0)) };
+        static CACHE: std::cell::RefCell<RecentChecks<String>> =
+            const { std::cell::RefCell::new(RecentChecks::new()) };
     }
     CACHE.with(|cache| {
-        let mut cache = cache.borrow_mut();
-        let (entries, next) = &mut *cache;
-        if let Some((_, valid)) = entries.iter().find(|(candidate, _)| candidate == pattern) {
-            return *valid;
-        }
-        let valid = jsonschema_regex::is_valid_ecma_regex(pattern);
-        if entries.len() < CACHE_SIZE {
-            entries.push((pattern.to_owned(), valid));
-        } else {
-            entries[*next] = (pattern.to_owned(), valid);
-            *next = (*next + 1) % CACHE_SIZE;
-        }
-        valid
+        cache.borrow_mut().get_or_check(
+            |candidate| candidate == pattern,
+            || pattern.to_owned(),
+            || jsonschema_regex::is_valid_ecma_regex(pattern),
+        )
     })
+}
+
+/// Whether the engine `options` selects builds `pattern` as written.
+pub(crate) fn engine_accepts_regex(options: PatternEngineOptions, pattern: &str) -> bool {
+    thread_local! {
+        static CACHE: std::cell::RefCell<RecentChecks<(PatternEngineOptions, String)>> =
+            const { std::cell::RefCell::new(RecentChecks::new()) };
+    }
+    CACHE.with(|cache| {
+        cache.borrow_mut().get_or_check(
+            |(candidate_options, candidate)| *candidate_options == options && candidate == pattern,
+            || (options, pattern.to_owned()),
+            || crate::regex::engine_accepts(options, pattern),
+        )
+    })
+}
+
+/// Validate that the `regex` engine builds a string as written.
+#[cfg(feature = "macros")]
+#[doc(hidden)]
+#[must_use]
+pub fn is_valid_regex_engine_regex(
+    pattern: &str,
+    size_limit: Option<usize>,
+    dfa_size_limit: Option<usize>,
+) -> bool {
+    engine_accepts_regex(
+        PatternEngineOptions::Regex {
+            size_limit,
+            dfa_size_limit,
+            syntax: PatternSyntax::Engine,
+        },
+        pattern,
+    )
+}
+
+/// Validate that the `fancy-regex` engine builds a string as written.
+#[cfg(feature = "macros")]
+#[doc(hidden)]
+#[must_use]
+pub fn is_valid_fancy_regex_engine_regex(
+    pattern: &str,
+    backtrack_limit: Option<usize>,
+    size_limit: Option<usize>,
+    dfa_size_limit: Option<usize>,
+) -> bool {
+    engine_accepts_regex(
+        PatternEngineOptions::FancyRegex {
+            backtrack_limit,
+            size_limit,
+            dfa_size_limit,
+            syntax: PatternSyntax::Engine,
+        },
+        pattern,
+    )
 }
 
 /// Implements `evaluate()` for format validators that have an `annotation: Arc<Value>` field.
@@ -1242,6 +1325,7 @@ format_validators!(
 struct RegexValidator {
     location: Location,
     annotation: Arc<Value>,
+    pattern_options: PatternEngineOptions,
 }
 
 impl RegexValidator {
@@ -1251,6 +1335,7 @@ impl RegexValidator {
         Ok(Box::new(RegexValidator {
             location,
             annotation,
+            pattern_options: ctx.config().pattern_options(),
         }))
     }
 }
@@ -1258,7 +1343,10 @@ impl RegexValidator {
 impl<F: Json> Validate<F> for RegexValidator {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
-            ctx.is_valid_ecma_regex(&item)
+            ctx.is_valid_regex(&item, |pattern| match self.pattern_options.syntax() {
+                PatternSyntax::Ecma262 => jsonschema_regex::is_valid_ecma_regex(pattern),
+                PatternSyntax::Engine => engine_accepts_regex(self.pattern_options, pattern),
+            })
         } else {
             true
         }

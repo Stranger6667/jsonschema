@@ -1,6 +1,6 @@
 use super::super::{
-    compile_regex_match, errors::invalid_schema_type_expression, translate_and_validate_regex,
-    CompileContext, CompiledExpr, RegexSite,
+    analyze_pattern, compile_regex_match, errors::invalid_schema_type_expression,
+    translate_and_validate_regex, CompileContext, CompiledExpr, RegexSite,
 };
 use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
@@ -33,7 +33,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         return invalid_schema_type_expression(value, &["string"]);
     };
     let schema_path = ctx.schema_path_for_keyword("pattern");
-    match jsonschema_regex::analyze_pattern(pattern) {
+    match analyze_pattern(ctx, pattern) {
         Some(jsonschema_regex::PatternAnalysis::Prefix(prefix)) => {
             let prefix: &str = prefix.as_ref();
             pattern_check::<E>(

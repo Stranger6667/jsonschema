@@ -9,8 +9,8 @@ use jsonschema::{
         options, CanonicalKind, CanonicalSchema, CanonicalView, Cause, Containment, Distinctness,
         ObjectViolationView, OperandMismatch, RawReason, Satisfiability, UnsatisfiableReason,
     },
-    canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions, Registry,
-    Retrieve, Uri,
+    canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions,
+    PatternSyntax, Registry, Retrieve, Uri,
 };
 use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
@@ -7385,4 +7385,63 @@ fn nested_conditional_splits_past_the_run_budget_stay_raw() {
     }
     let canonical = canonicalize(&schema).expect("canonicalizes");
     assert_eq!(canonical.kind(), CanonicalKind::Raw);
+}
+
+#[test_case(
+    &json!({"type": "string", "pattern": r"^\d+$", "enum": ["3", "٣", "x"]}),
+    PatternSyntax::Ecma262,
+    &json!({"const": "3"});
+    "ecma 262 digit class"
+)]
+#[test_case(
+    &json!({"type": "string", "pattern": r"^\d+$", "enum": ["3", "٣", "x"]}),
+    PatternSyntax::Engine,
+    &json!({"enum": ["3", "٣"]});
+    "engine digit class"
+)]
+#[test_case(
+    &json!({"type": "string", "format": "regex", "enum": ["(?P<name>a)", "(?<=a)b"]}),
+    PatternSyntax::Ecma262,
+    &json!({"const": "(?<=a)b"});
+    "ecma 262 regex format"
+)]
+#[test_case(
+    &json!({"type": "string", "format": "regex", "enum": ["(?P<name>a)", "(?<=a)b"]}),
+    PatternSyntax::Engine,
+    &json!({"const": "(?P<name>a)"});
+    "engine regex format"
+)]
+#[test_case(
+    &json!({"type": "object", "patternProperties": {"^foo$": {"type": "string"}}}),
+    PatternSyntax::Ecma262,
+    &json!({"type": "object", "properties": {"foo": {"type": "string"}}});
+    "ecma 262 exact key"
+)]
+#[test_case(
+    &json!({"type": "object", "patternProperties": {"^foo$": {"type": "string"}}}),
+    PatternSyntax::Engine,
+    &json!({"type": "object", "patternProperties": {"^foo$": {"type": "string"}}});
+    "engine exact key"
+)]
+fn pattern_syntax(schema: &Value, syntax: PatternSyntax, expected: &Value) {
+    let canonical = options()
+        .should_validate_formats(true)
+        .with_pattern_options(PatternOptions::regex().syntax(syntax))
+        .canonicalize(schema)
+        .expect("canonicalizes");
+    let mut output = canonical.to_json_schema();
+    output.as_object_mut().expect("an object").remove("$schema");
+    assert_eq!(&output, expected);
+}
+
+#[test]
+fn engine_syntax_rejects_ecma_only_pattern() {
+    let error = options()
+        .with_pattern_options(PatternOptions::regex().syntax(PatternSyntax::Engine))
+        .canonicalize(&json!({"pattern": r"^\cJ$"}))
+        .unwrap_err();
+    assert!(matches!(
+        error,
+        CanonicalizationError::InvalidPattern { .. }
+    ));
 }

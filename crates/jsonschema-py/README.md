@@ -587,6 +587,14 @@ validator = jsonschema_rs.validator_for(
         dfa_size_limit=10240      # Maximum DFA cache size
     )
 )
+
+# Patterns in the engine's own syntax instead of ECMA 262:
+# `\d` matches every Unicode decimal digit, as in the Rust `regex` crate
+validator = jsonschema_rs.validator_for(
+    {"type": "string", "pattern": r"^\d+$"},
+    pattern_options=RegexOptions(syntax="engine")
+)
+assert validator.is_valid("٣")
 ```
 
   - `FancyRegexOptions`: default engine, supports lookaround and backreferences
@@ -599,6 +607,8 @@ validator = jsonschema_rs.validator_for(
 
     - `size_limit`: Maximum compiled regex size in bytes
     - `dfa_size_limit`: Maximum DFA cache size in bytes
+
+Both take `syntax`: `"ecma262"` (default) translates patterns for the engine, `"engine"` passes them to it unchanged. Use `"engine"` for schemas whose patterns are written for the Rust [`regex`](https://docs.rs/regex/latest/regex/#syntax) or [`fancy-regex`](https://docs.rs/fancy-regex/latest/fancy_regex/#syntax) crate, such as the ones Pydantic generates.
 
 If you validate against schemas from untrusted sources, use `RegexOptions`: a crafted pattern cannot make it backtrack.
 
