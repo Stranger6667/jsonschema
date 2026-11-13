@@ -906,8 +906,15 @@ impl<F: Json> SchemaNode<F> {
     }
 }
 
-fn stamp_absolute_location(errors: &mut [ValidationError<'_>], uri: Option<&Arc<Uri<String>>>) {
-    let Some(uri) = uri else { return };
+/// `uri` is resolved only when the keyword reported errors.
+fn stamp_absolute_location<'a>(
+    errors: &mut [ValidationError<'_>],
+    uri: impl FnOnce() -> Option<&'a Arc<Uri<String>>>,
+) {
+    if errors.is_empty() {
+        return;
+    }
+    let Some(uri) = uri() else { return };
     for error in errors {
         error.set_absolute_keyword_location(uri);
     }
@@ -1065,6 +1072,11 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
         ctx: &mut ValidationContext,
         errors: &mut Vec<ValidationError<'i>>,
     ) {
+        if let Some(types) = self.inner.accepted_types {
+            if types.contains(instance.json_type()) {
+                return;
+            }
+        }
         match &self.inner.validators {
             NodeValidators::Keyword(kvs) => {
                 for (entry, metadata) in kvs.validators.as_slice().iter().zip(&kvs.metadata) {
@@ -1075,10 +1087,9 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
                     entry
                         .validator
                         .collect_errors(instance, location, tracker, ctx, errors);
-                    stamp_absolute_location(
-                        &mut errors[start..],
-                        metadata.absolute_location(self.inner.absolute_base.as_ref()),
-                    );
+                    stamp_absolute_location(&mut errors[start..], || {
+                        metadata.absolute_location(self.inner.absolute_base.as_ref())
+                    });
                 }
             }
             NodeValidators::Boolean {
@@ -1086,7 +1097,7 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
             } => {
                 let start = errors.len();
                 v.collect_errors(instance, location, tracker, ctx, errors);
-                stamp_absolute_location(&mut errors[start..], self.absolute_path());
+                stamp_absolute_location(&mut errors[start..], || self.absolute_path());
             }
             NodeValidators::Boolean {
                 validator: None, ..
@@ -1097,10 +1108,9 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
                     entry
                         .validator
                         .collect_errors(instance, location, tracker, ctx, errors);
-                    stamp_absolute_location(
-                        &mut errors[start..],
-                        entry.absolute_location(self.inner.absolute_base.as_ref()),
-                    );
+                    stamp_absolute_location(&mut errors[start..], || {
+                        entry.absolute_location(self.inner.absolute_base.as_ref())
+                    });
                 }
             }
         }

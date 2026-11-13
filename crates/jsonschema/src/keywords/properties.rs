@@ -468,32 +468,51 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         let Some(object) = instance.as_object() else {
             return;
         };
-        {
-            // Check required
+        if scan_members(object.len(), self.properties.len()) {
+            // One pass collects property errors and confirms both required keys.
+            let start = errors.len();
+            let mut seen_first = false;
+            let mut seen_second = false;
+            for (name, value) in object.members() {
+                let name = name.as_ref();
+                let head = KeyHead::of(name);
+                if self.first.matches(head, name) {
+                    seen_first = true;
+                } else if self.second.matches(head, name) {
+                    seen_second = true;
+                }
+                for (prop_name, _, node) in &self.properties {
+                    if prop_name.matches(head, name) {
+                        let instance_path = location.push(name);
+                        node.collect_errors(&value, &instance_path, tracker, ctx, errors);
+                        break;
+                    }
+                }
+            }
+            // Missing required names are reported before property errors.
+            if !seen_second {
+                errors.insert(
+                    start,
+                    self.missing(&self.second, instance, location, tracker),
+                );
+            }
+            if !seen_first {
+                errors.insert(
+                    start,
+                    self.missing(&self.first, instance, location, tracker),
+                );
+            }
+        } else {
             if object.get(&self.first_key).is_none() {
                 errors.push(self.missing(&self.first, instance, location, tracker));
             }
             if object.get(&self.second_key).is_none() {
                 errors.push(self.missing(&self.second, instance, location, tracker));
             }
-            if scan_members(object.len(), self.properties.len()) {
-                for (name, value) in object.members() {
-                    let name = name.as_ref();
-                    let head = KeyHead::of(name);
-                    for (prop_name, _, node) in &self.properties {
-                        if prop_name.matches(head, name) {
-                            let instance_path = location.push(name);
-                            node.collect_errors(&value, &instance_path, tracker, ctx, errors);
-                            break;
-                        }
-                    }
-                }
-            } else {
-                for (name, key, node) in &self.properties {
-                    if let Some(prop) = object.get(key) {
-                        let instance_path = location.push(name.as_str());
-                        node.collect_errors(&prop, &instance_path, tracker, ctx, errors);
-                    }
+            for (name, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
+                    let instance_path = location.push(name.as_str());
+                    node.collect_errors(&prop, &instance_path, tracker, ctx, errors);
                 }
             }
         }
