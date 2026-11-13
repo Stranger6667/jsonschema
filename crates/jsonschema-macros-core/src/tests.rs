@@ -100,6 +100,7 @@ pub(crate) fn test_config_with_draft(schema: Value, draft: Draft) -> CodegenConf
         ignore_unknown_formats: true,
         email_options: None,
         pattern_options: crate::context::PatternEngineConfig::default(),
+        pattern_syntax: crate::context::PatternSyntaxConfig::default(),
         methods: crate::context::MethodGates::default(),
     }
 }

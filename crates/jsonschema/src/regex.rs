@@ -1,5 +1,7 @@
 use std::sync::{Arc, OnceLock};
 
+use crate::options::{PatternEngineOptions, PatternSyntax};
+
 pub(crate) trait RegexEngine: Sized + Send + Sync {
     type Error: RegexError;
     /// Whether callers keep the match out of line. An inlined sequence match costs the callers'
@@ -328,8 +330,12 @@ use jsonschema_regex::{RepeatedClass, Search};
 fn compile<R>(
     pattern: &str,
     translated: &str,
+    syntax: PatternSyntax,
     build: impl FnOnce(&str) -> Result<R, ()>,
 ) -> Result<Compiled<R>, ()> {
+    if syntax == PatternSyntax::Engine {
+        return build(translated).map(Compiled::Engine);
+    }
     match jsonschema_regex::search_form(pattern, translated) {
         Some(Search::RepeatedClass(class)) => Ok(Compiled::RepeatedClass(class)),
         Some(Search::Collapsed(collapsed)) => build(&collapsed).map(Compiled::Engine),
@@ -345,8 +351,9 @@ pub(crate) fn build_fancy_regex(
     backtrack_limit: Option<usize>,
     size_limit: Option<usize>,
     dfa_size_limit: Option<usize>,
+    syntax: PatternSyntax,
 ) -> Result<Compiled<fancy_regex::Regex>, ()> {
-    compile(pattern, translated, |translated| {
+    compile(pattern, translated, syntax, |translated| {
         let mut builder = fancy_regex::RegexBuilder::new(translated);
         if let Some(limit) = backtrack_limit {
             builder.backtrack_limit(limit);
@@ -368,8 +375,9 @@ pub(crate) fn build_standard_regex(
     translated: &str,
     size_limit: Option<usize>,
     dfa_size_limit: Option<usize>,
+    syntax: PatternSyntax,
 ) -> Result<Compiled<regex::Regex>, ()> {
-    compile(pattern, translated, |translated| {
+    compile(pattern, translated, syntax, |translated| {
         let mut builder = regex::RegexBuilder::new(translated);
         if let Some(limit) = size_limit {
             builder.size_limit(limit);
@@ -379,6 +387,38 @@ pub(crate) fn build_standard_regex(
         }
         builder.build().map_err(|_| ())
     })
+}
+
+/// Whether the engine builds `pattern` as written.
+pub(crate) fn engine_accepts(options: PatternEngineOptions, pattern: &str) -> bool {
+    match options {
+        PatternEngineOptions::FancyRegex {
+            backtrack_limit,
+            size_limit,
+            dfa_size_limit,
+            ..
+        } => build_fancy_regex(
+            pattern,
+            pattern,
+            backtrack_limit,
+            size_limit,
+            dfa_size_limit,
+            PatternSyntax::Engine,
+        )
+        .is_ok(),
+        PatternEngineOptions::Regex {
+            size_limit,
+            dfa_size_limit,
+            ..
+        } => build_standard_regex(
+            pattern,
+            pattern,
+            size_limit,
+            dfa_size_limit,
+            PatternSyntax::Engine,
+        )
+        .is_ok(),
+    }
 }
 
 /// Analyze a pattern and return a [`PatternOptimization`] if one applies, or `None` if a full

@@ -2,9 +2,20 @@ use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 
-use crate::context::{CompileContext, PatternEngineConfig};
+use crate::context::{CompileContext, PatternEngineConfig, PatternSyntaxConfig};
 
 use super::{errors::invalid_regex_expression, CompiledExpr};
+
+/// The literal form of `pattern`, if it has one. The analysis reads the pattern as ECMA 262.
+pub(super) fn analyze_pattern<'a, E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    pattern: &'a str,
+) -> Option<jsonschema_regex::PatternAnalysis<'a>> {
+    match ctx.config.pattern_syntax {
+        PatternSyntaxConfig::Ecma262 => jsonschema_regex::analyze_pattern(pattern),
+        PatternSyntaxConfig::Engine => None,
+    }
+}
 
 pub(super) fn translate_and_validate_regex<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -14,19 +25,24 @@ pub(super) fn translate_and_validate_regex<E: ValueEmitter>(
     if let Some(cached) = ctx.translated_regex_cache.get(pattern) {
         return Ok(cached.clone());
     }
-    let Ok(translated) = jsonschema_regex::to_rust_regex(pattern) else {
-        return Err(invalid_regex_expression(keyword, pattern));
-    };
-    let translated = match jsonschema_regex::search_form(pattern, &translated) {
-        Some(jsonschema_regex::Search::RepeatedClass(_)) => {
-            let translated = translated.into_owned();
-            ctx.repeated_classes.insert(translated.clone());
-            ctx.translated_regex_cache
-                .insert(pattern.to_string(), translated.clone());
-            return Ok(translated);
+    let translated = match ctx.config.pattern_syntax {
+        PatternSyntaxConfig::Engine => pattern.to_string(),
+        PatternSyntaxConfig::Ecma262 => {
+            let Ok(translated) = jsonschema_regex::to_rust_regex(pattern) else {
+                return Err(invalid_regex_expression(keyword, pattern));
+            };
+            match jsonschema_regex::search_form(pattern, &translated) {
+                Some(jsonschema_regex::Search::RepeatedClass(_)) => {
+                    let translated = translated.into_owned();
+                    ctx.repeated_classes.insert(translated.clone());
+                    ctx.translated_regex_cache
+                        .insert(pattern.to_string(), translated.clone());
+                    return Ok(translated);
+                }
+                Some(jsonschema_regex::Search::Collapsed(collapsed)) => collapsed,
+                None => translated.into_owned(),
+            }
         }
-        Some(jsonschema_regex::Search::Collapsed(collapsed)) => collapsed,
-        None => translated.into_owned(),
     };
     let valid = match ctx.config.pattern_options {
         PatternEngineConfig::FancyRegex {

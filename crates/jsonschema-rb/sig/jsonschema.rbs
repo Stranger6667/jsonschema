@@ -760,7 +760,15 @@ module JSONSchema
     # Create regex engine options.
     # @param size_limit Maximum compiled regex size in bytes
     # @param dfa_size_limit Maximum DFA size in bytes
-    def initialize: (?size_limit: Integer?, ?dfa_size_limit: Integer?) -> void
+    # @param syntax :ecma262 translates patterns for the engine, :engine passes them to it unchanged
+    def initialize: (
+      ?size_limit: Integer?,
+      ?dfa_size_limit: Integer?,
+      ?syntax: (:ecma262 | :engine)?
+    ) -> void
+
+    # Syntax patterns are written in.
+    def syntax: () -> (:ecma262 | :engine)
 
     # Maximum compiled regex size.
     def size_limit: () -> Integer?
@@ -778,11 +786,16 @@ module JSONSchema
     # @param backtrack_limit Maximum backtracking steps
     # @param size_limit Maximum compiled regex size
     # @param dfa_size_limit Maximum DFA size
+    # @param syntax :ecma262 translates patterns for the engine, :engine passes them to it unchanged
     def initialize: (
       ?backtrack_limit: Integer?,
       ?size_limit: Integer?,
-      ?dfa_size_limit: Integer?
+      ?dfa_size_limit: Integer?,
+      ?syntax: (:ecma262 | :engine)?
     ) -> void
+
+    # Syntax patterns are written in.
+    def syntax: () -> (:ecma262 | :engine)
 
     # Maximum backtracking steps.
     def backtrack_limit: () -> Integer?

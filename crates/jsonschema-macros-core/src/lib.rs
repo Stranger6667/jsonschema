@@ -77,6 +77,7 @@ pub mod bench {
             ignore_unknown_formats: true,
             email_options: None,
             pattern_options: PatternEngineConfig::default(),
+            pattern_syntax: crate::context::PatternSyntaxConfig::default(),
             methods: MethodGates::default(),
         })
     }
@@ -149,6 +150,7 @@ enum PatternEngine {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct PatternOptionsConfig {
     engine: PatternEngine,
+    syntax: context::PatternSyntaxConfig,
     backtrack_limit: Option<usize>,
     size_limit: Option<usize>,
     dfa_size_limit: Option<usize>,
@@ -158,6 +160,7 @@ impl Default for PatternOptionsConfig {
     fn default() -> Self {
         Self {
             engine: PatternEngine::FancyRegex,
+            syntax: context::PatternSyntaxConfig::Ecma262,
             backtrack_limit: None,
             size_limit: None,
             dfa_size_limit: None,
@@ -377,6 +380,19 @@ fn parse_pattern_options(input: ParseStream) -> syn::Result<PatternOptionsConfig
                     }
                 };
             }
+            "syntax" => {
+                let syntax: Ident = content.parse()?;
+                options.syntax = match syntax.to_string().as_str() {
+                    "ecma262" => context::PatternSyntaxConfig::Ecma262,
+                    "engine" => context::PatternSyntaxConfig::Engine,
+                    _ => {
+                        return Err(syn::Error::new_spanned(
+                            syntax,
+                            "Unknown pattern syntax. Expected `ecma262` or `engine`",
+                        ));
+                    }
+                };
+            }
             "backtrack_limit" => {
                 let value: LitInt = content.parse()?;
                 options.backtrack_limit = Some(parse_pattern_limit(value, "backtrack_limit")?);
@@ -393,7 +409,7 @@ fn parse_pattern_options(input: ParseStream) -> syn::Result<PatternOptionsConfig
             _ => {
                 return Err(syn::Error::new_spanned(
                     key,
-                    "Unknown pattern_options key. Expected `engine`, `backtrack_limit`, `size_limit`, or `dfa_size_limit`",
+                    "Unknown pattern_options key. Expected `engine`, `syntax`, `backtrack_limit`, `size_limit`, or `dfa_size_limit`",
                 ));
             }
         }
@@ -926,6 +942,7 @@ so the generated methods cannot depend on type parameters",
                 dfa_size_limit: attr.pattern_options.dfa_size_limit,
             },
         },
+        pattern_syntax: attr.pattern_options.syntax,
         methods: attr.methods,
     };
     let impl_mod_name = format_ident!("__{}_impl", name.to_string().to_lowercase());

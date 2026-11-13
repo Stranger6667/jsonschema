@@ -20,6 +20,7 @@ use crate::{
         negate, rename, CanonicalizationError, DefinitionMap, CANONICAL_REFERENCE_PREFIX,
         ROOT_DEFINITION_KEY,
     },
+    options::PatternSyntax,
     JsonType, JsonTypeSet,
 };
 
@@ -2132,7 +2133,7 @@ fn fold_finite_key_patterns(
     ctx: &CanonicalizationContext,
 ) {
     pattern_properties.retain(|pattern, schema| {
-        let Some(keys) = finite_pattern_keys(pattern) else {
+        let Some(keys) = finite_pattern_keys(pattern, ctx) else {
             return true;
         };
         for key in keys {
@@ -2148,7 +2149,11 @@ fn fold_finite_key_patterns(
 
 /// The keys a pattern matches when it matches finitely many; `^` and `$` anchor the whole string,
 /// so an exact or alternation pattern names its keys outright.
-fn finite_pattern_keys(pattern: &str) -> Option<Vec<Arc<str>>> {
+fn finite_pattern_keys(pattern: &str, ctx: &CanonicalizationContext) -> Option<Vec<Arc<str>>> {
+    // The analysis reads the pattern as ECMA 262.
+    if ctx.pattern_options().syntax() == PatternSyntax::Engine {
+        return None;
+    }
     match jsonschema_regex::analyze_pattern(pattern)? {
         jsonschema_regex::PatternAnalysis::Exact(key) => Some(vec![Arc::from(key.as_ref())]),
         jsonschema_regex::PatternAnalysis::Alternation(keys) => {

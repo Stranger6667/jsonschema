@@ -743,6 +743,15 @@ RSpec.describe "JSONSchema.canonicalize" do
     it "rejects a non-options value" do
       expect { JSONSchema.canonicalize(large_pattern, pattern_options: 42) }.to raise_error(TypeError)
     end
+
+    { ecma262: { "const" => "3" }, engine: { "enum" => %w[3 ٣] } }.each do |syntax, expected|
+      it "reads patterns as #{syntax}" do
+        schema = { "type" => "string", "pattern" => "^\\d+$", "enum" => %w[3 ٣ x] }
+        options = JSONSchema::RegexOptions.new(syntax: syntax)
+        canonical = JSONSchema.canonicalize(schema, pattern_options: options)
+        expect(canonical.to_json_schema.except("$schema")).to eq(expected)
+      end
+    end
   end
 
   describe "reference resolution" do

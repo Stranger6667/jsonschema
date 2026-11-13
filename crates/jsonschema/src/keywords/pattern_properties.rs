@@ -9,7 +9,7 @@ use crate::{
     node::SchemaNode,
     options::PatternEngineOptions,
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{analyze_pattern, LiteralMatcher, RegexEngine},
+    regex::{LiteralMatcher, RegexEngine},
     types::JsonType,
     unfinished_matches::MatchSite,
     validator::{EvaluationResult, Validate, ValidationContext},
@@ -294,7 +294,7 @@ fn try_compile_as_literals<'a, F: Json>(
     let mut entries = Vec::with_capacity(map.len());
     for (pattern, subschema) in map {
         let pctx = ctx.new_at_location(pattern.as_str());
-        let matcher = LiteralMatcher::from(analyze_pattern(pattern)?);
+        let matcher = LiteralMatcher::from(ctx.analyze_pattern(pattern)?);
         let node = match compiler::compile(&pctx, pctx.as_resource_ref(subschema)) {
             Ok(node) => node,
             Err(e) => return Some(Err(e)),

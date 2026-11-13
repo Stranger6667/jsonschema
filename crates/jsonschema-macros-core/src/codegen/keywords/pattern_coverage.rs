@@ -5,7 +5,9 @@ use proc_macro2::TokenStream;
 use quote::quote;
 use serde_json::Value;
 
-use super::super::{compile_regex_match, translate_and_validate_regex, CompileContext, RegexSite};
+use super::super::{
+    analyze_pattern, compile_regex_match, translate_and_validate_regex, CompileContext, RegexSite,
+};
 use crate::codegen::CompiledExpr;
 
 /// Emitted checks deciding whether a property key is covered by
@@ -47,7 +49,7 @@ pub(super) fn build_pattern_coverage<E: ValueEmitter>(
     let mut regex_patterns: Vec<(String, &str)> = Vec::new();
     let mut predicates: Vec<TokenStream> = Vec::new();
     for pattern in obj.keys() {
-        match jsonschema_regex::analyze_pattern(pattern) {
+        match analyze_pattern(ctx, pattern) {
             Some(jsonschema_regex::PatternAnalysis::Prefix(prefix)) => prefixes.push(prefix),
             Some(jsonschema_regex::PatternAnalysis::Exact(exact)) => {
                 literals.push(exact.into_owned());

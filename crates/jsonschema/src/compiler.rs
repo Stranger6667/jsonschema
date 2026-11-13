@@ -10,9 +10,9 @@ use crate::{
         BoxedValidator, BuiltinKeyword, Keyword,
     },
     node::{PendingSchemaNode, SchemaNode},
-    options::{PatternCache, PatternEngineOptions, ValidationOptions},
+    options::{PatternCache, PatternEngineOptions, PatternSyntax, ValidationOptions},
     paths::{Location, LocationSegment},
-    regex::{Compiled, LazyRegex, SequenceMatcher},
+    regex::{Compiled, LazyRegex, PatternOptimization, SequenceMatcher},
     types::{JsonType, JsonTypeSet},
     validator::Validate,
     Json, LazyInstance, SerdeJson, ValidationError, Validator, ValidatorMap,
@@ -551,7 +551,10 @@ impl<'a, F: Json> Context<'a, F> {
         if let Some(entry) = self.shared.pattern_cache.borrow().get(pattern) {
             return Ok(Arc::clone(&entry.translated));
         }
-        let translated = Arc::<str>::from(jsonschema_regex::to_rust_regex(pattern)?);
+        let translated = match self.config.pattern_options().syntax() {
+            PatternSyntax::Ecma262 => Arc::<str>::from(jsonschema_regex::to_rust_regex(pattern)?),
+            PatternSyntax::Engine => Arc::from(pattern),
+        };
         self.shared.pattern_cache.borrow_mut().insert(
             Arc::from(pattern),
             PatternCacheEntry {
@@ -927,6 +930,17 @@ impl<'a, F: Json> Context<'a, F> {
         self.shared.alias_placeholders.borrow_mut().remove(alias);
     }
 
+    /// `Some` when patterns are ECMA 262, which every engine-free matcher reads them as.
+    pub(crate) fn ecma_262(&self) -> Option<()> {
+        (self.config.pattern_options().syntax() == PatternSyntax::Ecma262).then_some(())
+    }
+
+    /// The literal form of `pattern`, if it has one.
+    pub(crate) fn analyze_pattern(&self, pattern: &str) -> Option<PatternOptimization> {
+        self.ecma_262()?;
+        crate::regex::analyze_pattern(pattern)
+    }
+
     /// Get a cached compiled regex, or compile and cache it if not present.
     pub(crate) fn get_or_compile_regex(
         &self,
@@ -952,6 +966,7 @@ impl<'a, F: Json> Context<'a, F> {
                     backtrack_limit,
                     size_limit,
                     dfa_size_limit,
+                    ..
                 } => (backtrack_limit, size_limit, dfa_size_limit),
                 PatternEngineOptions::Regex { .. } => (None, None, None),
             };
@@ -961,6 +976,7 @@ impl<'a, F: Json> Context<'a, F> {
                 backtrack_limit,
                 size_limit,
                 dfa_size_limit,
+                options.syntax(),
             )
             .map(Arc::new);
             if let Some(cache) = shared {
@@ -981,6 +997,7 @@ impl<'a, F: Json> Context<'a, F> {
         &self,
         pattern: &str,
     ) -> Option<Arc<SequenceMatcher<LazyRegex>>> {
+        self.ecma_262()?;
         let translated = self.translated_pattern(pattern).ok()?;
         let cache = self.shared.pattern_cache.borrow();
         let entry = cache.get(pattern)?;
@@ -1042,6 +1059,7 @@ impl<'a, F: Json> Context<'a, F> {
                 PatternEngineOptions::Regex {
                     size_limit,
                     dfa_size_limit,
+                    ..
                 } => (size_limit, dfa_size_limit),
                 PatternEngineOptions::FancyRegex { .. } => (None, None),
             };
@@ -1050,6 +1068,7 @@ impl<'a, F: Json> Context<'a, F> {
                 translated.as_ref(),
                 size_limit,
                 dfa_size_limit,
+                options.syntax(),
             )
             .map(Arc::new);
             if let Some(cache) = shared {

@@ -130,6 +130,13 @@ pub(crate) enum PatternEngineConfig {
     },
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
+pub(crate) enum PatternSyntaxConfig {
+    #[default]
+    Ecma262,
+    Engine,
+}
+
 impl Default for PatternEngineConfig {
     fn default() -> Self {
         Self::FancyRegex {
@@ -224,6 +231,7 @@ pub(crate) struct CodegenConfig {
     pub(crate) ignore_unknown_formats: bool,
     pub(crate) email_options: Option<EmailOptionsConfig>,
     pub(crate) pattern_options: PatternEngineConfig,
+    pub(crate) pattern_syntax: PatternSyntaxConfig,
     pub(crate) methods: MethodGates,
 }
 

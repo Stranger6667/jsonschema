@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Added
+
+- `PatternOptions::syntax` with `PatternSyntax::Engine` to match `pattern` and `patternProperties` in the regex engine's own syntax, without the ECMA 262 translation. [#1895](https://github.com/Stranger6667/jsonschema/issues/1895)
+- `syntax` key in `pattern_options` of `#[jsonschema::validator]`. [#1895](https://github.com/Stranger6667/jsonschema/issues/1895)
+
 ### Fixed
 
 - `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.

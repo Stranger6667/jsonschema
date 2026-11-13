@@ -582,6 +582,16 @@ def test_large_pattern_with_raised_size_limit(options):
     assert canonical_schema.kind == CanonicalKind.STRING
 
 
+@pytest.mark.parametrize(
+    ("syntax", "expected"),
+    [("ecma262", {"const": "3"}), ("engine", {"enum": ["3", "٣"]})],
+)
+def test_pattern_syntax(syntax, expected):
+    schema = {"type": "string", "pattern": r"^\d+$", "enum": ["3", "٣", "x"]}
+    options = jsonschema_rs.RegexOptions(syntax=syntax)
+    assert canonicalize(schema, pattern_options=options).to_json_schema() == {"$schema": DRAFT202012, **expected}
+
+
 def test_pattern_options_rejects_other_types():
     with pytest.raises(TypeError):
         canonicalize(LARGE_PATTERN_SCHEMA, pattern_options=object())

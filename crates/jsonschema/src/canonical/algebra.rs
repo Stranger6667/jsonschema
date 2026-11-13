@@ -5865,11 +5865,11 @@ fn string_leaf_admits_text(
     Verdict::all(
         leaf.formats
             .iter()
-            .map(|format| demanded(format.is_valid(text)))
+            .map(|format| demanded(matchers.ctx.format_admits(format, text)))
             .chain(
                 leaf.excluded_formats
                     .iter()
-                    .map(|format| barred(format.is_valid(text))),
+                    .map(|format| barred(matchers.ctx.format_admits(format, text))),
             )
             .chain(leaf.content_media_types.iter().map(|media_type| {
                 demanded(

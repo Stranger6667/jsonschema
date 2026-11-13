@@ -5555,3 +5555,104 @@ unfinished_match_location!(
     r#"{"properties":{"o":{"patternProperties":{"(?<=ab)c":true},"unevaluatedProperties":false}}}"#,
     serde_json::json!({"o":{"abc":1}})
 );
+
+#[jsonschema::validator(
+    schema = r#"{"pattern":"^\\d+$"}"#,
+    pattern_options = { engine = regex, syntax = engine }
+)]
+struct EngineSyntaxRegexValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"pattern":"^\\d+$"}"#,
+    pattern_options = { syntax = engine }
+)]
+struct EngineSyntaxFancyRegexValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"pattern":"^\\d+$"}"#,
+    pattern_options = { engine = regex, syntax = ecma262 }
+)]
+struct EcmaSyntaxRegexValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"pattern":"^\\S*$"}"#,
+    pattern_options = { engine = regex, syntax = engine }
+)]
+struct EngineSyntaxNonWhitespaceValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"patternProperties":{"^\\d+$":{}},"additionalProperties":false}"#,
+    pattern_options = { engine = regex, syntax = engine }
+)]
+struct EngineSyntaxPatternPropertiesValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"patternProperties":{"^\\S*$":false}}"#,
+    pattern_options = { engine = regex, syntax = engine }
+)]
+struct EngineSyntaxPatternPropertiesNonWhitespaceValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"format":"regex"}"#,
+    validate_formats = true,
+    pattern_options = { engine = regex, syntax = engine }
+)]
+struct EngineSyntaxRegexFormatValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"format":"regex"}"#,
+    validate_formats = true,
+    pattern_options = { syntax = engine }
+)]
+struct EngineSyntaxFancyRegexFormatValidator;
+
+fn engine_syntax_validator(schema: &serde_json::Value, fancy: bool) -> jsonschema::Validator {
+    let options = jsonschema::options().should_validate_formats(true);
+    if fancy {
+        options.with_pattern_options(
+            jsonschema::PatternOptions::fancy_regex().syntax(jsonschema::PatternSyntax::Engine),
+        )
+    } else {
+        options.with_pattern_options(
+            jsonschema::PatternOptions::regex().syntax(jsonschema::PatternSyntax::Engine),
+        )
+    }
+    .build(schema)
+    .expect("valid schema")
+}
+
+#[test_case(serde_json::json!({"pattern": r"^\d+$"}), false, serde_json::json!("٣"), EngineSyntaxRegexValidator::is_valid, true; "regex digit class")]
+#[test_case(serde_json::json!({"pattern": r"^\d+$"}), true, serde_json::json!("٣"), EngineSyntaxFancyRegexValidator::is_valid, true; "fancy regex digit class")]
+#[test_case(serde_json::json!({"pattern": r"^\S*$"}), false, serde_json::json!("\u{feff}"), EngineSyntaxNonWhitespaceValidator::is_valid, true; "non-whitespace class")]
+#[test_case(serde_json::json!({"patternProperties": {r"^\d+$": {}}, "additionalProperties": false}), false, serde_json::json!({"٣": 1}), EngineSyntaxPatternPropertiesValidator::is_valid, true; "patternProperties")]
+#[test_case(serde_json::json!({"patternProperties": {r"^\S*$": false}}), false, serde_json::json!({"\u{feff}": 1}), EngineSyntaxPatternPropertiesNonWhitespaceValidator::is_valid, false; "patternProperties non-whitespace class")]
+#[test_case(serde_json::json!({"format": "regex"}), false, serde_json::json!("(?P<name>a)"), EngineSyntaxRegexFormatValidator::is_valid, true; "regex format named group")]
+#[test_case(serde_json::json!({"format": "regex"}), false, serde_json::json!("(?<=a)b"), EngineSyntaxRegexFormatValidator::is_valid, false; "regex format lookbehind")]
+#[test_case(serde_json::json!({"format": "regex"}), true, serde_json::json!("(?<=a)b"), EngineSyntaxFancyRegexFormatValidator::is_valid, true; "fancy regex format lookbehind")]
+fn test_engine_syntax_matches_runtime(
+    schema: serde_json::Value,
+    fancy: bool,
+    instance: serde_json::Value,
+    is_valid: fn(&serde_json::Value) -> bool,
+    expected: bool,
+) {
+    let runtime = engine_syntax_validator(&schema, fancy);
+    assert_eq!(runtime.is_valid(&instance), expected);
+    assert_eq!(is_valid(&instance), expected);
+}
+
+#[test]
+fn test_ecma_syntax_key() {
+    assert!(!EcmaSyntaxRegexValidator::is_valid(&serde_json::json!("٣")));
+    assert!(EcmaSyntaxRegexValidator::is_valid(&serde_json::json!("3")));
+}
+
+// One thread asks both engines about the same string.
+#[test]
+fn test_engine_syntax_regex_format_is_checked_per_engine() {
+    let instance = serde_json::json!("(?<=a)b");
+    for _ in 0..2 {
+        assert!(EngineSyntaxFancyRegexFormatValidator::is_valid(&instance));
+        assert!(!EngineSyntaxRegexFormatValidator::is_valid(&instance));
+    }
+}

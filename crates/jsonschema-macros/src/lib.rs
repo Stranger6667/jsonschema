@@ -55,6 +55,7 @@ use proc_macro::TokenStream;
 /// `pattern_options` keys:
 ///
 /// - `engine = fancy_regex|regex`
+/// - `syntax = ecma262|engine` (`engine` passes patterns to the engine unchanged)
 /// - `backtrack_limit = <usize>` (only for `fancy_regex`)
 /// - `size_limit = <usize>`
 /// - `dfa_size_limit = <usize>`

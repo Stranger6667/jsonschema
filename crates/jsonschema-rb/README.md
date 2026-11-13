@@ -573,6 +573,14 @@ validator = JSONSchema.validator_for(
     dfa_size_limit: 10240       # Maximum DFA cache size
   )
 )
+
+# Patterns in the engine's own syntax instead of ECMA 262:
+# `\d` matches every Unicode decimal digit, as in the Rust `regex` crate
+validator = JSONSchema.validator_for(
+  { "type" => "string", "pattern" => "^\\d+$" },
+  pattern_options: JSONSchema::RegexOptions.new(syntax: :engine)
+)
+validator.valid?("٣") # => true
 ```
 
   - `FancyRegexOptions`: default engine, supports lookaround and backreferences
@@ -585,6 +593,8 @@ validator = JSONSchema.validator_for(
 
     - `size_limit`: Maximum compiled regex size in bytes
     - `dfa_size_limit`: Maximum DFA cache size in bytes
+
+Both take `syntax:`: `:ecma262` (default) translates patterns for the engine, `:engine` passes them to it unchanged. Use `:engine` for schemas whose patterns are written for the Rust [`regex`](https://docs.rs/regex/latest/regex/#syntax) or [`fancy-regex`](https://docs.rs/fancy-regex/latest/fancy_regex/#syntax) crate.
 
 If you validate against schemas from untrusted sources, use `RegexOptions`: a crafted pattern cannot make it backtrack.
 

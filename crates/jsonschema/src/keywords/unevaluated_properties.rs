@@ -20,7 +20,7 @@ use crate::{
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     properties::NameSet,
-    regex::{analyze_pattern, Compiled, LazyRegex, LiteralMatcher, SequenceMatcher},
+    regex::{Compiled, LazyRegex, LiteralMatcher, SequenceMatcher},
     unfinished_matches::MatchSite,
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson, ValidationError,
@@ -166,7 +166,7 @@ impl<R> Clone for Pattern<R> {
 
 impl Patterns {
     fn push<F: Json>(&mut self, ctx: &compiler::Context<'_, F>, pattern: &str) -> Result<(), ()> {
-        if let Some(optimization) = analyze_pattern(pattern) {
+        if let Some(optimization) = ctx.analyze_pattern(pattern) {
             self.literal.push(Pattern {
                 regex: Arc::new(LiteralMatcher::from(optimization)),
                 location: ctx.location().clone(),

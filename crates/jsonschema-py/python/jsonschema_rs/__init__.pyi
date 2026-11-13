@@ -1,6 +1,6 @@
 from collections.abc import Iterable, Iterator, Sequence
 from decimal import Decimal
-from typing import Any, Callable, List, Protocol, TypeAlias, TypeVar, TypedDict, Union, final
+from typing import Any, Callable, List, Literal, Protocol, TypeAlias, TypeVar, TypedDict, Union, final
 
 from typing_extensions import Self
 
@@ -92,13 +92,22 @@ class Evaluation:
 @final
 class FancyRegexOptions:
     def __new__(
-        cls, backtrack_limit: int | None = None, size_limit: int | None = None, dfa_size_limit: int | None = None
+        cls,
+        backtrack_limit: int | None = None,
+        size_limit: int | None = None,
+        dfa_size_limit: int | None = None,
+        syntax: Literal["ecma262", "engine"] = "ecma262",
     ) -> Self: ...
     def __repr__(self) -> str: ...
 
 @final
 class RegexOptions:
-    def __new__(cls, size_limit: int | None = None, dfa_size_limit: int | None = None) -> Self: ...
+    def __new__(
+        cls,
+        size_limit: int | None = None,
+        dfa_size_limit: int | None = None,
+        syntax: Literal["ecma262", "engine"] = "ecma262",
+    ) -> Self: ...
     def __repr__(self) -> str: ...
 
 @final
