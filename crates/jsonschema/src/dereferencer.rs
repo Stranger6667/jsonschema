@@ -119,7 +119,8 @@ fn walk(
                 visited.remove(&visited_key);
 
                 // Since 2019-09 `$ref` applies next to its siblings; earlier drafts ignore them
-                let keep_siblings = draft >= Draft::Draft201909 && obj.len() > 1;
+                let ignores_siblings = draft < Draft::Draft201909;
+                let keep_siblings = !ignores_siblings && obj.len() > 1;
                 match inlined {
                     Value::Object(mut merged)
                         if !keep_siblings
@@ -130,7 +131,11 @@ fn walk(
                             }) =>
                     {
                         for (k, v) in obj {
-                            if k != "$ref" && !merged.contains_key(k.as_str()) {
+                            // Earlier drafts keep only siblings that neither validate nor set the base URI
+                            if MERGEABLE_SIBLINGS.contains(&k.as_str())
+                                && !(ignores_siblings && k == "$id")
+                                && !merged.contains_key(k.as_str())
+                            {
                                 // walk sibling values so nested $refs within siblings are also resolved
                                 let walked =
                                     walk_keyword(v, &subschemas, draft, &resolver, visited)?;
