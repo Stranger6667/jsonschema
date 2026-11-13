@@ -1,29 +1,29 @@
 use crate::codegen::emit::ValueEmitter;
-use std::{borrow::Cow, sync::Arc};
+use std::sync::Arc;
 
 use referencing::Uri;
 use serde_json::Value;
 
 use super::{draft::DraftExt, CompileContext};
 
-pub(crate) struct ResolvedRef {
-    pub(crate) schema: Value,
+pub(crate) struct ResolvedRef<'cfg> {
+    pub(crate) schema: &'cfg Value,
     pub(crate) location: String,
     /// Base URI of the resolved schema (for resolving nested references)
     pub(crate) base_uri: Arc<Uri<String>>,
 }
 
 /// Resolve a short top-level `$ref` chain for schema-shape analysis.
-pub(super) fn resolve_lone_top_level_ref<'b, E: ValueEmitter>(
-    ctx: &mut CompileContext<'_, E>,
+pub(super) fn resolve_lone_top_level_ref<'cfg: 'b, 'b, E: ValueEmitter>(
+    ctx: &mut CompileContext<'cfg, E>,
     schema: &'b Value,
-) -> Cow<'b, Value> {
-    let mut current = Cow::Borrowed(schema);
+) -> &'b Value {
+    let mut current = schema;
     // Bounded hop count: discriminator analysis is a best-effort optimization,
     // so give up on longer (or cyclic) $ref chains instead of tracking visited
     // locations. 8 hops covers realistic hand-written indirection.
     for _ in 0..8 {
-        let Value::Object(obj) = current.as_ref() else {
+        let Value::Object(obj) = current else {
             break;
         };
         let Some(reference) = obj.get("$ref").and_then(Value::as_str) else {
@@ -37,19 +37,21 @@ pub(super) fn resolve_lone_top_level_ref<'b, E: ValueEmitter>(
         let Ok(resolved) = resolve_ref(ctx, reference) else {
             break;
         };
-        current = Cow::Owned(resolved.schema);
+        current = resolved.schema;
     }
     current
 }
 
 /// Resolve a reference using the Registry.
-pub(crate) fn resolve_ref<E: ValueEmitter>(
-    ctx: &mut CompileContext<'_, E>,
+pub(crate) fn resolve_ref<'cfg, E: ValueEmitter>(
+    ctx: &mut CompileContext<'cfg, E>,
     reference: &str,
-) -> Result<ResolvedRef, String> {
+) -> Result<ResolvedRef<'cfg>, String> {
     let base_uri = ctx.current_base_uri.clone();
+    // Copy the `&'cfg` out so the lookup result is not tied to the `ctx` borrow.
+    let config = ctx.config;
 
-    let resolver = ctx.config.registry.resolver((*base_uri).clone());
+    let resolver = config.registry.resolver((*base_uri).clone());
     let resolved = resolver
         .lookup(reference)
         .map_err(|e| format!("Failed to resolve {reference}: {e}"))?;
@@ -70,7 +72,7 @@ pub(crate) fn resolve_ref<E: ValueEmitter>(
     let (contents, _, _) = resolved.into_inner();
 
     Ok(ResolvedRef {
-        schema: contents.clone(),
+        schema: contents,
         location: location_key,
         base_uri: resolved_base_uri,
     })

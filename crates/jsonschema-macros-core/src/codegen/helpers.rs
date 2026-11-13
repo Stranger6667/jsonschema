@@ -88,25 +88,25 @@ pub(crate) fn collect_dynamic_anchor_bindings<E: ValueEmitter>(
                 let Ok(resolved) = resolve_ref(ctx, &reference) else {
                     continue;
                 };
-                if dynamic_ref_anchor_name(&reference, &resolved.schema).is_none() {
+                if dynamic_ref_anchor_name(&reference, resolved.schema).is_none() {
                     continue;
                 }
                 let is_valid_name = get_or_create_is_valid_fn(
                     ctx,
                     &resolved.location,
-                    &resolved.schema,
+                    resolved.schema,
                     resolved.base_uri.clone(),
                 );
                 let key_eval_name = get_or_create_key_eval_fn(
                     ctx,
                     &resolved.location,
-                    &resolved.schema,
+                    resolved.schema,
                     resolved.base_uri.clone(),
                 );
                 let item_eval_name = get_or_create_item_eval_fn(
                     ctx,
                     &resolved.location,
-                    &resolved.schema,
+                    resolved.schema,
                     resolved.base_uri,
                 );
                 bindings.push(DynamicAnchorBinding {

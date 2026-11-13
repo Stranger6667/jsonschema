@@ -343,12 +343,9 @@ fn build_discriminator_plan<E: ValueEmitter>(
     let mut branch_discriminators = Vec::with_capacity(schemas.len());
     for schema in schemas {
         let resolved = resolve_lone_top_level_ref(ctx, schema);
-        classes.push(classify_branch(
-            resolved.as_ref(),
-            &ctx.config.custom_keywords,
-        ));
+        classes.push(classify_branch(resolved, &ctx.config.custom_keywords));
         branch_discriminators.push(extract_object(
-            resolved.as_ref(),
+            resolved,
             allow_const,
             &ctx.config.custom_keywords,
         ));

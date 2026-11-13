@@ -5,7 +5,6 @@ use super::super::{
 use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use serde_json::Value;
-use std::borrow::Cow;
 
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -24,7 +23,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     let key_as_value_ref = E::key_as_value_ref(format_ident!("key"));
 
     let resolved = resolve_lone_top_level_ref(ctx, value);
-    if let Value::Object(schema) = resolved.as_ref() {
+    if let Value::Object(schema) = resolved {
         let only_string_keywords = schema.iter().all(|(keyword, value)| {
             matches!(
                 keyword.as_str(),
@@ -42,7 +41,7 @@ pub(crate) fn compile<E: ValueEmitter>(
             }
             // A hopped `$ref` target must keep the shared fn for `validate`
             // error paths; only inline schemas take the string fast path.
-            if matches!(resolved, Cow::Borrowed(_)) {
+            if std::ptr::eq(resolved, value) {
                 let is_valid = string_check.is_valid_token_stream();
                 // Report each offending property name as the error instance (like the runtime),
                 // while keeping the fast `is_valid` scan and object-level instance path.
