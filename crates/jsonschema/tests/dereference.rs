@@ -300,6 +300,77 @@ fn registry_with_address() -> jsonschema::Registry<'static> {
     });
     "property_named_const_inlined"
 )]
+#[test_case(
+    json!({
+        "$defs": {"money": {"type": "number", "minimum": -1000}},
+        "properties": {"subtotal": {"$ref": "#/$defs/money", "minimum": 0}}
+    }),
+    json!({
+        "$defs": {"money": {"type": "number", "minimum": -1000}},
+        "properties": {"subtotal": {"allOf": [{"type": "number", "minimum": -1000}], "minimum": 0}}
+    });
+    "colliding_sibling_kept_next_to_target"
+)]
+#[test_case(
+    json!({
+        "$schema": "https://json-schema.org/draft/2019-09/schema",
+        "$defs": {"money": {"minimum": -1000}},
+        "properties": {"subtotal": {"$ref": "#/$defs/money", "minimum": 0}}
+    }),
+    json!({
+        "$schema": "https://json-schema.org/draft/2019-09/schema",
+        "$defs": {"money": {"minimum": -1000}},
+        "properties": {"subtotal": {"allOf": [{"minimum": -1000}], "minimum": 0}}
+    });
+    "colliding_sibling_kept_next_to_target_draft2019_09"
+)]
+#[test_case(
+    json!({
+        "$defs": {"low": {"allOf": [{"minimum": -1000}]}},
+        "properties": {"x": {"$ref": "#/$defs/low", "allOf": [{"minimum": 0}]}}
+    }),
+    json!({
+        "$defs": {"low": {"allOf": [{"minimum": -1000}]}},
+        "properties": {"x": {"allOf": [{"allOf": [{"minimum": -1000}]}, {"minimum": 0}]}}
+    });
+    "colliding_all_of_sibling_prepends_target"
+)]
+#[test_case(
+    json!({
+        "$defs": {"any": true},
+        "properties": {"x": {"$ref": "#/$defs/any", "minimum": 0}}
+    }),
+    json!({
+        "$defs": {"any": true},
+        "properties": {"x": {"allOf": [true], "minimum": 0}}
+    });
+    "boolean_target_keeps_siblings"
+)]
+#[test_case(
+    json!({
+        "$defs": {"any": true},
+        "properties": {"x": {"$ref": "#/$defs/any"}}
+    }),
+    json!({
+        "$defs": {"any": true},
+        "properties": {"x": true}
+    });
+    "boolean_target_without_siblings_inlined"
+)]
+// Draft 7 ignores `$ref` siblings
+#[test_case(
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {"money": {"minimum": -1000}},
+        "properties": {"subtotal": {"$ref": "#/definitions/money", "minimum": 0}}
+    }),
+    json!({
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "definitions": {"money": {"minimum": -1000}},
+        "properties": {"subtotal": {"minimum": -1000}}
+    });
+    "draft7_colliding_sibling_ignored"
+)]
 #[allow(clippy::needless_pass_by_value)]
 fn test_dereference(schema: Value, expected: Value) {
     assert_eq!(jsonschema::dereference(&schema).unwrap(), expected);

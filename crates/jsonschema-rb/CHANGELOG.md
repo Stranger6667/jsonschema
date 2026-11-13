@@ -6,6 +6,10 @@
 
 - Non-string keys of a root `Hash` raising only when validation reads them, like keys of nested ones, instead of on every call.
 
+### Fixed
+
+- `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
+
 ### Performance
 
 - Lower cost of collecting errors over the valid parts of an instance.

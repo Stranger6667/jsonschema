@@ -101,18 +101,43 @@ fn walk(
                 let inlined = walk(contents, inner_draft, &inner_resolver, visited)?;
                 visited.remove(&visited_key);
 
-                // Merge non-$ref siblings into inlined result
-                if let Value::Object(mut merged) = inlined {
-                    for (k, v) in obj {
-                        if k != "$ref" && !merged.contains_key(k.as_str()) {
-                            // walk sibling values so nested $refs within siblings are also resolved
-                            let walked = walk_keyword(v, &subschemas, draft, &resolver, visited)?;
-                            merged.insert(k.clone(), walked);
+                // Since 2019-09 `$ref` applies next to its siblings; earlier drafts ignore them
+                let keep_siblings = draft >= Draft::Draft201909 && obj.len() > 1;
+                match inlined {
+                    Value::Object(mut merged)
+                        if !keep_siblings
+                            || !obj.iter().any(|(k, v)| {
+                                k != "$ref" && merged.get(k.as_str()).is_some_and(|t| t != v)
+                            }) =>
+                    {
+                        for (k, v) in obj {
+                            if k != "$ref" && !merged.contains_key(k.as_str()) {
+                                // walk sibling values so nested $refs within siblings are also resolved
+                                let walked =
+                                    walk_keyword(v, &subschemas, draft, &resolver, visited)?;
+                                merged.insert(k.clone(), walked);
+                            }
                         }
+                        Ok(Value::Object(merged))
                     }
-                    Ok(Value::Object(merged))
-                } else {
-                    Ok(inlined)
+                    target if !keep_siblings => Ok(target),
+                    // Merging would lose a sibling, so the target goes under `allOf`
+                    target => {
+                        let mut siblings = Map::with_capacity(obj.len());
+                        for (k, v) in obj {
+                            if k != "$ref" {
+                                let walked =
+                                    walk_keyword(v, &subschemas, draft, &resolver, visited)?;
+                                siblings.insert(k.clone(), walked);
+                            }
+                        }
+                        if let Some(Value::Array(all_of)) = siblings.get_mut("allOf") {
+                            all_of.insert(0, target);
+                        } else {
+                            siblings.insert("allOf".to_string(), Value::Array(vec![target]));
+                        }
+                        Ok(Value::Object(siblings))
+                    }
                 }
             } else {
                 walk_keyword(value, &subschemas, draft, &resolver, visited)
