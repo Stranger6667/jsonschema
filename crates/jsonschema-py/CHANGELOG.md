@@ -12,6 +12,7 @@
 
 ### Performance
 
+- Fewer allocations per subschema when building a validator.
 - Lower cost of collecting errors over the valid parts of an instance.
 - Lower fixed cost of each validation call.
 - `pattern` and `patternProperties` with alternations of anchored sequences, such as `^[1-5](?:[0-9]{2}|XX)$`, matched in one pass without a regex engine.

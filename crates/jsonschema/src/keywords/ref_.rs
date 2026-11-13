@@ -332,7 +332,7 @@ fn compile_reference_validator<'a, F: Json>(
             Err(error) => return Some(Err(ValidationError::from(error))),
         };
 
-    let ref_suffix = ctx.suffix().join(keyword);
+    let ref_suffix = ctx.suffix_with(keyword);
     // A pointer counts from the resource the reference names, an anchor from the one it is in.
     let (ref_target_base, target_location, resource_start) = if is_named(&alias) {
         match named_target_base(ctx, &resolved) {
@@ -427,7 +427,7 @@ fn compile_recursive_validator<'a, F: Json>(
     ctx: &compiler::Context<F>,
     reference: &str,
 ) -> CompilationResult<'a, F> {
-    let ref_suffix = ctx.suffix().join("$recursiveRef");
+    let ref_suffix = ctx.suffix_with("$recursiveRef");
     let (alias, ref_target_base) = ctx
         .ref_target(reference, extract_ref_target_base)
         .map_err(ValidationError::from)?;
