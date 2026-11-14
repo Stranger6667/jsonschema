@@ -44,7 +44,6 @@ mod __validator_impl {
     type __Value<'a> = __json::RbNode<'a>;
     type __Map<'a> = <__Value<'a> as __NodeExt<'a, __Json>>::Object;
     type __Array<'a> = <__Value<'a> as __NodeExt<'a, __Json>>::Array;
-    #[inline]
     fn is_branch_valid_0(instance: __Value<'_>) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
@@ -169,7 +168,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_1(instance: __Value<'_>) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
@@ -294,7 +292,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_2(instance: __Value<'_>) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
@@ -385,7 +382,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_3(instance: __Value<'_>) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
@@ -477,7 +473,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_4(instance: __Value<'_>) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
@@ -600,7 +595,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_5(instance: __Value<'_>) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
@@ -723,7 +717,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn validate_ref_0(instance: __Value<'_>) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {

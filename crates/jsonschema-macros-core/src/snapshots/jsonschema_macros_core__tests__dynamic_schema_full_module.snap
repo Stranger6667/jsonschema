@@ -55,7 +55,6 @@ mod __validator_impl {
         std::cell::RefCell < Vec < (usize, usize) >> =
         std::cell::RefCell::new(Vec::new());
     }
-    #[inline]
     fn validate_ref_0(instance: &__Value) -> bool {
         matches!(instance, __Value::Object(_) | __Value::Bool(_))
     }
@@ -95,7 +94,6 @@ mod __validator_impl {
                 );
         }
     }
-    #[inline]
     fn validate_ref_1(instance: &__Value) -> bool {
         {
             __JSONSCHEMA_DYNAMIC_STACK

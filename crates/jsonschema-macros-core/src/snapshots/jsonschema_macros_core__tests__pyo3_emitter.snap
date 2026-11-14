@@ -45,7 +45,6 @@ mod __validator_impl {
     type __Bound<'py> = __py3::Bound<'py, __py3::PyAny>;
     type __Map<'py> = <__Value<'py> as __NodeExt<'py, __Json>>::Object;
     type __Array<'py> = <__Value<'py> as __NodeExt<'py, __Json>>::Array;
-    #[inline]
     fn is_branch_valid_0(instance: __Value<'_>) -> bool {
         let __py = instance.py();
         match __json::narrow_object(instance) {
@@ -164,7 +163,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_1(instance: __Value<'_>) -> bool {
         let __py = instance.py();
         match __json::narrow_object(instance) {
@@ -283,7 +281,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_2(instance: __Value<'_>) -> bool {
         let __py = instance.py();
         match __json::narrow_object(instance) {
@@ -368,7 +365,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_3(instance: __Value<'_>) -> bool {
         let __py = instance.py();
         match __json::narrow_object(instance) {
@@ -454,7 +450,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_4(instance: __Value<'_>) -> bool {
         let __py = instance.py();
         match __json::narrow_object(instance) {
@@ -567,7 +562,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn is_branch_valid_5(instance: __Value<'_>) -> bool {
         let __py = instance.py();
         match __json::narrow_object(instance) {
@@ -680,7 +674,6 @@ mod __validator_impl {
             None => {}
         }
     }
-    #[inline]
     fn validate_ref_0(instance: __Value<'_>) -> bool {
         let __py = instance.py();
         match __json::narrow_object(instance) {

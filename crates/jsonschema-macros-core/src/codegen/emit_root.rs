@@ -225,7 +225,6 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 }
             });
             quote! {
-                #[inline]
                 fn #func_ident(instance: #node) -> bool { #function_prelude #body }
                 #validate_fn
                 #collect_fn
@@ -256,7 +255,6 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 }
             });
             quote! {
-                #[inline]
                 fn #is_valid_ident(instance: #node) -> bool {
                     #function_prelude
                     #is_valid
