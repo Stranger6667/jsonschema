@@ -1,10 +1,24 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"type\":[\"integer\",\"string\"]}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-match instance {
+if !(match instance {
             __Value::Number(n) => __types::is_integer(n),
             __Value::String(_) => true,
             _ => false,
+        }) {
+            if __errors
+                .push(
+                    __err::multiple_types(
+                        "/type",
+                        __path.into(),
+                        instance,
+                        __JTS::empty().insert(__JT::Integer).insert(__JT::String),
+                    ),
+                )
+            {
+                return true;
+            }
         }
+        false

@@ -1,0 +1,69 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"properties\":{\"a\":{\"type\":\"integer\"},\"b\":{\"type\":\"integer\"}}}"
+expression: errors_body(schema)
+---
+match instance {
+            __Value::Object(obj) => {
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "a" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("a");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/properties/a/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "b" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("b");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/properties/b/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        false

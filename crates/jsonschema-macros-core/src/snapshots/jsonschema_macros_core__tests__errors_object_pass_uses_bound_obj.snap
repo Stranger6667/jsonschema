@@ -1,0 +1,101 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"additionalProperties\":false,\"patternProperties\":{\"^x\":{\"type\":\"string\"}},\"properties\":{\"a\":{\"type\":\"integer\"}},\"type\":\"object\"}"
+expression: errors_body(schema)
+---
+match instance {
+            __Value::Object(obj) => {
+                let mut __unexpected: Vec<String> = Vec::new();
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    let mut covered = false;
+                    match key_str {
+                        "a" => {
+                            let instance = value;
+                            let __path = &__path.push("a");
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                if __errors
+                                    .push(
+                                        __err::single_type(
+                                            "/properties/a/type",
+                                            __path.into(),
+                                            instance,
+                                            __JT::Integer,
+                                        ),
+                                    )
+                                {
+                                    return true;
+                                }
+                            }
+                            covered = true;
+                        }
+                        _ => {}
+                    }
+                    if key.as_str().starts_with("x") {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(instance.is_string()) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/patternProperties/^x/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::String,
+                                    ),
+                                )
+                            {
+                                return true;
+                            }
+                        }
+                        covered = true;
+                    }
+                    if !covered {
+                        if __errors.first_only() {
+                            return __errors
+                                .push(
+                                    __err::additional_properties(
+                                        "/additionalProperties",
+                                        __path.into(),
+                                        instance,
+                                        vec![key.clone()],
+                                    ),
+                                );
+                        }
+                        __unexpected.push(key.clone());
+                    }
+                }
+                if !__unexpected.is_empty() {
+                    if __errors
+                        .push(
+                            __err::additional_properties(
+                                "/additionalProperties",
+                                __path.into(),
+                                instance,
+                                __unexpected,
+                            ),
+                        )
+                    {
+                        return true;
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        false

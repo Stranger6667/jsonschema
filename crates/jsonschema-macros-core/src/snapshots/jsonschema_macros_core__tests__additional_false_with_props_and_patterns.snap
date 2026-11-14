@@ -1,35 +1,85 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"additionalProperties\":false,\"patternProperties\":{\"^x\":{\"type\":\"integer\"}},\"properties\":{\"a\":{}},\"type\":\"object\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
-                let __object_pass = obj
-                    .iter()
-                    .all(|(key, instance)| {
-                        let mut covered = false;
-                        match key.as_str() {
-                            "a" => {
-                                covered = true;
-                            }
-                            _ => {}
-                        }
-                        if key.as_str().starts_with("x") {
-                            if !(match instance {
-                                __Value::Number(n) => __types::is_integer(n),
-                                _ => false,
-                            }) {
-                                return false;
-                            }
+                let mut __unexpected: Vec<String> = Vec::new();
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    let mut covered = false;
+                    match key_str {
+                        "a" => {
                             covered = true;
                         }
-                        if !covered {
-                            return false;
+                        _ => {}
+                    }
+                    if key.as_str().starts_with("x") {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(match instance {
+                            __Value::Number(n) => __types::is_integer(n),
+                            _ => false,
+                        }) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/patternProperties/^x/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::Integer,
+                                    ),
+                                )
+                            {
+                                return true;
+                            }
                         }
-                        true
-                    });
-                __object_pass
+                        covered = true;
+                    }
+                    if !covered {
+                        if __errors.first_only() {
+                            return __errors
+                                .push(
+                                    __err::additional_properties(
+                                        "/additionalProperties",
+                                        __path.into(),
+                                        instance,
+                                        vec![key.clone()],
+                                    ),
+                                );
+                        }
+                        __unexpected.push(key.clone());
+                    }
+                }
+                if !__unexpected.is_empty() {
+                    if __errors
+                        .push(
+                            __err::additional_properties(
+                                "/additionalProperties",
+                                __path.into(),
+                                instance,
+                                __unexpected,
+                            ),
+                        )
+                    {
+                        return true;
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

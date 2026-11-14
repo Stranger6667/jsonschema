@@ -31,14 +31,14 @@ fn format_check<E: ValueEmitter>(
     check: TokenStream,
 ) -> CompiledExpr {
     let err_instance = E::err_instance(format_ident!("instance"));
-    let validate = quote! {
+    let first_error = quote! {
         if !(#check) {
             return Some(__err::format(
                 #schema_path, __path.into(), #err_instance, #format_name,
             ));
         }
     };
-    CompiledExpr::with_validate_blocks(check, validate)
+    CompiledExpr::from_first_error(check, first_error)
 }
 
 fn compile_email_options_argument<E: ValueEmitter>(ctx: &CompileContext<'_, E>) -> TokenStream {

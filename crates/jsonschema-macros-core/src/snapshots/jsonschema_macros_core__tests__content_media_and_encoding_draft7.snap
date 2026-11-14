@@ -1,14 +1,56 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"contentEncoding\":\"base64\",\"contentMediaType\":\"application/json\",\"type\":\"string\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::String(s) => {
-                match __content::from_base64(s) {
-                    Ok(Some(__decoded)) => __content::is_json(&__decoded),
-                    _ => false,
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    match __content::from_base64(s) {
+                        Ok(Some(__decoded)) => {
+                            if !__content::is_json(&__decoded) {
+                                return Some(
+                                    __err::content_media_type(
+                                        "/contentMediaType",
+                                        __path.into(),
+                                        instance,
+                                        "application/json",
+                                    ),
+                                );
+                            }
+                        }
+                        Ok(None) => {
+                            return Some(
+                                __err::content_encoding(
+                                    "/contentEncoding",
+                                    __path.into(),
+                                    instance,
+                                    "base64",
+                                ),
+                            );
+                        }
+                        Err(__err) => return Some(__err),
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
                 }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::String,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

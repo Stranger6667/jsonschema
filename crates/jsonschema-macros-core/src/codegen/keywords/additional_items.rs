@@ -1,4 +1,4 @@
-use super::super::{compile_schema, expr::ValidateBlock, CompileContext, CompiledExpr};
+use super::super::{compile_schema, expr::ErrorsBlock, CompileContext, CompiledExpr};
 use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use serde_json::Value;
@@ -26,14 +26,14 @@ pub(crate) fn compile<E: ValueEmitter>(
             }
             let len_expr = E::array_len(format_ident!("arr"));
             let check = quote! { #len_expr <= #tuple_len };
-            let validate = quote! {
+            let first_error = quote! {
                 if !(#check) {
                     return Some(__err::additional_items(
                         #schema_path, __path.into(), #err_instance, #tuple_len,
                     ));
                 }
             };
-            Some(CompiledExpr::with_validate_blocks(check, validate))
+            Some(CompiledExpr::from_first_error(check, first_error))
         }
         Value::Bool(true) => None,
         schema => {
@@ -44,29 +44,22 @@ pub(crate) fn compile<E: ValueEmitter>(
                 return None;
             }
             let is_valid = compiled.is_valid_token_stream();
-            match &compiled.validate {
-                ValidateBlock::Expr(expr) => {
-                    let child_collect = compiled.collect.as_token_stream();
+            match &compiled.errors {
+                ErrorsBlock::Expr(_) => {
+                    let child_errors = compiled.errors.as_token_stream();
                     let iter_expr = E::array_iter(format_ident!("arr"));
-                    Some(CompiledExpr::with_validate_and_collect_blocks(
+                    Some(CompiledExpr::with_errors(
                         quote! { #iter_expr.skip(#tuple_len).all(|instance| #is_valid) },
                         quote! {
                             for (idx, item) in #iter_expr.enumerate().skip(#tuple_len) {
                                 let instance = item;
                                 let __path = &__path.push(idx);
-                                #expr
-                            }
-                        },
-                        quote! {
-                            for (idx, item) in #iter_expr.enumerate().skip(#tuple_len) {
-                                let instance = item;
-                                let __path = &__path.push(idx);
-                                #child_collect
+                                #child_errors
                             }
                         },
                     ))
                 }
-                ValidateBlock::AlwaysValid => None,
+                ErrorsBlock::AlwaysValid => None,
             }
         }
     }

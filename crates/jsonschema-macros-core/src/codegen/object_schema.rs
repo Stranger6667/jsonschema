@@ -7,8 +7,11 @@ use serde_json::{Map, Value};
 use crate::context::CompileContext;
 
 use super::{
-    dispatch::compile_typed, draft::DraftExt, expr::IsValidExpr,
-    helpers::get_or_create_is_valid_fn, keywords, CompiledExpr,
+    dispatch::compile_typed,
+    draft::DraftExt,
+    expr::{call_errors, first_error_of, IsValidExpr},
+    helpers::get_or_create_is_valid_fn,
+    keywords, CompiledExpr,
 };
 
 fn type_check_is_redundant(schema: &Map<String, Value>, draft: Draft) -> bool {
@@ -108,14 +111,12 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
                     )
                 };
                 let func_ident = format_ident!("{}", func_name);
-                let validate_ident = format_ident!("{}_validate", func_name);
-                return CompiledExpr::with_validate_blocks(
+                let errors_ident = format_ident!("{}_errors", func_name);
+                return CompiledExpr::from_first_error(
                     quote! { #func_ident(instance) },
-                    quote! {
-                        if let Some(__err) = #validate_ident(instance, __path) {
-                            return Some(__err);
-                        }
-                    },
+                    first_error_of(&call_errors(
+                        &quote! { #errors_ident(instance, __path, __errors) },
+                    )),
                 );
             }
         }
@@ -196,7 +197,7 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         let typed = typed.filter(|t| !t.is_trivially_true());
 
         match typed {
-            // `validate` reports errors in keyword order (untyped first, matching the
+            // Errors are reported in keyword order (untyped first, matching the
             // runtime); `is_valid` runs the typed dispatch first so instances of other
             // types bail before the applicators.
             Some(type_check) if !untyped.is_empty() => {
@@ -212,8 +213,7 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
                     is_valid: IsValidExpr::Expr(quote! {
                         (#typed_is_valid) #(&& (#untyped_is_valid))*
                     }),
-                    validate: combined.validate,
-                    collect: combined.collect,
+                    errors: combined.errors,
                     compile_error: combined.compile_error,
                 }
             }

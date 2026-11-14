@@ -1,19 +1,48 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$defs\":{\"base\":{\"prefixItems\":[{}]}},\"$ref\":\"#/$defs/base\",\"type\":\"array\",\"unevaluatedItems\":false}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-(match instance {
+if validate_ref_0_errors(instance, __path, __errors) {
+            return true;
+        }
+        match instance {
             __Value::Array(arr) => {
-                arr.iter()
-                    .enumerate()
-                    .all(|(idx, item)| {
-                        if eval_items_ref_0(instance, arr, idx, item) {
-                            true
-                        } else {
-                            false
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if let __Value::Array(arr) = instance {
+                        let mut __unexpected: Vec<String> = Vec::new();
+                        for (idx, item) in arr.iter().enumerate() {
+                            if !(eval_items_ref_0(instance, arr, idx, item)) && !(false)
+                            {
+                                __unexpected.push(item.to_string());
+                            }
                         }
-                    })
+                        if !__unexpected.is_empty() {
+                            return Some(
+                                __err::unevaluated_items(
+                                    "/unevaluatedItems",
+                                    __path.into(),
+                                    instance,
+                                    __unexpected,
+                                ),
+                            );
+                        }
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
             }
-            _ => false,
-        }) && (validate_ref_0(instance))
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        false

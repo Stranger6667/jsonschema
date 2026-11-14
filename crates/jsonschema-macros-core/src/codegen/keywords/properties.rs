@@ -1,6 +1,6 @@
 use super::{
-    super::{expr::ValidateBlock, CompileContext, CompiledExpr},
-    additional_properties::{compile_first_unexpected_check, compile_wildcard_arm},
+    super::{CompileContext, CompiledExpr},
+    additional_properties::compile_wildcard_arm,
     object_pass::ClusterSubschemas,
     required,
 };
@@ -9,12 +9,10 @@ use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde_json::{Map, Value};
 
-fn compile_known_keys_precheck<E: ValueEmitter>(
-    properties: &Map<String, Value>,
-    schema_path: &str,
-) -> CompiledExpr {
+/// `is_valid` for an object whose keys must all be declared `properties`.
+fn known_keys_is_valid<E: ValueEmitter>(properties: &Map<String, Value>) -> TokenStream {
     let known_props: Vec<&str> = properties.keys().map(String::as_str).collect();
-    let is_valid = if known_props.is_empty() {
+    if known_props.is_empty() {
         E::object_is_empty(format_ident!("obj"))
     } else {
         let keys_iter = E::object_keys_iter(format_ident!("obj"));
@@ -24,16 +22,13 @@ fn compile_known_keys_precheck<E: ValueEmitter>(
                 matches!(#key_as_str, #(#known_props)|*)
             })
         }
-    };
-    let validate = compile_first_unexpected_check::<E>(&known_props, schema_path);
-    CompiledExpr::with_validate_blocks(is_valid, validate)
+    }
 }
 
 /// Compile `properties` together with the `additionalProperties` wildcard arm. This integrated
 /// form emits a single `obj.iter().all(...)` pass with a match on each key.
 ///
-/// `required` names are checked ahead of the property values, as the runtime does; `validate`
-/// tracks them in the same pass and reports a missing one before the first value error.
+/// `required` names are checked ahead of the property values, as the runtime does.
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     properties: &Map<String, Value>,
@@ -41,7 +36,6 @@ pub(crate) fn compile<E: ValueEmitter>(
     cluster: &ClusterSubschemas<'_>,
     required: &[&str],
 ) -> CompiledExpr {
-    let required_path = ctx.schema_path_for_keyword("required");
     let additional_properties_path = ctx.schema_path_for_keyword("additionalProperties");
     let use_known_keys_precheck = matches!(additional_properties, Some(Value::Bool(false)));
 
@@ -50,14 +44,8 @@ pub(crate) fn compile<E: ValueEmitter>(
     } else {
         compile_wildcard_arm(ctx, additional_properties, cluster.additional.as_ref())
     };
-    let known_keys_precheck = if use_known_keys_precheck {
-        compile_known_keys_precheck::<E>(properties, &additional_properties_path)
-    } else {
-        CompiledExpr::always_true()
-    };
 
     let compiled_props = &cluster.properties;
-    let mut single_pass_validate = None;
 
     let mut is_valid_match_arms = Vec::new();
     let mut all_arms_trivially_true = true;
@@ -72,10 +60,15 @@ pub(crate) fn compile<E: ValueEmitter>(
 
     let iter_trivially_true = all_arms_trivially_true && wildcard_arm_body.is_trivially_true();
 
-    // The single `obj.iter().all(...)` pass reused by `base_iter_check` below.
-    let main_iter_is_valid: Option<TokenStream> = if iter_trivially_true {
-        None
-    } else {
+    let errors = || {
+        build_errors_block::<E>(
+            compiled_props,
+            use_known_keys_precheck,
+            &wildcard_arm_body,
+            &additional_properties_path,
+        )
+    };
+    let compiled = if !iter_trivially_true {
         let key_as_str = E::key_as_str(format_ident!("key"));
         // With `additionalProperties: false` and no patternProperties, the wildcard arm
         // rejects unknown keys in this single pass, so `is_valid` needs no separate
@@ -92,70 +85,15 @@ pub(crate) fn compile<E: ValueEmitter>(
                 _ => #is_valid_wildcard
             }
         };
-        Some(E::object_iter_all(format_ident!("obj"), iter_body))
-    };
-
-    let base_iter_check: CompiledExpr = if let Some(main_is_valid) = main_iter_is_valid {
-        // With `additionalProperties: false` and no patternProperties, the wildcard arm reports the
-        // first unexpected key inline, so its error interleaves with covered-value errors in one pass.
-        let wildcard_validate = if use_known_keys_precheck {
-            let err_instance = E::err_instance(format_ident!("instance"));
-            let owned_key = E::key_to_owned(format_ident!("key"));
-            quote! {
-                return Some(__err::additional_properties(
-                    #additional_properties_path, __path.into(), #err_instance, vec![#owned_key],
-                ));
-            }
-        } else {
-            wildcard_arm_body.validate.as_token_stream()
-        };
-        let validate = build_validate_block::<E>(compiled_props, &wildcard_validate);
-        if !required.is_empty() {
-            single_pass_validate = Some(build_validate_with_required_block::<E>(
-                compiled_props,
-                &wildcard_validate,
-                required,
-                &required_path,
-            ));
-        }
-        let collect = build_collect_block::<E>(
-            compiled_props,
-            use_known_keys_precheck,
-            &wildcard_arm_body,
-            &additional_properties_path,
-        );
-        let base_is_valid = quote! {
-            {
-                #main_is_valid
-            }
-        };
-        CompiledExpr::with_validate_and_collect_blocks(base_is_valid, validate, collect)
+        let main_is_valid = E::object_iter_all(format_ident!("obj"), iter_body);
+        CompiledExpr::with_errors(quote! { { #main_is_valid } }, errors())
+    } else if use_known_keys_precheck {
+        // Trivial property values leave no covered-value errors to interleave with, so the
+        // known-keys check alone decides validity.
+        let known_keys_is_valid = known_keys_is_valid::<E>(properties);
+        CompiledExpr::with_errors(quote! { { #known_keys_is_valid } }, errors())
     } else {
         CompiledExpr::always_true()
-    };
-
-    let compiled = if base_iter_check.is_trivially_true() {
-        if known_keys_precheck.is_trivially_true() {
-            CompiledExpr::always_true()
-        } else {
-            // Trivial property values leave no covered-value errors to interleave with, so the
-            // known-keys precheck alone reports the first unexpected key.
-            let known_keys_is_valid = known_keys_precheck.is_valid_token_stream();
-            let precheck_validate = known_keys_precheck.validate.as_token_stream();
-            let precheck_collect = build_collect_block::<E>(
-                compiled_props,
-                use_known_keys_precheck,
-                &wildcard_arm_body,
-                &additional_properties_path,
-            );
-            CompiledExpr::with_validate_and_collect_blocks(
-                quote! { { #known_keys_is_valid } },
-                precheck_validate,
-                precheck_collect,
-            )
-        }
-    } else {
-        base_iter_check
     };
     if required.is_empty() {
         return compiled;
@@ -164,44 +102,17 @@ pub(crate) fn compile<E: ValueEmitter>(
         .iter()
         .map(|name| required::compile_single(ctx, name))
         .collect();
-    let mut combined = CompiledExpr::combine_and(required_checks.into_iter().chain([compiled]));
-    if let Some(validate) = single_pass_validate {
-        combined.validate = ValidateBlock::Expr(validate);
-    }
-    combined
+    CompiledExpr::combine_and(required_checks.into_iter().chain([compiled]))
 }
 
-/// Build the `collect` block. Pure `properties` iterates schema order (`obj.get`); fused
-/// `additionalProperties` cases iterate instance order, with `false` aggregating unexpected keys
-/// into one trailing error — matching the respective runtime validators.
-fn build_collect_block<E: ValueEmitter>(
+/// Build the errors block. It iterates the instance's keys, like `is_valid`, with
+/// `additionalProperties: false` aggregating unexpected keys into one trailing error.
+fn build_errors_block<E: ValueEmitter>(
     compiled_props: &[(&str, CompiledExpr)],
     use_known_keys_precheck: bool,
     wildcard_arm_body: &CompiledExpr,
     additional_properties_path: &str,
 ) -> TokenStream {
-    let fused = use_known_keys_precheck || !wildcard_arm_body.is_trivially_true();
-    if !fused {
-        let arms = compiled_props.iter().filter_map(|(name, compiled)| {
-            if compiled.is_trivially_true() {
-                return None;
-            }
-            let is_valid = compiled.is_valid_token_stream();
-            let child = compiled.collect.as_token_stream();
-            let get_expr = E::object_get(format_ident!("obj"), name);
-            Some(quote! {
-                if let Some(value) = #get_expr {
-                    let instance = value;
-                    if !(#is_valid) {
-                        let __path = &__path.push(#name);
-                        #child
-                    }
-                }
-            })
-        });
-        return quote! { #(#arms)* };
-    }
-
     let key_as_str = E::key_as_str(format_ident!("key"));
     let entries = E::object_iter_entries(format_ident!("obj"));
     let match_arms = compiled_props.iter().map(|(name, compiled)| {
@@ -209,7 +120,7 @@ fn build_collect_block<E: ValueEmitter>(
             return quote! { #name => {} };
         }
         let is_valid = compiled.is_valid_token_stream();
-        let child = compiled.collect.as_token_stream();
+        let child = compiled.errors.as_token_stream();
         quote! {
             #name => {
                 let instance = value;
@@ -229,143 +140,33 @@ fn build_collect_block<E: ValueEmitter>(
                 let key_str = #key_as_str;
                 match key_str {
                     #(#match_arms,)*
-                    _ => { __unexpected.push(#owned_key); }
+                    _ => {
+                        // `validate` reports the first unexpected key at once, like the runtime.
+                        if __errors.first_only() {
+                            return __errors.push(__err::additional_properties(
+                                #additional_properties_path, __path.into(), #err_instance, vec![#owned_key],
+                            ));
+                        }
+                        __unexpected.push(#owned_key);
+                    }
                 }
             }
             if !__unexpected.is_empty() {
-                __errors.push(__err::additional_properties(
+                if __errors.push(__err::additional_properties(
                     #additional_properties_path, __path.into(), #err_instance, __unexpected,
-                ));
+                )) { return true; }
             }
         }
     } else {
-        let wildcard_collect = wildcard_arm_body.collect.as_token_stream();
+        let wildcard_errors = wildcard_arm_body.errors.as_token_stream();
         quote! {
             for (key, value) in #entries {
                 let key_str = #key_as_str;
                 match key_str {
                     #(#match_arms,)*
-                    _ => { #wildcard_collect }
+                    _ => { #wildcard_errors }
                 }
             }
-        }
-    }
-}
-
-/// Build the `validate` block for the properties for-loop.
-fn build_validate_block<E: ValueEmitter>(
-    compiled_props: &[(&str, CompiledExpr)],
-    wildcard_validate: &TokenStream,
-) -> TokenStream {
-    let key_as_str = E::key_as_str(format_ident!("key"));
-    let entries = E::object_iter_entries(format_ident!("obj"));
-
-    let mut validate_arms = Vec::new();
-    for (name, compiled) in compiled_props {
-        let validate = compiled.validate.as_token_stream();
-        validate_arms.push(quote! {
-            #name => {
-                let instance = value;
-                let __path = &__path.push(#name);
-                #validate
-            }
-        });
-    }
-
-    let wildcard_validate_arm = quote! {
-        _ => { #wildcard_validate }
-    };
-
-    quote! {
-        for (key, value) in #entries {
-            let key_str = #key_as_str;
-            match key_str {
-                #(#validate_arms,)*
-                #wildcard_validate_arm
-            }
-        }
-    }
-}
-
-/// `validate` for the properties pass with `required` folded in: a flag per required name is set
-/// as its key goes by, and the first value error is held until the pass ends, so a missing
-/// required name is still reported first.
-fn build_validate_with_required_block<E: ValueEmitter>(
-    compiled_props: &[(&str, CompiledExpr)],
-    wildcard_validate: &TokenStream,
-    required: &[&str],
-    required_path: &str,
-) -> TokenStream {
-    let key_as_str = E::key_as_str(format_ident!("key"));
-    let entries = E::object_iter_entries(format_ident!("obj"));
-    let err_instance = E::err_instance(format_ident!("instance"));
-    let flags: Vec<_> = (0..required.len())
-        .map(|index| format_ident!("__req_{}", index))
-        .collect();
-    let flag_for = |name: &str| {
-        required
-            .iter()
-            .position(|required_name| *required_name == name)
-            .map(|index| &flags[index])
-    };
-
-    let mut arms = Vec::new();
-    for (name, compiled) in compiled_props {
-        let set_flag = flag_for(name).map(|flag| quote! { #flag = true; });
-        let hold_error = match &compiled.validate {
-            ValidateBlock::AlwaysValid => quote! {},
-            ValidateBlock::Expr(validate) => quote! {
-                if __first.is_none() {
-                    __first = (|| {
-                        let instance = value;
-                        let __path = &__path.push(#name);
-                        #validate
-                        None
-                    })();
-                }
-            },
-        };
-        arms.push(quote! { #name => { #set_flag #hold_error } });
-    }
-    let wildcard = if wildcard_validate.is_empty() {
-        quote! {}
-    } else {
-        quote! {
-            if __first.is_none() {
-                __first = (|| {
-                    #wildcard_validate
-                    None
-                })();
-            }
-        }
-    };
-    // A required name outside `properties` is still an additional property.
-    for (name, flag) in required.iter().zip(&flags) {
-        if !compiled_props.iter().any(|(property, _)| property == name) {
-            arms.push(quote! { #name => { #flag = true; #wildcard } });
-        }
-    }
-    let missing = required.iter().zip(&flags).map(|(name, flag)| {
-        quote! {
-            if !#flag {
-                return Some(__err::required(#required_path, __path.into(), #err_instance, #name));
-            }
-        }
-    });
-
-    quote! {
-        #(let mut #flags = false;)*
-        let mut __first = None;
-        for (key, value) in #entries {
-            let key_str = #key_as_str;
-            match key_str {
-                #(#arms,)*
-                _ => { #wildcard }
-            }
-        }
-        #(#missing)*
-        if __first.is_some() {
-            return __first;
         }
     }
 }

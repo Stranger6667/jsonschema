@@ -1,41 +1,84 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"oneOf\":[{\"properties\":{\"k\":{\"const\":1}},\"required\":[\"k\"],\"type\":\"object\"},{\"properties\":{\"k\":{\"const\":2}},\"required\":[\"k\"],\"type\":\"object\"}]}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-{
-            let __one_of_discriminator = match instance {
-                __Value::Object(obj) => {
-                    obj.get("k")
-                        .and_then(|value| {
-                            value
-                                .as_i64()
-                                .or_else(|| {
-                                    value
-                                        .as_f64()
-                                        .and_then(|float| {
-                                            (float.fract() == 0.0
-                                                && float >= -9_223_372_036_854_775_808.0_f64
-                                                && float < 9_223_372_036_854_775_808.0_f64)
-                                                .then_some(float as i64)
-                                        })
-                                })
-                        })
-                }
-                _ => None,
-            };
-            let mut matched = (matches!(__one_of_discriminator, Some(1i64))
-                && { is_branch_valid_0(instance) });
-            (if (matches!(__one_of_discriminator, Some(2i64))
-                && { is_branch_valid_1(instance) })
+if let Some(__e) = (|| -> Option<__VE<'_>> {
             {
-                if matched {
-                    false
-                } else {
-                    matched = true;
-                    true
+                let __one_of_discriminator = match instance {
+                    __Value::Object(obj) => {
+                        obj.get("k")
+                            .and_then(|value| {
+                                value
+                                    .as_i64()
+                                    .or_else(|| {
+                                        value
+                                            .as_f64()
+                                            .and_then(|float| {
+                                                (float.fract() == 0.0
+                                                    && float >= -9_223_372_036_854_775_808.0_f64
+                                                    && float < 9_223_372_036_854_775_808.0_f64)
+                                                    .then_some(float as i64)
+                                            })
+                                    })
+                            })
+                    }
+                    _ => None,
+                };
+                let mut __count = 0usize;
+                if (matches!(__one_of_discriminator, Some(1i64))
+                    && { is_branch_valid_0(instance) })
+                {
+                    __count += 1;
                 }
-            } else {
-                true
-            }) && matched
+                if (matches!(__one_of_discriminator, Some(2i64))
+                    && { is_branch_valid_1(instance) })
+                {
+                    __count += 1;
+                }
+                if __count != 1 {
+                    let mut __context = Vec::with_capacity(2usize);
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_0(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
+                    }
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_1(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
+                    }
+                    return Some(
+                        if __count == 0 {
+                            __err::one_of_not_valid(
+                                "/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
+                        } else {
+                            __err::one_of_multiple_valid(
+                                "/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
+                        },
+                    );
+                }
+            }
+            None
+        })() {
+            if __errors.push(__e) {
+                return true;
+            }
         }
+        false

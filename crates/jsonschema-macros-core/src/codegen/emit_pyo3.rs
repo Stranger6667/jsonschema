@@ -175,11 +175,6 @@ impl ValueEmitter for Pyo3Emitter {
         }
     }
 
-    fn object_get(object_expr: impl ToTokens, key: &str) -> TokenStream {
-        let key = Self::declare_key(key);
-        quote! { __ObjectExt::get(&#object_expr, #key) }
-    }
-
     fn object_iter_entries(object_expr: impl ToTokens) -> TokenStream {
         quote! { __ObjectExt::members(&#object_expr) }
     }

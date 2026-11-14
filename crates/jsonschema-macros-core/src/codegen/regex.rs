@@ -104,7 +104,7 @@ pub(super) struct RegexSite<'a> {
     pub(super) schema_path: &'a str,
     /// The `pattern` keyword's source pattern.
     pub(super) pattern: Option<&'a str>,
-    /// Emitted into `validate` or `collect_errors` code, where `__path` is the instance location.
+    /// Emitted into error-reporting code, where `__path` is the instance location.
     pub(super) located: bool,
 }
 

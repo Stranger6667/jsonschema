@@ -1,9 +1,23 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$schema\":\"https://json-schema.org/draft/2019-09/schema\",\"dependentRequired\":{},\"type\":\"object\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
-            __Value::Object(obj) => true,
-            _ => false,
+            __Value::Object(obj) => {}
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

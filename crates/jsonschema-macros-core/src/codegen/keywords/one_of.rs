@@ -113,7 +113,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         });
         let branch_helper = ctx.register_branch_helper(
             compiled.is_valid_token_stream(),
-            compiled.collect.as_token_stream(),
+            compiled.errors.as_token_stream(),
         );
         branch_collectors.push(format_ident!("collect_branch_errors_{}", branch_helper));
         let branch_is_valid = format_ident!("is_branch_valid_{}", branch_helper);
@@ -188,7 +188,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     let schema_path = ctx.schema_path_for_keyword("oneOf");
     let branch_count = branch_collectors.len();
 
-    CompiledExpr::with_validate_blocks(
+    CompiledExpr::from_first_error(
         is_valid,
         quote! {
             {
@@ -199,9 +199,9 @@ pub(crate) fn compile<E: ValueEmitter>(
                 if __count != 1 {
                     let mut __context = Vec::with_capacity(#branch_count);
                     #({
-                        let mut __branch_errors = Vec::new();
-                        #branch_collectors(instance, __path, &mut __branch_errors);
-                        __context.push(__branch_errors);
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = #branch_collectors(instance, __path, &mut __branch_errors);
+                        __context.push(__branch_errors.into_vec());
                     })*
                     return Some(if __count == 0 {
                         __err::one_of_not_valid(

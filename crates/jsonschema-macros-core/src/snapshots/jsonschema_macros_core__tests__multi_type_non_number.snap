@@ -1,9 +1,27 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"type\":[\"boolean\",\"null\",\"array\",\"object\"]}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-matches!(
+if !(matches!(
             instance, __Value::Bool(_) | __Value::Null | __Value::Array(_) |
             __Value::Object(_)
-        )
+        )) {
+            if __errors
+                .push(
+                    __err::multiple_types(
+                        "/type",
+                        __path.into(),
+                        instance,
+                        __JTS::empty()
+                            .insert(__JT::Boolean)
+                            .insert(__JT::Null)
+                            .insert(__JT::Array)
+                            .insert(__JT::Object),
+                    ),
+                )
+            {
+                return true;
+            }
+        }
+        false

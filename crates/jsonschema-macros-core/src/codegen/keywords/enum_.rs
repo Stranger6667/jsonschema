@@ -141,7 +141,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
 
     let is_valid = E::type_match(format_ident!("instance"), match_arms);
     let err_instance = E::err_instance(format_ident!("instance"));
-    CompiledExpr::with_validate_blocks(
+    CompiledExpr::from_first_error(
         is_valid.clone(),
         quote! {
             if !(#is_valid) {

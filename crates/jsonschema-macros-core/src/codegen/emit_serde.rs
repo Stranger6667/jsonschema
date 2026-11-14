@@ -138,11 +138,6 @@ impl ValueEmitter for SerdeEmitter {
         }
     }
 
-    fn object_get(object_expr: impl ToTokens, key: &str) -> TokenStream {
-        let key = Self::declare_key(key);
-        quote! { #object_expr.get(#key) }
-    }
-
     fn object_iter_entries(object_expr: impl ToTokens) -> TokenStream {
         quote! { #object_expr.iter() }
     }

@@ -1,7 +1,7 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"if\":{\"type\":\"integer\"},\"then\":{\"minimum\":10,\"multipleOf\":3}}"
-expression: collect_body(schema)
+expression: errors_body(schema)
 ---
 if match instance {
             __Value::Number(n) => __types::is_integer(n),
@@ -10,7 +10,7 @@ if match instance {
             match instance {
                 __Value::Number(n) => {
                     if !(__num::ge(n, 10u64)) {
-                        __errors
+                        if __errors
                             .push(
                                 __err::minimum(
                                     "/then/minimum",
@@ -18,10 +18,13 @@ if match instance {
                                     instance,
                                     __sj::Value::Number(__sj::Number::from(10u64)),
                                 ),
-                            );
+                            )
+                        {
+                            return true;
+                        }
                     }
                     if !(__num::is_multiple_of_integer(n, 3f64)) {
-                        __errors
+                        if __errors
                             .push(
                                 __err::multiple_of(
                                     "/then/multipleOf",
@@ -29,9 +32,13 @@ if match instance {
                                     instance,
                                     __sj::Value::Number(__sj::Number::from(3u64)),
                                 ),
-                            );
+                            )
+                        {
+                            return true;
+                        }
                     }
                 }
                 _ => {}
             }
         } else {}
+        false

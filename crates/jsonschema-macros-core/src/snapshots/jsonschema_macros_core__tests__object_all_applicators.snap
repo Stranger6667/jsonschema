@@ -1,43 +1,134 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"additionalProperties\":{\"type\":\"integer\"},\"maxProperties\":5,\"minProperties\":1,\"patternProperties\":{\"^x\":{\"type\":\"integer\"}},\"properties\":{\"a\":{}},\"propertyNames\":{\"minLength\":1},\"type\":\"object\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
-                ({
-                    let __object_pass = obj
-                        .iter()
-                        .all(|(key, instance)| {
-                            let mut covered = false;
-                            match key.as_str() {
-                                "a" => {
-                                    covered = true;
-                                }
-                                _ => {}
+                if !((obj.len() as u64) >= 1) {
+                    if __errors
+                        .push(
+                            __err::min_properties(
+                                "/minProperties",
+                                __path.into(),
+                                instance,
+                                1,
+                            ),
+                        )
+                    {
+                        return true;
+                    }
+                }
+                if !((obj.len() as u64) <= 5) {
+                    if __errors
+                        .push(
+                            __err::max_properties(
+                                "/maxProperties",
+                                __path.into(),
+                                instance,
+                                5,
+                            ),
+                        )
+                    {
+                        return true;
+                    }
+                }
+                for key in obj.keys() {
+                    let __key_val: __sj::Value = __sj::Value::String(key.clone());
+                    let mut __key_errors = __err::Errors::new(__errors.first_only());
+                    let _ = (|| -> bool {
+                        let s = key;
+                        let instance = &__key_val;
+                        let __errors = &mut __key_errors;
+                        if !(!s.is_empty()) {
+                            if __errors
+                                .push(
+                                    __err::min_length(
+                                        "/propertyNames/minLength",
+                                        __path.into(),
+                                        instance,
+                                        1,
+                                    ),
+                                )
+                            {
+                                return true;
                             }
-                            if key.as_str().starts_with("x") {
-                                if !(match instance {
-                                    __Value::Number(n) => __types::is_integer(n),
-                                    _ => false,
-                                }) {
-                                    return false;
-                                }
-                                covered = true;
+                        }
+                        false
+                    })();
+                    for __e in __key_errors.into_vec() {
+                        if __errors.push(__e.to_owned()) {
+                            return true;
+                        }
+                    }
+                }
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    let mut covered = false;
+                    match key_str {
+                        "a" => {
+                            covered = true;
+                        }
+                        _ => {}
+                    }
+                    if key.as_str().starts_with("x") {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(match instance {
+                            __Value::Number(n) => __types::is_integer(n),
+                            _ => false,
+                        }) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/patternProperties/^x/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::Integer,
+                                    ),
+                                )
+                            {
+                                return true;
                             }
-                            if !covered {
-                                if !(match instance {
-                                    __Value::Number(n) => __types::is_integer(n),
-                                    _ => false,
-                                }) {
-                                    return false;
-                                }
+                        }
+                        covered = true;
+                    }
+                    if !covered {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(match instance {
+                            __Value::Number(n) => __types::is_integer(n),
+                            _ => false,
+                        }) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/additionalProperties/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::Integer,
+                                    ),
+                                )
+                            {
+                                return true;
                             }
-                            true
-                        });
-                    __object_pass
-                }) && ((obj.len() as u64) >= 1) && ((obj.len() as u64) <= 5)
-                    && (obj.keys().all(|s| { !s.is_empty() }))
+                        }
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

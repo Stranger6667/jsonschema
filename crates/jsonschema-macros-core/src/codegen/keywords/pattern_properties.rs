@@ -1,7 +1,7 @@
 use super::{
     super::{
         analyze_pattern, compile_regex_match, errors::invalid_schema_type_expression,
-        expr::ValidateBlock, translate_and_validate_regex, CompileContext, CompiledExpr, RegexSite,
+        expr::ErrorsBlock, translate_and_validate_regex, CompileContext, CompiledExpr, RegexSite,
     },
     object_pass::ClusterSubschemas,
 };
@@ -39,12 +39,12 @@ pub(crate) fn compile<E: ValueEmitter>(
         }
         let schema_is_valid = schema_check.is_valid_token_stream();
 
-        let check = match &schema_check.validate {
-            ValidateBlock::Expr(expr) => {
-                let child_collect = schema_check.collect.as_token_stream();
+        let check = match &schema_check.errors {
+            ErrorsBlock::Expr(_) => {
+                let child_errors = schema_check.errors.as_token_stream();
                 let entries = E::object_iter_entries(format_ident!("obj"));
                 let key_as_str = E::key_as_str(format_ident!("key"));
-                CompiledExpr::with_validate_and_collect_blocks(
+                CompiledExpr::with_errors(
                     quote! {
                         #entries
                             .filter(|(key, _)| #key_matches_is_valid)
@@ -55,22 +55,13 @@ pub(crate) fn compile<E: ValueEmitter>(
                             if #key_matches {
                                 let instance = value;
                                 let __path = &__path.push(#key_as_str);
-                                #expr
-                            }
-                        }
-                    },
-                    quote! {
-                        for (key, value) in #entries {
-                            if #key_matches {
-                                let instance = value;
-                                let __path = &__path.push(#key_as_str);
-                                #child_collect
+                                #child_errors
                             }
                         }
                     },
                 )
             }
-            ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
+            ErrorsBlock::AlwaysValid => CompiledExpr::always_true(),
         };
         pattern_checks.push(check);
     }
@@ -87,7 +78,7 @@ pub(crate) fn compile<E: ValueEmitter>(
 pub(crate) struct KeyMatch {
     /// For `is_valid` code.
     pub(crate) is_valid: proc_macro2::TokenStream,
-    /// For `validate` and `collect_errors` code, where `__path` is the object's location.
+    /// For error-reporting code, where `__path` is the object's location.
     pub(crate) located: proc_macro2::TokenStream,
 }
 

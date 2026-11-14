@@ -77,28 +77,16 @@ define_dynamic_ops!(
     pop_dynamic_item_eval_n
 );
 
-// Parallel stacks holding validate() function pointers.
+// Parallel stacks holding error function pointers.
 define_recursive_ops!(
-    __JSONSCHEMA_RECURSIVE_VALIDATE_STACK,
-    push_recursive_validate,
-    pop_recursive_validate
+    __JSONSCHEMA_RECURSIVE_ERRORS_STACK,
+    push_recursive_errors,
+    pop_recursive_errors
 );
 define_dynamic_ops!(
-    __JSONSCHEMA_DYNAMIC_VALIDATE_STACK,
-    push_dynamic_validate,
-    pop_dynamic_validate_n
-);
-
-// Parallel stacks holding collect_errors() function pointers.
-define_recursive_ops!(
-    __JSONSCHEMA_RECURSIVE_COLLECT_STACK,
-    push_recursive_collect,
-    pop_recursive_collect
-);
-define_dynamic_ops!(
-    __JSONSCHEMA_DYNAMIC_COLLECT_STACK,
-    push_dynamic_collect,
-    pop_dynamic_collect_n
+    __JSONSCHEMA_DYNAMIC_ERRORS_STACK,
+    push_dynamic_errors,
+    pop_dynamic_errors_n
 );
 
 /// Push/pop emitters for one thread-local stack family, plus the accessor

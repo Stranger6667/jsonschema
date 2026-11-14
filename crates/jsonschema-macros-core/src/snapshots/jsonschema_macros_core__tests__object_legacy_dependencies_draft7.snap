@@ -1,11 +1,40 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"dependencies\":{\"a\":[\"b\"]},\"properties\":{\"a\":{}},\"type\":\"object\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
-                if obj.contains_key("a") { obj.contains_key("b") } else { true }
+                if obj.contains_key("a") {
+                    if !obj.contains_key("b") {
+                        if __errors
+                            .push(
+                                __err::required(
+                                    "/dependencies",
+                                    __path.into(),
+                                    instance,
+                                    "b",
+                                ),
+                            )
+                        {
+                            return true;
+                        }
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

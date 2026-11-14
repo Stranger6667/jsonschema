@@ -1,26 +1,74 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"allOf\":[{\"prefixItems\":[{\"type\":\"integer\"}]}],\"type\":\"array\",\"unevaluatedItems\":false}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-(match instance {
+match instance {
             __Value::Array(arr) => {
-                arr.iter()
-                    .enumerate()
-                    .all(|(idx, item)| { if idx < 1usize { true } else { false } })
-            }
-            _ => false,
-        })
-            && (match instance {
-                __Value::Array(arr) => {
-                    arr.get(0usize)
-                        .map_or(
-                            true,
-                            |instance| match instance {
-                                __Value::Number(n) => __types::is_integer(n),
-                                _ => false,
-                            },
-                        )
+                if let Some(instance) = arr.get(0usize) {
+                    if !(match instance {
+                        __Value::Number(n) => __types::is_integer(n),
+                        _ => false,
+                    }) {
+                        let __path = &__path.push(0usize);
+                        if !(match instance {
+                            __Value::Number(n) => __types::is_integer(n),
+                            _ => false,
+                        }) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/allOf/0/prefixItems/0/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::Integer,
+                                    ),
+                                )
+                            {
+                                return true;
+                            }
+                        }
+                    }
                 }
-                _ => true,
-            })
+            }
+            _ => {}
+        }
+        match instance {
+            __Value::Array(arr) => {
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if let __Value::Array(arr) = instance {
+                        let mut __unexpected: Vec<String> = Vec::new();
+                        for (idx, item) in arr.iter().enumerate() {
+                            if !(idx < 1usize) && !(false) {
+                                __unexpected.push(item.to_string());
+                            }
+                        }
+                        if !__unexpected.is_empty() {
+                            return Some(
+                                __err::unevaluated_items(
+                                    "/unevaluatedItems",
+                                    __path.into(),
+                                    instance,
+                                    __unexpected,
+                                ),
+                            );
+                        }
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        false

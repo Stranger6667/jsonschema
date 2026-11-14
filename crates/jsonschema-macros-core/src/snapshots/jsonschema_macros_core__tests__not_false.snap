@@ -1,6 +1,21 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"not\":false}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-!(false)
+if let Some(__e) = (|| -> Option<__VE<'_>> {
+            if false {
+                static NOT_SCHEMA: __Lazy<__sj::Value> = __Lazy::new(|| {
+                    __sj::from_str("false").expect("Failed to parse not schema")
+                });
+                return Some(
+                    __err::not("/not", __path.into(), instance, NOT_SCHEMA.clone()),
+                );
+            }
+            None
+        })() {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        false

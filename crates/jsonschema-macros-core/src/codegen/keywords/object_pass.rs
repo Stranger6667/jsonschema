@@ -1,5 +1,5 @@
 use super::{
-    super::{compile_schema, expr::ValidateBlock, CompileContext, CompiledExpr},
+    super::{compile_schema, expr::ErrorsBlock, CompileContext, CompiledExpr},
     pattern_properties::{key_match_expr, KeyMatch},
 };
 use crate::codegen::emit::ValueEmitter;
@@ -63,128 +63,11 @@ pub(crate) fn compile_cluster_subschemas<'a, E: ValueEmitter>(
     }
 }
 
-/// Single-pass `validate` for the object cluster: per key, validate the matching property, then
-/// matching patterns, then `additionalProperties` for keys covered by neither. Returns `None` when
-/// there is no `patternProperties` to merge or a pattern regex is invalid.
-pub(crate) fn compile_validate<E: ValueEmitter>(
-    ctx: &mut CompileContext<'_, E>,
-    cluster: &ClusterSubschemas<'_>,
-    additional_properties: Option<&Value>,
-) -> Option<TokenStream> {
-    if cluster.patterns.is_empty() {
-        return None;
-    }
-    let additional_properties_path = ctx.schema_path_for_keyword("additionalProperties");
-    let err_instance = E::err_instance(format_ident!("instance"));
-    let owned_key = E::key_to_owned(format_ident!("key"));
-
-    let (additional_properties_fallback, track_covered): (TokenStream, bool) =
-        match additional_properties {
-            Some(Value::Bool(false)) => (
-                quote! {
-                    if !covered {
-                        return Some(__err::additional_properties(
-                            #additional_properties_path, __path.into(), #err_instance, vec![#owned_key],
-                        ));
-                    }
-                },
-                true,
-            ),
-            Some(Value::Object(_)) => {
-                let check = cluster
-                    .additional
-                    .as_ref()
-                    .expect("additionalProperties schema precompiled");
-                match &check.validate {
-                    ValidateBlock::Expr(expr) => (
-                        quote! {
-                            if !covered {
-                                let instance = value;
-                                let __path = &__path.push(key_str);
-                                #expr
-                            }
-                        },
-                        true,
-                    ),
-                    ValidateBlock::AlwaysValid => (quote! {}, false),
-                }
-            }
-            _ => return None,
-        };
-    let set_covered = if track_covered {
-        quote! { covered = true; }
-    } else {
-        quote! {}
-    };
-    let covered_decl = if track_covered {
-        quote! { let mut covered = false; }
-    } else {
-        quote! {}
-    };
-
-    let mut match_arms: Vec<TokenStream> = Vec::new();
-    for (name_str, check) in &cluster.properties {
-        match &check.validate {
-            ValidateBlock::Expr(expr) => match_arms.push(quote! {
-                #name_str => {
-                    let instance = value;
-                    let __path = &__path.push(#name_str);
-                    #expr
-                    #set_covered
-                }
-            }),
-            ValidateBlock::AlwaysValid => match_arms.push(quote! {
-                #name_str => { #set_covered }
-            }),
-        }
-    }
-
-    let mut pattern_checks: Vec<TokenStream> = Vec::new();
-    for (_, key_match, check) in &cluster.patterns {
-        let Ok(key_match) = key_match else {
-            return None;
-        };
-        let key_match = &key_match.located;
-        let check = check.as_ref().expect("pattern subschema precompiled");
-        match &check.validate {
-            ValidateBlock::Expr(expr) => pattern_checks.push(quote! {
-                if #key_match {
-                    let instance = value;
-                    let __path = &__path.push(key_str);
-                    #expr
-                    #set_covered
-                }
-            }),
-            ValidateBlock::AlwaysValid => {
-                if track_covered {
-                    pattern_checks.push(quote! { if #key_match { #set_covered } });
-                }
-            }
-        }
-    }
-
-    let match_block = if match_arms.is_empty() {
-        quote! {}
-    } else {
-        quote! { match key_str { #(#match_arms)* _ => {} } }
-    };
-
-    let entries = E::object_iter_entries(format_ident!("obj"));
-    let key_as_str = E::key_as_str(format_ident!("key"));
-    Some(quote! {
-        for (key, value) in #entries {
-            let key_str = #key_as_str;
-            #covered_decl
-            #match_block
-            #(#pattern_checks)*
-            #additional_properties_fallback
-        }
-    })
-}
-
-/// Single-pass `collect` for the object cluster: like [`compile_validate`] but pushing instead of
-/// returning, with `additionalProperties: false` aggregating unexpected keys into one trailing error.
-pub(crate) fn compile_collect<E: ValueEmitter>(
+/// Single-pass errors block for the object cluster: per key, the matching property, then matching
+/// patterns, then `additionalProperties` for keys covered by neither, with `additionalProperties:
+/// false` aggregating unexpected keys into one trailing error. Returns `None` when there is no
+/// `patternProperties` to merge or a pattern regex is invalid.
+pub(crate) fn compile_errors<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     cluster: &ClusterSubschemas<'_>,
     additional_properties: Option<&Value>,
@@ -202,6 +85,12 @@ pub(crate) fn compile_collect<E: ValueEmitter>(
             Some(Value::Bool(false)) => (
                 quote! {
                     if !covered {
+                        // `validate` reports the first unexpected key at once, like the runtime.
+                        if __errors.first_only() {
+                            return __errors.push(__err::additional_properties(
+                                #additional_properties_path, __path.into(), #err_instance, vec![#owned_key],
+                            ));
+                        }
                         __unexpected.push(#owned_key);
                     }
                 },
@@ -212,21 +101,21 @@ pub(crate) fn compile_collect<E: ValueEmitter>(
                     .additional
                     .as_ref()
                     .expect("additionalProperties schema precompiled");
-                match &check.validate {
-                    ValidateBlock::Expr(_) => {
-                        let child_collect = check.collect.as_token_stream();
+                match &check.errors {
+                    ErrorsBlock::Expr(_) => {
+                        let child_errors = check.errors.as_token_stream();
                         (
                             quote! {
                                 if !covered {
                                     let instance = value;
                                     let __path = &__path.push(key_str);
-                                    #child_collect
+                                    #child_errors
                                 }
                             },
                             true,
                         )
                     }
-                    ValidateBlock::AlwaysValid => (quote! {}, false),
+                    ErrorsBlock::AlwaysValid => (quote! {}, false),
                 }
             }
             _ => return None,
@@ -244,19 +133,19 @@ pub(crate) fn compile_collect<E: ValueEmitter>(
 
     let mut match_arms: Vec<TokenStream> = Vec::new();
     for (name_str, check) in &cluster.properties {
-        match &check.validate {
-            ValidateBlock::Expr(_) => {
-                let child_collect = check.collect.as_token_stream();
+        match &check.errors {
+            ErrorsBlock::Expr(_) => {
+                let child_errors = check.errors.as_token_stream();
                 match_arms.push(quote! {
                     #name_str => {
                         let instance = value;
                         let __path = &__path.push(#name_str);
-                        #child_collect
+                        #child_errors
                         #set_covered
                     }
                 });
             }
-            ValidateBlock::AlwaysValid => match_arms.push(quote! {
+            ErrorsBlock::AlwaysValid => match_arms.push(quote! {
                 #name_str => { #set_covered }
             }),
         }
@@ -269,19 +158,19 @@ pub(crate) fn compile_collect<E: ValueEmitter>(
         };
         let key_match = &key_match.located;
         let check = check.as_ref().expect("pattern subschema precompiled");
-        match &check.validate {
-            ValidateBlock::Expr(_) => {
-                let child_collect = check.collect.as_token_stream();
+        match &check.errors {
+            ErrorsBlock::Expr(_) => {
+                let child_errors = check.errors.as_token_stream();
                 pattern_checks.push(quote! {
                     if #key_match {
                         let instance = value;
                         let __path = &__path.push(key_str);
-                        #child_collect
+                        #child_errors
                         #set_covered
                     }
                 });
             }
-            ValidateBlock::AlwaysValid => {
+            ErrorsBlock::AlwaysValid => {
                 if track_covered {
                     pattern_checks.push(quote! { if #key_match { #set_covered } });
                 }
@@ -303,9 +192,9 @@ pub(crate) fn compile_collect<E: ValueEmitter>(
     let aggregate = if is_false {
         quote! {
             if !__unexpected.is_empty() {
-                __errors.push(__err::additional_properties(
+                if __errors.push(__err::additional_properties(
                     #additional_properties_path, __path.into(), #err_instance, __unexpected,
-                ));
+                )) { return true; }
             }
         }
     } else {

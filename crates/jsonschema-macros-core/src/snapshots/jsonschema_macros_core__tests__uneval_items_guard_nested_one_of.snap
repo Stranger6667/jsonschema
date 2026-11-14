@@ -1,26 +1,72 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"anyOf\":[{\"oneOf\":[{\"prefixItems\":[{}]},{\"prefixItems\":[{},{}]}]}],\"type\":\"array\",\"unevaluatedItems\":false}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-(match instance {
-            __Value::Array(arr) => {
-                let __one_of_matches_0 = (true as usize) + (true as usize);
-                let __guard_0 = (|instance: &__Value| validate_ref_0(
-                    instance,
-                ))(instance);
-                arr.iter()
-                    .enumerate()
-                    .all(|(idx, item)| {
-                        if __guard_0
-                            && (__one_of_matches_0 == 1
-                                && ((true && (idx < 1usize)) || (true && (idx < 2usize))))
-                        {
-                            true
-                        } else {
-                            false
-                        }
-                    })
+if let Some(__e) = (|| -> Option<__VE<'_>> {
+            if !((is_branch_valid_2(instance))) {
+                let mut __context = Vec::with_capacity(1usize);
+                {
+                    let mut __branch_errors = __err::Errors::new(false);
+                    let _ = collect_branch_errors_2(
+                        instance,
+                        __path,
+                        &mut __branch_errors,
+                    );
+                    __context.push(__branch_errors.into_vec());
+                }
+                return Some(__err::any_of("/anyOf", __path.into(), instance, __context));
             }
-            _ => false,
-        }) && ((is_branch_valid_2(instance)))
+            None
+        })() {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        match instance {
+            __Value::Array(arr) => {
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if let __Value::Array(arr) = instance {
+                        let __one_of_matches_0 = (true as usize) + (true as usize);
+                        let __guard_0 = (|instance: &__Value| validate_ref_0(
+                            instance,
+                        ))(instance);
+                        let mut __unexpected: Vec<String> = Vec::new();
+                        for (idx, item) in arr.iter().enumerate() {
+                            if !(__guard_0
+                                && (__one_of_matches_0 == 1
+                                    && ((true && (idx < 1usize)) || (true && (idx < 2usize)))))
+                                && !(false)
+                            {
+                                __unexpected.push(item.to_string());
+                            }
+                        }
+                        if !__unexpected.is_empty() {
+                            return Some(
+                                __err::unevaluated_items(
+                                    "/unevaluatedItems",
+                                    __path.into(),
+                                    instance,
+                                    __unexpected,
+                                ),
+                            );
+                        }
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        false

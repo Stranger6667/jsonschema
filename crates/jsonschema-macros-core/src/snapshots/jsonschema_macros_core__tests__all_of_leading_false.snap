@@ -1,6 +1,28 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"allOf\":[false,{\"type\":\"string\"}]}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-(false) && (instance.is_string())
+if let Some(__e) = (|| -> Option<__VE<'_>> {
+            return Some(__err::false_schema("/allOf/0", __path.into(), instance));
+            None
+        })() {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        if !(instance.is_string()) {
+            if __errors
+                .push(
+                    __err::single_type(
+                        "/allOf/1/type",
+                        __path.into(),
+                        instance,
+                        __JT::String,
+                    ),
+                )
+            {
+                return true;
+            }
+        }
+        false

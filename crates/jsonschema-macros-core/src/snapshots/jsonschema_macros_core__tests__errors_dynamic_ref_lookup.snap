@@ -1,0 +1,160 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$defs\":{\"node\":{\"$dynamicAnchor\":\"node\",\"type\":[\"object\",\"boolean\"]}},\"properties\":{\"child\":{\"$dynamicRef\":\"#node\"}},\"type\":\"object\"}"
+expression: errors_body(schema)
+---
+__JSONSCHEMA_DYNAMIC_STACK
+            .with(|stack| {
+                stack.borrow_mut().push(("node", validate_ref_0));
+            });
+        __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push(("node", eval_ref_0));
+            });
+        __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push(("node", eval_items_ref_0));
+            });
+        __JSONSCHEMA_DYNAMIC_ERRORS_STACK
+            .with(|stack| {
+                stack.borrow_mut().push(("node", validate_ref_0_errors));
+            });
+        let __stop = (|| -> bool {
+            match instance {
+                __Value::Object(obj) => {
+                    for (key, value) in obj.iter() {
+                        let key_str = key.as_str();
+                        match key_str {
+                            "child" => {
+                                let instance = value;
+                                if !({
+                                    let __dynamic_target = __JSONSCHEMA_DYNAMIC_STACK
+                                        .with(|stack| {
+                                            stack
+                                                .borrow()
+                                                .iter()
+                                                .find(|(dynamic_anchor, _)| *dynamic_anchor == "node")
+                                                .map(|(_, is_valid)| *is_valid)
+                                        });
+                                    if let Some(target) = __dynamic_target {
+                                        {
+                                            let __mark = (
+                                                target as usize,
+                                                std::ptr::from_ref(instance) as usize,
+                                            );
+                                            let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                                .with(|__marks| {
+                                                    let mut __marks = __marks.borrow_mut();
+                                                    if __marks.contains(&__mark) {
+                                                        true
+                                                    } else {
+                                                        __marks.push(__mark);
+                                                        false
+                                                    }
+                                                });
+                                            if __reentered {
+                                                true
+                                            } else {
+                                                let __valid = target(instance);
+                                                __JSONSCHEMA_VALIDATE_MARK
+                                                    .with(|__marks| __marks.borrow_mut().pop());
+                                                __valid
+                                            }
+                                        }
+                                    } else {
+                                        validate_ref_0(instance)
+                                    }
+                                }) {
+                                    let __path = &__path.push("child");
+                                    {
+                                        let __dynamic_target_errors = __JSONSCHEMA_DYNAMIC_ERRORS_STACK
+                                            .with(|stack| {
+                                                stack
+                                                    .borrow()
+                                                    .iter()
+                                                    .find(|(dynamic_anchor, _)| *dynamic_anchor == "node")
+                                                    .map(|(_, errors)| *errors)
+                                            });
+                                        if let Some(target_errors) = __dynamic_target_errors {
+                                            {
+                                                let __mark = (
+                                                    target_errors as usize,
+                                                    std::ptr::from_ref(instance) as usize,
+                                                );
+                                                let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                                    .with(|__marks| {
+                                                        let mut __marks = __marks.borrow_mut();
+                                                        if __marks.contains(&__mark) {
+                                                            true
+                                                        } else {
+                                                            __marks.push(__mark);
+                                                            false
+                                                        }
+                                                    });
+                                                if !__reentered {
+                                                    let __stop = target_errors(instance, __path, __errors);
+                                                    __JSONSCHEMA_VALIDATE_MARK
+                                                        .with(|__marks| __marks.borrow_mut().pop());
+                                                    if __stop {
+                                                        return true;
+                                                    }
+                                                }
+                                            }
+                                        } else {
+                                            if validate_ref_0_errors(instance, __path, __errors) {
+                                                return true;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {
+                    if __errors
+                        .push(
+                            __err::single_type(
+                                "/type",
+                                __path.into(),
+                                instance,
+                                __JT::Object,
+                            ),
+                        )
+                    {
+                        return true;
+                    }
+                }
+            }
+            false
+        })();
+        __JSONSCHEMA_DYNAMIC_ERRORS_STACK
+            .with(|stack| {
+                let mut stack = stack.borrow_mut();
+                for _ in 0..1usize {
+                    stack.pop();
+                }
+            });
+        __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK
+            .with(|stack| {
+                let mut stack = stack.borrow_mut();
+                for _ in 0..1usize {
+                    stack.pop();
+                }
+            });
+        __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
+            .with(|stack| {
+                let mut stack = stack.borrow_mut();
+                for _ in 0..1usize {
+                    stack.pop();
+                }
+            });
+        __JSONSCHEMA_DYNAMIC_STACK
+            .with(|stack| {
+                let mut stack = stack.borrow_mut();
+                for _ in 0..1usize {
+                    stack.pop();
+                }
+            });
+        __stop

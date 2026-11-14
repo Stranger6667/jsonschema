@@ -46,7 +46,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
             let max_path = ctx.schema_path_for_keyword("maxLength");
             let min = proc_macro2::Literal::u64_unsuffixed(*min);
             let max = proc_macro2::Literal::u64_unsuffixed(*max);
-            items.push(CompiledExpr::with_validate_blocks(
+            items.push(CompiledExpr::from_first_error(
                 quote! { { let len = s.chars().count(); (len as u64) >= #min && (len as u64) <= #max } },
                 quote! {
                     let len = s.chars().count();

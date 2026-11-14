@@ -1,9 +1,33 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$schema\":\"http://json-schema.org/draft-06/schema#\",\"maxLength\":-0.0,\"type\":\"string\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
-            __Value::String(s) => s.is_empty(),
-            _ => false,
+            __Value::String(s) => {
+                if !(s.is_empty()) {
+                    if __errors
+                        .push(
+                            __err::max_length("/maxLength", __path.into(), instance, 0),
+                        )
+                    {
+                        return true;
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::String,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

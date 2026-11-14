@@ -1,23 +1,73 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"additionalProperties\":{\"type\":\"string\"},\"properties\":{\"a\":{\"type\":\"integer\"}},\"type\":\"object\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
-                obj.iter()
-                    .all(|(key, instance)| {
-                        let key_str = key.as_str();
-                        match key_str {
-                            "a" => {
-                                match instance {
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "a" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("a");
+                                if !(match instance {
                                     __Value::Number(n) => __types::is_integer(n),
                                     _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/properties/a/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
                                 }
                             }
-                            _ => instance.is_string(),
                         }
-                    })
+                        _ => {
+                            let instance = value;
+                            let __path = &__path.push(key_str);
+                            if !(instance.is_string()) {
+                                if __errors
+                                    .push(
+                                        __err::single_type(
+                                            "/additionalProperties/type",
+                                            __path.into(),
+                                            instance,
+                                            __JT::String,
+                                        ),
+                                    )
+                                {
+                                    return true;
+                                }
+                            }
+                        }
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

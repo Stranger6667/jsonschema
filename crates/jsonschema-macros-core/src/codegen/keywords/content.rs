@@ -74,7 +74,7 @@ pub(crate) fn compile<E: ValueEmitter>(
             };
             let (_, convert) = resolve_encoding(ctx, encoding_name)?;
             let encoding_path = ctx.schema_path_for_keyword("contentEncoding");
-            Some(CompiledExpr::with_validate_blocks(
+            Some(CompiledExpr::from_first_error(
                 quote! {
                     match #convert(s) {
                         Ok(Some(__decoded)) => #media_check(&__decoded),
@@ -100,7 +100,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 },
             ))
         } else {
-            Some(CompiledExpr::with_validate_blocks(
+            Some(CompiledExpr::from_first_error(
                 quote! { #media_check(s) },
                 quote! {
                     if !#media_check(s) {
@@ -117,7 +117,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         };
         let (check, _) = resolve_encoding(ctx, encoding_name)?;
         let encoding_path = ctx.schema_path_for_keyword("contentEncoding");
-        Some(CompiledExpr::with_validate_blocks(
+        Some(CompiledExpr::from_first_error(
             quote! { #check(s) },
             quote! {
                 if !#check(s) {

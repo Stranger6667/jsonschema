@@ -1,11 +1,43 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"multipleOf\":18446744073709551616,\"type\":\"number\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Number(n) => {
-                __num::check_compiled_multiple_of(n, "18446744073709551616")
+                if !(__num::check_compiled_multiple_of(n, "18446744073709551616")) {
+                    if __errors
+                        .push(
+                            __err::multiple_of(
+                                "/multipleOf",
+                                __path.into(),
+                                instance,
+                                {
+                                    static MULTIPLE_OF: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                        __sj::from_str("18446744073709551616").expect("multipleOf")
+                                    });
+                                    MULTIPLE_OF.clone()
+                                },
+                            ),
+                        )
+                    {
+                        return true;
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Number,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

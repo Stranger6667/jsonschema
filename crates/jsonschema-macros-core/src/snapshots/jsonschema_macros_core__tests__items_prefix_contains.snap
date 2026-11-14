@@ -1,31 +1,84 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"contains\":{\"type\":\"string\"},\"prefixItems\":[{\"type\":\"integer\"}],\"type\":\"array\",\"unevaluatedItems\":false}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Array(arr) => {
-                ((arr
-                    .get(0usize)
-                    .map_or(
-                        true,
-                        |instance| match instance {
+                if let Some(instance) = arr.get(0usize) {
+                    if !(match instance {
+                        __Value::Number(n) => __types::is_integer(n),
+                        _ => false,
+                    }) {
+                        let __path = &__path.push(0usize);
+                        if !(match instance {
                             __Value::Number(n) => __types::is_integer(n),
                             _ => false,
-                        },
-                    )) && (arr.iter().any(|instance| instance.is_string())))
-                    && (arr
-                        .iter()
-                        .enumerate()
-                        .all(|(idx, item)| {
-                            if (idx < 1usize
-                                || (|instance: &__Value| instance.is_string())(item))
+                        }) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/prefixItems/0/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::Integer,
+                                    ),
+                                )
                             {
-                                true
-                            } else {
-                                false
+                                return true;
                             }
-                        }))
+                        }
+                    }
+                }
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if !(arr.iter().any(|instance| instance.is_string())) {
+                        return Some(
+                            __err::contains("/contains", __path.into(), instance),
+                        );
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if let __Value::Array(arr) = instance {
+                        let mut __unexpected: Vec<String> = Vec::new();
+                        for (idx, item) in arr.iter().enumerate() {
+                            if !((idx < 1usize
+                                || (|instance: &__Value| instance.is_string())(item)))
+                                && !(false)
+                            {
+                                __unexpected.push(item.to_string());
+                            }
+                        }
+                        if !__unexpected.is_empty() {
+                            return Some(
+                                __err::unevaluated_items(
+                                    "/unevaluatedItems",
+                                    __path.into(),
+                                    instance,
+                                    __unexpected,
+                                ),
+                            );
+                        }
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

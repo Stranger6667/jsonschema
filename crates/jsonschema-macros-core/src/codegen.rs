@@ -147,7 +147,7 @@ pub(crate) fn compile_schema<E: ValueEmitter>(
         Value::Bool(true) => CompiledExpr::always_true(),
         Value::Bool(false) => {
             let schema_path = ctx.current_schema_path().to_owned();
-            CompiledExpr::with_validate_blocks(
+            CompiledExpr::from_first_error(
                 quote! { false },
                 quote! {
                     return Some(__err::false_schema(

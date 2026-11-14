@@ -1,0 +1,100 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"properties\":{\"a\":{\"type\":\"string\"},\"b\":{\"type\":\"integer\"}},\"required\":[\"a\",\"z\"],\"type\":\"object\"}"
+expression: errors_body(schema)
+---
+match instance {
+            __Value::Object(obj) => {
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if !(obj.contains_key("a")) {
+                        return Some(
+                            __err::required("/required", __path.into(), instance, "a"),
+                        );
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if !(obj.contains_key("z")) {
+                        return Some(
+                            __err::required("/required", __path.into(), instance, "z"),
+                        );
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "a" => {
+                            let instance = value;
+                            if !(instance.is_string()) {
+                                let __path = &__path.push("a");
+                                if !(instance.is_string()) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/properties/a/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::String,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "b" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("b");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/properties/b/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        false

@@ -72,7 +72,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 __result
             }
         };
-        let validate = E::if_array(
+        let first_error = E::if_array(
             format_ident!("instance"),
             quote! {
                 let __root_item_eval: fn(
@@ -96,7 +96,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 }
             },
         );
-        Some(CompiledExpr::with_validate_blocks(is_valid, validate))
+        Some(CompiledExpr::from_first_error(is_valid, first_error))
     } else {
         let all_expr = quote! {
             #iter_expr.enumerate().all(|(idx, item)| {
@@ -112,7 +112,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         } else {
             quote! { { #(#guard_bindings)* #all_expr } }
         };
-        let validate = E::if_array(
+        let first_error = E::if_array(
             format_ident!("instance"),
             quote! {
                 #(#guard_bindings)*
@@ -129,6 +129,6 @@ pub(crate) fn compile<E: ValueEmitter>(
                 }
             },
         );
-        Some(CompiledExpr::with_validate_blocks(is_valid, validate))
+        Some(CompiledExpr::from_first_error(is_valid, first_error))
     }
 }

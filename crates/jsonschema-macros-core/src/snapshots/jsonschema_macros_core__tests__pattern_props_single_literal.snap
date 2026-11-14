@@ -1,20 +1,50 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"patternProperties\":{\"^z$\":{}},\"type\":\"object\",\"unevaluatedProperties\":false}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
-                ({
-                    let __object_pass = obj.iter().all(|(key, instance)| { true });
-                    __object_pass
-                })
-                    && (obj
-                        .iter()
-                        .all(|(__key, __value)| {
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if let __Value::Object(obj) = instance {
+                        let mut __unexpected: Vec<String> = Vec::new();
+                        for (__key, __value) in obj.iter() {
                             let key_str = __key.as_str();
-                            if key_str == "z" { true } else { false }
-                        }))
+                            if !(key_str == "z") && !(false) {
+                                __unexpected.push(__key.clone());
+                            }
+                        }
+                        if !__unexpected.is_empty() {
+                            return Some(
+                                __err::unevaluated_properties(
+                                    "/unevaluatedProperties",
+                                    __path.into(),
+                                    instance,
+                                    __unexpected,
+                                ),
+                            );
+                        }
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

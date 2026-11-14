@@ -118,7 +118,7 @@ fn compile_equal_bounds<E: ValueEmitter>(
     let eq_check = equal_bound_check(min_value);
     let below_check = minmax::generate_numeric_check(ComparisonOp::Lt, min_value);
     let above_check = minmax::generate_numeric_check(ComparisonOp::Gt, min_value);
-    Some(CompiledExpr::with_validate_blocks(
+    Some(CompiledExpr::from_first_error(
         eq_check,
         quote! {
             if #below_check {

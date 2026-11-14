@@ -1,4 +1,4 @@
-use super::super::{compile_schema, expr::ValidateBlock, CompileContext, CompiledExpr};
+use super::super::{compile_schema, expr::ErrorsBlock, CompileContext, CompiledExpr};
 use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use serde_json::Value;
@@ -30,29 +30,23 @@ pub(crate) fn compile<E: ValueEmitter>(
                 return CompiledExpr::always_true();
             }
             let is_valid = validation.is_valid_token_stream();
-            match &validation.validate {
-                ValidateBlock::Expr(expr) => {
-                    let child_collect = validation.collect.as_token_stream();
+            match &validation.errors {
+                ErrorsBlock::Expr(_) => {
+                    let child_errors = validation.errors.as_token_stream();
                     let get_expr = E::array_get(format_ident!("arr"), idx);
-                    CompiledExpr::with_validate_and_collect_blocks(
+                    CompiledExpr::with_errors(
                         quote! { #get_expr.map_or(true, |instance| #is_valid) },
-                        quote! {
-                            if let Some(instance) = #get_expr {
-                                let __path = &__path.push(#idx);
-                                #expr
-                            }
-                        },
                         quote! {
                             if let Some(instance) = #get_expr {
                                 if !(#is_valid) {
                                     let __path = &__path.push(#idx);
-                                    #child_collect
+                                    #child_errors
                                 }
                             }
                         },
                     )
                 }
-                ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
+                ErrorsBlock::AlwaysValid => CompiledExpr::always_true(),
             }
         })
         .collect();

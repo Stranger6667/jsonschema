@@ -39,22 +39,15 @@ pub(crate) fn compile<E: ValueEmitter>(
     let else_is_valid = else_check
         .as_ref()
         .map_or_else(|| quote! { true }, CompiledExpr::is_valid_token_stream);
-    let then_validate = then_check
+    let then_errors = then_check
         .as_ref()
-        .map_or_else(|| quote! {}, |check| check.validate.as_token_stream());
-    let else_validate = else_check
+        .map_or_else(|| quote! {}, |check| check.errors.as_token_stream());
+    let else_errors = else_check
         .as_ref()
-        .map_or_else(|| quote! {}, |check| check.validate.as_token_stream());
-    let then_collect = then_check
-        .as_ref()
-        .map_or_else(|| quote! {}, |check| check.collect.as_token_stream());
-    let else_collect = else_check
-        .as_ref()
-        .map_or_else(|| quote! {}, |check| check.collect.as_token_stream());
+        .map_or_else(|| quote! {}, |check| check.errors.as_token_stream());
 
-    Some(CompiledExpr::with_validate_and_collect_blocks(
+    Some(CompiledExpr::with_errors(
         quote! { if #if_is_valid { #then_is_valid } else { #else_is_valid } },
-        quote! { if #if_is_valid { #then_validate } else { #else_validate } },
-        quote! { if #if_is_valid { #then_collect } else { #else_collect } },
+        quote! { if #if_is_valid { #then_errors } else { #else_errors } },
     ))
 }
