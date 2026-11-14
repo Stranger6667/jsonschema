@@ -741,11 +741,9 @@ mod __validator_impl {
                     match key_str {
                         "child" => {
                             let instance = value;
-                            if !(validate_ref_0(instance)) {
-                                let __path = &__path.push("child");
-                                if validate_ref_0_errors(instance, __path, __errors) {
-                                    return true;
-                                }
+                            let __path = &__path.push("child");
+                            if validate_ref_0_errors(instance, __path, __errors) {
+                                return true;
                             }
                         }
                         _ => {}
@@ -2155,11 +2153,9 @@ mod __validator_impl {
                         }
                         "tree" => {
                             let instance = value;
-                            if !(validate_ref_0(instance)) {
-                                let __path = &__path.push("tree");
-                                if validate_ref_0_errors(instance, __path, __errors) {
-                                    return true;
-                                }
+                            let __path = &__path.push("tree");
+                            if validate_ref_0_errors(instance, __path, __errors) {
+                                return true;
                             }
                         }
                         "tuple" => {

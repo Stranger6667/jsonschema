@@ -33,18 +33,20 @@ pub(crate) fn compile<E: ValueEmitter>(
             match &validation.errors {
                 ErrorsBlock::Expr(_) => {
                     let child_errors = validation.errors.as_token_stream();
+                    let errors = validation.guard_errors(&quote! {
+                        let __path = &__path.push(#idx);
+                        #child_errors
+                    });
                     let get_expr = E::array_get(format_ident!("arr"), idx);
                     CompiledExpr::with_errors(
                         quote! { #get_expr.map_or(true, |instance| #is_valid) },
                         quote! {
                             if let Some(instance) = #get_expr {
-                                if !(#is_valid) {
-                                    let __path = &__path.push(#idx);
-                                    #child_errors
-                                }
+                                #errors
                             }
                         },
                     )
+                    .with_skips_valid(validation.skips_valid)
                 }
                 ErrorsBlock::AlwaysValid => CompiledExpr::always_true(),
             }

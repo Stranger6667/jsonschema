@@ -92,10 +92,12 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     let mut sole: Option<SoleType> = None;
     let mut is_valid_arms = Vec::new();
     let mut errors_arms = Vec::new();
+    let mut skips_valid = true;
     let integer_guard = E::integer_number_guard(ctx.draft);
 
     if has_string {
         let for_string = keywords::string::compile(ctx, schema);
+        skips_valid &= for_string.skips_valid;
         if has_type_constraint || !for_string.is_trivially_true() {
             typed_arms += 1;
             is_valid_arms.push(E::match_string_arm(for_string.is_valid_token_stream()));
@@ -107,6 +109,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
 
     if has_number {
         let for_number = keywords::number::compile(ctx, schema);
+        skips_valid &= for_number.skips_valid;
         if has_type_constraint {
             let type_val = schema
                 .get("type")
@@ -152,6 +155,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
 
     if has_array {
         let for_array = keywords::array::compile(ctx, schema);
+        skips_valid &= for_array.skips_valid;
         if has_type_constraint || !for_array.is_trivially_true() {
             typed_arms += 1;
             sole = Some(SoleType::Array(
@@ -167,6 +171,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
 
     if has_object {
         let for_object = keywords::object::compile(ctx, schema);
+        skips_valid &= for_object.skips_valid;
         if has_type_constraint || !for_object.is_trivially_true() {
             typed_arms += 1;
             sole = Some(SoleType::Object(
@@ -258,6 +263,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
         is_valid: IsValidExpr::Expr(is_valid_ts),
         errors: ErrorsBlock::Expr(errors_ts),
         compile_error: false,
+        skips_valid,
     })
 }
 

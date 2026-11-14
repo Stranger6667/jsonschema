@@ -8,6 +8,9 @@ pub(crate) struct CompiledExpr {
     pub(crate) is_valid: IsValidExpr,
     pub(crate) errors: ErrorsBlock,
     pub(crate) compile_error: bool,
+    /// The errors block skips accepted instances on its own, through error functions that run
+    /// `is_valid` first, so a caller needs no `is_valid` guard before it.
+    pub(crate) skips_valid: bool,
 }
 
 #[derive(Clone)]
@@ -102,6 +105,7 @@ impl CompiledExpr {
             is_valid: IsValidExpr::AlwaysTrue,
             errors: ErrorsBlock::AlwaysValid,
             compile_error: false,
+            skips_valid: true,
         }
     }
 
@@ -135,6 +139,7 @@ impl CompiledExpr {
             is_valid: IsValidExpr::Expr(is_valid),
             errors: ErrorsBlock::Expr(TokenStream::new()),
             compile_error: true,
+            skips_valid: true,
         }
     }
 
@@ -171,6 +176,7 @@ impl CompiledExpr {
             }),
             is_valid: IsValidExpr::Expr(is_valid),
             compile_error: false,
+            skips_valid: false,
         }
     }
 
@@ -182,6 +188,7 @@ impl CompiledExpr {
             is_valid: IsValidExpr::Expr(is_valid),
             errors: report_first_error(&first_error),
             compile_error: false,
+            skips_valid: false,
         }
     }
 
@@ -191,12 +198,34 @@ impl CompiledExpr {
             is_valid: IsValidExpr::Expr(is_valid),
             errors: ErrorsBlock::Expr(errors),
             compile_error: false,
+            skips_valid: false,
+        }
+    }
+
+    pub(crate) fn with_skips_valid(mut self, skips_valid: bool) -> Self {
+        self.skips_valid = skips_valid;
+        self
+    }
+
+    /// `errors`, the code reporting this check's errors, behind an `is_valid` guard unless the
+    /// errors block skips accepted instances on its own.
+    pub(crate) fn guard_errors(&self, errors: &TokenStream) -> TokenStream {
+        if self.skips_valid {
+            errors.clone()
+        } else {
+            let is_valid = self.is_valid_token_stream();
+            quote! {
+                if !(#is_valid) {
+                    #errors
+                }
+            }
         }
     }
 
     /// Logical AND: simplifies trivially-true arms.
     pub(crate) fn and(self, other: Self) -> Self {
         let compile_error = self.compile_error || other.compile_error;
+        let skips_valid = self.skips_valid && other.skips_valid;
         let errors = self.errors.and(other.errors);
         let is_valid = match (self.is_valid, other.is_valid) {
             (IsValidExpr::AlwaysTrue, b) => b,
@@ -209,6 +238,7 @@ impl CompiledExpr {
             is_valid,
             errors,
             compile_error,
+            skips_valid,
         }
     }
 

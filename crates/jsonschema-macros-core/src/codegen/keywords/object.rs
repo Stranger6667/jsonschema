@@ -344,6 +344,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
                 is_valid: IsValidExpr::Expr(is_valid),
                 errors: combined.errors,
                 compile_error: combined.compile_error,
+                skips_valid: combined.skips_valid,
             }
         }
         None => CompiledExpr::combine_and(checks.into_iter().map(|(check, _)| check)),
