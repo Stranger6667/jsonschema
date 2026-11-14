@@ -518,10 +518,11 @@ fn parse_methods(input: ParseStream) -> syn::Result<context::MethodGates> {
             "is_valid" => methods.is_valid = value.value,
             "validate" => methods.validate = value.value,
             "iter_errors" => methods.iter_errors = value.value,
+            "evaluate" => methods.evaluate = value.value,
             _ => {
                 return Err(syn::Error::new_spanned(
                     key,
-                    "Unknown methods key. Expected `is_valid`, `validate`, or `iter_errors`",
+                    "Unknown methods key. Expected `is_valid`, `validate`, `iter_errors`, or `evaluate`",
                 ));
             }
         }
@@ -531,10 +532,10 @@ fn parse_methods(input: ParseStream) -> syn::Result<context::MethodGates> {
         }
     }
 
-    if !(methods.is_valid || methods.validate || methods.iter_errors) {
+    if !(methods.is_valid || methods.validate || methods.iter_errors || methods.evaluate) {
         return Err(syn::Error::new(
             proc_macro2::Span::call_site(),
-            "At least one of `is_valid`, `validate`, or `iter_errors` must be enabled",
+            "At least one of `is_valid`, `validate`, `iter_errors`, or `evaluate` must be enabled",
         ));
     }
 
@@ -949,6 +950,12 @@ so the generated methods cannot depend on type parameters",
     let recompile_trigger = quote! {
         #(#recompile_triggers)*
     };
+    if attr.methods.evaluate && !matches!(attr.backend, Backend::SerdeJson) {
+        return Err(syn::Error::new(
+            proc_macro2::Span::call_site(),
+            "`evaluate` is not available for this backend yet",
+        ));
+    }
     let tokens = match attr.backend {
         Backend::SerdeJson => crate::codegen::generate_from_config::<
             crate::codegen::emit_serde::SerdeEmitter,

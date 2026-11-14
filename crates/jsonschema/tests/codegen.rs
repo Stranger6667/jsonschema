@@ -5656,3 +5656,50 @@ fn test_engine_syntax_regex_format_is_checked_per_engine() {
         assert!(!EngineSyntaxRegexFormatValidator::is_valid(&instance));
     }
 }
+
+#[jsonschema::validator(schema = "true", methods = { evaluate = true })]
+struct EvaluateTrue;
+
+#[jsonschema::validator(schema = "false", methods = { evaluate = true })]
+struct EvaluateFalse;
+
+#[jsonschema::validator(schema = "{}", methods = { evaluate = true })]
+struct EvaluateEmpty;
+
+#[jsonschema::validator(
+    schema = "false",
+    base_uri = "https://example.com/root.json",
+    methods = { evaluate = true }
+)]
+struct EvaluateFalseWithBase;
+
+fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
+    [
+        serde_json::to_value(evaluation.list()).expect("list output serializes"),
+        serde_json::to_value(evaluation.hierarchical()).expect("hierarchical output serializes"),
+    ]
+}
+
+type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
+
+#[test_case(EvaluateTrue::evaluate, serde_json::json!(true), None ; "true_schema")]
+#[test_case(EvaluateFalse::evaluate, serde_json::json!(false), None ; "false_schema")]
+#[test_case(EvaluateEmpty::evaluate, serde_json::json!({}), None ; "empty_schema")]
+#[test_case(EvaluateFalseWithBase::evaluate, serde_json::json!(false), Some("https://example.com/root.json") ; "false_schema_with_base")]
+fn test_evaluate_matches_runtime(
+    evaluate: EvaluateFn,
+    schema: serde_json::Value,
+    base_uri: Option<&str>,
+) {
+    let mut options = jsonschema::options();
+    if let Some(base_uri) = base_uri {
+        options = options.with_base_uri(base_uri);
+    }
+    let runtime = options.build(&schema).expect("valid schema");
+    for instance in [serde_json::json!(null), serde_json::json!({"a": [1, "x"]})] {
+        assert_eq!(
+            evaluation_outputs(&evaluate(&instance)),
+            evaluation_outputs(&runtime.evaluate(&instance)),
+        );
+    }
+}

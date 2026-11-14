@@ -284,10 +284,18 @@ impl ValueEmitter for SerdeEmitter {
                 }
             }
         });
+        let evaluate = methods.evaluate.then(|| {
+            quote! {
+                pub(super) fn entry_evaluate(instance: &__Value) -> jsonschema::Evaluation {
+                    evaluate(instance)
+                }
+            }
+        });
         quote! {
             #is_valid
             #validate
             #iter_errors
+            #evaluate
         }
     }
 
@@ -323,10 +331,18 @@ impl ValueEmitter for SerdeEmitter {
                 }
             }
         });
+        let evaluate = methods.evaluate.then(|| {
+            quote! {
+                pub fn evaluate(instance: &#anonymous) -> #runtime_crate::Evaluation {
+                    #impl_mod_name::entry_evaluate(instance)
+                }
+            }
+        });
         quote! {
             #is_valid
             #validate
             #iter_errors
+            #evaluate
         }
     }
 
