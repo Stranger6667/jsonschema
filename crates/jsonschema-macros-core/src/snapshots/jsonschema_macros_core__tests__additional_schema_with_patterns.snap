@@ -1,31 +1,68 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"additionalProperties\":{\"type\":\"string\"},\"patternProperties\":{\"^x\":{\"type\":\"integer\"}},\"type\":\"object\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
-                let __object_pass = obj
-                    .iter()
-                    .all(|(key, instance)| {
-                        let mut covered = false;
-                        if key.as_str().starts_with("x") {
-                            if !(match instance {
-                                __Value::Number(n) => __types::is_integer(n),
-                                _ => false,
-                            }) {
-                                return false;
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    let mut covered = false;
+                    if key.as_str().starts_with("x") {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(match instance {
+                            __Value::Number(n) => __types::is_integer(n),
+                            _ => false,
+                        }) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/patternProperties/^x/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::Integer,
+                                    ),
+                                )
+                            {
+                                return true;
                             }
-                            covered = true;
                         }
-                        if !covered {
-                            if !(instance.is_string()) {
-                                return false;
+                        covered = true;
+                    }
+                    if !covered {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        if !(instance.is_string()) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/additionalProperties/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::String,
+                                    ),
+                                )
+                            {
+                                return true;
                             }
                         }
-                        true
-                    });
-                __object_pass
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

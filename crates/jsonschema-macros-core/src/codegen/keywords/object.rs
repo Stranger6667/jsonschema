@@ -41,7 +41,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
 ) -> CompiledExpr {
     // Each check carries a flag: `true` marks the object cluster
     // (properties/patternProperties/additionalProperties/required) whose `is_valid` is
-    // replaced by the unified single pass; `validate` still uses every check in order.
+    // replaced by the unified single pass; errors still come from every check in order.
     let mut checks: Vec<(CompiledExpr, bool)> = Vec::new();
     let validation_vocab_enabled = ctx.supports_validation_vocabulary();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
@@ -235,15 +235,10 @@ pub(in super::super) fn compile<E: ValueEmitter>(
     if let Some(pattern_properties_value) =
         pattern_properties_value.filter(|_| additional_properties_fused)
     {
-        if let Some(validate) =
-            object_pass::compile_validate(ctx, &cluster, additional_properties_schema)
+        if let Some(errors) =
+            object_pass::compile_errors(ctx, &cluster, additional_properties_schema)
         {
-            let collect = object_pass::compile_collect(ctx, &cluster, additional_properties_schema)
-                .expect("compile_collect mirrors compile_validate's applicability");
-            checks.push((
-                CompiledExpr::with_validate_and_collect_blocks(quote! { true }, validate, collect),
-                true,
-            ));
+            checks.push((CompiledExpr::with_errors(quote! { true }, errors), true));
         } else {
             // Invalid pattern regex: fall back to per-keyword checks so the diagnostic surfaces.
             if let Some(props) = properties_map {
@@ -347,8 +342,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
             };
             CompiledExpr {
                 is_valid: IsValidExpr::Expr(is_valid),
-                validate: combined.validate,
-                collect: combined.collect,
+                errors: combined.errors,
                 compile_error: combined.compile_error,
             }
         }

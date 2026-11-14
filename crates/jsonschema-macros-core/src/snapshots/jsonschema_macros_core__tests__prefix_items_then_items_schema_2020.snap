@@ -1,20 +1,64 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"items\":{\"type\":\"string\"},\"prefixItems\":[{\"type\":\"integer\"}],\"type\":\"array\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Array(arr) => {
-                (arr.iter().skip(1usize).all(|instance| instance.is_string()))
-                    && (arr
-                        .get(0usize)
-                        .map_or(
-                            true,
-                            |instance| match instance {
-                                __Value::Number(n) => __types::is_integer(n),
-                                _ => false,
-                            },
-                        ))
+                for (idx, item) in arr.iter().enumerate().skip(1usize) {
+                    let instance = item;
+                    if !(instance.is_string()) {
+                        let __path = &__path.push(idx);
+                        if !(instance.is_string()) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/items/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::String,
+                                    ),
+                                )
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
+                if let Some(instance) = arr.get(0usize) {
+                    if !(match instance {
+                        __Value::Number(n) => __types::is_integer(n),
+                        _ => false,
+                    }) {
+                        let __path = &__path.push(0usize);
+                        if !(match instance {
+                            __Value::Number(n) => __types::is_integer(n),
+                            _ => false,
+                        }) {
+                            if __errors
+                                .push(
+                                    __err::single_type(
+                                        "/prefixItems/0/type",
+                                        __path.into(),
+                                        instance,
+                                        __JT::Integer,
+                                    ),
+                                )
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

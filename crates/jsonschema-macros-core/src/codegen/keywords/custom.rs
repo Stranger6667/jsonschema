@@ -44,7 +44,7 @@ pub(crate) fn compile<E: ValueEmitter>(
             });
     };
 
-    CompiledExpr::with_validate_and_collect_blocks(
+    CompiledExpr::with_errors(
         quote! {
             {
                 #lazy
@@ -53,27 +53,16 @@ pub(crate) fn compile<E: ValueEmitter>(
         },
         quote! {
             #lazy
-            if let Some(__err) = __custom::validate(
+            if __custom::errors(
                 &**#static_ident,
                 &instance,
                 __path.into(),
                 #schema_path,
                 #name,
-            ) {
-                return Some(__err);
-            }
-        },
-        quote! {
-            #lazy
-            let __custom_path: __paths::Location = __path.into();
-            __custom::collect_errors(
-                &**#static_ident,
-                &instance,
-                &__custom_path,
-                #schema_path,
-                #name,
                 __errors,
-            );
+            ) {
+                return true;
+            }
         },
     )
 }

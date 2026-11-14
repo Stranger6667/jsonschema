@@ -12,7 +12,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     match value.as_bool() {
         Some(true) => {
             let schema_path = ctx.schema_path_for_keyword("uniqueItems");
-            Some(CompiledExpr::with_validate_blocks(
+            Some(CompiledExpr::from_first_error(
                 is_unique.clone(),
                 quote! {
                     if !#is_unique {

@@ -15,10 +15,8 @@ use super::{
     keywords::unevaluated::{compile_index_evaluated_expr, compile_key_evaluated_expr, GuardHoist},
     refs::resolve_ref,
     stack_emit::{
-        pop_dynamic_collect_n, pop_dynamic_validate_n, pop_recursive_collect,
-        pop_recursive_validate, push_dynamic_collect, push_dynamic_validate,
-        push_recursive_collect, push_recursive_validate, stack_scoped_body, IS_VALID_FAMILY,
-        ITEM_EVAL_FAMILY, KEY_EVAL_FAMILY,
+        pop_dynamic_errors_n, pop_recursive_errors, push_dynamic_errors, push_recursive_errors,
+        stack_scoped_body, IS_VALID_FAMILY, ITEM_EVAL_FAMILY, KEY_EVAL_FAMILY,
     },
 };
 
@@ -384,116 +382,58 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                 } else {
                     quote! {}
                 };
-                // Store the validate body so $recursiveRef/$dynamicRef dispatch
-                // in validate() context finds the right validate function.
                 {
-                    let validate_stmts = compiled.validate.as_token_stream();
-                    let validate_ident = format_ident!("{}_validate", func_name);
-                    let recursive_validate_push = if ctx.uses_recursive_ref {
-                        push_recursive_validate(&validate_ident, is_recursive_anchor)
+                    let errors_stmts = compiled.errors.as_token_stream();
+                    let errors_body = if recursive_push.is_empty() && dynamic_push.is_empty() {
+                        quote! { #errors_stmts false }
                     } else {
-                        quote! {}
-                    };
-                    let recursive_validate_pop = if ctx.uses_recursive_ref {
-                        pop_recursive_validate()
-                    } else {
-                        quote! {}
-                    };
-                    let dynamic_validate_pushes: Vec<_> = dynamic_bindings
-                        .iter()
-                        .map(|b| {
-                            let binding_validate_ident =
-                                format_ident!("{}_validate", b.is_valid_name);
-                            push_dynamic_validate(&b.anchor, &binding_validate_ident)
-                        })
-                        .collect();
-                    let dynamic_binding_count = dynamic_bindings.len();
-                    let dynamic_validate_push = if ctx.uses_dynamic_ref {
-                        quote! { #(#dynamic_validate_pushes)* }
-                    } else {
-                        quote! {}
-                    };
-                    let dynamic_validate_pop = if ctx.uses_dynamic_ref {
-                        pop_dynamic_validate_n(dynamic_binding_count)
-                    } else {
-                        quote! {}
-                    };
-                    let validate_body = if recursive_validate_push.is_empty()
-                        && dynamic_validate_push.is_empty()
-                        && recursive_push.is_empty()
-                        && dynamic_push.is_empty()
-                    {
-                        quote! { #validate_stmts None }
-                    } else {
-                        // Use an IIFE to capture early returns so the stack is always popped.
-                        quote! {
-                            #recursive_push
-                            #recursive_validate_push
-                            #dynamic_push
-                            #dynamic_validate_push
-                            let __r = (|| -> Option<__VE<'__i>> {
-                                #validate_stmts
-                                None
-                            })();
-                            #dynamic_validate_pop
-                            #dynamic_pop
-                            #recursive_validate_pop
-                            #recursive_pop
-                            if let Some(__e) = __r { return Some(__e); }
-                            None
-                        }
-                    };
-                    ctx.is_valid_fns
-                        .set_validate_body(&func_name, validate_body);
-                }
-                {
-                    let collect_stmts = compiled.collect.as_token_stream();
-                    let collect_body = if recursive_push.is_empty() && dynamic_push.is_empty() {
-                        quote! { #collect_stmts }
-                    } else {
-                        // Collect never returns early, so push/pop wrap the statements directly.
-                        let recursive_collect_push = if ctx.uses_recursive_ref {
-                            let collect_ident = format_ident!("{}_collect_errors", func_name);
-                            push_recursive_collect(&collect_ident, is_recursive_anchor)
+                        let errors_ident = format_ident!("{}_errors", func_name);
+                        let recursive_errors_push = if ctx.uses_recursive_ref {
+                            push_recursive_errors(&errors_ident, is_recursive_anchor)
                         } else {
                             quote! {}
                         };
-                        let recursive_collect_pop = if ctx.uses_recursive_ref {
-                            pop_recursive_collect()
+                        let recursive_errors_pop = if ctx.uses_recursive_ref {
+                            pop_recursive_errors()
                         } else {
                             quote! {}
                         };
-                        let dynamic_collect_pushes: Vec<_> = dynamic_bindings
+                        let dynamic_errors_pushes: Vec<_> = dynamic_bindings
                             .iter()
                             .map(|b| {
-                                let binding_collect_ident =
-                                    format_ident!("{}_collect_errors", b.is_valid_name);
-                                push_dynamic_collect(&b.anchor, &binding_collect_ident)
+                                let binding_errors_ident =
+                                    format_ident!("{}_errors", b.is_valid_name);
+                                push_dynamic_errors(&b.anchor, &binding_errors_ident)
                             })
                             .collect();
-                        let dynamic_collect_push = if ctx.uses_dynamic_ref {
-                            quote! { #(#dynamic_collect_pushes)* }
+                        let dynamic_errors_push = if ctx.uses_dynamic_ref {
+                            quote! { #(#dynamic_errors_pushes)* }
                         } else {
                             quote! {}
                         };
-                        let dynamic_collect_pop = if ctx.uses_dynamic_ref {
-                            pop_dynamic_collect_n(dynamic_bindings.len())
+                        let dynamic_errors_pop = if ctx.uses_dynamic_ref {
+                            pop_dynamic_errors_n(dynamic_bindings.len())
                         } else {
                             quote! {}
                         };
+                        // A closure captures the early return, so the stacks are always popped.
                         quote! {
                             #recursive_push
-                            #recursive_collect_push
+                            #recursive_errors_push
                             #dynamic_push
-                            #dynamic_collect_push
-                            #collect_stmts
-                            #dynamic_collect_pop
+                            #dynamic_errors_push
+                            let __stop = (|| -> bool {
+                                #errors_stmts
+                                false
+                            })();
+                            #dynamic_errors_pop
                             #dynamic_pop
-                            #recursive_collect_pop
+                            #recursive_errors_pop
                             #recursive_pop
+                            __stop
                         }
                     };
-                    ctx.is_valid_fns.set_collect_body(&func_name, collect_body);
+                    ctx.is_valid_fns.set_errors_body(&func_name, errors_body);
                 }
                 if recursive_push.is_empty() && dynamic_push.is_empty() {
                     compiled.into_token_stream()
@@ -510,16 +450,9 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                     }
                 }
             } else {
-                // Non-recursive, non-dynamic: store the complete validate function body.
-                let validate_stmts = match &compiled.validate {
-                    super::expr::ValidateBlock::Expr(v) => v.clone(),
-                    super::expr::ValidateBlock::AlwaysValid => quote! {},
-                };
-                let validate_body = quote! { #validate_stmts None };
+                let errors_stmts = compiled.errors.as_token_stream();
                 ctx.is_valid_fns
-                    .set_validate_body(&func_name, validate_body);
-                ctx.is_valid_fns
-                    .set_collect_body(&func_name, compiled.collect.as_token_stream());
+                    .set_errors_body(&func_name, quote! { #errors_stmts false });
                 compiled.into_token_stream()
             }
         })

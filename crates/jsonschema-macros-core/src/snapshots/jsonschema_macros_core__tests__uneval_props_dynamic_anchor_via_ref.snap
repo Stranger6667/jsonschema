@@ -1,15 +1,53 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$defs\":{\"anchored\":{\"$dynamicAnchor\":\"node\",\"properties\":{\"a\":{}}}},\"$ref\":\"#/$defs/anchored\",\"type\":\"object\",\"unevaluatedProperties\":false}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-(match instance {
+if validate_ref_0_errors(instance, __path, __errors) {
+            return true;
+        }
+        match instance {
             __Value::Object(obj) => {
-                obj.iter()
-                    .all(|(__key, __value)| {
-                        let key_str = __key.as_str();
-                        if eval_ref_0(instance, obj, key_str) { true } else { false }
-                    })
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if let __Value::Object(obj) = instance {
+                        let mut __unexpected: Vec<String> = Vec::new();
+                        for (__key, __value) in obj.iter() {
+                            let key_str = __key.as_str();
+                            if !(eval_ref_0(instance, obj, key_str)) && !(false) {
+                                __unexpected.push(__key.clone());
+                            }
+                        }
+                        if !__unexpected.is_empty() {
+                            return Some(
+                                __err::unevaluated_properties(
+                                    "/unevaluatedProperties",
+                                    __path.into(),
+                                    instance,
+                                    __unexpected,
+                                ),
+                            );
+                        }
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
             }
-            _ => false,
-        }) && (validate_ref_0(instance))
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        false

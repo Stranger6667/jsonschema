@@ -1,0 +1,68 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"oneOf\":[{\"properties\":{\"kind\":{\"const\":\"circle\"},\"radius\":{\"type\":\"number\"}},\"required\":[\"kind\"],\"type\":\"object\"},{\"properties\":{\"kind\":{\"const\":\"square\"},\"side\":{\"type\":\"number\"}},\"required\":[\"kind\"],\"type\":\"object\"}]}"
+expression: errors_body(schema)
+---
+if let Some(__e) = (|| -> Option<__VE<'_>> {
+            {
+                let __one_of_discriminator = match instance {
+                    __Value::Object(obj) => obj.get("kind").and_then(__Value::as_str),
+                    _ => None,
+                };
+                let mut __count = 0usize;
+                if (matches!(__one_of_discriminator, Some("circle"))
+                    && { is_branch_valid_0(instance) })
+                {
+                    __count += 1;
+                }
+                if (matches!(__one_of_discriminator, Some("square"))
+                    && { is_branch_valid_1(instance) })
+                {
+                    __count += 1;
+                }
+                if __count != 1 {
+                    let mut __context = Vec::with_capacity(2usize);
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_0(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
+                    }
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_1(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
+                    }
+                    return Some(
+                        if __count == 0 {
+                            __err::one_of_not_valid(
+                                "/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
+                        } else {
+                            __err::one_of_multiple_valid(
+                                "/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
+                        },
+                    );
+                }
+            }
+            None
+        })() {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        false

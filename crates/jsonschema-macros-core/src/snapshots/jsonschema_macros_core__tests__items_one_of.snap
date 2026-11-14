@@ -1,72 +1,139 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"oneOf\":[{\"prefixItems\":[{\"const\":1}]},{\"prefixItems\":[{\"const\":2},{}]}],\"type\":\"array\",\"unevaluatedItems\":false}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-(match instance {
-            __Value::Array(arr) => {
-                let __guard_0 = (|instance: &__Value| match instance {
-                    __Value::Array(arr) => {
-                        arr.get(0usize)
-                            .map_or(
-                                true,
-                                |instance| {
-                                    static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
-                                        __sj::from_str("1").expect("Failed to parse const number")
-                                    });
-                                    match instance {
-                                        __Value::Number(n) => __cmp::equal_numbers(n, &*EXPECTED),
-                                        _ => false,
-                                    }
-                                },
-                            )
+if let Some(__e) = (|| -> Option<__VE<'_>> {
+            {
+                let mut __count = 0usize;
+                if is_branch_valid_0(instance) {
+                    __count += 1;
+                }
+                if is_branch_valid_1(instance) {
+                    __count += 1;
+                }
+                if __count != 1 {
+                    let mut __context = Vec::with_capacity(2usize);
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_0(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
                     }
-                    _ => true,
-                })(instance);
-                let __guard_1 = (|instance: &__Value| match instance {
-                    __Value::Array(arr) => {
-                        arr.get(0usize)
-                            .map_or(
-                                true,
-                                |instance| {
-                                    static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
-                                        __sj::from_str("2").expect("Failed to parse const number")
-                                    });
-                                    match instance {
-                                        __Value::Number(n) => __cmp::equal_numbers(n, &*EXPECTED),
-                                        _ => false,
-                                    }
-                                },
-                            )
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_1(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
                     }
-                    _ => true,
-                })(instance);
-                let __one_of_matches_0 = (__guard_0 as usize) + (__guard_1 as usize);
-                arr.iter()
-                    .enumerate()
-                    .all(|(idx, item)| {
-                        if __one_of_matches_0 == 1
-                            && ((__guard_0 && (idx < 1usize))
-                                || (__guard_1 && (idx < 2usize)))
-                        {
-                            true
+                    return Some(
+                        if __count == 0 {
+                            __err::one_of_not_valid(
+                                "/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
                         } else {
-                            false
-                        }
-                    })
+                            __err::one_of_multiple_valid(
+                                "/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
+                        },
+                    );
+                }
             }
-            _ => false,
-        })
-            && ({
-                let mut matched = is_branch_valid_0(instance);
-                (if is_branch_valid_1(instance) {
-                    if matched {
-                        false
-                    } else {
-                        matched = true;
-                        true
+            None
+        })() {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        match instance {
+            __Value::Array(arr) => {
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if let __Value::Array(arr) = instance {
+                        let __guard_0 = (|instance: &__Value| match instance {
+                            __Value::Array(arr) => {
+                                arr.get(0usize)
+                                    .map_or(
+                                        true,
+                                        |instance| {
+                                            static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                                __sj::from_str("1").expect("Failed to parse const number")
+                                            });
+                                            match instance {
+                                                __Value::Number(n) => __cmp::equal_numbers(n, &*EXPECTED),
+                                                _ => false,
+                                            }
+                                        },
+                                    )
+                            }
+                            _ => true,
+                        })(instance);
+                        let __guard_1 = (|instance: &__Value| match instance {
+                            __Value::Array(arr) => {
+                                arr.get(0usize)
+                                    .map_or(
+                                        true,
+                                        |instance| {
+                                            static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                                __sj::from_str("2").expect("Failed to parse const number")
+                                            });
+                                            match instance {
+                                                __Value::Number(n) => __cmp::equal_numbers(n, &*EXPECTED),
+                                                _ => false,
+                                            }
+                                        },
+                                    )
+                            }
+                            _ => true,
+                        })(instance);
+                        let __one_of_matches_0 = (__guard_0 as usize)
+                            + (__guard_1 as usize);
+                        let mut __unexpected: Vec<String> = Vec::new();
+                        for (idx, item) in arr.iter().enumerate() {
+                            if !(__one_of_matches_0 == 1
+                                && ((__guard_0 && (idx < 1usize))
+                                    || (__guard_1 && (idx < 2usize)))) && !(false)
+                            {
+                                __unexpected.push(item.to_string());
+                            }
+                        }
+                        if !__unexpected.is_empty() {
+                            return Some(
+                                __err::unevaluated_items(
+                                    "/unevaluatedItems",
+                                    __path.into(),
+                                    instance,
+                                    __unexpected,
+                                ),
+                            );
+                        }
                     }
-                } else {
-                    true
-                }) && matched
-            })
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        false

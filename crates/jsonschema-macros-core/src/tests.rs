@@ -12,12 +12,8 @@ pub(crate) fn is_valid_body(schema: Value) -> String {
     extract_is_valid_body(&schema_to_code(schema))
 }
 
-fn validate_body(schema: Value) -> String {
-    extract_fn_body(&schema_to_code(schema), "pub(super) fn validate")
-}
-
-fn collect_body(schema: Value) -> String {
-    extract_fn_body(&schema_to_code(schema), "pub(super) fn collect_errors")
+fn errors_body(schema: Value) -> String {
+    extract_fn_body(&schema_to_code(schema), "pub(super) fn errors")
 }
 
 fn extract_is_valid_body(code: &str) -> String {
@@ -318,7 +314,7 @@ fn methods_is_valid_off_drops_only_public_wrapper() {
 }
 
 #[test]
-fn methods_validate_off_drops_validate_functions() {
+fn methods_validate_off_drops_only_public_wrapper() {
     let code = schema_to_code_with_methods(
         branchy_schema(),
         crate::context::MethodGates {
@@ -327,10 +323,9 @@ fn methods_validate_off_drops_validate_functions() {
         },
     );
     assert!(!code.contains("pub fn validate"), "{code}");
-    assert!(!code.contains("pub(super) fn validate"), "{code}");
-    assert!(!code.contains("_validate"), "{code}");
-    // `iter_errors` keeps the error-collection functions.
-    extract_fn_body(&code, "pub(super) fn collect_errors");
+    assert!(!code.contains("run_validate"), "{code}");
+    // `iter_errors` keeps the error functions.
+    extract_fn_body(&code, "pub(super) fn errors");
 }
 
 #[test]
@@ -344,12 +339,12 @@ fn methods_iter_errors_off_drops_only_public_wrapper() {
     );
     assert!(!code.contains("pub fn iter_errors"), "{code}");
     assert!(!code.contains("entry_iter_errors"), "{code}");
-    // `validate` builds `anyOf` error context from the collection functions.
-    extract_fn_body(&code, "pub(super) fn collect_errors");
+    // `validate` reports through the error functions.
+    extract_fn_body(&code, "pub(super) fn errors");
 }
 
 #[test]
-fn methods_validate_and_iter_errors_off_drop_collection() {
+fn methods_validate_and_iter_errors_off_drop_error_functions() {
     let code = schema_to_code_with_methods(
         branchy_schema(),
         crate::context::MethodGates {
@@ -358,9 +353,8 @@ fn methods_validate_and_iter_errors_off_drop_collection() {
             ..Default::default()
         },
     );
-    assert!(!code.contains("collect_errors"), "{code}");
+    assert!(!code.contains("__err::Errors"), "{code}");
     assert!(!code.contains("collect_branch_errors"), "{code}");
-    assert!(!code.contains("_validate"), "{code}");
     extract_is_valid_body(&code);
 }
 
@@ -840,58 +834,25 @@ fn empty_prefix_items_generates_no_op() {
 #[test_case(r#"{"type":"object","patternProperties":{"^\\S*$":{}},"unevaluatedProperties":false}"#, "pattern_props_no_whitespace_uneval" ; "pattern_props_no_whitespace_uneval")]
 #[test_case(r#"{"type":"array","prefixItems":[{"type":"integer"}],"items":{}}"#, "prefix_items_then_trivial_items" ; "prefix_items_then_trivial_items")]
 #[test_case(r#"{"oneOf":[{"properties":{"k":{"const":"a"},"x":{"type":"integer"}},"required":["k"],"additionalProperties":false},{"properties":{"k":{"const":"b"}},"required":["k"],"additionalProperties":false}]}"#, "one_of_vacuous_object_discriminator" ; "one_of_vacuous_object_discriminator")]
-#[test_case(r##"{"$defs":{"a":{"properties":{"k":{"const":"a"}},"required":["k"],"additionalProperties":false},"b":{"properties":{"k":{"const":"b"}},"required":["k"],"additionalProperties":false}},"oneOf":[{"$ref":"#/$defs/a"},{"$ref":"#/$defs/b"}]}"##, "one_of_ref_vacuous_discriminator" ; "one_of_ref_vacuous_discriminator")]
-#[test_case(r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"type":"object","properties":{"k":{"const":"b"}},"required":["k"]}]}"#, "one_of_single_vacuous_not_guarded" ; "one_of_single_vacuous_not_guarded")]
-#[test_case(r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"properties":{"k":{"const":"b"}},"required":["k"]},{"type":"string"}]}"#, "one_of_vacuous_with_non_object_branch_not_guarded" ; "one_of_vacuous_with_non_object_branch_not_guarded")]
-#[test_case(r#"{"oneOf":[{"properties":{"k":{"const":"a"}},"required":["k"]},{"properties":{"k":{"const":"b"}},"required":["k"]},{"properties":{"z":{"type":"integer"}}}]}"#, "one_of_vacuous_uncovered_branch_not_guarded" ; "one_of_vacuous_uncovered_branch_not_guarded")]
-#[test_case(r#"{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"}}}"#, "required_fused_into_properties" ; "required_fused_into_properties")]
-#[test_case(r#"{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"additionalProperties":false}"#, "required_fused_with_additional_false" ; "required_fused_with_additional_false")]
-#[test_case(r#"{"type":"object","required":["a"],"additionalProperties":{"type":"string"}}"#, "required_fused_with_additional_schema" ; "required_fused_with_additional_schema")]
-#[test_case(r#"{"type":"object","required":["a","b"]}"#, "required_only_not_fused" ; "required_only_not_fused")]
-#[test_case(r#"{"type":"object","required":["k"],"properties":{"k":{"type":"string"}},"oneOf":[{"required":["a"]},{"required":["b"]}]}"#, "typed_check_before_untyped_applicators" ; "typed_check_before_untyped_applicators")]
-#[test_case(r##"{"$defs":{"s":{"type":"string","format":"uri"}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}}"##, "property_names_ref_string_only" ; "property_names_ref_string_only")]
-#[test_case(r#"{"type":"object","propertyNames":{"type":"string"}}"#, "property_names_type_string_only" ; "property_names_type_string_only")]
-#[test_case(r##"{"$defs":{"s":{"type":"string","pattern":"^a"}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}}"##, "property_names_ref_pattern_stays_generic" ; "property_names_ref_pattern_stays_generic")]
-#[test_case(r##"{"$defs":{"s":{"minProperties":1}},"type":"object","propertyNames":{"$ref":"#/$defs/s"}}"##, "property_names_ref_non_string_stays_generic" ; "property_names_ref_non_string_stays_generic")]
-#[test_case(r##"{"$defs":{"s":{"type":"string"}},"type":"object","propertyNames":{"$ref":"#/$defs/s","minLength":2}}"##, "property_names_ref_with_sibling_stays_generic" ; "property_names_ref_with_sibling_stays_generic")]
-#[test_case(r##"{"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]}},"type":"object","properties":{"child":{"$dynamicRef":"#node"}}}"##, "dynamic_ref_lookup" ; "dynamic_ref_lookup")]
-#[test_case(r#"{"$schema":"http://json-schema.org/draft-07/schema#","type":"array","items":[{"type":"string"}],"additionalItems":false,"maxItems":1}"#, "additional_items_false_subsumed_by_max_items" ; "additional_items_false_subsumed_by_max_items")]
-#[test_case(r#"{"type":"string","allOf":[{"minLength":1},{"maxLength":5}]}"#, "typed_string_before_all_of" ; "typed_string_before_all_of")]
-fn codegen_is_valid_body_snapshot(schema_json: &str, snap_name: &str) {
+#[test_case(r##"{"$defs":{"a":{"properties":{"k":{"const":"a"}},"required":["k"],"additionalProperties":false},"b":{"properties":{"k":{"const":"b"}},"required":["k"],"additionalProperties":false}},"oneOf":[{"$ref":"#/$defs/a"},{"$ref":"#/$defs/b"}]}"##, "errors_one_of_ref_vacuous_discriminator" ; "one_of_ref_vacuous_discriminator")]
+#[test_case(r#"{"oneOf":[{"type":"object","required":["kind"],"properties":{"kind":{"const":"circle"},"radius":{"type":"number"}}},{"type":"object","required":["kind"],"properties":{"kind":{"const":"square"},"side":{"type":"number"}}}]}"#, "errors_one_of_typed_discriminator" ; "one_of_typed_discriminator")]
+#[test_case(r#"{"oneOf":[{"type":"null"},{"type":"object","required":["kind"],"properties":{"kind":{"const":"circle"}}},{"type":"object","required":["kind"],"properties":{"kind":{"const":"square"}}}]}"#, "errors_one_of_typed_with_null_branch" ; "one_of_typed_with_null_branch")]
+#[test_case(r#"{"oneOf":[{"type":"string"},{"type":"number"}]}"#, "errors_one_of_no_discriminator" ; "one_of_no_discriminator")]
+#[test_case(r#"{"type":"object","required":["a"],"properties":{"a":{"type":"string"}},"additionalProperties":false}"#, "errors_properties_uses_bound_obj" ; "properties_uses_bound_obj")]
+#[test_case(r#"{"type":"object","properties":{"a":{"type":"integer"}},"patternProperties":{"^x":{"type":"string"}},"additionalProperties":false}"#, "errors_object_pass_uses_bound_obj" ; "object_pass_uses_bound_obj")]
+#[test_case(r#"{"type":"object","required":["a","z"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}}}"#, "errors_properties_with_required" ; "properties_with_required")]
+#[test_case(r#"{"properties":{"a":{"type":"integer"},"b":{"type":"integer"}}}"#, "errors_properties_instance_order" ; "properties_instance_order")]
+#[test_case(r#"{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"additionalProperties":false}"#, "errors_required_fused_with_additional_false" ; "required_fused_with_additional_false")]
+#[test_case(r#"{"type":"object","properties":{"a":{}},"patternProperties":{"^x":{"type":"integer"}},"additionalProperties":{"type":"integer"},"propertyNames":{"minLength":1}}"#, "errors_object_all_applicators" ; "object_all_applicators")]
+#[test_case(r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"array","prefixItems":[{"type":"integer"}],"items":{"type":"string"}}"#, "errors_prefix_items_then_items_schema_2020" ; "prefix_items_then_items_schema_2020")]
+#[test_case(r##"{"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]}},"type":"object","properties":{"child":{"$dynamicRef":"#node"}}}"##, "errors_dynamic_ref_lookup" ; "dynamic_ref_lookup")]
+#[cfg_attr(not(feature = "arbitrary-precision"), test_case(r#"{"if":{"type":"integer"},"then":{"minimum":10,"multipleOf":3}}"#, "errors_if_then" ; "if_then"))]
+#[cfg_attr(feature = "arbitrary-precision", test_case(r#"{"if":{"type":"integer"},"then":{"minimum":10,"multipleOf":3}}"#, "errors_if_then_arbitrary" ; "if_then"))]
+fn codegen_errors_body_snapshot(schema_json: &str, snap_name: &str) {
     let schema: Value = serde_json::from_str(schema_json).expect("valid schema json");
     let description = serde_json::to_string(&schema).expect("schema serialization");
     insta::with_settings!({ description => &description }, {
-        insta::assert_snapshot!(snap_name, is_valid_body(schema));
-    });
-}
-
-#[test_case(r##"{"$defs":{"a":{"properties":{"k":{"const":"a"}},"required":["k"],"additionalProperties":false},"b":{"properties":{"k":{"const":"b"}},"required":["k"],"additionalProperties":false}},"oneOf":[{"$ref":"#/$defs/a"},{"$ref":"#/$defs/b"}]}"##, "one_of_ref_vacuous_discriminator_validate" ; "one_of_ref_vacuous_discriminator_validate")]
-#[test_case(r#"{"oneOf":[{"type":"object","required":["kind"],"properties":{"kind":{"const":"circle"},"radius":{"type":"number"}}},{"type":"object","required":["kind"],"properties":{"kind":{"const":"square"},"side":{"type":"number"}}}]}"#, "one_of_typed_discriminator_validate" ; "one_of_typed_discriminator_validate")]
-#[test_case(r#"{"oneOf":[{"type":"null"},{"type":"object","required":["kind"],"properties":{"kind":{"const":"circle"}}},{"type":"object","required":["kind"],"properties":{"kind":{"const":"square"}}}]}"#, "one_of_typed_with_null_branch_validate" ; "one_of_typed_with_null_branch_validate")]
-#[test_case(r#"{"oneOf":[{"type":"string"},{"type":"number"}]}"#, "one_of_no_discriminator_validate" ; "one_of_no_discriminator_validate")]
-#[test_case(r#"{"type":"object","required":["a"],"properties":{"a":{"type":"string"}},"additionalProperties":false}"#, "properties_validate_uses_bound_obj" ; "properties_validate_uses_bound_obj")]
-#[test_case(r#"{"type":"object","properties":{"a":{"type":"integer"}},"patternProperties":{"^x":{"type":"string"}},"additionalProperties":false}"#, "object_pass_validate_uses_bound_obj" ; "object_pass_validate_uses_bound_obj")]
-#[test_case(r#"{"type":"object","required":["a","z"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}}}"#, "properties_validate_tracks_required" ; "properties_validate_tracks_required")]
-fn codegen_validate_body_snapshot(schema_json: &str, snap_name: &str) {
-    let schema: Value = serde_json::from_str(schema_json).expect("valid schema json");
-    let description = serde_json::to_string(&schema).expect("schema serialization");
-    insta::with_settings!({ description => &description }, {
-        insta::assert_snapshot!(snap_name, validate_body(schema));
-    });
-}
-
-#[test_case(r#"{"properties":{"a":{"type":"integer"},"b":{"type":"integer"}}}"#, "collect_properties_schema_order" ; "collect_properties_schema_order")]
-#[test_case(r#"{"type":"object","required":["a","b"],"properties":{"a":{"type":"string"},"b":{"type":"integer"}},"additionalProperties":false}"#, "collect_required_fused_with_additional_false" ; "collect_required_fused_with_additional_false")]
-#[test_case(r#"{"type":"object","properties":{"a":{}},"patternProperties":{"^x":{"type":"integer"}},"additionalProperties":{"type":"integer"},"propertyNames":{"minLength":1}}"#, "collect_object_all_applicators" ; "collect_object_all_applicators")]
-#[test_case(r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","type":"array","prefixItems":[{"type":"integer"}],"items":{"type":"string"}}"#, "collect_prefix_items_then_items_schema_2020" ; "collect_prefix_items_then_items_schema_2020")]
-#[test_case(r##"{"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]}},"type":"object","properties":{"child":{"$dynamicRef":"#node"}}}"##, "collect_dynamic_ref_lookup" ; "collect_dynamic_ref_lookup")]
-#[cfg_attr(not(feature = "arbitrary-precision"), test_case(r#"{"if":{"type":"integer"},"then":{"minimum":10,"multipleOf":3}}"#, "collect_if_then" ; "collect_if_then"))]
-#[cfg_attr(feature = "arbitrary-precision", test_case(r#"{"if":{"type":"integer"},"then":{"minimum":10,"multipleOf":3}}"#, "collect_if_then_arbitrary" ; "collect_if_then"))]
-fn codegen_collect_body_snapshot(schema_json: &str, snap_name: &str) {
-    let schema: Value = serde_json::from_str(schema_json).expect("valid schema json");
-    let description = serde_json::to_string(&schema).expect("schema serialization");
-    insta::with_settings!({ description => &description }, {
-        insta::assert_snapshot!(snap_name, collect_body(schema));
+        insta::assert_snapshot!(snap_name, errors_body(schema));
     });
 }
 

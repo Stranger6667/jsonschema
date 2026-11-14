@@ -31,7 +31,7 @@ impl PatternCoverage {
 
 /// Build the coverage checks for `patternProperties`, or `Err` with the first
 /// invalid-regex diagnostic.
-/// `located` emits the checks into `validate` code, where `__path` is the object's location.
+/// `located` emits the checks into error-reporting code, where `__path` is the object's location.
 pub(super) fn build_pattern_coverage<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     pattern_properties: Option<&Value>,

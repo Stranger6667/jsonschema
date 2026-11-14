@@ -58,49 +58,29 @@ mod __validator_impl {
             _ => false,
         }
     }
-    pub(super) fn validate<'__i>(
+    pub(super) fn errors<'__i>(
         instance: &'__i __Value,
         __path: &__paths::LazyLocation,
-    ) -> Option<__VE<'__i>> {
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
         __JSONSCHEMA_URI_FORMAT_CACHE.with_borrow_mut(|cache| cache.clear());
         match instance {
             __Value::String(s) => {
-                if !(__cached_uri(s)) {
-                    return Some(
-                        __err::format("/format", __path.into(), instance, "uri"),
-                    );
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if !(__cached_uri(s)) {
+                        return Some(
+                            __err::format("/format", __path.into(), instance, "uri"),
+                        );
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
                 }
             }
             _ => {
-                return Some(
-                    __err::single_type("/type", __path.into(), instance, __JT::String),
-                );
-            }
-        }
-        None
-    }
-    pub(super) fn collect_errors<'__i>(
-        instance: &'__i __Value,
-        __path: &__paths::LazyLocation,
-        __errors: &mut Vec<__VE<'__i>>,
-    ) {
-        __JSONSCHEMA_URI_FORMAT_CACHE.with_borrow_mut(|cache| cache.clear());
-        match instance {
-            __Value::String(s) => {
-                __errors
-                    .extend(
-                        (|| -> Option<__VE<'_>> {
-                            if !(__cached_uri(s)) {
-                                return Some(
-                                    __err::format("/format", __path.into(), instance, "uri"),
-                                );
-                            }
-                            None
-                        })(),
-                    );
-            }
-            _ => {
-                __errors
+                if __errors
                     .push(
                         __err::single_type(
                             "/type",
@@ -108,20 +88,26 @@ mod __validator_impl {
                             instance,
                             __JT::String,
                         ),
-                    );
+                    )
+                {
+                    return true;
+                }
             }
         }
+        false
     }
     pub(super) fn run_is_valid(instance: &__Value) -> bool {
         is_valid(instance)
     }
     pub(super) fn run_validate<'__i>(instance: &'__i __Value) -> Option<__VE<'__i>> {
-        validate(instance, &__paths::LazyLocation::new())
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
     }
     pub(super) fn run_collect_errors<'__i>(instance: &'__i __Value) -> Vec<__VE<'__i>> {
-        let mut errors = Vec::new();
-        collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
-        errors
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {
         run_is_valid(instance)

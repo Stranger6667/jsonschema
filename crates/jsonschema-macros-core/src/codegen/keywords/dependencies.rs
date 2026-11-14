@@ -4,7 +4,7 @@ use std::collections::HashSet;
 use super::super::{
     compile_schema,
     errors::{invalid_schema_expression, invalid_schema_type_expression},
-    expr::ValidateBlock,
+    expr::ErrorsBlock,
     CompileContext, CompiledExpr,
 };
 use proc_macro2::TokenStream;
@@ -43,7 +43,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                         .iter()
                         .map(|prop| E::object_contains_key(format_ident!("obj"), prop))
                         .collect();
-                    CompiledExpr::with_validate_and_collect_blocks(
+                    CompiledExpr::with_errors(
                         quote! {
                             if #guard {
                                 #(#checks)&&*
@@ -55,20 +55,9 @@ pub(crate) fn compile<E: ValueEmitter>(
                             if #guard {
                                 #(
                                     if !#checks {
-                                        return Some(__err::required(
+                                        if __errors.push(__err::required(
                                             #schema_path, __path.into(), #err_instance, #props,
-                                        ));
-                                    }
-                                )*
-                            }
-                        },
-                        quote! {
-                            if #guard {
-                                #(
-                                    if !#checks {
-                                        __errors.push(__err::required(
-                                            #schema_path, __path.into(), #err_instance, #props,
-                                        ));
+                                        )) { return true; }
                                     }
                                 )*
                             }
@@ -82,16 +71,15 @@ pub(crate) fn compile<E: ValueEmitter>(
                 });
                 let is_valid = compiled.is_valid_token_stream();
                 let guard = E::object_contains_key(format_ident!("obj"), prop);
-                match &compiled.validate {
-                    ValidateBlock::Expr(expr) => {
-                        let child_collect = compiled.collect.as_token_stream();
-                        CompiledExpr::with_validate_and_collect_blocks(
+                match &compiled.errors {
+                    ErrorsBlock::Expr(_) => {
+                        let child_errors = compiled.errors.as_token_stream();
+                        CompiledExpr::with_errors(
                             quote! { if #guard { #is_valid } else { true } },
-                            quote! { if #guard { #expr } },
-                            quote! { if #guard { #child_collect } },
+                            quote! { if #guard { #child_errors } },
                         )
                     }
-                    ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
+                    ErrorsBlock::AlwaysValid => CompiledExpr::always_true(),
                 }
             }
         })
@@ -140,7 +128,7 @@ pub(crate) fn compile_dependent_required<E: ValueEmitter>(
                 .iter()
                 .map(|required_prop| E::object_contains_key(format_ident!("obj"), required_prop))
                 .collect();
-            CompiledExpr::with_validate_and_collect_blocks(
+            CompiledExpr::with_errors(
                 quote! {
                     if #guard {
                         #(#required_checks)&&*
@@ -152,20 +140,9 @@ pub(crate) fn compile_dependent_required<E: ValueEmitter>(
                     if #guard {
                         #(
                             if !#required_checks {
-                                return Some(__err::required(
+                                if __errors.push(__err::required(
                                     #schema_path, __path.into(), #err_instance, #required_props,
-                                ));
-                            }
-                        )*
-                    }
-                },
-                quote! {
-                    if #guard {
-                        #(
-                            if !#required_checks {
-                                __errors.push(__err::required(
-                                    #schema_path, __path.into(), #err_instance, #required_props,
-                                ));
+                                )) { return true; }
                             }
                         )*
                     }
@@ -196,16 +173,15 @@ pub(crate) fn compile_dependent_schemas<E: ValueEmitter>(
             });
             let is_valid = compiled.is_valid_token_stream();
             let guard = E::object_contains_key(format_ident!("obj"), prop);
-            match &compiled.validate {
-                ValidateBlock::Expr(expr) => {
-                    let child_collect = compiled.collect.as_token_stream();
-                    CompiledExpr::with_validate_and_collect_blocks(
+            match &compiled.errors {
+                ErrorsBlock::Expr(_) => {
+                    let child_errors = compiled.errors.as_token_stream();
+                    CompiledExpr::with_errors(
                         quote! { if #guard { #is_valid } else { true } },
-                        quote! { if #guard { #expr } },
-                        quote! { if #guard { #child_collect } },
+                        quote! { if #guard { #child_errors } },
                     )
                 }
-                ValidateBlock::AlwaysValid => CompiledExpr::always_true(),
+                ErrorsBlock::AlwaysValid => CompiledExpr::always_true(),
             }
         })
         .collect();

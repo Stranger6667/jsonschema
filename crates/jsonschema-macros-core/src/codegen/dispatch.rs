@@ -7,15 +7,15 @@ use crate::context::CompileContext;
 
 use super::{
     draft::DraftExt,
-    expr::{CollectBlock, IsValidExpr, ValidateBlock},
+    expr::{ErrorsBlock, IsValidExpr},
     keywords,
     keywords::format::format_emits_assertion,
     CompiledExpr,
 };
 
 enum SoleType {
-    Array(TokenStream, TokenStream, TokenStream),
-    Object(TokenStream, TokenStream, TokenStream),
+    Array(TokenStream, TokenStream),
+    Object(TokenStream, TokenStream),
 }
 
 fn type_keyword_includes(type_value: &Value, name: &str) -> bool {
@@ -87,13 +87,11 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     }
 
     let mut is_valid_fallback = quote! { true };
-    let mut validate_fallback = quote! { {} };
-    let mut collect_fallback = quote! { {} };
+    let mut errors_fallback = quote! { {} };
     let mut typed_arms = 0usize;
     let mut sole: Option<SoleType> = None;
     let mut is_valid_arms = Vec::new();
-    let mut validate_arms = Vec::new();
-    let mut collect_arms = Vec::new();
+    let mut errors_arms = Vec::new();
     let integer_guard = E::integer_number_guard(ctx.draft);
 
     if has_string {
@@ -101,9 +99,8 @@ pub(super) fn compile_typed<E: ValueEmitter>(
         if has_type_constraint || !for_string.is_trivially_true() {
             typed_arms += 1;
             is_valid_arms.push(E::match_string_arm(for_string.is_valid_token_stream()));
-            if has_type_constraint || matches!(&for_string.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(E::match_string_arm(for_string.validate.as_token_stream()));
-                collect_arms.push(E::match_string_arm(for_string.collect.as_token_stream()));
+            if has_type_constraint || matches!(&for_string.errors, ErrorsBlock::Expr(_)) {
+                errors_arms.push(E::match_string_arm(for_string.errors.as_token_stream()));
             }
         }
     }
@@ -119,43 +116,36 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             if allows_number {
                 typed_arms += 1;
                 is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
-                validate_arms.push(E::match_number_arm(for_number.validate.as_token_stream()));
-                collect_arms.push(E::match_number_arm(for_number.collect.as_token_stream()));
+                errors_arms.push(E::match_number_arm(for_number.errors.as_token_stream()));
             } else if allows_integer {
                 typed_arms += 1;
                 is_valid_arms.push(E::match_integer_arm(
                     integer_guard.clone(),
                     for_number.is_valid_token_stream(),
                 ));
-                validate_arms.push(E::match_integer_arm(
-                    integer_guard.clone(),
-                    for_number.validate.as_token_stream(),
-                ));
                 // Runtime reports both the type error and the numeric errors for a non-integer number
-                // under `type: integer`, so collect runs the numeric checks for every number and pushes
-                // the type error inline when it is not an integer.
+                // under `type: integer`, so the numeric checks run for every number and the type
+                // error is reported inline when it is not an integer.
                 let type_schema_path = ctx.schema_path_for_keyword("type");
                 let type_error_expr = build_type_error_expr::<E>(type_val, &type_schema_path);
                 let guard = integer_guard.clone();
-                let numeric_collect = for_number.collect.as_token_stream();
-                collect_arms.push(E::match_number_arm(quote! {
+                let numeric_errors = for_number.errors.as_token_stream();
+                errors_arms.push(E::match_number_arm(quote! {
                     if !(#guard) {
-                        __errors.push(#type_error_expr);
+                        if __errors.push(#type_error_expr) { return true; }
                     }
-                    #numeric_collect
+                    #numeric_errors
                 }));
             } else if for_number.is_compile_error() {
                 typed_arms += 1;
                 is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
-                validate_arms.push(E::match_number_arm(for_number.validate.as_token_stream()));
-                collect_arms.push(E::match_number_arm(for_number.collect.as_token_stream()));
+                errors_arms.push(E::match_number_arm(for_number.errors.as_token_stream()));
             }
         } else if !for_number.is_trivially_true() {
             typed_arms += 1;
             is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
-            if matches!(&for_number.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(E::match_number_arm(for_number.validate.as_token_stream()));
-                collect_arms.push(E::match_number_arm(for_number.collect.as_token_stream()));
+            if matches!(&for_number.errors, ErrorsBlock::Expr(_)) {
+                errors_arms.push(E::match_number_arm(for_number.errors.as_token_stream()));
             }
         }
     }
@@ -166,13 +156,11 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             typed_arms += 1;
             sole = Some(SoleType::Array(
                 for_array.is_valid_token_stream(),
-                for_array.validate.as_token_stream(),
-                for_array.collect.as_token_stream(),
+                for_array.errors.as_token_stream(),
             ));
             is_valid_arms.push(E::match_array_arm(for_array.is_valid_token_stream()));
-            if has_type_constraint || matches!(&for_array.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(E::match_array_arm(for_array.validate.as_token_stream()));
-                collect_arms.push(E::match_array_arm(for_array.collect.as_token_stream()));
+            if has_type_constraint || matches!(&for_array.errors, ErrorsBlock::Expr(_)) {
+                errors_arms.push(E::match_array_arm(for_array.errors.as_token_stream()));
             }
         }
     }
@@ -183,13 +171,11 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             typed_arms += 1;
             sole = Some(SoleType::Object(
                 for_object.is_valid_token_stream(),
-                for_object.validate.as_token_stream(),
-                for_object.collect.as_token_stream(),
+                for_object.errors.as_token_stream(),
             ));
             is_valid_arms.push(E::match_object_arm(for_object.is_valid_token_stream()));
-            if has_type_constraint || matches!(&for_object.validate, ValidateBlock::Expr(_)) {
-                validate_arms.push(E::match_object_arm(for_object.validate.as_token_stream()));
-                collect_arms.push(E::match_object_arm(for_object.collect.as_token_stream()));
+            if has_type_constraint || matches!(&for_object.errors, ErrorsBlock::Expr(_)) {
+                errors_arms.push(E::match_object_arm(for_object.errors.as_token_stream()));
             }
         }
     }
@@ -237,8 +223,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             // concatenates arms with no separator, and `_ => false` always follows it.
             is_valid_arms.push(quote! { #(#additional_types)|* => true, });
             for pattern in &additional_types {
-                validate_arms.push(quote! { #pattern => {} });
-                collect_arms.push(quote! { #pattern => {} });
+                errors_arms.push(quote! { #pattern => {} });
             }
         }
         is_valid_fallback = quote! { false };
@@ -248,36 +233,30 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             .get("type")
             .expect("has_type_constraint implies a `type` keyword");
         let type_error_expr = build_type_error_expr::<E>(type_value, &type_schema_path);
-        validate_fallback = quote! { { return Some(#type_error_expr); } };
-        collect_fallback = quote! { { __errors.push(#type_error_expr); } };
+        errors_fallback = quote! { { if __errors.push(#type_error_expr) { return true; } } };
     } else if is_valid_arms.is_empty() {
         return None;
     }
     is_valid_arms.push(quote! { _ => #is_valid_fallback });
-    validate_arms.push(quote! { _ => #validate_fallback });
-    collect_arms.push(quote! { _ => #collect_fallback });
+    errors_arms.push(quote! { _ => #errors_fallback });
 
-    let (is_valid_ts, validate_ts, collect_ts) = match sole.filter(|_| typed_arms == 1) {
-        Some(SoleType::Array(is_valid, validate, collect)) => (
+    let (is_valid_ts, errors_ts) = match sole.filter(|_| typed_arms == 1) {
+        Some(SoleType::Array(is_valid, errors)) => (
             E::sole_array_match(is_valid, is_valid_fallback),
-            E::sole_array_match(validate, validate_fallback),
-            E::sole_array_match(collect, collect_fallback),
+            E::sole_array_match(errors, errors_fallback),
         ),
-        Some(SoleType::Object(is_valid, validate, collect)) => (
+        Some(SoleType::Object(is_valid, errors)) => (
             E::sole_object_match(is_valid, is_valid_fallback),
-            E::sole_object_match(validate, validate_fallback),
-            E::sole_object_match(collect, collect_fallback),
+            E::sole_object_match(errors, errors_fallback),
         ),
         _ => (
             E::type_match(format_ident!("instance"), is_valid_arms),
-            E::type_match(format_ident!("instance"), validate_arms),
-            E::type_match(format_ident!("instance"), collect_arms),
+            E::type_match(format_ident!("instance"), errors_arms),
         ),
     };
     Some(CompiledExpr {
         is_valid: IsValidExpr::Expr(is_valid_ts),
-        validate: ValidateBlock::Expr(validate_ts),
-        collect: CollectBlock::Expr(collect_ts),
+        errors: ErrorsBlock::Expr(errors_ts),
         compile_error: false,
     })
 }

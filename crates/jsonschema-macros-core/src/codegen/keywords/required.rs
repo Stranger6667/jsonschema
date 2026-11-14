@@ -10,7 +10,7 @@ pub(crate) fn compile_single<E: ValueEmitter>(
     let err_instance = E::err_instance(format_ident!("instance"));
     let check = E::object_contains_key(format_ident!("obj"), name);
     let schema_path = ctx.schema_path_for_keyword("required");
-    CompiledExpr::with_validate_blocks(
+    CompiledExpr::from_first_error(
         quote! { #check },
         quote! {
             if !(#check) {

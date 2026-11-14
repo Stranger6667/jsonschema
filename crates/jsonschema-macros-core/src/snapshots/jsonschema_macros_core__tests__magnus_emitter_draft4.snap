@@ -56,10 +56,11 @@ mod __validator_impl {
             _ => false,
         }
     }
-    pub(super) fn validate<'__i>(
+    pub(super) fn errors<'__i>(
         instance: __Value<'__i>,
         __path: &__paths::LazyLocation,
-    ) -> Option<__VE<'__i>> {
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
         if !(match __NodeExt::json_type(&instance) {
             __JT::Number => {
                 __NodeExt::as_number(&instance)
@@ -70,33 +71,7 @@ mod __validator_impl {
             __JT::String => true,
             _ => false,
         }) {
-            return Some(
-                __err::multiple_types(
-                    "/type",
-                    __path.into(),
-                    __NodeExt::lazy_value(&instance),
-                    __JTS::empty().insert(__JT::Integer).insert(__JT::String),
-                ),
-            );
-        }
-        None
-    }
-    pub(super) fn collect_errors<'__i>(
-        instance: __Value<'__i>,
-        __path: &__paths::LazyLocation,
-        __errors: &mut Vec<__VE<'__i>>,
-    ) {
-        if !(match __NodeExt::json_type(&instance) {
-            __JT::Number => {
-                __NodeExt::as_number(&instance)
-                    .is_some_and(|__number| __NumberExt::is_written_as_integer(
-                        &__number,
-                    ))
-            }
-            __JT::String => true,
-            _ => false,
-        }) {
-            __errors
+            if __errors
                 .push(
                     __err::multiple_types(
                         "/type",
@@ -104,19 +79,25 @@ mod __validator_impl {
                         __NodeExt::lazy_value(&instance),
                         __JTS::empty().insert(__JT::Integer).insert(__JT::String),
                     ),
-                );
+                )
+            {
+                return true;
+            }
         }
+        false
     }
     pub(super) fn run_is_valid(instance: __Value<'_>) -> bool {
         is_valid(instance)
     }
     pub(super) fn run_validate<'__i>(instance: __Value<'__i>) -> Option<__VE<'__i>> {
-        validate(instance, &__paths::LazyLocation::new())
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
     }
     pub(super) fn run_collect_errors<'__i>(instance: __Value<'__i>) -> Vec<__VE<'__i>> {
-        let mut errors = Vec::new();
-        collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
-        errors
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
     }
     pub(super) fn entry_is_valid(
         instance: &__rb::Value,

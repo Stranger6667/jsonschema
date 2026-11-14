@@ -1,6 +1,35 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"anyOf\":[false,{\"type\":\"string\"}]}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-(is_branch_valid_0(instance) || is_branch_valid_1(instance))
+if let Some(__e) = (|| -> Option<__VE<'_>> {
+            if !((is_branch_valid_0(instance) || is_branch_valid_1(instance))) {
+                let mut __context = Vec::with_capacity(2usize);
+                {
+                    let mut __branch_errors = __err::Errors::new(false);
+                    let _ = collect_branch_errors_0(
+                        instance,
+                        __path,
+                        &mut __branch_errors,
+                    );
+                    __context.push(__branch_errors.into_vec());
+                }
+                {
+                    let mut __branch_errors = __err::Errors::new(false);
+                    let _ = collect_branch_errors_1(
+                        instance,
+                        __path,
+                        &mut __branch_errors,
+                    );
+                    __context.push(__branch_errors.into_vec());
+                }
+                return Some(__err::any_of("/anyOf", __path.into(), instance, __context));
+            }
+            None
+        })() {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        false

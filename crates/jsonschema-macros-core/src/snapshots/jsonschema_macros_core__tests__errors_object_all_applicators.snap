@@ -1,19 +1,19 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"additionalProperties\":{\"type\":\"integer\"},\"patternProperties\":{\"^x\":{\"type\":\"integer\"}},\"properties\":{\"a\":{}},\"propertyNames\":{\"minLength\":1},\"type\":\"object\"}"
-expression: collect_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
                 for key in obj.keys() {
                     let __key_val: __sj::Value = __sj::Value::String(key.clone());
-                    let mut __key_errors: Vec<__VE<'_>> = Vec::new();
-                    {
+                    let mut __key_errors = __err::Errors::new(__errors.first_only());
+                    let _ = (|| -> bool {
                         let s = key;
                         let instance = &__key_val;
                         let __errors = &mut __key_errors;
                         if !(!s.is_empty()) {
-                            __errors
+                            if __errors
                                 .push(
                                     __err::min_length(
                                         "/propertyNames/minLength",
@@ -21,11 +21,17 @@ match instance {
                                         instance,
                                         1,
                                     ),
-                                );
+                                )
+                            {
+                                return true;
+                            }
                         }
-                    }
-                    for __e in __key_errors {
-                        __errors.push(__e.to_owned());
+                        false
+                    })();
+                    for __e in __key_errors.into_vec() {
+                        if __errors.push(__e.to_owned()) {
+                            return true;
+                        }
                     }
                 }
                 for (key, value) in obj.iter() {
@@ -44,7 +50,7 @@ match instance {
                             __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }) {
-                            __errors
+                            if __errors
                                 .push(
                                     __err::single_type(
                                         "/patternProperties/^x/type",
@@ -52,7 +58,10 @@ match instance {
                                         instance,
                                         __JT::Integer,
                                     ),
-                                );
+                                )
+                            {
+                                return true;
+                            }
                         }
                         covered = true;
                     }
@@ -63,7 +72,7 @@ match instance {
                             __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }) {
-                            __errors
+                            if __errors
                                 .push(
                                     __err::single_type(
                                         "/additionalProperties/type",
@@ -71,13 +80,16 @@ match instance {
                                         instance,
                                         __JT::Integer,
                                     ),
-                                );
+                                )
+                            {
+                                return true;
+                            }
                         }
                     }
                 }
             }
             _ => {
-                __errors
+                if __errors
                     .push(
                         __err::single_type(
                             "/type",
@@ -85,6 +97,10 @@ match instance {
                             instance,
                             __JT::Object,
                         ),
-                    );
+                    )
+                {
+                    return true;
+                }
             }
         }
+        false

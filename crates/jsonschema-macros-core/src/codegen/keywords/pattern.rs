@@ -15,14 +15,14 @@ fn pattern_check<E: ValueEmitter>(
 ) -> CompiledExpr {
     let err_instance = E::err_instance(format_ident!("instance"));
     let validate_check = located_check.unwrap_or(&check);
-    let validate = quote! {
+    let first_error = quote! {
         if !(#validate_check) {
             return Some(__err::pattern(
                 #schema_path, __path.into(), #err_instance, #pattern,
             ));
         }
     };
-    CompiledExpr::with_validate_blocks(check, validate)
+    CompiledExpr::from_first_error(check, first_error)
 }
 
 pub(crate) fn compile<E: ValueEmitter>(

@@ -3699,7 +3699,7 @@ pub mod __private {
         #[must_use]
         pub fn validate<'i, N: Copy>(
             instance: impl FnOnce() -> LazyInstance<'i>,
-            collect: fn(N, &LazyLocation, &mut Vec<ValidationError<'i>>),
+            collect: fn(N, &LazyLocation, &mut super::error::Errors<'i>) -> bool,
             node: N,
         ) -> Option<ValidationError<'i>> {
             collect_errors(instance, collect, node).into_iter().next()
@@ -3710,13 +3710,13 @@ pub mod __private {
         #[must_use]
         pub fn collect_errors<'i, N: Copy>(
             instance: impl FnOnce() -> LazyInstance<'i>,
-            collect: fn(N, &LazyLocation, &mut Vec<ValidationError<'i>>),
+            collect: fn(N, &LazyLocation, &mut super::error::Errors<'i>) -> bool,
             node: N,
         ) -> Vec<ValidationError<'i>> {
             let run = || {
-                let mut errors = Vec::new();
-                collect(node, &LazyLocation::new(), &mut errors);
-                errors
+                let mut errors = super::error::Errors::new(false);
+                let _ = collect(node, &LazyLocation::new(), &mut errors);
+                errors.into_vec()
             };
             match under_each_outcome(run) {
                 Ok(outcomes) => errors(outcomes, instance),
@@ -3760,28 +3760,35 @@ pub mod __private {
             }
         }
 
-        /// Run a custom keyword's `iter_errors`, filling in context exactly like [`validate`] does.
-        pub fn collect_errors<'i, F: Json>(
+        /// Report a custom keyword's errors: its `validate` error when only the first is wanted,
+        /// its `iter_errors` otherwise, with context filled in exactly like [`validate`] does.
+        /// `true` when the caller must stop.
+        pub fn errors<'i, F: Json>(
             keyword: &dyn crate::Keyword<'i, F>,
             instance: &F::Node<'i>,
-            instance_path: &Location,
+            instance_path: Location,
             schema_path: &str,
             keyword_name: &str,
-            errors: &mut Vec<crate::ValidationError<'i>>,
-        ) {
+            errors: &mut super::error::Errors<'i>,
+        ) -> bool {
+            if errors.first_only() {
+                return validate(keyword, instance, instance_path, schema_path, keyword_name)
+                    .is_some_and(|error| errors.push(error));
+            }
             let mut found = keyword.iter_errors(instance.clone()).peekable();
             if found.peek().is_none() {
-                return;
+                return false;
             }
             let value = instance.to_value();
             for error in found {
-                errors.push(error.with_generated_context(
+                let _ = errors.push(error.with_generated_context(
                     value.clone(),
                     instance_path.clone(),
                     Location::from_escaped(schema_path),
                     keyword_name,
                 ));
             }
+            false
         }
     }
     pub mod types {
@@ -4009,6 +4016,66 @@ pub mod __private {
         #[must_use]
         pub fn iterator_from(errors: Vec<ValidationError<'_>>) -> ErrorIterator<'_> {
             ErrorIterator::from_iterator(errors.into_iter())
+        }
+
+        /// Errors reported by generated code: all of them for `iter_errors`, or only the first
+        /// one for `validate`.
+        pub enum Errors<'i> {
+            First(Option<ValidationError<'i>>),
+            All(Vec<ValidationError<'i>>),
+        }
+
+        impl<'i> Errors<'i> {
+            #[inline]
+            #[must_use]
+            pub fn new(first_only: bool) -> Self {
+                if first_only {
+                    Self::First(None)
+                } else {
+                    Self::All(Vec::new())
+                }
+            }
+
+            /// Records `error`; `true` when the caller must stop because only the first error
+            /// is wanted.
+            #[inline]
+            #[must_use]
+            pub fn push(&mut self, error: ValidationError<'i>) -> bool {
+                match self {
+                    Self::First(first) => {
+                        *first = Some(error);
+                        true
+                    }
+                    Self::All(errors) => {
+                        errors.push(error);
+                        false
+                    }
+                }
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn first_only(&self) -> bool {
+                matches!(self, Self::First(_))
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn into_first(self) -> Option<ValidationError<'i>> {
+                match self {
+                    Self::First(first) => first,
+                    Self::All(errors) => errors.into_iter().next(),
+                }
+            }
+
+            #[inline]
+            #[must_use]
+            pub fn into_vec(self) -> Vec<ValidationError<'i>> {
+                match self {
+                    Self::First(first) => first.into_iter().collect(),
+                    Self::All(errors) => errors,
+                }
+            }
         }
 
         /// `contentEncoding` keyword violation.

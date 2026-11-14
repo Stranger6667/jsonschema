@@ -20,7 +20,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
 
     // Checks are pushed in the runtime's `keyword_priority` order so that
-    // `validate` reports the same first error as the runtime validator.
+    // the first error reported is the runtime validator's.
     let array_len = E::array_len(format_ident!("arr"));
     compile_count_range(
         ctx,

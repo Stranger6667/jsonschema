@@ -82,7 +82,7 @@ pub(super) fn compile_count_range<E: ValueEmitter>(
                 let min_error = format_ident!("{min_error}");
                 let max_error = format_ident!("{max_error}");
                 let limit = proc_macro2::Literal::u64_unsuffixed(min);
-                checks.push(CompiledExpr::with_validate_blocks(
+                checks.push(CompiledExpr::from_first_error(
                     quote! { (#count as u64) == #limit },
                     quote! {
                         if (#count as u64) < #limit {

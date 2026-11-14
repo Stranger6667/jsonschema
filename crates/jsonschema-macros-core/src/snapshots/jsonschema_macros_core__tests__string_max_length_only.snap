@@ -1,9 +1,33 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"maxLength\":5,\"type\":\"string\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
-            __Value::String(s) => (s.chars().count() as u64) <= 5,
-            _ => false,
+            __Value::String(s) => {
+                if !((s.chars().count() as u64) <= 5) {
+                    if __errors
+                        .push(
+                            __err::max_length("/maxLength", __path.into(), instance, 5),
+                        )
+                    {
+                        return true;
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::String,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

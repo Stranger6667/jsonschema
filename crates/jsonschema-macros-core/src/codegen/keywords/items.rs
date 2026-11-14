@@ -32,22 +32,15 @@ fn compile_plain<E: ValueEmitter>(ctx: &mut CompileContext<'_, E>, value: &Value
                     return CompiledExpr::always_true();
                 }
                 let is_valid = compiled.is_valid_token_stream();
-                let expr = compiled.validate.as_token_stream();
-                let child_collect = compiled.collect.as_token_stream();
+                let child_errors = compiled.errors.as_token_stream();
                 let get_expr = E::array_get(format_ident!("arr"), idx);
-                CompiledExpr::with_validate_and_collect_blocks(
+                CompiledExpr::with_errors(
                     quote! { #get_expr.map_or(true, |instance| #is_valid) },
-                    quote! {
-                        if let Some(instance) = #get_expr {
-                            let __path = &__path.push(#idx);
-                            #expr
-                        }
-                    },
                     quote! {
                         if let Some(instance) = #get_expr {
                             if !(#is_valid) {
                                 let __path = &__path.push(#idx);
-                                #child_collect
+                                #child_errors
                             }
                         }
                     },
@@ -63,24 +56,16 @@ fn compile_plain<E: ValueEmitter>(ctx: &mut CompileContext<'_, E>, value: &Value
             return CompiledExpr::always_true();
         }
         let is_valid = compiled.is_valid_token_stream();
-        let expr = compiled.validate.as_token_stream();
-        let child_collect = compiled.collect.as_token_stream();
+        let child_errors = compiled.errors.as_token_stream();
         let iter_expr = E::array_iter(format_ident!("arr"));
-        CompiledExpr::with_validate_and_collect_blocks(
+        CompiledExpr::with_errors(
             quote! { #iter_expr.all(|instance| #is_valid) },
-            quote! {
-                for (idx, item) in #iter_expr.enumerate() {
-                    let instance = item;
-                    let __path = &__path.push(idx);
-                    #expr
-                }
-            },
             quote! {
                 for (idx, item) in #iter_expr.enumerate() {
                     let instance = item;
                     if !(#is_valid) {
                         let __path = &__path.push(idx);
-                        #child_collect
+                        #child_errors
                     }
                 }
             },
@@ -99,26 +84,16 @@ fn compile_with_prefix<E: ValueEmitter>(
         Value::Bool(true) => CompiledExpr::always_true(),
         Value::Bool(false) => {
             let len_expr = E::array_len(format_ident!("arr"));
-            let get_expr = E::array_get(format_ident!("arr"), prefix_len);
             let iter_expr = E::array_iter(format_ident!("arr"));
-            CompiledExpr::with_validate_and_collect_blocks(
+            CompiledExpr::with_errors(
                 quote! { #len_expr <= #prefix_len },
-                quote! {
-                    if let Some(item) = #get_expr {
-                        let instance = item;
-                        let __path = &__path.push(#prefix_len);
-                        return Some(__err::false_schema(
-                            #schema_path, __path.into(), #err_instance,
-                        ));
-                    }
-                },
                 quote! {
                     for (idx, item) in #iter_expr.enumerate().skip(#prefix_len) {
                         let instance = item;
                         let __path = &__path.push(idx);
-                        __errors.push(__err::false_schema(
+                        if __errors.push(__err::false_schema(
                             #schema_path, __path.into(), #err_instance,
-                        ));
+                        )) { return true; }
                     }
                 },
             )
@@ -131,24 +106,16 @@ fn compile_with_prefix<E: ValueEmitter>(
                 return CompiledExpr::always_true();
             }
             let is_valid = compiled.is_valid_token_stream();
-            let expr = compiled.validate.as_token_stream();
-            let child_collect = compiled.collect.as_token_stream();
+            let child_errors = compiled.errors.as_token_stream();
             let iter_expr = E::array_iter(format_ident!("arr"));
-            CompiledExpr::with_validate_and_collect_blocks(
+            CompiledExpr::with_errors(
                 quote! { #iter_expr.skip(#prefix_len).all(|instance| #is_valid) },
-                quote! {
-                    for (idx, item) in #iter_expr.enumerate().skip(#prefix_len) {
-                        let instance = item;
-                        let __path = &__path.push(idx);
-                        #expr
-                    }
-                },
                 quote! {
                     for (idx, item) in #iter_expr.enumerate().skip(#prefix_len) {
                         let instance = item;
                         if !(#is_valid) {
                             let __path = &__path.push(idx);
-                            #child_collect
+                            #child_errors
                         }
                     }
                 },

@@ -1,17 +1,49 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"contains\":{\"type\":\"integer\"},\"type\":\"array\",\"uniqueItems\":true}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Array(arr) => {
-                (__uniq::is_unique(arr))
-                    && (arr
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if !__uniq::is_unique(arr) {
+                        return Some(
+                            __err::unique_items("/uniqueItems", __path.into(), instance),
+                        );
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if !(arr
                         .iter()
                         .any(|instance| match instance {
                             __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }))
+                    {
+                        return Some(
+                            __err::contains("/contains", __path.into(), instance),
+                        );
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

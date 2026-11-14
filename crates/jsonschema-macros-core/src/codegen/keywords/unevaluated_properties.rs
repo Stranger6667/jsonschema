@@ -72,7 +72,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 __result
             }
         };
-        let validate = E::if_object(
+        let first_error = E::if_object(
             format_ident!("instance"),
             quote! {
                 let __root_key_eval: fn(
@@ -96,7 +96,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 }
             },
         );
-        Some(CompiledExpr::with_validate_blocks(is_valid, validate))
+        Some(CompiledExpr::from_first_error(is_valid, first_error))
     } else {
         let located_expr = compile_key_evaluated_expr(ctx, schema, false, true);
         let is_valid = quote! {
@@ -109,7 +109,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 }
             })
         };
-        let validate = E::if_object(
+        let first_error = E::if_object(
             format_ident!("instance"),
             quote! {
                 let mut __unexpected: Vec<String> = Vec::new();
@@ -126,6 +126,6 @@ pub(crate) fn compile<E: ValueEmitter>(
                 }
             },
         );
-        Some(CompiledExpr::with_validate_blocks(is_valid, validate))
+        Some(CompiledExpr::from_first_error(is_valid, first_error))
     }
 }

@@ -1,12 +1,42 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"maxLength\":5,\"minLength\":2,\"type\":\"string\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::String(s) => {
-                let len = s.chars().count();
-                (len as u64) >= 2 && (len as u64) <= 5
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    let len = s.chars().count();
+                    if (len as u64) < 2 {
+                        return Some(
+                            __err::min_length("/minLength", __path.into(), instance, 2),
+                        );
+                    }
+                    if (len as u64) > 5 {
+                        return Some(
+                            __err::max_length("/maxLength", __path.into(), instance, 5),
+                        );
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::String,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

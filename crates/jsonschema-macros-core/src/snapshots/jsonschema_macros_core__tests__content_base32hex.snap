@@ -1,9 +1,41 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"contentEncoding\":\"base32hex\",\"type\":\"string\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
-            __Value::String(s) => __content::is_base32hex(s),
-            _ => false,
+            __Value::String(s) => {
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if !__content::is_base32hex(s) {
+                        return Some(
+                            __err::content_encoding(
+                                "/contentEncoding",
+                                __path.into(),
+                                instance,
+                                "base32hex",
+                            ),
+                        );
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::String,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

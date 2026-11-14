@@ -18,6 +18,7 @@
 - Fewer allocations per subschema when building a validator.
 - Faster expansion of `#[jsonschema::validator]` for schemas with many `$ref`s, without copying each referenced schema.
 - Faster release builds and smaller binaries for `#[jsonschema::validator]`, with subschema checks no longer forced inline.
+- Faster compilation of `#[jsonschema::validator]` output, with `validate` and `iter_errors` sharing one generated error function per subschema.
 - Lower cost of collecting errors over the valid parts of an instance.
 - `pattern` and `patternProperties` with alternations of anchored sequences, such as `^[1-5](?:[0-9]{2}|XX)$`, matched in one pass without a regex engine.
 - `unevaluatedProperties` matching names against sequence-shaped `patternProperties`, such as `^[a-z0-9-]+$` or `^[1-5](?:[0-9]{2}|XX)$`, without a regex engine.

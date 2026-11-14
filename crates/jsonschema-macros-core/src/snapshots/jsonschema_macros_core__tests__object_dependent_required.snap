@@ -1,26 +1,72 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"dependentRequired\":{\"a\":[\"b\"]},\"properties\":{\"a\":{\"type\":\"integer\"}},\"type\":\"object\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
-                (if obj.contains_key("a") { obj.contains_key("b") } else { true })
-                    && ({
-                        obj.iter()
-                            .all(|(key, instance)| {
-                                let key_str = key.as_str();
-                                match key_str {
-                                    "a" => {
-                                        match instance {
-                                            __Value::Number(n) => __types::is_integer(n),
-                                            _ => false,
-                                        }
+                if obj.contains_key("a") {
+                    if !obj.contains_key("b") {
+                        if __errors
+                            .push(
+                                __err::required(
+                                    "/dependentRequired",
+                                    __path.into(),
+                                    instance,
+                                    "b",
+                                ),
+                            )
+                        {
+                            return true;
+                        }
+                    }
+                }
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "a" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("a");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/properties/a/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
                                     }
-                                    _ => true,
                                 }
-                            })
-                    })
+                            }
+                        }
+                        _ => {}
+                    }
+                }
             }
-            _ => false,
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

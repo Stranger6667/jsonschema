@@ -1,9 +1,26 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$schema\":\"http://json-schema.org/draft-06/schema#\",\"minItems\":10.0,\"type\":\"array\"}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
-            __Value::Array(arr) => (arr.len() as u64) >= 10,
-            _ => false,
+            __Value::Array(arr) => {
+                if !((arr.len() as u64) >= 10) {
+                    if __errors
+                        .push(__err::min_items("/minItems", __path.into(), instance, 10))
+                    {
+                        return true;
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
+                    )
+                {
+                    return true;
+                }
+            }
         }
+        false

@@ -1,7 +1,7 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"items\":{\"type\":\"string\"},\"prefixItems\":[{\"type\":\"integer\"}],\"type\":\"array\"}"
-expression: collect_body(schema)
+expression: errors_body(schema)
 ---
 match instance {
             __Value::Array(arr) => {
@@ -10,7 +10,7 @@ match instance {
                     if !(instance.is_string()) {
                         let __path = &__path.push(idx);
                         if !(instance.is_string()) {
-                            __errors
+                            if __errors
                                 .push(
                                     __err::single_type(
                                         "/items/type",
@@ -18,7 +18,10 @@ match instance {
                                         instance,
                                         __JT::String,
                                     ),
-                                );
+                                )
+                            {
+                                return true;
+                            }
                         }
                     }
                 }
@@ -32,7 +35,7 @@ match instance {
                             __Value::Number(n) => __types::is_integer(n),
                             _ => false,
                         }) {
-                            __errors
+                            if __errors
                                 .push(
                                     __err::single_type(
                                         "/prefixItems/0/type",
@@ -40,15 +43,22 @@ match instance {
                                         instance,
                                         __JT::Integer,
                                     ),
-                                );
+                                )
+                            {
+                                return true;
+                            }
                         }
                     }
                 }
             }
             _ => {
-                __errors
+                if __errors
                     .push(
                         __err::single_type("/type", __path.into(), instance, __JT::Array),
-                    );
+                    )
+                {
+                    return true;
+                }
             }
         }
+        false

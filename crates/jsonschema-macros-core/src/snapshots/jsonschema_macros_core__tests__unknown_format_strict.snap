@@ -46,62 +46,45 @@ mod __validator_impl {
             _ => true,
         }
     }
-    pub(super) fn validate<'__i>(
+    pub(super) fn errors<'__i>(
         instance: &'__i __Value,
         __path: &__paths::LazyLocation,
-    ) -> Option<__VE<'__i>> {
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
         match instance {
             __Value::String(s) => {
-                if !({
-                    compile_error!(
-                        "Unknown format: 'made-up'. Adjust configuration to ignore unrecognized formats"
-                    );
-                    false
-                }) {
-                    return Some(__err::false_schema("", __path.into(), instance));
+                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                    if !({
+                        compile_error!(
+                            "Unknown format: 'made-up'. Adjust configuration to ignore unrecognized formats"
+                        );
+                        false
+                    }) {
+                        return Some(__err::false_schema("", __path.into(), instance));
+                    }
+                    None
+                })() {
+                    if __errors.push(__e) {
+                        return true;
+                    }
                 }
             }
             _ => {}
         }
-        None
-    }
-    pub(super) fn collect_errors<'__i>(
-        instance: &'__i __Value,
-        __path: &__paths::LazyLocation,
-        __errors: &mut Vec<__VE<'__i>>,
-    ) {
-        match instance {
-            __Value::String(s) => {
-                __errors
-                    .extend(
-                        (|| -> Option<__VE<'_>> {
-                            if !({
-                                compile_error!(
-                                    "Unknown format: 'made-up'. Adjust configuration to ignore unrecognized formats"
-                                );
-                                false
-                            }) {
-                                return Some(
-                                    __err::false_schema("", __path.into(), instance),
-                                );
-                            }
-                            None
-                        })(),
-                    );
-            }
-            _ => {}
-        }
+        false
     }
     pub(super) fn run_is_valid(instance: &__Value) -> bool {
         is_valid(instance)
     }
     pub(super) fn run_validate<'__i>(instance: &'__i __Value) -> Option<__VE<'__i>> {
-        validate(instance, &__paths::LazyLocation::new())
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
     }
     pub(super) fn run_collect_errors<'__i>(instance: &'__i __Value) -> Vec<__VE<'__i>> {
-        let mut errors = Vec::new();
-        collect_errors(instance, &__paths::LazyLocation::new(), &mut errors);
-        errors
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {
         run_is_valid(instance)

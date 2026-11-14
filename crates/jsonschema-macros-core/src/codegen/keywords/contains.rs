@@ -123,5 +123,5 @@ pub(crate) fn compile<E: ValueEmitter>(
         }
     };
 
-    CompiledExpr::with_validate_blocks(is_valid, validate_block)
+    CompiledExpr::from_first_error(is_valid, validate_block)
 }

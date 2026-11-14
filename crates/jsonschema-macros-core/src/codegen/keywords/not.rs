@@ -24,11 +24,11 @@ pub(crate) fn compile<E: ValueEmitter>(
 
     if inner.is_trivially_true() {
         // `not: true`: always invalid; report the error at the /not path.
-        return CompiledExpr::with_validate_blocks(quote! { false }, report_error);
+        return CompiledExpr::from_first_error(quote! { false }, report_error);
     }
     let is_valid = inner.is_valid_token_stream();
 
-    CompiledExpr::with_validate_blocks(
+    CompiledExpr::from_first_error(
         quote! { !(#is_valid) },
         quote! {
             if #is_valid {

@@ -1,10 +1,29 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
 description: "{\"enum\":[false,\"marker\"]}"
-expression: is_valid_body(schema)
+expression: errors_body(schema)
 ---
-match instance {
-            __Value::Bool(b) => !*b,
-            __Value::String(s) => s.as_str() == "marker",
-            _ => false,
+if let Some(__e) = (|| -> Option<__VE<'_>> {
+            if !(match instance {
+                __Value::Bool(b) => !*b,
+                __Value::String(s) => s.as_str() == "marker",
+                _ => false,
+            }) {
+                static ENUM_OPTIONS: __Lazy<::std::sync::Arc<__sj::Value>> = __Lazy::new(||
+                {
+                    ::std::sync::Arc::new(
+                        __sj::from_str("[false,\"marker\"]")
+                            .expect("Failed to parse enum options"),
+                    )
+                });
+                return Some(
+                    __err::enumeration("/enum", __path.into(), instance, &*ENUM_OPTIONS),
+                );
+            }
+            None
+        })() {
+            if __errors.push(__e) {
+                return true;
+            }
         }
+        false
