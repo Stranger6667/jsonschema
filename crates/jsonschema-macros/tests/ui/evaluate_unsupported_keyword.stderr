@@ -1,0 +1,10 @@
+error: `evaluate` does not support the `type` keyword yet
+ --> tests/ui/evaluate_unsupported_keyword.rs:1:1
+  |
+1 | / #[jsonschema::validator(
+2 | |     schema = r#"{"type": "string"}"#,
+3 | |     methods = { evaluate = true }
+4 | | )]
+  | |__^
+  |
+  = note: this error originates in the attribute macro `jsonschema::validator` (in Nightly builds, run with -Z macro-backtrace for more info)
