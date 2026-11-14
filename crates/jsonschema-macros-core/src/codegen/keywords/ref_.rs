@@ -107,6 +107,12 @@ fn cycle_guarded_ref_is_valid(
     shared_cycle_guarded_is_valid(&mark_expr, &quote! { #func_ident(instance) })
 }
 
+/// A `$ref` check: the target's error function runs `is_valid` first, so its caller needs no
+/// guard. `$dynamicRef` and `$recursiveRef` may land on the root error function, which does not.
+fn ref_check(is_valid: TokenStream, errors: TokenStream) -> CompiledExpr {
+    CompiledExpr::with_errors(is_valid, errors).with_skips_valid(true)
+}
+
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     value: &Value,
@@ -177,7 +183,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         // Use the error helper when available for accurate error paths.
         if ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
             let errors_ident = format_ident!("{}_errors", func_name);
-            CompiledExpr::with_errors(
+            ref_check(
                 is_valid,
                 quote! {
                     {
@@ -202,13 +208,13 @@ pub(crate) fn compile<E: ValueEmitter>(
         if plain_cycle && ctx.closes_same_instance_cycle(&resolved.location) {
             ctx.uses_ref_cycle = true;
             let errors_ident = format_ident!("{}_errors", func_name);
-            CompiledExpr::with_errors(
+            ref_check(
                 cycle_guarded_ref_is_valid(&node, &node_address, &func_ident),
                 cycle_guarded_ref_errors(&node, &node_address, &func_ident, &errors_ident),
             )
         } else if plain_cycle || ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
             let errors_ident = format_ident!("{}_errors", func_name);
-            CompiledExpr::with_errors(
+            ref_check(
                 quote! { #func_ident(instance) },
                 call_errors(&quote! { #errors_ident(instance, __path, __errors) }),
             )

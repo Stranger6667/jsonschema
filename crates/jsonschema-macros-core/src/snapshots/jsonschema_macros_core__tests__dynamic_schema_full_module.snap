@@ -474,12 +474,28 @@ mod __validator_impl {
                             }
                             "other" => {
                                 let instance = value;
-                                if !({
+                                let __path = &__path.push("other");
+                                {
                                     __JSONSCHEMA_DYNAMIC_STACK
                                         .with(|stack| {
                                             stack.borrow_mut().push(("node", validate_ref_0));
                                         });
-                                    let __result = validate_ref_1(instance);
+                                    __JSONSCHEMA_DYNAMIC_ERRORS_STACK
+                                        .with(|stack| {
+                                            stack.borrow_mut().push(("node", validate_ref_0_errors));
+                                        });
+                                    let __stop = validate_ref_1_errors(
+                                        instance,
+                                        __path,
+                                        __errors,
+                                    );
+                                    __JSONSCHEMA_DYNAMIC_ERRORS_STACK
+                                        .with(|stack| {
+                                            let mut stack = stack.borrow_mut();
+                                            for _ in 0..1usize {
+                                                stack.pop();
+                                            }
+                                        });
                                     __JSONSCHEMA_DYNAMIC_STACK
                                         .with(|stack| {
                                             let mut stack = stack.borrow_mut();
@@ -487,40 +503,8 @@ mod __validator_impl {
                                                 stack.pop();
                                             }
                                         });
-                                    __result
-                                }) {
-                                    let __path = &__path.push("other");
-                                    {
-                                        __JSONSCHEMA_DYNAMIC_STACK
-                                            .with(|stack| {
-                                                stack.borrow_mut().push(("node", validate_ref_0));
-                                            });
-                                        __JSONSCHEMA_DYNAMIC_ERRORS_STACK
-                                            .with(|stack| {
-                                                stack.borrow_mut().push(("node", validate_ref_0_errors));
-                                            });
-                                        let __stop = validate_ref_1_errors(
-                                            instance,
-                                            __path,
-                                            __errors,
-                                        );
-                                        __JSONSCHEMA_DYNAMIC_ERRORS_STACK
-                                            .with(|stack| {
-                                                let mut stack = stack.borrow_mut();
-                                                for _ in 0..1usize {
-                                                    stack.pop();
-                                                }
-                                            });
-                                        __JSONSCHEMA_DYNAMIC_STACK
-                                            .with(|stack| {
-                                                let mut stack = stack.borrow_mut();
-                                                for _ in 0..1usize {
-                                                    stack.pop();
-                                                }
-                                            });
-                                        if __stop {
-                                            return true;
-                                        }
+                                    if __stop {
+                                        return true;
                                     }
                                 }
                             }

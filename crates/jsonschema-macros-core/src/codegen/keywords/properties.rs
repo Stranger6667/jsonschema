@@ -119,15 +119,15 @@ fn build_errors_block<E: ValueEmitter>(
         if compiled.is_trivially_true() {
             return quote! { #name => {} };
         }
-        let is_valid = compiled.is_valid_token_stream();
         let child = compiled.errors.as_token_stream();
+        let errors = compiled.guard_errors(&quote! {
+            let __path = &__path.push(#name);
+            #child
+        });
         quote! {
             #name => {
                 let instance = value;
-                if !(#is_valid) {
-                    let __path = &__path.push(#name);
-                    #child
-                }
+                #errors
             }
         }
     });

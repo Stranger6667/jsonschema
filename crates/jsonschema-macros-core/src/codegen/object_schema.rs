@@ -215,6 +215,7 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
                     }),
                     errors: combined.errors,
                     compile_error: combined.compile_error,
+                    skips_valid: combined.skips_valid,
                 }
             }
             Some(type_check) => type_check,
