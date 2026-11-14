@@ -966,6 +966,7 @@ fn backend_emitter(snapshot: &str, backend: &TokenStream, schema: &Value) {
     let wrapped: syn::File = syn::parse2(wrapper.mac.tokens.clone()).expect("wrapped items");
     let declaration = syn::File {
         shebang: None,
+        frontmatter: None,
         attrs: Vec::new(),
         items: vec![syn::Item::Struct(declaration.clone())],
     };
