@@ -1,6 +1,6 @@
 #[jsonschema::validator(
     schema = "{}",
-    methods = { evaluate = false }
+    methods = { apply = false }
 )]
 struct Validator;
 

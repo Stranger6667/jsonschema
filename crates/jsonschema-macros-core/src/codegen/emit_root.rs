@@ -24,6 +24,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     name: &Ident,
     impl_mod_name: &Ident,
     validation_expr: &CompiledExpr,
+    evaluation_body: Option<&TokenStream>,
     recursive_stack_needed: bool,
     dynamic_stack_needed: bool,
     root_recursive_anchor: bool,
@@ -51,6 +52,17 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     // Public `impl` methods live outside the aliased module, so they use the full type.
     let entry_points = E::entry_points(impl_mod_name, &runtime_crate, methods);
     let entry_bodies = E::entry_bodies(methods);
+    let evaluation_import =
+        evaluation_body.map(|_| quote! { use jsonschema::__private::evaluation as __eval; });
+    let evaluate_fn = evaluation_body.map(|body| {
+        quote! {
+            pub(super) fn evaluate(instance: #node) -> jsonschema::Evaluation {
+                #function_prelude
+                #recompile_trigger
+                #body
+            }
+        }
+    });
 
     let regex_helpers: Vec<TokenStream> = ctx
         .regex_helpers
@@ -582,6 +594,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             use jsonschema::__private::content as __content;
             use jsonschema::__private::custom as __custom;
             use jsonschema::__private::error as __err;
+            #evaluation_import
             use jsonschema::__private::fancy_regex as __fancy;
             use jsonschema::__private::format as __fmt;
             use jsonschema::__private::numeric as __num;
@@ -620,6 +633,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             }
             #run_validate_fn
             #run_collect_fn
+            #evaluate_fn
             #entry_bodies
         }
 

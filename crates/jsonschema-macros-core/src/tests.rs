@@ -269,16 +269,17 @@ fn config_parses_methods() {
 }
 
 #[test]
-fn config_methods_default_to_all_enabled() {
+fn config_methods_defaults() {
     let config = syn::parse_str::<crate::Config>(r#"schema = "{}""#).expect("config should parse");
     assert!(config.methods.is_valid);
     assert!(config.methods.validate);
     assert!(config.methods.iter_errors);
+    assert!(!config.methods.evaluate);
 }
 
-#[test_case(r#"schema = "{}", methods = { evaluate = false }"#, "Unknown methods key. Expected `is_valid`, `validate`, or `iter_errors`" ; "unknown_key")]
+#[test_case(r#"schema = "{}", methods = { apply = false }"#, "Unknown methods key. Expected `is_valid`, `validate`, `iter_errors`, or `evaluate`" ; "unknown_key")]
 #[test_case(r#"schema = "{}", methods = { validate = false, validate = true }"#, "Duplicate methods key: `validate`" ; "duplicate_key")]
-#[test_case(r#"schema = "{}", methods = { is_valid = false, validate = false, iter_errors = false }"#, "At least one of `is_valid`, `validate`, or `iter_errors` must be enabled" ; "all_disabled")]
+#[test_case(r#"schema = "{}", methods = { is_valid = false, validate = false, iter_errors = false }"#, "At least one of `is_valid`, `validate`, `iter_errors`, or `evaluate` must be enabled" ; "all_disabled")]
 fn config_rejects_invalid_methods(input: &str, expected: &str) {
     let error = syn::parse_str::<crate::Config>(input)
         .err()

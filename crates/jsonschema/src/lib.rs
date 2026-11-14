@@ -4000,6 +4000,8 @@ pub mod __private {
         }
     }
 
+    pub use crate::evaluation::generated as evaluation;
+
     /// Per-keyword error constructors for generated code; evaluation path always equals schema path.
     pub mod error {
         use serde_json::Value;

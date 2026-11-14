@@ -184,11 +184,14 @@ pub(crate) struct EmailOptionsConfig {
 }
 
 /// Which public methods the validator gets.
+// Independent switches, one per method.
+#[allow(clippy::struct_excessive_bools)]
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct MethodGates {
     pub(crate) is_valid: bool,
     pub(crate) validate: bool,
     pub(crate) iter_errors: bool,
+    pub(crate) evaluate: bool,
 }
 
 impl Default for MethodGates {
@@ -197,6 +200,7 @@ impl Default for MethodGates {
             is_valid: true,
             validate: true,
             iter_errors: true,
+            evaluate: false,
         }
     }
 }

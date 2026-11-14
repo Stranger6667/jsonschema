@@ -1547,6 +1547,89 @@ impl<'a> Serialize for ErrorEntriesSerializer<'a> {
     }
 }
 
+/// What generated validators build an [`Evaluation`] from.
+#[cfg(feature = "macros")]
+#[doc(hidden)]
+pub mod generated {
+    use super::{
+        format_keyword_location, ChildList, ErrorDescription, Evaluation, EvaluationArena,
+        EvaluationNode, InstancePosition,
+    };
+    use crate::{paths::Location, ValidationError};
+    use referencing::Uri;
+    use std::sync::Arc;
+
+    /// Where a schema node sits, fixed when the validator is generated.
+    pub struct NodeLocation {
+        keyword: Location,
+        schema: Arc<str>,
+        absolute: Option<Arc<Uri<String>>>,
+    }
+
+    impl NodeLocation {
+        /// # Panics
+        ///
+        /// `absolute` is not a URI; the generator only emits ones it resolved itself.
+        #[must_use]
+        pub fn new(keyword_location: &str, absolute: Option<&str>) -> Self {
+            let keyword = Location::from_escaped(keyword_location);
+            let absolute = absolute.map(|uri| {
+                Arc::new(Uri::parse(uri.to_owned()).expect("generated absolute location is a URI"))
+            });
+            NodeLocation {
+                schema: format_keyword_location(&keyword, absolute.as_ref()),
+                keyword,
+                absolute,
+            }
+        }
+    }
+
+    pub struct Node(EvaluationNode);
+
+    #[derive(Default)]
+    pub struct Builder(EvaluationArena);
+
+    impl Builder {
+        #[must_use]
+        pub fn new() -> Self {
+            Self::default()
+        }
+
+        /// A node at the instance root, invalid when it carries errors.
+        pub fn node(&mut self, location: &NodeLocation, errors: &[ValidationError<'_>]) -> Node {
+            let errors: Vec<_> = errors
+                .iter()
+                .map(ErrorDescription::from_validation_error)
+                .collect();
+            Node(if errors.is_empty() {
+                EvaluationNode::valid(
+                    location.keyword.clone(),
+                    location.absolute.clone(),
+                    Arc::clone(&location.schema),
+                    InstancePosition::ROOT,
+                    None,
+                    ChildList::default(),
+                )
+            } else {
+                EvaluationNode::invalid(
+                    location.keyword.clone(),
+                    location.absolute.clone(),
+                    Arc::clone(&location.schema),
+                    InstancePosition::ROOT,
+                    None,
+                    errors,
+                    ChildList::default(),
+                )
+            })
+        }
+
+        #[must_use]
+        pub fn finish(self, root: Node) -> Evaluation {
+            Evaluation::with_root(self.0, root.0)
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
