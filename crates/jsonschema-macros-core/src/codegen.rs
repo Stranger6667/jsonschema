@@ -25,6 +25,7 @@ pub(crate) mod emit_pyo3;
 mod emit_root;
 pub(crate) mod emit_serde;
 mod errors;
+mod evaluation;
 mod expr;
 mod helpers;
 mod keywords;
@@ -94,6 +95,11 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
             format!("Unknown vocabulary: '{uri}' is required by the meta-schema. Adjust configuration to declare support for it"),
         ));
     }
+    let evaluation_body = config
+        .methods
+        .evaluate
+        .then(|| evaluation::compile(&ctx, &config.schema))
+        .transpose()?;
     Ok(emit_root_module(
         &ctx,
         config.runtime_crate_alias.as_ref(),
@@ -101,6 +107,7 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
         name,
         impl_mod_name,
         &validation_expr,
+        evaluation_body.as_ref(),
         recursive_stack_needed,
         dynamic_stack_needed,
         root_recursive_anchor,
