@@ -1,6 +1,6 @@
 use std::{collections::HashMap, sync::LazyLock};
 
-use jsonschema::{json::Pyo3, paths::Location, Keyword, ValidationError};
+use jsonschema::{json::Pyo3, paths::Location, Evaluation, Keyword, ValidationError, Validator};
 use pyo3::{
     exceptions::PyKeyError,
     prelude::*,
@@ -14,9 +14,23 @@ pub struct SuiteEntry {
     pub is_valid: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<bool>,
     pub validate: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Option<String>>,
     pub iter_errors: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Vec<String>>,
-    /// A JSON array of the `list` and `hierarchical` outputs; `None` while the generator does not
-    /// support the case's schema.
+    /// `[generated, runtime]` as JSON, each the `list` and `hierarchical` outputs of a validator
+    /// with the same features and representation; `None` while the generator does not support the
+    /// case's schema.
     pub evaluate: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Option<String>>,
+}
+
+fn runtime_evaluate(
+    validator: &Validator<Pyo3>,
+    instance: &Bound<'_, PyAny>,
+) -> PyResult<Evaluation> {
+    jsonschema::json::inspect(instance.as_borrowed(), false, || {
+        validator.evaluate(instance.as_borrowed())
+    })
+}
+
+fn outputs(evaluation: &Evaluation) -> serde_json::Value {
+    serde_json::json!([evaluation.list(), evaluation.hierarchical()])
 }
 
 type KeywordResult<'a> = Result<Box<dyn for<'i> Keyword<'i, Pyo3>>, ValidationError<'a>>;

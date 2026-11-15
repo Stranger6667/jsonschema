@@ -41,7 +41,8 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     let methods = ctx.config.methods;
     // Validity bodies and `is_branch_valid_*` serve every method and always stay. Error bodies serve
     // `validate` (first error) and `iter_errors` (every error), so they go only when both are off.
-    let emit_errors = methods.validate || methods.iter_errors;
+    // `evaluate` reads its errors from the same function.
+    let emit_errors = methods.validate || methods.iter_errors || methods.evaluate;
     let module_prelude = E::module_prelude();
     let function_prelude = E::function_prelude();
     let node = E::node_param(None);
@@ -57,7 +58,6 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     let evaluate_fn = evaluation_body.map(|body| {
         quote! {
             pub(super) fn evaluate(instance: #node) -> jsonschema::Evaluation {
-                #function_prelude
                 #recompile_trigger
                 #body
             }

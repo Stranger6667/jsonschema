@@ -5705,6 +5705,28 @@ struct EvaluateEmpty;
 )]
 struct EvaluateFalseWithBase;
 
+#[jsonschema::validator(schema = r#"{"type": ["string", "null"]}"#, methods = { evaluate = true })]
+struct EvaluateType;
+
+#[jsonschema::validator(
+    schema = r#"{"maxLength": 3, "minLength": 2, "type": "string"}"#,
+    methods = { evaluate = true }
+)]
+struct EvaluateLengths;
+
+#[jsonschema::validator(
+    schema = r#"{"maxLength": 3, "minLength": 2, "type": "string"}"#,
+    base_uri = "https://example.com/root.json",
+    methods = { evaluate = true }
+)]
+struct EvaluateLengthsWithBase;
+
+#[jsonschema::validator(
+    schema = r#"{"maxLength": 3, "minLength": 2, "type": "string"}"#,
+    methods = { is_valid = false, validate = false, iter_errors = false, evaluate = true }
+)]
+struct EvaluateOnly;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -5718,6 +5740,10 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateFalse::evaluate, serde_json::json!(false), None ; "false_schema")]
 #[test_case(EvaluateEmpty::evaluate, serde_json::json!({}), None ; "empty_schema")]
 #[test_case(EvaluateFalseWithBase::evaluate, serde_json::json!(false), Some("https://example.com/root.json") ; "false_schema_with_base")]
+#[test_case(EvaluateType::evaluate, serde_json::json!({"type": ["string", "null"]}), None ; "type")]
+#[test_case(EvaluateLengths::evaluate, serde_json::json!({"maxLength": 3, "minLength": 2, "type": "string"}), None ; "lengths")]
+#[test_case(EvaluateLengthsWithBase::evaluate, serde_json::json!({"maxLength": 3, "minLength": 2, "type": "string"}), Some("https://example.com/root.json") ; "lengths_with_base")]
+#[test_case(EvaluateOnly::evaluate, serde_json::json!({"maxLength": 3, "minLength": 2, "type": "string"}), None ; "evaluate_only")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -5728,7 +5754,14 @@ fn test_evaluate_matches_runtime(
         options = options.with_base_uri(base_uri);
     }
     let runtime = options.build(&schema).expect("valid schema");
-    for instance in [serde_json::json!(null), serde_json::json!({"a": [1, "x"]})] {
+    for instance in [
+        serde_json::json!(null),
+        serde_json::json!({"a": [1, "x"]}),
+        serde_json::json!(5),
+        serde_json::json!("a"),
+        serde_json::json!("ab"),
+        serde_json::json!("abcd"),
+    ] {
         assert_eq!(
             evaluation_outputs(&evaluate(&instance)),
             evaluation_outputs(&runtime.evaluate(&instance)),

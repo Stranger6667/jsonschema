@@ -57,6 +57,29 @@ pub(crate) fn generate(
                 } else {
                     quote! {}
                 };
+                let evaluate = if supports_evaluate {
+                    let validate_formats = relative.starts_with("optional/");
+                    quote! {
+                        |instance| {
+                            static RUNTIME: std::sync::LazyLock<
+                                jsonschema::Validator<jsonschema::json::#backend>,
+                            > = std::sync::LazyLock::new(|| {
+                                jsonschema::options_for::<jsonschema::json::#backend>()
+                                    .with_draft(jsonschema::Draft::#draft_variant)
+                                    .should_validate_formats(#validate_formats)
+                                    .build(&serde_json::from_str(#schema).expect("suite schema is JSON"))
+                                    .expect("suite schema compiles")
+                            });
+                            let generated = #ident::evaluate(instance)?;
+                            let runtime = runtime_evaluate(&RUNTIME, instance)?;
+                            Ok(Some(
+                                serde_json::json!([outputs(&generated), outputs(&runtime)]).to_string(),
+                            ))
+                        }
+                    }
+                } else {
+                    quote! { |_| Ok(None) }
+                };
                 definitions.push(quote! {
                     #[jsonschema::validator(
                         schema = #schema,
@@ -68,7 +91,7 @@ pub(crate) fn generate(
                     )]
                     struct #ident;
                 });
-                entries.push(entry(&ident, &id, supports_evaluate));
+                entries.push(entry(&ident, &id, &evaluate));
             }
         }
     }
@@ -111,7 +134,7 @@ pub(crate) fn generate_schemas(
             #[jsonschema::validator(schema = #schema, backend = #backend, keywords = { #(#keywords),* })]
             struct #ident;
         });
-        entries.push(entry(&ident, &schema, false));
+        entries.push(entry(&ident, &schema, &quote! { |_| Ok(None) }));
     }
     Ok(quote! {
         // Rebuilds when the schema list changes.
@@ -140,19 +163,7 @@ fn sorted(value: &Value) -> Value {
     }
 }
 
-fn entry(ident: &Ident, id: &str, supports_evaluate: bool) -> TokenStream {
-    let evaluate = if supports_evaluate {
-        quote! {
-            |instance| {
-                let evaluation = #ident::evaluate(instance)?;
-                Ok(Some(
-                    serde_json::json!([evaluation.list(), evaluation.hierarchical()]).to_string(),
-                ))
-            }
-        }
-    } else {
-        quote! { |_| Ok(None) }
-    };
+fn entry(ident: &Ident, id: &str, evaluate: &TokenStream) -> TokenStream {
     quote! {
         SuiteEntry {
             id: #id,

@@ -361,6 +361,16 @@ fn methods_validate_and_iter_errors_off_drop_error_functions() {
 }
 
 #[test]
+fn evaluate_leaf_keywords_module() {
+    let mut config = test_config(json!({"maxLength": 3, "minLength": 2, "type": "string"}));
+    config.methods.evaluate = true;
+    insta::assert_snapshot!(
+        "evaluate_leaf_keywords_module",
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
+    );
+}
+
+#[test]
 fn methods_gate_every_backend() {
     let mut config = test_config(branchy_schema());
     config.methods = crate::context::MethodGates {

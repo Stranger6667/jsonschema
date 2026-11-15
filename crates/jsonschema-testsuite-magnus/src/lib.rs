@@ -1,9 +1,12 @@
 use std::{collections::HashMap, sync::LazyLock};
 
 use jsonschema::{
-    json::{Magnus, RbNode},
+    json::{
+        magnus_invalidate_members_cache, magnus_probe_root, magnus_take_pending_error, Magnus,
+        MagnusPendingErrorScope, RbNode,
+    },
     paths::Location,
-    Keyword, ValidationError,
+    Evaluation, Keyword, ValidationError, Validator,
 };
 use magnus::{
     function, rb_sys::FromRawValue, value::ReprValue, Error, Float, Integer, RArray, Ruby, Value,
@@ -15,9 +18,32 @@ pub struct SuiteEntry {
     pub is_valid: fn(&Value) -> Result<bool, Error>,
     pub validate: fn(&Value) -> Result<Option<String>, Error>,
     pub iter_errors: fn(&Value) -> Result<Vec<String>, Error>,
-    /// A JSON array of the `list` and `hierarchical` outputs; `None` while the generator does not
-    /// support the case's schema.
+    /// `[generated, runtime]` as JSON, each the `list` and `hierarchical` outputs of a validator
+    /// with the same features and representation; `None` while the generator does not support the
+    /// case's schema.
     pub evaluate: fn(&Value) -> Result<Option<String>, Error>,
+}
+
+/// The runtime counterpart of a generated `evaluate`, reading the instance the same way.
+// Takes the `&Value` every suite entry gets, so Pyo3 and Magnus entries call it alike.
+#[allow(clippy::trivially_copy_pass_by_ref)]
+fn runtime_evaluate(validator: &Validator<Magnus>, instance: &Value) -> Result<Evaluation, Error> {
+    let _scope = MagnusPendingErrorScope::enter();
+    magnus_invalidate_members_cache();
+    let node = RbNode::new(magnus::rb_sys::AsRawValue::as_raw(*instance));
+    magnus_probe_root(node);
+    if let Some(error) = magnus_take_pending_error() {
+        return Err(error.into());
+    }
+    let evaluation = validator.evaluate(node);
+    if let Some(error) = magnus_take_pending_error() {
+        return Err(error.into());
+    }
+    Ok(evaluation)
+}
+
+fn outputs(evaluation: &Evaluation) -> serde_json::Value {
+    serde_json::json!([evaluation.list(), evaluation.hierarchical()])
 }
 
 type KeywordResult<'a> = Result<Box<dyn for<'i> Keyword<'i, Magnus>>, ValidationError<'a>>;
