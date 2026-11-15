@@ -1,5 +1,5 @@
 use super::super::{
-    expr::{call_errors, ErrorsBlock},
+    expr::{call_errors, ErrorsBlock, RefErrors},
     helpers::{
         collect_dynamic_anchor_bindings, dynamic_ref_anchor_name, get_or_create_is_valid_fn,
     },
@@ -218,6 +218,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 quote! { #func_ident(instance) },
                 call_errors(&quote! { #errors_ident(instance, __path, __errors) }),
             )
+            .with_ref_errors(RefErrors::Call(func_name))
         } else {
             CompiledExpr::from_bool_expr(
                 quote! { #func_ident(instance) },

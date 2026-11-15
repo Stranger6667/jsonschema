@@ -1,20 +1,22 @@
 use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
-use quote::{format_ident, quote};
+use quote::{format_ident, quote, ToTokens};
 use serde_json::{Map, Value};
 
 use crate::context::CompileContext;
 
 use super::{
     draft::DraftExt,
-    expr::{ErrorsBlock, IsValidExpr},
+    expr::{call_errors, ErrorsBlock, IsValidExpr, RefErrors},
     keywords,
     keywords::format::format_emits_assertion,
     CompiledExpr,
 };
 
 enum SoleType {
-    Array(TokenStream, TokenStream),
+    /// `is_valid`, errors, and the referenced schema checking every item when that is the only
+    /// error source.
+    Array(TokenStream, TokenStream, Option<String>),
     Object(TokenStream, TokenStream),
 }
 
@@ -87,7 +89,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     }
 
     let mut is_valid_fallback = quote! { true };
-    let mut errors_fallback = quote! { {} };
+    let mut type_schema_path = None;
     let mut typed_arms = 0usize;
     let mut sole: Option<SoleType> = None;
     let mut is_valid_arms = Vec::new();
@@ -154,13 +156,17 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     }
 
     if has_array {
-        let for_array = keywords::array::compile(ctx, schema);
+        let mut for_array = keywords::array::compile(ctx, schema);
         skips_valid &= for_array.skips_valid;
         if has_type_constraint || !for_array.is_trivially_true() {
             typed_arms += 1;
             sole = Some(SoleType::Array(
                 for_array.is_valid_token_stream(),
                 for_array.errors.as_token_stream(),
+                match for_array.ref_errors.take() {
+                    Some(RefErrors::EachItem(name)) => Some(name),
+                    _ => None,
+                },
             ));
             is_valid_arms.push(E::match_array_arm(for_array.is_valid_token_stream()));
             if has_type_constraint || matches!(&for_array.errors, ErrorsBlock::Expr(_)) {
@@ -232,44 +238,68 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             }
         }
         is_valid_fallback = quote! { false };
-
-        let type_schema_path = ctx.schema_path_for_keyword("type");
-        let type_value = schema
-            .get("type")
-            .expect("has_type_constraint implies a `type` keyword");
-        let type_error_expr = build_type_error_expr::<E>(type_value, &type_schema_path);
-        errors_fallback = quote! { { if __errors.push(#type_error_expr) { return true; } } };
+        type_schema_path = Some(ctx.schema_path_for_keyword("type"));
     } else if is_valid_arms.is_empty() {
         return None;
     }
-    is_valid_arms.push(quote! { _ => #is_valid_fallback });
-    errors_arms.push(quote! { _ => #errors_fallback });
+    let errors_fallback = || {
+        if let (Some(type_value), Some(type_schema_path)) = (schema.get("type"), &type_schema_path)
+        {
+            let type_error_expr = build_type_error_expr::<E>(type_value, type_schema_path);
+            quote! { { if __errors.push(#type_error_expr) { return true; } } }
+        } else {
+            quote! { {} }
+        }
+    };
 
     let (is_valid_ts, errors_ts) = match sole.filter(|_| typed_arms == 1) {
-        Some(SoleType::Array(is_valid, errors)) => (
-            E::sole_array_match(is_valid, is_valid_fallback),
-            E::sole_array_match(errors, errors_fallback),
-        ),
+        Some(SoleType::Array(is_valid, errors, each_item_ref)) => {
+            let errors = match (schema.get("type"), each_item_ref, &type_schema_path) {
+                // Arrays of one referenced schema differ only in their type error's location, so
+                // they report through one helper taking that location.
+                (Some(type_value @ Value::String(ty)), Some(ref_name), Some(type_schema_path))
+                    if ty == "array" =>
+                {
+                    let helper = ctx.array_errors_helper(ref_name, || {
+                        let type_error =
+                            build_type_error_expr::<E>(type_value, format_ident!("__type_path"));
+                        E::sole_array_match(
+                            errors,
+                            quote! { { if __errors.push(#type_error) { return true; } } },
+                        )
+                    });
+                    call_errors(&quote! { #helper(instance, __path, __errors, #type_schema_path) })
+                }
+                _ => E::sole_array_match(errors, errors_fallback()),
+            };
+            (E::sole_array_match(is_valid, is_valid_fallback), errors)
+        }
         Some(SoleType::Object(is_valid, errors)) => (
             E::sole_object_match(is_valid, is_valid_fallback),
-            E::sole_object_match(errors, errors_fallback),
+            E::sole_object_match(errors, errors_fallback()),
         ),
-        _ => (
-            E::type_match(format_ident!("instance"), is_valid_arms),
-            E::type_match(format_ident!("instance"), errors_arms),
-        ),
+        _ => {
+            let errors_fallback = errors_fallback();
+            is_valid_arms.push(quote! { _ => #is_valid_fallback });
+            errors_arms.push(quote! { _ => #errors_fallback });
+            (
+                E::type_match(format_ident!("instance"), is_valid_arms),
+                E::type_match(format_ident!("instance"), errors_arms),
+            )
+        }
     };
     Some(CompiledExpr {
         is_valid: IsValidExpr::Expr(is_valid_ts),
         errors: ErrorsBlock::Expr(errors_ts),
         compile_error: false,
         skips_valid,
+        ref_errors: None,
     })
 }
 
 pub(super) fn build_type_error_expr<E: ValueEmitter>(
     type_val: &Value,
-    type_schema_path: &str,
+    type_schema_path: impl ToTokens,
 ) -> TokenStream {
     let err_instance = E::err_instance(format_ident!("instance"));
     match type_val {

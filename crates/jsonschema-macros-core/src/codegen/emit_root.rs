@@ -246,6 +246,29 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
         })
         .collect();
 
+    let array_errors_helpers: Vec<TokenStream> = if emit_errors {
+        ctx.array_errors_helpers
+            .values()
+            .map(|(helper_ident, body)| {
+                quote! {
+                    #[inline(never)]
+                    fn #helper_ident<'__i>(
+                        instance: #borrowed_node,
+                        __path: &__paths::LazyLocation,
+                        __errors: &mut __err::Errors<'__i>,
+                        __type_path: &str,
+                    ) -> bool {
+                        #function_prelude
+                        #body
+                        false
+                    }
+                }
+            })
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     let key_eval_fns: Vec<TokenStream> = ctx
         .key_eval_fns
         .iter_bodies()
@@ -601,6 +624,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             #uri_cache_defs
             #(#regex_helpers)*
             #(#branch_helpers)*
+            #(#array_errors_helpers)*
             #(#is_valid_fns)*
             #(#key_eval_fns)*
             #(#item_eval_fns)*
