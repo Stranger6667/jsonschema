@@ -6,7 +6,7 @@ use crate::{
     keywords::CompilationResult,
     paths::Location,
     types::{JsonType, JsonTypeSet},
-    validator::{EvaluationResult, Validate, ValidationContext},
+    validator::{evaluate_assertion, EvaluationResult, Validate, ValidationContext},
     Json, LazyInstance, Node,
 };
 use serde_json::{json, Map, Value};
@@ -92,12 +92,7 @@ impl<F: Json> Validate<F> for MultipleTypesValidator {
         _tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if Validate::<F>::is_valid(self, instance, ctx) {
-            EvaluationResult::valid_empty()
-        } else {
-            let message = format!("{} is not of types {:?}", instance.to_value(), self.types);
-            EvaluationResult::invalid_empty(vec![ErrorDescription::new("type", message)])
-        }
+        evaluate_assertion::<F, _>(self, instance, ctx)
     }
 }
 
@@ -583,6 +578,30 @@ mod tests {
     #[test_case(&json!({"type": ["string", "object"]}), &json!(1), "/type")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
         tests_util::assert_schema_location(schema, instance, expected);
+    }
+
+    // The same message `validate` reports.
+    #[test]
+    fn multiple_types_evaluate_message() {
+        let evaluation = crate::validator_for(&json!({"type": ["string", "null"]}))
+            .expect("valid schema")
+            .evaluate(&json!(5));
+        assert_eq!(
+            serde_json::to_value(evaluation.list()).expect("list output"),
+            json!({
+                "valid": false,
+                "details": [
+                    {"evaluationPath": "", "instanceLocation": "", "schemaLocation": "", "valid": false},
+                    {
+                        "errors": {"type": "5 is not of types \"null\", \"string\""},
+                        "evaluationPath": "/type",
+                        "instanceLocation": "",
+                        "schemaLocation": "/type",
+                        "valid": false
+                    }
+                ]
+            }),
+        );
     }
 
     #[test_case(&json!({"type": 5}), "5 is not of types \"string\", \"array\""; "not string or array")]
