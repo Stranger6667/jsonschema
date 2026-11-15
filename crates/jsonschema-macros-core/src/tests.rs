@@ -217,12 +217,12 @@ fn test_codegen_snapshot(schema: Value, snap_name: &str) {
     });
 }
 
-#[test]
-fn dynamic_schema_full_module_emission() {
-    let schema = json!({"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]},"plain":{"type":"integer"}},"type":"object","properties":{"child":{"$dynamicRef":"#node"},"other":{"$ref":"#/$defs/plain"}}});
+#[test_case(json!({"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]},"plain":{"type":"integer"}},"type":"object","properties":{"child":{"$dynamicRef":"#node"},"other":{"$ref":"#/$defs/plain"}}}), "dynamic_schema_full_module" ; "dynamic schema")]
+#[test_case(json!({"$defs":{"item":{"type":"integer"}},"properties":{"first":{"type":"array","items":{"$ref":"#/$defs/item"}},"second":{"type":"array","items":{"$ref":"#/$defs/item"}}}}), "arrays_of_same_ref_full_module" ; "arrays of the same ref")]
+fn full_module_emission(schema: Value, snap_name: &str) {
     let description = serde_json::to_string(&schema).expect("schema serialization");
     insta::with_settings!({ description => &description }, {
-        insta::assert_snapshot!("dynamic_schema_full_module", schema_to_code(schema));
+        insta::assert_snapshot!(snap_name, schema_to_code(schema));
     });
 }
 

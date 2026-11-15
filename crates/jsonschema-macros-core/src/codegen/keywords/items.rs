@@ -1,4 +1,4 @@
-use super::super::{compile_schema, CompileContext, CompiledExpr};
+use super::super::{compile_schema, expr::RefErrors, CompileContext, CompiledExpr};
 use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use serde_json::Value;
@@ -51,7 +51,7 @@ fn compile_plain<E: ValueEmitter>(ctx: &mut CompileContext<'_, E>, value: &Value
             .collect();
         CompiledExpr::combine_and(compiled)
     } else {
-        let compiled = ctx.with_schema_path_segment("items", |ctx| {
+        let mut compiled = ctx.with_schema_path_segment("items", |ctx| {
             ctx.with_instance_scope(|ctx| compile_schema(ctx, value))
         });
         if compiled.is_trivially_true() {
@@ -64,7 +64,7 @@ fn compile_plain<E: ValueEmitter>(ctx: &mut CompileContext<'_, E>, value: &Value
             #child_errors
         });
         let iter_expr = E::array_iter(format_ident!("arr"));
-        CompiledExpr::with_errors(
+        let checked = CompiledExpr::with_errors(
             quote! { #iter_expr.all(|instance| #is_valid) },
             quote! {
                 for (idx, item) in #iter_expr.enumerate() {
@@ -73,7 +73,11 @@ fn compile_plain<E: ValueEmitter>(ctx: &mut CompileContext<'_, E>, value: &Value
                 }
             },
         )
-        .with_skips_valid(compiled.skips_valid)
+        .with_skips_valid(compiled.skips_valid);
+        match compiled.ref_errors.take() {
+            Some(RefErrors::Call(name)) => checked.with_ref_errors(RefErrors::EachItem(name)),
+            _ => checked,
+        }
     }
 }
 

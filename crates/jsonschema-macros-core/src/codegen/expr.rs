@@ -11,6 +11,18 @@ pub(crate) struct CompiledExpr {
     /// The errors block skips accepted instances on its own, through error functions that run
     /// `is_valid` first, so a caller needs no `is_valid` guard before it.
     pub(crate) skips_valid: bool,
+    /// The referenced schema whose error function alone reports this check's errors; equal values
+    /// emit equal errors blocks wherever they appear.
+    pub(crate) ref_errors: Option<RefErrors>,
+}
+
+/// A referenced schema's error function, named by its `is_valid` function.
+#[derive(Clone)]
+pub(crate) enum RefErrors {
+    /// Run on the instance.
+    Call(String),
+    /// Run on every array item.
+    EachItem(String),
 }
 
 #[derive(Clone)]
@@ -106,6 +118,7 @@ impl CompiledExpr {
             errors: ErrorsBlock::AlwaysValid,
             compile_error: false,
             skips_valid: true,
+            ref_errors: None,
         }
     }
 
@@ -140,6 +153,7 @@ impl CompiledExpr {
             errors: ErrorsBlock::Expr(TokenStream::new()),
             compile_error: true,
             skips_valid: true,
+            ref_errors: None,
         }
     }
 
@@ -177,6 +191,7 @@ impl CompiledExpr {
             is_valid: IsValidExpr::Expr(is_valid),
             compile_error: false,
             skips_valid: false,
+            ref_errors: None,
         }
     }
 
@@ -189,6 +204,7 @@ impl CompiledExpr {
             errors: report_first_error(&first_error),
             compile_error: false,
             skips_valid: false,
+            ref_errors: None,
         }
     }
 
@@ -199,11 +215,17 @@ impl CompiledExpr {
             errors: ErrorsBlock::Expr(errors),
             compile_error: false,
             skips_valid: false,
+            ref_errors: None,
         }
     }
 
     pub(crate) fn with_skips_valid(mut self, skips_valid: bool) -> Self {
         self.skips_valid = skips_valid;
+        self
+    }
+
+    pub(crate) fn with_ref_errors(mut self, ref_errors: RefErrors) -> Self {
+        self.ref_errors = Some(ref_errors);
         self
     }
 
@@ -226,6 +248,11 @@ impl CompiledExpr {
     pub(crate) fn and(self, other: Self) -> Self {
         let compile_error = self.compile_error || other.compile_error;
         let skips_valid = self.skips_valid && other.skips_valid;
+        let ref_errors = match (&self.errors, &other.errors) {
+            (ErrorsBlock::AlwaysValid, _) => other.ref_errors,
+            (_, ErrorsBlock::AlwaysValid) => self.ref_errors,
+            _ => None,
+        };
         let errors = self.errors.and(other.errors);
         let is_valid = match (self.is_valid, other.is_valid) {
             (IsValidExpr::AlwaysTrue, b) => b,
@@ -239,6 +266,7 @@ impl CompiledExpr {
             errors,
             compile_error,
             skips_valid,
+            ref_errors,
         }
     }
 

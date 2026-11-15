@@ -1,0 +1,221 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 225
+description: "{\"$defs\":{\"item\":{\"type\":\"integer\"}},\"properties\":{\"first\":{\"items\":{\"$ref\":\"#/$defs/item\"},\"type\":\"array\"},\"second\":{\"items\":{\"$ref\":\"#/$defs/item\"},\"type\":\"array\"}}}"
+expression: schema_to_code(schema)
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::__private::unfinished_matches as __unfinished;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use __sj::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = __sj::Map<String, __Value>;
+    #[inline(never)]
+    fn array_errors_0<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+        __type_path: &str,
+    ) -> bool {
+        match instance {
+            __Value::Array(arr) => {
+                for (idx, item) in arr.iter().enumerate() {
+                    let instance = item;
+                    let __path = &__path.push(idx);
+                    if validate_ref_0_errors(instance, __path, __errors) {
+                        return true;
+                    }
+                }
+            }
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            __type_path,
+                            __path.into(),
+                            instance,
+                            __JT::Array,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        false
+    }
+    fn validate_ref_0(instance: &__Value) -> bool {
+        match instance {
+            __Value::Number(n) => __types::is_integer(n),
+            _ => false,
+        }
+    }
+    #[inline(never)]
+    fn validate_ref_0_errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        if validate_ref_0(instance) {
+            return false;
+        }
+        if !(match instance {
+            __Value::Number(n) => __types::is_integer(n),
+            _ => false,
+        }) {
+            if __errors
+                .push(
+                    __err::single_type(
+                        "/$defs/item/type",
+                        __path.into(),
+                        instance,
+                        __JT::Integer,
+                    ),
+                )
+            {
+                return true;
+            }
+        }
+        false
+    }
+    pub(super) fn is_valid(instance: &__Value) -> bool {
+        match instance {
+            __Value::Object(obj) => {
+                obj.iter()
+                    .all(|(key, instance)| {
+                        let key_str = key.as_str();
+                        match key_str {
+                            "first" => {
+                                match instance {
+                                    __Value::Array(arr) => {
+                                        arr.iter().all(|instance| validate_ref_0(instance))
+                                    }
+                                    _ => false,
+                                }
+                            }
+                            "second" => {
+                                match instance {
+                                    __Value::Array(arr) => {
+                                        arr.iter().all(|instance| validate_ref_0(instance))
+                                    }
+                                    _ => false,
+                                }
+                            }
+                            _ => true,
+                        }
+                    })
+            }
+            _ => true,
+        }
+    }
+    pub(super) fn errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        match instance {
+            __Value::Object(obj) => {
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "first" => {
+                            let instance = value;
+                            let __path = &__path.push("first");
+                            if array_errors_0(
+                                instance,
+                                __path,
+                                __errors,
+                                "/properties/first/type",
+                            ) {
+                                return true;
+                            }
+                        }
+                        "second" => {
+                            let instance = value;
+                            let __path = &__path.push("second");
+                            if array_errors_0(
+                                instance,
+                                __path,
+                                __errors,
+                                "/properties/second/type",
+                            ) {
+                                return true;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+    pub(super) fn run_is_valid(instance: &__Value) -> bool {
+        is_valid(instance)
+    }
+    pub(super) fn run_validate<'__i>(instance: &'__i __Value) -> Option<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
+    }
+    pub(super) fn run_collect_errors<'__i>(instance: &'__i __Value) -> Vec<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
+    }
+    pub(super) fn entry_is_valid(instance: &__Value) -> bool {
+        run_is_valid(instance)
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Value,
+    ) -> ::std::result::Result<(), __VE<'__i>> {
+        match run_validate(instance) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+    pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
+        __err::iterator_from(run_collect_errors(instance))
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &jsonschema::__private::serde_json::Value) -> bool {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> ::std::result::Result<(), jsonschema::ValidationError<'__i>> {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::ErrorIterator<'__i> {
+        __validator_impl::entry_iter_errors(instance)
+    }
+}

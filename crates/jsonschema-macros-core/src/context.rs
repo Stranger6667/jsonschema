@@ -5,7 +5,8 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use proc_macro2::TokenStream;
+use proc_macro2::{Ident, TokenStream};
+use quote::format_ident;
 use referencing::{write_escaped_str, Draft, Registry, Uri, VocabularySet};
 
 use crate::codegen::emit::ValueEmitter;
@@ -239,6 +240,9 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) item_eval_fns: FnTable,
     /// Applicator branches emitted once as paired validity and error-collection helpers.
     pub(crate) branch_helpers: Vec<(TokenStream, TokenStream)>,
+    /// Error reporting for `type: array` with every item checked by one referenced schema, keyed
+    /// by that schema's `is_valid` function.
+    pub(crate) array_errors_helpers: IndexMap<String, (Ident, TokenStream)>,
     discriminator_assumption: Option<DiscriminatorAssumption>,
     pub(crate) dynamic_anchor_bindings_cache:
         HashMap<String, Vec<crate::codegen::DynamicAnchorBinding>>,
@@ -296,6 +300,7 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             key_eval_fns: FnTable::new("eval_ref"),
             item_eval_fns: FnTable::new("eval_items_ref"),
             branch_helpers: Vec::new(),
+            array_errors_helpers: IndexMap::new(),
             discriminator_assumption: None,
             dynamic_anchor_bindings_cache: HashMap::new(),
             dynamic_anchor_bindings_being_compiled: HashSet::new(),
@@ -327,6 +332,21 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
         let idx = self.branch_helpers.len();
         self.branch_helpers.push((is_valid, errors));
         idx
+    }
+
+    /// The helper reporting errors for arrays of the schema behind `ref_name`, with `body` building
+    /// it the first time; the type error lands at `__type_path`.
+    pub(crate) fn array_errors_helper(
+        &mut self,
+        ref_name: String,
+        body: impl FnOnce() -> TokenStream,
+    ) -> Ident {
+        let entry = self.array_errors_helpers.entry(ref_name);
+        let idx = entry.index();
+        entry
+            .or_insert_with(|| (format_ident!("array_errors_{}", idx), body()))
+            .0
+            .clone()
     }
 
     pub(crate) fn with_discriminator_assumption<T>(

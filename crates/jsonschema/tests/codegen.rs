@@ -5656,3 +5656,35 @@ fn test_engine_syntax_regex_format_is_checked_per_engine() {
         assert!(!EngineSyntaxRegexFormatValidator::is_valid(&instance));
     }
 }
+
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"item":{"type":"integer"}},"properties":{"first":{"type":"array","items":{"$ref":"#/$defs/item"}},"second":{"type":"array","items":{"$ref":"#/$defs/item"}},"nested":{"type":"array","items":{"type":"array","items":{"$ref":"#/$defs/item"}}}}}"##
+)]
+struct ArraysOfSameRefValidator;
+
+// Arrays of one `$ref` report errors through shared code, each at its own schema location.
+#[test_case(serde_json::json!({"first": 1, "second": {}, "nested": "x"}) ; "not arrays")]
+#[test_case(serde_json::json!({"first": ["a"], "second": [1, "b"], "nested": [[2, "c"], 3]}) ; "invalid items")]
+#[test_case(serde_json::json!({"first": [1], "second": [], "nested": [[2]]}) ; "valid")]
+fn test_arrays_of_same_ref_match_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({
+        "$defs": {"item": {"type": "integer"}},
+        "properties": {
+            "first": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+            "second": {"type": "array", "items": {"$ref": "#/$defs/item"}},
+            "nested": {"type": "array", "items": {"type": "array", "items": {"$ref": "#/$defs/item"}}}
+        }
+    });
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_validate_parity(
+        ArraysOfSameRefValidator::is_valid(&instance),
+        ArraysOfSameRefValidator::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(
+        ArraysOfSameRefValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
