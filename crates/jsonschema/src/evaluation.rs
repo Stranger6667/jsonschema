@@ -1532,10 +1532,10 @@ pub mod generated {
     };
     use crate::{paths::Location, ValidationError};
     use referencing::Uri;
-    use std::sync::Arc;
+    use std::sync::{Arc, OnceLock};
 
     /// Where a schema node sits, fixed when the validator is generated.
-    pub struct NodeLocation {
+    struct NodeLocation {
         keyword: Location,
         schema: Arc<str>,
         absolute: Option<Arc<Uri<String>>>,
@@ -1545,8 +1545,7 @@ pub mod generated {
         /// # Panics
         ///
         /// `absolute` is not a URI; the generator only emits ones it resolved itself.
-        #[must_use]
-        pub fn new(keyword_location: &str, absolute: Option<&str>) -> Self {
+        fn new(keyword_location: &str, absolute: Option<&str>) -> Self {
             let keyword = Location::from_escaped(keyword_location);
             let absolute = absolute.map(|uri| {
                 Arc::new(Uri::parse(uri.to_owned()).expect("generated absolute location is a URI"))
@@ -1559,48 +1558,89 @@ pub mod generated {
         }
     }
 
-    pub struct Node(EvaluationNode);
+    /// The units a generated `evaluate` reports: the schema first, then its keywords. Their
+    /// locations are built on first use.
+    pub struct Locations {
+        pointers: &'static [&'static str],
+        base: Option<&'static str>,
+        built: OnceLock<Box<[NodeLocation]>>,
+    }
 
-    #[derive(Default)]
-    pub struct Builder(EvaluationArena);
-
-    impl Builder {
+    impl Locations {
+        /// `base` is the absolute URI the pointers resolve against, if the schema has one.
         #[must_use]
-        pub fn new() -> Self {
-            Self::default()
+        pub const fn new(pointers: &'static [&'static str], base: Option<&'static str>) -> Self {
+            Locations {
+                pointers,
+                base,
+                built: OnceLock::new(),
+            }
         }
 
-        /// A node at the instance root, invalid when it carries errors.
-        pub fn node(&mut self, location: &NodeLocation, errors: &[ValidationError<'_>]) -> Node {
-            let errors: Vec<_> = errors
-                .iter()
-                .map(ErrorDescription::from_validation_error)
-                .collect();
-            Node(if errors.is_empty() {
-                EvaluationNode::valid(
-                    location.keyword.clone(),
-                    location.absolute.clone(),
-                    Arc::clone(&location.schema),
-                    InstancePosition::ROOT,
-                    None,
-                    ChildList::default(),
-                )
-            } else {
-                EvaluationNode::invalid(
-                    location.keyword.clone(),
-                    location.absolute.clone(),
-                    Arc::clone(&location.schema),
-                    InstancePosition::ROOT,
-                    None,
-                    errors,
-                    ChildList::default(),
-                )
-            })
-        }
-
+        /// The evaluation of an instance the schema reports `errors` for: each unit fails with
+        /// the errors reported at its location.
+        ///
+        /// # Panics
+        ///
+        /// No pointers were given; the generator always gives the schema's own.
         #[must_use]
-        pub fn finish(self, root: Node) -> Evaluation {
-            Evaluation::with_root(self.0, root.0)
+        pub fn evaluate(&self, errors: &[ValidationError<'_>]) -> Evaluation {
+            let built = self.built.get_or_init(|| {
+                self.pointers
+                    .iter()
+                    .map(|pointer| {
+                        let absolute = self.base.map(|base| format!("{base}#{pointer}"));
+                        NodeLocation::new(pointer, absolute.as_deref())
+                    })
+                    .collect()
+            });
+            let (schema, keywords) = built.split_first().expect("the schema's own location");
+            let mut arena = EvaluationArena::default();
+            let mut children = ChildList::default();
+            for (location, pointer) in keywords.iter().zip(&self.pointers[1..]) {
+                children.push(
+                    &mut arena,
+                    unit(location, at(errors, pointer), ChildList::default()),
+                );
+            }
+            let root = unit(schema, at(errors, ""), children);
+            Evaluation::with_root(arena, root)
+        }
+    }
+
+    fn at(errors: &[ValidationError<'_>], pointer: &str) -> Vec<ErrorDescription> {
+        errors
+            .iter()
+            .filter(|error| error.schema_path().as_str() == pointer)
+            .map(ErrorDescription::from_validation_error)
+            .collect()
+    }
+
+    /// A unit at the instance root, failing with `errors` or with a failing child.
+    fn unit(
+        location: &NodeLocation,
+        errors: Vec<ErrorDescription>,
+        children: ChildList,
+    ) -> EvaluationNode {
+        if errors.is_empty() && children.all_valid() {
+            EvaluationNode::valid(
+                location.keyword.clone(),
+                location.absolute.clone(),
+                Arc::clone(&location.schema),
+                InstancePosition::ROOT,
+                None,
+                children,
+            )
+        } else {
+            EvaluationNode::invalid(
+                location.keyword.clone(),
+                location.absolute.clone(),
+                Arc::clone(&location.schema),
+                InstancePosition::ROOT,
+                None,
+                errors,
+                children,
+            )
         }
     }
 }

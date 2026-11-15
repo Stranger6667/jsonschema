@@ -1,8 +1,8 @@
-error: `evaluate` does not support the `type` keyword yet
+error: `evaluate` does not support the `minimum` keyword yet
  --> tests/ui/evaluate_unsupported_keyword.rs:1:1
   |
 1 | / #[jsonschema::validator(
-2 | |     schema = r#"{"type": "string"}"#,
+2 | |     schema = r#"{"minimum": 1}"#,
 3 | |     methods = { evaluate = true }
 4 | | )]
   | |__^

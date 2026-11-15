@@ -85,22 +85,10 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: __Value<'_>) -> jsonschema::Evaluation {
-        let __py = instance.py();
-        static __LOCATION: ::std::sync::LazyLock<__eval::NodeLocation> = ::std::sync::LazyLock::new(||
-        __eval::NodeLocation::new("", None));
-        let mut __builder = __eval::Builder::new();
-        let __root = __builder
-            .node(
-                &__LOCATION,
-                &[
-                    __err::false_schema(
-                        "",
-                        __paths::Location::new(),
-                        __NodeExt::lazy_value(&instance),
-                    ),
-                ],
-            );
-        __builder.finish(__root)
+        static __LOCATIONS: __eval::Locations = __eval::Locations::new(&[""], None);
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __LOCATIONS.evaluate(&__errors.into_vec())
     }
     pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
         __json::inspect(
