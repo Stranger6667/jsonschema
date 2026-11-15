@@ -51,6 +51,12 @@ pub(crate) fn generate(
                 };
                 let ident = format_ident!("Validator{}", definitions.len());
                 let id = format!("{draft}|{relative}|{index}");
+                let supports_evaluate = jsonschema_macros_core::evaluate_supports(&case.schema);
+                let methods = if supports_evaluate {
+                    quote! { , methods = { evaluate = true } }
+                } else {
+                    quote! {}
+                };
                 definitions.push(quote! {
                     #[jsonschema::validator(
                         schema = #schema,
@@ -58,10 +64,11 @@ pub(crate) fn generate(
                         backend = #backend
                         #resources
                         #validate_formats
+                        #methods
                     )]
                     struct #ident;
                 });
-                entries.push(entry(&ident, &id));
+                entries.push(entry(&ident, &id, supports_evaluate));
             }
         }
     }
@@ -104,7 +111,7 @@ pub(crate) fn generate_schemas(
             #[jsonschema::validator(schema = #schema, backend = #backend, keywords = { #(#keywords),* })]
             struct #ident;
         });
-        entries.push(entry(&ident, &schema));
+        entries.push(entry(&ident, &schema, false));
     }
     Ok(quote! {
         // Rebuilds when the schema list changes.
@@ -133,7 +140,19 @@ fn sorted(value: &Value) -> Value {
     }
 }
 
-fn entry(ident: &Ident, id: &str) -> TokenStream {
+fn entry(ident: &Ident, id: &str, supports_evaluate: bool) -> TokenStream {
+    let evaluate = if supports_evaluate {
+        quote! {
+            |instance| {
+                let evaluation = #ident::evaluate(instance)?;
+                Ok(Some(
+                    serde_json::json!([evaluation.list(), evaluation.hierarchical()]).to_string(),
+                ))
+            }
+        }
+    } else {
+        quote! { |_| Ok(None) }
+    };
     quote! {
         SuiteEntry {
             id: #id,
@@ -144,6 +163,7 @@ fn entry(ident: &Ident, id: &str) -> TokenStream {
             iter_errors: |instance| {
                 Ok(#ident::iter_errors(instance)?.map(|error| error.to_string()).collect())
             },
+            evaluate: #evaluate,
         }
     }
 }

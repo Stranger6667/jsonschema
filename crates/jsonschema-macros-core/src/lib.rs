@@ -36,6 +36,14 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
+/// Whether `#[validator]` can generate `evaluate` for `schema`.
+#[cfg(feature = "testsuite")]
+#[doc(hidden)]
+#[must_use]
+pub fn evaluate_supports(schema: &serde_json::Value) -> bool {
+    codegen::evaluation::unsupported(schema).is_none()
+}
+
 #[cfg(feature = "bench")]
 pub mod bench {
     use std::{collections::HashMap, sync::Arc};
@@ -950,12 +958,6 @@ so the generated methods cannot depend on type parameters",
     let recompile_trigger = quote! {
         #(#recompile_triggers)*
     };
-    if attr.methods.evaluate && !matches!(attr.backend, Backend::SerdeJson) {
-        return Err(syn::Error::new(
-            proc_macro2::Span::call_site(),
-            "`evaluate` is not available for this backend yet",
-        ));
-    }
     let tokens = match attr.backend {
         Backend::SerdeJson => crate::codegen::generate_from_config::<
             crate::codegen::emit_serde::SerdeEmitter,

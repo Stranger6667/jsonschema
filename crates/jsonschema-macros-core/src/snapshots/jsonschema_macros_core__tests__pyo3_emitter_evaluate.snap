@@ -1,0 +1,182 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+expression: rendered
+---
+struct Validator;
+::jsonschema::__private::pyo3_backend! {
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use ::jsonschema as jsonschema;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::evaluation as __eval;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::__private::unfinished_matches as __unfinished;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use jsonschema::__private::pyo3 as __py3;
+    use jsonschema::json as __json;
+    use jsonschema::json::{
+        Array as __ArrayExt, JsonNumber as __NumberExt, Node as __NodeExt,
+        Object as __ObjectExt,
+    };
+    use std::sync::LazyLock as __Lazy;
+    type __Json = __json::Pyo3;
+    type __Value<'py> = __py3::Borrowed<'py, 'py, __py3::PyAny>;
+    type __Bound<'py> = __py3::Bound<'py, __py3::PyAny>;
+    type __Map<'py> = <__Value<'py> as __NodeExt<'py, __Json>>::Object;
+    type __Array<'py> = <__Value<'py> as __NodeExt<'py, __Json>>::Array;
+    pub(super) fn is_valid(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        false
+    }
+    pub(super) fn errors<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        let __py = instance.py();
+        if let Some(__e) = '__first_error: {
+            break '__first_error Some(
+                __err::false_schema("", __path.into(), __NodeExt::lazy_value(&instance)),
+            );
+            None
+        } {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        false
+    }
+    pub(super) fn run_is_valid(instance: __Value<'_>) -> bool {
+        let __py = instance.py();
+        is_valid(instance)
+    }
+    pub(super) fn run_validate<'__i>(instance: __Value<'__i>) -> Option<__VE<'__i>> {
+        let __py = instance.py();
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
+    }
+    pub(super) fn run_collect_errors<'__i>(instance: __Value<'__i>) -> Vec<__VE<'__i>> {
+        let __py = instance.py();
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
+    }
+    pub(super) fn evaluate(instance: __Value<'_>) -> jsonschema::Evaluation {
+        let __py = instance.py();
+        static __LOCATION: ::std::sync::LazyLock<__eval::NodeLocation> = ::std::sync::LazyLock::new(||
+        __eval::NodeLocation::new("", None));
+        let mut __builder = __eval::Builder::new();
+        let __root = __builder
+            .node(
+                &__LOCATION,
+                &[
+                    __err::false_schema(
+                        "",
+                        __paths::Location::new(),
+                        __NodeExt::lazy_value(&instance),
+                    ),
+                ],
+            );
+        __builder.finish(__root)
+    }
+    pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
+        __json::inspect(
+            instance.as_borrowed(),
+            false,
+            || { run_is_valid(instance.as_borrowed()) },
+        )
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Bound<'__i>,
+    ) -> __py3::PyResult<::std::result::Result<(), __VE<'__i>>> {
+        __json::inspect(
+            instance.as_borrowed(),
+            false,
+            || {
+                match run_validate(instance.as_borrowed()) {
+                    Some(e) => Err(e),
+                    None => Ok(()),
+                }
+            },
+        )
+    }
+    pub(super) fn entry_iter_errors<'__i>(
+        instance: &'__i __Bound<'__i>,
+    ) -> __py3::PyResult<__EI<'__i>> {
+        let errors = __json::inspect(
+            instance.as_borrowed(),
+            false,
+            || { run_collect_errors(instance.as_borrowed()) },
+        )?;
+        Ok(__err::iterator_from(errors))
+    }
+    pub(super) fn entry_evaluate(
+        instance: &__Bound<'_>,
+    ) -> __py3::PyResult<jsonschema::Evaluation> {
+        __json::inspect(
+            instance.as_borrowed(),
+            false,
+            || { evaluate(instance.as_borrowed()) },
+        )
+    }
+}
+impl Validator {
+    pub fn is_valid(
+        instance: &::jsonschema::__private::pyo3::Bound<
+            '_,
+            ::jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> ::jsonschema::__private::pyo3::PyResult<bool> {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i ::jsonschema::__private::pyo3::Bound<
+            '__i,
+            ::jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> ::jsonschema::__private::pyo3::PyResult<
+        ::std::result::Result<(), ::jsonschema::ValidationError<'__i>>,
+    > {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i ::jsonschema::__private::pyo3::Bound<
+            '__i,
+            ::jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> ::jsonschema::__private::pyo3::PyResult<::jsonschema::ErrorIterator<'__i>> {
+        __validator_impl::entry_iter_errors(instance)
+    }
+    pub fn evaluate(
+        instance: &::jsonschema::__private::pyo3::Bound<
+            '_,
+            ::jsonschema::__private::pyo3::PyAny,
+        >,
+    ) -> ::jsonschema::__private::pyo3::PyResult<::jsonschema::Evaluation> {
+        __validator_impl::entry_evaluate(instance)
+    }
+}
+}

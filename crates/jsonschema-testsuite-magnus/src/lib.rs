@@ -15,6 +15,9 @@ pub struct SuiteEntry {
     pub is_valid: fn(&Value) -> Result<bool, Error>,
     pub validate: fn(&Value) -> Result<Option<String>, Error>,
     pub iter_errors: fn(&Value) -> Result<Vec<String>, Error>,
+    /// A JSON array of the `list` and `hierarchical` outputs; `None` while the generator does not
+    /// support the case's schema.
+    pub evaluate: fn(&Value) -> Result<Option<String>, Error>,
 }
 
 type KeywordResult<'a> = Result<Box<dyn for<'i> Keyword<'i, Magnus>>, ValidationError<'a>>;
@@ -189,11 +192,17 @@ fn each_error(ruby: &Ruby, case_id: String, instance: Value) -> Result<Vec<Strin
     (entry(ruby, &case_id)?.iter_errors)(&instance)
 }
 
+#[allow(clippy::needless_pass_by_value)]
+fn evaluate(ruby: &Ruby, case_id: String, instance: Value) -> Result<Option<String>, Error> {
+    (entry(ruby, &case_id)?.evaluate)(&instance)
+}
+
 #[magnus::init(name = "jsonschema_testsuite_magnus")]
 fn init(ruby: &Ruby) -> Result<(), Error> {
     let module = ruby.define_module("JSONSchemaTestSuite")?;
     module.define_module_function("valid?", function!(is_valid, 2))?;
     module.define_module_function("validate", function!(validate, 2))?;
     module.define_module_function("each_error", function!(each_error, 2))?;
+    module.define_module_function("evaluate", function!(evaluate, 2))?;
     Ok(())
 }
