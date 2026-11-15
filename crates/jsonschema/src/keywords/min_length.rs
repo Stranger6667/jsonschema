@@ -1,18 +1,16 @@
 use crate::{
     compiler,
     error::ValidationError,
-    evaluation::{absorbed_error_node, ChildList, ErrorDescription},
+    evaluation::{ChildList, ErrorDescription, InstancePosition},
     keywords::{
-        helpers::{fail_on_non_positive_integer, size_limit},
+        helpers::{fail_on_non_positive_integer, size_limit, unit, SchemaSite},
         CompilationResult,
     },
     paths::{LazyLocation, Location, RefTracker},
     validator::{evaluate_assertion, EvaluationResult, Validate, ValidationContext},
     Json, Node,
 };
-use referencing::Uri;
 use serde_json::{Map, Value};
-use std::sync::Arc;
 
 pub(crate) struct MinLengthValidator {
     limit: u64,
@@ -60,8 +58,7 @@ pub(crate) struct LengthRangeValidator {
     minimum: u64,
     maximum: u64,
     min_location: Location,
-    max_location: Location,
-    max_absolute_location: Option<Arc<Uri<String>>>,
+    max_site: SchemaSite,
 }
 
 impl LengthRangeValidator {
@@ -86,14 +83,15 @@ impl LengthRangeValidator {
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
     ) -> ValidationError<'i> {
+        let site = &self.max_site;
         ValidationError::max_length(
-            self.max_location.clone(),
-            crate::paths::capture_evaluation_path(tracker, &self.max_location),
+            site.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &site.location),
             location.into(),
             instance.lazy_value(),
             self.maximum,
         )
-        .with_absolute_keyword_location(self.max_absolute_location.clone())
+        .with_absolute_keyword_location(site.absolute_location().cloned())
     }
 }
 
@@ -140,39 +138,53 @@ impl<F: Json> Validate<F> for LengthRangeValidator {
         }
     }
 
+    // This unit is `minLength`'s; `maxLength` reports its own beside it.
     fn evaluate(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
+        _ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let Some(length) = instance.string_length() else {
-            return EvaluationResult::valid_empty();
-        };
-        // This node sits at the `minLength` location, so only `maxLength` needs its own node.
-        let mut children = ChildList::default();
-        if length > self.maximum {
-            let error = ErrorDescription::from_validation_error(
-                &self.max_error::<F>(instance, location, tracker),
-            );
-            let child = absorbed_error_node(
-                location,
-                tracker,
-                &self.max_location,
-                self.max_absolute_location.as_ref(),
-                error,
-                ctx,
-            );
-            children.push(ctx.arena(), child);
-        }
-        let mut result = EvaluationResult::from_children(children);
-        if length < self.minimum {
-            result.mark_errored(ErrorDescription::from_validation_error(
+        if instance
+            .string_length()
+            .is_some_and(|length| length < self.minimum)
+        {
+            EvaluationResult::invalid_empty(vec![ErrorDescription::from_validation_error(
                 &self.min_error::<F>(instance, location, tracker),
-            ));
+            )])
+        } else {
+            EvaluationResult::valid_empty()
         }
-        result
+    }
+
+    fn checks_siblings(&self) -> bool {
+        true
+    }
+
+    fn evaluate_siblings(
+        &self,
+        instance: &F::Node<'_>,
+        instance_location: InstancePosition,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+        children: &mut ChildList,
+    ) -> bool {
+        // The description depends on the error kind and the instance alone; see `Validate::evaluate`.
+        let error = instance
+            .string_length()
+            .is_some_and(|length| length > self.maximum)
+            .then(|| {
+                ErrorDescription::from_validation_error(&self.max_error::<F>(
+                    instance,
+                    &LazyLocation::new(),
+                    tracker,
+                ))
+            });
+        let invalid = error.is_some();
+        let node = unit(&self.max_site, error, instance_location, tracker, ctx);
+        children.push(ctx.arena(), node);
+        invalid
     }
 }
 
@@ -192,13 +204,11 @@ pub(crate) fn compile<'a, F: Json>(
         .filter(|_| !ctx.is_keyword_overridden("maxLength"))
         .and_then(|max| size_limit(ctx, max));
     if let Some(maximum) = maximum {
-        let max_location = ctx.location().join("maxLength");
         return Some(Ok(Box::new(LengthRangeValidator {
             minimum,
             maximum,
-            max_absolute_location: ctx.absolute_location(&max_location),
             min_location: location,
-            max_location,
+            max_site: SchemaSite::new(ctx, ctx.location().join("maxLength")),
         })));
     }
     Some(Ok(Box::new(MinLengthValidator {
@@ -210,7 +220,8 @@ pub(crate) fn compile<'a, F: Json>(
 #[cfg(test)]
 mod tests {
     use crate::tests_util;
-    use serde_json::json;
+    use serde_json::{json, Value};
+    use test_case::test_case;
 
     #[test]
     fn location() {
@@ -323,6 +334,51 @@ mod tests {
                     "/maxLength",
                 ),
             ],
+        );
+    }
+
+    // Both units, as `minLength` and `maxLength` report them on their own.
+    #[test_case(&json!({"minLength": 2, "maxLength": 3}), &json!("ab"), None, None ; "valid")]
+    #[test_case(&json!({"minLength": 2, "maxLength": 3}), &json!("a"), Some("\"a\" is shorter than 2 characters"), None ; "too short")]
+    #[test_case(&json!({"minLength": 2, "maxLength": 3}), &json!("abcd"), None, Some("\"abcd\" is longer than 3 characters") ; "too long")]
+    #[test_case(&json!({"minLength": 5, "maxLength": 3}), &json!("abcd"), Some("\"abcd\" is shorter than 5 characters"), Some("\"abcd\" is longer than 3 characters") ; "unsatisfiable")]
+    #[test_case(&json!({"minLength": 2, "maxLength": 3}), &json!(5), None, None ; "not a string")]
+    fn fused_evaluate_reports_sibling_units(
+        schema: &Value,
+        instance: &Value,
+        min_error: Option<&str>,
+        max_error: Option<&str>,
+    ) {
+        let unit = |keyword: &str, error: Option<&str>| {
+            let mut unit = json!({
+                "evaluationPath": format!("/{keyword}"),
+                "instanceLocation": "",
+                "schemaLocation": format!("/{keyword}"),
+                "valid": error.is_none(),
+            });
+            if let Some(error) = error {
+                unit["errors"] = json!({ keyword: error });
+            }
+            unit
+        };
+        let valid = min_error.is_none() && max_error.is_none();
+        let evaluation = crate::validator_for(schema)
+            .expect("valid schema")
+            .evaluate(instance);
+        let root = json!({"evaluationPath": "", "instanceLocation": "", "schemaLocation": "", "valid": valid});
+        let mut list_details = vec![root.clone()];
+        list_details.push(unit("minLength", min_error));
+        list_details.push(unit("maxLength", max_error));
+        assert_eq!(
+            serde_json::to_value(evaluation.list()).expect("list output"),
+            json!({"valid": valid, "details": list_details}),
+        );
+        let mut hierarchical = root;
+        hierarchical["details"] =
+            json!([unit("minLength", min_error), unit("maxLength", max_error)]);
+        assert_eq!(
+            serde_json::to_value(evaluation.hierarchical()).expect("hierarchical output"),
+            hierarchical,
         );
     }
 }

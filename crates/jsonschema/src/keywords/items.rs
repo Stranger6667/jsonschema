@@ -1,22 +1,19 @@
 use crate::{
-    compiler::{self, DeferredAbsoluteLocation},
-    evaluation::{
-        format_keyword_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
-        InstancePosition,
+    compiler,
+    evaluation::{Annotations, ChildList, ErrorDescription, EvaluationNode, InstancePosition},
+    keywords::{
+        helpers::{unit, SchemaSite},
+        BoxedValidator, CompilationResult,
     },
-    keywords::{BoxedValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::{EvaluationResult, Validate, ValidationContext},
     Array, Draft, Json, Node, SerdeJson, ValidationError,
 };
-use referencing::{Uri, Vocabulary};
+use referencing::Vocabulary;
 use serde_json::{Map, Value};
-use std::{
-    marker::PhantomData,
-    sync::{Arc, OnceLock},
-};
+use std::{marker::PhantomData, sync::Arc};
 
 pub(crate) struct ItemsArrayValidator<F: Json = SerdeJson> {
     items: Vec<SchemaNode<F>>,
@@ -361,38 +358,6 @@ impl ItemType for IntegerItemsDraft4 {
 
     fn compile_type<F: Json>(location: Location) -> CompilationResult<'static, F> {
         super::legacy::type_draft_4::IntegerTypeValidator::compile(location)
-    }
-}
-
-/// A schema position with the locations its output reports, rendered on first use.
-struct SchemaSite {
-    location: Location,
-    base: Option<DeferredAbsoluteLocation>,
-    absolute_location: OnceLock<Option<Arc<Uri<String>>>>,
-    schema_location: OnceLock<Arc<str>>,
-}
-
-impl SchemaSite {
-    fn new<F: Json>(ctx: &compiler::Context<F>, location: Location) -> Self {
-        SchemaSite {
-            location,
-            base: ctx.deferred_absolute_location(),
-            absolute_location: OnceLock::new(),
-            schema_location: OnceLock::new(),
-        }
-    }
-
-    fn absolute_location(&self) -> Option<&Arc<Uri<String>>> {
-        self.absolute_location
-            .get_or_init(|| self.base.as_ref().map(|base| base.resolve(&self.location)))
-            .as_ref()
-    }
-
-    fn schema_location(&self) -> Arc<str> {
-        Arc::clone(
-            self.schema_location
-                .get_or_init(|| format_keyword_location(&self.location, self.absolute_location())),
-        )
     }
 }
 
@@ -796,36 +761,6 @@ impl AbsorbedKeywords {
             let node = unit(&constraint.site, error, instance_location, tracker, ctx);
             children.push(ctx.arena(), node);
         }
-    }
-}
-
-/// A leaf keyword's output unit: valid and empty, or failing with `error`.
-fn unit(
-    site: &SchemaSite,
-    error: Option<ErrorDescription>,
-    instance_location: InstancePosition,
-    tracker: Option<&RefTracker>,
-    ctx: &mut ValidationContext,
-) -> EvaluationNode {
-    let evaluation_path = crate::paths::evaluation_path(tracker, &site.location, ctx);
-    match error {
-        None => EvaluationNode::valid(
-            evaluation_path,
-            site.absolute_location().cloned(),
-            site.schema_location(),
-            instance_location,
-            None,
-            ChildList::default(),
-        ),
-        Some(error) => EvaluationNode::invalid(
-            evaluation_path,
-            site.absolute_location().cloned(),
-            site.schema_location(),
-            instance_location,
-            None,
-            vec![error],
-            ChildList::default(),
-        ),
     }
 }
 

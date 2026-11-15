@@ -229,6 +229,8 @@ struct KeywordValidator<F: Json> {
     validator: BoxedValidator<F>,
     /// Asserts on the instance itself, so `is_valid` may run ahead of `validate`.
     is_leaf: bool,
+    /// Reports the output units of sibling keywords it checks too.
+    checks_siblings: bool,
 }
 
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
@@ -250,6 +252,7 @@ struct EntryParts<'a, F: Json> {
     absolute_location: &'a OnceLock<Arc<Uri<String>>>,
     schema_location: &'a OnceLock<SchemaLocation>,
     validator: &'a BoxedValidator<F>,
+    checks_siblings: bool,
 }
 
 impl<F: Json> EntryParts<'_, F> {
@@ -291,7 +294,7 @@ impl KeywordMetadata {
     fn parts<'a, F: Json>(
         &'a self,
         node: &'a Location,
-        validator: &'a BoxedValidator<F>,
+        entry: &'a KeywordValidator<F>,
         absolute_base: Option<&'a DeferredAbsoluteLocation>,
     ) -> EntryParts<'a, F> {
         EntryParts {
@@ -299,7 +302,8 @@ impl KeywordMetadata {
             absolute_base,
             absolute_location: &self.absolute_location,
             schema_location: &self.schema_location,
-            validator,
+            validator: &entry.validator,
+            checks_siblings: entry.checks_siblings,
         }
     }
 }
@@ -573,13 +577,23 @@ impl<F: Json> SchemaNode<F> {
                     keyword,
                     crate::keywords::Keyword::Builtin(crate::keywords::BuiltinKeyword::Required)
                 ) || validator.is_valid_alone());
+            // Only `minLength` checks a sibling keyword, `maxLength`; asking every validator costs a
+            // call each.
+            let checks_siblings = matches!(
+                keyword,
+                crate::keywords::Keyword::Builtin(crate::keywords::BuiltinKeyword::MinLength)
+            ) && validator.checks_siblings();
             metadata.push(KeywordMetadata {
                 keyword,
                 location: OnceLock::new(),
                 absolute_location: OnceLock::new(),
                 schema_location: OnceLock::new(),
             });
-            KeywordValidator { validator, is_leaf }
+            KeywordValidator {
+                validator,
+                is_leaf,
+                checks_siblings,
+            }
         });
         // A lone validator is stored inline, so it never needs a heap slice.
         let validators = if count == 1 {
@@ -789,7 +803,7 @@ impl<F: Json> SchemaNode<F> {
             metadata_before
                 .iter()
                 .zip(before)
-                .map(|(m, v)| m.parts(node_location, &v.validator, absolute_base)),
+                .map(|(m, v)| m.parts(node_location, v, absolute_base)),
             &mut children,
             ctx,
         );
@@ -802,7 +816,7 @@ impl<F: Json> SchemaNode<F> {
             metadata_after
                 .iter()
                 .zip(after)
-                .map(|(m, v)| m.parts(node_location, &v.validator, absolute_base)),
+                .map(|(m, v)| m.parts(node_location, v, absolute_base)),
             &mut children,
             ctx,
         );
@@ -896,6 +910,15 @@ impl<F: Json> SchemaNode<F> {
                 }
             };
             children.push(ctx.arena(), child_node);
+            if parts.checks_siblings {
+                invalid |= parts.validator.evaluate_siblings(
+                    instance,
+                    instance_loc,
+                    tracker,
+                    ctx,
+                    children,
+                );
+            }
         }
         invalid
     }
@@ -1189,6 +1212,7 @@ impl<F: Json> SchemaNode<F> {
                     absolute_location: &entry.absolute_location,
                     schema_location: &entry.schema_location,
                     validator: &entry.validator,
+                    checks_siblings: false,
                 }),
                 None,
                 ctx,
@@ -1238,7 +1262,7 @@ impl<F: Json> SchemaNode<F> {
                         metadata
                             .iter()
                             .zip(validators)
-                            .map(|(m, v)| m.parts(&self.location, &v.validator, absolute_base)),
+                            .map(|(m, v)| m.parts(&self.location, v, absolute_base)),
                         annotations,
                         ctx,
                     )
