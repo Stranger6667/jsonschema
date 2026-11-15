@@ -607,6 +607,25 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
         true
     }
 
+    /// Whether this validator also checks keywords beside its own, reporting their output units
+    /// through [`Self::evaluate_siblings`]. Asked once, when the schema node is built.
+    fn checks_siblings(&self) -> bool {
+        false
+    }
+
+    /// The output units of the keywords this validator checks beside its own, in priority order;
+    /// returns whether any of them fails.
+    fn evaluate_siblings(
+        &self,
+        _instance: &F::Node<'_>,
+        _instance_location: InstancePosition,
+        _tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+        _children: &mut ChildList,
+    ) -> bool {
+        false
+    }
+
     /// The types this validator accepts when all it checks is `type`.
     fn accepted_types(&self) -> Option<crate::types::JsonTypeSet> {
         None

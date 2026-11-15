@@ -5,7 +5,18 @@ use std::borrow::Cow;
 
 use serde_json::{Map, Value};
 
-use crate::{compiler, paths::Location, types::JsonType, Json, ValidationError};
+use crate::{
+    compiler::{self, DeferredAbsoluteLocation},
+    evaluation::{
+        format_keyword_location, ChildList, ErrorDescription, EvaluationNode, InstancePosition,
+    },
+    paths::{Location, RefTracker},
+    types::JsonType,
+    validator::ValidationContext,
+    Json, ValidationError,
+};
+use referencing::Uri;
+use std::sync::{Arc, OnceLock};
 
 /// A non-negative bound on a collection size, saturating at `u64::MAX`.
 ///
@@ -101,6 +112,68 @@ pub(crate) fn fail_on_non_positive_integer(
             LazyInstance::Ready(Cow::Borrowed(schema_value)),
             JsonType::Integer,
         )
+    }
+}
+
+/// A schema position with the locations its output reports, rendered on first use.
+pub(crate) struct SchemaSite {
+    pub(crate) location: Location,
+    base: Option<DeferredAbsoluteLocation>,
+    absolute_location: OnceLock<Option<Arc<Uri<String>>>>,
+    schema_location: OnceLock<Arc<str>>,
+}
+
+impl SchemaSite {
+    pub(crate) fn new<F: Json>(ctx: &compiler::Context<F>, location: Location) -> Self {
+        SchemaSite {
+            location,
+            base: ctx.deferred_absolute_location(),
+            absolute_location: OnceLock::new(),
+            schema_location: OnceLock::new(),
+        }
+    }
+
+    pub(crate) fn absolute_location(&self) -> Option<&Arc<Uri<String>>> {
+        self.absolute_location
+            .get_or_init(|| self.base.as_ref().map(|base| base.resolve(&self.location)))
+            .as_ref()
+    }
+
+    pub(crate) fn schema_location(&self) -> Arc<str> {
+        Arc::clone(
+            self.schema_location
+                .get_or_init(|| format_keyword_location(&self.location, self.absolute_location())),
+        )
+    }
+}
+
+/// A leaf keyword's output unit: valid and empty, or failing with `error`.
+pub(crate) fn unit(
+    site: &SchemaSite,
+    error: Option<ErrorDescription>,
+    instance_location: InstancePosition,
+    tracker: Option<&RefTracker>,
+    ctx: &mut ValidationContext,
+) -> EvaluationNode {
+    let evaluation_path = crate::paths::evaluation_path(tracker, &site.location, ctx);
+    match error {
+        None => EvaluationNode::valid(
+            evaluation_path,
+            site.absolute_location().cloned(),
+            site.schema_location(),
+            instance_location,
+            None,
+            ChildList::default(),
+        ),
+        Some(error) => EvaluationNode::invalid(
+            evaluation_path,
+            site.absolute_location().cloned(),
+            site.schema_location(),
+            instance_location,
+            None,
+            vec![error],
+            ChildList::default(),
+        ),
     }
 }
 

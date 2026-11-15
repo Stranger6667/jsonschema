@@ -1,8 +1,4 @@
-use crate::{
-    paths::{LazyLocation, Location, RefTracker},
-    validator::ValidationContext,
-    ValidationError,
-};
+use crate::{paths::Location, ValidationError};
 use ahash::AHashMap;
 use referencing::{JsonPointerSegment, Uri};
 use serde::{
@@ -1051,27 +1047,6 @@ where
         state.serialize_field("details", &DetailsSerializer { arena, index })?;
     }
     state.end()
-}
-
-/// Wraps an absorbed keyword's failure as a child node at that keyword's own schema location,
-/// so structured output keeps the correct `schemaLocation`.
-pub(crate) fn absorbed_error_node(
-    location: &LazyLocation,
-    tracker: Option<&RefTracker>,
-    keyword_location: &Location,
-    absolute_location: Option<&Arc<Uri<String>>>,
-    error: ErrorDescription,
-    ctx: &mut ValidationContext,
-) -> EvaluationNode {
-    EvaluationNode::invalid(
-        crate::paths::evaluation_path(tracker, keyword_location, ctx),
-        absolute_location.cloned(),
-        format_keyword_location(keyword_location, absolute_location),
-        ctx.instance_position(location),
-        None,
-        vec![error],
-        ChildList::default(),
-    )
 }
 
 /// `schemaLocation` of a keyword: its absolute URI when it has one, otherwise its JSON Pointer.
