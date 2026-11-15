@@ -65,11 +65,15 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
     };
     // There are a lot of tests in the test suite
     let mut functions = HashSet::with_capacity(7200);
+    let (mut evaluate_covered, mut evaluate_total) = (0_usize, 0_usize);
     for draft in &config.drafts {
         let suite_tree = match loader::load_suite(&config.path, draft) {
             Ok(tree) => tree,
             Err(e) => return compile_error_ts(e.to_string()),
         };
+        let (covered, total) = generator::evaluate_coverage(&suite_tree);
+        evaluate_covered += covered;
+        evaluate_total += total;
         let modules = generator::generate_modules(
             &suite_tree,
             &mut functions,
@@ -93,7 +97,21 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
             }
         }
     }
-    output.into()
+    quote! {
+        #output
+
+        // Run with `--nocapture` to see how far generated `evaluate` reaches.
+        #[cfg(not(all(target_arch = "wasm32", target_os = "unknown")))]
+        #[test]
+        fn evaluate_coverage() {
+            eprintln!(
+                "generated `evaluate` covers {} of {} suite cases",
+                #evaluate_covered,
+                #evaluate_total,
+            );
+        }
+    }
+    .into()
 }
 
 /// A procedural macro that generates tests for the structured output test suite.

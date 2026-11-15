@@ -1,0 +1,197 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+expression: rendered
+---
+struct Validator;
+::jsonschema::__private::magnus_backend! {
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use ::jsonschema as jsonschema;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::evaluation as __eval;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::__private::unfinished_matches as __unfinished;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use jsonschema::__private::magnus as __rb;
+    use jsonschema::json as __json;
+    use jsonschema::json::{
+        Array as __ArrayExt, Json as __JsonExt, JsonNumber as __NumberExt,
+        Node as __NodeExt, Object as __ObjectExt,
+    };
+    use std::sync::LazyLock as __Lazy;
+    type __Json = __json::Magnus;
+    type __Value<'a> = __json::RbNode<'a>;
+    type __Map<'a> = <__Value<'a> as __NodeExt<'a, __Json>>::Object;
+    type __Array<'a> = <__Value<'a> as __NodeExt<'a, __Json>>::Array;
+    pub(super) fn is_valid(instance: __Value<'_>) -> bool {
+        false
+    }
+    pub(super) fn errors<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        if let Some(__e) = '__first_error: {
+            break '__first_error Some(
+                __err::false_schema("", __path.into(), __NodeExt::lazy_value(&instance)),
+            );
+            None
+        } {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        false
+    }
+    pub(super) fn run_is_valid(instance: __Value<'_>) -> bool {
+        is_valid(instance)
+    }
+    pub(super) fn run_validate<'__i>(instance: __Value<'__i>) -> Option<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
+    }
+    pub(super) fn run_collect_errors<'__i>(instance: __Value<'__i>) -> Vec<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
+    }
+    pub(super) fn evaluate(instance: __Value<'_>) -> jsonschema::Evaluation {
+        static __LOCATION: ::std::sync::LazyLock<__eval::NodeLocation> = ::std::sync::LazyLock::new(||
+        __eval::NodeLocation::new("", None));
+        let mut __builder = __eval::Builder::new();
+        let __root = __builder
+            .node(
+                &__LOCATION,
+                &[
+                    __err::false_schema(
+                        "",
+                        __paths::Location::new(),
+                        __NodeExt::lazy_value(&instance),
+                    ),
+                ],
+            );
+        __builder.finish(__root)
+    }
+    pub(super) fn entry_is_valid(
+        instance: &__rb::Value,
+    ) -> ::std::result::Result<bool, __rb::Error> {
+        let _scope = __json::MagnusPendingErrorScope::enter();
+        __json::magnus_invalidate_members_cache();
+        let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
+        __json::magnus_probe_root(node);
+        if let Some(error) = __json::magnus_take_pending_error() {
+            return Err(error.into());
+        }
+        let result = run_is_valid(node);
+        if let Some(error) = __json::magnus_take_pending_error() {
+            return Err(error.into());
+        }
+        Ok(result)
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __rb::Value,
+    ) -> ::std::result::Result<::std::result::Result<(), __VE<'__i>>, __rb::Error> {
+        let _scope = __json::MagnusPendingErrorScope::enter();
+        __json::magnus_invalidate_members_cache();
+        let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
+        __json::magnus_probe_root(node);
+        if let Some(error) = __json::magnus_take_pending_error() {
+            return Err(error.into());
+        }
+        let result = match run_validate(node) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        };
+        if let Some(error) = __json::magnus_take_pending_error() {
+            return Err(error.into());
+        }
+        Ok(result)
+    }
+    pub(super) fn entry_iter_errors<'__i>(
+        instance: &'__i __rb::Value,
+    ) -> ::std::result::Result<__EI<'__i>, __rb::Error> {
+        let _scope = __json::MagnusPendingErrorScope::enter();
+        __json::magnus_invalidate_members_cache();
+        let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
+        __json::magnus_probe_root(node);
+        if let Some(error) = __json::magnus_take_pending_error() {
+            return Err(error.into());
+        }
+        let errors = run_collect_errors(node);
+        if let Some(error) = __json::magnus_take_pending_error() {
+            return Err(error.into());
+        }
+        Ok(__err::iterator_from(errors))
+    }
+    pub(super) fn entry_evaluate(
+        instance: &__rb::Value,
+    ) -> ::std::result::Result<jsonschema::Evaluation, __rb::Error> {
+        let _scope = __json::MagnusPendingErrorScope::enter();
+        __json::magnus_invalidate_members_cache();
+        let node = __json::RbNode::new(__rb::AsRawValue::as_raw(*instance));
+        __json::magnus_probe_root(node);
+        if let Some(error) = __json::magnus_take_pending_error() {
+            return Err(error.into());
+        }
+        let evaluation = evaluate(node);
+        if let Some(error) = __json::magnus_take_pending_error() {
+            return Err(error.into());
+        }
+        Ok(evaluation)
+    }
+}
+impl Validator {
+    pub fn is_valid(
+        instance: &::jsonschema::__private::magnus::Value,
+    ) -> ::std::result::Result<bool, ::jsonschema::__private::magnus::Error> {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i ::jsonschema::__private::magnus::Value,
+    ) -> ::std::result::Result<
+        ::std::result::Result<(), ::jsonschema::ValidationError<'__i>>,
+        ::jsonschema::__private::magnus::Error,
+    > {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i ::jsonschema::__private::magnus::Value,
+    ) -> ::std::result::Result<
+        ::jsonschema::ErrorIterator<'__i>,
+        ::jsonschema::__private::magnus::Error,
+    > {
+        __validator_impl::entry_iter_errors(instance)
+    }
+    pub fn evaluate(
+        instance: &::jsonschema::__private::magnus::Value,
+    ) -> ::std::result::Result<
+        ::jsonschema::Evaluation,
+        ::jsonschema::__private::magnus::Error,
+    > {
+        __validator_impl::entry_evaluate(instance)
+    }
+}
+}

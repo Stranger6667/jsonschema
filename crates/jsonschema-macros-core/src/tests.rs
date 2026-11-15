@@ -947,14 +947,16 @@ fn draft4_integer_schema() -> Value {
     json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": ["integer", "string"]})
 }
 
-#[test_case("pyo3_emitter", &quote! { Pyo3 }, &keyword_families_schema() ; "pyo3 keyword families")]
-#[test_case("pyo3_emitter_draft4", &quote! { Pyo3 }, &draft4_integer_schema() ; "pyo3 draft4 integer")]
-#[test_case("magnus_emitter", &quote! { Magnus }, &keyword_families_schema() ; "magnus keyword families")]
-#[test_case("magnus_emitter_draft4", &quote! { Magnus }, &draft4_integer_schema() ; "magnus draft4 integer")]
-fn backend_emitter(snapshot: &str, backend: &TokenStream, schema: &Value) {
+#[test_case("pyo3_emitter", &quote! { backend = Pyo3 }, &keyword_families_schema() ; "pyo3 keyword families")]
+#[test_case("pyo3_emitter_draft4", &quote! { backend = Pyo3 }, &draft4_integer_schema() ; "pyo3 draft4 integer")]
+#[test_case("pyo3_emitter_evaluate", &quote! { backend = Pyo3, methods = { evaluate = true } }, &json!(false) ; "pyo3 evaluate")]
+#[test_case("magnus_emitter", &quote! { backend = Magnus }, &keyword_families_schema() ; "magnus keyword families")]
+#[test_case("magnus_emitter_draft4", &quote! { backend = Magnus }, &draft4_integer_schema() ; "magnus draft4 integer")]
+#[test_case("magnus_emitter_evaluate", &quote! { backend = Magnus, methods = { evaluate = true } }, &json!(false) ; "magnus evaluate")]
+fn backend_emitter(snapshot: &str, attributes: &TokenStream, schema: &Value) {
     let schema = serde_json::to_string(schema).expect("schema serializes");
     let config: crate::Config =
-        syn::parse2(quote! { schema = #schema, backend = #backend }).expect("Config should parse");
+        syn::parse2(quote! { schema = #schema, #attributes }).expect("Config should parse");
     let item: syn::ItemStruct = syn::parse2(quote! {
         struct Validator;
     })

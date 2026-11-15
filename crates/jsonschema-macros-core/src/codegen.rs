@@ -25,7 +25,7 @@ pub(crate) mod emit_pyo3;
 mod emit_root;
 pub(crate) mod emit_serde;
 mod errors;
-mod evaluation;
+pub(crate) mod evaluation;
 mod expr;
 mod helpers;
 mod keywords;

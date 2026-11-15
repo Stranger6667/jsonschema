@@ -408,6 +408,26 @@ mod tests {
                 let _ = serde_json::to_value(evaluation.hierarchical())
                     .expect("Hierarchical output should serialize");
             }
+            if let Some(generated) = codegen_validator
+                .as_ref()
+                .and_then(|codegen_validator| codegen_validator.evaluate(&test.data))
+            {
+                let evaluation = validator.evaluate(&test.data);
+                assert_eq!(
+                    generated,
+                    (
+                        serde_json::to_value(evaluation.list())
+                            .expect("List output should serialize"),
+                        serde_json::to_value(evaluation.hierarchical())
+                            .expect("Hierarchical output should serialize"),
+                    ),
+                    "codegen evaluate() mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+            }
         }
     }
 

@@ -339,10 +339,22 @@ impl ValueEmitter for Pyo3Emitter {
                 }
             }
         });
+        let evaluate = methods.evaluate.then(|| {
+            quote! {
+                pub(super) fn entry_evaluate(
+                    instance: &__Bound<'_>,
+                ) -> __py3::PyResult<jsonschema::Evaluation> {
+                    __json::inspect(instance.as_borrowed(), false, || {
+                        evaluate(instance.as_borrowed())
+                    })
+                }
+            }
+        });
         quote! {
             #is_valid
             #validate
             #iter_errors
+            #evaluate
         }
     }
 
@@ -382,10 +394,20 @@ impl ValueEmitter for Pyo3Emitter {
                 }
             }
         });
+        let evaluate = methods.evaluate.then(|| {
+            quote! {
+                pub fn evaluate(
+                    instance: &#anonymous,
+                ) -> #runtime_crate::__private::pyo3::PyResult<#runtime_crate::Evaluation> {
+                    #impl_mod_name::entry_evaluate(instance)
+                }
+            }
+        });
         quote! {
             #is_valid
             #validate
             #iter_errors
+            #evaluate
         }
     }
 

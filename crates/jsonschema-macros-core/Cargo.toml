@@ -12,6 +12,7 @@ license.workspace = true
 arbitrary-precision = ["serde_json/arbitrary_precision"]
 float-roundtrip = ["serde_json/float_roundtrip"]
 bench = []
+testsuite = []
 
 [dependencies]
 fancy-regex = "0.20.2"

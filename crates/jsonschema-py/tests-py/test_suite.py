@@ -105,26 +105,30 @@ def pytest_generate_tests(metafunc):
     )
 
 
+def runtime_validator(draft, schema, is_optional):
+    cls = {
+        "4": jsonschema_rs.Draft4Validator,
+        "6": jsonschema_rs.Draft6Validator,
+        "7": jsonschema_rs.Draft7Validator,
+        "2019-09": jsonschema_rs.Draft201909Validator,
+        "2020-12": jsonschema_rs.Draft202012Validator,
+    }[draft]
+    kwargs = {"retriever": TESTSUITE_RETRIEVER}
+    if is_optional:
+        kwargs["validate_formats"] = True
+    # An explicit draft never retrieves `$schema`, so a custom meta-schema must be registered.
+    meta_schema = schema.get("$schema") if isinstance(schema, dict) else None
+    if meta_schema in REMOTE_DOCUMENTS:
+        kwargs["registry"] = jsonschema_rs.Registry(
+            [(meta_schema, json.loads(REMOTE_DOCUMENTS[meta_schema]))], retriever=TESTSUITE_RETRIEVER
+        )
+    return cls(schema, **kwargs)
+
+
 def test_draft(filename, draft, schema, instance, expected, description, is_optional, case_id):
     error_message = f"[{filename}] {description}: {schema} | {instance}"
     try:
-        cls = {
-            "4": jsonschema_rs.Draft4Validator,
-            "6": jsonschema_rs.Draft6Validator,
-            "7": jsonschema_rs.Draft7Validator,
-            "2019-09": jsonschema_rs.Draft201909Validator,
-            "2020-12": jsonschema_rs.Draft202012Validator,
-        }[draft]
-        kwargs = {"retriever": TESTSUITE_RETRIEVER}
-        if is_optional:
-            kwargs["validate_formats"] = True
-        # An explicit draft never retrieves `$schema`, so a custom meta-schema must be registered.
-        meta_schema = schema.get("$schema") if isinstance(schema, dict) else None
-        if meta_schema in REMOTE_DOCUMENTS:
-            kwargs["registry"] = jsonschema_rs.Registry(
-                [(meta_schema, json.loads(REMOTE_DOCUMENTS[meta_schema]))], retriever=TESTSUITE_RETRIEVER
-            )
-        validator = cls(schema, **kwargs)
+        validator = runtime_validator(draft, schema, is_optional)
 
         result = validator.is_valid(instance)
         assert result is expected, f"is_valid mismatch: {error_message}"
@@ -157,3 +161,10 @@ def test_draft_codegen(filename, draft, schema, instance, expected, description,
     assert (jsonschema_testsuite_pyo3.iter_errors(case_id, instance) == []) is expected, (
         f"iter_errors mismatch: {error_message}"
     )
+    # `None` until the generator supports `evaluate` for the case's schema.
+    output = jsonschema_testsuite_pyo3.evaluate(case_id, instance)
+    if output is not None:
+        evaluation = runtime_validator(draft, schema, is_optional).evaluate(instance)
+        assert json.loads(output) == [evaluation.list(), evaluation.hierarchical()], (
+            f"evaluate mismatch: {error_message}"
+        )

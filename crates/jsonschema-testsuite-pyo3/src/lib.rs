@@ -14,6 +14,9 @@ pub struct SuiteEntry {
     pub is_valid: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<bool>,
     pub validate: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Option<String>>,
     pub iter_errors: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Vec<String>>,
+    /// A JSON array of the `list` and `hierarchical` outputs; `None` while the generator does not
+    /// support the case's schema.
+    pub evaluate: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Option<String>>,
 }
 
 type KeywordResult<'a> = Result<Box<dyn for<'i> Keyword<'i, Pyo3>>, ValidationError<'a>>;
@@ -135,10 +138,16 @@ fn iter_errors(case_id: &str, instance: &Bound<'_, PyAny>) -> PyResult<Vec<Strin
     (entry(case_id)?.iter_errors)(instance)
 }
 
+#[pyfunction]
+fn evaluate(case_id: &str, instance: &Bound<'_, PyAny>) -> PyResult<Option<String>> {
+    (entry(case_id)?.evaluate)(instance)
+}
+
 #[pymodule]
 fn jsonschema_testsuite_pyo3(module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_function(wrap_pyfunction!(is_valid, module)?)?;
     module.add_function(wrap_pyfunction!(validate, module)?)?;
     module.add_function(wrap_pyfunction!(iter_errors, module)?)?;
+    module.add_function(wrap_pyfunction!(evaluate, module)?)?;
     Ok(())
 }

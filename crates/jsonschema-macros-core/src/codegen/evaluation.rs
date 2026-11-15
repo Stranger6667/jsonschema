@@ -18,27 +18,14 @@ pub(super) fn compile<E: ValueEmitter>(
         let uri = format!("{}#", base.trim_end_matches('#'));
         quote! { Some(#uri) }
     };
-    let errors = match schema {
-        Value::Bool(true) => quote! { &[] },
-        Value::Bool(false) => {
-            let err_instance = E::err_instance(quote! { instance });
-            quote! { &[__err::false_schema("", __paths::Location::new(), #err_instance)] }
-        }
-        Value::Object(keywords) => {
-            if let Some(keyword) = keywords.keys().next() {
-                return Err(syn::Error::new(
-                    proc_macro2::Span::call_site(),
-                    format!("`evaluate` does not support the `{keyword}` keyword yet"),
-                ));
-            }
-            quote! { &[] }
-        }
-        _ => {
-            return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
-                "`evaluate` needs a schema that is a boolean or an object",
-            ));
-        }
+    if let Some(message) = unsupported(schema) {
+        return Err(syn::Error::new(proc_macro2::Span::call_site(), message));
+    }
+    let errors = if schema == &Value::Bool(false) {
+        let err_instance = E::err_instance(quote! { instance });
+        quote! { &[__err::false_schema("", __paths::Location::new(), #err_instance)] }
+    } else {
+        quote! { &[] }
     };
     Ok(quote! {
         static __LOCATION: ::std::sync::LazyLock<__eval::NodeLocation> =
@@ -47,4 +34,16 @@ pub(super) fn compile<E: ValueEmitter>(
         let __root = __builder.node(&__LOCATION, #errors);
         __builder.finish(__root)
     })
+}
+
+/// Why the generated `evaluate` cannot handle `schema` yet, if it cannot.
+pub(crate) fn unsupported(schema: &Value) -> Option<String> {
+    match schema {
+        Value::Bool(_) => None,
+        Value::Object(keywords) => keywords
+            .keys()
+            .next()
+            .map(|keyword| format!("`evaluate` does not support the `{keyword}` keyword yet")),
+        _ => Some("`evaluate` needs a schema that is a boolean or an object".to_string()),
+    }
 }
