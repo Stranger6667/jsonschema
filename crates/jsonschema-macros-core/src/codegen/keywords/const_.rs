@@ -67,7 +67,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
                         __sj::from_str(#const_json).expect("Failed to parse const value"),
                     )
                 });
-            return Some(__err::constant(
+            break '__first_error Some(__err::constant(
                 #schema_path, __path.into(), #err_instance, &*CONST_EXPECTED,
             ));
         }

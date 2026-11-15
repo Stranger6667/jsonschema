@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 981
 expression: rendered
 ---
 struct Validator;
@@ -69,7 +70,7 @@ mod __validator_impl {
     ) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !(__ObjectExt::get(
                             &obj,
                             {
@@ -80,7 +81,7 @@ mod __validator_impl {
                         )
                         .is_some())
                     {
-                        return Some(
+                        break '__first_error Some(
                             __err::required(
                                 "/properties/code/oneOf/0/required",
                                 __path.into(),
@@ -90,7 +91,7 @@ mod __validator_impl {
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }
@@ -119,7 +120,7 @@ mod __validator_impl {
                                 }
                             }) {
                                 let __path = &__path.push("code");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     if !({
                                         static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
                                             __sj::from_str("1").expect("Failed to parse const number")
@@ -145,7 +146,7 @@ mod __validator_impl {
                                                 __sj::from_str("1").expect("Failed to parse const value"),
                                             )
                                         });
-                                        return Some(
+                                        break '__first_error Some(
                                             __err::constant(
                                                 "/properties/code/oneOf/0/properties/code/const",
                                                 __path.into(),
@@ -155,7 +156,7 @@ mod __validator_impl {
                                         );
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -195,7 +196,7 @@ mod __validator_impl {
     ) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !(__ObjectExt::get(
                             &obj,
                             {
@@ -206,7 +207,7 @@ mod __validator_impl {
                         )
                         .is_some())
                     {
-                        return Some(
+                        break '__first_error Some(
                             __err::required(
                                 "/properties/code/oneOf/1/required",
                                 __path.into(),
@@ -216,7 +217,7 @@ mod __validator_impl {
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }
@@ -245,7 +246,7 @@ mod __validator_impl {
                                 }
                             }) {
                                 let __path = &__path.push("code");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     if !({
                                         static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
                                             __sj::from_str("2").expect("Failed to parse const number")
@@ -271,7 +272,7 @@ mod __validator_impl {
                                                 __sj::from_str("2").expect("Failed to parse const value"),
                                             )
                                         });
-                                        return Some(
+                                        break '__first_error Some(
                                             __err::constant(
                                                 "/properties/code/oneOf/1/properties/code/const",
                                                 __path.into(),
@@ -281,7 +282,7 @@ mod __validator_impl {
                                         );
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -321,7 +322,7 @@ mod __validator_impl {
     ) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !(__ObjectExt::get(
                             &obj,
                             {
@@ -332,7 +333,7 @@ mod __validator_impl {
                         )
                         .is_some())
                     {
-                        return Some(
+                        break '__first_error Some(
                             __err::required(
                                 "/properties/flag/oneOf/0/required",
                                 __path.into(),
@@ -342,7 +343,7 @@ mod __validator_impl {
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }
@@ -354,7 +355,7 @@ mod __validator_impl {
                             let instance = value;
                             if !(__NodeExt::as_boolean(&instance) == Some(true)) {
                                 let __path = &__path.push("on");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     if !(__NodeExt::as_boolean(&instance) == Some(true)) {
                                         static CONST_EXPECTED: __Lazy<
                                             ::std::sync::Arc<__sj::Value>,
@@ -363,7 +364,7 @@ mod __validator_impl {
                                                 __sj::from_str("true").expect("Failed to parse const value"),
                                             )
                                         });
-                                        return Some(
+                                        break '__first_error Some(
                                             __err::constant(
                                                 "/properties/flag/oneOf/0/properties/on/const",
                                                 __path.into(),
@@ -373,7 +374,7 @@ mod __validator_impl {
                                         );
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -413,7 +414,7 @@ mod __validator_impl {
     ) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !(__ObjectExt::get(
                             &obj,
                             {
@@ -424,7 +425,7 @@ mod __validator_impl {
                         )
                         .is_some())
                     {
-                        return Some(
+                        break '__first_error Some(
                             __err::required(
                                 "/properties/flag/oneOf/1/required",
                                 __path.into(),
@@ -434,7 +435,7 @@ mod __validator_impl {
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }
@@ -446,7 +447,7 @@ mod __validator_impl {
                             let instance = value;
                             if !(__NodeExt::as_boolean(&instance) == Some(false)) {
                                 let __path = &__path.push("on");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     if !(__NodeExt::as_boolean(&instance) == Some(false)) {
                                         static CONST_EXPECTED: __Lazy<
                                             ::std::sync::Arc<__sj::Value>,
@@ -456,7 +457,7 @@ mod __validator_impl {
                                                     .expect("Failed to parse const value"),
                                             )
                                         });
-                                        return Some(
+                                        break '__first_error Some(
                                             __err::constant(
                                                 "/properties/flag/oneOf/1/properties/on/const",
                                                 __path.into(),
@@ -466,7 +467,7 @@ mod __validator_impl {
                                         );
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -511,7 +512,7 @@ mod __validator_impl {
     ) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !(__ObjectExt::get(
                             &obj,
                             {
@@ -522,7 +523,7 @@ mod __validator_impl {
                         )
                         .is_some())
                     {
-                        return Some(
+                        break '__first_error Some(
                             __err::required(
                                 "/properties/shape/oneOf/0/required",
                                 __path.into(),
@@ -532,7 +533,7 @@ mod __validator_impl {
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }
@@ -546,7 +547,7 @@ mod __validator_impl {
                                 == Some("circle"))
                             {
                                 let __path = &__path.push("kind");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     if !(__NodeExt::as_string(&instance).as_deref()
                                         == Some("circle"))
                                     {
@@ -558,7 +559,7 @@ mod __validator_impl {
                                                     .expect("Failed to parse const value"),
                                             )
                                         });
-                                        return Some(
+                                        break '__first_error Some(
                                             __err::constant(
                                                 "/properties/shape/oneOf/0/properties/kind/const",
                                                 __path.into(),
@@ -568,7 +569,7 @@ mod __validator_impl {
                                         );
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -633,7 +634,7 @@ mod __validator_impl {
     ) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !(__ObjectExt::get(
                             &obj,
                             {
@@ -644,7 +645,7 @@ mod __validator_impl {
                         )
                         .is_some())
                     {
-                        return Some(
+                        break '__first_error Some(
                             __err::required(
                                 "/properties/shape/oneOf/1/required",
                                 __path.into(),
@@ -654,7 +655,7 @@ mod __validator_impl {
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }
@@ -668,7 +669,7 @@ mod __validator_impl {
                                 == Some("square"))
                             {
                                 let __path = &__path.push("kind");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     if !(__NodeExt::as_string(&instance).as_deref()
                                         == Some("square"))
                                     {
@@ -680,7 +681,7 @@ mod __validator_impl {
                                                     .expect("Failed to parse const value"),
                                             )
                                         });
-                                        return Some(
+                                        break '__first_error Some(
                                             __err::constant(
                                                 "/properties/shape/oneOf/1/properties/kind/const",
                                                 __path.into(),
@@ -690,7 +691,7 @@ mod __validator_impl {
                                         );
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -727,15 +728,17 @@ mod __validator_impl {
     }
     fn validate_ref_0(instance: __Value<'_>) -> bool {
         match __NodeExt::as_object(&instance) {
-            Some(obj) => {
-                __ObjectExt::members(&obj)
-                    .all(|(key, instance)| {
-                        let key_str = (::std::convert::AsRef::<str>::as_ref(&key));
-                        match key_str {
-                            "child" => validate_ref_0(instance),
-                            _ => true,
-                        }
-                    })
+            Some(obj) => '__all_6: {
+                for (key, instance) in __ObjectExt::members(&obj) {
+                    let key_str = (::std::convert::AsRef::<str>::as_ref(&key));
+                    if !(match key_str {
+                        "child" => validate_ref_0(instance),
+                        _ => true,
+                    }) {
+                        break '__all_6 false;
+                    }
+                }
+                true
             }
             None => true,
         }
@@ -771,265 +774,203 @@ mod __validator_impl {
     }
     pub(super) fn is_valid(instance: __Value<'_>) -> bool {
         match __NodeExt::as_object(&instance) {
-            Some(obj) => {
-                __ObjectExt::members(&obj)
-                    .all(|(key, instance)| {
-                        let key_str = (::std::convert::AsRef::<str>::as_ref(&key));
-                        match key_str {
-                            "choice" => {
-                                match __NodeExt::json_type(&instance) {
-                                    __JT::Null => true,
-                                    __JT::Boolean => {
-                                        match __NodeExt::as_boolean(&instance) {
-                                            Some(__boolean) => {
-                                                let b = &__boolean;
-                                                *b
-                                            }
-                                            None => Default::default(),
+            Some(obj) => '__all_7: {
+                for (key, instance) in __ObjectExt::members(&obj) {
+                    let key_str = (::std::convert::AsRef::<str>::as_ref(&key));
+                    if !(match key_str {
+                        "choice" => {
+                            match __NodeExt::json_type(&instance) {
+                                __JT::Null => true,
+                                __JT::Boolean => {
+                                    match __NodeExt::as_boolean(&instance) {
+                                        Some(__boolean) => {
+                                            let b = &__boolean;
+                                            *b
                                         }
+                                        None => Default::default(),
                                     }
-                                    __JT::String => {
-                                        match __NodeExt::as_string(&instance) {
-                                            Some(__text) => {
-                                                let s: &str = &__text;
-                                                (&*s) == "a"
-                                            }
-                                            None => Default::default(),
-                                        }
-                                    }
-                                    __JT::Number => {
-                                        static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
-                                        {
-                                            __sj::from_str::<Vec<__sj::Value>>("[1]")
-                                                .expect("Failed to parse number variants")
-                                        });
-                                        NUMBER_VARIANTS
-                                            .iter()
-                                            .any(|variant| __NodeExt::equals_value(&instance, variant))
-                                    }
-                                    __JT::Object => {
-                                        static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
-                                        {
-                                            __sj::from_str::<Vec<__sj::Value>>("[{\"o\":[1]}]")
-                                                .expect("Failed to parse complex variants")
-                                        });
-                                        COMPLEX_VARIANTS
-                                            .iter()
-                                            .any(|variant| __NodeExt::equals_value(&instance, variant))
-                                    }
-                                    _ => false,
                                 }
-                            }
-                            "code" => {
-                                let __one_of_discriminator = __NodeExt::as_object(&instance)
-                                    .and_then(|__object| __ObjectExt::get(
-                                        &__object,
-                                        {
-                                            static __KEY: __Lazy<<__Json as __JsonExt>::PreparedKey> = __Lazy::new(||
-                                            <__Json as __JsonExt>::prepare_key("code"));
-                                            &*__KEY
-                                        },
-                                    ))
-                                    .and_then(|__value| __NodeExt::as_number(&__value))
-                                    .and_then(|__number| {
-                                        __NumberExt::as_i64(&__number)
-                                            .or_else(|| {
-                                                __NumberExt::as_f64(&__number)
-                                                    .and_then(|float| {
-                                                        (float.fract() == 0.0
-                                                            && float >= -9_223_372_036_854_775_808.0_f64
-                                                            && float < 9_223_372_036_854_775_808.0_f64)
-                                                            .then_some(float as i64)
-                                                    })
-                                            })
+                                __JT::String => {
+                                    match __NodeExt::as_string(&instance) {
+                                        Some(__text) => {
+                                            let s: &str = &__text;
+                                            (&*s) == "a"
+                                        }
+                                        None => Default::default(),
+                                    }
+                                }
+                                __JT::Number => {
+                                    static NUMBER_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                    {
+                                        __sj::from_str::<Vec<__sj::Value>>("[1]")
+                                            .expect("Failed to parse number variants")
                                     });
-                                let mut matched = (matches!(
-                                    __one_of_discriminator, Some(1i64)
-                                ) && { is_branch_valid_0(instance) });
-                                (if (matches!(__one_of_discriminator, Some(2i64))
-                                    && { is_branch_valid_1(instance) })
-                                {
-                                    if matched {
-                                        false
-                                    } else {
-                                        matched = true;
-                                        true
-                                    }
-                                } else {
-                                    true
-                                }) && matched
-                            }
-                            "empty" => {
-                                match __NodeExt::as_object(&instance) {
-                                    Some(obj) => __ObjectExt::is_empty(&obj),
-                                    None => true,
+                                    NUMBER_VARIANTS
+                                        .iter()
+                                        .any(|variant| __NodeExt::equals_value(&instance, variant))
                                 }
-                            }
-                            "fallbacks" => {
-                                match __NodeExt::json_type(&instance) {
-                                    __JT::Object => {
-                                        match __NodeExt::as_object(&instance) {
-                                            Some(obj) => (__ObjectExt::len(&obj) as u64) >= 1,
-                                            None => Default::default(),
-                                        }
-                                    }
-                                    __JT::String
-                                    | __JT::Number if __NodeExt::as_number(&instance)
-                                        .is_some_and(|__number| __NumberExt::is_integer(&__number))
-                                        | __JT::Array => true,
-                                    _ => false,
+                                __JT::Object => {
+                                    static COMPLEX_VARIANTS: __Lazy<Vec<__sj::Value>> = __Lazy::new(||
+                                    {
+                                        __sj::from_str::<Vec<__sj::Value>>("[{\"o\":[1]}]")
+                                            .expect("Failed to parse complex variants")
+                                    });
+                                    COMPLEX_VARIANTS
+                                        .iter()
+                                        .any(|variant| __NodeExt::equals_value(&instance, variant))
                                 }
+                                _ => false,
                             }
-                            "flag" => {
-                                let __one_of_discriminator = __NodeExt::as_object(&instance)
-                                    .and_then(|__object| __ObjectExt::get(
-                                        &__object,
-                                        {
-                                            static __KEY: __Lazy<<__Json as __JsonExt>::PreparedKey> = __Lazy::new(||
-                                            <__Json as __JsonExt>::prepare_key("on"));
-                                            &*__KEY
-                                        },
-                                    ))
-                                    .and_then(|__value| __NodeExt::as_boolean(&__value));
-                                let mut matched = (matches!(
-                                    __one_of_discriminator, Some(true)
-                                ) && { is_branch_valid_2(instance) });
-                                (if (matches!(__one_of_discriminator, Some(false))
-                                    && { is_branch_valid_3(instance) })
-                                {
-                                    if matched {
-                                        false
-                                    } else {
-                                        matched = true;
-                                        true
-                                    }
-                                } else {
-                                    true
-                                }) && matched
-                            }
-                            "flags" => {
-                                matches!(
-                                    __NodeExt::json_type(& instance), __JT::Boolean | __JT::Null
-                                    | __JT::Array
-                                )
-                            }
-                            "integer" => {
-                                match __NodeExt::json_type(&instance) {
-                                    __JT::Number if __NodeExt::as_number(&instance)
-                                        .is_some_and(|__number| __NumberExt::is_integer(
-                                            &__number,
-                                        )) => {
-                                        match __NodeExt::as_number(&instance) {
-                                            Some(__number) => {
-                                                let __number = __NumberExt::to_number(&__number);
-                                                let n = &*__number;
-                                                __num::ge(n, 1u64)
-                                            }
-                                            None => Default::default(),
-                                        }
-                                    }
-                                    _ => false,
-                                }
-                            }
-                            "items" => {
-                                match __NodeExt::as_array(&instance) {
-                                    Some(arr) => {
-                                        __ArrayExt::elements(&arr)
-                                            .enumerate()
-                                            .all(|(idx, item)| { if false { true } else { false } })
-                                    }
-                                    None => true,
-                                }
-                            }
-                            "list" => (__NodeExt::json_type(&instance) == __JT::Array),
-                            "nested" => {
-                                (match __NodeExt::as_object(&instance) {
-                                    Some(obj) => {
-                                        __ObjectExt::members(&obj)
-                                            .all(|(__key, __value)| {
-                                                let key_str = (::std::convert::AsRef::<
-                                                    str,
-                                                >::as_ref(&__key));
-                                                if (false)
-                                                    || {
-                                                        __ObjectExt::members(&obj)
-                                                            .find(|(__name, _)| {
-                                                                ::std::convert::AsRef::<str>::as_ref(&__name) == key_str
-                                                            })
-                                                            .map(|(_, __value)| __value)
-                                                            .is_some_and(|instance| { __NodeExt::is_string(&instance) })
-                                                    }
-                                                {
-                                                    true
-                                                } else {
-                                                    false
-                                                }
-                                            })
-                                    }
-                                    None => true,
-                                })
-                                    && (match __NodeExt::as_object(&instance) {
-                                        Some(obj) => {
-                                            __ObjectExt::members(&obj)
-                                                .all(|(__key, __value)| {
-                                                    let key_str = (::std::convert::AsRef::<
-                                                        str,
-                                                    >::as_ref(&__key));
-                                                    if false {
-                                                        true
-                                                    } else {
-                                                        (|instance: __Value<'_>| __NodeExt::is_string(
-                                                            &instance,
-                                                        ))(__value)
-                                                    }
+                        }
+                        "code" => {
+                            let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                .and_then(|__object| __ObjectExt::get(
+                                    &__object,
+                                    {
+                                        static __KEY: __Lazy<<__Json as __JsonExt>::PreparedKey> = __Lazy::new(||
+                                        <__Json as __JsonExt>::prepare_key("code"));
+                                        &*__KEY
+                                    },
+                                ))
+                                .and_then(|__value| __NodeExt::as_number(&__value))
+                                .and_then(|__number| {
+                                    __NumberExt::as_i64(&__number)
+                                        .or_else(|| {
+                                            __NumberExt::as_f64(&__number)
+                                                .and_then(|float| {
+                                                    (float.fract() == 0.0
+                                                        && float >= -9_223_372_036_854_775_808.0_f64
+                                                        && float < 9_223_372_036_854_775_808.0_f64)
+                                                        .then_some(float as i64)
                                                 })
-                                        }
-                                        None => true,
-                                    })
-                            }
-                            "nothing" => __NodeExt::is_null(&instance),
-                            "open" => {
-                                match __NodeExt::as_object(&instance) {
-                                    Some(obj) => {
-                                        __json::magnus_object_values(obj)
-                                            .all(|instance| {
-                                                (__NodeExt::json_type(&instance) == __JT::Boolean)
-                                            })
-                                    }
-                                    None => true,
-                                }
-                            }
-                            "record" => {
-                                match __NodeExt::as_object(&instance) {
-                                    Some(obj) => {
-                                        ({
-                                            let __object_pass = __ObjectExt::members(&obj)
-                                                .all(|(key, instance)| {
-                                                    if (::std::convert::AsRef::<str>::as_ref(&key))
-                                                        .starts_with("x-")
-                                                    {
-                                                        if !(__NodeExt::as_number(&instance)
-                                                            .is_some_and(|__number| __NumberExt::is_integer(&__number)))
-                                                        {
-                                                            return false;
-                                                        }
-                                                    }
-                                                    true
-                                                });
-                                            __object_pass
                                         })
-                                            && (__ObjectExt::members(&obj)
-                                                .map(|(__name, _)| __name)
-                                                .all(|__name| {
-                                                    let s: &str = ::std::convert::AsRef::<str>::as_ref(&__name);
-                                                    (s.chars().count() as u64) <= 5
-                                                }))
-                                    }
-                                    None => true,
+                                });
+                            let mut matched = (matches!(
+                                __one_of_discriminator, Some(1i64)
+                            ) && { is_branch_valid_0(instance) });
+                            (if (matches!(__one_of_discriminator, Some(2i64))
+                                && { is_branch_valid_1(instance) })
+                            {
+                                if matched {
+                                    false
+                                } else {
+                                    matched = true;
+                                    true
                                 }
+                            } else {
+                                true
+                            }) && matched
+                        }
+                        "empty" => {
+                            match __NodeExt::as_object(&instance) {
+                                Some(obj) => __ObjectExt::is_empty(&obj),
+                                None => true,
                             }
-                            "rest" => {
-                                match __NodeExt::as_object(&instance) {
+                        }
+                        "fallbacks" => {
+                            match __NodeExt::json_type(&instance) {
+                                __JT::Object => {
+                                    match __NodeExt::as_object(&instance) {
+                                        Some(obj) => (__ObjectExt::len(&obj) as u64) >= 1,
+                                        None => Default::default(),
+                                    }
+                                }
+                                __JT::String
+                                | __JT::Number if __NodeExt::as_number(&instance)
+                                    .is_some_and(|__number| __NumberExt::is_integer(&__number))
+                                    | __JT::Array => true,
+                                _ => false,
+                            }
+                        }
+                        "flag" => {
+                            let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                .and_then(|__object| __ObjectExt::get(
+                                    &__object,
+                                    {
+                                        static __KEY: __Lazy<<__Json as __JsonExt>::PreparedKey> = __Lazy::new(||
+                                        <__Json as __JsonExt>::prepare_key("on"));
+                                        &*__KEY
+                                    },
+                                ))
+                                .and_then(|__value| __NodeExt::as_boolean(&__value));
+                            let mut matched = (matches!(
+                                __one_of_discriminator, Some(true)
+                            ) && { is_branch_valid_2(instance) });
+                            (if (matches!(__one_of_discriminator, Some(false))
+                                && { is_branch_valid_3(instance) })
+                            {
+                                if matched {
+                                    false
+                                } else {
+                                    matched = true;
+                                    true
+                                }
+                            } else {
+                                true
+                            }) && matched
+                        }
+                        "flags" => {
+                            matches!(
+                                __NodeExt::json_type(& instance), __JT::Boolean | __JT::Null
+                                | __JT::Array
+                            )
+                        }
+                        "integer" => {
+                            match __NodeExt::json_type(&instance) {
+                                __JT::Number if __NodeExt::as_number(&instance)
+                                    .is_some_and(|__number| __NumberExt::is_integer(
+                                        &__number,
+                                    )) => {
+                                    match __NodeExt::as_number(&instance) {
+                                        Some(__number) => {
+                                            let __number = __NumberExt::to_number(&__number);
+                                            let n = &*__number;
+                                            __num::ge(n, 1u64)
+                                        }
+                                        None => Default::default(),
+                                    }
+                                }
+                                _ => false,
+                            }
+                        }
+                        "items" => {
+                            match __NodeExt::as_array(&instance) {
+                                Some(arr) => {
+                                    __ArrayExt::elements(&arr)
+                                        .enumerate()
+                                        .all(|(idx, item)| { if false { true } else { false } })
+                                }
+                                None => true,
+                            }
+                        }
+                        "list" => (__NodeExt::json_type(&instance) == __JT::Array),
+                        "nested" => {
+                            (match __NodeExt::as_object(&instance) {
+                                Some(obj) => {
+                                    __ObjectExt::members(&obj)
+                                        .all(|(__key, __value)| {
+                                            let key_str = (::std::convert::AsRef::<
+                                                str,
+                                            >::as_ref(&__key));
+                                            if (false)
+                                                || {
+                                                    __ObjectExt::members(&obj)
+                                                        .find(|(__name, _)| {
+                                                            ::std::convert::AsRef::<str>::as_ref(&__name) == key_str
+                                                        })
+                                                        .map(|(_, __value)| __value)
+                                                        .is_some_and(|instance| { __NodeExt::is_string(&instance) })
+                                                }
+                                            {
+                                                true
+                                            } else {
+                                                false
+                                            }
+                                        })
+                                }
+                                None => true,
+                            })
+                                && (match __NodeExt::as_object(&instance) {
                                     Some(obj) => {
                                         __ObjectExt::members(&obj)
                                             .all(|(__key, __value)| {
@@ -1046,79 +987,143 @@ mod __validator_impl {
                                             })
                                     }
                                     None => true,
-                                }
-                            }
-                            "shape" => {
-                                let __one_of_discriminator = __NodeExt::as_object(&instance)
-                                    .and_then(|__object| __ObjectExt::get(
-                                        &__object,
-                                        {
-                                            static __KEY: __Lazy<<__Json as __JsonExt>::PreparedKey> = __Lazy::new(||
-                                            <__Json as __JsonExt>::prepare_key("kind"));
-                                            &*__KEY
-                                        },
-                                    ))
-                                    .and_then(|__value| match __NodeExt::as_string(&__value) {
-                                        Some(::std::borrow::Cow::Borrowed(__text)) => Some(__text),
-                                        _ => None,
-                                    });
-                                let mut matched = (matches!(
-                                    __one_of_discriminator, Some("circle")
-                                ) && { is_branch_valid_4(instance) });
-                                (if (matches!(__one_of_discriminator, Some("square"))
-                                    && { is_branch_valid_5(instance) })
-                                {
-                                    if matched {
-                                        false
-                                    } else {
-                                        matched = true;
-                                        true
-                                    }
-                                } else {
-                                    true
-                                }) && matched
-                            }
-                            "structured" => {
-                                static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
-                                    __sj::from_str("{\"o\":true}")
-                                        .expect("Failed to parse const value")
-                                });
-                                __NodeExt::equals_value(&instance, &*EXPECTED)
-                            }
-                            "tree" => validate_ref_0(instance),
-                            "tuple" => {
-                                match __NodeExt::as_array(&instance) {
-                                    Some(arr) => {
-                                        ((__ArrayExt::is_unique(&arr))
-                                            && (__ArrayExt::elements(&arr)
-                                                .nth(0usize)
-                                                .map_or(true, |instance| __NodeExt::is_string(&instance))))
-                                            && (__ArrayExt::elements(&arr)
-                                                .any(|instance| {
-                                                    static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
-                                                        __sj::from_str("1").expect("Failed to parse const number")
-                                                    });
-                                                    match __NodeExt::json_type(&instance) {
-                                                        __JT::Number => {
-                                                            match __NodeExt::as_number(&instance) {
-                                                                Some(__number) => {
-                                                                    let __number = __NumberExt::to_number(&__number);
-                                                                    let n = &*__number;
-                                                                    __cmp::equal_numbers(n, &*EXPECTED)
-                                                                }
-                                                                None => Default::default(),
-                                                            }
-                                                        }
-                                                        _ => false,
-                                                    }
-                                                }))
-                                    }
-                                    None => true,
-                                }
-                            }
-                            _ => true,
+                                })
                         }
-                    })
+                        "nothing" => __NodeExt::is_null(&instance),
+                        "open" => {
+                            match __NodeExt::as_object(&instance) {
+                                Some(obj) => {
+                                    __json::magnus_object_values(obj)
+                                        .all(|instance| {
+                                            (__NodeExt::json_type(&instance) == __JT::Boolean)
+                                        })
+                                }
+                                None => true,
+                            }
+                        }
+                        "record" => {
+                            match __NodeExt::as_object(&instance) {
+                                Some(obj) => {
+                                    ({
+                                        let __object_pass = __ObjectExt::members(&obj)
+                                            .all(|(key, instance)| {
+                                                if (::std::convert::AsRef::<str>::as_ref(&key))
+                                                    .starts_with("x-")
+                                                {
+                                                    if !(__NodeExt::as_number(&instance)
+                                                        .is_some_and(|__number| __NumberExt::is_integer(&__number)))
+                                                    {
+                                                        return false;
+                                                    }
+                                                }
+                                                true
+                                            });
+                                        __object_pass
+                                    })
+                                        && (__ObjectExt::members(&obj)
+                                            .map(|(__name, _)| __name)
+                                            .all(|__name| {
+                                                let s: &str = ::std::convert::AsRef::<str>::as_ref(&__name);
+                                                (s.chars().count() as u64) <= 5
+                                            }))
+                                }
+                                None => true,
+                            }
+                        }
+                        "rest" => {
+                            match __NodeExt::as_object(&instance) {
+                                Some(obj) => {
+                                    __ObjectExt::members(&obj)
+                                        .all(|(__key, __value)| {
+                                            let key_str = (::std::convert::AsRef::<
+                                                str,
+                                            >::as_ref(&__key));
+                                            if false {
+                                                true
+                                            } else {
+                                                (|instance: __Value<'_>| __NodeExt::is_string(
+                                                    &instance,
+                                                ))(__value)
+                                            }
+                                        })
+                                }
+                                None => true,
+                            }
+                        }
+                        "shape" => {
+                            let __one_of_discriminator = __NodeExt::as_object(&instance)
+                                .and_then(|__object| __ObjectExt::get(
+                                    &__object,
+                                    {
+                                        static __KEY: __Lazy<<__Json as __JsonExt>::PreparedKey> = __Lazy::new(||
+                                        <__Json as __JsonExt>::prepare_key("kind"));
+                                        &*__KEY
+                                    },
+                                ))
+                                .and_then(|__value| match __NodeExt::as_string(&__value) {
+                                    Some(::std::borrow::Cow::Borrowed(__text)) => Some(__text),
+                                    _ => None,
+                                });
+                            let mut matched = (matches!(
+                                __one_of_discriminator, Some("circle")
+                            ) && { is_branch_valid_4(instance) });
+                            (if (matches!(__one_of_discriminator, Some("square"))
+                                && { is_branch_valid_5(instance) })
+                            {
+                                if matched {
+                                    false
+                                } else {
+                                    matched = true;
+                                    true
+                                }
+                            } else {
+                                true
+                            }) && matched
+                        }
+                        "structured" => {
+                            static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
+                                __sj::from_str("{\"o\":true}")
+                                    .expect("Failed to parse const value")
+                            });
+                            __NodeExt::equals_value(&instance, &*EXPECTED)
+                        }
+                        "tree" => validate_ref_0(instance),
+                        "tuple" => {
+                            match __NodeExt::as_array(&instance) {
+                                Some(arr) => {
+                                    ((__ArrayExt::is_unique(&arr))
+                                        && (__ArrayExt::elements(&arr)
+                                            .nth(0usize)
+                                            .map_or(true, |instance| __NodeExt::is_string(&instance))))
+                                        && (__ArrayExt::elements(&arr)
+                                            .any(|instance| {
+                                                static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
+                                                    __sj::from_str("1").expect("Failed to parse const number")
+                                                });
+                                                match __NodeExt::json_type(&instance) {
+                                                    __JT::Number => {
+                                                        match __NodeExt::as_number(&instance) {
+                                                            Some(__number) => {
+                                                                let __number = __NumberExt::to_number(&__number);
+                                                                let n = &*__number;
+                                                                __cmp::equal_numbers(n, &*EXPECTED)
+                                                            }
+                                                            None => Default::default(),
+                                                        }
+                                                    }
+                                                    _ => false,
+                                                }
+                                            }))
+                                }
+                                None => true,
+                            }
+                        }
+                        _ => true,
+                    }) {
+                        break '__all_7 false;
+                    }
+                }
+                true
             }
             None => true,
         }
@@ -1178,7 +1183,7 @@ mod __validator_impl {
                                 _ => false,
                             }) {
                                 let __path = &__path.push("choice");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     if !(match __NodeExt::json_type(&instance) {
                                         __JT::Null => true,
                                         __JT::Boolean => {
@@ -1229,7 +1234,7 @@ mod __validator_impl {
                                                     .expect("Failed to parse enum options"),
                                             )
                                         });
-                                        return Some(
+                                        break '__first_error Some(
                                             __err::enumeration(
                                                 "/properties/choice/enum",
                                                 __path.into(),
@@ -1239,7 +1244,7 @@ mod __validator_impl {
                                         );
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -1288,7 +1293,7 @@ mod __validator_impl {
                                 }) && matched
                             }) {
                                 let __path = &__path.push("code");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     {
                                         let __one_of_discriminator = __NodeExt::as_object(&instance)
                                             .and_then(|__object| __ObjectExt::get(
@@ -1346,7 +1351,7 @@ mod __validator_impl {
                                                 );
                                                 __context.push(__branch_errors.into_vec());
                                             }
-                                            return Some(
+                                            break '__first_error Some(
                                                 if __count == 0 {
                                                     __err::one_of_not_valid(
                                                         "/properties/code/oneOf",
@@ -1366,7 +1371,7 @@ mod __validator_impl {
                                         }
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -1382,9 +1387,9 @@ mod __validator_impl {
                                 let __path = &__path.push("empty");
                                 match __NodeExt::as_object(&instance) {
                                     Some(obj) => {
-                                        if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                        if let Some(__e) = '__first_error: {
                                             if !(__ObjectExt::is_empty(&obj)) {
-                                                return Some(
+                                                break '__first_error Some(
                                                     __err::false_schema(
                                                         "/properties/empty/additionalProperties",
                                                         __path.into(),
@@ -1393,7 +1398,7 @@ mod __validator_impl {
                                                 );
                                             }
                                             None
-                                        })() {
+                                        } {
                                             if __errors.push(__e) {
                                                 return true;
                                             }
@@ -1498,7 +1503,7 @@ mod __validator_impl {
                                 }) && matched
                             }) {
                                 let __path = &__path.push("flag");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     {
                                         let __one_of_discriminator = __NodeExt::as_object(&instance)
                                             .and_then(|__object| __ObjectExt::get(
@@ -1544,7 +1549,7 @@ mod __validator_impl {
                                                 );
                                                 __context.push(__branch_errors.into_vec());
                                             }
-                                            return Some(
+                                            break '__first_error Some(
                                                 if __count == 0 {
                                                     __err::one_of_not_valid(
                                                         "/properties/flag/oneOf",
@@ -1564,7 +1569,7 @@ mod __validator_impl {
                                         }
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -1689,7 +1694,7 @@ mod __validator_impl {
                                 let __path = &__path.push("items");
                                 match __NodeExt::as_array(&instance) {
                                     Some(arr) => {
-                                        if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                        if let Some(__e) = '__first_error: {
                                             if let Some(arr) = __NodeExt::as_array(&instance) {
                                                 let mut __unexpected: Vec<String> = Vec::new();
                                                 for (idx, item) in __ArrayExt::elements(&arr).enumerate() {
@@ -1698,7 +1703,7 @@ mod __validator_impl {
                                                     }
                                                 }
                                                 if !__unexpected.is_empty() {
-                                                    return Some(
+                                                    break '__first_error Some(
                                                         __err::unevaluated_items(
                                                             "/properties/items/unevaluatedItems",
                                                             __path.into(),
@@ -1709,7 +1714,7 @@ mod __validator_impl {
                                                 }
                                             }
                                             None
-                                        })() {
+                                        } {
                                             if __errors.push(__e) {
                                                 return true;
                                             }
@@ -1788,7 +1793,7 @@ mod __validator_impl {
                                 let __path = &__path.push("nested");
                                 match __NodeExt::as_object(&instance) {
                                     Some(obj) => {
-                                        if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                        if let Some(__e) = '__first_error: {
                                             if let Some(obj) = __NodeExt::as_object(&instance) {
                                                 let mut __unexpected: Vec<String> = Vec::new();
                                                 for (__key, __value) in __ObjectExt::members(&obj) {
@@ -1807,7 +1812,7 @@ mod __validator_impl {
                                                     }
                                                 }
                                                 if !__unexpected.is_empty() {
-                                                    return Some(
+                                                    break '__first_error Some(
                                                         __err::unevaluated_properties(
                                                             "/properties/nested/allOf/0/unevaluatedProperties",
                                                             __path.into(),
@@ -1818,7 +1823,7 @@ mod __validator_impl {
                                                 }
                                             }
                                             None
-                                        })() {
+                                        } {
                                             if __errors.push(__e) {
                                                 return true;
                                             }
@@ -1828,7 +1833,7 @@ mod __validator_impl {
                                 }
                                 match __NodeExt::as_object(&instance) {
                                     Some(obj) => {
-                                        if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                        if let Some(__e) = '__first_error: {
                                             if let Some(obj) = __NodeExt::as_object(&instance) {
                                                 let mut __unexpected: Vec<String> = Vec::new();
                                                 for (__key, __value) in __ObjectExt::members(&obj) {
@@ -1852,7 +1857,7 @@ mod __validator_impl {
                                                     }
                                                 }
                                                 if !__unexpected.is_empty() {
-                                                    return Some(
+                                                    break '__first_error Some(
                                                         __err::unevaluated_properties(
                                                             "/properties/nested/unevaluatedProperties",
                                                             __path.into(),
@@ -1863,7 +1868,7 @@ mod __validator_impl {
                                                 }
                                             }
                                             None
-                                        })() {
+                                        } {
                                             if __errors.push(__e) {
                                                 return true;
                                             }
@@ -2051,7 +2056,7 @@ mod __validator_impl {
                                 let __path = &__path.push("rest");
                                 match __NodeExt::as_object(&instance) {
                                     Some(obj) => {
-                                        if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                        if let Some(__e) = '__first_error: {
                                             if let Some(obj) = __NodeExt::as_object(&instance) {
                                                 let mut __unexpected: Vec<String> = Vec::new();
                                                 for (__key, __value) in __ObjectExt::members(&obj) {
@@ -2070,7 +2075,7 @@ mod __validator_impl {
                                                     }
                                                 }
                                                 if !__unexpected.is_empty() {
-                                                    return Some(
+                                                    break '__first_error Some(
                                                         __err::unevaluated_properties(
                                                             "/properties/rest/unevaluatedProperties",
                                                             __path.into(),
@@ -2081,7 +2086,7 @@ mod __validator_impl {
                                                 }
                                             }
                                             None
-                                        })() {
+                                        } {
                                             if __errors.push(__e) {
                                                 return true;
                                             }
@@ -2124,7 +2129,7 @@ mod __validator_impl {
                                 }) && matched
                             }) {
                                 let __path = &__path.push("shape");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     {
                                         let __one_of_discriminator = __NodeExt::as_object(&instance)
                                             .and_then(|__object| __ObjectExt::get(
@@ -2173,7 +2178,7 @@ mod __validator_impl {
                                                 );
                                                 __context.push(__branch_errors.into_vec());
                                             }
-                                            return Some(
+                                            break '__first_error Some(
                                                 if __count == 0 {
                                                     __err::one_of_not_valid(
                                                         "/properties/shape/oneOf",
@@ -2193,7 +2198,7 @@ mod __validator_impl {
                                         }
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -2210,7 +2215,7 @@ mod __validator_impl {
                                 __NodeExt::equals_value(&instance, &*EXPECTED)
                             }) {
                                 let __path = &__path.push("structured");
-                                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                if let Some(__e) = '__first_error: {
                                     if !({
                                         static EXPECTED: __Lazy<__sj::Value> = __Lazy::new(|| {
                                             __sj::from_str("{\"o\":true}")
@@ -2226,7 +2231,7 @@ mod __validator_impl {
                                                     .expect("Failed to parse const value"),
                                             )
                                         });
-                                        return Some(
+                                        break '__first_error Some(
                                             __err::constant(
                                                 "/properties/structured/const",
                                                 __path.into(),
@@ -2236,7 +2241,7 @@ mod __validator_impl {
                                         );
                                     }
                                     None
-                                })() {
+                                } {
                                     if __errors.push(__e) {
                                         return true;
                                     }
@@ -2283,9 +2288,9 @@ mod __validator_impl {
                                 let __path = &__path.push("tuple");
                                 match __NodeExt::as_array(&instance) {
                                     Some(arr) => {
-                                        if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                        if let Some(__e) = '__first_error: {
                                             if !__ArrayExt::is_unique(&arr) {
-                                                return Some(
+                                                break '__first_error Some(
                                                     __err::unique_items(
                                                         "/properties/tuple/uniqueItems",
                                                         __path.into(),
@@ -2294,7 +2299,7 @@ mod __validator_impl {
                                                 );
                                             }
                                             None
-                                        })() {
+                                        } {
                                             if __errors.push(__e) {
                                                 return true;
                                             }
@@ -2320,7 +2325,7 @@ mod __validator_impl {
                                                 }
                                             }
                                         }
-                                        if let Some(__e) = (|| -> Option<__VE<'_>> {
+                                        if let Some(__e) = '__first_error: {
                                             if !(__ArrayExt::elements(&arr)
                                                 .any(|instance| {
                                                     static EXPECTED: __Lazy<__sj::Number> = __Lazy::new(|| {
@@ -2341,7 +2346,7 @@ mod __validator_impl {
                                                     }
                                                 }))
                                             {
-                                                return Some(
+                                                break '__first_error Some(
                                                     __err::contains(
                                                         "/properties/tuple/contains",
                                                         __path.into(),
@@ -2350,7 +2355,7 @@ mod __validator_impl {
                                                 );
                                             }
                                             None
-                                        })() {
+                                        } {
                                             if __errors.push(__e) {
                                                 return true;
                                             }

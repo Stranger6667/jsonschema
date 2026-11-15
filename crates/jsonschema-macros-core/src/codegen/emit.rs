@@ -34,7 +34,6 @@ pub(crate) trait ValueEmitter {
     fn array_iter(array_expr: impl ToTokens) -> TokenStream;
     fn object_len(object_expr: impl ToTokens) -> TokenStream;
     fn object_contains_key(object_expr: impl ToTokens, key: &str) -> TokenStream;
-    fn object_iter_all(object_expr: impl ToTokens, body: impl ToTokens) -> TokenStream;
     fn object_iter_entries(object_expr: impl ToTokens) -> TokenStream;
     fn object_keys_iter(object_expr: impl ToTokens) -> TokenStream;
     /// Whether `body` holds for every property name, with the name bound as `s`.

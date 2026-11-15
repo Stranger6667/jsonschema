@@ -130,14 +130,6 @@ impl ValueEmitter for SerdeEmitter {
         quote! { #object_expr.contains_key(#key) }
     }
 
-    fn object_iter_all(object_expr: impl ToTokens, body: impl ToTokens) -> TokenStream {
-        quote! {
-            #object_expr.iter().all(|(key, instance)| {
-                #body
-            })
-        }
-    }
-
     fn object_iter_entries(object_expr: impl ToTokens) -> TokenStream {
         quote! { #object_expr.iter() }
     }

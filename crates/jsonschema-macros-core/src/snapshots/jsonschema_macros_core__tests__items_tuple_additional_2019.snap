@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"$schema\":\"https://json-schema.org/draft/2019-09/schema\",\"additionalItems\":{\"type\":\"string\"},\"items\":[{\"type\":\"integer\"}],\"type\":\"array\",\"unevaluatedItems\":false}"
 expression: errors_body(schema)
 ---
@@ -48,7 +49,7 @@ match instance {
                         }
                     }
                 }
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if let __Value::Array(arr) = instance {
                         let mut __unexpected: Vec<String> = Vec::new();
                         for (idx, item) in arr.iter().enumerate() {
@@ -57,7 +58,7 @@ match instance {
                             }
                         }
                         if !__unexpected.is_empty() {
-                            return Some(
+                            break '__first_error Some(
                                 __err::unevaluated_items(
                                     "/unevaluatedItems",
                                     __path.into(),
@@ -68,7 +69,7 @@ match instance {
                         }
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }

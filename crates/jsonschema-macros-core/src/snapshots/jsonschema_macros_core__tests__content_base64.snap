@@ -1,13 +1,14 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"contentEncoding\":\"base64\",\"type\":\"string\"}"
 expression: errors_body(schema)
 ---
 match instance {
             __Value::String(s) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !__content::is_base64(s) {
-                        return Some(
+                        break '__first_error Some(
                             __err::content_encoding(
                                 "/contentEncoding",
                                 __path.into(),
@@ -17,7 +18,7 @@ match instance {
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }

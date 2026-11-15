@@ -1,9 +1,10 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"oneOf\":[true,{\"prefixItems\":[{}]}],\"type\":\"array\",\"unevaluatedItems\":false}"
 expression: errors_body(schema)
 ---
-if let Some(__e) = (|| -> Option<__VE<'_>> {
+if let Some(__e) = '__first_error: {
             {
                 let mut __count = 0usize;
                 if is_branch_valid_0(instance) {
@@ -32,7 +33,7 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                         );
                         __context.push(__branch_errors.into_vec());
                     }
-                    return Some(
+                    break '__first_error Some(
                         if __count == 0 {
                             __err::one_of_not_valid(
                                 "/oneOf",
@@ -52,14 +53,14 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                 }
             }
             None
-        })() {
+        } {
             if __errors.push(__e) {
                 return true;
             }
         }
         match instance {
             __Value::Array(arr) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if let __Value::Array(arr) = instance {
                         let __one_of_matches_0 = (true as usize);
                         let mut __unexpected: Vec<String> = Vec::new();
@@ -71,7 +72,7 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                             }
                         }
                         if !__unexpected.is_empty() {
-                            return Some(
+                            break '__first_error Some(
                                 __err::unevaluated_items(
                                     "/unevaluatedItems",
                                     __path.into(),
@@ -82,7 +83,7 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                         }
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }

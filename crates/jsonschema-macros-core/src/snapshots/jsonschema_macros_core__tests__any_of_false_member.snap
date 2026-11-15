@@ -1,9 +1,10 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"anyOf\":[false,{\"type\":\"string\"}]}"
 expression: errors_body(schema)
 ---
-if let Some(__e) = (|| -> Option<__VE<'_>> {
+if let Some(__e) = '__first_error: {
             if !((is_branch_valid_0(instance) || is_branch_valid_1(instance))) {
                 let mut __context = Vec::with_capacity(2usize);
                 {
@@ -24,10 +25,12 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                     );
                     __context.push(__branch_errors.into_vec());
                 }
-                return Some(__err::any_of("/anyOf", __path.into(), instance, __context));
+                break '__first_error Some(
+                    __err::any_of("/anyOf", __path.into(), instance, __context),
+                );
             }
             None
-        })() {
+        } {
             if __errors.push(__e) {
                 return true;
             }

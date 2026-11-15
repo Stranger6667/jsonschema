@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 236
 description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"format\":\"iri-reference\",\"type\":\"string\"}"
 expression: code
 ---
@@ -66,9 +67,9 @@ mod __validator_impl {
         __JSONSCHEMA_IRI_REFERENCE_FORMAT_CACHE.with_borrow_mut(|cache| cache.clear());
         match instance {
             __Value::String(s) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !(__cached_iri_reference(s)) {
-                        return Some(
+                        break '__first_error Some(
                             __err::format(
                                 "/format",
                                 __path.into(),
@@ -78,7 +79,7 @@ mod __validator_impl {
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }

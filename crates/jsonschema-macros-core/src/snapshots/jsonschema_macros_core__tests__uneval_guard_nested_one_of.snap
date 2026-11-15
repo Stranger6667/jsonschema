@@ -1,9 +1,10 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"anyOf\":[{\"oneOf\":[{\"properties\":{\"a\":{}},\"required\":[\"a\"]},{\"properties\":{\"b\":{}},\"required\":[\"b\"]}]}],\"type\":\"object\",\"unevaluatedProperties\":false}"
 expression: errors_body(schema)
 ---
-if let Some(__e) = (|| -> Option<__VE<'_>> {
+if let Some(__e) = '__first_error: {
             if !((is_branch_valid_2(instance))) {
                 let mut __context = Vec::with_capacity(1usize);
                 {
@@ -15,17 +16,19 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                     );
                     __context.push(__branch_errors.into_vec());
                 }
-                return Some(__err::any_of("/anyOf", __path.into(), instance, __context));
+                break '__first_error Some(
+                    __err::any_of("/anyOf", __path.into(), instance, __context),
+                );
             }
             None
-        })() {
+        } {
             if __errors.push(__e) {
                 return true;
             }
         }
         match instance {
             __Value::Object(obj) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if let __Value::Object(obj) = instance {
                         let mut __unexpected: Vec<String> = Vec::new();
                         for (__key, __value) in obj.iter() {
@@ -57,7 +60,7 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                             }
                         }
                         if !__unexpected.is_empty() {
-                            return Some(
+                            break '__first_error Some(
                                 __err::unevaluated_properties(
                                     "/unevaluatedProperties",
                                     __path.into(),
@@ -68,7 +71,7 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                         }
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }

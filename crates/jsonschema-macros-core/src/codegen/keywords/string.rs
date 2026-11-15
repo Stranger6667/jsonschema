@@ -51,12 +51,12 @@ pub(in super::super) fn compile<E: ValueEmitter>(
                 quote! {
                     let len = s.chars().count();
                     if (len as u64) < #min {
-                        return Some(__err::min_length(
+                        break '__first_error Some(__err::min_length(
                             #min_path, __path.into(), #err_instance, #min,
                         ));
                     }
                     if (len as u64) > #max {
-                        return Some(__err::max_length(
+                        break '__first_error Some(__err::max_length(
                             #max_path, __path.into(), #err_instance, #max,
                         ));
                     }

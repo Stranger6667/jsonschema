@@ -1,4 +1,8 @@
-use super::super::{compile_schema, expr::ErrorsBlock, CompileContext, CompiledExpr};
+use super::super::{
+    compile_schema,
+    expr::{item_predicate, ErrorsBlock},
+    CompileContext, CompiledExpr,
+};
 use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use serde_json::Value;
@@ -28,7 +32,7 @@ pub(crate) fn compile<E: ValueEmitter>(
             let check = quote! { #len_expr <= #tuple_len };
             let first_error = quote! {
                 if !(#check) {
-                    return Some(__err::additional_items(
+                    break '__first_error Some(__err::additional_items(
                         #schema_path, __path.into(), #err_instance, #tuple_len,
                     ));
                 }
@@ -43,13 +47,13 @@ pub(crate) fn compile<E: ValueEmitter>(
             if compiled.is_trivially_true() {
                 return None;
             }
-            let is_valid = compiled.is_valid_token_stream();
+            let predicate = item_predicate(&compiled.is_valid_token_stream());
             match &compiled.errors {
                 ErrorsBlock::Expr(_) => {
                     let child_errors = compiled.errors.as_token_stream();
                     let iter_expr = E::array_iter(format_ident!("arr"));
                     Some(CompiledExpr::with_errors(
-                        quote! { #iter_expr.skip(#tuple_len).all(|instance| #is_valid) },
+                        quote! { #iter_expr.skip(#tuple_len).all(#predicate) },
                         quote! {
                             for (idx, item) in #iter_expr.enumerate().skip(#tuple_len) {
                                 let instance = item;

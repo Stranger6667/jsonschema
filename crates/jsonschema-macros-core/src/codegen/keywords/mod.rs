@@ -86,12 +86,12 @@ pub(super) fn compile_count_range<E: ValueEmitter>(
                     quote! { (#count as u64) == #limit },
                     quote! {
                         if (#count as u64) < #limit {
-                            return Some(__err::#min_error(
+                            break '__first_error Some(__err::#min_error(
                                 #min_path, __path.into(), #err_instance, #limit,
                             ));
                         }
                         if (#count as u64) > #limit {
-                            return Some(__err::#max_error(
+                            break '__first_error Some(__err::#max_error(
                                 #max_path, __path.into(), #err_instance, #limit,
                             ));
                         }

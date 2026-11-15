@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"$defs\":{\"anchored\":{\"$dynamicAnchor\":\"node\",\"properties\":{\"a\":{}}}},\"$ref\":\"#/$defs/anchored\",\"type\":\"object\",\"unevaluatedProperties\":false}"
 expression: errors_body(schema)
 ---
@@ -8,7 +9,7 @@ if validate_ref_0_errors(instance, __path, __errors) {
         }
         match instance {
             __Value::Object(obj) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if let __Value::Object(obj) = instance {
                         let mut __unexpected: Vec<String> = Vec::new();
                         for (__key, __value) in obj.iter() {
@@ -18,7 +19,7 @@ if validate_ref_0_errors(instance, __path, __errors) {
                             }
                         }
                         if !__unexpected.is_empty() {
-                            return Some(
+                            break '__first_error Some(
                                 __err::unevaluated_properties(
                                     "/unevaluatedProperties",
                                     __path.into(),
@@ -29,7 +30,7 @@ if validate_ref_0_errors(instance, __path, __errors) {
                         }
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }

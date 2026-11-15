@@ -78,14 +78,22 @@ pub(crate) fn compile<E: ValueEmitter>(
         } else {
             wildcard_arm_body.is_valid_token_stream()
         };
-        let iter_body = quote! {
-            let key_str = #key_as_str;
-            match key_str {
-                #(#is_valid_match_arms,)*
-                _ => #is_valid_wildcard
+        let label = ctx.next_loop_label();
+        let entries = E::object_iter_entries(format_ident!("obj"));
+        let main_is_valid = quote! {
+            #label: {
+                for (key, instance) in #entries {
+                    let key_str = #key_as_str;
+                    if !(match key_str {
+                        #(#is_valid_match_arms,)*
+                        _ => #is_valid_wildcard
+                    }) {
+                        break #label false;
+                    }
+                }
+                true
             }
         };
-        let main_is_valid = E::object_iter_all(format_ident!("obj"), iter_body);
         CompiledExpr::with_errors(quote! { { #main_is_valid } }, errors())
     } else if use_known_keys_precheck {
         // Trivial property values leave no covered-value errors to interleave with, so the

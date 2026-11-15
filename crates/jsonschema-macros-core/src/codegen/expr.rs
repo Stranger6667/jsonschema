@@ -1,4 +1,4 @@
-use proc_macro2::TokenStream;
+use proc_macro2::{Delimiter, TokenStream, TokenTree};
 use quote::quote;
 
 /// A compiled check in two shapes: `is_valid` (bool) and `errors`, which reports into the
@@ -83,7 +83,7 @@ pub(crate) fn call_errors(call: &TokenStream) -> TokenStream {
     }
 }
 
-/// A first-error block, as [`CompiledExpr::from_first_error`] takes, returning the first error
+/// A first-error block, as [`CompiledExpr::from_first_error`] takes, yielding the first error
 /// an errors block reports.
 pub(crate) fn first_error_of(errors: &TokenStream) -> TokenStream {
     quote! {
@@ -95,20 +95,41 @@ pub(crate) fn first_error_of(errors: &TokenStream) -> TokenStream {
                 false
             })();
             if let Some(__e) = __first.into_first() {
-                return Some(__e);
+                break '__first_error Some(__e);
             }
         }
     }
 }
 
-/// Run a first-error block in a closure and report its error, if any.
+/// Run a first-error block in a labelled block and report its error, if any. First-error blocks
+/// never nest outside a closure, so the label is never shadowed.
 fn report_first_error(first_error: &TokenStream) -> ErrorsBlock {
     let push = push_error(&quote! { __e });
     ErrorsBlock::Expr(quote! {
-        if let Some(__e) = (|| -> Option<__VE<'_>> { #first_error None })() {
+        if let Some(__e) = '__first_error: { #first_error None } {
             #push
         }
     })
+}
+
+/// The predicate `.all`/`.any` takes for `is_valid` over each `instance`: a call `f(instance)` is
+/// passed as `f`, which spares a closure per call site.
+pub(crate) fn item_predicate(is_valid: &TokenStream) -> TokenStream {
+    let mut tokens = is_valid.clone().into_iter();
+    if let (Some(TokenTree::Ident(function)), Some(TokenTree::Group(args)), None) =
+        (tokens.next(), tokens.next(), tokens.next())
+    {
+        let mut args_iter = args.stream().into_iter();
+        if args.delimiter() == Delimiter::Parenthesis
+            && matches!(
+                (args_iter.next(), args_iter.next()),
+                (Some(TokenTree::Ident(arg)), None) if arg == "instance"
+            )
+        {
+            return quote! { #function };
+        }
+    }
+    quote! { |instance| #is_valid }
 }
 
 impl CompiledExpr {
@@ -133,7 +154,7 @@ impl CompiledExpr {
             is_valid.clone(),
             quote! {
                 if !(#is_valid) {
-                    return Some(__err::false_schema(
+                    break '__first_error Some(__err::false_schema(
                         #schema_path, __path.into(), #err_instance,
                     ));
                 }
@@ -177,8 +198,7 @@ impl CompiledExpr {
         }
     }
 
-    /// Single-error leaf from a check and its error. Emits no closure, unlike
-    /// [`Self::from_first_error`].
+    /// Single-error leaf from a check and its error.
     #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn from_check_and_error(is_valid: TokenStream, error: TokenStream) -> Self {
         let push = push_error(&error);
@@ -195,8 +215,8 @@ impl CompiledExpr {
         }
     }
 
-    /// Single-error leaf from a block returning `Some(error)` for its first error; any later error
-    /// the block could return is never reported.
+    /// Single-error leaf from a block breaking `'__first_error` with `Some(error)` for its first
+    /// error; any later error the block could yield is never reported.
     #[allow(clippy::needless_pass_by_value)]
     pub(crate) fn from_first_error(is_valid: TokenStream, first_error: TokenStream) -> Self {
         Self {

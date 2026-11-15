@@ -122,12 +122,12 @@ fn compile_equal_bounds<E: ValueEmitter>(
         eq_check,
         quote! {
             if #below_check {
-                return Some(__err::minimum(
+                break '__first_error Some(__err::minimum(
                     #min_path, __path.into(), #err_instance, #limit_expr,
                 ));
             }
             if #above_check {
-                return Some(__err::maximum(
+                break '__first_error Some(__err::maximum(
                     #max_path, __path.into(), #err_instance, #limit_expr,
                 ));
             }

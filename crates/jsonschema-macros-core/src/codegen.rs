@@ -150,7 +150,7 @@ pub(crate) fn compile_schema<E: ValueEmitter>(
             CompiledExpr::from_first_error(
                 quote! { false },
                 quote! {
-                    return Some(__err::false_schema(
+                    break '__first_error Some(__err::false_schema(
                         #schema_path, __path.into(), #err_instance,
                     ));
                 },

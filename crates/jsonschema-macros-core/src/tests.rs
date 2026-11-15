@@ -219,6 +219,7 @@ fn test_codegen_snapshot(schema: Value, snap_name: &str) {
 
 #[test_case(json!({"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]},"plain":{"type":"integer"}},"type":"object","properties":{"child":{"$dynamicRef":"#node"},"other":{"$ref":"#/$defs/plain"}}}), "dynamic_schema_full_module" ; "dynamic schema")]
 #[test_case(json!({"$defs":{"item":{"type":"integer"}},"properties":{"first":{"type":"array","items":{"$ref":"#/$defs/item"}},"second":{"type":"array","items":{"$ref":"#/$defs/item"}}}}), "arrays_of_same_ref_full_module" ; "arrays of the same ref")]
+#[test_case(json!({"$defs":{"item":{"type":"integer"}},"required":["outer"],"properties":{"outer":{"additionalProperties":false,"properties":{"inner":{"properties":{"name":{"type":"string","pattern":"^a"}}}}},"list":{"type":"array","items":{"$ref":"#/$defs/item"}},"other":{"type":"array","items":{"$ref":"#/$defs/item"}}}}), "nested_objects_full_module" ; "nested objects")]
 fn full_module_emission(schema: Value, snap_name: &str) {
     let description = serde_json::to_string(&schema).expect("schema serialization");
     insta::with_settings!({ description => &description }, {

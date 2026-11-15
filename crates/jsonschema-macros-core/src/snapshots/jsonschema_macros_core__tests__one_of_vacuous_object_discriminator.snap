@@ -1,9 +1,10 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"oneOf\":[{\"additionalProperties\":false,\"properties\":{\"k\":{\"const\":\"a\"},\"x\":{\"type\":\"integer\"}},\"required\":[\"k\"]},{\"additionalProperties\":false,\"properties\":{\"k\":{\"const\":\"b\"}},\"required\":[\"k\"]}]}"
 expression: errors_body(schema)
 ---
-if let Some(__e) = (|| -> Option<__VE<'_>> {
+if let Some(__e) = '__first_error: {
             {
                 let __one_of_discriminator = match instance {
                     __Value::Object(obj) => obj.get("k").and_then(__Value::as_str),
@@ -43,7 +44,7 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                         );
                         __context.push(__branch_errors.into_vec());
                     }
-                    return Some(
+                    break '__first_error Some(
                         if __count == 0 {
                             __err::one_of_not_valid(
                                 "/oneOf",
@@ -63,7 +64,7 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                 }
             }
             None
-        })() {
+        } {
             if __errors.push(__e) {
                 return true;
             }
