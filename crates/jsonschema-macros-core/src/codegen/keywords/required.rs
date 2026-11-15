@@ -14,7 +14,7 @@ pub(crate) fn compile_single<E: ValueEmitter>(
         quote! { #check },
         quote! {
             if !(#check) {
-                return Some(__err::required(
+                break '__first_error Some(__err::required(
                     #schema_path, __path.into(), #err_instance, #name,
                 ));
             }

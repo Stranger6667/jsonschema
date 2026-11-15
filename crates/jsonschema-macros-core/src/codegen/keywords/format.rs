@@ -33,7 +33,7 @@ fn format_check<E: ValueEmitter>(
     let err_instance = E::err_instance(format_ident!("instance"));
     let first_error = quote! {
         if !(#check) {
-            return Some(__err::format(
+            break '__first_error Some(__err::format(
                 #schema_path, __path.into(), #err_instance, #format_name,
             ));
         }

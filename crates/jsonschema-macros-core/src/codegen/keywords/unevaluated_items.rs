@@ -90,7 +90,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 }
                 #recursive_pop
                 if !__unexpected.is_empty() {
-                    return Some(__err::unevaluated_items(
+                    break '__first_error Some(__err::unevaluated_items(
                         #schema_path, __path.into(), #err_instance, __unexpected,
                     ));
                 }
@@ -123,7 +123,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                     }
                 }
                 if !__unexpected.is_empty() {
-                    return Some(__err::unevaluated_items(
+                    break '__first_error Some(__err::unevaluated_items(
                         #schema_path, __path.into(), #err_instance, __unexpected,
                     ));
                 }

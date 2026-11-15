@@ -85,17 +85,17 @@ pub(crate) fn compile<E: ValueEmitter>(
                     match #convert(s) {
                         Ok(Some(__decoded)) => {
                             if !#media_check(&__decoded) {
-                                return Some(__err::content_media_type(
+                                break '__first_error Some(__err::content_media_type(
                                     #media_path, __path.into(), #err_instance, #media_name,
                                 ));
                             }
                         }
                         Ok(None) => {
-                            return Some(__err::content_encoding(
+                            break '__first_error Some(__err::content_encoding(
                                 #encoding_path, __path.into(), #err_instance, #encoding_name,
                             ));
                         }
-                        Err(__err) => return Some(__err),
+                        Err(__err) => break '__first_error Some(__err),
                     }
                 },
             ))
@@ -104,7 +104,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 quote! { #media_check(s) },
                 quote! {
                     if !#media_check(s) {
-                        return Some(__err::content_media_type(
+                        break '__first_error Some(__err::content_media_type(
                             #media_path, __path.into(), #err_instance, #media_name,
                         ));
                     }
@@ -121,7 +121,7 @@ pub(crate) fn compile<E: ValueEmitter>(
             quote! { #check(s) },
             quote! {
                 if !#check(s) {
-                    return Some(__err::content_encoding(
+                    break '__first_error Some(__err::content_encoding(
                         #encoding_path, __path.into(), #err_instance, #encoding_name,
                     ));
                 }

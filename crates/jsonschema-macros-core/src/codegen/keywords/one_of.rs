@@ -203,7 +203,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                         let _ = #branch_collectors(instance, __path, &mut __branch_errors);
                         __context.push(__branch_errors.into_vec());
                     })*
-                    return Some(if __count == 0 {
+                    break '__first_error Some(if __count == 0 {
                         __err::one_of_not_valid(
                             #schema_path, __path.into(), #err_instance, __context,
                         )

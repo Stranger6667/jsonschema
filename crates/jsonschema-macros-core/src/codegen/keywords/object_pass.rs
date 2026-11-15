@@ -339,16 +339,17 @@ pub(crate) fn compile_is_valid<E: ValueEmitter>(
         .map(|(_, id)| quote! { let mut #id = false; });
     let req_checks = req_idents.iter().map(|(_, id)| quote! { #id });
 
-    let pass = E::object_iter_all(
-        format_ident!("obj"),
-        quote! {
+    // `.all` over a closure, not a labelled loop: the loop form slows this pass in `is_valid`.
+    let entries = E::object_iter_entries(format_ident!("obj"));
+    let pass = quote! {
+        #entries.all(|(key, instance)| {
             #covered_decl
             #match_block
             #(#pattern_checks)*
             #additional_properties_fallback
             true
-        },
-    );
+        })
+    };
 
     Some(quote! {
         {

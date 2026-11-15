@@ -17,7 +17,7 @@ fn pattern_check<E: ValueEmitter>(
     let validate_check = located_check.unwrap_or(&check);
     let first_error = quote! {
         if !(#validate_check) {
-            return Some(__err::pattern(
+            break '__first_error Some(__err::pattern(
                 #schema_path, __path.into(), #err_instance, #pattern,
             ));
         }

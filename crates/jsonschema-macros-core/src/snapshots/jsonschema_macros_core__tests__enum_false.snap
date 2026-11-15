@@ -1,9 +1,10 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"enum\":[false]}"
 expression: errors_body(schema)
 ---
-if let Some(__e) = (|| -> Option<__VE<'_>> {
+if let Some(__e) = '__first_error: {
             if !(match instance {
                 __Value::Bool(b) => !*b,
                 _ => false,
@@ -14,12 +15,12 @@ if let Some(__e) = (|| -> Option<__VE<'_>> {
                         __sj::from_str("[false]").expect("Failed to parse enum options"),
                     )
                 });
-                return Some(
+                break '__first_error Some(
                     __err::enumeration("/enum", __path.into(), instance, &*ENUM_OPTIONS),
                 );
             }
             None
-        })() {
+        } {
             if __errors.push(__e) {
                 return true;
             }

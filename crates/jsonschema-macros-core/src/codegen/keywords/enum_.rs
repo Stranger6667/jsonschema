@@ -151,7 +151,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
                             __sj::from_str(#enum_json).expect("Failed to parse enum options"),
                         )
                     });
-                return Some(__err::enumeration(
+                break '__first_error Some(__err::enumeration(
                     #schema_path, __path.into(), #err_instance, &*ENUM_OPTIONS,
                 ));
             }

@@ -17,7 +17,7 @@ pub(crate) fn compile<E: ValueEmitter>(
             __Lazy::new(|| {
                 __sj::from_str(#not_schema_json).expect("Failed to parse not schema")
             });
-        return Some(__err::not(
+        break '__first_error Some(__err::not(
             #schema_path, __path.into(), #err_instance, NOT_SCHEMA.clone(),
         ));
     };

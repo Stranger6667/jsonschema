@@ -5,7 +5,7 @@ use std::{
 };
 
 use indexmap::IndexMap;
-use proc_macro2::{Ident, TokenStream};
+use proc_macro2::{Ident, Span, TokenStream};
 use quote::format_ident;
 use referencing::{write_escaped_str, Draft, Registry, Uri, VocabularySet};
 
@@ -243,6 +243,8 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     /// Error reporting for `type: array` with every item checked by one referenced schema, keyed
     /// by that schema's `is_valid` function.
     pub(crate) array_errors_helpers: IndexMap<String, (Ident, TokenStream)>,
+    /// Labels handed out by [`Self::next_loop_label`].
+    loop_labels: usize,
     discriminator_assumption: Option<DiscriminatorAssumption>,
     pub(crate) dynamic_anchor_bindings_cache:
         HashMap<String, Vec<crate::codegen::DynamicAnchorBinding>>,
@@ -301,6 +303,7 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             item_eval_fns: FnTable::new("eval_items_ref"),
             branch_helpers: Vec::new(),
             array_errors_helpers: IndexMap::new(),
+            loop_labels: 0,
             discriminator_assumption: None,
             dynamic_anchor_bindings_cache: HashMap::new(),
             dynamic_anchor_bindings_being_compiled: HashSet::new(),
@@ -347,6 +350,14 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             .or_insert_with(|| (format_ident!("array_errors_{}", idx), body()))
             .0
             .clone()
+    }
+
+    /// A loop label unique within the expansion: nested loops sharing a label would trigger
+    /// rustc's label-shadowing warning, which no `allow` silences.
+    pub(crate) fn next_loop_label(&mut self) -> syn::Lifetime {
+        let label = syn::Lifetime::new(&format!("'__all_{}", self.loop_labels), Span::call_site());
+        self.loop_labels += 1;
+        label
     }
 
     pub(crate) fn with_discriminator_assumption<T>(

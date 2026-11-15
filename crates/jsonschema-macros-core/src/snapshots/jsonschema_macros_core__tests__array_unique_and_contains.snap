@@ -1,23 +1,24 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"contains\":{\"type\":\"integer\"},\"type\":\"array\",\"uniqueItems\":true}"
 expression: errors_body(schema)
 ---
 match instance {
             __Value::Array(arr) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !__uniq::is_unique(arr) {
-                        return Some(
+                        break '__first_error Some(
                             __err::unique_items("/uniqueItems", __path.into(), instance),
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }
                 }
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !(arr
                         .iter()
                         .any(|instance| match instance {
@@ -25,12 +26,12 @@ match instance {
                             _ => false,
                         }))
                     {
-                        return Some(
+                        break '__first_error Some(
                             __err::contains("/contains", __path.into(), instance),
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }

@@ -65,7 +65,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                     let _ = #branch_collectors(instance, __path, &mut __branch_errors);
                     __context.push(__branch_errors.into_vec());
                 })*
-                return Some(__err::any_of(
+                break '__first_error Some(__err::any_of(
                     #schema_path, __path.into(), #err_instance, __context,
                 ));
             }

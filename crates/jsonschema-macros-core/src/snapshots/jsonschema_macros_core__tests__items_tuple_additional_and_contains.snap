@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"additionalItems\":{\"type\":\"integer\"},\"contains\":{\"type\":\"string\"},\"items\":[{\"type\":\"integer\"}],\"type\":\"array\"}"
 expression: errors_body(schema)
 ---
@@ -51,14 +52,14 @@ match instance {
                         }
                     }
                 }
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !(arr.iter().any(|instance| instance.is_string())) {
-                        return Some(
+                        break '__first_error Some(
                             __err::contains("/contains", __path.into(), instance),
                         );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }

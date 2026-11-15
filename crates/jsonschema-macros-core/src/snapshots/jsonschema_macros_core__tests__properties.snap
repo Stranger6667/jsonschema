@@ -1,18 +1,21 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 216
 description: "{\"properties\":{\"name\":{\"type\":\"string\"}},\"type\":\"object\"}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            __Value::Object(obj) => {
-                obj.iter()
-                    .all(|(key, instance)| {
-                        let key_str = key.as_str();
-                        match key_str {
-                            "name" => instance.is_string(),
-                            _ => true,
-                        }
-                    })
+            __Value::Object(obj) => '__all_0: {
+                for (key, instance) in obj.iter() {
+                    let key_str = key.as_str();
+                    if !(match key_str {
+                        "name" => instance.is_string(),
+                        _ => true,
+                    }) {
+                        break '__all_0 false;
+                    }
+                }
+                true
             }
             _ => false,
         }

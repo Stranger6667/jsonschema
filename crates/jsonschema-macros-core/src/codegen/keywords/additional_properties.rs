@@ -1,5 +1,9 @@
 use super::{
-    super::{compile_schema, expr::ErrorsBlock, CompileContext, CompiledExpr},
+    super::{
+        compile_schema,
+        expr::{item_predicate, ErrorsBlock},
+        CompileContext, CompiledExpr,
+    },
     pattern_coverage::build_pattern_coverage,
 };
 use crate::codegen::emit::ValueEmitter;
@@ -88,7 +92,7 @@ pub(crate) fn compile<E: ValueEmitter>(
             if schema_check.is_trivially_true() {
                 return None;
             }
-            let schema_is_valid = schema_check.is_valid_token_stream();
+            let predicate = item_predicate(&schema_check.is_valid_token_stream());
             match &schema_check.errors {
                 ErrorsBlock::Expr(_) => {
                     let child_errors = schema_check.errors.as_token_stream();
@@ -96,7 +100,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                     let key_as_str = E::key_as_str(format_ident!("key"));
                     let values_iter = E::object_values_iter(format_ident!("obj"));
                     Some(CompiledExpr::with_errors(
-                        quote! { #values_iter.all(|instance| #schema_is_valid) },
+                        quote! { #values_iter.all(#predicate) },
                         quote! {
                             for (key, value) in #entries {
                                 let instance = value;

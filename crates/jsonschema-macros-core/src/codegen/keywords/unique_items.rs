@@ -16,7 +16,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 is_unique.clone(),
                 quote! {
                     if !#is_unique {
-                        return Some(__err::unique_items(
+                        break '__first_error Some(__err::unique_items(
                             #schema_path, __path.into(), #err_instance,
                         ));
                     }

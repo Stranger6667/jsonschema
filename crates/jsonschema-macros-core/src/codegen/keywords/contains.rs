@@ -1,4 +1,4 @@
-use super::super::{compile_schema, CompileContext, CompiledExpr};
+use super::super::{compile_schema, expr::item_predicate, CompileContext, CompiledExpr};
 use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use serde_json::Value;
@@ -14,6 +14,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     }
     let schema_check = ctx.with_instance_scope(|ctx| compile_schema(ctx, value));
     let schema_is_valid = schema_check.is_valid_token_stream();
+    let predicate = item_predicate(&schema_is_valid);
     let min = proc_macro2::Literal::u64_unsuffixed(min_contains.unwrap_or(1));
 
     let contains_path = ctx.schema_path_for_keyword("contains");
@@ -38,7 +39,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     let contains_iter = E::array_iter(format_ident!("arr"));
     let arr_iter_ref = E::array_iter_ref(format_ident!("arr"));
     let is_valid = match (min_contains.unwrap_or(1), max_contains) {
-        (1, None) => quote! { #contains_iter.any(|instance| #schema_is_valid) },
+        (1, None) => quote! { #contains_iter.any(#predicate) },
         (_, None) => quote! {
             {
                 let mut __contains_count = 0usize;
@@ -83,11 +84,11 @@ pub(crate) fn compile<E: ValueEmitter>(
                     }
                 }
                 if (__contains_count as u64) > #max {
-                    return Some(__err::contains(
+                    break '__first_error Some(__err::contains(
                         #max_path, __path.into(), #err_instance,
                     ));
                 } else if (__contains_count as u64) < #min {
-                    return Some(__err::contains(
+                    break '__first_error Some(__err::contains(
                         #min_path_str, __path.into(), #err_instance,
                     ));
                 }
@@ -95,8 +96,8 @@ pub(crate) fn compile<E: ValueEmitter>(
         }
     } else if min_contains.unwrap_or(1) == 1 {
         quote! {
-            if !(#contains_iter.any(|instance| #schema_is_valid)) {
-                return Some(__err::contains(
+            if !(#contains_iter.any(#predicate)) {
+                break '__first_error Some(__err::contains(
                     #min_path_str, __path.into(), #err_instance,
                 ));
             }
@@ -115,7 +116,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                     }
                 }
                 if (__contains_count as u64) < #min {
-                    return Some(__err::contains(
+                    break '__first_error Some(__err::contains(
                         #min_path_str, __path.into(), #err_instance,
                     ));
                 }

@@ -1,6 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 225
+assertion_line: 226
 description: "{\"$defs\":{\"item\":{\"type\":\"integer\"}},\"properties\":{\"first\":{\"items\":{\"$ref\":\"#/$defs/item\"},\"type\":\"array\"},\"second\":{\"items\":{\"$ref\":\"#/$defs/item\"},\"type\":\"array\"}}}"
 expression: schema_to_code(schema)
 ---
@@ -106,30 +106,28 @@ mod __validator_impl {
     }
     pub(super) fn is_valid(instance: &__Value) -> bool {
         match instance {
-            __Value::Object(obj) => {
-                obj.iter()
-                    .all(|(key, instance)| {
-                        let key_str = key.as_str();
-                        match key_str {
-                            "first" => {
-                                match instance {
-                                    __Value::Array(arr) => {
-                                        arr.iter().all(|instance| validate_ref_0(instance))
-                                    }
-                                    _ => false,
-                                }
+            __Value::Object(obj) => '__all_0: {
+                for (key, instance) in obj.iter() {
+                    let key_str = key.as_str();
+                    if !(match key_str {
+                        "first" => {
+                            match instance {
+                                __Value::Array(arr) => arr.iter().all(validate_ref_0),
+                                _ => false,
                             }
-                            "second" => {
-                                match instance {
-                                    __Value::Array(arr) => {
-                                        arr.iter().all(|instance| validate_ref_0(instance))
-                                    }
-                                    _ => false,
-                                }
-                            }
-                            _ => true,
                         }
-                    })
+                        "second" => {
+                            match instance {
+                                __Value::Array(arr) => arr.iter().all(validate_ref_0),
+                                _ => false,
+                            }
+                        }
+                        _ => true,
+                    }) {
+                        break '__all_0 false;
+                    }
+                }
+                true
             }
             _ => true,
         }

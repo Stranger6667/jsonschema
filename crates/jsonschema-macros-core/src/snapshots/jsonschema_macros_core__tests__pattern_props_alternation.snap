@@ -1,11 +1,12 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 856
 description: "{\"patternProperties\":{\"^(x|y)$\":{}},\"type\":\"object\",\"unevaluatedProperties\":false}"
 expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if let __Value::Object(obj) = instance {
                         let mut __unexpected: Vec<String> = Vec::new();
                         for (__key, __value) in obj.iter() {
@@ -19,7 +20,7 @@ match instance {
                             }
                         }
                         if !__unexpected.is_empty() {
-                            return Some(
+                            break '__first_error Some(
                                 __err::unevaluated_properties(
                                     "/unevaluatedProperties",
                                     __path.into(),
@@ -30,7 +31,7 @@ match instance {
                         }
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }

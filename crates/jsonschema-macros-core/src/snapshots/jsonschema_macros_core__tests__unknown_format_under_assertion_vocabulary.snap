@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 510
 expression: "prettyplease::unparse(&file)"
 ---
 struct Validator;
@@ -53,17 +54,19 @@ mod __validator_impl {
     ) -> bool {
         match instance {
             __Value::String(s) => {
-                if let Some(__e) = (|| -> Option<__VE<'_>> {
+                if let Some(__e) = '__first_error: {
                     if !({
                         compile_error!(
                             "Unknown format: 'made-up'. The meta-schema asserts formats, so unrecognized ones cannot be ignored. Register a check for it or disable format validation"
                         );
                         false
                     }) {
-                        return Some(__err::false_schema("", __path.into(), instance));
+                        break '__first_error Some(
+                            __err::false_schema("", __path.into(), instance),
+                        );
                     }
                     None
-                })() {
+                } {
                     if __errors.push(__e) {
                         return true;
                     }
