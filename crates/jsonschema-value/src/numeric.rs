@@ -430,8 +430,6 @@ pub mod bignum {
 
     impl Decimal {
         /// The number written in `text`, a JSON number literal.
-        // ponytail: exponents saturate at `i64`, so numbers written past `1e9223372036854775807`
-        // compare equal to each other.
         pub fn parse(text: &str) -> Self {
             let mut negative = false;
             let mut digits = Vec::new();

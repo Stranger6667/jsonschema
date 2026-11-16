@@ -130,11 +130,20 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         let has_typed_checks = typed.is_some();
 
         let mut untyped: Vec<CompiledExpr> = Vec::new();
-        let type_is_redundant = type_check_is_redundant(schema, ctx.draft);
-
-        if has_type_constraint && !has_typed_checks && !type_is_redundant {
+        // `const` or `enum` reject every type but the one `type` names: `is_valid` skips the
+        // type check, errors still report it.
+        let mut implied_type = None;
+        if has_type_constraint && !has_typed_checks {
             if let Some(value) = schema.get("type") {
-                untyped.push(keywords::type_::compile(ctx, value));
+                let type_check = keywords::type_::compile(ctx, value);
+                if type_check_is_redundant(schema, ctx.draft) {
+                    implied_type = Some(CompiledExpr {
+                        is_valid: IsValidExpr::AlwaysTrue,
+                        ..type_check
+                    });
+                } else {
+                    untyped.push(type_check);
+                }
             }
         }
         if ctx.draft.supports_const_keyword() && validation_vocab_enabled {
@@ -220,7 +229,13 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
                 }
             }
             Some(type_check) => type_check,
-            None => CompiledExpr::combine_and(untyped),
+            None => {
+                let combined = CompiledExpr::combine_and(untyped);
+                match implied_type {
+                    Some(type_check) => type_check.and(combined),
+                    None => combined,
+                }
+            }
         }
     })
 }
