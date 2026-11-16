@@ -10,7 +10,7 @@ use super::{
 use crate::context::CompileContext;
 
 /// Keywords whose units `evaluate` reports, in the runtime's priority order.
-const LEAF_KEYWORDS: [&str; 21] = [
+const LEAF_KEYWORDS: [&str; 22] = [
     "type",
     "const",
     "enum",
@@ -26,6 +26,7 @@ const LEAF_KEYWORDS: [&str; 21] = [
     "minProperties",
     "maxProperties",
     "required",
+    "dependentRequired",
     "pattern",
     "format",
     "contentEncoding",
@@ -82,6 +83,11 @@ enum TreeUnit {
         schema: usize,
         closed: bool,
     },
+    /// `dependencies` or `dependentSchemas`, with a range of `Tree::dependencies`.
+    Dependencies {
+        keyword: &'static str,
+        schemas: (usize, usize),
+    },
 }
 
 struct TreeSchema {
@@ -103,6 +109,8 @@ struct Tree {
     properties: Vec<(String, usize)>,
     /// Each `patternProperties` subschema's index, with the name match its matcher runs.
     patterns: Vec<(usize, TokenStream)>,
+    /// Each property whose presence applies a subschema, with that subschema's index.
+    dependencies: Vec<(String, usize)>,
 }
 
 impl Tree {
@@ -201,6 +209,27 @@ impl Tree {
                     closed: *subschema == Value::Bool(false),
                 });
             }
+            for keyword in ["dependencies", "dependentSchemas"] {
+                let Some(Value::Object(dependencies)) = keywords
+                    .get(keyword)
+                    .filter(|_| ctx.draft.is_known_keyword(keyword))
+                else {
+                    continue;
+                };
+                let mut entries = Vec::new();
+                for (name, dependency) in dependencies {
+                    // Required names are errors of the keyword's own unit.
+                    if dependency.is_array() {
+                        continue;
+                    }
+                    let mut child = format!("{pointer}/{keyword}/");
+                    write_escaped_str(&mut child, name);
+                    entries.push((name.clone(), self.add(ctx, dependency, child)?));
+                }
+                let schemas = (self.dependencies.len(), entries.len());
+                self.dependencies.extend(entries);
+                units.push(TreeUnit::Dependencies { keyword, schemas });
+            }
             // The draft's unknown keywords annotate the schema, as the runtime reports them.
             let unknown: Map<_, _> = keywords
                 .iter()
@@ -287,11 +316,17 @@ pub(super) fn compile<E: ValueEmitter>(
             TreeUnit::Names { schema, closed } => {
                 json!({"keyword": "propertyNames", "names": schema, "closed": closed})
             }
+            TreeUnit::Dependencies { keyword, schemas } => {
+                json!({"keyword": keyword, "dependencies": schemas})
+            }
         })
         .collect();
     let mut tables = json!({"schemas": schemas, "units": units});
     if !tree.properties.is_empty() {
         tables["properties"] = json!(tree.properties);
+    }
+    if !tree.dependencies.is_empty() {
+        tables["dependencies"] = json!(tree.dependencies);
     }
     if !tree.patterns.is_empty() {
         tables["patterns"] = json!(tree
@@ -378,6 +413,12 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
                 ("properties" | "patternProperties", Value::Object(subschemas)) => {
                     return subschemas
                         .values()
+                        .find_map(|subschema| unsupported(subschema, draft));
+                }
+                ("dependencies" | "dependentSchemas", Value::Object(dependencies)) => {
+                    return dependencies
+                        .values()
+                        .filter(|dependency| !dependency.is_array())
                         .find_map(|subschema| unsupported(subschema, draft));
                 }
                 ("additionalProperties" | "propertyNames", Value::Bool(_) | Value::Object(_)) => {

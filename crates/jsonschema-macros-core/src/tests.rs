@@ -404,6 +404,8 @@ fn evaluate_object_applicators_module() {
 #[test_case(json!({"patternProperties": {"^a": {"items": {}}}}), "`evaluate` does not support the `items` keyword yet" ; "keyword below patternProperties")]
 #[test_case(json!({"additionalProperties": {"items": {}}}), "`evaluate` does not support the `items` keyword yet" ; "keyword below additionalProperties")]
 #[test_case(json!({"propertyNames": {"items": {}}}), "`evaluate` does not support the `items` keyword yet" ; "keyword below propertyNames")]
+#[test_case(json!({"dependencies": {"a": ["b"], "c": {"items": {}}}}), "`evaluate` does not support the `items` keyword yet" ; "keyword below dependencies")]
+#[test_case(json!({"dependentSchemas": {"a": {"items": {}}}}), "`evaluate` does not support the `items` keyword yet" ; "keyword below dependentSchemas")]
 #[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
 #[test_case(json!({"patternProperties": {"(": {}}}), "`evaluate` does not support the `(` pattern" ; "invalid pattern")]
 fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {

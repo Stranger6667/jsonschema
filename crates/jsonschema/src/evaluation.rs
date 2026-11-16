@@ -1574,6 +1574,9 @@ pub mod generated {
         /// Each `patternProperties` subschema's index, in the order of the matchers.
         #[serde(default)]
         patterns: Vec<usize>,
+        /// Each property whose presence applies a subschema, with that subschema's index.
+        #[serde(default)]
+        dependencies: Vec<(String, usize)>,
         /// The absolute URI the pointers resolve against, if the schema has one.
         #[serde(default)]
         base: Option<String>,
@@ -1616,6 +1619,9 @@ pub mod generated {
         /// A `propertyNames` unit's subschema.
         #[serde(default)]
         names: Option<usize>,
+        /// A `dependencies` or `dependentSchemas` unit's range of `Tables::dependencies`.
+        #[serde(default)]
+        dependencies: Option<(usize, usize)>,
         /// That subschema is `false`.
         #[serde(default)]
         closed: bool,
@@ -1639,6 +1645,7 @@ pub mod generated {
             schema: usize,
             closed: bool,
         },
+        Dependencies((usize, usize)),
     }
 
     /// Where a unit sits, fixed when the validator is generated.
@@ -1673,6 +1680,7 @@ pub mod generated {
         units: Box<[UnitLocation]>,
         properties: Box<[(String, usize)]>,
         patterns: Box<[usize]>,
+        dependencies: Box<[(String, usize)]>,
     }
 
     impl Tree {
@@ -1754,6 +1762,9 @@ pub mod generated {
                                 schema: unit.names.expect("the subschema's index"),
                                 closed: unit.closed,
                             },
+                            "dependencies" | "dependentSchemas" => Kind::Dependencies(
+                                unit.dependencies.expect("the range of subschemas"),
+                            ),
                             _ => Kind::Leaf,
                         },
                         ..locate(&format!("{pointer}/{}", unit.keyword), unit.strings)
@@ -1771,6 +1782,7 @@ pub mod generated {
                     .collect(),
                 properties: tables.properties.into_boxed_slice(),
                 patterns: tables.patterns.into_boxed_slice(),
+                dependencies: tables.dependencies.into_boxed_slice(),
             }
         }
     }
@@ -1881,6 +1893,9 @@ pub mod generated {
                     ),
                     Kind::Names { schema, closed } => {
                         self.names::<F>(site, schema, closed, instance, location, position)
+                    }
+                    Kind::Dependencies(schemas) => {
+                        self.dependencies::<F>(site, schemas, instance, location, position)
                     }
                 };
                 children.push(&mut self.arena, node);
@@ -2019,6 +2034,31 @@ pub mod generated {
             }
             let annotations = (!closed).then(|| Annotations::new(Value::Array(names)));
             Self::node(site, Vec::new(), annotations, children, position)
+        }
+
+        /// Missing required names are the unit's own errors; each present property with a
+        /// subschema applies it to the object, in declared order.
+        fn dependencies<F: Json>(
+            &mut self,
+            site: &UnitLocation,
+            (first, count): (usize, usize),
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let Some(object) = instance.as_object() else {
+                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+            };
+            let errors = self.errors_at(site, location);
+            let built = self.built;
+            let mut children = ChildList::default();
+            for (name, schema) in &built.dependencies[first..first + count] {
+                if object.get(&F::prepare_key(name)).is_some() {
+                    let child = self.schema::<F>(*schema, instance, location, position);
+                    children.push(&mut self.arena, child);
+                }
+            }
+            Self::node(site, errors, None, children, position)
         }
 
         /// Each name at the object's location, matched with the errors whose instance is that

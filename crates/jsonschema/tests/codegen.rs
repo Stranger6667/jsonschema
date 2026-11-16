@@ -5890,6 +5890,24 @@ struct EvaluatePropertyNamesNested;
 #[jsonschema::validator(schema = r#"{"propertyNames": {"maxLength": 1}, "minProperties": 1}"#, draft = Draft4, methods = { evaluate = true })]
 struct EvaluatePropertyNamesDraft4;
 
+#[jsonschema::validator(schema = r#"{"dependentRequired": {"a": ["b", "c"], "x": ["y"]}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDependentRequired;
+
+#[jsonschema::validator(schema = r#"{"dependentSchemas": {"a": {"required": ["b"]}, "c": true, "d": false, "e": {"x-note": 1, "minProperties": 2}}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDependentSchemas;
+
+#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["b"], "c": {"required": ["d"]}, "e": false, "f": []}}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateDependenciesDraft7;
+
+#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["b"], "c": {"properties": {"c": {"type": "integer"}}}}}"#, draft = Draft4, methods = { evaluate = true })]
+struct EvaluateDependenciesDraft4;
+
+#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["b"], "c": {"minProperties": 3}}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDependencies;
+
+#[jsonschema::validator(schema = r#"{"dependentRequired": {"a": ["b"]}, "minProperties": 1}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateDependentRequiredDraft7;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -5944,6 +5962,12 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluatePropertyNamesBesideApplicators::evaluate, serde_json::json!({"properties": {"a": {}}, "patternProperties": {"^x": {}}, "additionalProperties": {"type": "integer"}, "propertyNames": {"pattern": "^[a-z]+$", "minLength": 1}}), None, Draft::Draft202012 ; "property_names_beside_applicators")]
 #[test_case(EvaluatePropertyNamesNested::evaluate, serde_json::json!({"properties": {"a": {"propertyNames": {"maxLength": 1}}}}), None, Draft::Draft202012 ; "property_names_nested")]
 #[test_case(EvaluatePropertyNamesDraft4::evaluate, serde_json::json!({"propertyNames": {"maxLength": 1}, "minProperties": 1}), None, Draft::Draft4 ; "property_names_draft4")]
+#[test_case(EvaluateDependentRequired::evaluate, serde_json::json!({"dependentRequired": {"a": ["b", "c"], "x": ["y"]}}), None, Draft::Draft202012 ; "dependent_required")]
+#[test_case(EvaluateDependentSchemas::evaluate, serde_json::json!({"dependentSchemas": {"a": {"required": ["b"]}, "c": true, "d": false, "e": {"x-note": 1, "minProperties": 2}}}), None, Draft::Draft202012 ; "dependent_schemas")]
+#[test_case(EvaluateDependenciesDraft7::evaluate, serde_json::json!({"dependencies": {"a": ["b"], "c": {"required": ["d"]}, "e": false, "f": []}}), None, Draft::Draft7 ; "dependencies_draft7")]
+#[test_case(EvaluateDependenciesDraft4::evaluate, serde_json::json!({"dependencies": {"a": ["b"], "c": {"properties": {"c": {"type": "integer"}}}}}), None, Draft::Draft4 ; "dependencies_draft4")]
+#[test_case(EvaluateDependencies::evaluate, serde_json::json!({"dependencies": {"a": ["b"], "c": {"minProperties": 3}}}), None, Draft::Draft202012 ; "dependencies_draft2020")]
+#[test_case(EvaluateDependentRequiredDraft7::evaluate, serde_json::json!({"dependentRequired": {"a": ["b"]}, "minProperties": 1}), None, Draft::Draft7 ; "dependent_required_draft7")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -5979,6 +6003,8 @@ fn test_evaluate_matches_runtime(
         serde_json::json!({"a": 1, "b": "x", "xy": "q", "x": "", "c": 2, "ab": "3", "12": 1, "3": 5, "a/b~": "n", " ": 0}),
         serde_json::json!({"c": "x", "ca": 1, "d": {"a": 1}, "e": {"b": 2}}),
         serde_json::json!({"a": {"bb": 1, "c": 2}, "x@y.z": 1, "B": 2}),
+        serde_json::json!({"a": 1, "c": 2, "e": 3}),
+        serde_json::json!({"a": 1, "x": 1, "d": 1, "f": 1}),
         // More members than the runtime scans before looking declared names up instead.
         serde_json::json!({"a": 1, "b": "x", "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1}),
     ] {
