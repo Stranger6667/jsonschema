@@ -50,7 +50,7 @@ serde_json = { workspace = true, features = ["float_roundtrip"] }
 pyo3-build-config = { version = "0.30", optional = true }
 
 [dev-dependencies]
-hegeltest = { version = "0.48", features = ["serde_json"] }
+hegeltest = { version = "0.52", features = ["serde_json"] }
 test-case = "3"
 
 [lints]
