@@ -22,6 +22,7 @@
 - `evaluate` output for `additionalProperties: false` reporting one error for the whole object instead of a failing unit for each extra member.
 - `evaluate` output for two `required` names beside `properties` reporting them inside the `properties` unit, failing it, and only when missing.
 - `evaluate` output for `propertyNames: false` reporting one error for the whole object instead of a failing unit for each name.
+- `evaluate` output for `dependentRequired` and the array form of `dependencies` reporting missing names in a nested unit at a schema location that does not exist.
 
 ### Performance
 
