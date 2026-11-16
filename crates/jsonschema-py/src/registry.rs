@@ -118,6 +118,16 @@ impl Resolver {
     }
 
     fn lookup(&self, py: Python<'_>, reference: &str) -> PyResult<Resolved> {
+        self.resolve(py, reference, false)
+    }
+
+    fn lookup_dynamic_ref(&self, py: Python<'_>, reference: &str) -> PyResult<Resolved> {
+        self.resolve(py, reference, true)
+    }
+}
+
+impl Resolver {
+    fn resolve(&self, py: Python<'_>, reference: &str, dynamic: bool) -> PyResult<Resolved> {
         let resolver = if self.dynamic_scope.is_empty() {
             self.registry.as_ref().resolver(self.base_uri.clone())
         } else {
@@ -143,7 +153,12 @@ impl Resolver {
             resolver
         };
 
-        let resolved = match resolver.lookup(reference) {
+        let resolved = if dynamic {
+            resolver.lookup_dynamic_ref(reference)
+        } else {
+            resolver.lookup(reference)
+        };
+        let resolved = match resolved {
             Ok(resolved) => resolved,
             Err(error) => return Err(referencing_error_pyerr(py, error.to_string())?),
         };

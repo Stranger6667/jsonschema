@@ -5901,3 +5901,46 @@ fn test_evaluate_matches_runtime(
         );
     }
 }
+
+// `inner` is the schema every reference below names; `outer` is the outermost `item` in scope.
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"inner#item","$defs":{"outer":{"$dynamicAnchor":"item","type":"null"},"inner":{"$id":"inner","$dynamicAnchor":"item","type":"string"}}}"##
+)]
+struct RefToDynamicAnchorValidator;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicRef":"inner#item","$defs":{"outer":{"$dynamicAnchor":"item","type":"null"},"inner":{"$id":"inner","$dynamicAnchor":"item","type":"string"}}}"##
+)]
+struct DynamicRefToDynamicAnchorValidator;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","properties":{"static":{"$ref":"inner#item"},"dynamic":{"$dynamicRef":"inner#item"}},"$defs":{"outer":{"$dynamicAnchor":"item","type":"null"},"inner":{"$id":"inner","$dynamicAnchor":"item","type":"string"}}}"##
+)]
+struct RefBesideDynamicRefValidator;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"inner#item","unevaluatedProperties":false,"unevaluatedItems":false,"$defs":{"outer":{"$dynamicAnchor":"item","properties":{"outer":true},"prefixItems":[true]},"inner":{"$id":"inner","$dynamicAnchor":"item","properties":{"inner":true},"prefixItems":[true,true]}}}"##
+)]
+struct RefToDynamicAnchorUnevaluatedValidator;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicRef":"inner#item","unevaluatedProperties":false,"unevaluatedItems":false,"$defs":{"outer":{"$dynamicAnchor":"item","properties":{"outer":true},"prefixItems":[true]},"inner":{"$id":"inner","$dynamicAnchor":"item","properties":{"inner":true},"prefixItems":[true,true]}}}"##
+)]
+struct DynamicRefToDynamicAnchorUnevaluatedValidator;
+
+#[test_case(RefToDynamicAnchorValidator::is_valid, serde_json::json!("a"), serde_json::json!(null); "ref is static")]
+#[test_case(DynamicRefToDynamicAnchorValidator::is_valid, serde_json::json!(null), serde_json::json!("a"); "dynamic ref follows the scope")]
+#[test_case(RefBesideDynamicRefValidator::is_valid, serde_json::json!({"static": "a", "dynamic": null}), serde_json::json!({"static": null}); "ref beside dynamic ref, static side")]
+#[test_case(RefBesideDynamicRefValidator::is_valid, serde_json::json!({"static": "a", "dynamic": null}), serde_json::json!({"dynamic": "a"}); "ref beside dynamic ref, dynamic side")]
+#[test_case(RefToDynamicAnchorUnevaluatedValidator::is_valid, serde_json::json!({"inner": 1}), serde_json::json!({"outer": 1}); "ref, unevaluated properties")]
+#[test_case(RefToDynamicAnchorUnevaluatedValidator::is_valid, serde_json::json!([1, 2]), serde_json::json!([1, 2, 3]); "ref, unevaluated items")]
+#[test_case(DynamicRefToDynamicAnchorUnevaluatedValidator::is_valid, serde_json::json!({"outer": 1}), serde_json::json!({"inner": 1}); "dynamic ref, unevaluated properties")]
+#[test_case(DynamicRefToDynamicAnchorUnevaluatedValidator::is_valid, serde_json::json!([1]), serde_json::json!([1, 2]); "dynamic ref, unevaluated items")]
+fn ref_to_dynamic_anchor_ignores_dynamic_scope(
+    is_valid: fn(&serde_json::Value) -> bool,
+    valid: serde_json::Value,
+    invalid: serde_json::Value,
+) {
+    assert!(is_valid(&valid));
+    assert!(!is_valid(&invalid));
+}

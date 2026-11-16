@@ -690,6 +690,7 @@ module JSONSchema
     def base_uri: () -> String
     def dynamic_scope: () -> Array[String]
     def lookup: (String reference) -> Resolved
+    def lookup_dynamic_ref: (String reference) -> Resolved
   end
 
   # Resolved reference containing the dereferenced schema and its context.

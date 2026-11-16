@@ -504,6 +504,13 @@ impl<'a, F: Json> Context<'a, F> {
         self.resolver.lookup(reference)
     }
 
+    pub(crate) fn lookup_dynamic_ref(
+        &self,
+        reference: &str,
+    ) -> Result<Resolved<'a>, referencing::Error> {
+        self.resolver.lookup_dynamic_ref(reference)
+    }
+
     pub(crate) fn location_cache_key(&self) -> LocationCacheKey {
         LocationCacheKey {
             base_uri: self.resolver.base_uri(),
@@ -716,12 +723,21 @@ impl<'a, F: Json> Context<'a, F> {
         Ok(target)
     }
 
-    /// [`Context::ref_target`] together with what `reference` resolves to.
+    /// [`Context::ref_target`] together with what `reference` resolves to, as `$dynamicRef` when
+    /// `dynamic`.
     pub(crate) fn resolve_ref_target(
         &self,
         reference: &str,
+        dynamic: bool,
         target_base: impl FnOnce(&Uri<String>) -> Location,
     ) -> Result<(RefTarget, Resolved<'a>), referencing::Error> {
+        let enter = |lookup: &referencing::Target<'a>| {
+            if dynamic {
+                self.resolver.enter_dynamic_ref(lookup)
+            } else {
+                Ok(self.resolver.enter(lookup))
+            }
+        };
         let base_uri = BaseUriKey(self.resolver.base_uri());
         if let Some(entry) = self
             .shared
@@ -731,12 +747,12 @@ impl<'a, F: Json> Context<'a, F> {
             .and_then(|by_reference| by_reference.get(reference))
         {
             if let Some(lookup) = &entry.lookup {
-                return Ok((entry.target.clone(), self.resolver.enter(lookup)?));
+                return Ok((entry.target.clone(), enter(lookup)?));
             }
         }
         let target = self.ref_target(reference, target_base)?;
         let lookup = self.resolver.lookup_target(reference)?;
-        let resolved = self.resolver.enter(&lookup)?;
+        let resolved = enter(&lookup)?;
         if let Some(entry) = self
             .shared
             .ref_targets

@@ -1197,5 +1197,112 @@
         "valid": false
       }
     ]
+  },
+  {
+    "description": "$ref to a $dynamicAnchor names that schema whatever the dynamic scope holds",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://example.com/root",
+      "$ref": "inner#item",
+      "$defs": {
+        "outer": {
+          "$dynamicAnchor": "item",
+          "type": "null"
+        },
+        "inner": {
+          "$id": "inner",
+          "$dynamicAnchor": "item",
+          "type": "string"
+        }
+      }
+    },
+    "kind": "reference",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Finner%2523item",
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Finner%23item": {
+          "type": "string"
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": "a",
+        "valid": true
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ]
+  },
+  {
+    "description": "$ref and $dynamicRef naming one $dynamicAnchor but reaching different schemas stay raw",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://example.com/root",
+      "properties": {
+        "static": {
+          "$ref": "inner#item"
+        },
+        "dynamic": {
+          "$dynamicRef": "inner#item"
+        }
+      },
+      "$defs": {
+        "outer": {
+          "$dynamicAnchor": "item",
+          "type": "null"
+        },
+        "inner": {
+          "$id": "inner",
+          "$dynamicAnchor": "item",
+          "type": "string"
+        }
+      }
+    },
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://example.com/root",
+      "properties": {
+        "static": {
+          "$ref": "inner#item"
+        },
+        "dynamic": {
+          "$dynamicRef": "inner#item"
+        }
+      },
+      "$defs": {
+        "outer": {
+          "$dynamicAnchor": "item",
+          "type": "null"
+        },
+        "inner": {
+          "$id": "inner",
+          "$dynamicAnchor": "item",
+          "type": "string"
+        }
+      }
+    },
+    "kind": "raw",
+    "tests": [
+      {
+        "data": {
+          "static": "a",
+          "dynamic": null
+        }
+      },
+      {
+        "data": {
+          "static": null
+        }
+      },
+      {
+        "data": {
+          "dynamic": "a"
+        }
+      }
+    ]
   }
 ]

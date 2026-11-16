@@ -449,6 +449,29 @@ fn registry_with_address() -> jsonschema::Registry<'static> {
     });
     "non_validating_siblings_merged"
 )]
+#[test_case(
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://example.com/root",
+        "properties": {"item": {"$ref": "inner#item"}},
+        "$defs": {
+            "outer": {"$dynamicAnchor": "item", "type": "null"},
+            "inner": {"$id": "inner", "$dynamicAnchor": "item", "type": "string"}
+        }
+    }),
+    json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": "https://example.com/root",
+        "properties": {
+            "item": {"$id": "inner", "$dynamicAnchor": "item", "type": "string"}
+        },
+        "$defs": {
+            "outer": {"$dynamicAnchor": "item", "type": "null"},
+            "inner": {"$id": "inner", "$dynamicAnchor": "item", "type": "string"}
+        }
+    });
+    "ref_to_dynamic_anchor_ignores_outer_anchor_of_that_name"
+)]
 #[allow(clippy::needless_pass_by_value)]
 fn test_dereference(schema: Value, expected: Value) {
     assert_eq!(jsonschema::dereference(&schema).unwrap(), expected);
