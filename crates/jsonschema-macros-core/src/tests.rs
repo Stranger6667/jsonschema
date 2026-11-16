@@ -417,6 +417,13 @@ fn evaluate_object_applicators_module() {
 #[test_case(json!({"if": {"unevaluatedItems": false}, "then": {}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below if")]
 #[test_case(json!({"if": {}, "then": {"unevaluatedItems": false}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below then")]
 #[test_case(json!({"if": {}, "else": {"unevaluatedItems": false}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below else")]
+#[test_case(json!({"$ref": "#/$defs/a", "$defs": {"a": {"unevaluatedItems": false}}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword in a ref target")]
+#[test_case(json!({"$ref": "#a", "$defs": {"a": {"$anchor": "a", "unevaluatedItems": false}}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword in an anchor target")]
+#[test_case(json!({"$ref": "#/$defs/missing"}), "Pointer '/$defs/missing' does not exist" ; "unresolvable ref")]
+#[test_case(json!({"$ref": "http://example.com/a", "$defs": {"a": {"$id": "http://example.com/a"}}}), "`evaluate` does not support a `$ref` to another resource yet" ; "ref to another resource")]
+#[test_case(json!({"$ref": "#/$defs/a/properties/x", "$defs": {"a": {"$id": "http://example.com/a", "properties": {"x": {}}}}}), "`evaluate` does not support a `$ref` to another resource yet" ; "ref into an embedded resource")]
+#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a"}}}), "`evaluate` does not support `$id` below the root yet" ; "id below the root")]
+#[test_case(json!({"$schema": "http://json-schema.org/draft-04/schema#", "properties": {"a": {"id": "http://example.com/a"}}}), "`evaluate` does not support `id` below the root yet" ; "draft4 id below the root")]
 #[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
 #[test_case(json!({"patternProperties": {"(": {}}}), "`evaluate` does not support the `(` pattern" ; "invalid pattern")]
 fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
@@ -457,6 +464,36 @@ fn evaluate_combinators_module() {
     config.methods.evaluate = true;
     insta::assert_snapshot!(
         "evaluate_combinators_module",
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
+    );
+}
+
+#[test]
+fn evaluate_rejects_a_ref_to_a_provided_resource() {
+    let config: crate::Config = syn::parse2(quote! {
+        schema = r#"{"$ref": "json-schema:///other"}"#,
+        resources = { "json-schema:///other" => { schema = r#"{"type": "integer"}"# } },
+        methods = { evaluate = true },
+    })
+    .expect("Config should parse");
+    let item: syn::ItemStruct =
+        syn::parse2(quote! { struct Validator; }).expect("Item should parse");
+    let error = crate::validator_impl(&config, &item).expect_err("unsupported schema");
+    assert_eq!(
+        error.to_string(),
+        "`evaluate` does not support a `$ref` to another resource yet"
+    );
+}
+
+#[test]
+fn evaluate_ref_module() {
+    let mut config = test_config(json!({
+        "properties": {"next": {"$ref": "#"}, "value": {"$ref": "#/$defs/value"}},
+        "$defs": {"value": {"type": "integer"}},
+    }));
+    config.methods.evaluate = true;
+    insta::assert_snapshot!(
+        "evaluate_ref_module",
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
     );
 }

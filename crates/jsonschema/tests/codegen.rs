@@ -6055,6 +6055,42 @@ struct EvaluateIfAlone;
 
 #[jsonschema::validator(schema = r#"{"anyOf": [{"allOf": [{"type": "array"}, {"items": {"not": {"type": "string"}}}]}, {"oneOf": [{"type": "object"}, {"type": "null"}]}]}"#, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateNestedCombinators;
+#[jsonschema::validator(schema = r##"{"$defs": {"a": {"type": "integer", "minimum": 2}}, "$ref": "#/$defs/a"}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRef;
+#[jsonschema::validator(schema = r##"{"$defs": {"a": {"type": "integer"}}, "$ref": "#/$defs/a", "minimum": 5, "title": "t"}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefSiblings;
+#[jsonschema::validator(schema = r##"{"definitions": {"a": {"type": "integer"}}, "$ref": "#/definitions/a", "minimum": 5, "title": "t"}"##, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateRefSiblingsDraft7;
+#[jsonschema::validator(schema = r##"{"properties": {"foo": {"$ref": "#/$defs/a"}}, "$defs": {"a": {"minLength": 2, "title": "t"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefBelowProperties;
+#[jsonschema::validator(schema = r##"{"type": "object", "properties": {"next": {"$ref": "#"}, "v": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefRecursive;
+#[jsonschema::validator(schema = r##"{"anyOf": [{"$ref": "#/$defs/a"}, {"type": "null"}], "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefInBranches;
+#[jsonschema::validator(schema = r##"{"$ref": "#/$defs/f", "$defs": {"f": false}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefFalse;
+#[jsonschema::validator(schema = r##"{"$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"type": "integer"}}, "$ref": "#/$defs/a"}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefChain;
+#[jsonschema::validator(schema = r##"{"$id": "https://example.com/root", "$defs": {"a": {"$anchor": "here", "type": "integer"}}, "$ref": "#here"}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefAnchor;
+#[jsonschema::validator(schema = r##"{"allOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/a"}], "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefTwice;
+#[jsonschema::validator(schema = r##"{"$ref": "#", "type": "integer"}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefRoot;
+#[jsonschema::validator(schema = r##"{"$defs": {"a": {"$ref": "#/$defs/a", "type": "integer"}}, "$ref": "#/$defs/a"}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefSelf;
+#[jsonschema::validator(schema = r##"{"properties": {"a": {"type": "integer"}, "b": {"$ref": "#/properties/a"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefToProperty;
+#[jsonschema::validator(schema = r##"{"items": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefBelowItems;
+#[jsonschema::validator(schema = r##"{"definitions": {"a": {"type": "integer"}}, "properties": {"a": {"$ref": "#/definitions/a"}}}"##, draft = Draft4, methods = { evaluate = true })]
+struct EvaluateRefDraft4;
+#[jsonschema::validator(schema = r##"{"contains": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefBelowContains;
+#[jsonschema::validator(schema = r##"{"definitions": {"a": {"type": "integer"}, "b": {"$id": "http://example.com/b"}}, "$ref": "#/definitions/a", "properties": {"x": {"$ref": "http://example.com/b"}}}"##, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateRefIgnoredSiblings;
+#[jsonschema::validator(schema = r##"{"$defs": {"s": {"propertyNames": {"$ref": "#/$defs/s"}, "maxLength": 3}}, "$ref": "#/$defs/s"}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefBelowNames;
 
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
@@ -6148,6 +6184,24 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateIfElse::evaluate, serde_json::json!({"if": {"type": "integer"}, "else": {"type": "string"}}), None, Draft::Draft202012 ; "if_else")]
 #[test_case(EvaluateIfAlone::evaluate, serde_json::json!({"if": {"type": "integer"}, "minLength": 1}), None, Draft::Draft202012 ; "if_alone")]
 #[test_case(EvaluateNestedCombinators::evaluate, serde_json::json!({"anyOf": [{"allOf": [{"type": "array"}, {"items": {"not": {"type": "string"}}}]}, {"oneOf": [{"type": "object"}, {"type": "null"}]}]}), None, Draft::Draft202012 ; "nested_combinators")]
+#[test_case(EvaluateRef::evaluate, serde_json::json!({"$defs": {"a": {"type": "integer", "minimum": 2}}, "$ref": "#/$defs/a"}), None, Draft::Draft202012 ; "ref")]
+#[test_case(EvaluateRefSiblings::evaluate, serde_json::json!({"$defs": {"a": {"type": "integer"}}, "$ref": "#/$defs/a", "minimum": 5, "title": "t"}), None, Draft::Draft202012 ; "ref_siblings")]
+#[test_case(EvaluateRefSiblingsDraft7::evaluate, serde_json::json!({"definitions": {"a": {"type": "integer"}}, "$ref": "#/definitions/a", "minimum": 5, "title": "t"}), None, Draft::Draft7 ; "ref_siblings_draft7")]
+#[test_case(EvaluateRefBelowProperties::evaluate, serde_json::json!({"properties": {"foo": {"$ref": "#/$defs/a"}}, "$defs": {"a": {"minLength": 2, "title": "t"}}}), None, Draft::Draft202012 ; "ref_below_properties")]
+#[test_case(EvaluateRefRecursive::evaluate, serde_json::json!({"type": "object", "properties": {"next": {"$ref": "#"}, "v": {"type": "integer"}}}), None, Draft::Draft202012 ; "ref_recursive")]
+#[test_case(EvaluateRefInBranches::evaluate, serde_json::json!({"anyOf": [{"$ref": "#/$defs/a"}, {"type": "null"}], "$defs": {"a": {"type": "integer"}}}), None, Draft::Draft202012 ; "ref_in_branches")]
+#[test_case(EvaluateRefFalse::evaluate, serde_json::json!({"$ref": "#/$defs/f", "$defs": {"f": false}}), None, Draft::Draft202012 ; "ref_false")]
+#[test_case(EvaluateRefChain::evaluate, serde_json::json!({"$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"type": "integer"}}, "$ref": "#/$defs/a"}), None, Draft::Draft202012 ; "ref_chain")]
+#[test_case(EvaluateRefAnchor::evaluate, serde_json::json!({"$id": "https://example.com/root", "$defs": {"a": {"$anchor": "here", "type": "integer"}}, "$ref": "#here"}), None, Draft::Draft202012 ; "ref_anchor")]
+#[test_case(EvaluateRefTwice::evaluate, serde_json::json!({"allOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/a"}], "$defs": {"a": {"type": "integer"}}}), None, Draft::Draft202012 ; "ref_twice")]
+#[test_case(EvaluateRefRoot::evaluate, serde_json::json!({"$ref": "#", "type": "integer"}), None, Draft::Draft202012 ; "ref_root")]
+#[test_case(EvaluateRefSelf::evaluate, serde_json::json!({"$defs": {"a": {"$ref": "#/$defs/a", "type": "integer"}}, "$ref": "#/$defs/a"}), None, Draft::Draft202012 ; "ref_self")]
+#[test_case(EvaluateRefToProperty::evaluate, serde_json::json!({"properties": {"a": {"type": "integer"}, "b": {"$ref": "#/properties/a"}}}), None, Draft::Draft202012 ; "ref_to_property")]
+#[test_case(EvaluateRefBelowItems::evaluate, serde_json::json!({"items": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}), None, Draft::Draft202012 ; "ref_below_items")]
+#[test_case(EvaluateRefDraft4::evaluate, serde_json::json!({"definitions": {"a": {"type": "integer"}}, "properties": {"a": {"$ref": "#/definitions/a"}}}), None, Draft::Draft4 ; "ref_draft4")]
+#[test_case(EvaluateRefBelowContains::evaluate, serde_json::json!({"contains": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}), None, Draft::Draft202012 ; "ref_below_contains")]
+#[test_case(EvaluateRefIgnoredSiblings::evaluate, serde_json::json!({"definitions": {"a": {"type": "integer"}, "b": {"$id": "http://example.com/b"}}, "$ref": "#/definitions/a", "properties": {"x": {"$ref": "http://example.com/b"}}}), None, Draft::Draft7 ; "ref_ignored_siblings")]
+#[test_case(EvaluateRefBelowNames::evaluate, serde_json::json!({"$defs": {"s": {"propertyNames": {"$ref": "#/$defs/s"}, "maxLength": 3}}, "$ref": "#/$defs/s"}), None, Draft::Draft202012 ; "ref_below_names")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -6195,6 +6249,11 @@ fn test_evaluate_matches_runtime(
         serde_json::json!({"a": 1, "b": 1}),
         serde_json::json!({"b": 2}),
         serde_json::json!(true),
+        serde_json::json!({"foo": "x"}),
+        serde_json::json!({"next": {"next": {"v": "x"}}}),
+        serde_json::json!({"next": {"v": 1}, "v": 2}),
+        serde_json::json!({"a": 1, "b": "x"}),
+        serde_json::json!({"abcd": 1, "ab": 2}),
         // More members than the runtime scans before looking declared names up instead.
         serde_json::json!({"a": 1, "b": "x", "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1}),
     ] {

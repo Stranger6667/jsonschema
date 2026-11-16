@@ -221,6 +221,29 @@ pub(crate) fn get_or_create_item_eval_fn<E: ValueEmitter>(
     func_name
 }
 
+/// JSON Pointer of the schema at a resolved `location` within its resource: the percent-decoded
+/// fragment ("/$defs/foo" from "base.json#/$defs/foo"), or where an anchor fragment ("#foo") sits.
+pub(crate) fn location_pointer<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    location: &str,
+    base_uri: &Uri<String>,
+) -> String {
+    location.rfind('#').map_or_else(String::new, |hash| {
+        // `#foo`, borrowed from `location` to look the anchor up
+        let reference = &location[hash..];
+        let frag = &reference[1..];
+        if frag.starts_with('/') {
+            percent_encoding::percent_decode_str(frag)
+                .decode_utf8_lossy()
+                .into_owned()
+        } else if frag.is_empty() {
+            String::new()
+        } else {
+            named_target_pointer(ctx, base_uri, reference)
+        }
+    })
+}
+
 /// JSON Pointer of the schema `reference` (`#foo`) names within the resource at `base_uri`.
 fn named_target_pointer<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -301,23 +324,8 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
 
     let func_name = ctx.is_valid_fns.alloc_name(location);
 
-    // Errors inside this helper carry the target's JSON Pointer within its resource: the
-    // percent-decoded fragment of `location` ("/$defs/foo" from "base.json#/$defs/foo"), or
-    // where an anchor fragment ("#foo") sits.
-    let ref_schema_path: String = location.rfind('#').map_or_else(String::new, |hash| {
-        // `#foo`, borrowed from `location` to look the anchor up
-        let reference = &location[hash..];
-        let frag = &reference[1..];
-        if frag.starts_with('/') {
-            percent_encoding::percent_decode_str(frag)
-                .decode_utf8_lossy()
-                .into_owned()
-        } else if frag.is_empty() {
-            String::new()
-        } else {
-            named_target_pointer(ctx, &schema_base_uri, reference)
-        }
-    });
+    // Errors inside this helper carry the target's JSON Pointer within its resource.
+    let ref_schema_path = location_pointer(ctx, location, &schema_base_uri);
 
     let body = ctx.with_is_valid_scope(location, |ctx| {
         ctx.with_schema_env(schema, schema_base_uri, |ctx| {
