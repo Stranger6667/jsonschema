@@ -170,7 +170,6 @@ impl MultipleOfBigIntValidator {
 impl<F: Json> Validate<F> for MultipleOfBigIntValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         use num_bigint::BigInt;
-        use num_traits::One;
         if let Some(item) = instance.as_number() {
             if let Some(instance) = numeric::bignum::past_digit_budget(&item.as_str()) {
                 return instance
@@ -184,43 +183,8 @@ impl<F: Json> Validate<F> for MultipleOfBigIntValidator {
             } else if let Some(v) = item.as_i64() {
                 let v_bigint = BigInt::from(v);
                 numeric::bignum::is_multiple_of_bigint(&v_bigint, &self.multiple_of)
-            } else if let Some(v) = item.as_f64() {
-                if v.fract() != 0.0 {
-                    return false;
-                }
-                // JSON numbers that originate as f64 are only exactly representable if their
-                // absolute value is below 2^53. Within that "safe integer" window we can round-trip
-                // to i64 without losing bits, so convert and reuse the bigint path.
-                #[allow(clippy::cast_precision_loss, clippy::cast_possible_truncation)]
-                if v.is_finite() && v.abs() < (1u64 << 53) as f64 {
-                    let v_bigint = BigInt::from(v as i64);
-                    numeric::bignum::is_multiple_of_bigint(&v_bigint, &self.multiple_of)
-                } else {
-                    // 2^53 and above can no longer be recovered exactly from the binary64 mantissa,
-                    // so we bail out instead of pretending we know whether the bigint divisor divides
-                    // such an approximation.
-                    false
-                }
             } else {
-                // as_f64() returning None means the literal overflowed binary64 (e.g. 1e10000) or was
-                // written in plain decimal form with more precision than f64 can carry. We attempt to
-                // parse it as an exact BigFraction and only accept it when the denominator is 1 so we
-                // can safely convert it to BigInt before running the modulo check below.
-                if let Some(instance_bigfrac) =
-                    numeric::bignum::try_parse_bigfraction(&item.to_number())
-                {
-                    if instance_bigfrac.denom().is_none_or(One::is_one) {
-                        if let Some(numer) = instance_bigfrac.numer() {
-                            let instance_bigint = BigInt::from(numer.clone());
-                            return numeric::bignum::is_multiple_of_bigint(
-                                &instance_bigint,
-                                &self.multiple_of,
-                            );
-                        }
-                    }
-                }
-                // If we made it here we encountered scientific notation that can’t be normalized, or
-                // a decimal with a fractional part. Either way it cannot be an integer multiple.
+                // Any other number has a fractional part, so no integer divides it.
                 false
             }
         } else {
@@ -592,6 +556,10 @@ mod tests {
             false;
             "float_beyond_safe_range_rejected"
         )]
+        #[test_case(r#"{"multipleOf": 18446744073709551616}"#, "1e-400", false; "underflowing_instance_rejected")]
+        #[test_case(r#"{"multipleOf": 18446744073709551616}"#, "-1e-400", false; "negative_underflowing_instance_rejected")]
+        #[test_case(r#"{"multipleOf": 18446744073709551616}"#, "0.5", false; "fraction_rejected")]
+        #[test_case(r#"{"multipleOf": 9007199254740993}"#, "1e-400", false; "underflowing_instance_rejected_above_safe_range")]
         fn bigint_validator_float_instances(
             schema_json: &str,
             instance_json: &str,
@@ -879,6 +847,17 @@ mod tests {
         #[test_case(r#"{"const": 0.1}"#, "0.10", true; "decimal trailing zero")]
         #[test_case(r#"{"const": 0.1}"#, "0.2", false; "decimal mismatch")]
         #[test_case(r#"{"const": -99999999999999999999}"#, "-99999999999999999999", true; "neg bigint")]
+        #[test_case(r#"{"const": 0}"#, "1e-400", false; "zero against underflowing instance")]
+        #[test_case(r#"{"const": 1e-400}"#, "0", false; "underflowing const against zero")]
+        #[test_case(r#"{"const": 1e-400}"#, "0.0", false; "underflowing const against float zero")]
+        #[test_case(r#"{"const": 1e-400}"#, "2e-400", false; "two underflowing numbers")]
+        #[test_case(r#"{"const": 1e-400}"#, "10e-401", true; "underflowing number written two ways")]
+        #[test_case(r#"{"const": 1e400}"#, "2e400", false; "two overflowing numbers")]
+        #[test_case(r#"{"const": 1e400}"#, "10e399", true; "overflowing number written two ways")]
+        #[test_case(r#"{"const": 18446744073709551616}"#, "18446744073709551616.0", true; "bigint against its decimal form")]
+        #[test_case(r#"{"const": 18446744073709551616}"#, "18446744073709551616.5", false; "bigint against a fraction above it")]
+        #[test_case(r#"{"const": 0.5}"#, "5e-1", true; "fraction against its exponent form")]
+        #[test_case(r#"{"const": [1e-400]}"#, "[2e-400]", false; "nested underflowing numbers")]
         fn const_large_numbers(schema_json: &str, instance_json: &str, expected: bool) {
             let schema = parse_json(schema_json);
             let instance = parse_json(instance_json);

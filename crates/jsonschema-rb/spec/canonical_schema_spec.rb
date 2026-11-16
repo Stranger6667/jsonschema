@@ -893,4 +893,13 @@ RSpec.describe "JSONSchema.canonicalize" do
       expect { JSONSchema.canonicalize(true, registry: 42) }.to raise_error(TypeError)
     end
   end
+
+  it "view exposes the additionalProperties schema" do
+    view = JSONSchema.canonicalize({ "type" => "object", "additionalProperties" => { "type" => "string" } }).view
+    expect(view.additional_properties.to_json_schema).to eq({ "$schema" => DRAFT202012, "type" => "string" })
+  end
+
+  it "accepts a nil registry" do
+    expect(JSONSchema.canonicalize({ "type" => "string" }, registry: nil).kind).to eq(:multi_type)
+  end
 end

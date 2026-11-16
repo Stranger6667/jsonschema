@@ -798,6 +798,55 @@ mod tests {
     use serde_json::{json, Map, Value};
     use test_case::test_case;
 
+    fn outcome(schema: &Value, instance: &Value) -> (bool, bool, Vec<(String, String, String)>) {
+        let validator = crate::validator_for(schema).expect("schema compiles");
+        let errors = validator
+            .iter_errors(instance)
+            .map(|error| {
+                (
+                    error.to_string(),
+                    error.instance_path().to_string(),
+                    error.schema_path().to_string(),
+                )
+            })
+            .collect();
+        (
+            validator.is_valid(instance),
+            validator.validate(instance).is_ok(),
+            errors,
+        )
+    }
+
+    // Many undeclared members switch validation from one pass over the object to a lookup per
+    // declared property; the verdict and the errors stay the same.
+    #[test_case(&json!({"properties": {"a": {"type": "integer"}}}); "properties alone")]
+    #[test_case(&json!({"properties": {"a": {"type": "integer"}}, "required": ["a"]}); "one required name")]
+    #[test_case(&json!({"properties": {"a": {"type": "integer"}}, "required": ["a", "b"]}); "two required names")]
+    #[test_case(&json!({"properties": {"a": {"type": "integer"}}, "required": ["a", "b", "c"]}); "three required names")]
+    fn undeclared_members_do_not_change_the_outcome(schema: &Value) {
+        for narrow in [
+            json!({}),
+            json!({"a": 1}),
+            json!({"a": "x"}),
+            json!({"b": 2}),
+            json!({"a": 1, "b": 2}),
+            json!({"a": "x", "b": 2, "c": 3}),
+        ] {
+            let mut wide = narrow.clone();
+            for index in 0..64 {
+                wide[format!("undeclared{index}")] = json!(index);
+            }
+            let (valid, validated, errors) = outcome(schema, &narrow);
+            assert_eq!(valid, validated);
+            assert_eq!(valid, errors.is_empty());
+            assert_eq!(
+                outcome(schema, &wide),
+                (valid, validated, errors),
+                "{narrow}"
+            );
+        }
+    }
+
     // `required` reports its own unit before `properties`, as it would without the validators fused.
     #[test_case(
         &json!({"a": 1}),

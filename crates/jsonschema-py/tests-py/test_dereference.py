@@ -121,3 +121,8 @@ def test_dereference_with_retriever():
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "type": "string",
     }
+
+
+def test_pointer_that_leads_nowhere():
+    with pytest.raises(ValueError, match=r"^Pointer '/\$defs/missing' does not exist$"):
+        jsonschema_rs.dereference({"$ref": "#/$defs/missing"})

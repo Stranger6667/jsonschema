@@ -3143,3 +3143,90 @@ fn test_draft_flag_selects_keyword_set(draft: &str, schema: &str, instance: &str
         .unwrap();
     assert_eq!(output.status.success(), valid);
 }
+
+#[test_case(&[], false; "formats annotate by default")]
+#[test_case(&["--assert-format"], true; "assert format")]
+#[test_case(&["--no-assert-format"], false; "no assert format")]
+fn test_canonicalize_format_flags(flags: &[&str], keeps_format: bool) {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(
+        &dir,
+        "schema.json",
+        r#"{"type": "string", "format": "email"}"#,
+    );
+
+    let output = cli()
+        .arg("canonicalize")
+        .arg(&schema)
+        .args(flags)
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    let mut expected = serde_json::json!({
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "string"
+    });
+    if keeps_format {
+        expected["format"] = serde_json::json!("email");
+    }
+    let canonical: Value = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(canonical, expected);
+}
+
+const LOCAL_REF_SCHEMA: &str = r##"{"$ref": "#/$defs/a", "$defs": {"a": {"type": "string"}}}"##;
+
+#[test_case("bundle", &serde_json::json!({"$ref": "#/$defs/a", "$defs": {"a": {"type": "string"}}}))]
+#[test_case("dereference", &serde_json::json!({"type": "string", "$defs": {"a": {"type": "string"}}}))]
+fn test_output_to_a_bare_file_name(subcommand: &str, expected: &Value) {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "schema.json", LOCAL_REF_SCHEMA);
+
+    let output = cli()
+        .current_dir(dir.path())
+        .args([subcommand, "schema.json", "-o", "out.json"])
+        .output()
+        .unwrap();
+    assert!(output.status.success());
+    assert_eq!(output.stdout, b"");
+    let written: Value =
+        serde_json::from_str(&fs::read_to_string(dir.path().join("out.json")).unwrap()).unwrap();
+    assert_eq!(&written, expected);
+}
+
+#[test_case("bundle")]
+#[test_case("dereference")]
+#[test_case("canonicalize")]
+fn test_output_to_a_missing_directory_fails(subcommand: &str) {
+    let dir = tempdir().unwrap();
+    create_temp_file(&dir, "schema.json", LOCAL_REF_SCHEMA);
+
+    let output = cli()
+        .current_dir(dir.path())
+        .args([subcommand, "schema.json", "-o", "missing/out.json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(3));
+    assert_eq!(output.stdout, b"");
+    assert!(!dir.path().join("missing").exists());
+}
+
+#[test]
+fn test_self_describing_malformed_schema_uri() {
+    let dir = tempdir().unwrap();
+    let instance = create_temp_file(&dir, "instance.json", r#"{"$schema": "http://[::1"}"#);
+
+    let output = cli()
+        .arg("validate")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert_eq!(
+        sanitize_output(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+            &[&instance]
+        ),
+        "{FILE_1} - ERROR: invalid `$schema` value `http://[::1`: Invalid URI reference 'http://[::1': unexpected character at index 11\n"
+    );
+}

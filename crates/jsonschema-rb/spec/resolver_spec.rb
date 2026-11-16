@@ -139,3 +139,53 @@ RSpec.describe "JSONSchema::Resolver" do
     end.to raise_error(JSONSchema::ReferencingError, /missing\.json/)
   end
 end
+
+RSpec.describe JSONSchema::Registry do
+  {
+    "http://json-schema.org/draft-04/schema#" => JSONSchema::Draft4,
+    "http://json-schema.org/draft-06/schema#" => JSONSchema::Draft6,
+    "http://json-schema.org/draft-07/schema#" => JSONSchema::Draft7,
+    "https://json-schema.org/draft/2019-09/schema" => JSONSchema::Draft201909
+  }.each do |dialect, draft|
+    it "resolves a #{dialect} resource under its own draft" do
+      registry = described_class.new([["https://example.com/s.json", { "$schema" => dialect }]])
+      expect(registry.resolver("https://example.com/s.json").lookup("").draft).to eq(draft)
+    end
+  end
+
+  it "reads a resource without $schema under the draft keyword" do
+    registry = described_class.new([["https://example.com/s.json", {}]], draft: :draft7)
+    expect(registry.resolver("https://example.com/s.json").lookup("").draft).to eq(JSONSchema::Draft7)
+  end
+
+  it "ignores a nil retriever" do
+    registry = described_class.new([["https://example.com/s.json", {}]], retriever: nil)
+    expect(registry.resolver("https://example.com/s.json").lookup("").contents).to eq({})
+  end
+
+  [
+    ["a resource that is not a pair", [[["https://example.com/s.json"]]], {}, ArgumentError,
+     "Each resource must be a [uri, schema] pair"],
+    ["a malformed resource URI", [[["http://[::1", {}]]], {}, ArgumentError,
+     "Invalid URI reference 'http://[::1': unexpected character at index 11"],
+    ["a retriever that is not callable", [[]], { retriever: 1 }, TypeError,
+     "Retriever must be a callable (Proc or Lambda)"],
+    [
+      "a retriever result with no JSON form",
+      [[["https://example.com/s.json", { "$ref" => "https://example.com/x.json" }]]],
+      { retriever: ->(_uri) { Object.new } },
+      ArgumentError,
+      "Resource 'https://example.com/x.json' is not present in a registry and retrieving it failed: " \
+      "Failed to convert retriever result: TypeError: Unsupported type: 'Object'"
+    ]
+  ].each do |label, args, kwargs, error, message|
+    it "raises #{error} for #{label}" do
+      expect { described_class.new(*args, **kwargs) }.to raise_error(error, message)
+    end
+  end
+
+  it "raises ArgumentError for a malformed resolver base URI" do
+    expect { described_class.new([]).resolver("http://[::1") }
+      .to raise_error(ArgumentError, "Invalid URI reference 'http://[::1': unexpected character at index 11")
+  end
+end

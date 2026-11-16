@@ -784,6 +784,25 @@ RSpec.describe JSONSchema::Meta do
         expect { JSONSchema::Meta.validate!({ "type" => "invalid_type" }, registry: registry) }
           .to raise_error(JSONSchema::ValidationError) { |e| expect(e.instance_path).to eq(["type"]) }
       end
+
+      it "raises ReferencingError for a meta-schema outside the registry" do
+        schema = { "$schema" => "https://example.com/unknown" }
+        message = "Resource 'https://example.com/unknown' is not present in a registry and retrieving it failed: " \
+                  "Retrieving external resources is not supported once the registry is populated"
+        expect { JSONSchema::Meta.validate!(schema, registry: registry) }
+          .to raise_error(JSONSchema::ReferencingError, message)
+        expect { JSONSchema::Meta.valid?(schema, registry: registry) }
+          .to raise_error(JSONSchema::ReferencingError, message)
+      end
+
+      it "validates against a meta-schema the registry holds" do
+        registry = JSONSchema::Registry.new(
+          [["https://example.com/meta", { "$schema" => "https://json-schema.org/draft/2020-12/schema", "type" => "object", "required" => ["x"] }]]
+        )
+        expect(JSONSchema::Meta.valid?({ "$schema" => "https://example.com/meta", "x" => 1 }, registry: registry))
+          .to be true
+        expect(JSONSchema::Meta.valid?({ "$schema" => "https://example.com/meta" }, registry: registry)).to be false
+      end
     end
   end
 end
@@ -2735,6 +2754,109 @@ RSpec.describe "Unfinished regex matches" do
         expect([backend.valid?(schema, subject_string), backend.each_error(schema, subject_string).map(&:message)])
           .to eq([true, []])
       end
+    end
+  end
+end
+
+RSpec.describe "Evaluation output with several errors under one keyword" do
+  it "lists every message" do
+    expect(JSONSchema.evaluate({ "required" => %w[a b] }, {}).list).to eq(
+      valid: false,
+      details: [
+        { valid: false, evaluationPath: "", schemaLocation: "", instanceLocation: "" },
+        {
+          valid: false, evaluationPath: "/required", schemaLocation: "/required", instanceLocation: "",
+          errors: { "required" => ['"a" is a required property', '"b" is a required property'] }
+        }
+      ]
+    )
+  end
+end
+
+RSpec.describe "A retriever result with no JSON form" do
+  it "raises ArgumentError" do
+    retriever = ->(_uri) { Object.new }
+    expect { JSONSchema.validator_for({ "$ref" => "https://example.com/x.json" }, retriever: retriever) }
+      .to raise_error(ArgumentError, "Failed to convert retriever result: TypeError: Unsupported type: 'Object'")
+  end
+end
+
+RSpec.describe "Content decoded to bytes that are not UTF-8" do
+  it "carries the decoding error on the kind" do
+    schema = { "contentEncoding" => "base64", "contentMediaType" => "application/json" }
+    error = JSONSchema::Draft7Validator.new(schema).each_error("/w==").first
+    expect(error.kind.to_h).to eq(
+      name: "contentEncoding", value: { error: "invalid utf-8 sequence of 1 bytes from index 0" }
+    )
+  end
+end
+
+RSpec.describe "A format checker that raises" do
+  let(:options) { { validate_formats: true, formats: { "x" => ->(_value) { raise ArgumentError, "boom" } } } }
+  let(:schema) { { "format" => "x" } }
+
+  {
+    "valid?" => ->(target, *args, **kwargs) { target.valid?(*args, **kwargs) },
+    "validate!" => ->(target, *args, **kwargs) { target.validate!(*args, **kwargs) },
+    "each_error" => ->(target, *args, **kwargs) { target.each_error(*args, **kwargs).to_a },
+    "evaluate" => ->(target, *args, **kwargs) { target.evaluate(*args, **kwargs) }
+  }.each do |name, call|
+    it "surfaces the exception from Validator##{name}" do
+      validator = JSONSchema.validator_for(schema, **options)
+      expect { call.call(validator, "a") }.to raise_error(ArgumentError, "boom")
+    end
+
+    it "surfaces the exception from JSONSchema.#{name}" do
+      expect { call.call(JSONSchema, schema, "a", **options) }.to raise_error(ArgumentError, "boom")
+    end
+  end
+
+  it "leaves later validations unaffected" do
+    validator = JSONSchema.validator_for(schema, **options)
+    expect { validator.valid?("a") }.to raise_error(ArgumentError, "boom")
+    expect(JSONSchema.valid?({ "type" => "string" }, "a")).to be true
+  end
+end
+
+RSpec.describe "A custom keyword that raises" do
+  it "reports a constructor failure when the schema is built" do
+    keyword = Class.new do
+      def initialize(*) = raise(ArgumentError, "bad keyword")
+      def validate(_instance) = nil
+    end
+    expect { JSONSchema.validator_for({ "k" => 1 }, keywords: { "k" => keyword }) }
+      .to raise_error(ArgumentError, "Failed to instantiate keyword class 'k': bad keyword")
+  end
+
+  it "reports an iter_errors failure as one error with its cause" do
+    keyword = Class.new do
+      def initialize(*); end
+      def validate(_instance) = nil
+      def iter_errors(_instance) = raise(ArgumentError, "iter boom")
+    end
+    errors = JSONSchema.validator_for({ "k" => 1 }, keywords: { "k" => keyword }).each_error(1).to_a
+    expect(errors.map { |e| [e.message, e.kind.name, e.cause.class] }).to eq([["iter boom", "k", ArgumentError]])
+  end
+end
+
+RSpec.describe "An error instance that is a Hash subclass" do
+  it "is reported in its JSON form" do
+    instance = Class.new(Hash).new
+    instance["a"] = 1
+    expect { JSONSchema.validate!({ "properties" => { "x" => { "type" => "string" } } }, { "x" => instance }) }
+      .to raise_error(JSONSchema::ValidationError) { |e|
+        expect(e.instance).to eq({ "a" => 1 })
+        expect(e.instance).to be_instance_of(Hash)
+      }
+  end
+end
+
+RSpec.describe "multipleOf with an integer divisor past u64" do
+  {
+    BigDecimal("1e-400") => false, BigDecimal("-1e-400") => false, BigDecimal("0.5") => false, 2**65 => true, 0 => true
+  }.each do |instance, expected|
+    it "answers #{expected} for #{instance.inspect}" do
+      expect(JSONSchema.valid?({ "multipleOf" => 2**64 }, instance)).to be expected
     end
   end
 end

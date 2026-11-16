@@ -120,4 +120,9 @@ RSpec.describe "JSONSchema.dereference" do
                            "type" => "string"
                          })
   end
+
+  it "raises RuntimeError for a pointer that leads nowhere" do
+    expect { JSONSchema.dereference({ "$ref" => "#/$defs/missing" }) }
+      .to raise_error(RuntimeError, "Pointer '/$defs/missing' does not exist")
+  end
 end

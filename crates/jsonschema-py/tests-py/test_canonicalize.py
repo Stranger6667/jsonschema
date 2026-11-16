@@ -286,6 +286,18 @@ def test_object_view_violations():
     assert violation.schema.to_json_schema()["const"] == "filter"
 
 
+def test_object_view_size_window_and_additional_properties():
+    schema = {"type": "object", "minProperties": 1, "maxProperties": 3, "additionalProperties": {"type": "string"}}
+    match canonicalize(schema).view():
+        case canonical.ObjectView(
+            min_properties=min_properties, max_properties=max_properties, additional_properties=additional
+        ):
+            assert (min_properties, max_properties) == (1, 3)
+            assert additional.to_json_schema() == {"$schema": DRAFT202012, "type": "string"}
+        case other:
+            pytest.fail(f"unexpected view: {other!r}")
+
+
 def test_object_view_undeclared_value_fails():
     schema = {
         "type": "object",

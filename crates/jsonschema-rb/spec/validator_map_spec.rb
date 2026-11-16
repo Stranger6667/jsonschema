@@ -130,4 +130,20 @@ RSpec.describe "JSONSchema.validator_map_for" do
       expect(e.message).to eq('*** is not of type "object"')
     end
   end
+
+  {
+    '{"$schema": "http://json-schema.org/draft-07/schema#", "type": "string"}' => "Draft7",
+    '{"type": "string"}' => "Draft202012",
+    "true" => "Draft202012"
+  }.each do |text, draft|
+    it "reads the draft of JSON text #{text}" do
+      expect(JSONSchema.validator_map_for(text)["#"].inspect).to eq("#<JSONSchema::#{draft}Validator>")
+    end
+  end
+
+  it "reports a retriever failure" do
+    retriever = ->(_uri) { raise "boom" }
+    expect { JSONSchema.validator_map_for({ "$ref" => "https://example.com/x.json" }, retriever: retriever) }
+      .to raise_error(ArgumentError, "Retriever failed for https://example.com/x.json: boom")
+  end
 end
