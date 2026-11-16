@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 test = false
 
 [dependencies]
-jsonschema = { path = "../jsonschema", features = ["macros", "magnus"] }
+jsonschema = { path = "../jsonschema", features = ["arbitrary-precision", "macros", "magnus"] }
 magnus = { version = "0.9", features = ["rb-sys"] }
 serde_json.workspace = true
 testsuite = { package = "jsonschema-testsuite", path = "../jsonschema-testsuite" }

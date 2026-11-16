@@ -1,13 +1,30 @@
 use serde_json::Value;
 use std::collections::BTreeMap;
 
+/// A suite file: related test cases, usually for one keyword.
+#[derive(Debug, serde::Deserialize)]
+pub struct SuiteFile {
+    pub tests: Vec<Case>,
+}
+
 /// An individual test case, containing multiple tests of a single schema's behavior.
 #[derive(Debug, serde::Deserialize)]
 pub struct Case {
+    /// Position within the suite file.
+    #[serde(skip)]
+    pub index: usize,
     /// The test case description.
     pub description: String,
+    /// Dialects the case applies to; `None` means every dialect.
+    pub compatibility: Option<String>,
+    /// Behaviors an implementation must provide for the case to apply.
+    #[serde(default)]
+    pub tags: Vec<String>,
     /// A valid JSON Schema.
     pub schema: Value,
+    /// Schemas the case's schema references, keyed by retrieval URI.
+    #[serde(default, rename = "externalSchemas")]
+    pub external_schemas: BTreeMap<String, Value>,
     /// A set of related tests all using the same schema.
     pub tests: Vec<InnerTest>,
 }
@@ -28,9 +45,14 @@ pub struct InnerTest {
 #[derive(Debug)]
 pub struct Test {
     pub draft: &'static str,
+    /// Suite file the case comes from, relative to `validation/tests`.
+    pub file: &'static str,
     pub schema: Value,
+    /// Schemas the case's schema references, keyed by retrieval URI.
+    pub external_schemas: Vec<(&'static str, Value)>,
     pub case: &'static str,
-    pub is_optional: bool,
+    /// The `format` behavior the case expects; `None` leaves the draft's default.
+    pub validate_formats: Option<bool>,
     /// The test description, briefly explaining which behavior it exercises.
     pub description: &'static str,
     /// Instance validated against the surrounding `schema`.

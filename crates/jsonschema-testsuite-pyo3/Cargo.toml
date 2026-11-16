@@ -12,7 +12,7 @@ crate-type = ["cdylib"]
 test = false
 
 [dependencies]
-jsonschema = { path = "../jsonschema", features = ["macros", "pyo3"] }
+jsonschema = { path = "../jsonschema", features = ["arbitrary-precision", "macros", "pyo3"] }
 serde_json.workspace = true
 pyo3 = { version = "0.30", features = ["extension-module"] }
 testsuite = { package = "jsonschema-testsuite", path = "../jsonschema-testsuite" }
