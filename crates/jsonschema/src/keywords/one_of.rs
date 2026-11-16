@@ -310,11 +310,14 @@ impl<F: Json, D: Dispatch<F>> Validate<F> for OneOfValidator<F, D> {
                     }
                 }
             }
+            let errors = self
+                .validate(instance, location, tracker, ctx)
+                .err()
+                .iter()
+                .map(ErrorDescription::from_validation_error)
+                .collect();
             EvaluationResult::Invalid {
-                errors: vec![ErrorDescription::new(
-                    "oneOf",
-                    "more than one subschema succeeded".to_string(),
-                )],
+                errors,
                 children: successes,
                 annotations: None,
             }
@@ -351,6 +354,29 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // `evaluate` reports the error `validate` reports.
+    #[test]
+    fn evaluate_more_than_one_valid() {
+        let schema = json!({"oneOf": [{"type": "integer"}, {"minimum": 0}]});
+        let output = serde_json::to_value(
+            crate::validator_for(&schema)
+                .expect("valid schema")
+                .evaluate(&json!(1))
+                .list(),
+        )
+        .expect("list output");
+        let unit = output["details"]
+            .as_array()
+            .expect("units")
+            .iter()
+            .find(|unit| unit["evaluationPath"] == "/oneOf")
+            .expect("the oneOf unit");
+        assert_eq!(
+            unit["errors"],
+            json!({"oneOf": "1 is valid under more than one of the schemas listed in the 'oneOf' keyword"})
+        );
+    }
 
     #[test_case(&json!({"oneOf": [{"type": "string"}]}), &json!(0), "/oneOf")]
     #[test_case(&json!({"oneOf": [{"type": "string"}, {"maxLength": 3}]}), &json!(""), "/oneOf")]

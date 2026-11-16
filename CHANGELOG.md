@@ -26,6 +26,8 @@
 - `evaluate` output for `dependentRequired` and the array form of `dependencies` reporting missing names in a nested unit at a schema location that does not exist.
 - `evaluate` output for array-form `items` and `additionalItems` missing their annotations, and for `additionalItems` reporting the extra items in one error instead of a unit for each.
 - `evaluate` output for `contains` beside `minContains` or `maxContains` missing the matching items and their indices, and locating the subschema at the bound keyword instead of at `contains`.
+- `evaluate` output for `then` and `else` reported inside the `if` unit instead of in units of their own.
+- `evaluate` output for `oneOf` with more than one valid subschema reporting a different message than `validate`.
 - Error messages for `minContains` and `maxContains` claiming that no item is valid under the `contains` subschema.
 - `evaluate` output for `contains` annotating an instance that is not an array.
 

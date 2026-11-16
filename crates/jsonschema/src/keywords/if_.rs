@@ -1,17 +1,82 @@
 use crate::{
     compiler,
     evaluation::{ChildList, InstancePosition},
-    keywords::CompilationResult,
+    keywords::{
+        helpers::{unit_over, SchemaSite},
+        CompilationResult,
+    },
     node::SchemaNode,
     paths::{LazyLocation, RefTracker},
-    validator::{EvaluationResult, Validate, ValidationContext},
+    validator::{Validate, ValidationContext},
     Json, SerdeJson, ValidationError,
 };
 use serde_json::{Map, Value};
 
+/// The `if` subschema and the branches it chooses between, each with where its unit sits.
+struct Conditional<'a, F: Json> {
+    condition: (&'a SchemaNode<F>, &'a SchemaSite),
+    then: Option<(&'a SchemaNode<F>, &'a SchemaSite)>,
+    otherwise: Option<(&'a SchemaNode<F>, &'a SchemaSite)>,
+}
+
+/// `if` reports its own unit, holding its subschema only when it passes; the branch taken
+/// reports a unit of its own beside it. Returns whether that branch fails.
+fn evaluate_conditional<F: Json>(
+    conditional: &Conditional<'_, F>,
+    instance: &F::Node<'_>,
+    location: &LazyLocation,
+    instance_location: InstancePosition,
+    tracker: Option<&RefTracker>,
+    ctx: &mut ValidationContext,
+    children: &mut ChildList,
+) -> bool {
+    let (condition, condition_site) = conditional.condition;
+    let node = condition.evaluate_instance_at(instance, location, instance_location, tracker, ctx);
+    let passed = node.valid;
+    let held = if passed {
+        ChildList::of(ctx.arena(), node)
+    } else {
+        ChildList::default()
+    };
+    let unit = unit_over(
+        condition_site,
+        Vec::new(),
+        None,
+        held,
+        instance_location,
+        tracker,
+        ctx,
+    );
+    children.push(ctx.arena(), unit);
+    let branch = if passed {
+        conditional.then
+    } else {
+        conditional.otherwise
+    };
+    let Some((schema, site)) = branch else {
+        return false;
+    };
+    let node = schema.evaluate_instance_at(instance, location, instance_location, tracker, ctx);
+    let failed = !node.valid;
+    let held = ChildList::of(ctx.arena(), node);
+    let unit = unit_over(
+        site,
+        Vec::new(),
+        None,
+        held,
+        instance_location,
+        tracker,
+        ctx,
+    );
+    children.push(ctx.arena(), unit);
+    failed
+}
+
 pub(crate) struct IfThenValidator<F: Json> {
     schema: SchemaNode<F>,
     then_schema: SchemaNode<F>,
+    if_site: SchemaSite,
+    then_site: SchemaSite,
 }
 
 impl IfThenValidator<SerdeJson> {
@@ -30,6 +95,8 @@ impl IfThenValidator<SerdeJson> {
                 let ctx = ctx.new_at_location("then");
                 compiler::compile(&ctx, ctx.as_resource_ref(then_schema))?
             },
+            if_site: SchemaSite::new(ctx, ctx.location().join("if")),
+            then_site: SchemaSite::new(ctx, ctx.location().join("then")),
         }))
     }
 }
@@ -71,54 +138,40 @@ impl<F: Json> Validate<F> for IfThenValidator<F> {
         }
     }
 
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
+    fn reports_units(&self) -> bool {
+        true
     }
 
-    fn evaluate_with_location(
+    fn evaluate_units(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
         instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        let if_node =
-            self.schema
-                .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
-        if if_node.valid {
-            let then_node = self.then_schema.evaluate_instance_at(
-                instance,
-                location,
-                instance_location,
-                tracker,
-                ctx,
-            );
-            let mut children = ChildList::default();
-            children.push(ctx.arena(), if_node);
-            children.push(ctx.arena(), then_node);
-            EvaluationResult::from_children(children)
-        } else {
-            EvaluationResult::valid_empty()
-        }
+        children: &mut ChildList,
+    ) -> bool {
+        evaluate_conditional(
+            &Conditional {
+                condition: (&self.schema, &self.if_site),
+                then: Some((&self.then_schema, &self.then_site)),
+                otherwise: None,
+            },
+            instance,
+            location,
+            instance_location,
+            tracker,
+            ctx,
+            children,
+        )
     }
 }
 
 pub(crate) struct IfElseValidator<F: Json> {
     schema: SchemaNode<F>,
     else_schema: SchemaNode<F>,
+    if_site: SchemaSite,
+    else_site: SchemaSite,
 }
 
 impl IfElseValidator<SerdeJson> {
@@ -137,6 +190,8 @@ impl IfElseValidator<SerdeJson> {
                 let ctx = ctx.new_at_location("else");
                 compiler::compile(&ctx, ctx.as_resource_ref(else_schema))?
             },
+            if_site: SchemaSite::new(ctx, ctx.location().join("if")),
+            else_site: SchemaSite::new(ctx, ctx.location().join("else")),
         }))
     }
 }
@@ -178,45 +233,32 @@ impl<F: Json> Validate<F> for IfElseValidator<F> {
         }
     }
 
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
+    fn reports_units(&self) -> bool {
+        true
     }
 
-    fn evaluate_with_location(
+    fn evaluate_units(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
         instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        let if_node =
-            self.schema
-                .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
-        if if_node.valid {
-            EvaluationResult::from_children(ChildList::of(ctx.arena(), if_node))
-        } else {
-            let else_node = self.else_schema.evaluate_instance_at(
-                instance,
-                location,
-                instance_location,
-                tracker,
-                ctx,
-            );
-            EvaluationResult::from_children(ChildList::of(ctx.arena(), else_node))
-        }
+        children: &mut ChildList,
+    ) -> bool {
+        evaluate_conditional(
+            &Conditional {
+                condition: (&self.schema, &self.if_site),
+                then: None,
+                otherwise: Some((&self.else_schema, &self.else_site)),
+            },
+            instance,
+            location,
+            instance_location,
+            tracker,
+            ctx,
+            children,
+        )
     }
 }
 
@@ -224,6 +266,9 @@ pub(crate) struct IfThenElseValidator<F: Json> {
     schema: SchemaNode<F>,
     then_schema: SchemaNode<F>,
     else_schema: SchemaNode<F>,
+    if_site: SchemaSite,
+    then_site: SchemaSite,
+    else_site: SchemaSite,
 }
 
 impl IfThenElseValidator<SerdeJson> {
@@ -247,6 +292,9 @@ impl IfThenElseValidator<SerdeJson> {
                 let ctx = ctx.new_at_location("else");
                 compiler::compile(&ctx, ctx.as_resource_ref(else_schema))?
             },
+            if_site: SchemaSite::new(ctx, ctx.location().join("if")),
+            then_site: SchemaSite::new(ctx, ctx.location().join("then")),
+            else_site: SchemaSite::new(ctx, ctx.location().join("else")),
         }))
     }
 }
@@ -291,55 +339,32 @@ impl<F: Json> Validate<F> for IfThenElseValidator<F> {
         }
     }
 
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
+    fn reports_units(&self) -> bool {
+        true
     }
 
-    fn evaluate_with_location(
+    fn evaluate_units(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
         instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        let if_node =
-            self.schema
-                .evaluate_instance_at(instance, location, instance_location, tracker, ctx);
-        if if_node.valid {
-            let then_node = self.then_schema.evaluate_instance_at(
-                instance,
-                location,
-                instance_location,
-                tracker,
-                ctx,
-            );
-            let mut children = ChildList::default();
-            children.push(ctx.arena(), if_node);
-            children.push(ctx.arena(), then_node);
-            EvaluationResult::from_children(children)
-        } else {
-            let else_node = self.else_schema.evaluate_instance_at(
-                instance,
-                location,
-                instance_location,
-                tracker,
-                ctx,
-            );
-            EvaluationResult::from_children(ChildList::of(ctx.arena(), else_node))
-        }
+        children: &mut ChildList,
+    ) -> bool {
+        evaluate_conditional(
+            &Conditional {
+                condition: (&self.schema, &self.if_site),
+                then: Some((&self.then_schema, &self.then_site)),
+                otherwise: Some((&self.else_schema, &self.else_site)),
+            },
+            instance,
+            location,
+            instance_location,
+            tracker,
+            ctx,
+            children,
+        )
     }
 }
 
@@ -369,6 +394,59 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // `if` reports its own unit, holding its subschema only when it passes; `then` and `else`
+    // report units of their own beside it.
+    #[test_case(
+        &json!({"if": {"type": "integer"}, "then": {"minimum": 2}, "else": {"type": "string"}}),
+        &json!(1),
+        &[
+            " @ FAIL",
+            "  /if @ ok",
+            "    /if @ ok",
+            "      /if/type @ ok",
+            "  /then @ FAIL",
+            "    /then @ FAIL",
+            "      /then/minimum @ FAIL err=minimum",
+        ] ; "then fails"
+    )]
+    #[test_case(
+        &json!({"if": {"type": "integer"}, "then": {"minimum": 2}, "else": {"type": "string"}}),
+        &json!(true),
+        &[
+            " @ FAIL",
+            "  /if @ ok",
+            "  /else @ FAIL",
+            "    /else @ FAIL",
+            "      /else/type @ FAIL err=type",
+        ] ; "else fails"
+    )]
+    #[test_case(
+        &json!({"if": {"type": "integer"}, "then": {"minimum": 2}, "else": {"type": "string"}}),
+        &json!(3),
+        &[
+            " @ ok",
+            "  /if @ ok",
+            "    /if @ ok",
+            "      /if/type @ ok",
+            "  /then @ ok",
+            "    /then @ ok",
+            "      /then/minimum @ ok",
+        ] ; "then passes"
+    )]
+    #[test_case(
+        &json!({"if": {"type": "integer"}, "then": {"minimum": 2}}),
+        &json!("x"),
+        &[" @ ok", "  /if @ ok"] ; "no else"
+    )]
+    #[test_case(
+        &json!({"if": {"type": "integer"}, "else": {"type": "string"}}),
+        &json!(1),
+        &[" @ ok", "  /if @ ok", "    /if @ ok", "      /if/type @ ok"] ; "no then"
+    )]
+    fn evaluate_units(schema: &Value, instance: &Value, expected: &[&str]) {
+        assert_eq!(tests_util::evaluation_outline(schema, instance), expected);
+    }
 
     #[test_case(&json!({"if": {"minimum": 0}, "else": {"multipleOf": 2}}), &json!(-1), "/else/multipleOf")]
     #[test_case(&json!({"if": {"minimum": 0}, "then": {"multipleOf": 2}}), &json!(3), "/then/multipleOf")]

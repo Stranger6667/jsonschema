@@ -577,14 +577,15 @@ impl<F: Json> SchemaNode<F> {
                     keyword,
                     crate::keywords::Keyword::Builtin(crate::keywords::BuiltinKeyword::Required)
                 ) || validator.is_valid_alone());
-            // Only `minLength`, `properties` and `additionalProperties` check sibling keywords;
-            // asking every validator costs a call each.
+            // Only `minLength`, `properties`, `additionalProperties` and `if` check sibling
+            // keywords; asking every validator costs a call each.
             let reports_units = matches!(
                 keyword,
                 crate::keywords::Keyword::Builtin(
                     crate::keywords::BuiltinKeyword::MinLength
                         | crate::keywords::BuiltinKeyword::Properties
                         | crate::keywords::BuiltinKeyword::AdditionalProperties
+                        | crate::keywords::BuiltinKeyword::If
                 )
             ) && validator.reports_units();
             metadata.push(KeywordMetadata {
