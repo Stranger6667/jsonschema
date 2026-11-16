@@ -4326,6 +4326,41 @@ fn test_type_rejects_types_it_excludes(
     }
 }
 
+#[jsonschema::validator(schema = r#"{"type": "string", "const": "a"}"#)]
+struct TypeBesideConst;
+#[jsonschema::validator(schema = r#"{"type": "string", "enum": ["a", "b"]}"#)]
+struct TypeBesideEnum;
+#[jsonschema::validator(schema = r#"{"type": "null", "const": null}"#)]
+struct TypeBesideNullConst;
+
+// `type` reports its own error even where `const` or `enum` already reject every other type.
+#[test_case(TypeBesideConst::is_valid, TypeBesideConst::validate, TypeBesideConst::iter_errors, serde_json::json!({"type": "string", "const": "a"}) ; "const")]
+#[test_case(TypeBesideEnum::is_valid, TypeBesideEnum::validate, TypeBesideEnum::iter_errors, serde_json::json!({"type": "string", "enum": ["a", "b"]}) ; "enum")]
+#[test_case(TypeBesideNullConst::is_valid, TypeBesideNullConst::validate, TypeBesideNullConst::iter_errors, serde_json::json!({"type": "null", "const": null}) ; "null_const")]
+fn test_type_beside_const_or_enum_reports_its_error(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    schema: serde_json::Value,
+) {
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    for instance in [
+        serde_json::json!("a"),
+        serde_json::json!("c"),
+        serde_json::json!(2),
+        serde_json::json!(null),
+        serde_json::json!([]),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+    }
+}
+
 #[jsonschema::validator(
     schema = r##"{"definitions":{"pos":{"type":"integer","minimum":1}},"type":"object","properties":{"id":{"$ref":"#/definitions/pos"}},"required":["id"]}"##,
     draft = Draft7

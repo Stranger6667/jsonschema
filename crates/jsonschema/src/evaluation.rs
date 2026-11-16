@@ -2115,8 +2115,6 @@ pub mod generated {
             };
             let built = self.built;
             let declared = &built.properties[first..first + count];
-            // ponytail: a scan of the declared names per member; a name map if wide declarations
-            // get slow.
             let mut matched: Vec<_> = object
                 .members()
                 .filter_map(|(name, value)| {

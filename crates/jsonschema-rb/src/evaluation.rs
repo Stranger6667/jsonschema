@@ -176,7 +176,6 @@ fn list_units(ruby: &Ruby, unit: OutputUnit<'_>, out: RArray) -> Result<(), Erro
 /// Messages grouped by keyword in first-seen order: one message as a String, several as an Array.
 fn errors_to_ruby(ruby: &Ruby, errors: &[ErrorDescription]) -> Result<RHash, Error> {
     let hash = ruby.hash_new();
-    // ponytail: quadratic in a unit's errors, which hold about one per keyword.
     for (index, error) in errors.iter().enumerate() {
         let keyword = error.keyword();
         if errors[..index].iter().any(|seen| seen.keyword() == keyword) {
