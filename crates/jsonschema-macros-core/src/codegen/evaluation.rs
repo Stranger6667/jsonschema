@@ -83,6 +83,18 @@ enum TreeUnit {
         schema: usize,
         closed: bool,
     },
+    /// Array-form `items` or `prefixItems`, with a range of `Tree::tuples`.
+    Tuple {
+        keyword: &'static str,
+        schemas: (usize, usize),
+    },
+    /// Schema-form `items` or `additionalItems`: a subschema for each item from `skip` on.
+    Rest {
+        keyword: &'static str,
+        schema: usize,
+        skip: usize,
+        closed: bool,
+    },
     /// `dependencies` or `dependentSchemas`, with a range of `Tree::dependencies`.
     Dependencies {
         keyword: &'static str,
@@ -111,9 +123,27 @@ struct Tree {
     patterns: Vec<(usize, TokenStream)>,
     /// Each property whose presence applies a subschema, with that subschema's index.
     dependencies: Vec<(String, usize)>,
+    /// Each subschema of array-form `items` or `prefixItems`, by position.
+    tuples: Vec<usize>,
 }
 
 impl Tree {
+    fn add_tuple<E: ValueEmitter>(
+        &mut self,
+        ctx: &mut CompileContext<'_, E>,
+        schemas: &[Value],
+        pointer: &str,
+        keyword: &str,
+    ) -> syn::Result<(usize, usize)> {
+        let mut entries = Vec::with_capacity(schemas.len());
+        for (index, subschema) in schemas.iter().enumerate() {
+            entries.push(self.add(ctx, subschema, format!("{pointer}/{keyword}/{index}"))?);
+        }
+        let range = (self.tuples.len(), entries.len());
+        self.tuples.extend(entries);
+        Ok(range)
+    }
+
     fn add<E: ValueEmitter>(
         &mut self,
         ctx: &mut CompileContext<'_, E>,
@@ -206,6 +236,51 @@ impl Tree {
                 let schema = self.add(ctx, subschema, format!("{pointer}/propertyNames"))?;
                 units.push(TreeUnit::Names {
                     schema,
+                    closed: *subschema == Value::Bool(false),
+                });
+            }
+            let prefix = keywords
+                .get("prefixItems")
+                .and_then(Value::as_array)
+                .filter(|_| ctx.draft.is_known_keyword("prefixItems"));
+            match keywords.get("items") {
+                Some(Value::Array(schemas)) => {
+                    let schemas = self.add_tuple(ctx, schemas, &pointer, "items")?;
+                    units.push(TreeUnit::Tuple {
+                        keyword: "items",
+                        schemas,
+                    });
+                }
+                Some(subschema @ (Value::Object(_) | Value::Bool(false))) => {
+                    let schema = self.add(ctx, subschema, format!("{pointer}/items"))?;
+                    units.push(TreeUnit::Rest {
+                        keyword: "items",
+                        schema,
+                        skip: prefix.map_or(0, Vec::len),
+                        closed: false,
+                    });
+                }
+                _ => {}
+            }
+            if let Some(prefix) = prefix {
+                let schemas = self.add_tuple(ctx, prefix, &pointer, "prefixItems")?;
+                units.push(TreeUnit::Tuple {
+                    keyword: "prefixItems",
+                    schemas,
+                });
+            }
+            // `additionalItems` applies past an array-form `items` only.
+            if let (
+                Some(Value::Array(tuple)),
+                Some(subschema @ (Value::Object(_) | Value::Bool(false))),
+            ) = (keywords.get("items"), keywords.get("additionalItems"))
+            {
+                let schema = self.add(ctx, subschema, format!("{pointer}/additionalItems"))?;
+                units.push(TreeUnit::Rest {
+                    keyword: "additionalItems",
+                    schema,
+                    skip: tuple.len(),
+                    // The errors run reports one error for every extra item of `false`.
                     closed: *subschema == Value::Bool(false),
                 });
             }
@@ -319,11 +394,21 @@ pub(super) fn compile<E: ValueEmitter>(
             TreeUnit::Dependencies { keyword, schemas } => {
                 json!({"keyword": keyword, "dependencies": schemas})
             }
+            TreeUnit::Tuple { keyword, schemas } => json!({"keyword": keyword, "tuple": schemas}),
+            TreeUnit::Rest {
+                keyword,
+                schema,
+                skip,
+                closed,
+            } => json!({"keyword": keyword, "rest": schema, "skip": skip, "closed": closed}),
         })
         .collect();
     let mut tables = json!({"schemas": schemas, "units": units});
     if !tree.properties.is_empty() {
         tables["properties"] = json!(tree.properties);
+    }
+    if !tree.tuples.is_empty() {
+        tables["tuples"] = json!(tree.tuples);
     }
     if !tree.dependencies.is_empty() {
         tables["dependencies"] = json!(tree.dependencies);
@@ -421,7 +506,15 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
                         .filter(|dependency| !dependency.is_array())
                         .find_map(|subschema| unsupported(subschema, draft));
                 }
-                ("additionalProperties" | "propertyNames", Value::Bool(_) | Value::Object(_)) => {
+                ("items" | "prefixItems", Value::Array(schemas)) => {
+                    return schemas
+                        .iter()
+                        .find_map(|subschema| unsupported(subschema, draft));
+                }
+                (
+                    "additionalProperties" | "propertyNames" | "items" | "additionalItems",
+                    Value::Bool(_) | Value::Object(_),
+                ) => {
                     return unsupported(value, draft);
                 }
                 _ => {}

@@ -5908,6 +5908,39 @@ struct EvaluateDependencies;
 #[jsonschema::validator(schema = r#"{"dependentRequired": {"a": ["b"]}, "minProperties": 1}"#, draft = Draft7, methods = { evaluate = true })]
 struct EvaluateDependentRequiredDraft7;
 
+#[jsonschema::validator(schema = r#"{"prefixItems": [{"type": "integer"}, true], "items": {"type": "string"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluatePrefixItems;
+
+#[jsonschema::validator(schema = r#"{"prefixItems": [{}], "items": false}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsFalse;
+
+#[jsonschema::validator(schema = r#"{"items": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsType;
+
+#[jsonschema::validator(schema = r#"{"type": "array", "minItems": 1, "maxItems": 3, "items": {"minimum": 1}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsShape;
+
+#[jsonschema::validator(schema = r#"{"items": true, "prefixItems": [{"const": 1}]}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsTrue;
+
+#[jsonschema::validator(schema = r#"{"items": {"properties": {"a": {"type": "integer"}}}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsNested;
+
+#[jsonschema::validator(schema = r#"{"items": [{"type": "integer"}, {}], "additionalItems": {"type": "string"}}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateTupleDraft7;
+
+#[jsonschema::validator(schema = r#"{"items": [{}], "additionalItems": false}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateAdditionalItemsFalse;
+
+#[jsonschema::validator(schema = r#"{"items": [{}, {}], "additionalItems": {"type": "string"}}"#, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateTupleDraft201909;
+
+#[jsonschema::validator(schema = r#"{"items": {"type": "integer"}, "additionalItems": false}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateAdditionalItemsIgnored;
+
+#[jsonschema::validator(schema = r#"{"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}"#, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluatePrefixItemsDraft201909;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -5968,6 +6001,17 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateDependenciesDraft4::evaluate, serde_json::json!({"dependencies": {"a": ["b"], "c": {"properties": {"c": {"type": "integer"}}}}}), None, Draft::Draft4 ; "dependencies_draft4")]
 #[test_case(EvaluateDependencies::evaluate, serde_json::json!({"dependencies": {"a": ["b"], "c": {"minProperties": 3}}}), None, Draft::Draft202012 ; "dependencies_draft2020")]
 #[test_case(EvaluateDependentRequiredDraft7::evaluate, serde_json::json!({"dependentRequired": {"a": ["b"]}, "minProperties": 1}), None, Draft::Draft7 ; "dependent_required_draft7")]
+#[test_case(EvaluatePrefixItems::evaluate, serde_json::json!({"prefixItems": [{"type": "integer"}, true], "items": {"type": "string"}}), None, Draft::Draft202012 ; "prefix_items")]
+#[test_case(EvaluateItemsFalse::evaluate, serde_json::json!({"prefixItems": [{}], "items": false}), None, Draft::Draft202012 ; "items_false")]
+#[test_case(EvaluateItemsType::evaluate, serde_json::json!({"items": {"type": "integer"}}), None, Draft::Draft202012 ; "items_type")]
+#[test_case(EvaluateItemsShape::evaluate, serde_json::json!({"type": "array", "minItems": 1, "maxItems": 3, "items": {"minimum": 1}}), None, Draft::Draft202012 ; "items_shape")]
+#[test_case(EvaluateItemsTrue::evaluate, serde_json::json!({"items": true, "prefixItems": [{"const": 1}]}), None, Draft::Draft202012 ; "items_true")]
+#[test_case(EvaluateItemsNested::evaluate, serde_json::json!({"items": {"properties": {"a": {"type": "integer"}}}}), None, Draft::Draft202012 ; "items_nested")]
+#[test_case(EvaluateTupleDraft7::evaluate, serde_json::json!({"items": [{"type": "integer"}, {}], "additionalItems": {"type": "string"}}), None, Draft::Draft7 ; "tuple_draft7")]
+#[test_case(EvaluateAdditionalItemsFalse::evaluate, serde_json::json!({"items": [{}], "additionalItems": false}), None, Draft::Draft7 ; "additional_items_false")]
+#[test_case(EvaluateTupleDraft201909::evaluate, serde_json::json!({"items": [{}, {}], "additionalItems": {"type": "string"}}), None, Draft::Draft201909 ; "tuple_draft2019")]
+#[test_case(EvaluateAdditionalItemsIgnored::evaluate, serde_json::json!({"items": {"type": "integer"}, "additionalItems": false}), None, Draft::Draft7 ; "additional_items_ignored")]
+#[test_case(EvaluatePrefixItemsDraft201909::evaluate, serde_json::json!({"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}), None, Draft::Draft201909 ; "prefix_items_draft2019")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -6005,6 +6049,11 @@ fn test_evaluate_matches_runtime(
         serde_json::json!({"a": {"bb": 1, "c": 2}, "x@y.z": 1, "B": 2}),
         serde_json::json!({"a": 1, "c": 2, "e": 3}),
         serde_json::json!({"a": 1, "x": 1, "d": 1, "f": 1}),
+        serde_json::json!([]),
+        serde_json::json!(["x"]),
+        serde_json::json!([1, "a", 3]),
+        serde_json::json!([1, 2, "a", "b"]),
+        serde_json::json!([{"a": 1}, {"a": "x"}, 5]),
         // More members than the runtime scans before looking declared names up instead.
         serde_json::json!({"a": 1, "b": "x", "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1}),
     ] {
