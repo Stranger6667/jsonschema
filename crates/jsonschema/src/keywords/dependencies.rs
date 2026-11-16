@@ -4,7 +4,7 @@ use std::borrow::Cow;
 use crate::{
     compiler,
     error::ValidationError,
-    evaluation::ChildList,
+    evaluation::{ChildList, ErrorDescription},
     keywords::{required, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
@@ -15,7 +15,36 @@ use crate::{
 use serde_json::{Map, Value};
 
 pub(crate) struct DependenciesValidator<F: Json = SerdeJson> {
-    dependencies: Vec<(F::PreparedKey, SchemaNode<F>)>,
+    dependencies: Vec<(F::PreparedKey, Dependency<F>)>,
+}
+
+/// What a property's presence requires.
+enum Dependency<F: Json> {
+    /// Other properties; their absence fails the keyword's own unit.
+    Names(SchemaNode<F>),
+    Schema(SchemaNode<F>),
+}
+
+impl<F: Json> Dependency<F> {
+    fn node(&self) -> &SchemaNode<F> {
+        match self {
+            Dependency::Names(node) | Dependency::Schema(node) => node,
+        }
+    }
+}
+
+/// The errors of `node`, a `required` check, as errors of the keyword's own unit.
+fn missing_names<F: Json>(
+    node: &SchemaNode<F>,
+    instance: &F::Node<'_>,
+    location: &LazyLocation,
+    tracker: Option<&RefTracker>,
+    ctx: &mut ValidationContext,
+    errors: &mut Vec<ErrorDescription>,
+) {
+    let mut found = Vec::new();
+    node.collect_errors(instance, location, tracker, ctx, &mut found);
+    errors.extend(found.iter().map(ErrorDescription::from_validation_error));
 }
 
 impl DependenciesValidator {
@@ -29,18 +58,21 @@ impl DependenciesValidator {
             let mut dependencies = Vec::with_capacity(map.len());
             for (key, subschema) in map {
                 let ctx = kctx.new_at_location(key.as_str());
-                let s =
-                    match subschema {
-                        Value::Array(_) => {
-                            let validators = vec![required::compile_with_path(
-                                subschema,
-                                kctx.location().clone(),
-                            )
-                            .expect("The required validator compilation does not return None")?];
-                            SchemaNode::from_array(&kctx, validators)
-                        }
-                        _ => compiler::compile(&ctx, ctx.as_resource_ref(subschema))?,
-                    };
+                let s = match subschema {
+                    Value::Array(_) => {
+                        let validators =
+                            vec![
+                                required::compile_with_path(subschema, kctx.location().clone())
+                                    .expect(
+                                        "The required validator compilation does not return None",
+                                    )?,
+                            ];
+                        Dependency::Names(SchemaNode::from_array(&kctx, validators))
+                    }
+                    _ => {
+                        Dependency::Schema(compiler::compile(&ctx, ctx.as_resource_ref(subschema))?)
+                    }
+                };
                 dependencies.push((F::prepare_key(key), s));
             }
             Ok(Box::new(DependenciesValidator { dependencies }))
@@ -60,8 +92,10 @@ impl DependenciesValidator {
 impl<F: Json> Validate<F> for DependenciesValidator<F> {
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
-            for (property, node) in &self.dependencies {
-                if object.get(property).is_some() && !node.is_valid_child(instance, ctx) {
+            for (property, dependency) in &self.dependencies {
+                if object.get(property).is_some()
+                    && !dependency.node().is_valid_child(instance, ctx)
+                {
                     return false;
                 }
             }
@@ -81,7 +115,9 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
         if let Some(object) = instance.as_object() {
             for (property, dependency) in &self.dependencies {
                 if object.get(property).is_some() {
-                    dependency.validate(instance, location, tracker, ctx)?;
+                    dependency
+                        .node()
+                        .validate(instance, location, tracker, ctx)?;
                 }
             }
         }
@@ -99,9 +135,11 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
         let Some(object) = instance.as_object() else {
             return;
         };
-        for (property, node) in &self.dependencies {
+        for (property, dependency) in &self.dependencies {
             if object.get(property).is_some() {
-                node.collect_errors(instance, location, tracker, ctx, errors);
+                dependency
+                    .node()
+                    .collect_errors(instance, location, tracker, ctx, errors);
             }
         }
     }
@@ -130,11 +168,21 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Some(object) = instance.as_object() {
-            let mut children = ChildList::default();
-            for (property, dependency) in &self.dependencies {
-                if object.get(property).is_some() {
-                    let child = dependency.evaluate_instance_at(
+        let Some(object) = instance.as_object() else {
+            return EvaluationResult::valid_empty();
+        };
+        let mut errors = Vec::new();
+        let mut children = ChildList::default();
+        for (property, dependency) in &self.dependencies {
+            if object.get(property).is_none() {
+                continue;
+            }
+            match dependency {
+                Dependency::Names(node) => {
+                    missing_names(node, instance, location, tracker, ctx, &mut errors);
+                }
+                Dependency::Schema(node) => {
+                    let child = node.evaluate_instance_at(
                         instance,
                         location,
                         instance_location,
@@ -144,9 +192,15 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
                     children.push(ctx.arena(), child);
                 }
             }
+        }
+        if errors.is_empty() {
             EvaluationResult::from_children(children)
         } else {
-            EvaluationResult::valid_empty()
+            EvaluationResult::Invalid {
+                errors,
+                children,
+                annotations: None,
+            }
         }
     }
 }
@@ -267,40 +321,19 @@ impl<F: Json> Validate<F> for DependentRequiredValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
-    }
-
-    fn evaluate_with_location(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        instance_location: InstancePosition,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        if let Some(object) = instance.as_object() {
-            let mut children = ChildList::default();
-            for (property, dependency) in &self.dependencies {
-                if object.get(property).is_some() {
-                    let child = dependency.evaluate_instance_at(
-                        instance,
-                        location,
-                        instance_location,
-                        tracker,
-                        ctx,
-                    );
-                    children.push(ctx.arena(), child);
-                }
+        let Some(object) = instance.as_object() else {
+            return EvaluationResult::valid_empty();
+        };
+        let mut errors = Vec::new();
+        for (property, dependency) in &self.dependencies {
+            if object.get(property).is_some() {
+                missing_names(dependency, instance, location, tracker, ctx, &mut errors);
             }
-            EvaluationResult::from_children(children)
-        } else {
+        }
+        if errors.is_empty() {
             EvaluationResult::valid_empty()
+        } else {
+            EvaluationResult::invalid_empty(errors)
         }
     }
 }
@@ -458,6 +491,52 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // Missing names are errors of the keyword's own unit, as Blaze and Corvus report them;
+    // subschemas get a unit each.
+    #[test_case(
+        &json!({"dependentRequired": {"a": ["b", "c"], "x": ["y"]}}),
+        &json!({"a": 1}),
+        &[" @ FAIL", "  /dependentRequired @ FAIL err=required"] ; "dependentRequired, names missing"
+    )]
+    #[test_case(
+        &json!({"dependentRequired": {"a": ["b"]}}),
+        &json!({"a": 1, "b": 2}),
+        &[" @ ok", "  /dependentRequired @ ok"] ; "dependentRequired, names present"
+    )]
+    #[test_case(
+        &json!({"$schema": "http://json-schema.org/draft-07/schema#", "dependencies": {"a": ["b"], "c": {"required": ["d"]}}}),
+        &json!({"a": 1, "c": 2}),
+        &[
+            " @ FAIL",
+            "  /dependencies @ FAIL err=required",
+            "    /dependencies/c @ FAIL",
+            "      /dependencies/c/required @ FAIL err=required",
+        ] ; "dependencies, names and a subschema failing"
+    )]
+    #[test_case(
+        &json!({"$schema": "http://json-schema.org/draft-07/schema#", "dependencies": {"a": ["b"], "c": {"required": ["d"]}}}),
+        &json!({"a": 1, "b": 1, "c": 2, "d": 3}),
+        &[
+            " @ ok",
+            "  /dependencies @ ok",
+            "    /dependencies/c @ ok",
+            "      /dependencies/c/required @ ok",
+        ] ; "dependencies satisfied"
+    )]
+    #[test_case(
+        &json!({"dependentSchemas": {"a": {"required": ["b"]}}}),
+        &json!({"a": 1}),
+        &[
+            " @ FAIL",
+            "  /dependentSchemas @ FAIL",
+            "    /dependentSchemas/a @ FAIL",
+            "      /dependentSchemas/a/required @ FAIL err=required",
+        ] ; "dependentSchemas"
+    )]
+    fn evaluate_units(schema: &Value, instance: &Value, expected: &[&str]) {
+        assert_eq!(tests_util::evaluation_outline(schema, instance), expected);
+    }
 
     #[test_case(&json!({"dependencies": {"bar": ["foo"]}}), &json!({"bar": 1}), "/dependencies")]
     #[test_case(&json!({"dependencies": {"bar": {"type": "string"}}}), &json!({"bar": 1}), "/dependencies/bar/type")]
