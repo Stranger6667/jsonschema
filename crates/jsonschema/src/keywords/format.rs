@@ -156,11 +156,8 @@ fn parse_varname(bytes: &[u8], i: &mut usize) -> bool {
             if !parse_varchar(bytes, i) {
                 return false;
             }
-        } else if is_varchar_start(bytes[*i]) || bytes[*i] == b'%' {
-            if !parse_varchar(bytes, i) {
-                return false;
-            }
         } else {
+            // `parse_varchar` consumed every varchar, so anything else ends the name.
             break;
         }
     }
@@ -2157,6 +2154,8 @@ mod tests {
     #[test_case("P1Y1Y")]
     #[test_case("PT1H1H")]
     #[test_case("P1WT1H")]
+    #[test_case("P1Y1W"; "weeks after another unit")]
+    #[test_case("P1W1D"; "another unit after weeks")]
     fn test_invalid_duration(input: &str) {
         assert!(!is_valid_duration(input));
     }
@@ -2848,6 +2847,10 @@ mod tests {
     #[test_case("/sparql{?query,default-graph-uri}"; "uritemplate-test 27: hyphen in varname")]
     #[test_case("/sparql{?query){&default-graph-uri*}"; "uritemplate-test 28: paren in template")]
     #[test_case("/resolution{?x, y}"; "uritemplate-test 29: space after comma")]
+    #[test_case("{+"; "expression ends after the operator")]
+    #[test_case("{a:"; "expression ends after the prefix colon")]
+    #[test_case("{a.}"; "dot without a following name")]
+    #[test_case("{a%zz}"; "percent sign without two hex digits")]
     fn test_invalid_uri_template(template: &str) {
         assert!(!is_valid_uri_template(template));
     }

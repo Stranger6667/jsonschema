@@ -1,6 +1,6 @@
 import pytest
 
-from jsonschema_rs import Draft202012, ReferencingError, Registry
+from jsonschema_rs import Draft4, Draft6, Draft7, Draft201909, Draft202012, ReferencingError, Registry
 
 NESTED_RESOURCES = [
     (
@@ -140,3 +140,30 @@ def test_resolver_lookup_raises_referencing_error_for_missing_resource():
         resolver.lookup("https://example.com/missing.json")
 
     assert "missing.json" in str(exc.value)
+
+
+@pytest.mark.parametrize(
+    "dialect,draft",
+    [
+        ("http://json-schema.org/draft-04/schema#", Draft4),
+        ("http://json-schema.org/draft-06/schema#", Draft6),
+        ("http://json-schema.org/draft-07/schema#", Draft7),
+        ("https://json-schema.org/draft/2019-09/schema", Draft201909),
+    ],
+)
+def test_lookup_reports_the_draft_of_the_resource(dialect, draft):
+    registry = Registry([("https://example.com/s.json", {"$schema": dialect})])
+    assert registry.resolver("https://example.com/s.json").lookup("").draft == draft
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda: Registry([("http://[::1", {})]),
+        lambda: Registry([]).resolver("http://[::1"),
+    ],
+    ids=["resource", "resolver base"],
+)
+def test_malformed_uri(build):
+    with pytest.raises(ValueError, match=r"^Invalid URI reference 'http://\[::1': unexpected character at index 11$"):
+        build()

@@ -19,10 +19,12 @@ from jsonschema_rs import (
     Registry,
     ValidationError,
     ValidationErrorKind,
+    evaluate,
     is_valid,
     iter_errors,
     validate,
     validator_for,
+    validator_map_for,
 )
 
 json = st.recursive(
@@ -214,6 +216,44 @@ def test_cycle_after_a_deep_sibling_stays_valid(prefix):
         innermost = innermost["next"]
     innermost["next"] = target
     assert is_valid(RECURSIVE_OBJECT_SCHEMA, instance)
+
+
+def chain(length):
+    outermost = {}
+    innermost = outermost
+    for _ in range(length):
+        innermost["next"] = {}
+        innermost = innermost["next"]
+    return outermost, innermost
+
+
+# Past the depth where the cycle guard starts counting
+@pytest.mark.parametrize("length", (10, 100))
+def test_self_loop_at_the_end_of_a_chain_stays_valid(length):
+    instance, innermost = chain(length)
+    innermost["next"] = innermost
+    assert is_valid(RECURSIVE_OBJECT_SCHEMA, instance)
+
+
+# Two references are entered for every object on the way down
+TWO_STEP_RECURSIVE_SCHEMA = {
+    "$defs": {
+        "outer": {"$ref": "#/$defs/inner"},
+        "inner": {"type": "object", "additionalProperties": {"$ref": "#/$defs/outer"}},
+    },
+    "$ref": "#/$defs/outer",
+}
+
+
+@pytest.mark.parametrize("length", (10, 100))
+def test_two_references_per_level(length):
+    instance, innermost = chain(length)
+    assert is_valid(TWO_STEP_RECURSIVE_SCHEMA, instance)
+    innermost["next"] = instance
+    assert is_valid(TWO_STEP_RECURSIVE_SCHEMA, instance)
+    innermost["next"] = 1
+    [error] = iter_errors(TWO_STEP_RECURSIVE_SCHEMA, instance)
+    assert error.instance_path == ["next"] * (length + 1)
 
 
 def cyclic_dict():
@@ -716,26 +756,29 @@ def test_kind_value(schema, instance, expected_value):
 
 # Keywords Draft 7 asserts and later drafts read differently or only annotate.
 @pytest.mark.parametrize(
-    "schema,instance,expected_value,expected_dict",
+    "schema,instance,expected_name,expected_value,expected_dict",
     [
-        ({"items": [{}], "additionalItems": False}, [1, 2], 1, {"limit": 1}),
-        ({"contentEncoding": "base64"}, "!!", "base64", {"content_encoding": "base64"}),
+        ({"items": [{}], "additionalItems": False}, [1, 2], "additionalItems", 1, {"limit": 1}),
+        ({"contentEncoding": "base64"}, "!!", "contentEncoding", "base64", {"content_encoding": "base64"}),
         (
             {"contentMediaType": "application/json"},
             "{",
+            "contentMediaType",
             "application/json",
             {"content_media_type": "application/json"},
         ),
         (
             {"contentEncoding": "base64", "contentMediaType": "application/json"},
             "/w==",
+            "contentEncoding",
             "invalid utf-8 sequence of 1 bytes from index 0",
             {"error": "invalid utf-8 sequence of 1 bytes from index 0"},
         ),
     ],
 )
-def test_kind_payload_draft7(schema, instance, expected_value, expected_dict):
+def test_kind_payload_draft7(schema, instance, expected_name, expected_value, expected_dict):
     [error] = Draft7Validator(schema).iter_errors(instance)
+    assert error.kind.name == expected_name
     assert error.kind.value == expected_value
     assert error.kind.as_dict() == expected_dict
 
@@ -1718,3 +1761,26 @@ def test_unknown_draft():
 def test_options_of_the_wrong_type(kwargs, message):
     with pytest.raises(TypeError, match=f"^{message}$"):
         validator_for({}, **kwargs)
+
+
+@pytest.mark.parametrize(
+    "build",
+    [
+        lambda schema: list(iter_errors(schema, 1)),
+        lambda schema: evaluate(schema, 1),
+        lambda schema: validator_map_for(schema),
+    ],
+    ids=["iter_errors", "evaluate", "validator_map_for"],
+)
+def test_invalid_schema_is_reported_by_every_entry_point(build):
+    with pytest.raises(ValidationError) as exc:
+        build({"type": "nope"})
+    assert exc.value.instance_path == ["type"]
+
+
+@pytest.mark.parametrize(
+    "instance,expected",
+    [(Decimal("1e-400"), False), (Decimal("-1e-400"), False), (Decimal("0.5"), False), (2**65, True), (0, True)],
+)
+def test_multiple_of_integer_divisor_past_u64(instance, expected):
+    assert is_valid({"multipleOf": 2**64}, instance) is expected

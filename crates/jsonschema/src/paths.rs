@@ -816,6 +816,18 @@ mod tests {
     use test_case::test_case;
 
     #[test]
+    fn error_location_renders_and_serializes() {
+        let schema = json!({"properties": {"a": {"items": {"type": "string"}}}});
+        let validator = crate::validator_for(&schema).expect("schema compiles");
+        let instance = json!({"a": ["x", 1]});
+        let error = validator.validate(&instance).expect_err("invalid");
+        let path = error.instance_path();
+        let rendered: Vec<String> = path.iter().map(|segment| segment.to_string()).collect();
+        assert_eq!(rendered, ["a", "1"]);
+        assert_eq!(serde_json::to_value(path).expect("a string"), json!("/a/1"));
+    }
+
+    #[test]
     fn test_location_default() {
         let loc = Location::default();
         assert_eq!(loc.as_str(), "");

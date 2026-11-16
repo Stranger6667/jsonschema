@@ -470,3 +470,40 @@ def test_keyword_disabled_by_value():
     )
     assert validator_enabled.is_valid(2)
     assert not validator_enabled.is_valid(3)
+
+
+class IterErrorsRaises:
+    def __init__(self, parent_schema, value, schema_path):
+        pass
+
+    def validate(self, instance):
+        pass
+
+    def iter_errors(self, instance):
+        raise ValueError("first")
+
+
+class IterErrorsNotIterable(IterErrorsRaises):
+    def iter_errors(self, instance):
+        return 1
+
+
+class IterErrorsRaisesMidway(IterErrorsRaises):
+    def iter_errors(self, instance):
+        yield ValueError("first")
+        raise ValueError("second")
+
+
+@pytest.mark.parametrize(
+    "keyword,expected",
+    [
+        (IterErrorsRaises, [("first", ValueError)]),
+        (IterErrorsNotIterable, [("'int' object is not iterable", TypeError)]),
+        (IterErrorsRaisesMidway, [("first", ValueError), ("second", ValueError)]),
+    ],
+)
+def test_iter_errors_failure_becomes_an_error_with_its_cause(keyword, expected):
+    validator = jsonschema_rs.validator_for({"k": 1}, keywords={"k": keyword})
+    errors = list(validator.iter_errors(1))
+    assert [(error.message, type(error.__cause__)) for error in errors] == expected
+    assert [error.kind.name for error in errors] == ["k"] * len(expected)

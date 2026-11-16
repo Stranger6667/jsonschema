@@ -138,4 +138,13 @@ RSpec.describe "JSONSchema::Canonical.find_unsatisfiable" do
     expect { JSONSchema::Canonical.find_unsatisfiable({ "type" => 1 }) }
       .to raise_error(JSONSchema::ValidationError)
   end
+
+  it "reports a reference it cannot resolve" do
+    expect { JSONSchema::Canonical.find_unsatisfiable({ "$ref" => "https://example.com/missing" }) }
+      .to raise_error(
+        JSONSchema::Canonical::CanonicalizationError,
+        "Resource 'https://example.com/missing' is not present in a registry and retrieving it failed: " \
+        "Default retriever does not fetch resources"
+      )
+  end
 end

@@ -328,3 +328,28 @@ def test_evaluate_lists_every_message_of_one_keyword():
             },
         ],
     }
+
+
+IDENTIFIED = {"$id": "https://example.com/s", "type": "string", "title": "T"}
+
+
+def test_errors_carry_the_absolute_keyword_location():
+    assert jsonschema_rs.evaluate(IDENTIFIED, 1).errors() == [
+        {
+            "schemaLocation": "https://example.com/s#/type",
+            "absoluteKeywordLocation": "https://example.com/s#/type",
+            "instanceLocation": "",
+            "error": '1 is not of type "string"',
+        }
+    ]
+
+
+def test_annotations_carry_the_absolute_keyword_location():
+    assert jsonschema_rs.evaluate(IDENTIFIED, "a").annotations() == [
+        {
+            "schemaLocation": "https://example.com/s#",
+            "absoluteKeywordLocation": "https://example.com/s#",
+            "instanceLocation": "",
+            "annotations": {"title": "T"},
+        }
+    ]
