@@ -153,7 +153,7 @@ jobs:
         run: |
           uv venv --python ${{ env.PYTHON_ABI_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
-      - uses: uraimo/run-on-arch-action@fa1f3e7de95534497266c7265950b5188355fbfb # v3.2.1
+      - uses: uraimo/run-on-arch-action@9893a0f995e5148dcc313ba661820f3992cffcc1 # v3.3
         if: matrix.target == 'aarch64'
         name: Install built wheel on ARM architecture
         with:
@@ -198,7 +198,7 @@ jobs:
           target: ${{ matrix.target }}
           manylinux: musllinux_1_2
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
-      - uses: uraimo/run-on-arch-action@fa1f3e7de95534497266c7265950b5188355fbfb # v3.2.1
+      - uses: uraimo/run-on-arch-action@9893a0f995e5148dcc313ba661820f3992cffcc1 # v3.3
         name: Install built wheel on Alpine
         with:
           base_image: '--platform=linux/${{ matrix.arch }} python:${{ env.PYTHON_ABI_VERSION }}-alpine'

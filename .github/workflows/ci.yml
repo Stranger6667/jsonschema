@@ -1095,7 +1095,7 @@ jobs:
           manylinux: musllinux_1_2
           args: -m crates/jsonschema-py/Cargo.toml --out dist
 
-      - uses: uraimo/run-on-arch-action@fa1f3e7de95534497266c7265950b5188355fbfb # v3.2.1
+      - uses: uraimo/run-on-arch-action@9893a0f995e5148dcc313ba661820f3992cffcc1 # v3.3
         name: Install and test wheel on Alpine
         with:
           base_image: '--platform=linux/${{ matrix.arch }} python:3.10-alpine'
