@@ -5762,6 +5762,21 @@ struct EvaluateUniqueItemsFalse;
 )]
 struct EvaluateObjectsAndPattern;
 
+#[jsonschema::validator(
+    schema = r#"{"title": "t", "x-vendor": [1, {"a": null}], "$comment": "c", "minimum": 1}"#,
+    methods = { evaluate = true }
+)]
+struct EvaluateAnnotations;
+
+#[jsonschema::validator(schema = r#"{"const": 1, "maximum": 1}"#, draft = Draft4, methods = { evaluate = true })]
+struct EvaluateDraft4Const;
+
+#[jsonschema::validator(
+    schema = r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"}"#,
+    methods = { evaluate = true }
+)]
+struct EvaluateSchemaKeyword;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -5784,6 +5799,9 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateValues::evaluate, serde_json::json!({"enum": [1, 2, "a"], "const": 1}), None, Draft::Draft202012 ; "values")]
 #[test_case(EvaluateItemCounts::evaluate, serde_json::json!({"maxItems": 2, "minItems": 1, "uniqueItems": true}), None, Draft::Draft202012 ; "item_counts")]
 #[test_case(EvaluateUniqueItemsFalse::evaluate, serde_json::json!({"uniqueItems": false, "minItems": 1}), None, Draft::Draft202012 ; "unique_items_false")]
+#[test_case(EvaluateAnnotations::evaluate, serde_json::json!({"title": "t", "x-vendor": [1, {"a": null}], "$comment": "c", "minimum": 1}), None, Draft::Draft202012 ; "annotations")]
+#[test_case(EvaluateDraft4Const::evaluate, serde_json::json!({"const": 1, "maximum": 1}), None, Draft::Draft4 ; "draft4_const_annotation")]
+#[test_case(EvaluateSchemaKeyword::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"}), None, Draft::Draft202012 ; "schema_keyword")]
 #[test_case(EvaluateObjectsAndPattern::evaluate, serde_json::json!({"required": ["a"], "maxProperties": 2, "minProperties": 1, "pattern": "^a"}), None, Draft::Draft202012 ; "objects_and_pattern")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,

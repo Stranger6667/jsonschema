@@ -102,7 +102,9 @@ mod __validator_impl {
     }
     pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
         static __LOCATIONS: __eval::Locations = __eval::Locations::new(
-            &[&[""], &["/type"], &["/minLength"], &["/maxLength"]],
+            &["", "/type", "/minLength", "/maxLength"],
+            &[],
+            None,
             None,
         );
         let mut __errors = __err::Errors::new(false);
