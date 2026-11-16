@@ -4097,6 +4097,24 @@ pub mod __private {
             )
         }
 
+        /// A failure to convert the decoded content, reported at the `contentEncoding` location
+        /// as the runtime does.
+        #[inline]
+        pub fn content_conversion<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: impl Into<LazyInstance<'i>>,
+            error: ValidationError<'_>,
+        ) -> ValidationError<'i> {
+            ValidationError::new(
+                instance.into(),
+                error.into_parts().kind,
+                instance_path,
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+            )
+        }
+
         /// `contentMediaType` keyword violation.
         #[inline]
         pub fn content_media_type<'i>(

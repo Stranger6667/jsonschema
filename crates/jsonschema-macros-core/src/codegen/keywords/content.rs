@@ -95,7 +95,11 @@ pub(crate) fn compile<E: ValueEmitter>(
                                 #encoding_path, __path.into(), #err_instance, #encoding_name,
                             ));
                         }
-                        Err(__err) => break '__first_error Some(__err),
+                        Err(__err) => {
+                            break '__first_error Some(__err::content_conversion(
+                                #encoding_path, __path.into(), #err_instance, __err,
+                            ));
+                        }
                     }
                 },
             ))

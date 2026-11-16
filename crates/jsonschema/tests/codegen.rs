@@ -476,6 +476,35 @@ struct BuiltinContentEncodingValidator;
 #[jsonschema::validator(schema = r#"{"contentEncoding":"BASE64"}"#, draft = Draft7)]
 struct UppercaseContentEncodingValidator;
 
+#[jsonschema::validator(
+    schema = r#"{"contentEncoding":"base64","contentMediaType":"application/json"}"#,
+    draft = Draft7
+)]
+struct Base64JsonContentValidator;
+
+// `"abcd"` decodes to bytes that are not UTF-8.
+#[test_case(serde_json::json!("abcd") ; "not_utf8")]
+#[test_case(serde_json::json!("!!") ; "not_base64")]
+#[test_case(serde_json::json!("ew==") ; "not_json")]
+#[test_case(serde_json::json!("MQ==") ; "valid")]
+fn test_base64_json_content_matches_runtime(instance: serde_json::Value) {
+    let runtime = jsonschema::options()
+        .with_draft(jsonschema::Draft::Draft7)
+        .build(&serde_json::json!({"contentEncoding": "base64", "contentMediaType": "application/json"}))
+        .expect("valid schema");
+    assert_validate_parity(
+        Base64JsonContentValidator::is_valid(&instance),
+        Base64JsonContentValidator::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(
+        Base64JsonContentValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
 #[test_case(serde_json::json!("deadBEEF") ; "valid_hex")]
 #[test_case(serde_json::json!("xyz") ; "invalid_hex")]
 #[test_case(serde_json::json!(5) ; "non_string")]
