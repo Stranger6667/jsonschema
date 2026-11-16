@@ -4,10 +4,12 @@ use std::borrow::Cow;
 use crate::{
     compiler,
     error::ValidationError,
-    evaluation::{
-        format_keyword_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
+    evaluation::{Annotations, ChildList, ErrorDescription, InstancePosition},
+    keywords::{
+        helpers::{unit, unit_over, SchemaSite},
+        required::CheckedBySiblingValidator,
+        BoxedValidator, CompilationResult,
     },
-    keywords::{required::CheckedBySiblingValidator, BoxedValidator, CompilationResult},
     node::SchemaNode,
     paths::{LazyLocation, Location, RefTracker},
     properties::{
@@ -18,9 +20,8 @@ use crate::{
     validator::{EvaluationResult, Validate, ValidationContext},
     Json, Node, Object, SerdeJson,
 };
-use referencing::{Draft, Uri, Vocabulary};
+use referencing::{Draft, Vocabulary};
 use serde_json::{Map, Value};
-use std::sync::Arc;
 
 use super::all_of::ObjectPart;
 
@@ -41,8 +42,8 @@ pub(crate) struct SmallPropertiesWithRequired2Validator<F: Json = SerdeJson> {
     first_key: F::PreparedKey,
     second: PropertyName,
     second_key: F::PreparedKey,
-    required_location: Location,
-    required_absolute_location: Option<Arc<Uri<String>>>,
+    required: SchemaSite,
+    properties_site: SchemaSite,
 }
 
 impl SmallPropertiesValidator {
@@ -149,16 +150,14 @@ impl SmallPropertiesWithRequired2Validator {
                 compiler::compile(&kctx, kctx.as_resource_ref(subschema))?,
             ));
         }
-        let required_location = ctx.location().join("required");
-        let required_absolute_location = ctx.absolute_location(&required_location);
         Ok(Box::new(SmallPropertiesWithRequired2Validator {
             properties,
             first_key: F::prepare_key(&first),
             second_key: F::prepare_key(&second),
             first: PropertyName::new(first),
             second: PropertyName::new(second),
-            required_location,
-            required_absolute_location,
+            required: SchemaSite::new(ctx, ctx.location().join("required")),
+            properties_site: SchemaSite::new(ctx, ctx.location().join("properties")),
         }))
     }
 }
@@ -323,13 +322,13 @@ impl<F: Json> SmallPropertiesWithRequired2Validator<F> {
         tracker: Option<&RefTracker>,
     ) -> ValidationError<'i> {
         ValidationError::required(
-            self.required_location.clone(),
-            crate::paths::capture_evaluation_path(tracker, &self.required_location),
+            self.required.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &self.required.location),
             location.into(),
             instance.lazy_value(),
             Value::String(key.as_str().to_owned()),
         )
-        .with_absolute_keyword_location(self.required_absolute_location.clone())
+        .with_absolute_keyword_location(self.required.absolute_location().cloned())
     }
 
     fn check_required<'i, O: Object<'i, F>>(
@@ -518,87 +517,87 @@ impl<F: Json> Validate<F> for SmallPropertiesWithRequired2Validator<F> {
         }
     }
 
-    fn evaluate(
+    fn reports_units(&self) -> bool {
+        true
+    }
+
+    // `required` reports its unit before `properties`, as when they are not fused.
+    fn evaluate_units(
         &self,
         instance: &F::Node<'_>,
         location: &LazyLocation,
+        instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        if let Some(object) = instance.as_object() {
-            let mut matched_props = Vec::with_capacity(object.len());
-            let mut children = ChildList::default();
-            if scan_members::<F>(object.len(), self.properties.len()) {
-                for (name, value) in object.members() {
-                    let name = name.as_ref();
-                    let head = KeyHead::of(name);
-                    for (prop_name, _, node) in &self.properties {
-                        if prop_name.matches(head, name) {
-                            let path = location.push(name);
-                            matched_props.push(prop_name.as_str().to_owned());
-                            let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
-                            children.push(ctx.arena(), child);
-                            break;
-                        }
-                    }
-                }
-            } else {
-                for (prop_name, key, node) in &self.properties {
-                    if let Some(prop) = object.get(key) {
-                        let path = location.push(prop_name.as_str());
-                        matched_props.push(prop_name.as_str().to_owned());
-                        let child = node.evaluate_instance_below(&prop, &path, tracker, ctx);
-                        children.push(ctx.arena(), child);
-                    }
-                }
+        children: &mut ChildList,
+    ) -> bool {
+        let Some(object) = instance.as_object() else {
+            for site in [&self.required, &self.properties_site] {
+                let node = unit(site, None, instance_location, tracker, ctx);
+                children.push(ctx.arena(), node);
             }
-            // `required` is fused into this validator, so its failures are emitted as a child node at
-            // the `required` keyword location to keep the correct `schemaLocation` in structured output.
-            let mut required_errors = Vec::new();
-            let eval_path = crate::paths::capture_evaluation_path(tracker, &self.required_location);
-            if object.get(&self.first_key).is_none() {
-                required_errors.push(ErrorDescription::from_validation_error(
-                    &ValidationError::required(
-                        self.required_location.clone(),
-                        eval_path.clone(),
-                        location.into(),
-                        instance.lazy_value(),
-                        Value::String(self.first.as_str().to_owned()),
-                    ),
+            return false;
+        };
+        let mut errors = Vec::new();
+        for (name, key) in [
+            (&self.first, &self.first_key),
+            (&self.second, &self.second_key),
+        ] {
+            if object.get(key).is_none() {
+                errors.push(ErrorDescription::from_validation_error(
+                    &self.missing(name, instance, location, tracker),
                 ));
             }
-            if object.get(&self.second_key).is_none() {
-                required_errors.push(ErrorDescription::from_validation_error(
-                    &ValidationError::required(
-                        self.required_location.clone(),
-                        eval_path,
-                        location.into(),
-                        instance.lazy_value(),
-                        Value::String(self.second.as_str().to_owned()),
-                    ),
-                ));
-            }
-            if !required_errors.is_empty() {
-                let child = EvaluationNode::invalid(
-                    crate::paths::evaluation_path(tracker, &self.required_location, ctx),
-                    self.required_absolute_location.clone(),
-                    format_keyword_location(
-                        &self.required_location,
-                        self.required_absolute_location.as_ref(),
-                    ),
-                    ctx.instance_position(location),
-                    None,
-                    required_errors,
-                    ChildList::default(),
-                );
-                children.push(ctx.arena(), child);
-            }
-            let mut application = EvaluationResult::from_children(children);
-            application.annotate(Annotations::new(Value::from(matched_props)));
-            application
-        } else {
-            EvaluationResult::valid_empty()
         }
+        let mut invalid = !errors.is_empty();
+        let node = unit_over(
+            &self.required,
+            errors,
+            None,
+            ChildList::default(),
+            instance_location,
+            tracker,
+            ctx,
+        );
+        children.push(ctx.arena(), node);
+        let mut matched_props = Vec::with_capacity(object.len());
+        let mut members = ChildList::default();
+        if scan_members::<F>(object.len(), self.properties.len()) {
+            for (name, value) in object.members() {
+                let name = name.as_ref();
+                let head = KeyHead::of(name);
+                for (prop_name, _, node) in &self.properties {
+                    if prop_name.matches(head, name) {
+                        let path = location.push(name);
+                        matched_props.push(prop_name.as_str().to_owned());
+                        let child = node.evaluate_instance_below(&value, &path, tracker, ctx);
+                        members.push(ctx.arena(), child);
+                        break;
+                    }
+                }
+            }
+        } else {
+            for (prop_name, key, node) in &self.properties {
+                if let Some(prop) = object.get(key) {
+                    let path = location.push(prop_name.as_str());
+                    matched_props.push(prop_name.as_str().to_owned());
+                    let child = node.evaluate_instance_below(&prop, &path, tracker, ctx);
+                    members.push(ctx.arena(), child);
+                }
+            }
+        }
+        invalid |= !members.all_valid();
+        let node = unit_over(
+            &self.properties_site,
+            Vec::new(),
+            Some(Annotations::new(Value::from(matched_props))),
+            members,
+            instance_location,
+            tracker,
+            ctx,
+        );
+        children.push(ctx.arena(), node);
+        invalid
     }
 }
 
@@ -692,6 +691,22 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
     }
 }
 
+/// Whether `parent` has a keyword ordered between `required` and `properties`, whose unit a
+/// validator reporting both would put after `required`.
+pub(crate) fn has_keyword_between_required_and_properties(parent: &Map<String, Value>) -> bool {
+    [
+        "dependentRequired",
+        "pattern",
+        "format",
+        "contentEncoding",
+        "contentMediaType",
+        "contentSchema",
+        "uniqueItems",
+    ]
+    .iter()
+    .any(|keyword| parent.contains_key(*keyword))
+}
+
 /// Check if we can use fused properties+required validator.
 /// Conditions: properties < threshold, required: [2 strings], no patternProperties.
 fn extract_required2<F: Json>(
@@ -700,6 +715,9 @@ fn extract_required2<F: Json>(
 ) -> Option<(String, String)> {
     // `required` compiles under the validation vocabulary only
     if !ctx.has_vocabulary(&Vocabulary::Validation) {
+        return None;
+    }
+    if has_keyword_between_required_and_properties(parent) {
         return None;
     }
     // No patternProperties (uses separate validator paths)
@@ -779,6 +797,68 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Map, Value};
     use test_case::test_case;
+
+    // `required` reports its own unit before `properties`, as it would without the validators fused.
+    #[test_case(
+        &json!({"a": 1}),
+        &[
+            " @ FAIL",
+            "  /required @ FAIL err=required",
+            "  /properties @ ok ann=[\"a\"]",
+            "    /properties/a @/a ok",
+            "      /properties/a/type @/a ok",
+        ] ; "one name missing"
+    )]
+    #[test_case(
+        &json!({"a": 1, "b": 2}),
+        &[
+            " @ ok",
+            "  /required @ ok",
+            "  /properties @ ok ann=[\"a\",\"b\"]",
+            "    /properties/a @/a ok",
+            "      /properties/a/type @/a ok",
+            "    /properties/b @/b ok",
+        ] ; "both names present"
+    )]
+    #[test_case(
+        &json!({"a": "x"}),
+        &[
+            " @ FAIL",
+            "  /required @ FAIL err=required",
+            "  /properties @ FAIL dropped=[\"a\"]",
+            "    /properties/a @/a FAIL",
+            "      /properties/a/type @/a FAIL err=type",
+        ] ; "name missing beside an invalid member"
+    )]
+    #[test_case(&json!(1), &[" @ ok", "  /required @ ok", "  /properties @ ok"] ; "not an object")]
+    fn two_required_names_evaluate(instance: &Value, expected: &[&str]) {
+        let schema =
+            json!({"properties": {"a": {"type": "integer"}, "b": {}}, "required": ["a", "b"]});
+        assert_eq!(tests_util::evaluation_outline(&schema, instance), expected);
+    }
+
+    // A keyword ordered between `required` and `properties` keeps its place between their units.
+    #[test_case(&json!({"dependentRequired": {"a": ["b"]}}), &["/required", "/dependentRequired", "/properties"]; "dependentRequired")]
+    #[test_case(&json!({"pattern": "x"}), &["/required", "/pattern", "/properties"]; "pattern")]
+    #[test_case(&json!({"format": "email"}), &["/required", "/format", "/properties"]; "format")]
+    #[test_case(&json!({"contentEncoding": "base64"}), &["/required", "/contentEncoding", "/properties"]; "contentEncoding")]
+    #[test_case(&json!({"contentMediaType": "application/json", "contentSchema": {}}), &["/required", "/contentMediaType", "/contentSchema", "/properties"]; "content")]
+    #[test_case(&json!({"uniqueItems": true}), &["/required", "/uniqueItems", "/properties"]; "uniqueItems")]
+    fn two_required_names_beside_a_keyword_between(keyword: &Value, expected: &[&str]) {
+        let mut schema = json!({"properties": {"a": {}, "b": {}}, "required": ["a", "b"]});
+        schema
+            .as_object_mut()
+            .expect("an object")
+            .extend(keyword.as_object().expect("an object").clone());
+        let units: Vec<_> = tests_util::evaluation_outline(&schema, &json!({"a": 1, "b": 2}))
+            .into_iter()
+            .filter_map(|line| {
+                let line = line.strip_prefix("  ")?;
+                (!line.starts_with(' ')).then(|| line.split(' ').next().expect("a path").to_owned())
+            })
+            .collect();
+        assert_eq!(units, expected);
+    }
 
     // Member subschemas that only check `type`, against every kind of value
     #[test_case(&json!({"type": "string"}), &json!(null), false; "string child, null")]

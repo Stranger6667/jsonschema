@@ -4648,7 +4648,51 @@ pub mod __private {
 pub(crate) mod tests_util {
     use super::Validator;
     use crate::ValidationError;
-    use serde_json::Value;
+    use serde_json::{json, Value};
+    use std::fmt::Write;
+
+    /// `{path} @{instance location} ok|FAIL` per unit of the hierarchical output, children
+    /// indented below their parent.
+    pub(crate) fn evaluation_outline(schema: &Value, instance: &Value) -> Vec<String> {
+        let evaluation = crate::validator_for(schema)
+            .expect("valid schema")
+            .evaluate(instance);
+        let mut lines = Vec::new();
+        outline(
+            &serde_json::to_value(evaluation.hierarchical()).expect("hierarchical output"),
+            0,
+            &mut lines,
+        );
+        lines
+    }
+
+    fn outline(node: &Value, depth: usize, lines: &mut Vec<String>) {
+        let mut line = format!(
+            "{}{} @{} {}",
+            "  ".repeat(depth),
+            node["evaluationPath"].as_str().expect("path"),
+            node["instanceLocation"].as_str().expect("location"),
+            if node["valid"] == json!(true) {
+                "ok"
+            } else {
+                "FAIL"
+            },
+        );
+        if let Some(annotations) = node.get("annotations") {
+            write!(line, " ann={annotations}").expect("writes to a string");
+        }
+        if let Some(annotations) = node.get("droppedAnnotations") {
+            write!(line, " dropped={annotations}").expect("writes to a string");
+        }
+        if let Some(errors) = node.get("errors").and_then(Value::as_object) {
+            let keywords: Vec<_> = errors.keys().map(String::as_str).collect();
+            write!(line, " err={}", keywords.join(",")).expect("writes to a string");
+        }
+        lines.push(line);
+        for child in node["details"].as_array().into_iter().flatten() {
+            outline(child, depth + 1, lines);
+        }
+    }
 
     #[track_caller]
     pub(crate) fn is_not_valid_with(validator: &Validator, instance: &Value) {
@@ -5195,7 +5239,7 @@ mod tests {
     #[test_case(
         &json!({"$id": "https://example.com/tree", "properties": {"a": {"type": "string"}, "b": {"type": "string"}}, "required": ["a", "b"]}),
         &json!({}),
-        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/properties", "https://example.com/tree#/required"];
+        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/required", "https://example.com/tree#/properties"];
         "required"
     )]
     #[test_case(
