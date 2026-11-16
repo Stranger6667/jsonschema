@@ -96,11 +96,33 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     let mut errors_arms = Vec::new();
     let mut skips_valid = true;
     let integer_guard = E::integer_number_guard(ctx.draft);
+    let type_value = schema.get("type").filter(|_| has_type_constraint);
+    let type_error = type_value.map(|type_value| {
+        let type_error =
+            build_type_error_expr::<E>(type_value, &ctx.schema_path_for_keyword("type"));
+        quote! { if __errors.push(#type_error) { return true; } }
+    });
+    // The type error, when `type` leaves out every one of `names`: such instances fail, and the
+    // runtime reports the type error before the errors of their keywords.
+    let excluded = |names: &[&str]| {
+        type_error.clone().filter(|_| {
+            type_value.is_some_and(|type_value| {
+                !names
+                    .iter()
+                    .any(|name| type_keyword_includes(type_value, name))
+            })
+        })
+    };
 
     if has_string {
         let for_string = keywords::string::compile(ctx, schema);
         skips_valid &= for_string.skips_valid;
-        if has_type_constraint || !for_string.is_trivially_true() {
+        if let Some(type_error) = excluded(&["string"]) {
+            typed_arms += 1;
+            let errors = for_string.errors.as_token_stream();
+            is_valid_arms.push(E::match_string_arm(quote! { false }));
+            errors_arms.push(E::match_string_arm(quote! { #type_error #errors }));
+        } else if has_type_constraint || !for_string.is_trivially_true() {
             typed_arms += 1;
             is_valid_arms.push(E::match_string_arm(for_string.is_valid_token_stream()));
             if has_type_constraint || matches!(&for_string.errors, ErrorsBlock::Expr(_)) {
@@ -145,6 +167,11 @@ pub(super) fn compile_typed<E: ValueEmitter>(
                 typed_arms += 1;
                 is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
                 errors_arms.push(E::match_number_arm(for_number.errors.as_token_stream()));
+            } else if let Some(type_error) = excluded(&["number", "integer"]) {
+                typed_arms += 1;
+                let errors = for_number.errors.as_token_stream();
+                is_valid_arms.push(E::match_number_arm(quote! { false }));
+                errors_arms.push(E::match_number_arm(quote! { #type_error #errors }));
             }
         } else if !for_number.is_trivially_true() {
             typed_arms += 1;
@@ -158,7 +185,12 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     if has_array {
         let mut for_array = keywords::array::compile(ctx, schema);
         skips_valid &= for_array.skips_valid;
-        if has_type_constraint || !for_array.is_trivially_true() {
+        if let Some(type_error) = excluded(&["array"]) {
+            typed_arms += 1;
+            let errors = for_array.errors.as_token_stream();
+            is_valid_arms.push(E::match_array_arm(quote! { false }));
+            errors_arms.push(E::match_array_arm(quote! { #type_error #errors }));
+        } else if has_type_constraint || !for_array.is_trivially_true() {
             typed_arms += 1;
             sole = Some(SoleType::Array(
                 for_array.is_valid_token_stream(),
@@ -178,7 +210,12 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     if has_object {
         let for_object = keywords::object::compile(ctx, schema);
         skips_valid &= for_object.skips_valid;
-        if has_type_constraint || !for_object.is_trivially_true() {
+        if let Some(type_error) = excluded(&["object"]) {
+            typed_arms += 1;
+            let errors = for_object.errors.as_token_stream();
+            is_valid_arms.push(E::match_object_arm(quote! { false }));
+            errors_arms.push(E::match_object_arm(quote! { #type_error #errors }));
+        } else if has_type_constraint || !for_object.is_trivially_true() {
             typed_arms += 1;
             sole = Some(SoleType::Object(
                 for_object.is_valid_token_stream(),

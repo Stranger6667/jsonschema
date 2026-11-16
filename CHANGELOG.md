@@ -18,6 +18,7 @@
 - `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
 - `evaluate` messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
 - `#[jsonschema::validator]` reporting content that decodes to invalid UTF-8 beside `contentMediaType` at the schema root instead of at `contentEncoding`.
+- `#[jsonschema::validator]` accepting instances of a type that `type` leaves out when keywords for that type are beside it.
 - `evaluate` output for `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.
 - `evaluate` output for one `required` name beside `properties` and `additionalProperties: false` reporting the name inside the `additionalProperties` unit, and only when missing.
 - `evaluate` output for `additionalProperties: false` reporting one error for the whole object instead of a failing unit for each extra member.
