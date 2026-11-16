@@ -728,6 +728,7 @@ pub(crate) fn compile<'a, F: Json>(
             && !additional_props_false
             && !additional_props_is_schema
             && !has_pattern_properties
+            && !super::properties::has_keyword_between_required_and_properties(parent)
         {
             return None;
         }

@@ -2342,7 +2342,6 @@ pub(crate) fn compile<'a, F: Json>(
 mod tests {
     use crate::{properties::HASHMAP_THRESHOLD, tests_util, PatternOptions};
     use serde_json::{json, Map, Value};
-    use std::fmt::Write;
     use test_case::test_case;
 
     // `required` with one name is checked by the `additionalProperties: false` walk for `is_valid`
@@ -3287,35 +3286,6 @@ mod tests {
         }
     }
 
-    // `{path} @{instance location} ok|FAIL` per unit, children indented below their parent.
-    fn outline(node: &Value, depth: usize, lines: &mut Vec<String>) {
-        let mut line = format!(
-            "{}{} @{} {}",
-            "  ".repeat(depth),
-            node["evaluationPath"].as_str().expect("path"),
-            node["instanceLocation"].as_str().expect("location"),
-            if node["valid"] == json!(true) {
-                "ok"
-            } else {
-                "FAIL"
-            },
-        );
-        if let Some(annotations) = node.get("annotations") {
-            write!(line, " ann={annotations}").expect("writes to a string");
-        }
-        if let Some(annotations) = node.get("droppedAnnotations") {
-            write!(line, " dropped={annotations}").expect("writes to a string");
-        }
-        if let Some(errors) = node.get("errors").and_then(Value::as_object) {
-            let keywords: Vec<_> = errors.keys().map(String::as_str).collect();
-            write!(line, " err={}", keywords.join(",")).expect("writes to a string");
-        }
-        lines.push(line);
-        for child in node["details"].as_array().into_iter().flatten() {
-            outline(child, depth + 1, lines);
-        }
-    }
-
     // Each keyword reports its own unit, as it would without the validators fused; `false` fails
     // each extra member, as Blaze and Corvus report it.
     #[test_case(
@@ -3438,15 +3408,6 @@ mod tests {
         &[" @ ok", "  /additionalProperties @ ok"] ; "false alone on an empty object"
     )]
     fn fused_evaluate_reports_each_keyword(schema: &Value, instance: &Value, expected: &[&str]) {
-        let evaluation = crate::validator_for(schema)
-            .expect("valid schema")
-            .evaluate(instance);
-        let mut lines = Vec::new();
-        outline(
-            &serde_json::to_value(evaluation.hierarchical()).expect("hierarchical output"),
-            0,
-            &mut lines,
-        );
-        assert_eq!(lines, expected);
+        assert_eq!(tests_util::evaluation_outline(schema, instance), expected);
     }
 }

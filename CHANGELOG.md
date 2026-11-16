@@ -18,6 +18,8 @@
 - `evaluate` output for `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.
 - `evaluate` output for one `required` name beside `properties` and `additionalProperties: false` reporting the name inside the `additionalProperties` unit, and only when missing.
 - `evaluate` output for `additionalProperties: false` reporting one error for the whole object instead of a failing unit for each extra member.
+- `evaluate` output for two `required` names beside `properties` reporting them inside the `properties` unit, failing it, and only when missing.
+- `evaluate` output for `propertyNames: false` reporting one error for the whole object instead of a failing unit for each name.
 
 ### Performance
 
