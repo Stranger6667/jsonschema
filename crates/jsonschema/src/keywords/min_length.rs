@@ -57,7 +57,7 @@ impl<F: Json> Validate<F> for MinLengthValidator {
 pub(crate) struct LengthRangeValidator {
     minimum: u64,
     maximum: u64,
-    min_location: Location,
+    min_site: SchemaSite,
     max_site: SchemaSite,
 }
 
@@ -69,8 +69,8 @@ impl LengthRangeValidator {
         tracker: Option<&RefTracker>,
     ) -> ValidationError<'i> {
         ValidationError::min_length(
-            self.min_location.clone(),
-            crate::paths::capture_evaluation_path(tracker, &self.min_location),
+            self.min_site.location.clone(),
+            crate::paths::capture_evaluation_path(tracker, &self.min_site.location),
             location.into(),
             instance.lazy_value(),
             self.minimum,
@@ -138,51 +138,35 @@ impl<F: Json> Validate<F> for LengthRangeValidator {
         }
     }
 
-    // This unit is `minLength`'s; `maxLength` reports its own beside it.
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        _ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        if instance
-            .string_length()
-            .is_some_and(|length| length < self.minimum)
-        {
-            EvaluationResult::invalid_empty(vec![ErrorDescription::from_validation_error(
-                &self.min_error::<F>(instance, location, tracker),
-            )])
-        } else {
-            EvaluationResult::valid_empty()
-        }
-    }
-
-    fn checks_siblings(&self) -> bool {
+    fn reports_units(&self) -> bool {
         true
     }
 
-    fn evaluate_siblings(
+    fn evaluate_units(
         &self,
         instance: &F::Node<'_>,
+        location: &LazyLocation,
         instance_location: InstancePosition,
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
         children: &mut ChildList,
     ) -> bool {
-        // The description depends on the error kind and the instance alone; see `Validate::evaluate`.
-        let error = instance
-            .string_length()
-            .is_some_and(|length| length > self.maximum)
-            .then(|| {
-                ErrorDescription::from_validation_error(&self.max_error::<F>(
-                    instance,
-                    &LazyLocation::new(),
-                    tracker,
-                ))
-            });
-        let invalid = error.is_some();
-        let node = unit(&self.max_site, error, instance_location, tracker, ctx);
+        let length = instance.string_length();
+        // A description depends on the error kind and the instance alone; see `Validate::evaluate`.
+        let min_error = length.is_some_and(|length| length < self.minimum).then(|| {
+            ErrorDescription::from_validation_error(
+                &self.min_error::<F>(instance, location, tracker),
+            )
+        });
+        let max_error = length.is_some_and(|length| length > self.maximum).then(|| {
+            ErrorDescription::from_validation_error(
+                &self.max_error::<F>(instance, location, tracker),
+            )
+        });
+        let invalid = min_error.is_some() || max_error.is_some();
+        let node = unit(&self.min_site, min_error, instance_location, tracker, ctx);
+        children.push(ctx.arena(), node);
+        let node = unit(&self.max_site, max_error, instance_location, tracker, ctx);
         children.push(ctx.arena(), node);
         invalid
     }
@@ -207,7 +191,7 @@ pub(crate) fn compile<'a, F: Json>(
         return Some(Ok(Box::new(LengthRangeValidator {
             minimum,
             maximum,
-            min_location: location,
+            min_site: SchemaSite::new(ctx, location),
             max_site: SchemaSite::new(ctx, ctx.location().join("maxLength")),
         })));
     }

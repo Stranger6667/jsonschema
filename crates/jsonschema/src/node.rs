@@ -229,8 +229,8 @@ struct KeywordValidator<F: Json> {
     validator: BoxedValidator<F>,
     /// Asserts on the instance itself, so `is_valid` may run ahead of `validate`.
     is_leaf: bool,
-    /// Reports the output units of sibling keywords it checks too.
-    checks_siblings: bool,
+    /// Reports the output units of the sibling keywords it checks, with its own.
+    reports_units: bool,
 }
 
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
@@ -252,7 +252,7 @@ struct EntryParts<'a, F: Json> {
     absolute_location: &'a OnceLock<Arc<Uri<String>>>,
     schema_location: &'a OnceLock<SchemaLocation>,
     validator: &'a BoxedValidator<F>,
-    checks_siblings: bool,
+    reports_units: bool,
 }
 
 impl<F: Json> EntryParts<'_, F> {
@@ -303,7 +303,7 @@ impl KeywordMetadata {
             absolute_location: &self.absolute_location,
             schema_location: &self.schema_location,
             validator: &entry.validator,
-            checks_siblings: entry.checks_siblings,
+            reports_units: entry.reports_units,
         }
     }
 }
@@ -577,12 +577,15 @@ impl<F: Json> SchemaNode<F> {
                     keyword,
                     crate::keywords::Keyword::Builtin(crate::keywords::BuiltinKeyword::Required)
                 ) || validator.is_valid_alone());
-            // Only `minLength` checks a sibling keyword, `maxLength`; asking every validator costs a
-            // call each.
-            let checks_siblings = matches!(
+            // Only `minLength` and `additionalProperties` check sibling keywords; asking every
+            // validator costs a call each.
+            let reports_units = matches!(
                 keyword,
-                crate::keywords::Keyword::Builtin(crate::keywords::BuiltinKeyword::MinLength)
-            ) && validator.checks_siblings();
+                crate::keywords::Keyword::Builtin(
+                    crate::keywords::BuiltinKeyword::MinLength
+                        | crate::keywords::BuiltinKeyword::AdditionalProperties
+                )
+            ) && validator.reports_units();
             metadata.push(KeywordMetadata {
                 keyword,
                 location: OnceLock::new(),
@@ -592,7 +595,7 @@ impl<F: Json> SchemaNode<F> {
             KeywordValidator {
                 validator,
                 is_leaf,
-                checks_siblings,
+                reports_units,
             }
         });
         // A lone validator is stored inline, so it never needs a heap slice.
@@ -861,6 +864,17 @@ impl<F: Json> SchemaNode<F> {
         let mut invalid = false;
 
         for parts in subschemas {
+            if parts.reports_units {
+                invalid |= parts.validator.evaluate_units(
+                    instance,
+                    location,
+                    instance_loc,
+                    tracker,
+                    ctx,
+                    children,
+                );
+                continue;
+            }
             let child_result = parts.validator.evaluate_with_location(
                 instance,
                 location,
@@ -910,15 +924,6 @@ impl<F: Json> SchemaNode<F> {
                 }
             };
             children.push(ctx.arena(), child_node);
-            if parts.checks_siblings {
-                invalid |= parts.validator.evaluate_siblings(
-                    instance,
-                    instance_loc,
-                    tracker,
-                    ctx,
-                    children,
-                );
-            }
         }
         invalid
     }
@@ -1212,7 +1217,7 @@ impl<F: Json> SchemaNode<F> {
                     absolute_location: &entry.absolute_location,
                     schema_location: &entry.schema_location,
                     validator: &entry.validator,
-                    checks_siblings: false,
+                    reports_units: false,
                 }),
                 None,
                 ctx,

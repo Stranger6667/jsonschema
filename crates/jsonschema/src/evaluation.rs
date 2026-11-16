@@ -425,6 +425,21 @@ impl ChildList {
         self.len += 1;
     }
 
+    /// Moves `other`'s nodes after this list's.
+    pub(crate) fn append(&mut self, arena: &mut EvaluationArena, other: ChildList) {
+        if other.first == NO_NODE {
+            return;
+        }
+        if self.last == NO_NODE {
+            *self = other;
+            return;
+        }
+        arena.node_mut(self.last).next_sibling = other.first;
+        self.last = other.last;
+        self.len += other.len;
+        self.valid &= other.valid;
+    }
+
     pub(crate) fn len(self) -> usize {
         self.len as usize
     }

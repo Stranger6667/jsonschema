@@ -5219,7 +5219,7 @@ mod tests {
     #[test_case(
         &json!({"$id": "https://example.com/tree", "patternProperties": {"^a": {}}, "additionalProperties": false}),
         &json!({"a": 1, "b": 1}),
-        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/additionalProperties", "https://example.com/tree#/patternProperties/%5Ea", "https://example.com/tree#/patternProperties"];
+        &["", "/properties", "https://example.com/tree#", "https://example.com/tree#/patternProperties", "https://example.com/tree#/patternProperties/%5Ea", "https://example.com/tree#/additionalProperties", "https://example.com/tree#/additionalProperties"];
         "patternProperties beside additionalProperties"
     )]
     fn list_schema_locations_in_nested_resource(tree: &Value, instance: &Value, expected: &[&str]) {

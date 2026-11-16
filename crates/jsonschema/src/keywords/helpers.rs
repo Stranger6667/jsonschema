@@ -8,7 +8,8 @@ use serde_json::{Map, Value};
 use crate::{
     compiler::{self, DeferredAbsoluteLocation},
     evaluation::{
-        format_keyword_location, ChildList, ErrorDescription, EvaluationNode, InstancePosition,
+        format_keyword_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
+        InstancePosition,
     },
     paths::{Location, RefTracker},
     types::JsonType,
@@ -155,25 +156,47 @@ pub(crate) fn unit(
     tracker: Option<&RefTracker>,
     ctx: &mut ValidationContext,
 ) -> EvaluationNode {
+    unit_over(
+        site,
+        error.into_iter().collect(),
+        None,
+        ChildList::default(),
+        instance_location,
+        tracker,
+        ctx,
+    )
+}
+
+/// A keyword's output unit over `children`, failing with `errors` or with a failing child.
+pub(crate) fn unit_over(
+    site: &SchemaSite,
+    errors: Vec<ErrorDescription>,
+    annotations: Option<Annotations>,
+    children: ChildList,
+    instance_location: InstancePosition,
+    tracker: Option<&RefTracker>,
+    ctx: &mut ValidationContext,
+) -> EvaluationNode {
     let evaluation_path = crate::paths::evaluation_path(tracker, &site.location, ctx);
-    match error {
-        None => EvaluationNode::valid(
+    if errors.is_empty() && children.all_valid() {
+        EvaluationNode::valid(
             evaluation_path,
             site.absolute_location().cloned(),
             site.schema_location(),
             instance_location,
-            None,
-            ChildList::default(),
-        ),
-        Some(error) => EvaluationNode::invalid(
+            annotations,
+            children,
+        )
+    } else {
+        EvaluationNode::invalid(
             evaluation_path,
             site.absolute_location().cloned(),
             site.schema_location(),
             instance_location,
-            None,
-            vec![error],
-            ChildList::default(),
-        ),
+            annotations,
+            errors,
+            children,
+        )
     }
 }
 

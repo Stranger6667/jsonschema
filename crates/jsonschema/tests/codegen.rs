@@ -909,14 +909,14 @@ fn test_additional_properties_false_nontrivial_validate_parity(instance: serde_j
     );
 }
 
-// The additionalProperties error precedes a missing-required error.
+// A missing-required error precedes the additionalProperties error.
 #[jsonschema::validator(
     schema = r#"{"properties":{"m":{"type":"integer"}},"required":["m"],"additionalProperties":false}"#
 )]
 struct AdditionalPropsFalseRequiredParityValidator;
 
 #[test_case(serde_json::json!({"m":"x","z":1}) ; "value_error_first")]
-#[test_case(serde_json::json!({"z":1}) ; "additional_before_missing_required")]
+#[test_case(serde_json::json!({"z":1}) ; "missing_required_before_additional")]
 #[test_case(serde_json::json!({}) ; "missing_required_only")]
 fn test_additional_properties_false_required_validate_parity(instance: serde_json::Value) {
     let schema = serde_json::json!({"properties":{"m":{"type":"integer"}},"required":["m"],"additionalProperties":false});
@@ -928,8 +928,8 @@ fn test_additional_properties_false_required_validate_parity(instance: serde_jso
     );
 }
 
-// Outside the additionalProperties:false single-required fusion, `required` is validated before
-// property values, so a missing required field is reported ahead of a covered-value error.
+// `required` is validated before property values, so a missing required field is reported ahead
+// of a covered-value error.
 #[jsonschema::validator(
     schema = r#"{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"}},"required":["a","b"]}"#
 )]
