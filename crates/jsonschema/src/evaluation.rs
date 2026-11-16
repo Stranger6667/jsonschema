@@ -1650,6 +1650,9 @@ pub mod generated {
         /// A `then` or `else` unit's subschema.
         #[serde(default)]
         branch: Option<usize>,
+        /// A `$ref` unit's target.
+        #[serde(default)]
+        target: Option<usize>,
         /// That subschema is `false`.
         #[serde(default)]
         closed: bool,
@@ -1691,6 +1694,7 @@ pub mod generated {
             schema: usize,
             then: bool,
         },
+        Ref(usize),
         Rest {
             schema: usize,
             skip: usize,
@@ -1753,6 +1757,8 @@ pub mod generated {
                 by_path: by_path(&errors),
                 errors,
                 arena: EvaluationArena::default(),
+                rebase: None,
+                active: Vec::new(),
             };
             let root = walk.schema(0, instance, &LazyLocation::new(), InstancePosition::ROOT);
             Evaluation::with_root(walk.arena, root)
@@ -1840,6 +1846,7 @@ pub mod generated {
                                 schema: unit.branch.expect("the subschema's index"),
                                 then: unit.keyword == "then",
                             },
+                            "$ref" => Kind::Ref(unit.target.expect("the target's index")),
                             "items" | "prefixItems" | "additionalItems" => {
                                 if let Some(tuple) = unit.tuple {
                                     Kind::Tuple(tuple)
@@ -1925,6 +1932,18 @@ pub mod generated {
         /// Indices into `errors` by schema location.
         by_path: AHashMap<&'e str, Vec<usize>>,
         arena: EvaluationArena,
+        /// Set below a `$ref`.
+        rebase: Option<Rebase>,
+        /// Each schema being walked, with the address of its instance location.
+        active: Vec<(usize, usize)>,
+    }
+
+    /// Where the units of a `$ref` target are reported: their pointers below the target, after
+    /// the evaluation path of the `$ref`.
+    struct Rebase {
+        /// The length of the target's pointer.
+        strip: usize,
+        prefix: Location,
     }
 
     /// `errors`, with the branch errors of a failing `anyOf`, or of a `oneOf` with no valid branch,
@@ -1964,6 +1983,9 @@ pub mod generated {
         ) -> EvaluationNode {
             let built = self.built;
             let (first, count) = built.schema_units[index];
+            // In-place applicators pass the same location on, so its address identifies it.
+            let here = std::ptr::from_ref(location).addr();
+            self.active.push((index, here));
             let mut children = ChildList::default();
             // Whether the instance is valid under `if`, which picks `then` or `else`.
             let mut passed = false;
@@ -1971,9 +1993,9 @@ pub mod generated {
                 let site = &built.units[unit];
                 let node = match site.kind {
                     Kind::Leaf => {
-                        let errors = self.errors_at(site, location);
+                        let errors = self.errors_at(site, instance, location);
                         let annotations = site.annotations(instance.is_string());
-                        Self::node(site, errors, annotations, ChildList::default(), position)
+                        self.node(site, errors, annotations, ChildList::default(), position)
                     }
                     Kind::Properties {
                         declared,
@@ -2016,7 +2038,14 @@ pub mod generated {
                             let child = self.schema(schema, instance, location, position);
                             children.push(&mut self.arena, child);
                         }
-                        Self::node(site, Vec::new(), None, children, position)
+                        self.node(site, Vec::new(), None, children, position)
+                    }
+                    Kind::Ref(target) => {
+                        // A target re-entered at the same instance location adds nothing.
+                        if self.active.contains(&(target, here)) {
+                            continue;
+                        }
+                        self.reference(site, target, instance, location, position)
                     }
                     Kind::Branch { schema, then } => {
                         if passed != then {
@@ -2024,7 +2053,7 @@ pub mod generated {
                         }
                         let child = self.schema(schema, instance, location, position);
                         let children = ChildList::of(&mut self.arena, child);
-                        Self::node(site, Vec::new(), None, children, position)
+                        self.node(site, Vec::new(), None, children, position)
                     }
                     Kind::Tuple(schemas) => self.tuple(site, schemas, instance, location, position),
                     Kind::Rest {
@@ -2035,10 +2064,41 @@ pub mod generated {
                 };
                 children.push(&mut self.arena, node);
             }
+            self.active.pop();
             let site = &built.schemas[index];
-            let errors = self.errors_at(site, location);
+            let errors = self.errors_at(site, instance, location);
             let annotations = site.annotations(true);
-            Self::node(site, errors, annotations, children, position)
+            self.node(site, errors, annotations, children, position)
+        }
+
+        /// The target's units, reported below the `$ref`.
+        fn reference(
+            &mut self,
+            site: &UnitLocation,
+            target: usize,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let rebase = Rebase {
+                strip: self.built.schemas[target].keyword.as_str().len(),
+                prefix: self.evaluation_path(site),
+            };
+            let outer = self.rebase.replace(rebase);
+            let node = self.schema(target, instance, location, position);
+            self.rebase = outer;
+            node
+        }
+
+        fn evaluation_path(&self, site: &UnitLocation) -> Location {
+            match &self.rebase {
+                None => site.keyword.clone(),
+                Some(rebase) => Location::from_escaped(&format!(
+                    "{}{}",
+                    rebase.prefix.as_str(),
+                    &site.keyword.as_str()[rebase.strip..]
+                )),
+            }
         }
 
         fn properties(
@@ -2051,7 +2111,7 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let Some(object) = instance.as_object() else {
-                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+                return self.node(site, Vec::new(), None, ChildList::default(), position);
             };
             let built = self.built;
             let declared = &built.properties[first..first + count];
@@ -2084,7 +2144,7 @@ pub mod generated {
                 children.push(&mut self.arena, child);
             }
             let annotations = Some(Annotations::new(Value::Array(names)));
-            Self::node(site, Vec::new(), annotations, children, position)
+            self.node(site, Vec::new(), annotations, children, position)
         }
 
         /// Pattern by pattern, the members whose names match it, in member order; a name matching
@@ -2098,7 +2158,7 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let Some(object) = instance.as_object() else {
-                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+                return self.node(site, Vec::new(), None, ChildList::default(), position);
             };
             let (built, matchers) = (self.built, self.matchers);
             let mut names = Vec::new();
@@ -2117,7 +2177,7 @@ pub mod generated {
                 }
             }
             let annotations = Some(Annotations::new(Value::Array(names)));
-            Self::node(site, Vec::new(), annotations, children, position)
+            self.node(site, Vec::new(), annotations, children, position)
         }
 
         /// The members no sibling `properties` or `patternProperties` names, in member order.
@@ -2135,7 +2195,7 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let Some(object) = instance.as_object() else {
-                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+                return self.node(site, Vec::new(), None, ChildList::default(), position);
             };
             let (built, matchers) = (self.built, self.matchers);
             let declared = &built.properties[first..first + count];
@@ -2152,7 +2212,7 @@ pub mod generated {
                 let path = location.push(name);
                 let below = self.arena.position_below(position, path.segment());
                 let child = if closed {
-                    Self::rejected(&built.schemas[schema], &value, &path, below)
+                    self.rejected(&built.schemas[schema], &value, &path, below)
                 } else {
                     names.push(Value::String(name.to_owned()));
                     self.schema(schema, &value, &path, below)
@@ -2160,7 +2220,7 @@ pub mod generated {
                 children.push(&mut self.arena, child);
             }
             let annotations = (!closed).then(|| Annotations::new(Value::Array(names)));
-            Self::node(site, Vec::new(), annotations, children, position)
+            self.node(site, Vec::new(), annotations, children, position)
         }
 
         /// The items valid under the subschema, annotated by their positions. Count errors are
@@ -2175,9 +2235,9 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let Some(array) = instance.as_array() else {
-                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+                return self.node(site, Vec::new(), None, ChildList::default(), position);
             };
-            let errors = self.errors_at(site, location);
+            let errors = self.errors_at(site, instance, location);
             let is_valid = self.valid[valid];
             let mut indices = Vec::new();
             let mut children = ChildList::default();
@@ -2192,7 +2252,7 @@ pub mod generated {
                 children.push(&mut self.arena, child);
             }
             let annotations = (!indices.is_empty()).then(|| Annotations::new(Value::from(indices)));
-            Self::node(site, errors, annotations, children, position)
+            self.node(site, errors, annotations, children, position)
         }
 
         /// Each branch applied to the instance: under `anyOf` and `oneOf`, the valid ones if any.
@@ -2220,8 +2280,8 @@ pub mod generated {
                 let child = self.schema(*schema, instance, location, position);
                 children.push(&mut self.arena, child);
             }
-            let errors = self.errors_at(site, location);
-            Self::node(site, errors, None, children, position)
+            let errors = self.errors_at(site, instance, location);
+            self.node(site, errors, None, children, position)
         }
 
         /// The item at each position with a subschema. The annotation is `true` when every item
@@ -2235,7 +2295,7 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let Some(array) = instance.as_array().filter(|array| array.len() != 0) else {
-                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+                return self.node(site, Vec::new(), None, ChildList::default(), position);
             };
             let built = self.built;
             let mut children = ChildList::default();
@@ -2254,7 +2314,7 @@ pub mod generated {
             } else {
                 Value::from(children.len() - 1)
             };
-            Self::node(
+            self.node(
                 site,
                 Vec::new(),
                 Some(Annotations::new(annotation)),
@@ -2277,7 +2337,7 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let Some(array) = instance.as_array() else {
-                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+                return self.node(site, Vec::new(), None, ChildList::default(), position);
             };
             let built = self.built;
             let mut children = ChildList::default();
@@ -2285,14 +2345,14 @@ pub mod generated {
                 let path = location.push(idx);
                 let below = self.arena.position_below(position, path.segment());
                 let child = if closed {
-                    Self::rejected(&built.schemas[schema], &item, &path, below)
+                    self.rejected(&built.schemas[schema], &item, &path, below)
                 } else {
                     self.schema(schema, &item, &path, below)
                 };
                 children.push(&mut self.arena, child);
             }
             let annotation = Annotations::new(Value::Bool(array.len() > skip));
-            Self::node(site, Vec::new(), Some(annotation), children, position)
+            self.node(site, Vec::new(), Some(annotation), children, position)
         }
 
         /// Missing required names are the unit's own errors; each present property with a
@@ -2306,9 +2366,9 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let Some(object) = instance.as_object() else {
-                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+                return self.node(site, Vec::new(), None, ChildList::default(), position);
             };
-            let errors = self.errors_at(site, location);
+            let errors = self.errors_at(site, instance, location);
             let built = self.built;
             let mut children = ChildList::default();
             for (name, schema) in &built.dependencies[first..first + count] {
@@ -2317,7 +2377,7 @@ pub mod generated {
                     children.push(&mut self.arena, child);
                 }
             }
-            Self::node(site, errors, None, children, position)
+            self.node(site, errors, None, children, position)
         }
 
         /// Each name at the object's location, matched with the errors whose instance is that
@@ -2332,7 +2392,7 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let Some(object) = instance.as_object() else {
-                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+                return self.node(site, Vec::new(), None, ChildList::default(), position);
             };
             let built = self.built;
             let mut children = ChildList::default();
@@ -2340,7 +2400,7 @@ pub mod generated {
             let ControlFlow::Continue(()) =
                 object.try_for_each_name_node::<Infallible>(&mut buffer, |name| {
                     let child = if closed {
-                        Self::rejected(&built.schemas[schema], &name, location, position)
+                        self.rejected(&built.schemas[schema], &name, location, position)
                     } else {
                         let text = name.as_string();
                         let scoped: Vec<_> = self
@@ -2351,7 +2411,10 @@ pub mod generated {
                             .collect();
                         let outer_by_path = std::mem::replace(&mut self.by_path, by_path(&scoped));
                         let outer = std::mem::replace(&mut self.errors, scoped);
+                        // The name is walked at the object's location, as a different instance.
+                        let outer_active = std::mem::take(&mut self.active);
                         let child = self.schema(schema, &name, location, position);
+                        self.active = outer_active;
                         self.errors = outer;
                         self.by_path = outer_by_path;
                         child
@@ -2359,12 +2422,17 @@ pub mod generated {
                     children.push(&mut self.arena, child);
                     ControlFlow::Continue(())
                 });
-            Self::node(site, Vec::new(), None, children, position)
+            self.node(site, Vec::new(), None, children, position)
         }
 
         /// The errors reported at `site` or its alias for the instance at `location`, in the order
         /// they were reported.
-        fn errors_at(&self, site: &UnitLocation, location: &LazyLocation) -> Vec<ErrorDescription> {
+        fn errors_at(
+            &self,
+            site: &UnitLocation,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+        ) -> Vec<ErrorDescription> {
             if self.by_path.is_empty() {
                 return Vec::new();
             }
@@ -2379,16 +2447,29 @@ pub mod generated {
             }
             indices.sort_unstable();
             let instance_location = Location::from(location);
-            indices
+            // A name is walked at its object's location; its errors are the name's.
+            let object = instance.as_object().is_some();
+            let mut errors: Vec<ErrorDescription> = Vec::with_capacity(indices.len());
+            for error in indices
                 .into_iter()
                 .map(|index| self.errors[index])
-                .filter(|error| *error.instance_path() == instance_location)
+                .filter(|error| {
+                    *error.instance_path() == instance_location
+                        && !(object && error.instance().as_str().is_some())
+                })
                 .map(ErrorDescription::from_validation_error)
-                .collect()
+            {
+                // A target reached twice at one instance location reports its errors once per visit.
+                if !errors.contains(&error) {
+                    errors.push(error);
+                }
+            }
+            errors
         }
 
         /// The `false` subschema at `site` failing for `value`, at `location`.
         fn rejected(
+            &self,
             site: &UnitLocation,
             value: &F::Node<'_>,
             location: &LazyLocation,
@@ -2401,19 +2482,21 @@ pub mod generated {
                 value.lazy_value(),
             );
             let errors = vec![ErrorDescription::from_validation_error(&error)];
-            Self::node(site, errors, None, ChildList::default(), position)
+            self.node(site, errors, None, ChildList::default(), position)
         }
 
         fn node(
+            &self,
             site: &UnitLocation,
             errors: Vec<ErrorDescription>,
             annotations: Option<Annotations>,
             children: ChildList,
             position: InstancePosition,
         ) -> EvaluationNode {
+            let path = self.evaluation_path(site);
             if errors.is_empty() && children.all_valid() {
                 EvaluationNode::valid(
-                    site.keyword.clone(),
+                    path,
                     site.absolute.clone(),
                     Arc::clone(&site.schema),
                     position,
@@ -2422,7 +2505,7 @@ pub mod generated {
                 )
             } else {
                 EvaluationNode::invalid(
-                    site.keyword.clone(),
+                    path,
                     site.absolute.clone(),
                     Arc::clone(&site.schema),
                     position,

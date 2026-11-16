@@ -1,12 +1,16 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use referencing::{write_escaped_str, Draft};
+use referencing::{write_escaped_str, Draft, Registry, RegistryBuilder, Resolver, Uri};
 use serde_json::{json, Map, Value};
+use std::collections::{HashMap, HashSet};
 
 use super::{
     compile_schema,
+    draft::DraftExt,
     emit::ValueEmitter,
+    helpers::location_pointer,
     keywords::{format::format_emits_assertion, pattern_properties::name_match_expr},
+    refs::resolve_ref,
 };
 use crate::context::CompileContext;
 
@@ -106,6 +110,8 @@ enum TreeUnit {
         keyword: &'static str,
         schema: usize,
     },
+    /// `$ref`, with its target's index.
+    Ref(usize),
     /// Array-form `items` or `prefixItems`, with a range of `Tree::tuples`.
     Tuple {
         keyword: &'static str,
@@ -150,6 +156,8 @@ struct Tree {
     tuples: Vec<usize>,
     /// The `is_valid` code of each subschema a unit checks, run against `instance`.
     valid: Vec<TokenStream>,
+    /// Each schema's index by its pointer, so a `$ref` target is added once.
+    by_pointer: HashMap<String, usize>,
 }
 
 impl Tree {
@@ -188,6 +196,9 @@ impl Tree {
         schema: &Value,
         pointer: String,
     ) -> syn::Result<usize> {
+        if let Some(&index) = self.by_pointer.get(&pointer) {
+            return Ok(index);
+        }
         let index = self.schemas.len();
         self.schemas.push(TreeSchema {
             pointer: String::new(),
@@ -195,6 +206,7 @@ impl Tree {
             first: 0,
             count: 0,
         });
+        self.by_pointer.insert(pointer.clone(), index);
         let mut units = Vec::new();
         let mut annotations = None;
         if let Value::Object(keywords) = schema {
@@ -206,6 +218,14 @@ impl Tree {
                     proc_macro2::Span::call_site(),
                     format!("`evaluate` does not support the custom `{keyword}` keyword yet"),
                 ));
+            }
+            let reference = keywords.get("$ref").and_then(Value::as_str);
+            if let Some(reference) = reference.filter(|_| !ctx.draft.supports_adjacent_validation())
+            {
+                // The keywords beside `$ref` apply from Draft 2019-09 on.
+                let target = self.add_reference(ctx, reference)?;
+                self.finish(index, pointer, None, vec![TreeUnit::Ref(target)]);
+                return Ok(index);
             }
             units.extend(
                 LEAF_KEYWORDS
@@ -397,6 +417,9 @@ impl Tree {
                     }
                 }
             }
+            if let Some(reference) = reference {
+                units.push(TreeUnit::Ref(self.add_reference(ctx, reference)?));
+            }
             // The draft's unknown keywords annotate the schema, as the runtime reports them.
             let unknown: Map<_, _> = keywords
                 .iter()
@@ -407,6 +430,17 @@ impl Tree {
                 annotations = Some(Value::Object(unknown));
             }
         }
+        self.finish(index, pointer, annotations, units);
+        Ok(index)
+    }
+
+    fn finish(
+        &mut self,
+        index: usize,
+        pointer: String,
+        annotations: Option<Value>,
+        units: Vec<TreeUnit>,
+    ) {
         self.schemas[index] = TreeSchema {
             pointer,
             annotations,
@@ -414,7 +448,18 @@ impl Tree {
             count: units.len(),
         };
         self.units.extend(units);
-        Ok(index)
+    }
+
+    /// The schema a `$ref` points to, in the same resource.
+    fn add_reference<E: ValueEmitter>(
+        &mut self,
+        ctx: &mut CompileContext<'_, E>,
+        reference: &str,
+    ) -> syn::Result<usize> {
+        let resolved =
+            resolve_ref(ctx, reference).expect("`unsupported` resolves every `$ref` first");
+        let pointer = location_pointer(ctx, &resolved.location, &resolved.base_uri);
+        self.add(ctx, resolved.schema, pointer)
     }
 }
 
@@ -496,6 +541,7 @@ pub(super) fn compile<E: ValueEmitter>(
                 json!({"keyword": "if", "condition": [schema, valid]})
             }
             TreeUnit::Branch { keyword, schema } => json!({"keyword": keyword, "branch": schema}),
+            TreeUnit::Ref(target) => json!({"keyword": "$ref", "target": target}),
             // The errors run reports the count errors at the bound keywords.
             TreeUnit::Contains { schema, valid } => json!({
                 "keyword": "contains",
@@ -607,10 +653,75 @@ fn unit<E: ValueEmitter>(
 
 /// Why the generated `evaluate` cannot handle `schema` yet, if it cannot.
 pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
-    match schema {
-        Value::Bool(_) => None,
-        Value::Object(keywords) => keywords.iter().find_map(|(keyword, value)| {
-            if !draft.is_known_keyword(keyword) {
+    const BASE: &str = "json-schema:///evaluate";
+    // Without the other documents, the registry builds only when every `$ref` stays in this one.
+    let Ok(registry) = Registry::new()
+        .draft(draft)
+        .extend([(BASE, draft.create_resource(schema.clone()))])
+        .and_then(RegistryBuilder::prepare)
+    else {
+        return Some(another_resource());
+    };
+    let resolver = registry.resolver(referencing::uri::from_str(BASE).expect("a valid URI"));
+    let root = resolver.lookup("#").expect("the root resolves");
+    let mut support = Support {
+        draft,
+        base: root.resolver().base_uri().as_ref().clone(),
+        resolver,
+        checked: HashSet::from([std::ptr::from_ref(root.contents()).addr()]),
+    };
+    support.check(root.contents(), true)
+}
+
+fn another_resource() -> String {
+    "`evaluate` does not support a `$ref` to another resource yet".to_string()
+}
+
+/// Walks what `evaluate` reports, following each `$ref` once.
+struct Support<'r> {
+    draft: Draft,
+    /// The resource every `$ref` must stay in.
+    base: Uri<String>,
+    resolver: Resolver<'r>,
+    /// The schemas already walked, by address.
+    checked: HashSet<usize>,
+}
+
+impl Support<'_> {
+    fn check(&mut self, schema: &Value, root: bool) -> Option<String> {
+        let keywords = match schema {
+            Value::Bool(_) => return None,
+            Value::Object(keywords) => keywords,
+            _ => {
+                return Some("`evaluate` needs a schema that is a boolean or an object".to_string())
+            }
+        };
+        let id = if self.draft == Draft::Draft4 {
+            "id"
+        } else {
+            "$id"
+        };
+        if !root
+            && keywords
+                .get(id)
+                .and_then(Value::as_str)
+                .is_some_and(|id| !id.starts_with('#'))
+        {
+            return Some(format!(
+                "`evaluate` does not support `{id}` below the root yet"
+            ));
+        }
+        if let Some(reference) = keywords.get("$ref") {
+            if let Some(message) = self.reference(reference) {
+                return Some(message);
+            }
+            if !self.draft.supports_adjacent_validation() {
+                // Earlier drafts ignore the keywords beside `$ref`.
+                return None;
+            }
+        }
+        keywords.iter().find_map(|(keyword, value)| {
+            if !self.draft.is_known_keyword(keyword) {
                 // An unknown keyword is an annotation.
                 return None;
             }
@@ -618,20 +729,20 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
                 ("properties" | "patternProperties", Value::Object(subschemas)) => {
                     return subschemas
                         .values()
-                        .find_map(|subschema| unsupported(subschema, draft));
+                        .find_map(|subschema| self.check(subschema, false));
                 }
                 ("dependencies" | "dependentSchemas", Value::Object(dependencies)) => {
                     return dependencies
                         .values()
                         .filter(|dependency| !dependency.is_array())
-                        .find_map(|subschema| unsupported(subschema, draft));
+                        .find_map(|subschema| self.check(subschema, false));
                 }
                 // Only its validity is checked.
                 ("not", _) => return None,
                 ("items" | "prefixItems" | "allOf" | "anyOf" | "oneOf", Value::Array(schemas)) => {
                     return schemas
                         .iter()
-                        .find_map(|subschema| unsupported(subschema, draft));
+                        .find_map(|subschema| self.check(subschema, false));
                 }
                 (
                     "additionalProperties"
@@ -644,14 +755,35 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
                     | "else",
                     Value::Bool(_) | Value::Object(_),
                 ) => {
-                    return unsupported(value, draft);
+                    return self.check(value, false);
                 }
                 _ => {}
             }
-            (!supports(keyword, value, draft))
+            (!supports(keyword, value, self.draft))
                 .then(|| format!("`evaluate` does not support the `{keyword}` keyword yet"))
-        }),
-        _ => Some("`evaluate` needs a schema that is a boolean or an object".to_string()),
+        })
+    }
+
+    /// Checks the target of a `$ref` the first time it is reached.
+    fn reference(&mut self, reference: &Value) -> Option<String> {
+        let Some(reference) = reference
+            .as_str()
+            .filter(|reference| reference.starts_with('#'))
+        else {
+            return Some(another_resource());
+        };
+        let resolved = match self.resolver.lookup(reference) {
+            Ok(resolved) => resolved,
+            Err(error) => return Some(error.to_string()),
+        };
+        if *resolved.resolver().base_uri().as_ref() != self.base {
+            return Some(another_resource());
+        }
+        let target = resolved.contents();
+        if !self.checked.insert(std::ptr::from_ref(target).addr()) {
+            return None;
+        }
+        self.check(target, false)
     }
 }
 
@@ -663,8 +795,9 @@ fn supports(keyword: &str, value: &Value, draft: Draft) -> bool {
             .is_some_and(|uri| Draft::from_schema_uri(uri) == draft),
         // The runtime skips a divisor beyond `f64`.
         "multipleOf" => value.as_f64().is_some_and(f64::is_finite),
-        // `contains` reports their errors.
-        "minContains" | "maxContains" => true,
+        // `contains` reports the bounds' errors, and `Support` walks each `$ref` target.
+        "minContains" | "maxContains" | "$ref" | "$defs" | "definitions" | "$anchor"
+        | "$comment" | "$id" | "id" => true,
         _ => LEAF_KEYWORDS.contains(&keyword),
     }
 }
