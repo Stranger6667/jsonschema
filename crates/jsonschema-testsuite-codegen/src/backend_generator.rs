@@ -51,7 +51,10 @@ pub(crate) fn generate(
                 };
                 let ident = format_ident!("Validator{}", definitions.len());
                 let id = format!("{draft}|{relative}|{index}");
-                let supports_evaluate = jsonschema_macros_core::evaluate_supports(&case.schema);
+                let supports_evaluate = jsonschema_macros_core::evaluate_supports(
+                    &case.schema,
+                    crate::generator::draft_named(draft),
+                );
                 let methods = if supports_evaluate {
                     quote! { , methods = { evaluate = true } }
                 } else {

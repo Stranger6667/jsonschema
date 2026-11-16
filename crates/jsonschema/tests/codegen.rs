@@ -1,4 +1,5 @@
 #![allow(clippy::needless_pass_by_value)]
+use jsonschema::Draft;
 use test_case::test_case;
 
 fn is_currency_format(value: &str) -> bool {
@@ -5727,6 +5728,40 @@ struct EvaluateLengthsWithBase;
 )]
 struct EvaluateOnly;
 
+#[jsonschema::validator(
+    schema = r#"{"exclusiveMaximum": 5, "minimum": 1, "multipleOf": 2}"#,
+    methods = { evaluate = true }
+)]
+struct EvaluateNumbers;
+
+#[jsonschema::validator(
+    schema = r#"{"maximum": 5, "exclusiveMaximum": true, "minimum": 1, "exclusiveMinimum": true}"#,
+    draft = Draft4,
+    methods = { evaluate = true }
+)]
+struct EvaluateDraft4Bounds;
+
+#[jsonschema::validator(schema = r#"{"enum": [1, 2, "a"], "const": 1}"#, methods = { evaluate = true })]
+struct EvaluateValues;
+
+#[jsonschema::validator(
+    schema = r#"{"maxItems": 2, "minItems": 1, "uniqueItems": true}"#,
+    methods = { evaluate = true }
+)]
+struct EvaluateItemCounts;
+
+#[jsonschema::validator(
+    schema = r#"{"uniqueItems": false, "minItems": 1}"#,
+    methods = { evaluate = true }
+)]
+struct EvaluateUniqueItemsFalse;
+
+#[jsonschema::validator(
+    schema = r#"{"required": ["a"], "maxProperties": 2, "minProperties": 1, "pattern": "^a"}"#,
+    methods = { evaluate = true }
+)]
+struct EvaluateObjectsAndPattern;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -5736,20 +5771,27 @@ fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value
 
 type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 
-#[test_case(EvaluateTrue::evaluate, serde_json::json!(true), None ; "true_schema")]
-#[test_case(EvaluateFalse::evaluate, serde_json::json!(false), None ; "false_schema")]
-#[test_case(EvaluateEmpty::evaluate, serde_json::json!({}), None ; "empty_schema")]
-#[test_case(EvaluateFalseWithBase::evaluate, serde_json::json!(false), Some("https://example.com/root.json") ; "false_schema_with_base")]
-#[test_case(EvaluateType::evaluate, serde_json::json!({"type": ["string", "null"]}), None ; "type")]
-#[test_case(EvaluateLengths::evaluate, serde_json::json!({"maxLength": 3, "minLength": 2, "type": "string"}), None ; "lengths")]
-#[test_case(EvaluateLengthsWithBase::evaluate, serde_json::json!({"maxLength": 3, "minLength": 2, "type": "string"}), Some("https://example.com/root.json") ; "lengths_with_base")]
-#[test_case(EvaluateOnly::evaluate, serde_json::json!({"maxLength": 3, "minLength": 2, "type": "string"}), None ; "evaluate_only")]
+#[test_case(EvaluateTrue::evaluate, serde_json::json!(true), None, Draft::Draft202012 ; "true_schema")]
+#[test_case(EvaluateFalse::evaluate, serde_json::json!(false), None, Draft::Draft202012 ; "false_schema")]
+#[test_case(EvaluateEmpty::evaluate, serde_json::json!({}), None, Draft::Draft202012 ; "empty_schema")]
+#[test_case(EvaluateFalseWithBase::evaluate, serde_json::json!(false), Some("https://example.com/root.json"), Draft::Draft202012 ; "false_schema_with_base")]
+#[test_case(EvaluateType::evaluate, serde_json::json!({"type": ["string", "null"]}), None, Draft::Draft202012 ; "type")]
+#[test_case(EvaluateLengths::evaluate, serde_json::json!({"maxLength": 3, "minLength": 2, "type": "string"}), None, Draft::Draft202012 ; "lengths")]
+#[test_case(EvaluateLengthsWithBase::evaluate, serde_json::json!({"maxLength": 3, "minLength": 2, "type": "string"}), Some("https://example.com/root.json"), Draft::Draft202012 ; "lengths_with_base")]
+#[test_case(EvaluateOnly::evaluate, serde_json::json!({"maxLength": 3, "minLength": 2, "type": "string"}), None, Draft::Draft202012 ; "evaluate_only")]
+#[test_case(EvaluateNumbers::evaluate, serde_json::json!({"exclusiveMaximum": 5, "minimum": 1, "multipleOf": 2}), None, Draft::Draft202012 ; "numbers")]
+#[test_case(EvaluateDraft4Bounds::evaluate, serde_json::json!({"maximum": 5, "exclusiveMaximum": true, "minimum": 1, "exclusiveMinimum": true}), None, Draft::Draft4 ; "draft4_bounds")]
+#[test_case(EvaluateValues::evaluate, serde_json::json!({"enum": [1, 2, "a"], "const": 1}), None, Draft::Draft202012 ; "values")]
+#[test_case(EvaluateItemCounts::evaluate, serde_json::json!({"maxItems": 2, "minItems": 1, "uniqueItems": true}), None, Draft::Draft202012 ; "item_counts")]
+#[test_case(EvaluateUniqueItemsFalse::evaluate, serde_json::json!({"uniqueItems": false, "minItems": 1}), None, Draft::Draft202012 ; "unique_items_false")]
+#[test_case(EvaluateObjectsAndPattern::evaluate, serde_json::json!({"required": ["a"], "maxProperties": 2, "minProperties": 1, "pattern": "^a"}), None, Draft::Draft202012 ; "objects_and_pattern")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
     base_uri: Option<&str>,
+    draft: Draft,
 ) {
-    let mut options = jsonschema::options();
+    let mut options = jsonschema::options().with_draft(draft);
     if let Some(base_uri) = base_uri {
         options = options.with_base_uri(base_uri);
     }
@@ -5761,6 +5803,14 @@ fn test_evaluate_matches_runtime(
         serde_json::json!("a"),
         serde_json::json!("ab"),
         serde_json::json!("abcd"),
+        serde_json::json!(0),
+        serde_json::json!(1),
+        serde_json::json!(2),
+        serde_json::json!(6),
+        serde_json::json!([1, 1]),
+        serde_json::json!([1, 2, 3]),
+        serde_json::json!({}),
+        serde_json::json!({"a": 1, "b": 2, "c": 3}),
     ] {
         assert_eq!(
             evaluation_outputs(&evaluate(&instance)),

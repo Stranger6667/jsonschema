@@ -4,6 +4,7 @@ use std::collections::HashSet;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
+use referencing::Draft;
 
 pub(crate) fn generate_modules(
     tree: &loader::TestCaseTree,
@@ -79,7 +80,7 @@ fn generate_nested_structure(
                         quote! {}
                     };
 
-                    let supports_evaluate = jsonschema_macros_core::evaluate_supports(&case.schema);
+                    let supports_evaluate = jsonschema_macros_core::evaluate_supports(&case.schema, draft_named(draft));
                     let methods_attr = if supports_evaluate {
                         quote! { , methods = { evaluate = true } }
                     } else {
@@ -226,14 +227,14 @@ fn generate_nested_structure(
 }
 
 /// Suite cases whose schema the generated `evaluate` supports, and all suite cases.
-pub(crate) fn evaluate_coverage(tree: &loader::TestCaseTree) -> (usize, usize) {
+pub(crate) fn evaluate_coverage(tree: &loader::TestCaseTree, draft: Draft) -> (usize, usize) {
     tree.values()
         .map(|node| match node {
-            loader::TestCaseNode::Submodule(subtree) => evaluate_coverage(subtree),
+            loader::TestCaseNode::Submodule(subtree) => evaluate_coverage(subtree, draft),
             loader::TestCaseNode::TestFile(cases) => (
                 cases
                     .iter()
-                    .filter(|case| jsonschema_macros_core::evaluate_supports(&case.schema))
+                    .filter(|case| jsonschema_macros_core::evaluate_supports(&case.schema, draft))
                     .count(),
                 cases.len(),
             ),
@@ -241,4 +242,15 @@ pub(crate) fn evaluate_coverage(tree: &loader::TestCaseTree) -> (usize, usize) {
         .fold((0, 0), |(covered, total), (node_covered, node_total)| {
             (covered + node_covered, total + node_total)
         })
+}
+
+/// The draft a suite directory name stands for.
+pub(crate) fn draft_named(name: &str) -> Draft {
+    match name {
+        "draft4" => Draft::Draft4,
+        "draft6" => Draft::Draft6,
+        "draft7" => Draft::Draft7,
+        "draft2019-09" => Draft::Draft201909,
+        _ => Draft::Draft202012,
+    }
 }

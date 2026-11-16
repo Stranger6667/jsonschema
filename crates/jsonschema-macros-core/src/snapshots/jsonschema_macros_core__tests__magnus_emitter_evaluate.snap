@@ -79,7 +79,7 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: __Value<'_>) -> jsonschema::Evaluation {
-        static __LOCATIONS: __eval::Locations = __eval::Locations::new(&[""], None);
+        static __LOCATIONS: __eval::Locations = __eval::Locations::new(&[&[""]], None);
         let mut __errors = __err::Errors::new(false);
         let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
         __LOCATIONS.evaluate(&__errors.into_vec())

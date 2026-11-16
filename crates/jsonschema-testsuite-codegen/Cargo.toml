@@ -16,6 +16,7 @@ heck = "0.5"
 jsonschema-macros-core = { path = "../jsonschema-macros-core", features = ["testsuite"] }
 proc-macro2 = "1"
 quote = "1"
+referencing = { path = "../jsonschema-referencing" }
 serde_json = { workspace = true, features = ["raw_value"] }
 syn = { version = "3", features = ["full"] }
 testsuite = { package = "testsuite-common", path = "../testsuite-common/" }
