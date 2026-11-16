@@ -5971,6 +5971,38 @@ struct EvaluateContainsDraft7;
 #[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minItems": 1}"#, draft = Draft4, methods = { evaluate = true })]
 struct EvaluateContainsDraft4;
 
+#[jsonschema::validator(schema = r#"{"allOf": [{"type": "integer"}, {"minimum": 2}, true]}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateAllOf;
+
+#[jsonschema::validator(schema = r#"{"anyOf": [{"type": "string"}, {"minimum": 2}, {"type": "integer"}]}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateAnyOf;
+
+#[jsonschema::validator(schema = r#"{"oneOf": [{"type": "integer"}, {"minimum": 2}, {"type": "string"}]}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateOneOf;
+
+#[jsonschema::validator(schema = r#"{"oneOf": [{"properties": {"a": {"type": "integer"}}, "required": ["a"]}, {"properties": {"b": {"const": 1}}, "required": ["b"]}]}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateOneOfObjects;
+
+#[jsonschema::validator(schema = r#"{"not": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateNot;
+#[jsonschema::validator(schema = r#"{"not": {"items": {"type": "string"}, "unevaluatedItems": false}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateNotUnwalked;
+
+#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "then": {"minimum": 2}, "else": {"type": "string"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateConditional;
+
+#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "then": {"minimum": 2}}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateIfThen;
+
+#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "else": {"type": "string"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateIfElse;
+
+#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "minLength": 1}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateIfAlone;
+
+#[jsonschema::validator(schema = r#"{"anyOf": [{"allOf": [{"type": "array"}, {"items": {"not": {"type": "string"}}}]}, {"oneOf": [{"type": "object"}, {"type": "null"}]}]}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateNestedCombinators;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -6052,6 +6084,17 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateContainsNested::evaluate, serde_json::json!({"contains": {"properties": {"a": {"type": "integer"}}, "required": ["a"]}}), None, Draft::Draft202012 ; "contains_nested")]
 #[test_case(EvaluateContainsDraft7::evaluate, serde_json::json!({"contains": {"minimum": 2}, "minContains": 5}), None, Draft::Draft7 ; "contains_draft7")]
 #[test_case(EvaluateContainsDraft4::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minItems": 1}), None, Draft::Draft4 ; "contains_draft4")]
+#[test_case(EvaluateAllOf::evaluate, serde_json::json!({"allOf": [{"type": "integer"}, {"minimum": 2}, true]}), None, Draft::Draft202012 ; "all_of")]
+#[test_case(EvaluateAnyOf::evaluate, serde_json::json!({"anyOf": [{"type": "string"}, {"minimum": 2}, {"type": "integer"}]}), None, Draft::Draft202012 ; "any_of")]
+#[test_case(EvaluateOneOf::evaluate, serde_json::json!({"oneOf": [{"type": "integer"}, {"minimum": 2}, {"type": "string"}]}), None, Draft::Draft202012 ; "one_of")]
+#[test_case(EvaluateOneOfObjects::evaluate, serde_json::json!({"oneOf": [{"properties": {"a": {"type": "integer"}}, "required": ["a"]}, {"properties": {"b": {"const": 1}}, "required": ["b"]}]}), None, Draft::Draft202012 ; "one_of_objects")]
+#[test_case(EvaluateNot::evaluate, serde_json::json!({"not": {"type": "integer"}}), None, Draft::Draft202012 ; "not")]
+#[test_case(EvaluateNotUnwalked::evaluate, serde_json::json!({"not": {"items": {"type": "string"}, "unevaluatedItems": false}}), None, Draft::Draft202012 ; "not unwalked")]
+#[test_case(EvaluateConditional::evaluate, serde_json::json!({"if": {"type": "integer"}, "then": {"minimum": 2}, "else": {"type": "string"}}), None, Draft::Draft202012 ; "conditional")]
+#[test_case(EvaluateIfThen::evaluate, serde_json::json!({"if": {"type": "integer"}, "then": {"minimum": 2}}), None, Draft::Draft7 ; "if_then")]
+#[test_case(EvaluateIfElse::evaluate, serde_json::json!({"if": {"type": "integer"}, "else": {"type": "string"}}), None, Draft::Draft202012 ; "if_else")]
+#[test_case(EvaluateIfAlone::evaluate, serde_json::json!({"if": {"type": "integer"}, "minLength": 1}), None, Draft::Draft202012 ; "if_alone")]
+#[test_case(EvaluateNestedCombinators::evaluate, serde_json::json!({"anyOf": [{"allOf": [{"type": "array"}, {"items": {"not": {"type": "string"}}}]}, {"oneOf": [{"type": "object"}, {"type": "null"}]}]}), None, Draft::Draft202012 ; "nested_combinators")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -6096,6 +6139,9 @@ fn test_evaluate_matches_runtime(
         serde_json::json!([{"a": 1}, {"a": "x"}, 5]),
         serde_json::json!([1, 1, 1, 1, "x"]),
         serde_json::json!([{"a": 2}, {"b": 1}, {"a": 3}]),
+        serde_json::json!({"a": 1, "b": 1}),
+        serde_json::json!({"b": 2}),
+        serde_json::json!(true),
         // More members than the runtime scans before looking declared names up instead.
         serde_json::json!({"a": 1, "b": "x", "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1}),
     ] {

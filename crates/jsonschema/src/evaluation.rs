@@ -1547,6 +1547,7 @@ pub mod generated {
     };
     use crate::{
         compiler::resolve_absolute_location,
+        error::ValidationErrorKind,
         json::Array,
         paths::{capture_evaluation_path, LazyLocation, Location},
         properties::{scan_members, HASHMAP_THRESHOLD},
@@ -1578,7 +1579,7 @@ pub mod generated {
         /// Each property whose presence applies a subschema, with that subschema's index.
         #[serde(default)]
         dependencies: Vec<(String, usize)>,
-        /// Each subschema of array-form `items` or `prefixItems`, by position.
+        /// Each subschema listed in an array, by position.
         #[serde(default)]
         tuples: Vec<usize>,
         /// The absolute URI the pointers resolve against, if the schema has one.
@@ -1637,6 +1638,18 @@ pub mod generated {
         /// A `contains` unit's subschema, and its index in `Tree::valid`.
         #[serde(default)]
         contains: Option<(usize, usize)>,
+        /// An `allOf`, `anyOf` or `oneOf` unit's range of `Tables::tuples`.
+        #[serde(default)]
+        branches: Option<(usize, usize)>,
+        /// Where the checks of the `anyOf` or `oneOf` branches start in `Tree::valid`.
+        #[serde(default)]
+        valid: Option<usize>,
+        /// An `if` unit's subschema, and its index in `Tree::valid`.
+        #[serde(default)]
+        condition: Option<(usize, usize)>,
+        /// A `then` or `else` unit's subschema.
+        #[serde(default)]
+        branch: Option<usize>,
         /// That subschema is `false`.
         #[serde(default)]
         closed: bool,
@@ -1666,6 +1679,18 @@ pub mod generated {
             schema: usize,
             valid: usize,
         },
+        Branches {
+            schemas: (usize, usize),
+            valid: Option<usize>,
+        },
+        Condition {
+            schema: usize,
+            valid: usize,
+        },
+        Branch {
+            schema: usize,
+            then: bool,
+        },
         Rest {
             schema: usize,
             skip: usize,
@@ -1689,7 +1714,7 @@ pub mod generated {
     /// Whether a name matches one `patternProperties` regex.
     pub type Matcher = fn(&str) -> bool;
 
-    /// Whether an instance is valid under one `contains` subschema.
+    /// Whether an instance is valid under one subschema.
     pub type Validity<F> = for<'a> fn(&<F as Json>::Node<'a>) -> bool;
 
     /// The units a generated `evaluate` reports, built on first use.
@@ -1698,7 +1723,7 @@ pub mod generated {
         pub tables: &'static str,
         /// One per entry of `Tables::patterns`.
         pub matchers: &'static [Matcher],
-        /// One per `contains` subschema.
+        /// One per subschema a unit checks.
         pub valid: &'static [Validity<F>],
         pub built: OnceLock<Built>,
     }
@@ -1718,7 +1743,9 @@ pub mod generated {
         /// The evaluation of `instance`, which the schema reports `errors` for: each unit fails
         /// with the errors reported at its location.
         fn evaluate(&self, instance: &F::Node<'_>, errors: &[ValidationError<'_>]) -> Evaluation {
-            let errors: Vec<_> = errors.iter().collect();
+            let mut flat = Vec::with_capacity(errors.len());
+            flatten(errors, &mut flat);
+            let errors = flat;
             let mut walk: Walker<'_, '_, '_, F> = Walker {
                 built: self.built.get_or_init(|| self.build()),
                 matchers: self.matchers,
@@ -1800,6 +1827,19 @@ pub mod generated {
                                     unit.contains.expect("the subschema and its validity");
                                 Kind::Contains { schema, valid }
                             }
+                            "allOf" | "anyOf" | "oneOf" => Kind::Branches {
+                                schemas: unit.branches.expect("the range of subschemas"),
+                                valid: unit.valid,
+                            },
+                            "if" => {
+                                let (schema, valid) =
+                                    unit.condition.expect("the subschema and its validity");
+                                Kind::Condition { schema, valid }
+                            }
+                            "then" | "else" => Kind::Branch {
+                                schema: unit.branch.expect("the subschema's index"),
+                                then: unit.keyword == "then",
+                            },
                             "items" | "prefixItems" | "additionalItems" => {
                                 if let Some(tuple) = unit.tuple {
                                     Kind::Tuple(tuple)
@@ -1887,6 +1927,22 @@ pub mod generated {
         arena: EvaluationArena,
     }
 
+    /// `errors`, with the branch errors of a failing `anyOf`, or of a `oneOf` with no valid branch,
+    /// in place of the error holding them: the runtime reports those in the branches only.
+    fn flatten<'e, 'i>(errors: &'e [ValidationError<'i>], into: &mut Vec<&'e ValidationError<'i>>) {
+        for error in errors {
+            match error.kind() {
+                ValidationErrorKind::AnyOf { context }
+                | ValidationErrorKind::OneOfNotValid { context } => {
+                    for branch in context {
+                        flatten(branch, into);
+                    }
+                }
+                _ => into.push(error),
+            }
+        }
+    }
+
     fn by_path<'e>(errors: &[&'e ValidationError<'_>]) -> AHashMap<&'e str, Vec<usize>> {
         let mut by_path: AHashMap<&str, Vec<usize>> = AHashMap::new();
         for (index, error) in errors.iter().enumerate() {
@@ -1909,6 +1965,8 @@ pub mod generated {
             let built = self.built;
             let (first, count) = built.schema_units[index];
             let mut children = ChildList::default();
+            // Whether the instance is valid under `if`, which picks `then` or `else`.
+            let mut passed = false;
             for unit in first..first + count {
                 let site = &built.units[unit];
                 let node = match site.kind {
@@ -1947,6 +2005,26 @@ pub mod generated {
                     }
                     Kind::Contains { schema, valid } => {
                         self.contains(site, schema, valid, instance, location, position)
+                    }
+                    Kind::Branches { schemas, valid } => {
+                        self.branches(site, schemas, valid, instance, location, position)
+                    }
+                    Kind::Condition { schema, valid } => {
+                        passed = self.valid[valid](instance);
+                        let mut children = ChildList::default();
+                        if passed {
+                            let child = self.schema(schema, instance, location, position);
+                            children.push(&mut self.arena, child);
+                        }
+                        Self::node(site, Vec::new(), None, children, position)
+                    }
+                    Kind::Branch { schema, then } => {
+                        if passed != then {
+                            continue;
+                        }
+                        let child = self.schema(schema, instance, location, position);
+                        let children = ChildList::of(&mut self.arena, child);
+                        Self::node(site, Vec::new(), None, children, position)
                     }
                     Kind::Tuple(schemas) => self.tuple(site, schemas, instance, location, position),
                     Kind::Rest {
@@ -2115,6 +2193,35 @@ pub mod generated {
             }
             let annotations = (!indices.is_empty()).then(|| Annotations::new(Value::from(indices)));
             Self::node(site, errors, annotations, children, position)
+        }
+
+        /// Each branch applied to the instance: under `anyOf` and `oneOf`, the valid ones if any.
+        /// A `oneOf` error is the unit's own.
+        fn branches(
+            &mut self,
+            site: &UnitLocation,
+            (first, count): (usize, usize),
+            valid: Option<usize>,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let built = self.built;
+            let checks = valid.map(|valid| &self.valid[valid..valid + count]);
+            let first_valid =
+                checks.and_then(|checks| checks.iter().position(|is_valid| is_valid(instance)));
+            let mut children = ChildList::default();
+            for (idx, schema) in built.tuples[first..first + count].iter().enumerate() {
+                if let (Some(checks), Some(first_valid)) = (checks, first_valid) {
+                    if idx < first_valid || (idx > first_valid && !checks[idx](instance)) {
+                        continue;
+                    }
+                }
+                let child = self.schema(*schema, instance, location, position);
+                children.push(&mut self.arena, child);
+            }
+            let errors = self.errors_at(site, location);
+            Self::node(site, errors, None, children, position)
         }
 
         /// The item at each position with a subschema. The annotation is `true` when every item
