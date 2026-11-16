@@ -1555,7 +1555,11 @@ pub mod generated {
     use referencing::{uri, Uri};
     use serde::Deserialize;
     use serde_json::Value;
-    use std::sync::{Arc, OnceLock};
+    use std::{
+        convert::Infallible,
+        ops::ControlFlow,
+        sync::{Arc, OnceLock},
+    };
 
     /// The tables a generated `evaluate` reports from, as the generator writes them in JSON: one
     /// string literal costs the compiler far less than the same tables as Rust values.
@@ -1609,6 +1613,9 @@ pub mod generated {
         /// An `additionalProperties` unit's subschema.
         #[serde(default)]
         additional: Option<usize>,
+        /// A `propertyNames` unit's subschema.
+        #[serde(default)]
+        names: Option<usize>,
         /// That subschema is `false`.
         #[serde(default)]
         closed: bool,
@@ -1627,6 +1634,10 @@ pub mod generated {
             closed: bool,
             declared: (usize, usize),
             patterns: (usize, usize),
+        },
+        Names {
+            schema: usize,
+            closed: bool,
         },
     }
 
@@ -1672,18 +1683,12 @@ pub mod generated {
             instance: &F::Node<'_>,
             errors: &[ValidationError<'_>],
         ) -> Evaluation {
-            let mut by_path: AHashMap<&str, Vec<usize>> = AHashMap::new();
-            for (index, error) in errors.iter().enumerate() {
-                by_path
-                    .entry(error.schema_path().as_str())
-                    .or_default()
-                    .push(index);
-            }
+            let errors: Vec<_> = errors.iter().collect();
             let mut walk = Walker {
                 built: self.built.get_or_init(|| self.build()),
                 matchers: self.matchers,
+                by_path: by_path(&errors),
                 errors,
-                by_path,
                 arena: EvaluationArena::default(),
             };
             let root = walk.schema::<F>(0, instance, &LazyLocation::new(), InstancePosition::ROOT);
@@ -1744,6 +1749,10 @@ pub mod generated {
                                 closed: unit.closed,
                                 declared: unit.properties.unwrap_or_default(),
                                 patterns: unit.patterns.unwrap_or_default(),
+                            },
+                            "propertyNames" => Kind::Names {
+                                schema: unit.names.expect("the subschema's index"),
+                                closed: unit.closed,
                             },
                             _ => Kind::Leaf,
                         },
@@ -1811,10 +1820,22 @@ pub mod generated {
     struct Walker<'t, 'e, 'i> {
         built: &'t Built,
         matchers: &'t [Matcher],
-        errors: &'e [ValidationError<'i>],
+        /// The errors units match against: below `propertyNames`, those of one name.
+        errors: Vec<&'e ValidationError<'i>>,
         /// Indices into `errors` by schema location.
         by_path: AHashMap<&'e str, Vec<usize>>,
         arena: EvaluationArena,
+    }
+
+    fn by_path<'e>(errors: &[&'e ValidationError<'_>]) -> AHashMap<&'e str, Vec<usize>> {
+        let mut by_path: AHashMap<&str, Vec<usize>> = AHashMap::new();
+        for (index, error) in errors.iter().enumerate() {
+            by_path
+                .entry(error.schema_path().as_str())
+                .or_default()
+                .push(index);
+        }
+        by_path
     }
 
     impl Walker<'_, '_, '_> {
@@ -1858,6 +1879,9 @@ pub mod generated {
                     } => self.additional::<F>(
                         site, schema, closed, declared, patterns, instance, location, position,
                     ),
+                    Kind::Names { schema, closed } => {
+                        self.names::<F>(site, schema, closed, instance, location, position)
+                    }
                 };
                 children.push(&mut self.arena, node);
             }
@@ -1997,6 +2021,56 @@ pub mod generated {
             Self::node(site, Vec::new(), annotations, children, position)
         }
 
+        /// Each name at the object's location, matched with the errors whose instance is that
+        /// name. `false` fails each name, where the errors run reports one error for all.
+        fn names<F: Json>(
+            &mut self,
+            site: &UnitLocation,
+            schema: usize,
+            closed: bool,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let Some(object) = instance.as_object() else {
+                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+            };
+            let built = self.built;
+            let mut children = ChildList::default();
+            let mut buffer = F::StringBuffer::default();
+            let ControlFlow::Continue(()) =
+                object.try_for_each_name_node::<Infallible>(&mut buffer, |name| {
+                    let child = if closed {
+                        let site = &built.schemas[schema];
+                        let error = ValidationError::false_schema(
+                            site.keyword.clone(),
+                            capture_evaluation_path(None, &site.keyword),
+                            Location::from(location),
+                            name.lazy_value(),
+                        );
+                        let errors = vec![ErrorDescription::from_validation_error(&error)];
+                        Self::node(site, errors, None, ChildList::default(), position)
+                    } else {
+                        let text = name.as_string();
+                        let scoped: Vec<_> = self
+                            .errors
+                            .iter()
+                            .copied()
+                            .filter(|error| error.instance().as_str() == text.as_deref())
+                            .collect();
+                        let outer_by_path = std::mem::replace(&mut self.by_path, by_path(&scoped));
+                        let outer = std::mem::replace(&mut self.errors, scoped);
+                        let child = self.schema::<F>(schema, &name, location, position);
+                        self.errors = outer;
+                        self.by_path = outer_by_path;
+                        child
+                    };
+                    children.push(&mut self.arena, child);
+                    ControlFlow::Continue(())
+                });
+            Self::node(site, Vec::new(), None, children, position)
+        }
+
         /// The errors reported at `site` or its alias for the instance at `location`, in the order
         /// they were reported.
         fn errors_at(&self, site: &UnitLocation, location: &LazyLocation) -> Vec<ErrorDescription> {
@@ -2016,7 +2090,7 @@ pub mod generated {
             let instance_location = Location::from(location);
             indices
                 .into_iter()
-                .map(|index| &self.errors[index])
+                .map(|index| self.errors[index])
                 .filter(|error| *error.instance_path() == instance_location)
                 .map(ErrorDescription::from_validation_error)
                 .collect()
