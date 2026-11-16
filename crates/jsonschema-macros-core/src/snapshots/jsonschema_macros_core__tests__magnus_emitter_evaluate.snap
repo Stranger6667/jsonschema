@@ -79,16 +79,13 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: __Value<'_>) -> jsonschema::Evaluation {
-        static __LOCATIONS: __eval::Locations = __eval::Locations::new(
-            &[""],
-            &[],
-            None,
-            None,
-            &[],
-        );
+        static __TREE: __eval::Tree = __eval::Tree {
+            tables: "{\"schemas\":[{\"count\":0,\"first\":0,\"pointer\":\"\"}],\"units\":[]}",
+            built: ::std::sync::OnceLock::new(),
+        };
         let mut __errors = __err::Errors::new(false);
         let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        __LOCATIONS.evaluate(&__errors.into_vec(), false)
+        <__Json as __eval::Walk>::evaluate(&__TREE, &instance, &__errors.into_vec())
     }
     pub(super) fn entry_is_valid(
         instance: &__rb::Value,

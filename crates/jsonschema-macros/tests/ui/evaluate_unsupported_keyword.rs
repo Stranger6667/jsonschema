@@ -1,5 +1,5 @@
 #[jsonschema::validator(
-    schema = r#"{"properties": {}}"#,
+    schema = r#"{"properties": {"a": {"unevaluatedItems": false}}}"#,
     methods = { evaluate = true }
 )]
 struct Validator;

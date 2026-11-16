@@ -1,8 +1,8 @@
-error: `evaluate` does not support the `properties` keyword yet
+error: `evaluate` does not support the `unevaluatedItems` keyword yet
  --> tests/ui/evaluate_unsupported_keyword.rs:1:1
   |
 1 | / #[jsonschema::validator(
-2 | |     schema = r#"{"properties": {}}"#,
+2 | |     schema = r#"{"properties": {"a": {"unevaluatedItems": false}}}"#,
 3 | |     methods = { evaluate = true }
 4 | | )]
   | |__^

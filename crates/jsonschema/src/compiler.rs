@@ -36,7 +36,7 @@ pub(crate) const DEFAULT_SCHEME: &str = "json-schema";
 pub(crate) const DEFAULT_BASE_URI: &str = "json-schema:///";
 
 /// `base` with `pointer` as its fragment.
-fn resolve_absolute_location(
+pub(crate) fn resolve_absolute_location(
     base: &Uri<String>,
     pointer: &str,
     buffer: &mut uri::EncodedBuffer,

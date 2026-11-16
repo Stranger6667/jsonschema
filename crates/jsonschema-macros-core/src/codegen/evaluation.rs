@@ -1,12 +1,9 @@
 use proc_macro2::TokenStream;
 use quote::quote;
-use referencing::Draft;
-use serde_json::{Map, Value};
+use referencing::{write_escaped_str, Draft};
+use serde_json::{json, Map, Value};
 
-use super::{
-    emit::ValueEmitter,
-    keywords::{format::format_emits_assertion, type_::simple_type_pattern},
-};
+use super::{emit::ValueEmitter, keywords::format::format_emits_assertion};
 use crate::context::CompileContext;
 
 /// Keywords whose units `evaluate` reports, in the runtime's priority order.
@@ -34,38 +31,132 @@ const LEAF_KEYWORDS: [&str; 21] = [
     "uniqueItems",
 ];
 
-/// A unit: the schema's own, by default, or a keyword's.
-#[derive(Default)]
+/// A keyword's unit that checks the instance alone.
 struct Unit {
-    location: String,
-    /// Other locations its errors are reported at.
-    aliases: Vec<&'static str>,
-    /// Its annotation of a string instance, as JSON.
-    string_annotation: Option<String>,
+    keyword: String,
+    /// Another keyword its errors are reported at.
+    alias: Option<&'static str>,
+    /// Its annotation of a string instance.
+    string_annotation: Option<Value>,
 }
 
 impl Unit {
     fn new(keyword: &str) -> Self {
         Unit {
-            location: format!("/{keyword}"),
-            aliases: Vec::new(),
+            keyword: keyword.to_string(),
+            alias: None,
             string_annotation: None,
         }
     }
 
     fn with_alias(mut self, alias: &'static str) -> Self {
-        self.aliases.push(alias);
+        self.alias = Some(alias);
         self
     }
 
     fn annotating(mut self, value: &Value) -> Self {
-        self.string_annotation = Some(value.to_string());
+        self.string_annotation = Some(value.clone());
         self
     }
 }
 
+enum TreeUnit {
+    Leaf(Unit),
+    /// A range of `Tree::properties`.
+    Properties {
+        first: usize,
+        count: usize,
+    },
+}
+
+struct TreeSchema {
+    pointer: String,
+    /// The draft's unknown keywords.
+    annotations: Option<Value>,
+    /// A range of `Tree::units`.
+    first: usize,
+    count: usize,
+}
+
+/// Every schema `evaluate` reports, the root first, with their units in the runtime's priority
+/// order.
+#[derive(Default)]
+struct Tree {
+    schemas: Vec<TreeSchema>,
+    units: Vec<TreeUnit>,
+    /// Each declared property, with its schema's index.
+    properties: Vec<(String, usize)>,
+}
+
+impl Tree {
+    fn add<E: ValueEmitter>(
+        &mut self,
+        ctx: &CompileContext<'_, E>,
+        schema: &Value,
+        pointer: String,
+    ) -> syn::Result<usize> {
+        let index = self.schemas.len();
+        self.schemas.push(TreeSchema {
+            pointer: String::new(),
+            annotations: None,
+            first: 0,
+            count: 0,
+        });
+        let mut units = Vec::new();
+        let mut annotations = None;
+        if let Value::Object(keywords) = schema {
+            if let Some(keyword) = keywords
+                .keys()
+                .find(|keyword| ctx.config.custom_keywords.contains_key(*keyword))
+            {
+                return Err(syn::Error::new(
+                    proc_macro2::Span::call_site(),
+                    format!("`evaluate` does not support the custom `{keyword}` keyword yet"),
+                ));
+            }
+            units.extend(
+                LEAF_KEYWORDS
+                    .iter()
+                    .filter_map(|keyword| unit(ctx, keyword, keywords.get(*keyword)?, keywords))
+                    .map(TreeUnit::Leaf),
+            );
+            if let Some(Value::Object(properties)) = keywords.get("properties") {
+                let mut declared = Vec::with_capacity(properties.len());
+                for (name, subschema) in properties {
+                    let mut child = format!("{pointer}/properties/");
+                    write_escaped_str(&mut child, name);
+                    declared.push((name.clone(), self.add(ctx, subschema, child)?));
+                }
+                units.push(TreeUnit::Properties {
+                    first: self.properties.len(),
+                    count: declared.len(),
+                });
+                self.properties.extend(declared);
+            }
+            // The draft's unknown keywords annotate the schema, as the runtime reports them.
+            let unknown: Map<_, _> = keywords
+                .iter()
+                .filter(|(keyword, _)| !ctx.draft.is_known_keyword(keyword))
+                .map(|(keyword, value)| (keyword.clone(), value.clone()))
+                .collect();
+            if !unknown.is_empty() {
+                annotations = Some(Value::Object(unknown));
+            }
+        }
+        self.schemas[index] = TreeSchema {
+            pointer,
+            annotations,
+            first: self.units.len(),
+            count: units.len(),
+        };
+        self.units.extend(units);
+        Ok(index)
+    }
+}
+
 /// The body of the generated `evaluate`. Keyword units take their errors from one run of the
-/// schema's errors function, by schema location, so no keyword's error code is emitted twice.
+/// schema's errors function, by schema location and instance location, so no keyword's error code
+/// is emitted twice.
 pub(super) fn compile<E: ValueEmitter>(
     ctx: &CompileContext<'_, E>,
     schema: &Value,
@@ -73,70 +164,61 @@ pub(super) fn compile<E: ValueEmitter>(
     if let Some(message) = unsupported(schema, ctx.draft) {
         return Err(syn::Error::new(proc_macro2::Span::call_site(), message));
     }
-    // The schema's own unit comes first.
-    let mut units = vec![Unit::default()];
-    let mut annotations = quote! { None };
-    if let Value::Object(keywords) = schema {
-        if let Some(keyword) = keywords
-            .keys()
-            .find(|keyword| ctx.config.custom_keywords.contains_key(*keyword))
-        {
-            return Err(syn::Error::new(
-                proc_macro2::Span::call_site(),
-                format!("`evaluate` does not support the custom `{keyword}` keyword yet"),
-            ));
-        }
-        units.extend(
-            LEAF_KEYWORDS
-                .iter()
-                .filter_map(|keyword| unit(ctx, keyword, keywords.get(*keyword)?, keywords)),
-        );
-        // The draft's unknown keywords annotate the schema, as the runtime reports them.
-        let unknown: serde_json::Map<_, _> = keywords
-            .iter()
-            .filter(|(keyword, _)| !ctx.draft.is_known_keyword(keyword))
-            .map(|(keyword, value)| (keyword.clone(), value.clone()))
-            .collect();
-        if !unknown.is_empty() {
-            let json = Value::Object(unknown).to_string();
-            annotations = quote! { Some(#json) };
-        }
+    let mut tree = Tree::default();
+    tree.add(ctx, schema, String::new())?;
+    let schemas: Vec<Value> = tree
+        .schemas
+        .into_iter()
+        .map(|schema| {
+            let mut entry = json!({
+                "pointer": schema.pointer,
+                "first": schema.first,
+                "count": schema.count,
+            });
+            if let Some(annotations) = schema.annotations {
+                entry["annotations"] = annotations;
+            }
+            entry
+        })
+        .collect();
+    let units: Vec<Value> = tree
+        .units
+        .into_iter()
+        .map(|unit| match unit {
+            TreeUnit::Leaf(unit) => {
+                let mut entry = json!({"keyword": unit.keyword});
+                if let Some(alias) = unit.alias {
+                    entry["alias"] = json!(alias);
+                }
+                if let Some(annotation) = unit.string_annotation {
+                    entry["strings"] = annotation;
+                }
+                entry
+            }
+            TreeUnit::Properties { first, count } => {
+                json!({"keyword": "properties", "properties": [first, count]})
+            }
+        })
+        .collect();
+    let mut tables = json!({"schemas": schemas, "units": units});
+    if !tree.properties.is_empty() {
+        tables["properties"] = json!(tree.properties);
     }
-    let pointers = units.iter().map(|unit| &unit.location);
-    let aliases = units.iter().enumerate().flat_map(|(index, unit)| {
-        unit.aliases
-            .iter()
-            .map(move |alias| quote! { (#alias, #index) })
-    });
-    let string_annotations = units.iter().enumerate().filter_map(|(index, unit)| {
-        let json = unit.string_annotation.as_ref()?;
-        Some(quote! { (#index, #json) })
-    });
-    // Only string annotations read it.
-    let string = if units.iter().any(|unit| unit.string_annotation.is_some()) {
-        E::type_matches(simple_type_pattern::<E>("string").into_iter().collect())
-    } else {
-        quote! { false }
-    };
     let base = ctx.config.base_uri.as_str();
     // Without a base of its own the schema gets a synthetic one, which the output leaves out.
-    let base = if base.starts_with("json-schema:///") {
-        quote! { None }
-    } else {
-        let base = base.trim_end_matches('#');
-        quote! { Some(#base) }
-    };
+    if !base.starts_with("json-schema:///") {
+        tables["base"] = json!(base.trim_end_matches('#'));
+    }
+    let tables = tables.to_string();
+    let json = E::json_representation();
     Ok(quote! {
-        static __LOCATIONS: __eval::Locations = __eval::Locations::new(
-            &[#(#pointers),*],
-            &[#(#aliases),*],
-            #base,
-            #annotations,
-            &[#(#string_annotations),*],
-        );
+        static __TREE: __eval::Tree = __eval::Tree {
+            tables: #tables,
+            built: ::std::sync::OnceLock::new(),
+        };
         let mut __errors = __err::Errors::new(false);
         let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        __LOCATIONS.evaluate(&__errors.into_vec(), #string)
+        <#json as __eval::Walk>::evaluate(&__TREE, &instance, &__errors.into_vec())
     })
 }
 
@@ -155,8 +237,8 @@ fn unit<E: ValueEmitter>(
     match (ctx.draft, keyword) {
         // Draft 4's boolean flags make a bound exclusive; the bound's unit reports their errors.
         (Draft::Draft4, "exclusiveMinimum" | "exclusiveMaximum") => None,
-        (Draft::Draft4, "minimum") => Some(unit.with_alias("/exclusiveMinimum")),
-        (Draft::Draft4, "maximum") => Some(unit.with_alias("/exclusiveMaximum")),
+        (Draft::Draft4, "minimum") => Some(unit.with_alias("exclusiveMinimum")),
+        (Draft::Draft4, "maximum") => Some(unit.with_alias("exclusiveMaximum")),
         (_, "uniqueItems") if value == &Value::Bool(false) => None,
         // The runtime skips a format it validates formats with but does not know.
         (_, "format") if ctx.validates_formats() && !format_emits_assertion(ctx, value) => None,
@@ -170,7 +252,7 @@ fn unit<E: ValueEmitter>(
         (Draft::Draft6 | Draft::Draft7, "contentMediaType")
             if keywords.contains_key("contentEncoding") =>
         {
-            Some(unit.with_alias("/contentEncoding"))
+            Some(unit.with_alias("contentEncoding"))
         }
         (Draft::Draft6 | Draft::Draft7, _) => Some(unit),
         (_, "contentSchema") if !keywords.contains_key("contentMediaType") => None,
@@ -185,10 +267,15 @@ fn unit<E: ValueEmitter>(
 pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
     match schema {
         Value::Bool(_) => None,
-        Value::Object(keywords) => keywords
-            .iter()
-            .find(|(keyword, value)| !supports(keyword, value, draft))
-            .map(|(keyword, _)| format!("`evaluate` does not support the `{keyword}` keyword yet")),
+        Value::Object(keywords) => keywords.iter().find_map(|(keyword, value)| {
+            if let ("properties", Value::Object(properties)) = (keyword.as_str(), value) {
+                return properties
+                    .values()
+                    .find_map(|subschema| unsupported(subschema, draft));
+            }
+            (!supports(keyword, value, draft))
+                .then(|| format!("`evaluate` does not support the `{keyword}` keyword yet"))
+        }),
         _ => Some("`evaluate` needs a schema that is a boolean or an object".to_string()),
     }
 }

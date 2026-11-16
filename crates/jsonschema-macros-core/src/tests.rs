@@ -371,6 +371,39 @@ fn evaluate_leaf_keywords_module() {
 }
 
 #[test]
+fn evaluate_properties_module() {
+    let mut config = test_config(json!({
+        "properties": {"a": {"type": "integer"}, "b/c": {"properties": {"d": false}}},
+        "required": ["a"]
+    }));
+    config.methods.evaluate = true;
+    insta::assert_snapshot!(
+        "evaluate_properties_module",
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
+    );
+}
+
+#[test_case(json!({"even": true}), "`evaluate` does not support the custom `even` keyword yet" ; "custom keyword")]
+#[test_case(json!({"properties": {"a": {"even": true}}}), "`evaluate` does not support the custom `even` keyword yet" ; "custom keyword below properties")]
+#[test_case(json!({"properties": {"a": {"items": {}}}}), "`evaluate` does not support the `items` keyword yet" ; "keyword below properties")]
+#[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
+fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
+    let mut config = test_config(schema);
+    config
+        .custom_keywords
+        .insert("even".to_string(), quote! { crate::even });
+    config.methods.evaluate = true;
+    let error = generate_from_config::<crate::codegen::emit_serde::SerdeEmitter>(
+        &config,
+        &quote! {},
+        &format_ident!("Validator"),
+        &format_ident!("__validator_impl"),
+    )
+    .expect_err("unsupported schema");
+    assert_eq!(error.to_string(), message);
+}
+
+#[test]
 fn methods_gate_every_backend() {
     let mut config = test_config(branchy_schema());
     config.methods = crate::context::MethodGates {

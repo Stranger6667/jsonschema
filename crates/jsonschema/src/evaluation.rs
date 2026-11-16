@@ -1545,180 +1545,347 @@ pub mod generated {
         format_keyword_location, Annotations, ChildList, ErrorDescription, Evaluation,
         EvaluationArena, EvaluationNode, InstancePosition,
     };
-    use crate::{paths::Location, ValidationError};
-    use referencing::Uri;
+    use crate::{
+        compiler::resolve_absolute_location,
+        paths::{LazyLocation, Location},
+        properties::{scan_members, HASHMAP_THRESHOLD},
+        Json, Node, Object, ValidationError,
+    };
+    use ahash::AHashMap;
+    use referencing::{uri, Uri};
+    use serde::Deserialize;
+    use serde_json::Value;
     use std::sync::{Arc, OnceLock};
 
-    /// Where a schema node sits, fixed when the validator is generated.
-    struct NodeLocation {
+    /// The tables a generated `evaluate` reports from, as the generator writes them in JSON: one
+    /// string literal costs the compiler far less than the same tables as Rust values.
+    #[derive(Deserialize)]
+    struct Tables {
+        /// The root first.
+        schemas: Vec<SchemaTable>,
+        units: Vec<UnitTable>,
+        /// Each declared property: its name and its schema's index.
+        #[serde(default)]
+        properties: Vec<(String, usize)>,
+        /// The absolute URI the pointers resolve against, if the schema has one.
+        #[serde(default)]
+        base: Option<String>,
+    }
+
+    #[derive(Deserialize)]
+    struct SchemaTable {
+        pointer: String,
+        /// Its units, a range of `Tables::units` in the runtime's priority order.
+        first: usize,
+        count: usize,
+        /// The draft's unknown keywords.
+        #[serde(default)]
+        annotations: Option<Value>,
+    }
+
+    #[derive(Deserialize)]
+    struct UnitTable {
+        keyword: String,
+        /// Another keyword whose errors it reports.
+        #[serde(default)]
+        alias: Option<String>,
+        /// Its annotation of a string instance.
+        #[serde(default)]
+        strings: Option<Value>,
+        /// A `properties` unit's declared properties, a range of `Tables::properties`.
+        #[serde(default)]
+        properties: Option<(usize, usize)>,
+    }
+
+    /// Where a unit sits, fixed when the validator is generated.
+    struct UnitLocation {
         keyword: Location,
         schema: Arc<str>,
         absolute: Option<Arc<Uri<String>>>,
-        annotations: Option<Arc<serde_json::Value>>,
+        /// Where else its errors are reported.
+        alias: Option<Location>,
+        annotations: Option<Arc<Value>>,
         /// The annotations apply to string instances only.
         strings_only: bool,
+        properties: Option<(usize, usize)>,
     }
 
-    impl NodeLocation {
+    /// The units a generated `evaluate` reports, built on first use.
+    pub struct Tree {
+        /// The JSON the generator writes.
+        pub tables: &'static str,
+        pub built: OnceLock<Built>,
+    }
+
+    pub struct Built {
+        schemas: Box<[UnitLocation]>,
+        /// Each schema's units, a range of `units`.
+        schema_units: Box<[(usize, usize)]>,
+        units: Box<[UnitLocation]>,
+        properties: Box<[(String, usize)]>,
+    }
+
+    impl Tree {
+        /// The evaluation of `instance`, which the schema reports `errors` for: each unit fails
+        /// with the errors reported at its location.
+        fn evaluate<F: Json>(
+            &self,
+            instance: &F::Node<'_>,
+            errors: &[ValidationError<'_>],
+        ) -> Evaluation {
+            let mut by_path: AHashMap<&str, Vec<usize>> = AHashMap::new();
+            for (index, error) in errors.iter().enumerate() {
+                by_path
+                    .entry(error.schema_path().as_str())
+                    .or_default()
+                    .push(index);
+            }
+            let mut walk = Walker {
+                built: self.built.get_or_init(|| self.build()),
+                errors,
+                by_path,
+                arena: EvaluationArena::default(),
+            };
+            let root = walk.schema::<F>(0, instance, &LazyLocation::new(), InstancePosition::ROOT);
+            Evaluation::with_root(walk.arena, root)
+        }
+
         /// # Panics
         ///
-        /// `absolute` is not a URI, or `annotations` is not JSON; the generator only emits ones it
-        /// built itself.
-        fn new(
-            keyword_location: &str,
-            absolute: Option<&str>,
-            annotations: Option<&str>,
-            strings_only: bool,
-        ) -> Self {
-            let keyword = Location::from_escaped(keyword_location);
-            let absolute = absolute.map(|uri| {
-                Arc::new(Uri::parse(uri.to_owned()).expect("generated absolute location is a URI"))
-            });
-            NodeLocation {
-                schema: format_keyword_location(&keyword, absolute.as_ref()),
-                keyword,
-                absolute,
-                annotations: annotations.map(|json| {
-                    Arc::new(serde_json::from_str(json).expect("generated annotations are JSON"))
-                }),
-                strings_only,
+        /// The tables are not ones the generator writes.
+        fn build(&self) -> Built {
+            let tables: Tables =
+                serde_json::from_str(self.tables).expect("the generator writes valid tables");
+            let base = tables
+                .base
+                .map(|base| Uri::parse(base).expect("the generator writes a URI base"));
+            let mut buffer = uri::EncodedBuffer::new();
+            let mut locate = |pointer: &str, annotations: Option<Value>| {
+                let keyword = Location::from_escaped(pointer);
+                let absolute = base
+                    .as_ref()
+                    .map(|base| Arc::new(resolve_absolute_location(base, pointer, &mut buffer)));
+                UnitLocation {
+                    schema: format_keyword_location(&keyword, absolute.as_ref()),
+                    keyword,
+                    absolute,
+                    alias: None,
+                    annotations: annotations.map(Arc::new),
+                    strings_only: false,
+                    properties: None,
+                }
+            };
+            let mut units: Vec<Option<UnitLocation>> = tables.units.iter().map(|_| None).collect();
+            let mut unit_tables: Vec<Option<UnitTable>> =
+                tables.units.into_iter().map(Some).collect();
+            let mut schema_units = Vec::with_capacity(tables.schemas.len());
+            let mut schemas = Vec::with_capacity(tables.schemas.len());
+            for schema in tables.schemas {
+                let pointer = &schema.pointer;
+                for index in schema.first..schema.first + schema.count {
+                    let unit = unit_tables[index]
+                        .take()
+                        .expect("every unit belongs to one schema");
+                    units[index] = Some(UnitLocation {
+                        alias: unit
+                            .alias
+                            .map(|alias| Location::from_escaped(&format!("{pointer}/{alias}"))),
+                        strings_only: unit.strings.is_some(),
+                        properties: unit.properties,
+                        ..locate(&format!("{pointer}/{}", unit.keyword), unit.strings)
+                    });
+                }
+                schema_units.push((schema.first, schema.count));
+                schemas.push(locate(pointer, schema.annotations));
+            }
+            Built {
+                schemas: schemas.into_boxed_slice(),
+                schema_units: schema_units.into_boxed_slice(),
+                units: units
+                    .into_iter()
+                    .map(|unit| unit.expect("every unit belongs to a schema"))
+                    .collect(),
+                properties: tables.properties.into_boxed_slice(),
             }
         }
     }
 
-    /// The units a generated `evaluate` reports: the schema first, then its keywords. Locations
-    /// are built on first use.
-    pub struct Locations {
-        units: &'static [&'static str],
-        /// Other locations a unit's errors are reported at, with the unit's index.
-        aliases: &'static [(&'static str, usize)],
-        base: Option<&'static str>,
-        /// The schema's own annotations, as JSON.
-        annotations: Option<&'static str>,
-        /// Annotations of keyword units that annotate string instances only, with the unit's
-        /// index.
-        string_annotations: &'static [(usize, &'static str)],
-        built: OnceLock<Box<[NodeLocation]>>,
+    /// `Tree::evaluate` for one JSON representation, compiled here rather than in each crate
+    /// with a generated validator.
+    pub trait Walk: Json {
+        fn evaluate(
+            tree: &Tree,
+            instance: &Self::Node<'_>,
+            errors: &[ValidationError<'_>],
+        ) -> Evaluation;
     }
 
-    impl Locations {
-        /// `base` is the absolute URI the pointers resolve against, if the schema has one.
-        #[must_use]
-        pub const fn new(
-            units: &'static [&'static str],
-            aliases: &'static [(&'static str, usize)],
-            base: Option<&'static str>,
-            annotations: Option<&'static str>,
-            string_annotations: &'static [(usize, &'static str)],
-        ) -> Self {
-            Locations {
-                units,
-                aliases,
-                base,
-                annotations,
-                string_annotations,
-                built: OnceLock::new(),
-            }
+    impl Walk for crate::SerdeJson {
+        fn evaluate(
+            tree: &Tree,
+            instance: &Self::Node<'_>,
+            errors: &[ValidationError<'_>],
+        ) -> Evaluation {
+            tree.evaluate::<Self>(instance, errors)
         }
+    }
 
-        /// The evaluation of an instance the schema reports `errors` for: each unit fails with
-        /// the errors reported at its locations. `string` tells whether the instance is a string.
-        ///
-        /// # Panics
-        ///
-        /// There are no units; the generator always gives the schema's own.
-        #[must_use]
-        pub fn evaluate(&self, errors: &[ValidationError<'_>], string: bool) -> Evaluation {
-            let built = self.built.get_or_init(|| {
-                self.units
-                    .iter()
-                    .enumerate()
-                    .map(|(index, pointer)| {
-                        let absolute = self.base.map(|base| format!("{base}#{pointer}"));
-                        let string_annotations = self
-                            .string_annotations
-                            .iter()
-                            .find(|(of, _)| *of == index)
-                            .map(|(_, json)| *json);
-                        let annotations = if index == 0 {
-                            self.annotations
-                        } else {
-                            string_annotations
-                        };
-                        NodeLocation::new(
-                            pointer,
-                            absolute.as_deref(),
-                            annotations,
-                            string_annotations.is_some(),
-                        )
-                    })
-                    .collect()
-            });
-            let (schema, keywords) = built.split_first().expect("the schema's own location");
-            let mut arena = EvaluationArena::default();
+    #[cfg(feature = "pyo3")]
+    impl Walk for crate::json::Pyo3 {
+        fn evaluate(
+            tree: &Tree,
+            instance: &Self::Node<'_>,
+            errors: &[ValidationError<'_>],
+        ) -> Evaluation {
+            tree.evaluate::<Self>(instance, errors)
+        }
+    }
+
+    #[cfg(feature = "magnus")]
+    impl Walk for crate::json::Magnus {
+        fn evaluate(
+            tree: &Tree,
+            instance: &Self::Node<'_>,
+            errors: &[ValidationError<'_>],
+        ) -> Evaluation {
+            tree.evaluate::<Self>(instance, errors)
+        }
+    }
+
+    struct Walker<'t, 'e, 'i> {
+        built: &'t Built,
+        errors: &'e [ValidationError<'i>],
+        /// Indices into `errors` by schema location.
+        by_path: AHashMap<&'e str, Vec<usize>>,
+        arena: EvaluationArena,
+    }
+
+    impl Walker<'_, '_, '_> {
+        fn schema<F: Json>(
+            &mut self,
+            index: usize,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let built = self.built;
+            let (first, count) = built.schema_units[index];
             let mut children = ChildList::default();
-            for (index, location) in keywords.iter().enumerate() {
-                children.push(
-                    &mut arena,
-                    unit(
-                        location,
-                        string,
-                        self.at(errors, index + 1),
-                        ChildList::default(),
-                    ),
-                );
+            for unit in first..first + count {
+                let site = &built.units[unit];
+                let node = if let Some((first, count)) = site.properties {
+                    self.properties::<F>(site, first, count, instance, location, position)
+                } else {
+                    let errors = self.errors_at(site);
+                    let annotations = site.annotations(instance.is_string());
+                    Self::node(site, errors, annotations, ChildList::default(), position)
+                };
+                children.push(&mut self.arena, node);
             }
-            let root = unit(schema, string, self.at(errors, 0), children);
-            Evaluation::with_root(arena, root)
+            let site = &built.schemas[index];
+            let errors = self.errors_at(site);
+            let annotations = site.annotations(true);
+            Self::node(site, errors, annotations, children, position)
         }
 
-        fn at(&self, errors: &[ValidationError<'_>], index: usize) -> Vec<ErrorDescription> {
-            errors
-                .iter()
-                .filter(|error| {
-                    let path = error.schema_path().as_str();
-                    path == self.units[index]
-                        || self
-                            .aliases
-                            .iter()
-                            .any(|(alias, of)| *of == index && *alias == path)
+        fn properties<F: Json>(
+            &mut self,
+            site: &UnitLocation,
+            first: usize,
+            count: usize,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let Some(object) = instance.as_object() else {
+                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+            };
+            let built = self.built;
+            let declared = &built.properties[first..first + count];
+            // ponytail: a scan of the declared names per member; a name map if wide declarations
+            // get slow.
+            let mut matched: Vec<_> = object
+                .members()
+                .filter_map(|(name, value)| {
+                    let name = name.as_ref();
+                    let index = declared.iter().position(|(declared, _)| declared == name)?;
+                    Some((index, value))
                 })
-                .map(ErrorDescription::from_validation_error)
+                .collect();
+            // The runtime looks a few declared names up on a wide object, in declared order.
+            if count < HASHMAP_THRESHOLD && !scan_members::<F>(object.len(), count) {
+                matched.sort_unstable_by_key(|(index, _)| *index);
+            }
+            let mut names = Vec::with_capacity(matched.len());
+            let mut children = ChildList::default();
+            for (index, value) in matched {
+                let (name, schema) = &declared[index];
+                let schema = *schema;
+                names.push(Value::String(name.clone()));
+                let path = location.push(name);
+                let below = self.arena.position_below(position, path.segment());
+                let child = self.schema::<F>(schema, &value, &path, below);
+                children.push(&mut self.arena, child);
+            }
+            let annotations = Some(Annotations::new(Value::Array(names)));
+            Self::node(site, Vec::new(), annotations, children, position)
+        }
+
+        /// The errors reported at `site` or its alias, in the order they were reported. A
+        /// subschema of `properties` applies at one instance location only.
+        fn errors_at(&self, site: &UnitLocation) -> Vec<ErrorDescription> {
+            if self.by_path.is_empty() {
+                return Vec::new();
+            }
+            let mut indices: Vec<usize> = std::iter::once(&site.keyword)
+                .chain(site.alias.as_ref())
+                .filter_map(|path| self.by_path.get(path.as_str()))
+                .flatten()
+                .copied()
+                .collect();
+            indices.sort_unstable();
+            indices
+                .into_iter()
+                .map(|index| ErrorDescription::from_validation_error(&self.errors[index]))
                 .collect()
         }
+
+        fn node(
+            site: &UnitLocation,
+            errors: Vec<ErrorDescription>,
+            annotations: Option<Annotations>,
+            children: ChildList,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            if errors.is_empty() && children.all_valid() {
+                EvaluationNode::valid(
+                    site.keyword.clone(),
+                    site.absolute.clone(),
+                    Arc::clone(&site.schema),
+                    position,
+                    annotations,
+                    children,
+                )
+            } else {
+                EvaluationNode::invalid(
+                    site.keyword.clone(),
+                    site.absolute.clone(),
+                    Arc::clone(&site.schema),
+                    position,
+                    annotations,
+                    errors,
+                    children,
+                )
+            }
+        }
     }
 
-    /// A unit at the instance root, failing with `errors` or with a failing child.
-    fn unit(
-        location: &NodeLocation,
-        string: bool,
-        errors: Vec<ErrorDescription>,
-        children: ChildList,
-    ) -> EvaluationNode {
-        let annotations = location
-            .annotations
-            .clone()
-            .filter(|_| string || !location.strings_only)
-            .map(Annotations::from_arc);
-        if errors.is_empty() && children.all_valid() {
-            EvaluationNode::valid(
-                location.keyword.clone(),
-                location.absolute.clone(),
-                Arc::clone(&location.schema),
-                InstancePosition::ROOT,
-                annotations,
-                children,
-            )
-        } else {
-            EvaluationNode::invalid(
-                location.keyword.clone(),
-                location.absolute.clone(),
-                Arc::clone(&location.schema),
-                InstancePosition::ROOT,
-                annotations,
-                errors,
-                children,
-            )
+    impl UnitLocation {
+        fn annotations(&self, string: bool) -> Option<Annotations> {
+            self.annotations
+                .clone()
+                .filter(|_| string || !self.strings_only)
+                .map(Annotations::from_arc)
         }
     }
 }
