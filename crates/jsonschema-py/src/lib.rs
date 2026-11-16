@@ -330,10 +330,12 @@ enum ValidationErrorKind {
     FalseSchema {},
     Format { format: String },
     FromUtf8 { error: String },
+    MaxContains { limit: u64 },
     MaxItems { limit: u64 },
     Maximum { limit: Py<PyAny> },
     MaxLength { limit: u64 },
     MaxProperties { limit: u64 },
+    MinContains { limit: u64 },
     MinItems { limit: u64 },
     Minimum { limit: Py<PyAny> },
     MinLength { limit: u64 },
@@ -436,6 +438,12 @@ impl ValidationErrorKind {
             }
             jsonschema::error::ValidationErrorKind::MinItems { limit } => {
                 ValidationErrorKind::MinItems { limit }
+            }
+            jsonschema::error::ValidationErrorKind::MinContains { limit } => {
+                ValidationErrorKind::MinContains { limit }
+            }
+            jsonschema::error::ValidationErrorKind::MaxContains { limit } => {
+                ValidationErrorKind::MaxContains { limit }
             }
             jsonschema::error::ValidationErrorKind::Minimum { limit } => {
                 ValidationErrorKind::Minimum {
@@ -541,10 +549,12 @@ impl ValidationErrorKind {
             Self::ExclusiveMinimum { .. } => "exclusiveMinimum",
             Self::FalseSchema { .. } => "falseSchema",
             Self::Format { .. } => "format",
+            Self::MaxContains { .. } => "maxContains",
             Self::MaxItems { .. } => "maxItems",
             Self::Maximum { .. } => "maximum",
             Self::MaxLength { .. } => "maxLength",
             Self::MaxProperties { .. } => "maxProperties",
+            Self::MinContains { .. } => "minContains",
             Self::MinItems { .. } => "minItems",
             Self::Minimum { .. } => "minimum",
             Self::MinLength { .. } => "minLength",
@@ -597,9 +607,11 @@ impl ValidationErrorKind {
             | Self::Maximum { limit }
             | Self::Minimum { limit } => limit.clone_ref(py),
             Self::Format { format } => format.into_pyobject(py).unwrap().into_any().unbind(),
-            Self::MaxItems { limit }
+            Self::MaxContains { limit }
+            | Self::MaxItems { limit }
             | Self::MaxLength { limit }
             | Self::MaxProperties { limit }
+            | Self::MinContains { limit }
             | Self::MinItems { limit }
             | Self::MinLength { limit }
             | Self::MinProperties { limit } => limit.into_pyobject(py).unwrap().into_any().unbind(),
@@ -646,9 +658,11 @@ impl ValidationErrorKind {
             | Self::Maximum { limit }
             | Self::Minimum { limit } => dict.set_item("limit", limit)?,
             Self::Format { format } => dict.set_item("format", format)?,
-            Self::MaxItems { limit }
+            Self::MaxContains { limit }
+            | Self::MaxItems { limit }
             | Self::MaxLength { limit }
             | Self::MaxProperties { limit }
+            | Self::MinContains { limit }
             | Self::MinItems { limit }
             | Self::MinLength { limit }
             | Self::MinProperties { limit } => dict.set_item("limit", limit)?,

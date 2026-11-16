@@ -492,8 +492,7 @@ mod tests {
     use serde_json::{json, Value};
     use test_case::test_case;
 
-    // Missing names are errors of the keyword's own unit, as Blaze and Corvus report them;
-    // subschemas get a unit each.
+    // Missing names are errors of the keyword's own unit; subschemas get a unit each.
     #[test_case(
         &json!({"dependentRequired": {"a": ["b", "c"], "x": ["y"]}}),
         &json!({"a": 1}),

@@ -6,6 +6,7 @@
 
 - `syntax: :engine` on `RegexOptions` and `FancyRegexOptions` to match `pattern` and `patternProperties` in the regex engine's own syntax, without the ECMA 262 translation. [#1895](https://github.com/Stranger6667/jsonschema/issues/1895)
 - `Resolver#lookup_dynamic_ref` to resolve a `$dynamicRef` through the dynamic scope. [#1923](https://github.com/Stranger6667/jsonschema/issues/1923)
+- `minContains` and `maxContains` error kinds.
 
 ### Changed
 
@@ -25,6 +26,9 @@
 - `evaluate` output for two `required` names beside `properties` reporting them inside the `properties` unit, failing it, and only when missing.
 - `evaluate` output for `propertyNames: false` reporting one error for the whole object instead of a failing unit for each name.
 - `evaluate` output for `dependentRequired` and the array form of `dependencies` reporting missing names in a nested unit at a schema location that does not exist.
+- `evaluate` output for array-form `items` and `additionalItems` missing their annotations, and for `additionalItems` reporting the extra items in one error instead of a unit for each.
+- `evaluate` output for `contains` beside `minContains` or `maxContains` missing the matching items and their indices, and locating the subschema at the bound keyword instead of at `contains`.
+- Error messages for `minContains` and `maxContains` claiming that no item is valid under the `contains` subschema.
 
 ### Performance
 

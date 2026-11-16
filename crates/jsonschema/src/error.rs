@@ -289,6 +289,8 @@ pub enum ValidationErrorKind {
     Format { format: String },
     /// May happen in `contentEncoding` validation if `base64` encoded data is invalid.
     FromUtf8 { error: FromUtf8Error },
+    /// More items than `maxContains` are valid under the `contains` subschema.
+    MaxContains { limit: u64 },
     /// Too many items in an array.
     MaxItems { limit: u64 },
     /// Value is too large.
@@ -297,6 +299,8 @@ pub enum ValidationErrorKind {
     MaxLength { limit: u64 },
     /// Too many properties in an object.
     MaxProperties { limit: u64 },
+    /// Fewer items than `minContains` are valid under the `contains` subschema.
+    MinContains { limit: u64 },
     /// Too few items in an array.
     MinItems { limit: u64 },
     /// Value is too small.
@@ -370,10 +374,12 @@ impl ValidationErrorKind {
             ValidationErrorKind::ExclusiveMinimum { .. } => "exclusiveMinimum",
             ValidationErrorKind::FalseSchema => "falseSchema",
             ValidationErrorKind::Format { .. } => "format",
+            ValidationErrorKind::MaxContains { .. } => "maxContains",
             ValidationErrorKind::MaxItems { .. } => "maxItems",
             ValidationErrorKind::Maximum { .. } => "maximum",
             ValidationErrorKind::MaxLength { .. } => "maxLength",
             ValidationErrorKind::MaxProperties { .. } => "maxProperties",
+            ValidationErrorKind::MinContains { .. } => "minContains",
             ValidationErrorKind::MinItems { .. } => "minItems",
             ValidationErrorKind::Minimum { .. } => "minimum",
             ValidationErrorKind::MinLength { .. } => "minLength",
@@ -873,6 +879,36 @@ impl<'a> ValidationError<'a> {
         Self::borrowed(
             instance,
             ValidationErrorKind::MaxProperties { limit },
+            instance_path,
+            schema_path,
+            tracker,
+        )
+    }
+    pub(crate) fn min_contains(
+        schema_path: Location,
+        tracker: impl Into<LazyEvaluationPath>,
+        instance_path: Location,
+        instance: LazyInstance<'a>,
+        limit: u64,
+    ) -> ValidationError<'a> {
+        Self::borrowed(
+            instance,
+            ValidationErrorKind::MinContains { limit },
+            instance_path,
+            schema_path,
+            tracker,
+        )
+    }
+    pub(crate) fn max_contains(
+        schema_path: Location,
+        tracker: impl Into<LazyEvaluationPath>,
+        instance_path: Location,
+        instance: LazyInstance<'a>,
+        limit: u64,
+    ) -> ValidationError<'a> {
+        Self::borrowed(
+            instance,
+            ValidationErrorKind::MaxContains { limit },
             instance_path,
             schema_path,
             tracker,
@@ -1503,6 +1539,20 @@ impl fmt::Display for ValidationError<'_> {
                 limit,
                 if *limit == 1 { "" } else { "s" }
             ),
+            ValidationErrorKind::MaxContains { limit } => write!(
+                f,
+                "{} has more than {} item{} valid under the given schema",
+                self.instance(),
+                limit,
+                if *limit == 1 { "" } else { "s" }
+            ),
+            ValidationErrorKind::MinContains { limit } => write!(
+                f,
+                "{} has less than {} item{} valid under the given schema",
+                self.instance(),
+                limit,
+                if *limit == 1 { "" } else { "s" }
+            ),
             ValidationErrorKind::MinItems { limit } => write!(
                 f,
                 "{} has less than {} item{}",
@@ -1695,6 +1745,20 @@ impl fmt::Display for MaskedValidationError<'_, '_, '_> {
             ValidationErrorKind::MaxItems { limit } => write!(
                 f,
                 "{} has more than {} item{}",
+                self.placeholder,
+                limit,
+                if *limit == 1 { "" } else { "s" }
+            ),
+            ValidationErrorKind::MaxContains { limit } => write!(
+                f,
+                "{} has more than {} item{} valid under the given schema",
+                self.placeholder,
+                limit,
+                if *limit == 1 { "" } else { "s" }
+            ),
+            ValidationErrorKind::MinContains { limit } => write!(
+                f,
+                "{} has less than {} item{} valid under the given schema",
                 self.placeholder,
                 limit,
                 if *limit == 1 { "" } else { "s" }

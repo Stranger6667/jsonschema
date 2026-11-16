@@ -10,9 +10,9 @@ use super::required;
 use crate::{
     compiler,
     error::ValidationError,
-    evaluation::{Annotations, ChildList, ErrorDescription, EvaluationNode, InstancePosition},
+    evaluation::{Annotations, ChildList, EvaluationNode, InstancePosition},
     keywords::{
-        helpers::{unit_over, SchemaSite},
+        helpers::{false_schema_unit, unit_over, SchemaSite},
         CompilationResult,
     },
     node::SchemaNode,
@@ -81,32 +81,6 @@ impl ObjectSites {
     }
 }
 
-/// The false schema of `additionalProperties: false` failing at the member at `path`.
-fn rejected_member<F: Json>(
-    ctx: &mut ValidationContext,
-    site: &SchemaSite,
-    value: &F::Node<'_>,
-    path: &LazyLocation,
-    tracker: Option<&RefTracker>,
-) -> EvaluationNode {
-    let error = ErrorDescription::from_validation_error(&ValidationError::false_schema(
-        site.location.clone(),
-        crate::paths::capture_evaluation_path(tracker, &site.location),
-        path.into(),
-        value.lazy_value(),
-    ));
-    let position = ctx.instance_position(path);
-    unit_over(
-        site,
-        vec![error],
-        None,
-        ChildList::default(),
-        position,
-        tracker,
-        ctx,
-    )
-}
-
 /// The children of each unit, collected in one pass over an object, reported as each keyword
 /// alone reports its own.
 struct ObjectUnits {
@@ -166,7 +140,7 @@ impl ObjectUnits {
         path: &LazyLocation,
         tracker: Option<&RefTracker>,
     ) {
-        let node = rejected_member::<F>(ctx, site, value, path, tracker);
+        let node = false_schema_unit::<F>(ctx, site, value, path, tracker);
         self.additional.push(ctx.arena(), node);
     }
 
@@ -411,7 +385,7 @@ impl<F: Json> Validate<F> for AdditionalPropertiesFalseValidator {
         let mut children = ChildList::default();
         for (name, value) in object.members() {
             let path = location.push(name.as_ref());
-            let node = rejected_member::<F>(ctx, &self.site, &value, &path, tracker);
+            let node = false_schema_unit::<F>(ctx, &self.site, &value, &path, tracker);
             children.push(ctx.arena(), node);
         }
         EvaluationResult::from_children(children)
@@ -3287,7 +3261,7 @@ mod tests {
     }
 
     // Each keyword reports its own unit, as it would without the validators fused; `false` fails
-    // each extra member, as Blaze and Corvus report it.
+    // each extra member.
     #[test_case(
         &json!({"properties": {"a": {"type": "integer"}}, "additionalProperties": false}),
         &json!({"a": 1, "b": 2}),

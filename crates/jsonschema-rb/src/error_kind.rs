@@ -188,9 +188,11 @@ impl ValidationErrorKind {
                 ID_ERROR.to_symbol(),
                 ruby.into_value(error.to_string().as_str()),
             )?,
-            K::MaxItems { limit }
+            K::MaxContains { limit }
+            | K::MaxItems { limit }
             | K::MaxLength { limit }
             | K::MaxProperties { limit }
+            | K::MinContains { limit }
             | K::MinItems { limit }
             | K::MinLength { limit }
             | K::MinProperties { limit } => rb_hash1(

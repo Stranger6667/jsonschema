@@ -4421,6 +4421,40 @@ pub mod __private {
             )
         }
 
+        /// `minContains` keyword violation: fewer than `limit` items match `contains`.
+        #[inline]
+        pub fn min_contains<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: impl Into<LazyInstance<'i>>,
+            limit: u64,
+        ) -> ValidationError<'i> {
+            ValidationError::min_contains(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance.into(),
+                limit,
+            )
+        }
+
+        /// `maxContains` keyword violation: more than `limit` items match `contains`.
+        #[inline]
+        pub fn max_contains<'i>(
+            schema_path: &str,
+            instance_path: Location,
+            instance: impl Into<LazyInstance<'i>>,
+            limit: u64,
+        ) -> ValidationError<'i> {
+            ValidationError::max_contains(
+                Location::from_escaped(schema_path),
+                LazyEvaluationPath::SameAsSchemaPath,
+                instance_path,
+                instance.into(),
+                limit,
+            )
+        }
+
         /// `minProperties` keyword violation: object has fewer properties than `limit`.
         #[inline]
         pub fn min_properties<'i>(

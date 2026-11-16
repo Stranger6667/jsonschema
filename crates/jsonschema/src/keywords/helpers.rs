@@ -11,10 +11,10 @@ use crate::{
         format_keyword_location, Annotations, ChildList, ErrorDescription, EvaluationNode,
         InstancePosition,
     },
-    paths::{Location, RefTracker},
+    paths::{LazyLocation, Location, RefTracker},
     types::JsonType,
     validator::ValidationContext,
-    Json, ValidationError,
+    Json, Node, ValidationError,
 };
 use referencing::Uri;
 use std::sync::{Arc, OnceLock};
@@ -162,6 +162,32 @@ pub(crate) fn unit(
         None,
         ChildList::default(),
         instance_location,
+        tracker,
+        ctx,
+    )
+}
+
+/// A `false` subschema failing at the instance at `path`, as a unit at `site`.
+pub(crate) fn false_schema_unit<F: Json>(
+    ctx: &mut ValidationContext,
+    site: &SchemaSite,
+    value: &F::Node<'_>,
+    path: &LazyLocation,
+    tracker: Option<&RefTracker>,
+) -> EvaluationNode {
+    let error = ErrorDescription::from_validation_error(&ValidationError::false_schema(
+        site.location.clone(),
+        crate::paths::capture_evaluation_path(tracker, &site.location),
+        path.into(),
+        value.lazy_value(),
+    ));
+    let position = ctx.instance_position(path);
+    unit_over(
+        site,
+        vec![error],
+        None,
+        ChildList::default(),
+        position,
         tracker,
         ctx,
     )

@@ -233,8 +233,7 @@ mod tests {
     use serde_json::{json, Value};
     use test_case::test_case;
 
-    // Each name gets a unit of its own at the object's location; `false` fails each, as Blaze and
-    // Corvus report it.
+    // Each name gets a unit of its own at the object's location; `false` fails each.
     #[test_case(
         &json!({"propertyNames": {"maxLength": 1}}),
         &json!({"a": 1, "bb": 2}),

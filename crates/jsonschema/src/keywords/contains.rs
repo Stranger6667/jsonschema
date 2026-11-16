@@ -14,6 +14,15 @@ use std::sync::Arc;
 
 use super::helpers::map_get_u64;
 
+/// How many items a `contains` failure needed.
+#[derive(Clone, Copy)]
+enum Bound {
+    /// At least one, without `minContains`.
+    Any,
+    Min(u64),
+    Max(u64),
+}
+
 /// The keyword a `contains` failure is reported at.
 struct Site {
     location: Location,
@@ -36,13 +45,31 @@ impl Site {
         instance: &F::Node<'i>,
         location: &LazyLocation,
         tracker: Option<&RefTracker>,
+        bound: Bound,
     ) -> ValidationError<'i> {
-        ValidationError::contains(
-            self.location.clone(),
-            crate::paths::capture_evaluation_path(tracker, &self.location),
-            location.into(),
-            instance.lazy_value(),
-        )
+        let schema_path = self.location.clone();
+        let evaluation_path = crate::paths::capture_evaluation_path(tracker, &self.location);
+        let instance_path = location.into();
+        let instance = instance.lazy_value();
+        match bound {
+            Bound::Any => {
+                ValidationError::contains(schema_path, evaluation_path, instance_path, instance)
+            }
+            Bound::Min(limit) => ValidationError::min_contains(
+                schema_path,
+                evaluation_path,
+                instance_path,
+                instance,
+                limit,
+            ),
+            Bound::Max(limit) => ValidationError::max_contains(
+                schema_path,
+                evaluation_path,
+                instance_path,
+                instance,
+                limit,
+            ),
+        }
         .with_absolute_keyword_location(self.absolute_location.clone())
     }
 }
@@ -150,6 +177,42 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
 /// `minContains` validation. Used only if there is no `maxContains` present.
 ///
 /// Docs: <https://json-schema.org/draft/2019-09/json-schema-validation.html#rfc.section.6.4.5>
+/// The matching items' units and their indices, as plain `contains` reports them, failing with
+/// `validator`'s error when the count of matches is out of its bounds.
+fn evaluate_bounded<F: Json, V: Validate<F>>(
+    validator: &V,
+    node: &SchemaNode<F>,
+    instance: &F::Node<'_>,
+    location: &LazyLocation,
+    tracker: Option<&RefTracker>,
+    ctx: &mut ValidationContext,
+) -> EvaluationResult {
+    let Some(array) = instance.as_array() else {
+        return EvaluationResult::valid_empty();
+    };
+    let mut children = ChildList::default();
+    let mut indices = Vec::new();
+    for (idx, item) in array.elements().enumerate() {
+        let child = node.evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
+        if child.valid {
+            indices.push(idx);
+            children.push(ctx.arena(), child);
+        }
+    }
+    let annotations = (!indices.is_empty()).then(|| Annotations::new(Value::from(indices)));
+    match validator.validate(instance, location, tracker, ctx) {
+        Ok(()) => EvaluationResult::Valid {
+            annotations,
+            children,
+        },
+        Err(error) => EvaluationResult::Invalid {
+            errors: vec![ErrorDescription::from_validation_error(&error)],
+            children,
+            annotations,
+        },
+    }
+}
+
 pub(crate) struct MinContainsValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
     min_contains: u64,
@@ -164,7 +227,7 @@ impl MinContainsValidator {
         min_contains: u64,
     ) -> CompilationResult<'a, F> {
         let min = Site::new(ctx, "minContains");
-        let ctx = ctx.new_at_location("minContains");
+        let ctx = ctx.new_at_location("contains");
         Ok(Box::new(MinContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
             min_contains,
@@ -217,13 +280,25 @@ impl<F: Json> Validate<F> for MinContainsValidator<F> {
                 }
             }
             if self.min_contains > 0 {
-                Err(self.min.error::<F>(instance, location, tracker))
+                Err(self
+                    .min
+                    .error::<F>(instance, location, tracker, Bound::Min(self.min_contains)))
             } else {
                 Ok(())
             }
         } else {
             Ok(())
         }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        evaluate_bounded(self, &self.node, instance, location, tracker, ctx)
     }
 }
 
@@ -244,7 +319,7 @@ impl MaxContainsValidator {
         max_contains: u64,
     ) -> CompilationResult<'a, F> {
         let max = Site::new(ctx, "maxContains");
-        let ctx = ctx.new_at_location("maxContains");
+        let ctx = ctx.new_at_location("contains");
         Ok(Box::new(MaxContainsValidator {
             node: compiler::compile(&ctx, ctx.as_resource_ref(schema))?,
             max_contains,
@@ -292,18 +367,33 @@ impl<F: Json> Validate<F> for MaxContainsValidator<F> {
                 {
                     matches += 1;
                     if matches > self.max_contains {
-                        return Err(self.max.error::<F>(instance, location, tracker));
+                        return Err(self.max.error::<F>(
+                            instance,
+                            location,
+                            tracker,
+                            Bound::Max(self.max_contains),
+                        ));
                     }
                 }
             }
             if matches > 0 {
                 Ok(())
             } else {
-                Err(self.max.error::<F>(instance, location, tracker))
+                Err(self.max.error::<F>(instance, location, tracker, Bound::Any))
             }
         } else {
             Ok(())
         }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        evaluate_bounded(self, &self.node, instance, location, tracker, ctx)
     }
 }
 
@@ -381,18 +471,35 @@ impl<F: Json> Validate<F> for MinMaxContainsValidator<F> {
                 {
                     matches += 1;
                     if matches > self.max_contains {
-                        return Err(self.max.error::<F>(instance, location, tracker));
+                        return Err(self.max.error::<F>(
+                            instance,
+                            location,
+                            tracker,
+                            Bound::Max(self.max_contains),
+                        ));
                     }
                 }
             }
             if matches < self.min_contains {
-                Err(self.min.error::<F>(instance, location, tracker))
+                Err(self
+                    .min
+                    .error::<F>(instance, location, tracker, Bound::Min(self.min_contains)))
             } else {
                 Ok(())
             }
         } else {
             Ok(())
         }
+    }
+
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        evaluate_bounded(self, &self.node, instance, location, tracker, ctx)
     }
 }
 
@@ -443,6 +550,49 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // With `minContains` or `maxContains`, `contains` still reports the matching items and their
+    // indices, as without them.
+    #[test_case(
+        &json!({"contains": {"type": "integer"}, "minContains": 1, "maxContains": 2}),
+        &json!(["a", 1]),
+        &[
+            " @ ok",
+            "  /contains @ ok ann=[1]",
+            "    /contains @/1 ok",
+            "      /contains/type @/1 ok",
+        ] ; "both bounds met"
+    )]
+    #[test_case(
+        &json!({"contains": {"type": "integer"}, "minContains": 2}),
+        &json!(["a", 1]),
+        &[
+            " @ FAIL",
+            "  /contains @ FAIL dropped=[1] err=minContains",
+            "    /contains @/1 ok",
+            "      /contains/type @/1 ok",
+        ] ; "too few"
+    )]
+    #[test_case(
+        &json!({"contains": {"type": "integer"}, "maxContains": 1}),
+        &json!([1, 2]),
+        &[
+            " @ FAIL",
+            "  /contains @ FAIL dropped=[0,1] err=maxContains",
+            "    /contains @/0 ok",
+            "      /contains/type @/0 ok",
+            "    /contains @/1 ok",
+            "      /contains/type @/1 ok",
+        ] ; "too many"
+    )]
+    #[test_case(
+        &json!({"contains": {"type": "integer"}, "minContains": 0}),
+        &json!(["a"]),
+        &[" @ ok", "  /contains @ ok"] ; "none needed, none matching"
+    )]
+    fn evaluate_with_bounds(schema: &Value, instance: &Value, expected: &[&str]) {
+        assert_eq!(tests_util::evaluation_outline(schema, instance), expected);
+    }
 
     #[test]
     fn location() {
@@ -495,22 +645,28 @@ mod tests {
         );
     }
 
-    #[test_case(&json!({}), &json!([2]), "/contains"; "contains")]
-    #[test_case(&json!({"minContains": 2}), &json!([1]), "/minContains"; "minContains")]
-    #[test_case(&json!({"maxContains": 1}), &json!([1, 1]), "/maxContains"; "maxContains")]
-    #[test_case(&json!({"maxContains": 1}), &json!([2]), "/maxContains"; "maxContains without a match")]
-    #[test_case(&json!({"minContains": 2, "maxContains": 3}), &json!([1]), "/minContains"; "min of both")]
+    #[test_case(&json!({}), &json!([2]), "/contains", "None of [2] are valid under the given schema", "contains"; "contains")]
+    #[test_case(&json!({"minContains": 2}), &json!([1]), "/minContains", "[1] has less than 2 items valid under the given schema", "minContains"; "minContains")]
+    #[test_case(&json!({"maxContains": 1}), &json!([1, 1]), "/maxContains", "[1,1] has more than 1 item valid under the given schema", "maxContains"; "maxContains")]
+    #[test_case(&json!({"maxContains": 1}), &json!([2]), "/maxContains", "None of [2] are valid under the given schema", "contains"; "maxContains without a match")]
+    #[test_case(&json!({"minContains": 2, "maxContains": 3}), &json!([1]), "/minContains", "[1] has less than 2 items valid under the given schema", "minContains"; "min of both")]
     #[test_case(
         &json!({"minContains": 2, "maxContains": 3}),
         &json!([1, 1, 1, 1]),
-        "/maxContains";
+        "/maxContains",
+        "[1,1,1,1] has more than 3 items valid under the given schema",
+        "maxContains";
         "max of both"
     )]
-    fn error_locations(bounds: &Value, instance: &Value, schema_path: &str) {
+    fn errors(bounds: &Value, instance: &Value, schema_path: &str, message: &str, keyword: &str) {
         let mut schema = bounds.clone();
         schema["contains"] = json!({"const": 1});
-        let message = format!("None of {instance} are valid under the given schema");
-        tests_util::assert_error_locations(&schema, instance, &[(&message, "", schema_path)]);
+        tests_util::assert_error_locations(&schema, instance, &[(message, "", schema_path)]);
+        let error = crate::validator_for(&schema)
+            .expect("valid schema")
+            .validate(instance)
+            .expect_err("invalid instance");
+        assert_eq!(error.kind().keyword(), keyword);
     }
 
     #[test]
