@@ -88,6 +88,41 @@ RSpec.describe "JSONSchema::Canonical.find_unsatisfiable" do
     )
   end
 
+  it "renders each reason with what it carries" do
+    reasons = JSONSchema::Canonical.find_unsatisfiable(
+      {
+        "properties" => {
+          "a" => false,
+          "b" => { "type" => "integer", "minimum" => 5, "maximum" => 3 },
+          "c" => { "type" => "string", "minLength" => 5, "maxLength" => 2 }
+        }
+      }
+    )
+
+    expect(reasons.transform_values(&:inspect)).to eq(
+      "/properties/a" => "#<JSONSchema::Canonical::LiteralReason>",
+      "/properties/b" => "#<JSONSchema::Canonical::EmptyReason cause=#{reasons['/properties/b'].cause.inspect}>",
+      "/properties/c" => "#<JSONSchema::Canonical::ConflictReason causes=#{reasons['/properties/c'].causes.inspect}>"
+    )
+  end
+
+  it "matches a cause by pattern" do
+    reason = JSONSchema::Canonical.find_unsatisfiable(
+      { "properties" => { "a" => { "type" => "integer", "minimum" => 5, "maximum" => 3 } } }
+    )["/properties/a"]
+
+    case reason.cause
+    in JSONSchema::Canonical::Cause[pointer:, keywords:] => cause
+      expect([pointer, keywords]).to eq(["/properties/a", %w[minimum maximum]])
+      expect(cause).not_to eq(pointer)
+    end
+  end
+
+  it "matches a literal reason by an empty pattern" do
+    reason = JSONSchema::Canonical.find_unsatisfiable({ "properties" => { "a" => false } })["/properties/a"]
+    expect(reason.deconstruct_keys(nil)).to eq({})
+  end
+
   it "reads the registry" do
     registry = JSONSchema::Registry.new([["https://example.com/int", { "type" => "integer" }]])
 

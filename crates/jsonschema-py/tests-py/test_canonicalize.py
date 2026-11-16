@@ -286,6 +286,60 @@ def test_object_view_violations():
     assert violation.schema.to_json_schema()["const"] == "filter"
 
 
+def test_object_view_undeclared_value_fails():
+    schema = {
+        "type": "object",
+        "not": {
+            "properties": {"a": True},
+            "patternProperties": {"^b": True},
+            "additionalProperties": {"type": "string"},
+        },
+    }
+    match canonicalize(schema).view().violations:
+        case [canonical.UndeclaredValueFailsView(names=names, patterns=patterns, additional=additional)]:
+            assert names == ["a"]
+            assert patterns == ["^b"]
+            assert additional.to_json_schema() == {"$schema": DRAFT202012, "type": "string"}
+        case other:
+            pytest.fail(f"unexpected violations: {other!r}")
+
+
+def test_object_view_pattern_value_fails():
+    schema = {"type": "object", "not": {"patternProperties": {"^a": {"type": "string"}}}}
+    match canonicalize(schema).view().violations:
+        case [canonical.PatternValueFailsView(pattern=pattern, schema=inner)]:
+            assert pattern == "^a"
+            assert inner.to_json_schema() == {"$schema": DRAFT202012, "type": "string"}
+        case other:
+            pytest.fail(f"unexpected violations: {other!r}")
+
+
+@pytest.mark.parametrize(
+    "draft,expected",
+    [
+        (jsonschema_rs.Draft4, 4),
+        (jsonschema_rs.Draft6, 6),
+        (jsonschema_rs.Draft7, 7),
+        (jsonschema_rs.Draft201909, 19),
+        (jsonschema_rs.Draft202012, 20),
+    ],
+)
+def test_canonical_schema_draft(draft, expected):
+    assert canonicalize({"type": "string"}, draft=draft).draft == expected
+
+
+def test_canonical_schema_hashes_by_value():
+    string = canonicalize({"type": "string"})
+    assert {string, canonicalize({"type": "string"}), canonicalize({"type": "integer"})} == {
+        string,
+        canonicalize({"type": "integer"}),
+    }
+
+
+def test_canonical_schema_repr():
+    assert repr(canonicalize({"type": "string"})) == "<CanonicalSchema kind=multi_type draft=Draft202012>"
+
+
 def test_view_number_multiple_of():
     match canonicalize({"type": "number", "multipleOf": 0.5}).view():
         case canonical.NumberView(multiple_of=multiple_of):

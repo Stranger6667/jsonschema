@@ -693,11 +693,75 @@ def test_kind_name(schema, instance, expected_name, draft):
         ({"required": ["foo"]}, {}, "foo"),
         ({"multipleOf": 3}, 5, 3.0),
         ({"format": "email"}, "bad", "email"),
+        ({"properties": {"x": {}}, "additionalProperties": False}, {"a": 1}, ["a"]),
+        ({"unevaluatedProperties": False}, {"a": 1}, ["a"]),
+        ({"unevaluatedItems": False}, [1], ["1"]),
+        ({"exclusiveMaximum": 3}, 3, 3),
+        ({"exclusiveMinimum": 3}, 3, 3),
+        ({"maxItems": 1}, [1, 2], 1),
+        ({"minItems": 1}, [], 1),
+        ({"maxProperties": 0}, {"a": 1}, 0),
+        ({"minProperties": 1}, {}, 1),
+        ({"not": {"type": "integer"}}, 5, {"type": "integer"}),
     ],
 )
 def test_kind_value(schema, instance, expected_value):
     errors = list(iter_errors(schema, instance, validate_formats=True))
     assert errors[0].kind.value == expected_value
+
+
+# Keywords Draft 7 asserts and later drafts read differently or only annotate.
+@pytest.mark.parametrize(
+    "schema,instance,expected_value,expected_dict",
+    [
+        ({"items": [{}], "additionalItems": False}, [1, 2], 1, {"limit": 1}),
+        ({"contentEncoding": "base64"}, "!!", "base64", {"content_encoding": "base64"}),
+        (
+            {"contentMediaType": "application/json"},
+            "{",
+            "application/json",
+            {"content_media_type": "application/json"},
+        ),
+        (
+            {"contentEncoding": "base64", "contentMediaType": "application/json"},
+            "/w==",
+            "invalid utf-8 sequence of 1 bytes from index 0",
+            {"error": "invalid utf-8 sequence of 1 bytes from index 0"},
+        ),
+    ],
+)
+def test_kind_payload_draft7(schema, instance, expected_value, expected_dict):
+    [error] = Draft7Validator(schema).iter_errors(instance)
+    assert error.kind.value == expected_value
+    assert error.kind.as_dict() == expected_dict
+
+
+@pytest.mark.parametrize(
+    "schema,instance,expected_messages",
+    [
+        (
+            {"anyOf": [{"type": "string"}, {"minimum": 5}]},
+            1,
+            [['1 is not of type "string"'], ["1 is less than the minimum of 5"]],
+        ),
+        (
+            {"oneOf": [{"type": "string"}, {"minimum": 5}]},
+            1,
+            [['1 is not of type "string"'], ["1 is less than the minimum of 5"]],
+        ),
+        ({"oneOf": [{"type": "integer"}, {"minimum": 0}]}, 1, [[], []]),
+    ],
+)
+def test_kind_context_lists_each_branch(schema, instance, expected_messages):
+    [error] = iter_errors(schema, instance)
+    for context in (error.kind.value, error.kind.as_dict()["context"]):
+        assert [[inner.message for inner in branch] for branch in context] == expected_messages
+
+
+def test_kind_property_names_carries_the_name_error():
+    [error] = iter_errors({"propertyNames": {"maxLength": 1}}, {"ab": 1})
+    assert error.kind.value.message == '"ab" is longer than 1 character'
+    assert error.kind.as_dict()["error"].message == '"ab" is longer than 1 character'
 
 
 @pytest.mark.parametrize(
@@ -723,10 +787,17 @@ def test_kind_value_none(schema, instance):
         ({"contains": {"type": "string"}}, [1], {}),
         (False, 1, {}),
         ({"uniqueItems": True}, [1, 1], {}),
+        ({"properties": {"x": {}}, "additionalProperties": False}, {"a": 1}, {"unexpected": ["a"]}),
+        ({"const": 1}, 2, {"expected_value": 1}),
+        ({"enum": [1, 2]}, 3, {"options": [1, 2]}),
+        ({"format": "email"}, "bad", {"format": "email"}),
+        ({"maxItems": 1}, [1, 2], {"limit": 1}),
+        ({"multipleOf": 3}, 5, {"multiple_of": 3}),
+        ({"not": {"type": "integer"}}, 5, {"schema": {"type": "integer"}}),
     ],
 )
 def test_kind_as_dict(schema, instance, expected_dict):
-    errors = list(iter_errors(schema, instance))
+    errors = list(iter_errors(schema, instance, validate_formats=True))
     assert errors[0].kind.as_dict() == expected_dict
 
 
@@ -1626,3 +1697,20 @@ def test_non_finite_numbers_in_typed_subschemas(schema, instance, expected):
     validator = validator_for(schema)
     assert validator.is_valid(instance) is expected
     assert (next(validator.iter_errors(instance), None) is None) is expected
+
+
+def test_unknown_draft():
+    with pytest.raises(ValueError, match="^Unknown draft: 99$"):
+        is_valid({}, 1, draft=99)
+
+
+@pytest.mark.parametrize(
+    "kwargs,message",
+    [
+        ({"email_options": 1}, "email_options must be an instance of EmailOptions"),
+        ({"http_options": 1}, "http_options must be an instance of HttpOptions"),
+    ],
+)
+def test_options_of_the_wrong_type(kwargs, message):
+    with pytest.raises(TypeError, match=f"^{message}$"):
+        validator_for({}, **kwargs)

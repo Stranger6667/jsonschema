@@ -4,10 +4,7 @@
 use jsonschema::{output::ErrorDescription, OutputUnit};
 use magnus::{method, prelude::*, Error, RArray, RHash, RModule, Ruby, Value};
 
-use crate::{
-    ser::{serialize_to_ruby, value_to_ruby},
-    static_id::define_rb_intern,
-};
+use crate::{ser::value_to_ruby, static_id::define_rb_intern};
 
 define_rb_intern!(static ID_SCHEMA_LOCATION: "schemaLocation");
 define_rb_intern!(static ID_ABSOLUTE_KEYWORD_LOCATION: "absoluteKeywordLocation");
@@ -138,13 +135,13 @@ fn unit_to_ruby(ruby: &Ruby, unit: OutputUnit<'_>, nested: bool) -> Result<RHash
     if let Some(annotations) = unit.annotations() {
         push(
             ID_ANNOTATIONS.to_symbol().as_value(),
-            serialize_to_ruby(ruby, annotations)?,
+            value_to_ruby(ruby, annotations.value())?,
         );
     }
     if let Some(annotations) = unit.dropped_annotations() {
         push(
             ID_DROPPED_ANNOTATIONS.to_symbol().as_value(),
-            serialize_to_ruby(ruby, annotations)?,
+            value_to_ruby(ruby, annotations.value())?,
         );
     }
     if !unit.errors().is_empty() {
