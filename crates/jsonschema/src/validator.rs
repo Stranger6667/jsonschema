@@ -607,17 +607,18 @@ pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
         true
     }
 
-    /// Whether this validator also checks keywords beside its own, reporting their output units
-    /// through [`Self::evaluate_siblings`]. Asked once, when the schema node is built.
-    fn checks_siblings(&self) -> bool {
+    /// Whether this validator checks keywords beside its own and reports every unit itself,
+    /// through [`Self::evaluate_units`]. Asked once, when the schema node is built.
+    fn reports_units(&self) -> bool {
         false
     }
 
-    /// The output units of the keywords this validator checks beside its own, in priority order;
-    /// returns whether any of them fails.
-    fn evaluate_siblings(
+    /// The output units of the keywords this validator checks, its own included, in priority
+    /// order; returns whether any of them fails.
+    fn evaluate_units(
         &self,
         _instance: &F::Node<'_>,
+        _location: &LazyLocation,
         _instance_location: InstancePosition,
         _tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
@@ -715,25 +716,6 @@ impl EvaluationResult {
         match self {
             Self::Valid { annotations, .. } | Self::Invalid { annotations, .. } => {
                 *annotations = Some(new_annotations);
-            }
-        }
-    }
-
-    /// Set the error that will be returned for the current validator. If this
-    /// `EvaluationResult` is valid then this method converts this application into
-    /// `EvaluationResult::Invalid`
-    pub(crate) fn mark_errored(&mut self, error: ErrorDescription) {
-        match self {
-            Self::Invalid { errors, .. } => errors.push(error),
-            Self::Valid {
-                annotations,
-                children,
-            } => {
-                *self = Self::Invalid {
-                    errors: vec![error],
-                    children: std::mem::take(children),
-                    annotations: annotations.take(),
-                }
             }
         }
     }

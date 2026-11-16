@@ -120,29 +120,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         None
     };
 
-    // The runtime folds `required` into the property loop (checked after property values) only for
-    // the additionalProperties:false single-required fusion; every other shape validates `required`
-    // before property values. Emit the checks before `properties` here, or after it (below) for the
-    // fused shape.
-    let has_pattern_properties = schema
-        .get("patternProperties")
-        .and_then(Value::as_object)
-        .is_some_and(|m| !m.is_empty());
-    let required_after_properties =
-        matches!(schema.get("additionalProperties"), Some(Value::Bool(false)))
-            && required_fields.len() == 1
-            && properties_map.is_some()
-            && !has_pattern_properties;
-
-    let required_after_checks: Vec<CompiledExpr> = if required_after_properties {
-        required_fields
-            .iter()
-            .map(|name| required::compile_single(ctx, name))
-            .collect()
-    } else {
-        Vec::new()
-    };
-    // `required` goes here unless the properties pass takes it over, which needs nothing checked
+    // `required` is validated before property values, as the runtime orders keywords. It goes here unless the properties pass takes it over, which needs nothing checked
     // in between.
     let required_slot = checks.len();
 
@@ -197,12 +175,11 @@ pub(in super::super) fn compile<E: ValueEmitter>(
 
     // Every cluster subschema is compiled exactly once and shared by the
     // per-keyword and unified-pass emitters below.
-    let required_in_properties_pass = !required_after_properties
-        && !required_fields.is_empty()
+    let required_in_properties_pass = !required_fields.is_empty()
         && checks.len() == required_slot
         && properties_map.is_some()
         && !(pattern_properties_value.is_some() && additional_properties_fused);
-    if !required_after_properties && !required_in_properties_pass {
+    if !required_in_properties_pass {
         let required_checks: Vec<(CompiledExpr, bool)> = required_fields
             .iter()
             .map(|name| (required::compile_single(ctx, name), true))
@@ -294,10 +271,6 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         ) {
             checks.push((compiled, true));
         }
-    }
-
-    for check in required_after_checks {
-        checks.push((check, true));
     }
 
     if unevaluated_properties_enabled {

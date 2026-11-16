@@ -667,15 +667,19 @@ pub(crate) fn compile<'a, F: Json>(
         let additional_props_false =
             matches!(parent.get("additionalProperties"), Some(Value::Bool(false)));
 
-        // Case 1: properties + additionalProperties: false + required: [1 item], no patternProperties
-        // Handled by AdditionalPropertiesNotEmptyFalseWithRequired1Validator
+        // Case 1: properties + additionalProperties: false + required: [1 item], no patternProperties.
+        // `AdditionalPropertiesNotEmptyFalseWithRequired1Validator` checks it for `is_valid`.
         if items.len() == 1
             && additional_props_false
             && has_properties
             && !has_pattern_properties
             && !ctx.is_keyword_overridden("additionalProperties")
         {
-            return None;
+            return Some(
+                compile_with_path(schema, ctx.location().join("required"))?.map(|inner| {
+                    Box::new(CheckedBySiblingValidator { inner }) as BoxedValidator<F>
+                }),
+            );
         }
 
         if checked_by_closed_object(ctx, parent).is_some() {
@@ -896,17 +900,20 @@ mod tests {
     #[test]
     fn every_declared_name_count_matches_with_undeclared_member() {
         let schema = closed(&["a", "b", "c"], 3, &json!({}));
-        let expected = errors(&[
-            ("/required", MISSING_C),
-            ("/additionalProperties", UNEXPECTED_Z),
-        ]);
         assert_eq!(
             outcome(&schema, &json!({"a": 1, "b": 2, "z": 3})),
             (
                 false,
                 Some(MISSING_C.to_owned()),
-                expected.clone(),
-                expected
+                errors(&[
+                    ("/required", MISSING_C),
+                    ("/additionalProperties", UNEXPECTED_Z),
+                ]),
+                // `evaluate` fails the false schema at each rejected member.
+                errors(&[
+                    ("/required", MISSING_C),
+                    ("/additionalProperties", "False schema does not allow 3"),
+                ])
             )
         );
     }
