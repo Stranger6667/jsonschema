@@ -40,8 +40,8 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
 #[cfg(feature = "testsuite")]
 #[doc(hidden)]
 #[must_use]
-pub fn evaluate_supports(schema: &serde_json::Value) -> bool {
-    codegen::evaluation::unsupported(schema).is_none()
+pub fn evaluate_supports(schema: &serde_json::Value, draft: Draft) -> bool {
+    codegen::evaluation::unsupported(schema, draft).is_none()
 }
 
 #[cfg(feature = "bench")]

@@ -1558,10 +1558,11 @@ pub mod generated {
         }
     }
 
-    /// The units a generated `evaluate` reports: the schema first, then its keywords. Their
-    /// locations are built on first use.
+    /// The units a generated `evaluate` reports: the schema first, then its keywords. Each unit
+    /// is its location, then any other location its errors are reported at. Locations are built
+    /// on first use.
     pub struct Locations {
-        pointers: &'static [&'static str],
+        units: &'static [&'static [&'static str]],
         base: Option<&'static str>,
         built: OnceLock<Box<[NodeLocation]>>,
     }
@@ -1569,9 +1570,12 @@ pub mod generated {
     impl Locations {
         /// `base` is the absolute URI the pointers resolve against, if the schema has one.
         #[must_use]
-        pub const fn new(pointers: &'static [&'static str], base: Option<&'static str>) -> Self {
+        pub const fn new(
+            units: &'static [&'static [&'static str]],
+            base: Option<&'static str>,
+        ) -> Self {
             Locations {
-                pointers,
+                units,
                 base,
                 built: OnceLock::new(),
             }
@@ -1582,13 +1586,14 @@ pub mod generated {
         ///
         /// # Panics
         ///
-        /// No pointers were given; the generator always gives the schema's own.
+        /// A unit has no location; the generator always gives one.
         #[must_use]
         pub fn evaluate(&self, errors: &[ValidationError<'_>]) -> Evaluation {
             let built = self.built.get_or_init(|| {
-                self.pointers
+                self.units
                     .iter()
-                    .map(|pointer| {
+                    .map(|paths| {
+                        let pointer = paths[0];
                         let absolute = self.base.map(|base| format!("{base}#{pointer}"));
                         NodeLocation::new(pointer, absolute.as_deref())
                     })
@@ -1597,21 +1602,21 @@ pub mod generated {
             let (schema, keywords) = built.split_first().expect("the schema's own location");
             let mut arena = EvaluationArena::default();
             let mut children = ChildList::default();
-            for (location, pointer) in keywords.iter().zip(&self.pointers[1..]) {
+            for (location, paths) in keywords.iter().zip(&self.units[1..]) {
                 children.push(
                     &mut arena,
-                    unit(location, at(errors, pointer), ChildList::default()),
+                    unit(location, at(errors, paths), ChildList::default()),
                 );
             }
-            let root = unit(schema, at(errors, ""), children);
+            let root = unit(schema, at(errors, self.units[0]), children);
             Evaluation::with_root(arena, root)
         }
     }
 
-    fn at(errors: &[ValidationError<'_>], pointer: &str) -> Vec<ErrorDescription> {
+    fn at(errors: &[ValidationError<'_>], paths: &[&str]) -> Vec<ErrorDescription> {
         errors
             .iter()
-            .filter(|error| error.schema_path().as_str() == pointer)
+            .filter(|error| paths.contains(&error.schema_path().as_str()))
             .map(ErrorDescription::from_validation_error)
             .collect()
     }

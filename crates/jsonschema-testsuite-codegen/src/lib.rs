@@ -71,7 +71,8 @@ pub fn suite(args: TokenStream, input: TokenStream) -> TokenStream {
             Ok(tree) => tree,
             Err(e) => return compile_error_ts(e.to_string()),
         };
-        let (covered, total) = generator::evaluate_coverage(&suite_tree);
+        let (covered, total) =
+            generator::evaluate_coverage(&suite_tree, generator::draft_named(draft));
         evaluate_covered += covered;
         evaluate_total += total;
         let modules = generator::generate_modules(
