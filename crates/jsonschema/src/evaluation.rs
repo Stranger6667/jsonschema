@@ -1540,6 +1540,8 @@ pub mod generated {
         schema: Arc<str>,
         absolute: Option<Arc<Uri<String>>>,
         annotations: Option<Arc<serde_json::Value>>,
+        /// The annotations apply to string instances only.
+        strings_only: bool,
     }
 
     impl NodeLocation {
@@ -1547,7 +1549,12 @@ pub mod generated {
         ///
         /// `absolute` is not a URI, or `annotations` is not JSON; the generator only emits ones it
         /// built itself.
-        fn new(keyword_location: &str, absolute: Option<&str>, annotations: Option<&str>) -> Self {
+        fn new(
+            keyword_location: &str,
+            absolute: Option<&str>,
+            annotations: Option<&str>,
+            strings_only: bool,
+        ) -> Self {
             let keyword = Location::from_escaped(keyword_location);
             let absolute = absolute.map(|uri| {
                 Arc::new(Uri::parse(uri.to_owned()).expect("generated absolute location is a URI"))
@@ -1559,6 +1566,7 @@ pub mod generated {
                 annotations: annotations.map(|json| {
                     Arc::new(serde_json::from_str(json).expect("generated annotations are JSON"))
                 }),
+                strings_only,
             }
         }
     }
@@ -1572,6 +1580,9 @@ pub mod generated {
         base: Option<&'static str>,
         /// The schema's own annotations, as JSON.
         annotations: Option<&'static str>,
+        /// Annotations of keyword units that annotate string instances only, with the unit's
+        /// index.
+        string_annotations: &'static [(usize, &'static str)],
         built: OnceLock<Box<[NodeLocation]>>,
     }
 
@@ -1583,32 +1594,48 @@ pub mod generated {
             aliases: &'static [(&'static str, usize)],
             base: Option<&'static str>,
             annotations: Option<&'static str>,
+            string_annotations: &'static [(usize, &'static str)],
         ) -> Self {
             Locations {
                 units,
                 aliases,
                 base,
                 annotations,
+                string_annotations,
                 built: OnceLock::new(),
             }
         }
 
         /// The evaluation of an instance the schema reports `errors` for: each unit fails with
-        /// the errors reported at its locations.
+        /// the errors reported at its locations. `string` tells whether the instance is a string.
         ///
         /// # Panics
         ///
         /// There are no units; the generator always gives the schema's own.
         #[must_use]
-        pub fn evaluate(&self, errors: &[ValidationError<'_>]) -> Evaluation {
+        pub fn evaluate(&self, errors: &[ValidationError<'_>], string: bool) -> Evaluation {
             let built = self.built.get_or_init(|| {
                 self.units
                     .iter()
                     .enumerate()
                     .map(|(index, pointer)| {
                         let absolute = self.base.map(|base| format!("{base}#{pointer}"));
-                        let annotations = if index == 0 { self.annotations } else { None };
-                        NodeLocation::new(pointer, absolute.as_deref(), annotations)
+                        let string_annotations = self
+                            .string_annotations
+                            .iter()
+                            .find(|(of, _)| *of == index)
+                            .map(|(_, json)| *json);
+                        let annotations = if index == 0 {
+                            self.annotations
+                        } else {
+                            string_annotations
+                        };
+                        NodeLocation::new(
+                            pointer,
+                            absolute.as_deref(),
+                            annotations,
+                            string_annotations.is_some(),
+                        )
                     })
                     .collect()
             });
@@ -1618,10 +1645,15 @@ pub mod generated {
             for (index, location) in keywords.iter().enumerate() {
                 children.push(
                     &mut arena,
-                    unit(location, self.at(errors, index + 1), ChildList::default()),
+                    unit(
+                        location,
+                        string,
+                        self.at(errors, index + 1),
+                        ChildList::default(),
+                    ),
                 );
             }
-            let root = unit(schema, self.at(errors, 0), children);
+            let root = unit(schema, string, self.at(errors, 0), children);
             Evaluation::with_root(arena, root)
         }
 
@@ -1644,16 +1676,22 @@ pub mod generated {
     /// A unit at the instance root, failing with `errors` or with a failing child.
     fn unit(
         location: &NodeLocation,
+        string: bool,
         errors: Vec<ErrorDescription>,
         children: ChildList,
     ) -> EvaluationNode {
+        let annotations = location
+            .annotations
+            .clone()
+            .filter(|_| string || !location.strings_only)
+            .map(Annotations::from_arc);
         if errors.is_empty() && children.all_valid() {
             EvaluationNode::valid(
                 location.keyword.clone(),
                 location.absolute.clone(),
                 Arc::clone(&location.schema),
                 InstancePosition::ROOT,
-                location.annotations.clone().map(Annotations::from_arc),
+                annotations,
                 children,
             )
         } else {
@@ -1662,7 +1700,7 @@ pub mod generated {
                 location.absolute.clone(),
                 Arc::clone(&location.schema),
                 InstancePosition::ROOT,
-                location.annotations.clone().map(Annotations::from_arc),
+                annotations,
                 errors,
                 children,
             )

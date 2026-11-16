@@ -1,13 +1,16 @@
 use proc_macro2::TokenStream;
 use quote::quote;
 use referencing::Draft;
-use serde_json::Value;
+use serde_json::{Map, Value};
 
-use super::emit::ValueEmitter;
+use super::{
+    emit::ValueEmitter,
+    keywords::{format::format_emits_assertion, type_::simple_type_pattern},
+};
 use crate::context::CompileContext;
 
 /// Keywords whose units `evaluate` reports, in the runtime's priority order.
-const LEAF_KEYWORDS: [&str; 17] = [
+const LEAF_KEYWORDS: [&str; 21] = [
     "type",
     "const",
     "enum",
@@ -24,8 +27,42 @@ const LEAF_KEYWORDS: [&str; 17] = [
     "maxProperties",
     "required",
     "pattern",
+    "format",
+    "contentEncoding",
+    "contentMediaType",
+    "contentSchema",
     "uniqueItems",
 ];
+
+/// A unit: the schema's own, by default, or a keyword's.
+#[derive(Default)]
+struct Unit {
+    location: String,
+    /// Other locations its errors are reported at.
+    aliases: Vec<&'static str>,
+    /// Its annotation of a string instance, as JSON.
+    string_annotation: Option<String>,
+}
+
+impl Unit {
+    fn new(keyword: &str) -> Self {
+        Unit {
+            location: format!("/{keyword}"),
+            aliases: Vec::new(),
+            string_annotation: None,
+        }
+    }
+
+    fn with_alias(mut self, alias: &'static str) -> Self {
+        self.aliases.push(alias);
+        self
+    }
+
+    fn annotating(mut self, value: &Value) -> Self {
+        self.string_annotation = Some(value.to_string());
+        self
+    }
+}
 
 /// The body of the generated `evaluate`. Keyword units take their errors from one run of the
 /// schema's errors function, by schema location, so no keyword's error code is emitted twice.
@@ -37,7 +74,7 @@ pub(super) fn compile<E: ValueEmitter>(
         return Err(syn::Error::new(proc_macro2::Span::call_site(), message));
     }
     // The schema's own unit comes first.
-    let mut units = vec![vec![String::new()]];
+    let mut units = vec![Unit::default()];
     let mut annotations = quote! { None };
     if let Value::Object(keywords) = schema {
         if let Some(keyword) = keywords
@@ -52,7 +89,7 @@ pub(super) fn compile<E: ValueEmitter>(
         units.extend(
             LEAF_KEYWORDS
                 .iter()
-                .filter_map(|keyword| unit(keyword, keywords.get(*keyword)?, ctx.draft)),
+                .filter_map(|keyword| unit(ctx, keyword, keywords.get(*keyword)?, keywords)),
         );
         // The draft's unknown keywords annotate the schema, as the runtime reports them.
         let unknown: serde_json::Map<_, _> = keywords
@@ -65,12 +102,22 @@ pub(super) fn compile<E: ValueEmitter>(
             annotations = quote! { Some(#json) };
         }
     }
-    let pointers = units.iter().map(|paths| &paths[0]);
-    let aliases = units.iter().enumerate().flat_map(|(index, paths)| {
-        paths[1..]
+    let pointers = units.iter().map(|unit| &unit.location);
+    let aliases = units.iter().enumerate().flat_map(|(index, unit)| {
+        unit.aliases
             .iter()
             .map(move |alias| quote! { (#alias, #index) })
     });
+    let string_annotations = units.iter().enumerate().filter_map(|(index, unit)| {
+        let json = unit.string_annotation.as_ref()?;
+        Some(quote! { (#index, #json) })
+    });
+    // Only string annotations read it.
+    let string = if units.iter().any(|unit| unit.string_annotation.is_some()) {
+        E::type_matches(simple_type_pattern::<E>("string").into_iter().collect())
+    } else {
+        quote! { false }
+    };
     let base = ctx.config.base_uri.as_str();
     // Without a base of its own the schema gets a synthetic one, which the output leaves out.
     let base = if base.starts_with("json-schema:///") {
@@ -80,29 +127,57 @@ pub(super) fn compile<E: ValueEmitter>(
         quote! { Some(#base) }
     };
     Ok(quote! {
-        static __LOCATIONS: __eval::Locations =
-            __eval::Locations::new(&[#(#pointers),*], &[#(#aliases),*], #base, #annotations);
+        static __LOCATIONS: __eval::Locations = __eval::Locations::new(
+            &[#(#pointers),*],
+            &[#(#aliases),*],
+            #base,
+            #annotations,
+            &[#(#string_annotations),*],
+        );
         let mut __errors = __err::Errors::new(false);
         let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        __LOCATIONS.evaluate(&__errors.into_vec())
+        __LOCATIONS.evaluate(&__errors.into_vec(), #string)
     })
 }
 
-/// A keyword's unit: its location, then any other location its errors are reported at. `None`
-/// when the runtime gives the keyword no unit.
-fn unit(keyword: &str, value: &Value, draft: Draft) -> Option<Vec<String>> {
+/// A keyword's unit, or `None` when the runtime gives the keyword none.
+fn unit<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    keyword: &str,
+    value: &Value,
+    keywords: &Map<String, Value>,
+) -> Option<Unit> {
     // The draft's unknown keywords annotate the schema instead.
-    if !draft.is_known_keyword(keyword) {
+    if !ctx.draft.is_known_keyword(keyword) {
         return None;
     }
-    let location = format!("/{keyword}");
-    match (draft, keyword) {
+    let unit = Unit::new(keyword);
+    match (ctx.draft, keyword) {
         // Draft 4's boolean flags make a bound exclusive; the bound's unit reports their errors.
         (Draft::Draft4, "exclusiveMinimum" | "exclusiveMaximum") => None,
-        (Draft::Draft4, "minimum") => Some(vec![location, "/exclusiveMinimum".to_string()]),
-        (Draft::Draft4, "maximum") => Some(vec![location, "/exclusiveMaximum".to_string()]),
+        (Draft::Draft4, "minimum") => Some(unit.with_alias("/exclusiveMinimum")),
+        (Draft::Draft4, "maximum") => Some(unit.with_alias("/exclusiveMaximum")),
         (_, "uniqueItems") if value == &Value::Bool(false) => None,
-        _ => Some(vec![location]),
+        // The runtime skips a format it validates formats with but does not know.
+        (_, "format") if ctx.validates_formats() && !format_emits_assertion(ctx, value) => None,
+        (_, "format") => Some(unit.annotating(value)),
+        // Draft 6 and 7 assert content, reporting both keywords in the `contentMediaType` unit.
+        (Draft::Draft6 | Draft::Draft7, "contentEncoding")
+            if keywords.contains_key("contentMediaType") =>
+        {
+            None
+        }
+        (Draft::Draft6 | Draft::Draft7, "contentMediaType")
+            if keywords.contains_key("contentEncoding") =>
+        {
+            Some(unit.with_alias("/contentEncoding"))
+        }
+        (Draft::Draft6 | Draft::Draft7, _) => Some(unit),
+        (_, "contentSchema") if !keywords.contains_key("contentMediaType") => None,
+        (_, "contentEncoding" | "contentMediaType" | "contentSchema") => {
+            Some(unit.annotating(value))
+        }
+        _ => Some(unit),
     }
 }
 

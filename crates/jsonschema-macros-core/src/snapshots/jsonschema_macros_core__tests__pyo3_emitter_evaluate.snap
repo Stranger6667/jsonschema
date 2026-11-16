@@ -90,10 +90,11 @@ mod __validator_impl {
             &[],
             None,
             None,
+            &[],
         );
         let mut __errors = __err::Errors::new(false);
         let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        __LOCATIONS.evaluate(&__errors.into_vec())
+        __LOCATIONS.evaluate(&__errors.into_vec(), false)
     }
     pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
         __json::inspect(

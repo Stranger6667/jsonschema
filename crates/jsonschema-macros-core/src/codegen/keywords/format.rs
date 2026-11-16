@@ -14,7 +14,7 @@ fn validates_formats_by_default(draft: Draft) -> bool {
 }
 
 impl<E: ValueEmitter> CompileContext<'_, E> {
-    fn validates_formats(&self) -> bool {
+    pub(crate) fn validates_formats(&self) -> bool {
         self.config.validate_formats.unwrap_or_else(|| {
             self.asserts_formats_by_dialect() || validates_formats_by_default(self.draft)
         })
