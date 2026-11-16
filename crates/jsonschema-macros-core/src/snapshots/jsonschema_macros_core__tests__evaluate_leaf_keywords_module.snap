@@ -101,16 +101,17 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
-        static __LOCATIONS: __eval::Locations = __eval::Locations::new(
-            &["", "/type", "/minLength", "/maxLength"],
-            &[],
-            None,
-            None,
-            &[],
-        );
+        static __TREE: __eval::Tree = __eval::Tree {
+            tables: "{\"schemas\":[{\"count\":3,\"first\":0,\"pointer\":\"\"}],\"units\":[{\"keyword\":\"type\"},{\"keyword\":\"minLength\"},{\"keyword\":\"maxLength\"}]}",
+            built: ::std::sync::OnceLock::new(),
+        };
         let mut __errors = __err::Errors::new(false);
         let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        __LOCATIONS.evaluate(&__errors.into_vec(), false)
+        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate(
+            &__TREE,
+            &instance,
+            &__errors.into_vec(),
+        )
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {
         run_is_valid(instance)

@@ -5830,6 +5830,15 @@ struct EvaluateContent;
 #[jsonschema::validator(schema = r#"{"contentSchema": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateContentSchemaAlone;
 
+#[jsonschema::validator(schema = r#"{"properties": {"a": {"type": "integer"}, "b": false, "c": true, "d": {}, "e~/f": {"minLength": 1, "x-note": 1}}}"#, methods = { evaluate = true })]
+struct EvaluateProperties;
+
+#[jsonschema::validator(schema = r#"{"properties": {"s p": {"type": "string"}, "^a": {"properties": {"b": {"minimum": 2}}}}}"#, base_uri = "https://example.com/root.json", methods = { evaluate = true })]
+struct EvaluatePropertiesWithBase;
+
+#[jsonschema::validator(schema = r#"{"type": "object", "properties": {"b": {"type": "integer"}, "a": {}}, "required": ["a", "b"]}"#, methods = { evaluate = true })]
+struct EvaluatePropertiesRequired;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -5864,6 +5873,9 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateContent::evaluate, serde_json::json!({"contentEncoding": "base64", "contentMediaType": "application/json", "contentSchema": {"type": "integer"}}), None, Draft::Draft202012 ; "content_annotations")]
 #[test_case(EvaluateContentSchemaAlone::evaluate, serde_json::json!({"contentSchema": {"type": "integer"}}), None, Draft::Draft202012 ; "content_schema_alone")]
 #[test_case(EvaluateObjectsAndPattern::evaluate, serde_json::json!({"required": ["a"], "maxProperties": 2, "minProperties": 1, "pattern": "^a"}), None, Draft::Draft202012 ; "objects_and_pattern")]
+#[test_case(EvaluateProperties::evaluate, serde_json::json!({"properties": {"a": {"type": "integer"}, "b": false, "c": true, "d": {}, "e~/f": {"minLength": 1, "x-note": 1}}}), None, Draft::Draft202012 ; "properties")]
+#[test_case(EvaluatePropertiesWithBase::evaluate, serde_json::json!({"properties": {"s p": {"type": "string"}, "^a": {"properties": {"b": {"minimum": 2}}}}}), Some("https://example.com/root.json"), Draft::Draft202012 ; "properties_with_base")]
+#[test_case(EvaluatePropertiesRequired::evaluate, serde_json::json!({"type": "object", "properties": {"b": {"type": "integer"}, "a": {}}, "required": ["a", "b"]}), None, Draft::Draft202012 ; "properties_required")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -5894,6 +5906,10 @@ fn test_evaluate_matches_runtime(
         serde_json::json!("MQ=="),
         serde_json::json!("ew=="),
         serde_json::json!("!!"),
+        serde_json::json!({"a": "x", "b": 1, "c": 2, "d": null, "e~/f": "", "s p": 1, "^a": {"b": 1}}),
+        serde_json::json!({"^a": {"b": 3, "c": 1}, "s p": "x", "e~/f": "y"}),
+        // More members than the runtime scans before looking declared names up instead.
+        serde_json::json!({"a": 1, "b": "x", "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1}),
     ] {
         assert_eq!(
             evaluation_outputs(&evaluate(&instance)),
