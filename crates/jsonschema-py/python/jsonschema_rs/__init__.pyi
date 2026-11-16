@@ -338,6 +338,11 @@ class ValidationErrorKind:
         error: str
 
     @final
+    class MaxContains(ValidationErrorKind):
+        __match_args__ = ("limit",)
+        limit: int
+
+    @final
     class MaxItems(ValidationErrorKind):
         __match_args__ = ("limit",)
         limit: int
@@ -354,6 +359,11 @@ class ValidationErrorKind:
 
     @final
     class MaxProperties(ValidationErrorKind):
+        __match_args__ = ("limit",)
+        limit: int
+
+    @final
+    class MinContains(ValidationErrorKind):
         __match_args__ = ("limit",)
         limit: int
 

@@ -56,10 +56,12 @@ pub(crate) enum Kind {
     FalseSchema,
     Format { format: String },
     FromUtf8 { message: String },
+    MaxContains { limit: u64 },
     MaxItems { limit: u64 },
     Maximum { limit: Value },
     MaxLength { limit: u64 },
     MaxProperties { limit: u64 },
+    MinContains { limit: u64 },
     MinItems { limit: u64 },
     Minimum { limit: Value },
     MinLength { limit: u64 },
@@ -137,6 +139,8 @@ impl From<&ValidationErrorKind> for Kind {
             ValidationErrorKind::MaxLength { limit } => Kind::MaxLength { limit: *limit },
             ValidationErrorKind::MaxProperties { limit } => Kind::MaxProperties { limit: *limit },
             ValidationErrorKind::MinItems { limit } => Kind::MinItems { limit: *limit },
+            ValidationErrorKind::MinContains { limit } => Kind::MinContains { limit: *limit },
+            ValidationErrorKind::MaxContains { limit } => Kind::MaxContains { limit: *limit },
             ValidationErrorKind::Minimum { limit } => Kind::Minimum {
                 limit: limit.clone(),
             },
@@ -345,6 +349,16 @@ mod tests {
         &json!({"minItems": 2}),
         &json!([1]),
         &json!([{"message": "[1] has less than 2 items", "instancePath": [], "schemaPath": ["minItems"], "kind": {"type": "minItems", "limit": 2}}])
+    )]
+    #[test_case(
+        &json!({"contains": {"const": 1}, "minContains": 2}),
+        &json!([1]),
+        &json!([{"message": "[1] has less than 2 items valid under the given schema", "instancePath": [], "schemaPath": ["minContains"], "kind": {"type": "minContains", "limit": 2}}])
+    )]
+    #[test_case(
+        &json!({"contains": {"const": 1}, "maxContains": 1}),
+        &json!([1, 1]),
+        &json!([{"message": "[1,1] has more than 1 item valid under the given schema", "instancePath": [], "schemaPath": ["maxContains"], "kind": {"type": "maxContains", "limit": 1}}])
     )]
     #[test_case(
         &json!({"maxProperties": 1}),

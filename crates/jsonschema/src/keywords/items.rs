@@ -86,16 +86,23 @@ impl<F: Json> Validate<F> for ItemsArrayValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        if let Some(array) = instance.as_array() {
-            let mut children = ChildList::default();
-            for (idx, (item, node)) in array.elements().zip(self.items.iter()).enumerate() {
-                let child = node.evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
-                children.push(ctx.arena(), child);
-            }
-            EvaluationResult::from_children(children)
-        } else {
-            EvaluationResult::valid_empty()
+        let Some(array) = instance.as_array().filter(|array| array.len() != 0) else {
+            return EvaluationResult::valid_empty();
+        };
+        let mut children = ChildList::default();
+        for (idx, (item, node)) in array.elements().zip(self.items.iter()).enumerate() {
+            let child = node.evaluate_instance_below(&item, &location.push(idx), tracker, ctx);
+            children.push(ctx.arena(), child);
         }
+        // As `prefixItems`: every item, or the largest index applied.
+        let annotation = if children.len() == array.len() {
+            Value::Bool(true)
+        } else {
+            Value::from(children.len() - 1)
+        };
+        let mut result = EvaluationResult::from_children(children);
+        result.annotate(Annotations::new(annotation));
+        result
     }
 }
 

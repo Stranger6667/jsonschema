@@ -1410,6 +1410,17 @@ RSpec.describe JSONSchema::ValidationErrorKind do
     expect(errors.first.kind.value).to have_key(:limit)
   end
 
+  [
+    ["minContains", { "contains" => { "const" => 1 }, "minContains" => 2 }, [1], 2],
+    ["maxContains", { "contains" => { "const" => 1 }, "maxContains" => 1 }, [1, 1], 1]
+  ].each do |name, schema, instance, limit|
+    it "has name and value for #{name} error" do
+      errors = JSONSchema.each_error(schema, instance).to_a
+      expect(errors.first.kind.name).to eq(name)
+      expect(errors.first.kind.value).to eq({ limit: limit })
+    end
+  end
+
   it "has name and value for maxLength error" do
     schema = { "type" => "string", "maxLength" => 3 }
     errors = JSONSchema.each_error(schema, "toolong").to_a

@@ -69,6 +69,12 @@ pub(crate) fn compile<E: ValueEmitter>(
 
     let min_path_str = min_path.as_str();
     let err_instance = E::err_instance(format_ident!("instance"));
+    // Without `minContains` no item matching is the plain `contains` failure.
+    let too_few = if min_contains.is_some() {
+        quote! { __err::min_contains(#min_path_str, __path.into(), #err_instance, #min) }
+    } else {
+        quote! { __err::contains(#min_path_str, __path.into(), #err_instance) }
+    };
 
     // Combined min+max: check maxContains before minContains (matching the runtime) so at
     // most one error is emitted.
@@ -84,22 +90,18 @@ pub(crate) fn compile<E: ValueEmitter>(
                     }
                 }
                 if (__contains_count as u64) > #max {
-                    break '__first_error Some(__err::contains(
-                        #max_path, __path.into(), #err_instance,
+                    break '__first_error Some(__err::max_contains(
+                        #max_path, __path.into(), #err_instance, #max,
                     ));
                 } else if (__contains_count as u64) < #min {
-                    break '__first_error Some(__err::contains(
-                        #min_path_str, __path.into(), #err_instance,
-                    ));
+                    break '__first_error Some(#too_few);
                 }
             }
         }
     } else if min_contains.unwrap_or(1) == 1 {
         quote! {
             if !(#contains_iter.any(#predicate)) {
-                break '__first_error Some(__err::contains(
-                    #min_path_str, __path.into(), #err_instance,
-                ));
+                break '__first_error Some(#too_few);
             }
         }
     } else {
@@ -116,9 +118,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                     }
                 }
                 if (__contains_count as u64) < #min {
-                    break '__first_error Some(__err::contains(
-                        #min_path_str, __path.into(), #err_instance,
-                    ));
+                    break '__first_error Some(#too_few);
                 }
             }
         }
