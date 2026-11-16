@@ -78,6 +78,10 @@ enum TreeUnit {
         declared: Option<(usize, usize)>,
         patterns: Option<(usize, usize)>,
     },
+    Names {
+        schema: usize,
+        closed: bool,
+    },
 }
 
 struct TreeSchema {
@@ -186,6 +190,17 @@ impl Tree {
                     patterns,
                 });
             }
+            if let Some(subschema) = keywords
+                .get("propertyNames")
+                .filter(|value| **value != Value::Bool(true))
+                .filter(|_| ctx.draft.is_known_keyword("propertyNames"))
+            {
+                let schema = self.add(ctx, subschema, format!("{pointer}/propertyNames"))?;
+                units.push(TreeUnit::Names {
+                    schema,
+                    closed: *subschema == Value::Bool(false),
+                });
+            }
             // The draft's unknown keywords annotate the schema, as the runtime reports them.
             let unknown: Map<_, _> = keywords
                 .iter()
@@ -269,6 +284,9 @@ pub(super) fn compile<E: ValueEmitter>(
                 "properties": declared,
                 "patterns": patterns,
             }),
+            TreeUnit::Names { schema, closed } => {
+                json!({"keyword": "propertyNames", "names": schema, "closed": closed})
+            }
         })
         .collect();
     let mut tables = json!({"schemas": schemas, "units": units});
@@ -352,13 +370,17 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
     match schema {
         Value::Bool(_) => None,
         Value::Object(keywords) => keywords.iter().find_map(|(keyword, value)| {
+            if !draft.is_known_keyword(keyword) {
+                // An unknown keyword is an annotation.
+                return None;
+            }
             match (keyword.as_str(), value) {
                 ("properties" | "patternProperties", Value::Object(subschemas)) => {
                     return subschemas
                         .values()
                         .find_map(|subschema| unsupported(subschema, draft));
                 }
-                ("additionalProperties", Value::Bool(_) | Value::Object(_)) => {
+                ("additionalProperties" | "propertyNames", Value::Bool(_) | Value::Object(_)) => {
                     return unsupported(value, draft);
                 }
                 _ => {}
@@ -378,7 +400,6 @@ fn supports(keyword: &str, value: &Value, draft: Draft) -> bool {
             .is_some_and(|uri| Draft::from_schema_uri(uri) == draft),
         // The runtime skips a divisor beyond `f64`.
         "multipleOf" => value.as_f64().is_some_and(f64::is_finite),
-        // An unknown keyword is an annotation.
-        _ => LEAF_KEYWORDS.contains(&keyword) || !draft.is_known_keyword(keyword),
+        _ => LEAF_KEYWORDS.contains(&keyword),
     }
 }
