@@ -64,10 +64,9 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
                 }
             });
             if let ControlFlow::Break(error) = flow {
-                let schema_path = error.schema_path().clone();
                 return Err(ValidationError::property_names(
-                    schema_path.clone(),
-                    crate::paths::capture_evaluation_path(tracker, &schema_path),
+                    error.schema_path().clone(),
+                    error.evaluation_path().clone(),
                     location.into(),
                     instance.lazy_value(),
                     error,
@@ -96,10 +95,9 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
                     .collect_errors(&node, location, tracker, ctx, &mut collected);
                 for error in collected {
                     let error = error.to_owned();
-                    let schema_path = error.schema_path().clone();
                     errors.push(ValidationError::property_names(
-                        schema_path.clone(),
-                        crate::paths::capture_evaluation_path(tracker, &schema_path),
+                        error.schema_path().clone(),
+                        error.evaluation_path().clone(),
                         location.into(),
                         instance.lazy_value(),
                         error,
@@ -232,6 +230,31 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // A name's error is reported along the path that reached it, `$ref`s included.
+    #[test_case(
+        &json!({"$defs": {"s": {"pattern": "^a"}}, "propertyNames": {"$ref": "#/$defs/s"}}),
+        "/propertyNames/$ref/pattern" ; "ref below propertyNames"
+    )]
+    #[test_case(
+        &json!({"$defs": {"o": {"propertyNames": {"pattern": "^a"}}}, "$ref": "#/$defs/o"}),
+        "/$ref/propertyNames/pattern" ; "propertyNames below ref"
+    )]
+    #[test_case(
+        &json!({"propertyNames": {"pattern": "^a"}}),
+        "/propertyNames/pattern" ; "no ref"
+    )]
+    fn evaluation_path(schema: &Value, expected: &str) {
+        let validator = crate::validator_for(schema).expect("valid schema");
+        let instance = json!({"bx": 1});
+        let error = validator.validate(&instance).expect_err("invalid");
+        assert_eq!(error.evaluation_path().as_str(), expected);
+        let paths: Vec<_> = validator
+            .iter_errors(&instance)
+            .map(|error| error.evaluation_path().as_str().to_string())
+            .collect();
+        assert_eq!(paths, [expected]);
+    }
 
     // Each name gets a unit of its own at the object's location; `false` fails each.
     #[test_case(

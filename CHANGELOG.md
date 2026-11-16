@@ -31,6 +31,7 @@
 - `evaluate` output for `oneOf` with more than one valid subschema reporting a different message than `validate`.
 - Error messages for `minContains` and `maxContains` claiming that no item is valid under the `contains` subschema.
 - `evaluate` output for `contains` annotating an instance that is not an array.
+- Evaluation paths of `propertyNames` errors leaving out a `$ref` inside `propertyNames`.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `f64`, such as `1e-400`, with the `arbitrary-precision` feature.
 
 ### Performance
