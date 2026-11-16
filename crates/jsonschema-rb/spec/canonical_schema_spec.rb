@@ -7,6 +7,10 @@ DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 # `unevaluated*`, so this stays raw. Each construct canonicalization learns needs a
 # still-unsupported stand-in here.
 UNSUPPORTED = { "dependencies" => {}, "unevaluatedProperties" => false }.freeze
+# A cycle keeps a reference symbolic: such a document is not folded through its targets.
+RECURSIVE_DEFS = {
+  "node" => { "type" => "object", "properties" => { "child" => { "$ref" => "#/$defs/node" } } }
+}.freeze
 
 RSpec.describe "JSONSchema.canonicalize" do
   [
@@ -370,6 +374,95 @@ RSpec.describe "JSONSchema.canonicalize" do
     expect(view.inspect).to eq(
       "#<JSONSchema::Canonical::AnyOfView branches=#{view.branches.map(&:kind).inspect}>"
     )
+  end
+
+  {
+    "OneOfView" => {
+      "oneOf" => [{ "$ref" => "#/$defs/plain" }, { "$ref" => "#/$defs/tight" }],
+      "$defs" => { "plain" => { "type" => "string" }, "tight" => { "type" => "string", "minLength" => 3 } }
+    },
+    "AllOfView" => { "allOf" => [{ "$ref" => "#/$defs/node" }, { "type" => "string" }], "$defs" => RECURSIVE_DEFS }
+  }.each do |name, schema|
+    it "inspect summarises #{name} branches by kind" do
+      view = JSONSchema.canonicalize(schema).view
+      expect(view.inspect).to eq(
+        "#<JSONSchema::Canonical::#{name} branches=#{view.branches.map(&:kind).inspect}>"
+      )
+    end
+  end
+
+  it "inspect names the kind a NotView negates" do
+    view = JSONSchema.canonicalize({ "not" => { "$ref" => "#/$defs/node" }, "$defs" => RECURSIVE_DEFS }).view
+    expect(view.inspect).to eq("#<JSONSchema::Canonical::NotView schema=reference>")
+  end
+
+  it "view returns ReferenceView with its target" do
+    view = JSONSchema.canonicalize({ "not" => { "$ref" => "#/$defs/node" }, "$defs" => RECURSIVE_DEFS }).view
+    case view.schema.view
+    in JSONSchema::Canonical::ReferenceView[uri:] => reference
+      expect(uri).to eq("#/$defs/node")
+      expect(reference.inspect).to eq('#<JSONSchema::Canonical::ReferenceView uri="#/$defs/node">')
+    end
+  end
+
+  it "view returns a ContainsView that matches by pattern" do
+    schema = { "type" => "array", "contains" => { "type" => "string" }, "minContains" => 2, "maxContains" => 3 }
+    case JSONSchema.canonicalize(schema).view.contains
+    in [JSONSchema::Canonical::ContainsView[schema: inner, min_contains:, max_contains:] => facet]
+      expect(inner.to_json_schema).to eq({ "$schema" => DRAFT202012, "type" => "string" })
+      expect([min_contains, max_contains]).to eq([2, 3])
+      expect(facet.inspect).to eq(
+        "#<JSONSchema::Canonical::ContainsView schema=#{inner.inspect} min_contains=2 max_contains=3>"
+      )
+    end
+  end
+
+  it "view returns ObjectView with an UndeclaredValueFails violation" do
+    schema = {
+      "type" => "object",
+      "not" => {
+        "properties" => { "a" => true }, "patternProperties" => { "^b" => true },
+        "additionalProperties" => { "type" => "string" }
+      }
+    }
+    case JSONSchema.canonicalize(schema).view.violations
+    in [JSONSchema::Canonical::UndeclaredValueFailsView[names:, patterns:, additional:] => violation]
+      expect(names).to eq(["a"])
+      expect(patterns).to eq(["^b"])
+      expect(additional.to_json_schema).to eq({ "$schema" => DRAFT202012, "type" => "string" })
+      expect(violation.inspect).to eq(
+        "#<JSONSchema::Canonical::UndeclaredValueFailsView names=[\"a\"] patterns=[\"^b\"] " \
+        "additional=#{additional.inspect}>"
+      )
+    end
+  end
+
+  it "view returns ObjectView with a PatternValueFails violation" do
+    schema = { "type" => "object", "not" => { "patternProperties" => { "^a" => { "type" => "string" } } } }
+    case JSONSchema.canonicalize(schema).view.violations
+    in [JSONSchema::Canonical::PatternValueFailsView[pattern:, schema: inner] => violation]
+      expect(pattern).to eq("^a")
+      expect(inner.to_json_schema).to eq({ "$schema" => DRAFT202012, "type" => "string" })
+      expect(violation.inspect).to eq(
+        "#<JSONSchema::Canonical::PatternValueFailsView pattern=\"^a\" schema=#{inner.inspect}>"
+      )
+    end
+  end
+
+  it "inspect renders the schema a NameFails violation carries" do
+    schema = { "type" => "object", "not" => { "propertyNames" => { "maxLength" => 2 } } }
+    violation = JSONSchema.canonicalize(schema).view.violations.first
+    expect(violation.inspect).to eq("#<JSONSchema::Canonical::NameFailsView schema=#{violation.schema.inspect}>")
+  end
+
+  %i[draft4 draft6 draft7 draft201909 draft202012].each do |draft|
+    it "reports the #{draft} it was canonicalized under" do
+      expect(JSONSchema.canonicalize({ "type" => "string" }, draft: draft).draft).to eq(draft)
+    end
+  end
+
+  it "does not equal a value of another class" do
+    expect(JSONSchema.canonicalize({})).not_to eq(1)
   end
 
   it "view returns RawView with the document payload" do

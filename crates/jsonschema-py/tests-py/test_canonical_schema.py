@@ -1,4 +1,5 @@
 import sys
+from collections import OrderedDict
 
 import pytest
 from hypothesis import given
@@ -118,6 +119,13 @@ def test_unknown_object_is_returned_as_is():
 
     obj = Custom()
     assert clone(obj) is obj
+
+
+def test_dict_subclasses_are_cloned_into_plain_dicts():
+    value = OrderedDict(a=OrderedDict(b=[OrderedDict(c=1)]))
+    cloned = clone(value)
+    assert cloned == {"a": {"b": [{"c": 1}]}}
+    assert [type(node) for node in (cloned, cloned["a"], cloned["a"]["b"][0])] == [dict, dict, dict]
 
 
 def test_recursion_limit_raises():

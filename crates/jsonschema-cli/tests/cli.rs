@@ -3084,3 +3084,62 @@ fn test_output_file_keeps_existing_permissions(command: &str) {
         0o640
     );
 }
+
+#[test]
+fn test_self_describing_offline_refuses_remote_schema() {
+    let dir = tempdir().unwrap();
+    let instance = create_temp_file(
+        &dir,
+        "instance.json",
+        r#"{"$schema": "https://example.com/schema.json"}"#,
+    );
+
+    let output = cli()
+        .arg("validate")
+        .arg("--offline")
+        .arg("-i")
+        .arg(&instance)
+        .output()
+        .unwrap();
+    assert!(!output.status.success());
+    assert_eq!(
+        sanitize_output(
+            String::from_utf8_lossy(&output.stderr).to_string(),
+            &[&instance]
+        ),
+        "{FILE_1} - ERROR: `--offline` refuses to fetch the schema `https://example.com/schema.json` this instance describes itself with\n"
+    );
+}
+
+#[test]
+fn test_resource_without_separator_is_rejected() {
+    let output = cli()
+        .args(["bundle", "schema.json", "--resource", "person.json"])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.code(), Some(2));
+    assert_eq!(
+        String::from_utf8(output.stderr).unwrap(),
+        "error: invalid value 'person.json' for '--resource <URI=FILE>': expected URI=FILE, got 'person.json'\n\nFor more information, try '--help'.\n"
+    );
+}
+
+// Each keyword is ignored by the draft before the one that introduced it.
+#[test_case("6", r#"{"propertyNames": {"maxLength": 1}}"#, r#"{"ab": 1}"#, false; "draft 6 enforces propertyNames")]
+#[test_case("6", r#"{"if": {"type": "integer"}, "then": {"minimum": 10}}"#, "1", true; "draft 6 ignores if")]
+#[test_case("7", r#"{"if": {"type": "integer"}, "then": {"minimum": 10}}"#, "1", false; "draft 7 enforces if")]
+#[test_case("7", r#"{"dependentRequired": {"a": ["b"]}}"#, r#"{"a": 1}"#, true; "draft 7 ignores dependentRequired")]
+#[test_case("2019", r#"{"dependentRequired": {"a": ["b"]}}"#, r#"{"a": 1}"#, false; "draft 2019 enforces dependentRequired")]
+#[test_case("2019", r#"{"prefixItems": [{"type": "string"}]}"#, "[1]", true; "draft 2019 ignores prefixItems")]
+#[test_case("2020", r#"{"prefixItems": [{"type": "string"}]}"#, "[1]", false; "draft 2020 enforces prefixItems")]
+fn test_draft_flag_selects_keyword_set(draft: &str, schema: &str, instance: &str, valid: bool) {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", schema);
+    let instance = create_temp_file(&dir, "instance.json", instance);
+
+    let output = cli()
+        .args(["validate", &schema, "-d", draft, "-i", &instance])
+        .output()
+        .unwrap();
+    assert_eq!(output.status.success(), valid);
+}

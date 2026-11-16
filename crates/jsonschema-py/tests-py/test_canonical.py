@@ -3,6 +3,7 @@ import gc
 import json
 import sys
 from decimal import Decimal
+from functools import reduce
 
 import pytest
 from hypothesis import given
@@ -295,3 +296,24 @@ def test_enum_value_refcount_is_stable():
     for _ in range(200):
         assert to_string(PayloadEnum.ITEM) == "[1]"
     assert sys.getrefcount(payload) == baseline
+
+
+@pytest.mark.parametrize(
+    "wrap,opening,closing",
+    [
+        (lambda inner: [inner], "[", "]"),
+        (lambda inner: (inner,), "[", "]"),
+        (lambda inner: {"a": inner}, '{"a":', "}"),
+    ],
+    ids=["list", "tuple", "dict"],
+)
+def test_nesting_up_to_the_recursion_limit(wrap, opening, closing):
+    nested = reduce(lambda inner, _: wrap(inner), range(255), 1)
+    assert canonical.json.to_string(nested) == opening * 255 + "1" + closing * 255
+    with pytest.raises(ValueError, match="^Recursion limit reached$"):
+        canonical.json.to_string(wrap(nested))
+
+
+@pytest.mark.parametrize("value,expected", [((), "[]"), ([], "[]"), ({}, "{}")])
+def test_empty_containers(value, expected):
+    assert canonical.json.to_string(value) == expected

@@ -197,6 +197,55 @@ RSpec.describe JSONSchema do
       expect { JSONSchema::Canonical::JSON.to_string({ a: 1, "a" => 2 }) }
         .to raise_error(TypeError, /duplicate keys after normalization/)
     end
+
+    {
+      nil => "null",
+      [true, false] => "[true,false]",
+      :name => '"name"',
+      -1e10 => "-10000000000",
+      -1e300 => -1e300.to_i.to_s,
+      2**70 => "1180591620717411303424",
+      -(2**70) => "-1180591620717411303424",
+      BigDecimal("1e30") => "1000000000000000000000000000000",
+      BigDecimal("Infinity") => "null"
+    }.each do |value, expected|
+      it "serializes #{value.inspect} as #{expected}" do
+        expect(JSONSchema::Canonical::JSON.to_string(value)).to eq(expected)
+      end
+    end
+
+    {
+      "arrays" => ->(inner) { [inner] },
+      "hashes" => ->(inner) { { "a" => inner } }
+    }.each do |label, wrap|
+      it "serializes #{label} nested up to the depth limit and raises past it" do
+        nested = 255.times.reduce(1) { |inner, _| wrap.call(inner) }
+        expect(JSONSchema::Canonical::JSON.to_string(nested)).to eq(JSON.generate(nested, max_nesting: 256))
+        expect { JSONSchema::Canonical::JSON.to_string(wrap.call(nested)) }
+          .to raise_error(ArgumentError, "Exceeded maximum nesting depth (255)")
+      end
+    end
+  end
+
+  describe "schema values" do
+    it "reads a symbol as its name" do
+      expect(JSONSchema.valid?({ "type" => :string }, "a")).to be true
+      expect(JSONSchema.valid?({ "type" => :string }, 1)).to be false
+    end
+
+    [
+      ["an unsupported type", Object.new, TypeError, "Unsupported type: 'Object'"],
+      ["NaN", Float::NAN, ArgumentError, "Cannot convert NaN or Infinity to JSON"],
+      ["a BigDecimal NaN", BigDecimal("NaN"), ArgumentError, "Cannot convert BigDecimal NaN or Infinity to JSON"],
+      ["arrays nested past the depth limit", 256.times.reduce(1) { |inner, _| [inner] }, ArgumentError,
+       "Exceeded maximum nesting depth (255)"],
+      ["hashes nested past the depth limit", 256.times.reduce(1) { |inner, _| { "a" => inner } }, ArgumentError,
+       "Exceeded maximum nesting depth (255)"]
+    ].each do |label, value, error, message|
+      it "raises #{error} for #{label}" do
+        expect { JSONSchema.valid?({ "const" => value }, 1) }.to raise_error(error, message)
+      end
+    end
   end
 
   describe ".validator_for" do
@@ -280,6 +329,34 @@ RSpec.describe JSONSchema do
 end
 
 RSpec.describe "Reusable validators" do
+  # `exclusiveMinimum` is a boolean modifier in Draft 4 and a bound of its own from Draft 6 on.
+  {
+    JSONSchema::Draft4Validator => { "minimum" => 5, "exclusiveMinimum" => true },
+    JSONSchema::Draft6Validator => { "exclusiveMinimum" => 5 },
+    JSONSchema::Draft7Validator => { "exclusiveMinimum" => 5 },
+    JSONSchema::Draft201909Validator => { "exclusiveMinimum" => 5 },
+    JSONSchema::Draft202012Validator => { "exclusiveMinimum" => 5 }
+  }.each do |klass, schema|
+    describe klass do
+      let(:validator) { klass.new(schema) }
+
+      it "reports the same verdict through every method" do
+        expect(validator.valid?(6)).to be true
+        expect(validator.validate!(6)).to be_nil
+        expect(validator.each_error(6).to_a).to eq([])
+        expect(validator.evaluate(6).valid?).to be true
+      end
+
+      it "reports the same failure through every method" do
+        expect(validator.valid?(5)).to be false
+        expect { validator.validate!(5) }
+          .to raise_error(JSONSchema::ValidationError) { |e| expect(e.kind.name).to eq("exclusiveMinimum") }
+        expect(validator.each_error(5).map { |e| e.kind.name }).to eq(["exclusiveMinimum"])
+        expect(validator.evaluate(5).valid?).to be false
+      end
+    end
+  end
+
   describe "#inspect" do
     {
       JSONSchema::Draft4Validator => "Draft4",
@@ -693,6 +770,20 @@ RSpec.describe JSONSchema::Meta do
     it "raises ValidationError for invalid schema" do
       schema = { "type" => "invalid_type" }
       expect { JSONSchema::Meta.validate!(schema) }.to raise_error(JSONSchema::ValidationError)
+    end
+
+    context "with a registry" do
+      let(:registry) { JSONSchema::Registry.new([["https://example.com/ref.json", { "type" => "string" }]]) }
+
+      it "returns nil for a valid schema" do
+        schema = { "$ref" => "https://example.com/ref.json" }
+        expect(JSONSchema::Meta.validate!(schema, registry: registry)).to be_nil
+      end
+
+      it "raises ValidationError for an invalid schema" do
+        expect { JSONSchema::Meta.validate!({ "type" => "invalid_type" }, registry: registry) }
+          .to raise_error(JSONSchema::ValidationError) { |e| expect(e.instance_path).to eq(["type"]) }
+      end
     end
   end
 end
@@ -1621,9 +1712,14 @@ RSpec.describe JSONSchema::RegexOptions do
     expect(validator.valid?("other")).to be false
   end
 
-  it "has inspect output" do
-    opts = JSONSchema::RegexOptions.new(size_limit: 1024)
-    expect(opts.inspect).to eq("#<JSONSchema::RegexOptions size_limit=1024, dfa_size_limit=nil, syntax=:ecma262>")
+  {
+    { size_limit: 1024 } => "size_limit=1024, dfa_size_limit=nil",
+    { dfa_size_limit: 2048 } => "size_limit=nil, dfa_size_limit=2048"
+  }.each do |kwargs, rendered|
+    it "has inspect output for #{kwargs}" do
+      opts = JSONSchema::RegexOptions.new(**kwargs)
+      expect(opts.inspect).to eq("#<JSONSchema::RegexOptions #{rendered}, syntax=:ecma262>")
+    end
   end
 
   # Recovery for https://github.com/rust-lang/regex/issues/1344.
@@ -1662,9 +1758,21 @@ RSpec.describe JSONSchema::FancyRegexOptions do
     expect(validator.valid?("other")).to be false
   end
 
-  it "has inspect output" do
-    opts = JSONSchema::FancyRegexOptions.new(backtrack_limit: 1000)
-    expect(opts.inspect).to eq("#<JSONSchema::FancyRegexOptions backtrack_limit=1000, size_limit=nil, dfa_size_limit=nil, syntax=:ecma262>")
+  {
+    { backtrack_limit: 1000 } => "backtrack_limit=1000, size_limit=nil, dfa_size_limit=nil",
+    { size_limit: 5, dfa_size_limit: 6 } => "backtrack_limit=nil, size_limit=5, dfa_size_limit=6"
+  }.each do |kwargs, rendered|
+    it "has inspect output for #{kwargs}" do
+      opts = JSONSchema::FancyRegexOptions.new(**kwargs)
+      expect(opts.inspect).to eq("#<JSONSchema::FancyRegexOptions #{rendered}, syntax=:ecma262>")
+    end
+  end
+
+  it "applies dfa_size_limit to the compiled pattern" do
+    opts = JSONSchema::FancyRegexOptions.new(dfa_size_limit: 100_000)
+    validator = JSONSchema.validator_for({ "pattern" => "^a+$" }, pattern_options: opts)
+    expect(validator.valid?("aa")).to be true
+    expect(validator.valid?("b")).to be false
   end
 
   # Recovery for https://github.com/rust-lang/regex/issues/1344.
@@ -1710,9 +1818,15 @@ RSpec.describe JSONSchema::EmailOptions do
     expect(validator.valid?("user@localhost")).to be true
   end
 
-  it "has inspect output" do
-    opts = JSONSchema::EmailOptions.new(require_tld: true, minimum_sub_domains: 2)
-    expect(opts.inspect).to eq("#<JSONSchema::EmailOptions require_tld=true, allow_domain_literal=true, allow_display_text=true, minimum_sub_domains=2>")
+  {
+    { require_tld: true, minimum_sub_domains: 2 } =>
+      "require_tld=true, allow_domain_literal=true, allow_display_text=true, minimum_sub_domains=2",
+    { allow_domain_literal: false, allow_display_text: false } =>
+      "require_tld=false, allow_domain_literal=false, allow_display_text=false, minimum_sub_domains=nil"
+  }.each do |kwargs, rendered|
+    it "has inspect output for #{kwargs}" do
+      expect(JSONSchema::EmailOptions.new(**kwargs).inspect).to eq("#<JSONSchema::EmailOptions #{rendered}>")
+    end
   end
 end
 
@@ -1732,9 +1846,25 @@ RSpec.describe JSONSchema::HttpOptions do
     expect(opts.tls_verify).to be false
   end
 
-  it "has inspect output" do
-    opts = JSONSchema::HttpOptions.new(timeout: 30.0, tls_verify: false)
-    expect(opts.inspect).to eq("#<JSONSchema::HttpOptions timeout=30, connect_timeout=nil, tls_verify=false, ca_cert=nil>")
+  {
+    { timeout: 30.0, tls_verify: false } => "timeout=30, connect_timeout=nil, tls_verify=false, ca_cert=nil",
+    { connect_timeout: 5.0, ca_cert: "/ca.pem" } =>
+      'timeout=nil, connect_timeout=5, tls_verify=true, ca_cert="/ca.pem"'
+  }.each do |kwargs, rendered|
+    it "has inspect output for #{kwargs}" do
+      expect(JSONSchema::HttpOptions.new(**kwargs).inspect).to eq("#<JSONSchema::HttpOptions #{rendered}>")
+    end
+  end
+
+  it "builds a validator that skips TLS verification" do
+    opts = JSONSchema::HttpOptions.new(tls_verify: false)
+    expect(JSONSchema.validator_for({ "type" => "string" }, http_options: opts).valid?("a")).to be true
+  end
+
+  it "raises ArgumentError for a CA certificate that cannot be read" do
+    opts = JSONSchema::HttpOptions.new(ca_cert: "/nonexistent.pem")
+    expect { JSONSchema.validator_for({ "type" => "string" }, http_options: opts) }
+      .to raise_error(ArgumentError, "Failed to read certificate file '/nonexistent.pem': No such file or directory (os error 2)")
   end
 
   it "raises ArgumentError for negative timeout" do
