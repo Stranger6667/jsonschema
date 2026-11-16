@@ -1,0 +1,176 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+expression: "render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)"
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::evaluation as __eval;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::__private::unfinished_matches as __unfinished;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use __sj::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = __sj::Map<String, __Value>;
+    pub(super) fn is_valid(instance: &__Value) -> bool {
+        match instance {
+            __Value::Array(arr) => {
+                let mut __contains_count = 0usize;
+                for instance in arr {
+                    if match instance {
+                        __Value::Number(n) => __types::is_integer(n),
+                        _ => false,
+                    } {
+                        __contains_count += 1;
+                        if (__contains_count as u64) >= 2 {
+                            break;
+                        }
+                    }
+                }
+                (__contains_count as u64) >= 2
+            }
+            _ => true,
+        }
+    }
+    pub(super) fn errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        match instance {
+            __Value::Array(arr) => {
+                if let Some(__e) = '__first_error: {
+                    {
+                        let mut __contains_count = 0usize;
+                        for item in arr.iter() {
+                            let instance = item;
+                            if match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            } {
+                                __contains_count += 1;
+                                if (__contains_count as u64) >= 2 {
+                                    break;
+                                }
+                            }
+                        }
+                        if (__contains_count as u64) < 2 {
+                            break '__first_error Some(
+                                __err::min_contains(
+                                    "/minContains",
+                                    __path.into(),
+                                    instance,
+                                    2,
+                                ),
+                            );
+                        }
+                    }
+                    None
+                } {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+    pub(super) fn run_is_valid(instance: &__Value) -> bool {
+        is_valid(instance)
+    }
+    pub(super) fn run_validate<'__i>(instance: &'__i __Value) -> Option<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
+    }
+    pub(super) fn run_collect_errors<'__i>(instance: &'__i __Value) -> Vec<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
+    }
+    pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        fn __valid_0(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+        ) -> bool {
+            let instance = ::core::clone::Clone::clone(instance);
+            match instance {
+                __Value::Number(n) => __types::is_integer(n),
+                _ => false,
+            }
+        }
+        static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
+            tables: "{\"schemas\":[{\"count\":1,\"first\":1,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/contains\"}],\"units\":[{\"keyword\":\"type\"},{\"aliases\":[\"minContains\",\"maxContains\"],\"contains\":[1,0],\"keyword\":\"contains\"}]}",
+            matchers: &[],
+            valid: &[__valid_0],
+            built: ::std::sync::OnceLock::new(),
+        };
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate(
+            &__TREE,
+            &instance,
+            &__errors.into_vec(),
+        )
+    }
+    pub(super) fn entry_is_valid(instance: &__Value) -> bool {
+        run_is_valid(instance)
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Value,
+    ) -> ::std::result::Result<(), __VE<'__i>> {
+        match run_validate(instance) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+    pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
+        __err::iterator_from(run_collect_errors(instance))
+    }
+    pub(super) fn entry_evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        evaluate(instance)
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &jsonschema::__private::serde_json::Value) -> bool {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> ::std::result::Result<(), jsonschema::ValidationError<'__i>> {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::ErrorIterator<'__i> {
+        __validator_impl::entry_iter_errors(instance)
+    }
+    pub fn evaluate(
+        instance: &jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::Evaluation {
+        __validator_impl::entry_evaluate(instance)
+    }
+}

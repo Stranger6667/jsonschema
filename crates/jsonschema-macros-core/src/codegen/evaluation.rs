@@ -4,6 +4,7 @@ use referencing::{write_escaped_str, Draft};
 use serde_json::{json, Map, Value};
 
 use super::{
+    compile_schema,
     emit::ValueEmitter,
     keywords::{format::format_emits_assertion, pattern_properties::name_match_expr},
 };
@@ -83,6 +84,11 @@ enum TreeUnit {
         schema: usize,
         closed: bool,
     },
+    /// `contains`, with its subschema's index in `Tree::valid`.
+    Contains {
+        schema: usize,
+        valid: usize,
+    },
     /// Array-form `items` or `prefixItems`, with a range of `Tree::tuples`.
     Tuple {
         keyword: &'static str,
@@ -125,6 +131,8 @@ struct Tree {
     dependencies: Vec<(String, usize)>,
     /// Each subschema of array-form `items` or `prefixItems`, by position.
     tuples: Vec<usize>,
+    /// The `is_valid` code of each `contains` subschema, run against `instance`.
+    valid: Vec<TokenStream>,
 }
 
 impl Tree {
@@ -284,6 +292,21 @@ impl Tree {
                     closed: *subschema == Value::Bool(false),
                 });
             }
+            if let Some(subschema @ (Value::Bool(_) | Value::Object(_))) = keywords
+                .get("contains")
+                .filter(|_| ctx.draft.is_known_keyword("contains"))
+            {
+                let location = format!("{pointer}/contains");
+                let schema = self.add(ctx, subschema, location.clone())?;
+                let check = ctx.with_schema_path_swap(location, |ctx| {
+                    ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
+                });
+                units.push(TreeUnit::Contains {
+                    schema,
+                    valid: self.valid.len(),
+                });
+                self.valid.push(check.is_valid_token_stream());
+            }
             for keyword in ["dependencies", "dependentSchemas"] {
                 let Some(Value::Object(dependencies)) = keywords
                     .get(keyword)
@@ -360,7 +383,7 @@ pub(super) fn compile<E: ValueEmitter>(
             TreeUnit::Leaf(unit) => {
                 let mut entry = json!({"keyword": unit.keyword});
                 if let Some(alias) = unit.alias {
-                    entry["alias"] = json!(alias);
+                    entry["aliases"] = json!([alias]);
                 }
                 if let Some(annotation) = unit.string_annotation {
                     entry["strings"] = annotation;
@@ -395,6 +418,12 @@ pub(super) fn compile<E: ValueEmitter>(
                 json!({"keyword": keyword, "dependencies": schemas})
             }
             TreeUnit::Tuple { keyword, schemas } => json!({"keyword": keyword, "tuple": schemas}),
+            // The errors run reports the count errors at the bound keywords.
+            TreeUnit::Contains { schema, valid } => json!({
+                "keyword": "contains",
+                "contains": [schema, valid],
+                "aliases": ["minContains", "maxContains"],
+            }),
             TreeUnit::Rest {
                 keyword,
                 schema,
@@ -424,6 +453,11 @@ pub(super) fn compile<E: ValueEmitter>(
         .map(|index| format_ident!("__matches_{index}"))
         .collect();
     let matches = tree.patterns.iter().map(|(_, matches)| matches);
+    let validities: Vec<_> = (0..tree.valid.len())
+        .map(|index| format_ident!("__valid_{index}"))
+        .collect();
+    let checks = &tree.valid;
+    let prelude = E::function_prelude();
     let base = ctx.config.base_uri.as_str();
     // Without a base of its own the schema gets a synthetic one, which the output leaves out.
     if !base.starts_with("json-schema:///") {
@@ -433,9 +467,17 @@ pub(super) fn compile<E: ValueEmitter>(
     let json = E::json_representation();
     Ok(quote! {
         #(fn #matchers(name: &str) -> bool { #matches })*
-        static __TREE: __eval::Tree = __eval::Tree {
+        #(
+            fn #validities(instance: &<#json as jsonschema::json::Json>::Node<'_>) -> bool {
+                let instance = ::core::clone::Clone::clone(instance);
+                #prelude
+                #checks
+            }
+        )*
+        static __TREE: __eval::Tree<#json> = __eval::Tree {
             tables: #tables,
             matchers: &[#(#matchers),*],
+            valid: &[#(#validities),*],
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);
@@ -512,7 +554,11 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
                         .find_map(|subschema| unsupported(subschema, draft));
                 }
                 (
-                    "additionalProperties" | "propertyNames" | "items" | "additionalItems",
+                    "additionalProperties"
+                    | "propertyNames"
+                    | "items"
+                    | "additionalItems"
+                    | "contains",
                     Value::Bool(_) | Value::Object(_),
                 ) => {
                     return unsupported(value, draft);
@@ -534,6 +580,8 @@ fn supports(keyword: &str, value: &Value, draft: Draft) -> bool {
             .is_some_and(|uri| Draft::from_schema_uri(uri) == draft),
         // The runtime skips a divisor beyond `f64`.
         "multipleOf" => value.as_f64().is_some_and(f64::is_finite),
+        // `contains` reports their errors.
+        "minContains" | "maxContains" => true,
         _ => LEAF_KEYWORDS.contains(&keyword),
     }
 }
