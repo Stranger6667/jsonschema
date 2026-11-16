@@ -167,9 +167,7 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
                 }
             }
         } else {
-            let mut result = EvaluationResult::valid_empty();
-            result.annotate(Annotations::new(Value::Array(Vec::new())));
-            result
+            EvaluationResult::valid_empty()
         }
     }
 }
@@ -550,6 +548,17 @@ mod tests {
     use crate::tests_util;
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // `contains` annotates arrays only, with or without bounds.
+    #[test_case(&json!({"contains": {"type": "integer"}}) ; "plain")]
+    #[test_case(&json!({"contains": {"type": "integer"}, "minContains": 2}) ; "minContains")]
+    #[test_case(&json!({"contains": {"type": "integer"}, "maxContains": 1}) ; "maxContains")]
+    fn evaluate_non_array(schema: &Value) {
+        assert_eq!(
+            tests_util::evaluation_outline(schema, &json!(1)),
+            [" @ ok", "  /contains @ ok"]
+        );
+    }
 
     // With `minContains` or `maxContains`, `contains` still reports the matching items and their
     // indices, as without them.
