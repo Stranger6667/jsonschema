@@ -5839,6 +5839,36 @@ struct EvaluatePropertiesWithBase;
 #[jsonschema::validator(schema = r#"{"type": "object", "properties": {"b": {"type": "integer"}, "a": {}}, "required": ["a", "b"]}"#, methods = { evaluate = true })]
 struct EvaluatePropertiesRequired;
 
+#[jsonschema::validator(schema = r#"{"patternProperties": {"^a": {"type": "integer"}, "b$": true, "^c": false, "^[0-9]+$": {"minimum": 2}}}"#, methods = { evaluate = true })]
+struct EvaluatePatternProperties;
+
+#[jsonschema::validator(schema = r#"{"additionalProperties": {"type": "string"}}"#, methods = { evaluate = true })]
+struct EvaluateAdditionalSchema;
+
+#[jsonschema::validator(schema = r#"{"additionalProperties": false}"#, methods = { evaluate = true })]
+struct EvaluateAdditionalFalse;
+
+#[jsonschema::validator(schema = r#"{"additionalProperties": {}}"#, methods = { evaluate = true })]
+struct EvaluateAdditionalEmpty;
+
+#[jsonschema::validator(schema = r#"{"properties": {"b": {}, "a": {"type": "integer"}}, "additionalProperties": true}"#, methods = { evaluate = true })]
+struct EvaluateAdditionalTrue;
+
+#[jsonschema::validator(schema = r#"{"properties": {"b": {"type": "integer"}, "a": {}}, "patternProperties": {"^x": {"minLength": 2}}, "additionalProperties": {"type": "string"}}"#, methods = { evaluate = true })]
+struct EvaluateObjectApplicators;
+
+#[jsonschema::validator(schema = r#"{"properties": {"a": {}}, "patternProperties": {"^x": {}}, "additionalProperties": false}"#, methods = { evaluate = true })]
+struct EvaluateObjectApplicatorsFalse;
+
+#[jsonschema::validator(schema = r#"{"properties": {"a": {}}, "required": ["a"], "additionalProperties": false}"#, methods = { evaluate = true })]
+struct EvaluateClosedRequired;
+
+#[jsonschema::validator(schema = r#"{"properties": {"a": {}, "b": {}}, "required": ["a", "b"], "additionalProperties": false}"#, methods = { evaluate = true })]
+struct EvaluateClosedEveryRequired;
+
+#[jsonschema::validator(schema = r#"{"patternProperties": {"^a/b~": {"type": "integer"}, "^ ": {}}, "additionalProperties": {"properties": {"a": false}}}"#, base_uri = "https://example.com/root.json", methods = { evaluate = true })]
+struct EvaluatePatternsWithBase;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -5876,6 +5906,16 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateProperties::evaluate, serde_json::json!({"properties": {"a": {"type": "integer"}, "b": false, "c": true, "d": {}, "e~/f": {"minLength": 1, "x-note": 1}}}), None, Draft::Draft202012 ; "properties")]
 #[test_case(EvaluatePropertiesWithBase::evaluate, serde_json::json!({"properties": {"s p": {"type": "string"}, "^a": {"properties": {"b": {"minimum": 2}}}}}), Some("https://example.com/root.json"), Draft::Draft202012 ; "properties_with_base")]
 #[test_case(EvaluatePropertiesRequired::evaluate, serde_json::json!({"type": "object", "properties": {"b": {"type": "integer"}, "a": {}}, "required": ["a", "b"]}), None, Draft::Draft202012 ; "properties_required")]
+#[test_case(EvaluatePatternProperties::evaluate, serde_json::json!({"patternProperties": {"^a": {"type": "integer"}, "b$": true, "^c": false, "^[0-9]+$": {"minimum": 2}}}), None, Draft::Draft202012 ; "pattern_properties")]
+#[test_case(EvaluateAdditionalSchema::evaluate, serde_json::json!({"additionalProperties": {"type": "string"}}), None, Draft::Draft202012 ; "additional_schema")]
+#[test_case(EvaluateAdditionalFalse::evaluate, serde_json::json!({"additionalProperties": false}), None, Draft::Draft202012 ; "additional_false")]
+#[test_case(EvaluateAdditionalEmpty::evaluate, serde_json::json!({"additionalProperties": {}}), None, Draft::Draft202012 ; "additional_empty")]
+#[test_case(EvaluateAdditionalTrue::evaluate, serde_json::json!({"properties": {"b": {}, "a": {"type": "integer"}}, "additionalProperties": true}), None, Draft::Draft202012 ; "additional_true")]
+#[test_case(EvaluateObjectApplicators::evaluate, serde_json::json!({"properties": {"b": {"type": "integer"}, "a": {}}, "patternProperties": {"^x": {"minLength": 2}}, "additionalProperties": {"type": "string"}}), None, Draft::Draft202012 ; "object_applicators")]
+#[test_case(EvaluateObjectApplicatorsFalse::evaluate, serde_json::json!({"properties": {"a": {}}, "patternProperties": {"^x": {}}, "additionalProperties": false}), None, Draft::Draft202012 ; "object_applicators_false")]
+#[test_case(EvaluateClosedRequired::evaluate, serde_json::json!({"properties": {"a": {}}, "required": ["a"], "additionalProperties": false}), None, Draft::Draft202012 ; "closed_required")]
+#[test_case(EvaluateClosedEveryRequired::evaluate, serde_json::json!({"properties": {"a": {}, "b": {}}, "required": ["a", "b"], "additionalProperties": false}), None, Draft::Draft202012 ; "closed_every_required")]
+#[test_case(EvaluatePatternsWithBase::evaluate, serde_json::json!({"patternProperties": {"^a/b~": {"type": "integer"}, "^ ": {}}, "additionalProperties": {"properties": {"a": false}}}), Some("https://example.com/root.json"), Draft::Draft202012 ; "patterns_with_base")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -5908,6 +5948,8 @@ fn test_evaluate_matches_runtime(
         serde_json::json!("!!"),
         serde_json::json!({"a": "x", "b": 1, "c": 2, "d": null, "e~/f": "", "s p": 1, "^a": {"b": 1}}),
         serde_json::json!({"^a": {"b": 3, "c": 1}, "s p": "x", "e~/f": "y"}),
+        serde_json::json!({"a": 1, "b": "x", "xy": "q", "x": "", "c": 2, "ab": "3", "12": 1, "3": 5, "a/b~": "n", " ": 0}),
+        serde_json::json!({"c": "x", "ca": 1, "d": {"a": 1}, "e": {"b": 2}}),
         // More members than the runtime scans before looking declared names up instead.
         serde_json::json!({"a": 1, "b": "x", "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1}),
     ] {

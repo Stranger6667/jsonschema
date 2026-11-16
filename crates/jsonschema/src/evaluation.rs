@@ -1547,7 +1547,7 @@ pub mod generated {
     };
     use crate::{
         compiler::resolve_absolute_location,
-        paths::{LazyLocation, Location},
+        paths::{capture_evaluation_path, LazyLocation, Location},
         properties::{scan_members, HASHMAP_THRESHOLD},
         Json, Node, Object, ValidationError,
     };
@@ -1567,6 +1567,9 @@ pub mod generated {
         /// Each declared property: its name and its schema's index.
         #[serde(default)]
         properties: Vec<(String, usize)>,
+        /// Each `patternProperties` subschema's index, in the order of the matchers.
+        #[serde(default)]
+        patterns: Vec<usize>,
         /// The absolute URI the pointers resolve against, if the schema has one.
         #[serde(default)]
         base: Option<String>,
@@ -1592,9 +1595,39 @@ pub mod generated {
         /// Its annotation of a string instance.
         #[serde(default)]
         strings: Option<Value>,
-        /// A `properties` unit's declared properties, a range of `Tables::properties`.
+        /// A range of `Tables::properties`: a `properties` unit's own, or the ones beside an
+        /// `additionalProperties` unit.
         #[serde(default)]
         properties: Option<(usize, usize)>,
+        /// The runtime checks `properties` in one pass with `additionalProperties`, in member order.
+        #[serde(default)]
+        members: bool,
+        /// A range of `Tables::patterns`: a `patternProperties` unit's own, or the ones beside an
+        /// `additionalProperties` unit.
+        #[serde(default)]
+        patterns: Option<(usize, usize)>,
+        /// An `additionalProperties` unit's subschema.
+        #[serde(default)]
+        additional: Option<usize>,
+        /// That subschema is `false`.
+        #[serde(default)]
+        closed: bool,
+    }
+
+    /// What a unit checks.
+    enum Kind {
+        Leaf,
+        Properties {
+            declared: (usize, usize),
+            in_member_order: bool,
+        },
+        Patterns((usize, usize)),
+        Additional {
+            schema: usize,
+            closed: bool,
+            declared: (usize, usize),
+            patterns: (usize, usize),
+        },
     }
 
     /// Where a unit sits, fixed when the validator is generated.
@@ -1607,13 +1640,18 @@ pub mod generated {
         annotations: Option<Arc<Value>>,
         /// The annotations apply to string instances only.
         strings_only: bool,
-        properties: Option<(usize, usize)>,
+        kind: Kind,
     }
+
+    /// Whether a name matches one `patternProperties` regex.
+    pub type Matcher = fn(&str) -> bool;
 
     /// The units a generated `evaluate` reports, built on first use.
     pub struct Tree {
         /// The JSON the generator writes.
         pub tables: &'static str,
+        /// One per entry of `Tables::patterns`.
+        pub matchers: &'static [Matcher],
         pub built: OnceLock<Built>,
     }
 
@@ -1623,6 +1661,7 @@ pub mod generated {
         schema_units: Box<[(usize, usize)]>,
         units: Box<[UnitLocation]>,
         properties: Box<[(String, usize)]>,
+        patterns: Box<[usize]>,
     }
 
     impl Tree {
@@ -1642,6 +1681,7 @@ pub mod generated {
             }
             let mut walk = Walker {
                 built: self.built.get_or_init(|| self.build()),
+                matchers: self.matchers,
                 errors,
                 by_path,
                 arena: EvaluationArena::default(),
@@ -1672,7 +1712,7 @@ pub mod generated {
                     alias: None,
                     annotations: annotations.map(Arc::new),
                     strings_only: false,
-                    properties: None,
+                    kind: Kind::Leaf,
                 }
             };
             let mut units: Vec<Option<UnitLocation>> = tables.units.iter().map(|_| None).collect();
@@ -1691,7 +1731,22 @@ pub mod generated {
                             .alias
                             .map(|alias| Location::from_escaped(&format!("{pointer}/{alias}"))),
                         strings_only: unit.strings.is_some(),
-                        properties: unit.properties,
+                        kind: match unit.keyword.as_str() {
+                            "properties" => Kind::Properties {
+                                declared: unit.properties.unwrap_or_default(),
+                                in_member_order: unit.members,
+                            },
+                            "patternProperties" => {
+                                Kind::Patterns(unit.patterns.unwrap_or_default())
+                            }
+                            "additionalProperties" => Kind::Additional {
+                                schema: unit.additional.expect("the subschema's index"),
+                                closed: unit.closed,
+                                declared: unit.properties.unwrap_or_default(),
+                                patterns: unit.patterns.unwrap_or_default(),
+                            },
+                            _ => Kind::Leaf,
+                        },
                         ..locate(&format!("{pointer}/{}", unit.keyword), unit.strings)
                     });
                 }
@@ -1706,6 +1761,7 @@ pub mod generated {
                     .map(|unit| unit.expect("every unit belongs to a schema"))
                     .collect(),
                 properties: tables.properties.into_boxed_slice(),
+                patterns: tables.patterns.into_boxed_slice(),
             }
         }
     }
@@ -1754,6 +1810,7 @@ pub mod generated {
 
     struct Walker<'t, 'e, 'i> {
         built: &'t Built,
+        matchers: &'t [Matcher],
         errors: &'e [ValidationError<'i>],
         /// Indices into `errors` by schema location.
         by_path: AHashMap<&'e str, Vec<usize>>,
@@ -1773,17 +1830,39 @@ pub mod generated {
             let mut children = ChildList::default();
             for unit in first..first + count {
                 let site = &built.units[unit];
-                let node = if let Some((first, count)) = site.properties {
-                    self.properties::<F>(site, first, count, instance, location, position)
-                } else {
-                    let errors = self.errors_at(site);
-                    let annotations = site.annotations(instance.is_string());
-                    Self::node(site, errors, annotations, ChildList::default(), position)
+                let node = match site.kind {
+                    Kind::Leaf => {
+                        let errors = self.errors_at(site, location);
+                        let annotations = site.annotations(instance.is_string());
+                        Self::node(site, errors, annotations, ChildList::default(), position)
+                    }
+                    Kind::Properties {
+                        declared,
+                        in_member_order,
+                    } => self.properties::<F>(
+                        site,
+                        declared,
+                        in_member_order,
+                        instance,
+                        location,
+                        position,
+                    ),
+                    Kind::Patterns(patterns) => {
+                        self.patterns::<F>(site, patterns, instance, location, position)
+                    }
+                    Kind::Additional {
+                        schema,
+                        closed,
+                        declared,
+                        patterns,
+                    } => self.additional::<F>(
+                        site, schema, closed, declared, patterns, instance, location, position,
+                    ),
                 };
                 children.push(&mut self.arena, node);
             }
             let site = &built.schemas[index];
-            let errors = self.errors_at(site);
+            let errors = self.errors_at(site, location);
             let annotations = site.annotations(true);
             Self::node(site, errors, annotations, children, position)
         }
@@ -1791,8 +1870,8 @@ pub mod generated {
         fn properties<F: Json>(
             &mut self,
             site: &UnitLocation,
-            first: usize,
-            count: usize,
+            (first, count): (usize, usize),
+            in_member_order: bool,
             instance: &F::Node<'_>,
             location: &LazyLocation,
             position: InstancePosition,
@@ -1813,7 +1892,10 @@ pub mod generated {
                 })
                 .collect();
             // The runtime looks a few declared names up on a wide object, in declared order.
-            if count < HASHMAP_THRESHOLD && !scan_members::<F>(object.len(), count) {
+            if !in_member_order
+                && count < HASHMAP_THRESHOLD
+                && !scan_members::<F>(object.len(), count)
+            {
                 matched.sort_unstable_by_key(|(index, _)| *index);
             }
             let mut names = Vec::with_capacity(matched.len());
@@ -1831,9 +1913,93 @@ pub mod generated {
             Self::node(site, Vec::new(), annotations, children, position)
         }
 
-        /// The errors reported at `site` or its alias, in the order they were reported. A
-        /// subschema of `properties` applies at one instance location only.
-        fn errors_at(&self, site: &UnitLocation) -> Vec<ErrorDescription> {
+        /// Pattern by pattern, the members whose names match it, in member order; a name matching
+        /// two patterns is annotated twice.
+        fn patterns<F: Json>(
+            &mut self,
+            site: &UnitLocation,
+            (first, count): (usize, usize),
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let Some(object) = instance.as_object() else {
+                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+            };
+            let (built, matchers) = (self.built, self.matchers);
+            let mut names = Vec::new();
+            let mut children = ChildList::default();
+            for pattern in first..first + count {
+                let (schema, matches) = (built.patterns[pattern], matchers[pattern]);
+                for (name, value) in object.members() {
+                    let name = name.as_ref();
+                    if matches(name) {
+                        names.push(Value::String(name.to_owned()));
+                        let path = location.push(name);
+                        let below = self.arena.position_below(position, path.segment());
+                        let child = self.schema::<F>(schema, &value, &path, below);
+                        children.push(&mut self.arena, child);
+                    }
+                }
+            }
+            let annotations = Some(Annotations::new(Value::Array(names)));
+            Self::node(site, Vec::new(), annotations, children, position)
+        }
+
+        /// The members no sibling `properties` or `patternProperties` names, in member order.
+        /// `false` fails each one; the errors run reports one error for all of them instead.
+        #[allow(clippy::too_many_arguments)]
+        fn additional<F: Json>(
+            &mut self,
+            site: &UnitLocation,
+            schema: usize,
+            closed: bool,
+            (first, count): (usize, usize),
+            patterns: (usize, usize),
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let Some(object) = instance.as_object() else {
+                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+            };
+            let (built, matchers) = (self.built, self.matchers);
+            let declared = &built.properties[first..first + count];
+            let matchers = &matchers[patterns.0..patterns.0 + patterns.1];
+            let mut names = Vec::new();
+            let mut children = ChildList::default();
+            for (name, value) in object.members() {
+                let name = name.as_ref();
+                if declared.iter().any(|(declared, _)| declared == name)
+                    || matchers.iter().any(|matches| matches(name))
+                {
+                    continue;
+                }
+                let path = location.push(name);
+                let below = self.arena.position_below(position, path.segment());
+                let child = if closed {
+                    let site = &built.schemas[schema];
+                    let error = ValidationError::false_schema(
+                        site.keyword.clone(),
+                        capture_evaluation_path(None, &site.keyword),
+                        Location::from(&path),
+                        value.lazy_value(),
+                    );
+                    let errors = vec![ErrorDescription::from_validation_error(&error)];
+                    Self::node(site, errors, None, ChildList::default(), below)
+                } else {
+                    names.push(Value::String(name.to_owned()));
+                    self.schema::<F>(schema, &value, &path, below)
+                };
+                children.push(&mut self.arena, child);
+            }
+            let annotations = (!closed).then(|| Annotations::new(Value::Array(names)));
+            Self::node(site, Vec::new(), annotations, children, position)
+        }
+
+        /// The errors reported at `site` or its alias for the instance at `location`, in the order
+        /// they were reported.
+        fn errors_at(&self, site: &UnitLocation, location: &LazyLocation) -> Vec<ErrorDescription> {
             if self.by_path.is_empty() {
                 return Vec::new();
             }
@@ -1843,10 +2009,16 @@ pub mod generated {
                 .flatten()
                 .copied()
                 .collect();
+            if indices.is_empty() {
+                return Vec::new();
+            }
             indices.sort_unstable();
+            let instance_location = Location::from(location);
             indices
                 .into_iter()
-                .map(|index| ErrorDescription::from_validation_error(&self.errors[index]))
+                .map(|index| &self.errors[index])
+                .filter(|error| *error.instance_path() == instance_location)
+                .map(ErrorDescription::from_validation_error)
                 .collect()
         }
 

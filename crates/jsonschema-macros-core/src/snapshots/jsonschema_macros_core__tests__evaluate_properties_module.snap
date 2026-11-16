@@ -202,7 +202,8 @@ mod __validator_impl {
     }
     pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
         static __TREE: __eval::Tree = __eval::Tree {
-            tables: "{\"properties\":[[\"d\",3],[\"a\",1],[\"b/c\",2]],\"schemas\":[{\"count\":2,\"first\":2,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/b~1c\"},{\"count\":0,\"first\":1,\"pointer\":\"/properties/b~1c/properties/d\"}],\"units\":[{\"keyword\":\"type\"},{\"keyword\":\"properties\",\"properties\":[0,1]},{\"keyword\":\"required\"},{\"keyword\":\"properties\",\"properties\":[1,2]}]}",
+            tables: "{\"properties\":[[\"d\",3],[\"a\",1],[\"b/c\",2]],\"schemas\":[{\"count\":2,\"first\":2,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/b~1c\"},{\"count\":0,\"first\":1,\"pointer\":\"/properties/b~1c/properties/d\"}],\"units\":[{\"keyword\":\"type\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]},{\"keyword\":\"required\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[1,2]}]}",
+            matchers: &[],
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);

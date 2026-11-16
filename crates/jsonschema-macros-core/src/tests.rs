@@ -383,10 +383,27 @@ fn evaluate_properties_module() {
     );
 }
 
+#[test]
+fn evaluate_object_applicators_module() {
+    let mut config = test_config(json!({
+        "properties": {"a": {}},
+        "patternProperties": {"^x-": {}, "[0-9]$": {"minimum": 1}},
+        "additionalProperties": false
+    }));
+    config.methods.evaluate = true;
+    insta::assert_snapshot!(
+        "evaluate_object_applicators_module",
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
+    );
+}
+
 #[test_case(json!({"even": true}), "`evaluate` does not support the custom `even` keyword yet" ; "custom keyword")]
 #[test_case(json!({"properties": {"a": {"even": true}}}), "`evaluate` does not support the custom `even` keyword yet" ; "custom keyword below properties")]
 #[test_case(json!({"properties": {"a": {"items": {}}}}), "`evaluate` does not support the `items` keyword yet" ; "keyword below properties")]
+#[test_case(json!({"patternProperties": {"^a": {"items": {}}}}), "`evaluate` does not support the `items` keyword yet" ; "keyword below patternProperties")]
+#[test_case(json!({"additionalProperties": {"items": {}}}), "`evaluate` does not support the `items` keyword yet" ; "keyword below additionalProperties")]
 #[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
+#[test_case(json!({"patternProperties": {"(": {}}}), "`evaluate` does not support the `(` pattern" ; "invalid pattern")]
 fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
     let mut config = test_config(schema);
     config
