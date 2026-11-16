@@ -89,6 +89,23 @@ enum TreeUnit {
         schema: usize,
         valid: usize,
     },
+    /// `allOf`, `anyOf` or `oneOf`, with a range of `Tree::tuples` and, unless every branch
+    /// applies, where their checks start in `Tree::valid`.
+    Branches {
+        keyword: &'static str,
+        schemas: (usize, usize),
+        valid: Option<usize>,
+    },
+    /// `if`, with its subschema's index in `Tree::valid`.
+    Condition {
+        schema: usize,
+        valid: usize,
+    },
+    /// `then` or `else`.
+    Branch {
+        keyword: &'static str,
+        schema: usize,
+    },
     /// Array-form `items` or `prefixItems`, with a range of `Tree::tuples`.
     Tuple {
         keyword: &'static str,
@@ -129,13 +146,26 @@ struct Tree {
     patterns: Vec<(usize, TokenStream)>,
     /// Each property whose presence applies a subschema, with that subschema's index.
     dependencies: Vec<(String, usize)>,
-    /// Each subschema of array-form `items` or `prefixItems`, by position.
+    /// Each subschema listed in an array, by position.
     tuples: Vec<usize>,
-    /// The `is_valid` code of each `contains` subschema, run against `instance`.
+    /// The `is_valid` code of each subschema a unit checks, run against `instance`.
     valid: Vec<TokenStream>,
 }
 
 impl Tree {
+    /// The `is_valid` code of the subschema at `location`.
+    fn add_validity<E: ValueEmitter>(
+        &mut self,
+        ctx: &mut CompileContext<'_, E>,
+        subschema: &Value,
+        location: String,
+    ) {
+        let check = ctx.with_schema_path_swap(location, |ctx| {
+            ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
+        });
+        self.valid.push(check.is_valid_token_stream());
+    }
+
     fn add_tuple<E: ValueEmitter>(
         &mut self,
         ctx: &mut CompileContext<'_, E>,
@@ -298,14 +328,11 @@ impl Tree {
             {
                 let location = format!("{pointer}/contains");
                 let schema = self.add(ctx, subschema, location.clone())?;
-                let check = ctx.with_schema_path_swap(location, |ctx| {
-                    ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
-                });
                 units.push(TreeUnit::Contains {
                     schema,
                     valid: self.valid.len(),
                 });
-                self.valid.push(check.is_valid_token_stream());
+                self.add_validity(ctx, subschema, location);
             }
             for keyword in ["dependencies", "dependentSchemas"] {
                 let Some(Value::Object(dependencies)) = keywords
@@ -327,6 +354,48 @@ impl Tree {
                 let schemas = (self.dependencies.len(), entries.len());
                 self.dependencies.extend(entries);
                 units.push(TreeUnit::Dependencies { keyword, schemas });
+            }
+            for keyword in ["allOf", "anyOf", "oneOf"] {
+                let Some(Value::Array(schemas)) = keywords.get(keyword) else {
+                    continue;
+                };
+                // Every `allOf` branch applies; the others apply the valid ones if any.
+                let valid = (keyword != "allOf").then_some(self.valid.len());
+                if valid.is_some() {
+                    for (index, subschema) in schemas.iter().enumerate() {
+                        self.add_validity(ctx, subschema, format!("{pointer}/{keyword}/{index}"));
+                    }
+                }
+                let schemas = self.add_tuple(ctx, schemas, &pointer, keyword)?;
+                units.push(TreeUnit::Branches {
+                    keyword,
+                    schemas,
+                    valid,
+                });
+            }
+            // `not` reports its error alone.
+            if keywords.contains_key("not") {
+                units.push(TreeUnit::Leaf(Unit::new("not")));
+            }
+            // `if` without `then` or `else` checks nothing.
+            if let Some(condition) = keywords
+                .get("if")
+                .filter(|_| ctx.draft.is_known_keyword("if"))
+                .filter(|_| keywords.contains_key("then") || keywords.contains_key("else"))
+            {
+                let location = format!("{pointer}/if");
+                let schema = self.add(ctx, condition, location.clone())?;
+                units.push(TreeUnit::Condition {
+                    schema,
+                    valid: self.valid.len(),
+                });
+                self.add_validity(ctx, condition, location);
+                for keyword in ["then", "else"] {
+                    if let Some(branch) = keywords.get(keyword) {
+                        let schema = self.add(ctx, branch, format!("{pointer}/{keyword}"))?;
+                        units.push(TreeUnit::Branch { keyword, schema });
+                    }
+                }
             }
             // The draft's unknown keywords annotate the schema, as the runtime reports them.
             let unknown: Map<_, _> = keywords
@@ -418,6 +487,15 @@ pub(super) fn compile<E: ValueEmitter>(
                 json!({"keyword": keyword, "dependencies": schemas})
             }
             TreeUnit::Tuple { keyword, schemas } => json!({"keyword": keyword, "tuple": schemas}),
+            TreeUnit::Branches {
+                keyword,
+                schemas,
+                valid,
+            } => json!({"keyword": keyword, "branches": schemas, "valid": valid}),
+            TreeUnit::Condition { schema, valid } => {
+                json!({"keyword": "if", "condition": [schema, valid]})
+            }
+            TreeUnit::Branch { keyword, schema } => json!({"keyword": keyword, "branch": schema}),
             // The errors run reports the count errors at the bound keywords.
             TreeUnit::Contains { schema, valid } => json!({
                 "keyword": "contains",
@@ -548,7 +626,9 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
                         .filter(|dependency| !dependency.is_array())
                         .find_map(|subschema| unsupported(subschema, draft));
                 }
-                ("items" | "prefixItems", Value::Array(schemas)) => {
+                // Only its validity is checked.
+                ("not", _) => return None,
+                ("items" | "prefixItems" | "allOf" | "anyOf" | "oneOf", Value::Array(schemas)) => {
                     return schemas
                         .iter()
                         .find_map(|subschema| unsupported(subschema, draft));
@@ -558,7 +638,10 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
                     | "propertyNames"
                     | "items"
                     | "additionalItems"
-                    | "contains",
+                    | "contains"
+                    | "if"
+                    | "then"
+                    | "else",
                     Value::Bool(_) | Value::Object(_),
                 ) => {
                     return unsupported(value, draft);

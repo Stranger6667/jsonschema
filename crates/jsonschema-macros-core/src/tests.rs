@@ -411,6 +411,12 @@ fn evaluate_object_applicators_module() {
 #[test_case(json!({"prefixItems": [{"unevaluatedItems": false}]}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below prefixItems")]
 #[test_case(json!({"items": [{}], "additionalItems": {"unevaluatedItems": false}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below additionalItems")]
 #[test_case(json!({"contains": {"unevaluatedItems": false}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below contains")]
+#[test_case(json!({"allOf": [{}, {"unevaluatedItems": false}]}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below allOf")]
+#[test_case(json!({"anyOf": [{"unevaluatedItems": false}]}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below anyOf")]
+#[test_case(json!({"oneOf": [{"unevaluatedItems": false}]}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below oneOf")]
+#[test_case(json!({"if": {"unevaluatedItems": false}, "then": {}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below if")]
+#[test_case(json!({"if": {}, "then": {"unevaluatedItems": false}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below then")]
+#[test_case(json!({"if": {}, "else": {"unevaluatedItems": false}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below else")]
 #[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
 #[test_case(json!({"patternProperties": {"(": {}}}), "`evaluate` does not support the `(` pattern" ; "invalid pattern")]
 fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
@@ -435,6 +441,22 @@ fn evaluate_contains_module() {
     config.methods.evaluate = true;
     insta::assert_snapshot!(
         "evaluate_contains_module",
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
+    );
+}
+
+#[test]
+fn evaluate_combinators_module() {
+    let mut config = test_config(json!({
+        "allOf": [{"minimum": 0}],
+        "anyOf": [{"type": "integer"}, {"minimum": 2}],
+        "not": {"const": 1},
+        "if": {"type": "integer"},
+        "then": {"maximum": 9},
+    }));
+    config.methods.evaluate = true;
+    insta::assert_snapshot!(
+        "evaluate_combinators_module",
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
     );
 }
