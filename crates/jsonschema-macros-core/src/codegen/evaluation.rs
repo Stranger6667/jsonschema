@@ -1,9 +1,12 @@
 use proc_macro2::TokenStream;
-use quote::quote;
+use quote::{format_ident, quote};
 use referencing::{write_escaped_str, Draft};
 use serde_json::{json, Map, Value};
 
-use super::{emit::ValueEmitter, keywords::format::format_emits_assertion};
+use super::{
+    emit::ValueEmitter,
+    keywords::{format::format_emits_assertion, pattern_properties::name_match_expr},
+};
 use crate::context::CompileContext;
 
 /// Keywords whose units `evaluate` reports, in the runtime's priority order.
@@ -64,8 +67,16 @@ enum TreeUnit {
     Leaf(Unit),
     /// A range of `Tree::properties`.
     Properties {
-        first: usize,
-        count: usize,
+        declared: (usize, usize),
+        in_member_order: bool,
+    },
+    /// A range of `Tree::patterns`.
+    Patterns((usize, usize)),
+    Additional {
+        schema: usize,
+        closed: bool,
+        declared: Option<(usize, usize)>,
+        patterns: Option<(usize, usize)>,
     },
 }
 
@@ -86,12 +97,14 @@ struct Tree {
     units: Vec<TreeUnit>,
     /// Each declared property, with its schema's index.
     properties: Vec<(String, usize)>,
+    /// Each `patternProperties` subschema's index, with the name match its matcher runs.
+    patterns: Vec<(usize, TokenStream)>,
 }
 
 impl Tree {
     fn add<E: ValueEmitter>(
         &mut self,
-        ctx: &CompileContext<'_, E>,
+        ctx: &mut CompileContext<'_, E>,
         schema: &Value,
         pointer: String,
     ) -> syn::Result<usize> {
@@ -120,18 +133,58 @@ impl Tree {
                     .filter_map(|keyword| unit(ctx, keyword, keywords.get(*keyword)?, keywords))
                     .map(TreeUnit::Leaf),
             );
+            let additional = keywords
+                .get("additionalProperties")
+                .filter(|value| **value != Value::Bool(true));
+            let mut declared = None;
             if let Some(Value::Object(properties)) = keywords.get("properties") {
-                let mut declared = Vec::with_capacity(properties.len());
+                let mut entries = Vec::with_capacity(properties.len());
                 for (name, subschema) in properties {
                     let mut child = format!("{pointer}/properties/");
                     write_escaped_str(&mut child, name);
-                    declared.push((name.clone(), self.add(ctx, subschema, child)?));
+                    entries.push((name.clone(), self.add(ctx, subschema, child)?));
                 }
+                let range = (self.properties.len(), entries.len());
+                self.properties.extend(entries);
+                declared = Some(range);
+                // Beside `additionalProperties`, the runtime checks both in one pass.
                 units.push(TreeUnit::Properties {
-                    first: self.properties.len(),
-                    count: declared.len(),
+                    declared: range,
+                    in_member_order: additional.is_some(),
                 });
-                self.properties.extend(declared);
+            }
+            let mut patterns = None;
+            if let Some(Value::Object(subschemas)) = keywords.get("patternProperties") {
+                let mut entries = Vec::with_capacity(subschemas.len());
+                for (pattern, subschema) in subschemas {
+                    let mut child = format!("{pointer}/patternProperties/");
+                    write_escaped_str(&mut child, pattern);
+                    let schema = self.add(ctx, subschema, child)?;
+                    let matches = ctx
+                        .with_schema_path_swap(pointer.clone(), |ctx| {
+                            name_match_expr(ctx, pattern, &quote! { name })
+                        })
+                        .map_err(|_| {
+                            syn::Error::new(
+                                proc_macro2::Span::call_site(),
+                                format!("`evaluate` does not support the `{pattern}` pattern"),
+                            )
+                        })?;
+                    entries.push((schema, matches.is_valid));
+                }
+                let range = (self.patterns.len(), entries.len());
+                self.patterns.extend(entries);
+                patterns = Some(range);
+                units.push(TreeUnit::Patterns(range));
+            }
+            if let Some(subschema) = additional {
+                let schema = self.add(ctx, subschema, format!("{pointer}/additionalProperties"))?;
+                units.push(TreeUnit::Additional {
+                    schema,
+                    closed: *subschema == Value::Bool(false),
+                    declared,
+                    patterns,
+                });
             }
             // The draft's unknown keywords annotate the schema, as the runtime reports them.
             let unknown: Map<_, _> = keywords
@@ -158,7 +211,7 @@ impl Tree {
 /// schema's errors function, by schema location and instance location, so no keyword's error code
 /// is emitted twice.
 pub(super) fn compile<E: ValueEmitter>(
-    ctx: &CompileContext<'_, E>,
+    ctx: &mut CompileContext<'_, E>,
     schema: &Value,
 ) -> syn::Result<TokenStream> {
     if let Some(message) = unsupported(schema, ctx.draft) {
@@ -195,15 +248,44 @@ pub(super) fn compile<E: ValueEmitter>(
                 }
                 entry
             }
-            TreeUnit::Properties { first, count } => {
-                json!({"keyword": "properties", "properties": [first, count]})
+            TreeUnit::Properties {
+                declared,
+                in_member_order,
+            } => {
+                json!({"keyword": "properties", "properties": declared, "members": in_member_order})
             }
+            TreeUnit::Patterns(patterns) => {
+                json!({"keyword": "patternProperties", "patterns": patterns})
+            }
+            TreeUnit::Additional {
+                schema,
+                closed,
+                declared,
+                patterns,
+            } => json!({
+                "keyword": "additionalProperties",
+                "additional": schema,
+                "closed": closed,
+                "properties": declared,
+                "patterns": patterns,
+            }),
         })
         .collect();
     let mut tables = json!({"schemas": schemas, "units": units});
     if !tree.properties.is_empty() {
         tables["properties"] = json!(tree.properties);
     }
+    if !tree.patterns.is_empty() {
+        tables["patterns"] = json!(tree
+            .patterns
+            .iter()
+            .map(|(schema, _)| schema)
+            .collect::<Vec<_>>());
+    }
+    let matchers: Vec<_> = (0..tree.patterns.len())
+        .map(|index| format_ident!("__matches_{index}"))
+        .collect();
+    let matches = tree.patterns.iter().map(|(_, matches)| matches);
     let base = ctx.config.base_uri.as_str();
     // Without a base of its own the schema gets a synthetic one, which the output leaves out.
     if !base.starts_with("json-schema:///") {
@@ -212,8 +294,10 @@ pub(super) fn compile<E: ValueEmitter>(
     let tables = tables.to_string();
     let json = E::json_representation();
     Ok(quote! {
+        #(fn #matchers(name: &str) -> bool { #matches })*
         static __TREE: __eval::Tree = __eval::Tree {
             tables: #tables,
+            matchers: &[#(#matchers),*],
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);
@@ -268,10 +352,16 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
     match schema {
         Value::Bool(_) => None,
         Value::Object(keywords) => keywords.iter().find_map(|(keyword, value)| {
-            if let ("properties", Value::Object(properties)) = (keyword.as_str(), value) {
-                return properties
-                    .values()
-                    .find_map(|subschema| unsupported(subschema, draft));
+            match (keyword.as_str(), value) {
+                ("properties" | "patternProperties", Value::Object(subschemas)) => {
+                    return subschemas
+                        .values()
+                        .find_map(|subschema| unsupported(subschema, draft));
+                }
+                ("additionalProperties", Value::Bool(_) | Value::Object(_)) => {
+                    return unsupported(value, draft);
+                }
+                _ => {}
             }
             (!supports(keyword, value, draft))
                 .then(|| format!("`evaluate` does not support the `{keyword}` keyword yet"))

@@ -1,0 +1,282 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+expression: "render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)"
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::evaluation as __eval;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::__private::unfinished_matches as __unfinished;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use __sj::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = __sj::Map<String, __Value>;
+    #[inline]
+    fn __jsonschema_regex_0(
+        subject: &str,
+        schema_path: &str,
+        pattern: Option<&str>,
+        instance_path: Option<&__paths::LazyLocation>,
+    ) -> bool {
+        static REGEX: __Lazy<Option<__fancy::Regex>> = __Lazy::new(|| {
+            let mut builder = __fancy::RegexBuilder::new("[0-9]$");
+            builder.build().ok()
+        });
+        REGEX
+            .as_ref()
+            .is_some_and(|re| {
+                __unfinished::fancy_is_match(
+                    re,
+                    subject,
+                    schema_path,
+                    pattern,
+                    instance_path,
+                )
+            })
+    }
+    pub(super) fn is_valid(instance: &__Value) -> bool {
+        match instance {
+            __Value::Object(obj) => {
+                let __object_pass = obj
+                    .iter()
+                    .all(|(key, instance)| {
+                        let mut covered = false;
+                        match key.as_str() {
+                            "a" => {
+                                covered = true;
+                            }
+                            _ => {}
+                        }
+                        if {
+                            __jsonschema_regex_0(
+                                key.as_str(),
+                                "/patternProperties/[0-9]$",
+                                None,
+                                None,
+                            )
+                        } {
+                            if !(match instance {
+                                __Value::Number(n) => __num::ge(n, 1u64),
+                                _ => true,
+                            }) {
+                                return false;
+                            }
+                            covered = true;
+                        }
+                        if key.as_str().starts_with("x-") {
+                            covered = true;
+                        }
+                        if !covered {
+                            return false;
+                        }
+                        true
+                    });
+                __object_pass
+            }
+            _ => true,
+        }
+    }
+    pub(super) fn errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        match instance {
+            __Value::Object(obj) => {
+                let mut __unexpected: Vec<String> = Vec::new();
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    let mut covered = false;
+                    match key_str {
+                        "a" => {
+                            covered = true;
+                        }
+                        _ => {}
+                    }
+                    if {
+                        __jsonschema_regex_0(
+                            key.as_str(),
+                            "/patternProperties/[0-9]$",
+                            None,
+                            Some(__path),
+                        )
+                    } {
+                        let instance = value;
+                        let __path = &__path.push(key_str);
+                        match instance {
+                            __Value::Number(n) => {
+                                if !(__num::ge(n, 1u64)) {
+                                    if __errors
+                                        .push(
+                                            __err::minimum(
+                                                "/patternProperties/[0-9]$/minimum",
+                                                __path.into(),
+                                                instance,
+                                                __sj::Value::Number(__sj::Number::from(1u64)),
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                            _ => {}
+                        }
+                        covered = true;
+                    }
+                    if key.as_str().starts_with("x-") {
+                        covered = true;
+                    }
+                    if !covered {
+                        if __errors.first_only() {
+                            return __errors
+                                .push(
+                                    __err::additional_properties(
+                                        "/additionalProperties",
+                                        __path.into(),
+                                        instance,
+                                        vec![key.clone()],
+                                    ),
+                                );
+                        }
+                        __unexpected.push(key.clone());
+                    }
+                }
+                if !__unexpected.is_empty() {
+                    if __errors
+                        .push(
+                            __err::additional_properties(
+                                "/additionalProperties",
+                                __path.into(),
+                                instance,
+                                __unexpected,
+                            ),
+                        )
+                    {
+                        return true;
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+    pub(super) fn run_is_valid(instance: &__Value) -> bool {
+        let valid = is_valid(instance);
+        if !__unfinished::met() {
+            return valid;
+        }
+        __unfinished::is_valid(is_valid, instance)
+    }
+    pub(super) fn run_validate<'__i>(instance: &'__i __Value) -> Option<__VE<'__i>> {
+        let error = {
+            let mut __errors = __err::Errors::new(true);
+            let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+            __errors.into_first()
+        };
+        if !__unfinished::met() {
+            return error;
+        }
+        __unfinished::validate(
+            || ::core::convert::Into::into(instance),
+            errors,
+            instance,
+        )
+    }
+    pub(super) fn run_collect_errors<'__i>(instance: &'__i __Value) -> Vec<__VE<'__i>> {
+        let found = {
+            let mut __errors = __err::Errors::new(false);
+            let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+            __errors.into_vec()
+        };
+        if !__unfinished::met() {
+            return found;
+        }
+        __unfinished::collect_errors(
+            || ::core::convert::Into::into(instance),
+            errors,
+            instance,
+        )
+    }
+    pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        fn __matches_0(name: &str) -> bool {
+            { __jsonschema_regex_0(name, "/patternProperties/[0-9]$", None, None) }
+        }
+        fn __matches_1(name: &str) -> bool {
+            name.starts_with("x-")
+        }
+        static __TREE: __eval::Tree = __eval::Tree {
+            tables: "{\"patterns\":[2,3],\"properties\":[[\"a\",1]],\"schemas\":[{\"count\":3,\"first\":1,\"pointer\":\"\"},{\"count\":0,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":0,\"pointer\":\"/patternProperties/[0-9]$\"},{\"count\":0,\"first\":1,\"pointer\":\"/patternProperties/^x-\"},{\"count\":0,\"first\":1,\"pointer\":\"/additionalProperties\"}],\"units\":[{\"keyword\":\"minimum\"},{\"keyword\":\"properties\",\"members\":true,\"properties\":[0,1]},{\"keyword\":\"patternProperties\",\"patterns\":[0,2]},{\"additional\":4,\"closed\":true,\"keyword\":\"additionalProperties\",\"patterns\":[0,2],\"properties\":[0,1]}]}",
+            matchers: &[__matches_0, __matches_1],
+            built: ::std::sync::OnceLock::new(),
+        };
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate(
+            &__TREE,
+            &instance,
+            &__errors.into_vec(),
+        )
+    }
+    pub(super) fn entry_is_valid(instance: &__Value) -> bool {
+        run_is_valid(instance)
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Value,
+    ) -> ::std::result::Result<(), __VE<'__i>> {
+        match run_validate(instance) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+    pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
+        __err::iterator_from(run_collect_errors(instance))
+    }
+    pub(super) fn entry_evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        evaluate(instance)
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &jsonschema::__private::serde_json::Value) -> bool {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> ::std::result::Result<(), jsonschema::ValidationError<'__i>> {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::ErrorIterator<'__i> {
+        __validator_impl::entry_iter_errors(instance)
+    }
+    pub fn evaluate(
+        instance: &jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::Evaluation {
+        __validator_impl::entry_evaluate(instance)
+    }
+}

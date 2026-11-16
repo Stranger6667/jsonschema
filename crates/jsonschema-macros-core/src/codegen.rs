@@ -98,7 +98,7 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
     let evaluation_body = config
         .methods
         .evaluate
-        .then(|| evaluation::compile(&ctx, &config.schema))
+        .then(|| evaluation::compile(&mut ctx, &config.schema))
         .transpose()?;
     Ok(emit_root_module(
         &ctx,

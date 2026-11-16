@@ -87,7 +87,15 @@ pub(crate) fn key_match_expr<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     pattern: &str,
 ) -> Result<KeyMatch, CompiledExpr> {
-    let key_as_str = E::key_as_str(format_ident!("key"));
+    name_match_expr(ctx, pattern, &E::key_as_str(format_ident!("key")))
+}
+
+/// [`key_match_expr`] for `key_as_str`, a `&str` expression.
+pub(crate) fn name_match_expr<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    pattern: &str,
+    key_as_str: &proc_macro2::TokenStream,
+) -> Result<KeyMatch, CompiledExpr> {
     let literal = |condition: proc_macro2::TokenStream| KeyMatch {
         is_valid: condition.clone(),
         located: condition,
