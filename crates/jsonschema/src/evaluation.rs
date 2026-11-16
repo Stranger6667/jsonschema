@@ -1547,6 +1547,7 @@ pub mod generated {
     };
     use crate::{
         compiler::resolve_absolute_location,
+        json::Array,
         paths::{capture_evaluation_path, LazyLocation, Location},
         properties::{scan_members, HASHMAP_THRESHOLD},
         Json, Node, Object, ValidationError,
@@ -1577,6 +1578,9 @@ pub mod generated {
         /// Each property whose presence applies a subschema, with that subschema's index.
         #[serde(default)]
         dependencies: Vec<(String, usize)>,
+        /// Each subschema of array-form `items` or `prefixItems`, by position.
+        #[serde(default)]
+        tuples: Vec<usize>,
         /// The absolute URI the pointers resolve against, if the schema has one.
         #[serde(default)]
         base: Option<String>,
@@ -1622,6 +1626,14 @@ pub mod generated {
         /// A `dependencies` or `dependentSchemas` unit's range of `Tables::dependencies`.
         #[serde(default)]
         dependencies: Option<(usize, usize)>,
+        /// An array-form `items` or `prefixItems` unit's range of `Tables::tuples`.
+        #[serde(default)]
+        tuple: Option<(usize, usize)>,
+        /// A schema-form `items` or `additionalItems` unit's subschema, applied from `skip` on.
+        #[serde(default)]
+        rest: Option<usize>,
+        #[serde(default)]
+        skip: usize,
         /// That subschema is `false`.
         #[serde(default)]
         closed: bool,
@@ -1646,6 +1658,12 @@ pub mod generated {
             closed: bool,
         },
         Dependencies((usize, usize)),
+        Tuple((usize, usize)),
+        Rest {
+            schema: usize,
+            skip: usize,
+            closed: bool,
+        },
     }
 
     /// Where a unit sits, fixed when the validator is generated.
@@ -1681,6 +1699,7 @@ pub mod generated {
         properties: Box<[(String, usize)]>,
         patterns: Box<[usize]>,
         dependencies: Box<[(String, usize)]>,
+        tuples: Box<[usize]>,
     }
 
     impl Tree {
@@ -1765,6 +1784,17 @@ pub mod generated {
                             "dependencies" | "dependentSchemas" => Kind::Dependencies(
                                 unit.dependencies.expect("the range of subschemas"),
                             ),
+                            "items" | "prefixItems" | "additionalItems" => {
+                                if let Some(tuple) = unit.tuple {
+                                    Kind::Tuple(tuple)
+                                } else {
+                                    Kind::Rest {
+                                        schema: unit.rest.expect("the subschema's index"),
+                                        skip: unit.skip,
+                                        closed: unit.closed,
+                                    }
+                                }
+                            }
                             _ => Kind::Leaf,
                         },
                         ..locate(&format!("{pointer}/{}", unit.keyword), unit.strings)
@@ -1783,6 +1813,7 @@ pub mod generated {
                 properties: tables.properties.into_boxed_slice(),
                 patterns: tables.patterns.into_boxed_slice(),
                 dependencies: tables.dependencies.into_boxed_slice(),
+                tuples: tables.tuples.into_boxed_slice(),
             }
         }
     }
@@ -1897,6 +1928,14 @@ pub mod generated {
                     Kind::Dependencies(schemas) => {
                         self.dependencies::<F>(site, schemas, instance, location, position)
                     }
+                    Kind::Tuple(schemas) => {
+                        self.tuple::<F>(site, schemas, instance, location, position)
+                    }
+                    Kind::Rest {
+                        schema,
+                        skip,
+                        closed,
+                    } => self.rest::<F>(site, schema, skip, closed, instance, location, position),
                 };
                 children.push(&mut self.arena, node);
             }
@@ -2017,15 +2056,7 @@ pub mod generated {
                 let path = location.push(name);
                 let below = self.arena.position_below(position, path.segment());
                 let child = if closed {
-                    let site = &built.schemas[schema];
-                    let error = ValidationError::false_schema(
-                        site.keyword.clone(),
-                        capture_evaluation_path(None, &site.keyword),
-                        Location::from(&path),
-                        value.lazy_value(),
-                    );
-                    let errors = vec![ErrorDescription::from_validation_error(&error)];
-                    Self::node(site, errors, None, ChildList::default(), below)
+                    Self::rejected::<F>(&built.schemas[schema], &value, &path, below)
                 } else {
                     names.push(Value::String(name.to_owned()));
                     self.schema::<F>(schema, &value, &path, below)
@@ -2034,6 +2065,77 @@ pub mod generated {
             }
             let annotations = (!closed).then(|| Annotations::new(Value::Array(names)));
             Self::node(site, Vec::new(), annotations, children, position)
+        }
+
+        /// The item at each position with a subschema. The annotation is `true` when every item
+        /// has one, otherwise the largest position.
+        fn tuple<F: Json>(
+            &mut self,
+            site: &UnitLocation,
+            (first, count): (usize, usize),
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let Some(array) = instance.as_array().filter(|array| array.len() != 0) else {
+                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+            };
+            let built = self.built;
+            let mut children = ChildList::default();
+            for (idx, (item, schema)) in array
+                .elements()
+                .zip(&built.tuples[first..first + count])
+                .enumerate()
+            {
+                let path = location.push(idx);
+                let below = self.arena.position_below(position, path.segment());
+                let child = self.schema::<F>(*schema, &item, &path, below);
+                children.push(&mut self.arena, child);
+            }
+            let annotation = if children.len() == array.len() {
+                Value::Bool(true)
+            } else {
+                Value::from(children.len() - 1)
+            };
+            Self::node(
+                site,
+                Vec::new(),
+                Some(Annotations::new(annotation)),
+                children,
+                position,
+            )
+        }
+
+        /// Each item from `skip` on. `false` fails each one, where the errors run reports one
+        /// error for all.
+        #[allow(clippy::too_many_arguments)]
+        fn rest<F: Json>(
+            &mut self,
+            site: &UnitLocation,
+            schema: usize,
+            skip: usize,
+            closed: bool,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let Some(array) = instance.as_array() else {
+                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+            };
+            let built = self.built;
+            let mut children = ChildList::default();
+            for (idx, item) in array.elements().enumerate().skip(skip) {
+                let path = location.push(idx);
+                let below = self.arena.position_below(position, path.segment());
+                let child = if closed {
+                    Self::rejected::<F>(&built.schemas[schema], &item, &path, below)
+                } else {
+                    self.schema::<F>(schema, &item, &path, below)
+                };
+                children.push(&mut self.arena, child);
+            }
+            let annotation = Annotations::new(Value::Bool(array.len() > skip));
+            Self::node(site, Vec::new(), Some(annotation), children, position)
         }
 
         /// Missing required names are the unit's own errors; each present property with a
@@ -2081,15 +2183,7 @@ pub mod generated {
             let ControlFlow::Continue(()) =
                 object.try_for_each_name_node::<Infallible>(&mut buffer, |name| {
                     let child = if closed {
-                        let site = &built.schemas[schema];
-                        let error = ValidationError::false_schema(
-                            site.keyword.clone(),
-                            capture_evaluation_path(None, &site.keyword),
-                            Location::from(location),
-                            name.lazy_value(),
-                        );
-                        let errors = vec![ErrorDescription::from_validation_error(&error)];
-                        Self::node(site, errors, None, ChildList::default(), position)
+                        Self::rejected::<F>(&built.schemas[schema], &name, location, position)
                     } else {
                         let text = name.as_string();
                         let scoped: Vec<_> = self
@@ -2134,6 +2228,23 @@ pub mod generated {
                 .filter(|error| *error.instance_path() == instance_location)
                 .map(ErrorDescription::from_validation_error)
                 .collect()
+        }
+
+        /// The `false` subschema at `site` failing for `value`, at `location`.
+        fn rejected<F: Json>(
+            site: &UnitLocation,
+            value: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let error = ValidationError::false_schema(
+                site.keyword.clone(),
+                capture_evaluation_path(None, &site.keyword),
+                Location::from(location),
+                value.lazy_value(),
+            );
+            let errors = vec![ErrorDescription::from_validation_error(&error)];
+            Self::node(site, errors, None, ChildList::default(), position)
         }
 
         fn node(
