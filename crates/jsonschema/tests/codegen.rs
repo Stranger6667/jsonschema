@@ -4273,6 +4273,59 @@ fn single_pass_empty_pattern_props(instance: serde_json::Value) {
     assert_is_valid_parity(&schema, EmptyPatternProps::is_valid(&instance), &instance);
 }
 
+#[jsonschema::validator(schema = r#"{"type": "integer", "minLength": 1}"#)]
+struct TypeExcludesString;
+#[jsonschema::validator(schema = r#"{"type": "string", "minItems": 1}"#)]
+struct TypeExcludesArray;
+#[jsonschema::validator(schema = r#"{"type": "string", "minimum": 1}"#)]
+struct TypeExcludesNumber;
+#[jsonschema::validator(
+    schema = r#"{"type": "integer", "properties": {"b": {"minimum": 5}}, "required": ["c"]}"#
+)]
+struct TypeExcludesObject;
+#[jsonschema::validator(schema = r#"{"type": ["string", "null"], "properties": {"a": {}}}"#)]
+struct TypeListExcludesObject;
+#[jsonschema::validator(schema = r#"{"type": "object", "minLength": 1}"#)]
+struct TypeObjectExcludesString;
+
+type IsValidFn = fn(&serde_json::Value) -> bool;
+type ValidateFn = for<'i> fn(&'i serde_json::Value) -> Result<(), jsonschema::ValidationError<'i>>;
+type IterErrorsFn = for<'i> fn(&'i serde_json::Value) -> jsonschema::ErrorIterator<'i>;
+
+// A `type` that leaves out the instance's type rejects it, even beside keywords for that type.
+#[test_case(TypeExcludesString::is_valid, TypeExcludesString::validate, TypeExcludesString::iter_errors, serde_json::json!({"type": "integer", "minLength": 1}) ; "string_keywords")]
+#[test_case(TypeExcludesArray::is_valid, TypeExcludesArray::validate, TypeExcludesArray::iter_errors, serde_json::json!({"type": "string", "minItems": 1}) ; "array_keywords")]
+#[test_case(TypeExcludesNumber::is_valid, TypeExcludesNumber::validate, TypeExcludesNumber::iter_errors, serde_json::json!({"type": "string", "minimum": 1}) ; "number_keywords")]
+#[test_case(TypeExcludesObject::is_valid, TypeExcludesObject::validate, TypeExcludesObject::iter_errors, serde_json::json!({"type": "integer", "properties": {"b": {"minimum": 5}}, "required": ["c"]}) ; "object_keywords")]
+#[test_case(TypeListExcludesObject::is_valid, TypeListExcludesObject::validate, TypeListExcludesObject::iter_errors, serde_json::json!({"type": ["string", "null"], "properties": {"a": {}}}) ; "type_list_object_keywords")]
+#[test_case(TypeObjectExcludesString::is_valid, TypeObjectExcludesString::validate, TypeObjectExcludesString::iter_errors, serde_json::json!({"type": "object", "minLength": 1}) ; "object_type_string_keywords")]
+fn test_type_rejects_types_it_excludes(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    schema: serde_json::Value,
+) {
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    for instance in [
+        serde_json::json!("abc"),
+        serde_json::json!(""),
+        serde_json::json!([1]),
+        serde_json::json!(5),
+        serde_json::json!(0),
+        serde_json::json!({"b": 1}),
+        serde_json::json!({"c": 1}),
+        serde_json::json!(null),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+    }
+}
+
 #[jsonschema::validator(
     schema = r##"{"definitions":{"pos":{"type":"integer","minimum":1}},"type":"object","properties":{"id":{"$ref":"#/definitions/pos"}},"required":["id"]}"##,
     draft = Draft7
