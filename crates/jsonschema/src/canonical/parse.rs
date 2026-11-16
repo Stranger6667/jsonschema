@@ -1119,10 +1119,7 @@ fn parse_schema_in_scope<'a>(
                 state.dynamic_scope.tracked(),
                 "a dynamic reference is only resolved with the dynamic scope tracked"
             );
-            // [`Resolver::lookup`] implements the dynamic rule already: a fragment naming a
-            // `$dynamicAnchor` resolves against the outermost resource in scope declaring it, one
-            // that does not resolves as `$ref`.
-            let Some(schema) = resolve_reference(reference, ctx, resolver, state)? else {
+            let Some(schema) = resolve_dynamic_reference(reference, ctx, resolver, state)? else {
                 return Ok(None);
             };
             references.push(schema);
@@ -3594,6 +3591,20 @@ fn resolve_reference<'a>(
     let base_uri = resolver.base_uri();
     let location = resolver.resolve_uri(&base_uri.borrow(), reference)?;
     let resolved = resolver.lookup(reference)?;
+    reference_to_definition(reference, location.as_str(), resolved, ctx, state)
+}
+
+/// A `$dynamicRef`: a fragment naming a `$dynamicAnchor` resolves against the outermost resource
+/// in scope declaring it, any other reference as `$ref`.
+fn resolve_dynamic_reference<'a>(
+    reference: &str,
+    ctx: &CanonicalizationContext,
+    resolver: &Resolver<'a>,
+    state: &mut ParseState<'a, '_>,
+) -> Result<Option<Schema>, CanonicalizationError> {
+    let base_uri = resolver.base_uri();
+    let location = resolver.resolve_uri(&base_uri.borrow(), reference)?;
+    let resolved = resolver.lookup_dynamic_ref(reference)?;
     reference_to_definition(reference, location.as_str(), resolved, ctx, state)
 }
 

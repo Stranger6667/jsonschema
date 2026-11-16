@@ -477,7 +477,9 @@ fn compile_dynamic_ref<'a, F: Json>(
         return Ok(None);
     };
 
-    let resolved = ctx.lookup(reference).map_err(ValidationError::from)?;
+    let resolved = ctx
+        .lookup_dynamic_ref(reference)
+        .map_err(ValidationError::from)?;
 
     let (contents, resolver, draft) = resolved.into_inner();
     if let Value::Object(subschema) = &contents {

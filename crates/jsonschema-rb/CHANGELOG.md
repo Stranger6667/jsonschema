@@ -5,6 +5,7 @@
 ### Added
 
 - `syntax: :engine` on `RegexOptions` and `FancyRegexOptions` to match `pattern` and `patternProperties` in the regex engine's own syntax, without the ECMA 262 translation. [#1895](https://github.com/Stranger6667/jsonschema/issues/1895)
+- `Resolver#lookup_dynamic_ref` to resolve a `$dynamicRef` through the dynamic scope. [#1923](https://github.com/Stranger6667/jsonschema/issues/1923)
 
 ### Changed
 
@@ -12,6 +13,7 @@
 
 ### Fixed
 
+- `$ref` to a `$dynamicAnchor` resolving through the dynamic scope like `$dynamicRef`, to an outer `$dynamicAnchor` of the same name instead of the schema it names. [#1923](https://github.com/Stranger6667/jsonschema/issues/1923)
 - `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
 - `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
 - `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.

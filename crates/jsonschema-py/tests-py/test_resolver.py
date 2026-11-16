@@ -101,6 +101,37 @@ def test_resolver_lookup_supports_pointers_and_anchors():
     assert anchor.resolver.base_uri == "https://example.com/anchors.json"
 
 
+SAME_NAME_DYNAMIC_ANCHORS = [
+    (
+        "https://example.com/root",
+        {
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$defs": {
+                "outer": {"$dynamicAnchor": "item", "type": "null"},
+                "inner": {"$id": "inner", "$dynamicAnchor": "item", "type": "string"},
+            },
+        },
+    )
+]
+
+
+@pytest.mark.parametrize(
+    ("method", "expected", "base_uri"),
+    [
+        ("lookup", {"$id": "inner", "$dynamicAnchor": "item", "type": "string"}, "https://example.com/inner"),
+        ("lookup_dynamic_ref", {"$dynamicAnchor": "item", "type": "null"}, "https://example.com/root"),
+    ],
+)
+def test_resolver_lookup_of_dynamic_anchor(method, expected, base_uri):
+    registry = Registry(SAME_NAME_DYNAMIC_ANCHORS)
+    resolver = registry.resolver("https://example.com/root")
+
+    resolved = getattr(resolver, method)("inner#item")
+
+    assert resolved.contents == expected
+    assert resolved.resolver.base_uri == base_uri
+
+
 def test_resolver_lookup_raises_referencing_error_for_missing_resource():
     registry = Registry(NESTED_RESOURCES)
     resolver = registry.resolver("https://example.com/person.json")

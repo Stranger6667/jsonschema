@@ -217,9 +217,14 @@ fn target_location(base: &Uri<String>, location: &Location) -> Option<Arc<Uri<St
     if base.scheme().as_str() == compiler::DEFAULT_SCHEME {
         return None;
     }
+    Some(pointer_uri(base, location))
+}
+
+/// URI of the schema at `location` within the resource `base` names.
+fn pointer_uri(base: &Uri<String>, location: &Location) -> Arc<Uri<String>> {
     let mut fragment = uri::EncodedBuffer::new();
     fragment.encode_str::<uri::Path>(location.as_str());
-    Some(Arc::new(base.with_fragment(Some(fragment.as_estr()))))
+    Arc::new(base.with_fragment(Some(fragment.as_estr())))
 }
 
 /// Whether `alias` names its target by an anchor rather than a JSON Pointer.
@@ -326,8 +331,9 @@ fn compile_reference_validator<'a, F: Json>(
     if reference.is_empty() {
         return None;
     }
-    let ((alias, ref_target_base), resolved) =
-        match ctx.resolve_ref_target(reference, extract_ref_target_base) {
+    let dynamic = keyword == "$dynamicRef";
+    let ((mut alias, ref_target_base), resolved) =
+        match ctx.resolve_ref_target(reference, dynamic, extract_ref_target_base) {
             Ok(target) => target,
             Err(error) => return Some(Err(ValidationError::from(error))),
         };
@@ -337,7 +343,18 @@ fn compile_reference_validator<'a, F: Json>(
     let (ref_target_base, target_location, resource_start) = if is_named(&alias) {
         match named_target_base(ctx, &resolved) {
             Ok(location) => {
-                let target = target_location(&resolved.resolver().base_uri(), &location);
+                let base_uri = resolved.resolver().base_uri();
+                // `$dynamicRef` to the same URI may land on another schema, so `$ref` to a
+                // dynamic anchor is cached under the pointer to it.
+                if !dynamic
+                    && resolved
+                        .contents()
+                        .as_object()
+                        .is_some_and(|target| target.contains_key("$dynamicAnchor"))
+                {
+                    alias = pointer_uri(&base_uri, &location);
+                }
+                let target = target_location(&base_uri, &location);
                 (location, target, 0)
             }
             Err(error) => return Some(Err(ValidationError::from(error))),
@@ -2767,6 +2784,98 @@ mod tests {
         .map(|instance| validator.is_valid(instance))
         .collect();
         assert_eq!(results, vec![true, false, false, true]);
+    }
+
+    // `inner` is the resource every reference names; `outer` is the outermost `item` in scope
+    fn same_name_dynamic_anchors(root: &Value) -> Value {
+        let mut schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root",
+            "$defs": {
+                "outer": {"$dynamicAnchor": "item", "type": "null"},
+                "inner": {"$id": "inner", "$dynamicAnchor": "item", "type": "string"}
+            }
+        });
+        let keywords = schema.as_object_mut().expect("An object");
+        keywords.extend(root.as_object().expect("An object").clone());
+        schema
+    }
+
+    #[test_case(&json!({"$ref": "inner#item"}), &json!("a"), &json!(null); "ref is static")]
+    #[test_case(&json!({"$dynamicRef": "inner#item"}), &json!(null), &json!("a"); "dynamic ref follows the scope")]
+    #[test_case(
+        &json!({"allOf": [
+            {"properties": {"static": {"$ref": "inner#item"}}},
+            {"properties": {"dynamic": {"$dynamicRef": "inner#item"}}}
+        ]}),
+        &json!({"static": "a", "dynamic": null}),
+        &json!({"static": null});
+        "ref before dynamic ref, static side"
+    )]
+    #[test_case(
+        &json!({"allOf": [
+            {"properties": {"static": {"$ref": "inner#item"}}},
+            {"properties": {"dynamic": {"$dynamicRef": "inner#item"}}}
+        ]}),
+        &json!({"static": "a", "dynamic": null}),
+        &json!({"dynamic": "a"});
+        "ref before dynamic ref, dynamic side"
+    )]
+    #[test_case(
+        &json!({"allOf": [
+            {"properties": {"dynamic": {"$dynamicRef": "inner#item"}}},
+            {"properties": {"static": {"$ref": "inner#item"}}}
+        ]}),
+        &json!({"static": "a", "dynamic": null}),
+        &json!({"static": null});
+        "dynamic ref before ref, static side"
+    )]
+    #[test_case(
+        &json!({"allOf": [
+            {"properties": {"dynamic": {"$dynamicRef": "inner#item"}}},
+            {"properties": {"static": {"$ref": "inner#item"}}}
+        ]}),
+        &json!({"static": "a", "dynamic": null}),
+        &json!({"dynamic": "a"});
+        "dynamic ref before ref, dynamic side"
+    )]
+    fn ref_to_dynamic_anchor_ignores_dynamic_scope(root: &Value, valid: &Value, invalid: &Value) {
+        let schema = same_name_dynamic_anchors(root);
+        tests_util::is_valid(&schema, valid);
+        tests_util::is_not_valid(&schema, invalid);
+    }
+
+    #[test_case("$ref", &json!({"inner": 1}), &json!({"outer": 1}); "ref, properties")]
+    #[test_case("$ref", &json!([1, 2]), &json!([1, 2, 3]); "ref, items")]
+    #[test_case("$dynamicRef", &json!({"outer": 1}), &json!({"inner": 1}); "dynamic ref, properties")]
+    #[test_case("$dynamicRef", &json!([1]), &json!([1, 2]); "dynamic ref, items")]
+    fn unevaluated_sees_what_the_reference_target_evaluates(
+        keyword: &str,
+        valid: &Value,
+        invalid: &Value,
+    ) {
+        let schema = json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root",
+            keyword: "inner#item",
+            "unevaluatedProperties": false,
+            "unevaluatedItems": false,
+            "$defs": {
+                "outer": {
+                    "$dynamicAnchor": "item",
+                    "properties": {"outer": true},
+                    "prefixItems": [true]
+                },
+                "inner": {
+                    "$id": "inner",
+                    "$dynamicAnchor": "item",
+                    "properties": {"inner": true},
+                    "prefixItems": [true, true]
+                }
+            }
+        });
+        tests_util::is_valid(&schema, valid);
+        tests_util::is_not_valid(&schema, invalid);
     }
 
     #[test_case("$ref"; "ref")]

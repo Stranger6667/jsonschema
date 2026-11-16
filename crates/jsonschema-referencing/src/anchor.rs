@@ -2,8 +2,8 @@
 //!
 //! JSON Schema defines two anchor flavors:
 //! - [`Anchor::Default`]: a plain anchor (`$anchor`), resolved against the current base URI.
-//! - [`Anchor::Dynamic`]: a dynamic anchor (`$dynamicAnchor`), which re-anchors to the
-//!   outermost matching dynamic anchor found in the dynamic scope during resolution.
+//! - [`Anchor::Dynamic`]: a dynamic anchor (`$dynamicAnchor`), which `$dynamicRef` re-anchors to
+//!   the outermost matching dynamic anchor found in the dynamic scope.
 //!
 //! [`AnchorIter`] avoids a heap allocation for the common case of 0–2 anchors per schema object.
 
@@ -34,44 +34,38 @@ impl<'a> Anchor<'a> {
     }
 }
 
-impl<'r> Anchor<'r> {
-    /// Get the resource for this anchor.
-    pub(crate) fn resolve(&self, resolver: Resolver<'r>) -> Result<Resolved<'r>, Error> {
-        match self {
-            Anchor::Default { resource, .. } => Ok(Resolved::new(
-                resource.contents(),
-                resolver,
-                resource.draft(),
-            )),
-            Anchor::Dynamic { name, resource } => {
-                let scope = resolver.dynamic_scope();
-                let mut last = *resource;
-                let mut found_in = None;
-                for uri in &scope {
-                    match resolver.lookup_anchor(uri, name) {
-                        Ok(anchor) => {
-                            if let Anchor::Dynamic { resource, .. } = anchor {
-                                last = resource;
-                                found_in = Some(uri);
-                            }
-                        }
-                        Err(Error::NoSuchAnchor { .. }) => {}
-                        Err(err) => return Err(err),
-                    }
+/// The outermost resource in the dynamic scope with a `$dynamicAnchor` called `name`; `resource`
+/// when the scope has none.
+pub(crate) fn resolve_dynamic<'r>(
+    name: &str,
+    resource: ResourceRef<'r>,
+    resolver: Resolver<'r>,
+) -> Result<Resolved<'r>, Error> {
+    let scope = resolver.dynamic_scope();
+    let mut last = resource;
+    let mut found_in = None;
+    for uri in &scope {
+        match resolver.lookup_anchor(uri, name) {
+            Ok(anchor) => {
+                if let Anchor::Dynamic { resource, .. } = anchor {
+                    last = resource;
+                    found_in = Some(uri);
                 }
-                // The anchor's own document is the base for references inside it
-                let resolver = match found_in {
-                    Some(uri) => resolver.at_uri(uri)?,
-                    None => resolver,
-                };
-                Ok(Resolved::new(
-                    last.contents(),
-                    resolver.in_subresource(last)?,
-                    last.draft(),
-                ))
             }
+            Err(Error::NoSuchAnchor { .. }) => {}
+            Err(err) => return Err(err),
         }
     }
+    // The anchor's own document is the base for references inside it
+    let resolver = match found_in {
+        Some(uri) => resolver.at_uri(uri)?,
+        None => resolver,
+    };
+    Ok(Resolved::new(
+        last.contents(),
+        resolver.in_subresource(last)?,
+        last.draft(),
+    ))
 }
 
 /// An iterator over 0, 1, or 2 anchors — avoids a [`Vec`] allocation for the common case.
@@ -186,7 +180,7 @@ mod tests {
             .expect("Invalid resources");
         let resolver = registry
             .resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
-        let resolved = resolver.lookup("#foo").expect("Lookup failed");
+        let resolved = resolver.lookup_dynamic_ref("#foo").expect("Lookup failed");
         assert_eq!(resolved.contents(), one.contents());
     }
 
@@ -227,7 +221,7 @@ mod tests {
         let third = second.resolver().lookup("bar").expect("Lookup failed");
         let fourth = third
             .resolver()
-            .lookup("#fooAnchor")
+            .lookup_dynamic_ref("#fooAnchor")
             .expect("Lookup failed");
         assert_eq!(fourth.contents(), root.contents());
         assert_eq!(format!("{:?}", fourth.resolver()), "Resolver { base_uri: \"http://example.com\", scopes: \"[http://example.com/foo/, http://example.com, http://example.com]\" }");
@@ -256,12 +250,51 @@ mod tests {
         );
 
         let tree = resolver.lookup("tree.json").expect("Lookup failed");
-        let node = tree.resolver().lookup("#node").expect("Lookup failed");
+        let node = tree
+            .resolver()
+            .lookup_dynamic_ref("#node")
+            .expect("Lookup failed");
 
         assert_eq!(node.contents(), &root.contents()["$defs"]["node"]);
         assert_eq!(
             node.resolver().base_uri().as_str(),
             "https://example.com/root.json"
+        );
+    }
+
+    #[test]
+    fn lookup_of_a_dynamic_anchor_ignores_the_dynamic_scope() {
+        let root = Draft::Draft202012.create_resource(json!({
+            "$id": "https://example.com/root",
+            "$defs": {
+                "outer": {"$dynamicAnchor": "item", "type": "null"},
+                "inner": {"$id": "inner", "$dynamicAnchor": "item", "type": "string"}
+            }
+        }));
+        let registry = Registry::new()
+            .add("https://example.com/root", &root)
+            .expect("Invalid resources")
+            .prepare()
+            .expect("Invalid resources");
+        let resolver = registry
+            .resolver(crate::uri::from_str("https://example.com/root").expect("Invalid base URI"));
+
+        let resolved = resolver.lookup("inner#item").expect("Lookup failed");
+
+        assert_eq!(resolved.contents(), &root.contents()["$defs"]["inner"]);
+        assert_eq!(
+            resolved.resolver().base_uri().as_str(),
+            "https://example.com/inner"
+        );
+
+        let resolved = resolver
+            .lookup_dynamic_ref("inner#item")
+            .expect("Lookup failed");
+
+        assert_eq!(resolved.contents(), &root.contents()["$defs"]["outer"]);
+        assert_eq!(
+            resolved.resolver().base_uri().as_str(),
+            "https://example.com/root"
         );
     }
 
@@ -302,7 +335,7 @@ mod tests {
         let third = second.resolver().lookup("bar").expect("Lookup failed");
         let fourth = third
             .resolver()
-            .lookup("#fooAnchor")
+            .lookup_dynamic_ref("#fooAnchor")
             .expect("Lookup failed");
         assert_eq!(fourth.contents(), two.contents());
     }

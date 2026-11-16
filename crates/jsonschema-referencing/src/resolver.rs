@@ -67,10 +67,24 @@ impl<'r> Resolver<'r> {
     /// If the reference cannot be resolved or is invalid.
     pub fn lookup(&self, reference: &str) -> Result<Resolved<'r>, Error> {
         let target = self.lookup_target(reference)?;
-        self.enter(&target)
+        Ok(self.enter(&target))
+    }
+    /// Resolve a `$dynamicRef` to the resource it points to.
+    ///
+    /// A fragment naming a `$dynamicAnchor` resolves to the outermost resource in the dynamic
+    /// scope with a `$dynamicAnchor` of that name. Any other reference resolves as
+    /// [`Resolver::lookup`] does.
+    ///
+    /// # Errors
+    ///
+    /// If the reference cannot be resolved or is invalid.
+    pub fn lookup_dynamic_ref(&self, reference: &str) -> Result<Resolved<'r>, Error> {
+        let target = self.lookup_target(reference)?;
+        self.enter_dynamic_ref(&target)
     }
     /// Resolve a reference to a target that [`Resolver::enter`] turns into what
-    /// [`Resolver::lookup`] returns.
+    /// [`Resolver::lookup`] returns, and [`Resolver::enter_dynamic_ref`] into what
+    /// [`Resolver::lookup_dynamic_ref`] returns.
     #[doc(hidden)]
     ///
     /// The target depends only on the base URI and the reference, not on the dynamic scope, so
@@ -138,7 +152,7 @@ impl<'r> Resolver<'r> {
                     base_uri: Arc::clone(&uri),
                     draft: resource.draft(),
                 },
-                anchor @ Anchor::Dynamic { .. } => TargetKind::DynamicAnchor(anchor),
+                Anchor::Dynamic { name, resource } => TargetKind::DynamicAnchor { name, resource },
             };
             return Ok(Target {
                 #[cfg(debug_assertions)]
@@ -161,11 +175,8 @@ impl<'r> Resolver<'r> {
     }
     /// Enter a target returned by [`Resolver::lookup_target`] on a resolver with this base URI.
     #[doc(hidden)]
-    ///
-    /// # Errors
-    ///
-    /// If the target is a dynamic anchor that cannot be resolved in this dynamic scope.
-    pub fn enter(&self, target: &Target<'r>) -> Result<Resolved<'r>, Error> {
+    #[must_use]
+    pub fn enter(&self, target: &Target<'r>) -> Resolved<'r> {
         #[cfg(debug_assertions)]
         assert_eq!(
             target.origin, self.base_uri,
@@ -179,9 +190,31 @@ impl<'r> Resolver<'r> {
                 draft,
             } => {
                 resolver.base_uri = Arc::clone(base_uri);
-                Ok(Resolved::new(contents, resolver, *draft))
+                Resolved::new(contents, resolver, *draft)
             }
-            TargetKind::DynamicAnchor(anchor) => anchor.resolve(resolver),
+            TargetKind::DynamicAnchor { resource, .. } => {
+                Resolved::new(resource.contents(), resolver, resource.draft())
+            }
+        }
+    }
+    /// Enter a target as `$dynamicRef` does: a dynamic anchor resolves in this dynamic scope.
+    #[doc(hidden)]
+    ///
+    /// # Errors
+    ///
+    /// If the target is a dynamic anchor that cannot be resolved in this dynamic scope.
+    pub fn enter_dynamic_ref(&self, target: &Target<'r>) -> Result<Resolved<'r>, Error> {
+        match &target.kind {
+            TargetKind::Resolved { .. } => Ok(self.enter(target)),
+            TargetKind::DynamicAnchor { name, resource } => {
+                #[cfg(debug_assertions)]
+                assert_eq!(
+                    target.origin, self.base_uri,
+                    "a target is entered on a resolver with the base URI it was resolved from"
+                );
+                let resolver = self.evolve(Arc::clone(&target.document));
+                crate::anchor::resolve_dynamic(name, *resource, resolver)
+            }
         }
     }
     /// Resolve a recursive reference.
@@ -332,8 +365,11 @@ enum TargetKind<'r> {
         base_uri: Arc<Uri<String>>,
         draft: Draft,
     },
-    /// Its target depends on the dynamic scope it is entered in.
-    DynamicAnchor(Anchor<'r>),
+    /// `$dynamicRef` resolves it in the dynamic scope it is entered in.
+    DynamicAnchor {
+        name: &'r str,
+        resource: ResourceRef<'r>,
+    },
 }
 
 /// A reference resolved to its contents by a [`Resolver`].

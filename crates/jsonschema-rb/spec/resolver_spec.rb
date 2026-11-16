@@ -102,6 +102,34 @@ RSpec.describe "JSONSchema::Resolver" do
     expect(anchor.resolver.base_uri).to eq("https://example.com/anchors.json")
   end
 
+  [
+    ["lookup", { "$id" => "inner", "$dynamicAnchor" => "item", "type" => "string" }, "https://example.com/inner"],
+    ["lookup_dynamic_ref", { "$dynamicAnchor" => "item", "type" => "null" }, "https://example.com/root"]
+  ].each do |method, expected, base_uri|
+    it "#{method} of a dynamic anchor with the same name in an outer resource" do
+      registry = JSONSchema::Registry.new(
+        [
+          [
+            "https://example.com/root",
+            {
+              "$schema" => "https://json-schema.org/draft/2020-12/schema",
+              "$defs" => {
+                "outer" => { "$dynamicAnchor" => "item", "type" => "null" },
+                "inner" => { "$id" => "inner", "$dynamicAnchor" => "item", "type" => "string" }
+              }
+            }
+          ]
+        ]
+      )
+      resolver = registry.resolver("https://example.com/root")
+
+      resolved = resolver.public_send(method, "inner#item")
+
+      expect(resolved.contents).to eq(expected)
+      expect(resolved.resolver.base_uri).to eq(base_uri)
+    end
+  end
+
   it "raises ReferencingError for a missing resource" do
     registry = JSONSchema::Registry.new(nested_resources)
     resolver = registry.resolver("https://example.com/person.json")

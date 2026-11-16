@@ -207,6 +207,20 @@ impl Resolver {
 
     #[allow(clippy::needless_pass_by_value)]
     fn lookup(ruby: &Ruby, rb_self: &Resolver, reference: String) -> Result<Resolved, Error> {
+        rb_self.resolve(ruby, &reference, false)
+    }
+
+    #[allow(clippy::needless_pass_by_value)]
+    fn lookup_dynamic_ref(
+        ruby: &Ruby,
+        rb_self: &Resolver,
+        reference: String,
+    ) -> Result<Resolved, Error> {
+        rb_self.resolve(ruby, &reference, true)
+    }
+
+    fn resolve(&self, ruby: &Ruby, reference: &str, dynamic: bool) -> Result<Resolved, Error> {
+        let rb_self = self;
         let resolver = if rb_self.0.dynamic_scope.is_empty() {
             rb_self
                 .0
@@ -237,9 +251,12 @@ impl Resolver {
             resolver
         };
 
-        let resolved = resolver
-            .lookup(&reference)
-            .map_err(|e| crate::referencing_error(ruby, e.to_string()))?;
+        let resolved = if dynamic {
+            resolver.lookup_dynamic_ref(reference)
+        } else {
+            resolver.lookup(reference)
+        };
+        let resolved = resolved.map_err(|e| crate::referencing_error(ruby, e.to_string()))?;
         let (contents, resolver, draft) = resolved.into_inner();
 
         let contents_val = value_to_ruby(ruby, contents)?;
@@ -286,6 +303,10 @@ pub fn define_class(ruby: &Ruby, module: &RModule) -> Result<(), Error> {
     resolver_class.define_method("base_uri", method!(Resolver::base_uri, 0))?;
     resolver_class.define_method("dynamic_scope", method!(Resolver::dynamic_scope, 0))?;
     resolver_class.define_method("lookup", method!(Resolver::lookup, 1))?;
+    resolver_class.define_method(
+        "lookup_dynamic_ref",
+        method!(Resolver::lookup_dynamic_ref, 1),
+    )?;
 
     let resolved_class = module.define_class("Resolved", ruby.class_object())?;
     resolved_class.define_method("contents", method!(Resolved::contents, 0))?;
