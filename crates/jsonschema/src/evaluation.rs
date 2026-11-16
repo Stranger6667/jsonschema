@@ -1527,8 +1527,8 @@ impl<'a> Serialize for ErrorEntriesSerializer<'a> {
 #[doc(hidden)]
 pub mod generated {
     use super::{
-        format_keyword_location, ChildList, ErrorDescription, Evaluation, EvaluationArena,
-        EvaluationNode, InstancePosition,
+        format_keyword_location, Annotations, ChildList, ErrorDescription, Evaluation,
+        EvaluationArena, EvaluationNode, InstancePosition,
     };
     use crate::{paths::Location, ValidationError};
     use referencing::Uri;
@@ -1539,13 +1539,15 @@ pub mod generated {
         keyword: Location,
         schema: Arc<str>,
         absolute: Option<Arc<Uri<String>>>,
+        annotations: Option<Arc<serde_json::Value>>,
     }
 
     impl NodeLocation {
         /// # Panics
         ///
-        /// `absolute` is not a URI; the generator only emits ones it resolved itself.
-        fn new(keyword_location: &str, absolute: Option<&str>) -> Self {
+        /// `absolute` is not a URI, or `annotations` is not JSON; the generator only emits ones it
+        /// built itself.
+        fn new(keyword_location: &str, absolute: Option<&str>, annotations: Option<&str>) -> Self {
             let keyword = Location::from_escaped(keyword_location);
             let absolute = absolute.map(|uri| {
                 Arc::new(Uri::parse(uri.to_owned()).expect("generated absolute location is a URI"))
@@ -1554,16 +1556,22 @@ pub mod generated {
                 schema: format_keyword_location(&keyword, absolute.as_ref()),
                 keyword,
                 absolute,
+                annotations: annotations.map(|json| {
+                    Arc::new(serde_json::from_str(json).expect("generated annotations are JSON"))
+                }),
             }
         }
     }
 
-    /// The units a generated `evaluate` reports: the schema first, then its keywords. Each unit
-    /// is its location, then any other location its errors are reported at. Locations are built
-    /// on first use.
+    /// The units a generated `evaluate` reports: the schema first, then its keywords. Locations
+    /// are built on first use.
     pub struct Locations {
-        units: &'static [&'static [&'static str]],
+        units: &'static [&'static str],
+        /// Other locations a unit's errors are reported at, with the unit's index.
+        aliases: &'static [(&'static str, usize)],
         base: Option<&'static str>,
+        /// The schema's own annotations, as JSON.
+        annotations: Option<&'static str>,
         built: OnceLock<Box<[NodeLocation]>>,
     }
 
@@ -1571,54 +1579,66 @@ pub mod generated {
         /// `base` is the absolute URI the pointers resolve against, if the schema has one.
         #[must_use]
         pub const fn new(
-            units: &'static [&'static [&'static str]],
+            units: &'static [&'static str],
+            aliases: &'static [(&'static str, usize)],
             base: Option<&'static str>,
+            annotations: Option<&'static str>,
         ) -> Self {
             Locations {
                 units,
+                aliases,
                 base,
+                annotations,
                 built: OnceLock::new(),
             }
         }
 
         /// The evaluation of an instance the schema reports `errors` for: each unit fails with
-        /// the errors reported at its location.
+        /// the errors reported at its locations.
         ///
         /// # Panics
         ///
-        /// A unit has no location; the generator always gives one.
+        /// There are no units; the generator always gives the schema's own.
         #[must_use]
         pub fn evaluate(&self, errors: &[ValidationError<'_>]) -> Evaluation {
             let built = self.built.get_or_init(|| {
                 self.units
                     .iter()
-                    .map(|paths| {
-                        let pointer = paths[0];
+                    .enumerate()
+                    .map(|(index, pointer)| {
                         let absolute = self.base.map(|base| format!("{base}#{pointer}"));
-                        NodeLocation::new(pointer, absolute.as_deref())
+                        let annotations = if index == 0 { self.annotations } else { None };
+                        NodeLocation::new(pointer, absolute.as_deref(), annotations)
                     })
                     .collect()
             });
             let (schema, keywords) = built.split_first().expect("the schema's own location");
             let mut arena = EvaluationArena::default();
             let mut children = ChildList::default();
-            for (location, paths) in keywords.iter().zip(&self.units[1..]) {
+            for (index, location) in keywords.iter().enumerate() {
                 children.push(
                     &mut arena,
-                    unit(location, at(errors, paths), ChildList::default()),
+                    unit(location, self.at(errors, index + 1), ChildList::default()),
                 );
             }
-            let root = unit(schema, at(errors, self.units[0]), children);
+            let root = unit(schema, self.at(errors, 0), children);
             Evaluation::with_root(arena, root)
         }
-    }
 
-    fn at(errors: &[ValidationError<'_>], paths: &[&str]) -> Vec<ErrorDescription> {
-        errors
-            .iter()
-            .filter(|error| paths.contains(&error.schema_path().as_str()))
-            .map(ErrorDescription::from_validation_error)
-            .collect()
+        fn at(&self, errors: &[ValidationError<'_>], index: usize) -> Vec<ErrorDescription> {
+            errors
+                .iter()
+                .filter(|error| {
+                    let path = error.schema_path().as_str();
+                    path == self.units[index]
+                        || self
+                            .aliases
+                            .iter()
+                            .any(|(alias, of)| *of == index && *alias == path)
+                })
+                .map(ErrorDescription::from_validation_error)
+                .collect()
+        }
     }
 
     /// A unit at the instance root, failing with `errors` or with a failing child.
@@ -1633,7 +1653,7 @@ pub mod generated {
                 location.absolute.clone(),
                 Arc::clone(&location.schema),
                 InstancePosition::ROOT,
-                None,
+                location.annotations.clone().map(Annotations::from_arc),
                 children,
             )
         } else {
@@ -1642,7 +1662,7 @@ pub mod generated {
                 location.absolute.clone(),
                 Arc::clone(&location.schema),
                 InstancePosition::ROOT,
-                None,
+                location.annotations.clone().map(Annotations::from_arc),
                 errors,
                 children,
             )

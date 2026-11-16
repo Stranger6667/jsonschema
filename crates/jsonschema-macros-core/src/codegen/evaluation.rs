@@ -38,14 +38,39 @@ pub(super) fn compile<E: ValueEmitter>(
     }
     // The schema's own unit comes first.
     let mut units = vec![vec![String::new()]];
+    let mut annotations = quote! { None };
     if let Value::Object(keywords) = schema {
+        if let Some(keyword) = keywords
+            .keys()
+            .find(|keyword| ctx.config.custom_keywords.contains_key(*keyword))
+        {
+            return Err(syn::Error::new(
+                proc_macro2::Span::call_site(),
+                format!("`evaluate` does not support the custom `{keyword}` keyword yet"),
+            ));
+        }
         units.extend(
             LEAF_KEYWORDS
                 .iter()
                 .filter_map(|keyword| unit(keyword, keywords.get(*keyword)?, ctx.draft)),
         );
+        // The draft's unknown keywords annotate the schema, as the runtime reports them.
+        let unknown: serde_json::Map<_, _> = keywords
+            .iter()
+            .filter(|(keyword, _)| !ctx.draft.is_known_keyword(keyword))
+            .map(|(keyword, value)| (keyword.clone(), value.clone()))
+            .collect();
+        if !unknown.is_empty() {
+            let json = Value::Object(unknown).to_string();
+            annotations = quote! { Some(#json) };
+        }
     }
-    let units = units.iter().map(|paths| quote! { &[#(#paths),*] });
+    let pointers = units.iter().map(|paths| &paths[0]);
+    let aliases = units.iter().enumerate().flat_map(|(index, paths)| {
+        paths[1..]
+            .iter()
+            .map(move |alias| quote! { (#alias, #index) })
+    });
     let base = ctx.config.base_uri.as_str();
     // Without a base of its own the schema gets a synthetic one, which the output leaves out.
     let base = if base.starts_with("json-schema:///") {
@@ -55,7 +80,8 @@ pub(super) fn compile<E: ValueEmitter>(
         quote! { Some(#base) }
     };
     Ok(quote! {
-        static __LOCATIONS: __eval::Locations = __eval::Locations::new(&[#(#units),*], #base);
+        static __LOCATIONS: __eval::Locations =
+            __eval::Locations::new(&[#(#pointers),*], &[#(#aliases),*], #base, #annotations);
         let mut __errors = __err::Errors::new(false);
         let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
         __LOCATIONS.evaluate(&__errors.into_vec())
@@ -65,6 +91,10 @@ pub(super) fn compile<E: ValueEmitter>(
 /// A keyword's unit: its location, then any other location its errors are reported at. `None`
 /// when the runtime gives the keyword no unit.
 fn unit(keyword: &str, value: &Value, draft: Draft) -> Option<Vec<String>> {
+    // The draft's unknown keywords annotate the schema instead.
+    if !draft.is_known_keyword(keyword) {
+        return None;
+    }
     let location = format!("/{keyword}");
     match (draft, keyword) {
         // Draft 4's boolean flags make a bound exclusive; the bound's unit reports their errors.
@@ -90,10 +120,13 @@ pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
 
 fn supports(keyword: &str, value: &Value, draft: Draft) -> bool {
     match keyword {
-        // Not a Draft 4 keyword, so the runtime reports it as an annotation.
-        "const" => draft != Draft::Draft4,
+        // A custom meta-schema could change which keywords apply.
+        "$schema" => value
+            .as_str()
+            .is_some_and(|uri| Draft::from_schema_uri(uri) == draft),
         // The runtime skips a divisor beyond `f64`.
         "multipleOf" => value.as_f64().is_some_and(f64::is_finite),
-        _ => LEAF_KEYWORDS.contains(&keyword),
+        // An unknown keyword is an annotation.
+        _ => LEAF_KEYWORDS.contains(&keyword) || !draft.is_known_keyword(keyword),
     }
 }
