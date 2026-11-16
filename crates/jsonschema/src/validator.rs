@@ -1090,18 +1090,6 @@ mod tests {
     use std::sync::LazyLock;
     use test_case::test_case;
 
-    #[cfg(not(target_arch = "wasm32"))]
-    fn load(path: &str, idx: usize) -> Value {
-        use std::{fs::File, io::Read, path::Path};
-        let path = Path::new(path);
-        let mut file = File::open(path).unwrap();
-        let mut content = String::new();
-        file.read_to_string(&mut content).ok().unwrap();
-        let data: Value = serde_json::from_str(&content).unwrap();
-        let case = &data.as_array().unwrap()[idx];
-        case.get("schema").unwrap().clone()
-    }
-
     /// Large enough that early paths are built directly and later ones come from the cache.
     #[test]
     fn evaluation_paths_match_across_cache_threshold() {
@@ -1285,9 +1273,10 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(target_arch = "wasm32"))]
     fn validate_ref() {
-        let schema = load("tests/suite/tests/draft7/ref.json", 1);
+        let schema = json!({
+            "properties": {"foo": {"type": "integer"}, "bar": {"$ref": "#/properties/foo"}}
+        });
         let value = json!({"bar": 3});
         let validator = crate::validator_for(&schema).unwrap();
         assert!(validator.validate(&value).is_ok());

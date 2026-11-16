@@ -2,21 +2,40 @@
 
 require "spec_helper"
 require "json"
+require "bigdecimal"
 require "pathname"
 require_relative "support/jsonschema_testsuite_magnus"
 
 module SuiteHelpers
-  SUITE_PATH = Pathname.new(__dir__).join("../../jsonschema/tests/suite/tests")
-  REMOTES_PATH = Pathname.new(__dir__).join("../../jsonschema/tests/suite/remotes")
+  SUITE_PATH = Pathname.new(__dir__).join("../../jsonschema/tests/suite/validation/tests")
 
-  # Map draft directories to JSONSchema draft constants
+  # Draft name => JSONSchema draft constant and the number the suite's `compatibility` property uses for it
   DRAFT_MAP = {
-    "draft4" => :draft4,
-    "draft6" => :draft6,
-    "draft7" => :draft7,
-    "draft2019-09" => :draft201909,
-    "draft2020-12" => :draft202012
+    "draft4" => [:draft4, 4],
+    "draft6" => [:draft6, 6],
+    "draft7" => [:draft7, 7],
+    "draft2019-09" => [:draft201909, 2019],
+    "draft2020-12" => [:draft202012, 2020]
   }.freeze
+
+  def self.compatible?(compatibility, release)
+    compatible = true
+    compatibility.to_s.split(",").each do |constraint|
+      operator, version = constraint.match(/\A(<=|=)?(\d+)\z/).captures
+      version = version.to_i
+      compatible = { "<=" => release <= version, "=" => release == version }.fetch(operator, release >= version)
+      break if release <= version
+    end
+    compatible
+  end
+
+  def self.validate_formats(test_case)
+    tags = test_case.fetch("tags", [])
+    return true if tags.include?("format-assertion")
+    return false if tags.include?("format-annotation")
+
+    nil
+  end
 
   def self.sanitize_name(name)
     name.gsub(/[^a-zA-Z0-9_]/, "_").gsub(/_+/, "_").gsub(/^_|_$/, "")
@@ -38,42 +57,27 @@ module SuiteHelpers
   def self.unencodable?(value)
     value.is_a?(String) && value.include?(REPLACEMENT_CHARACTER)
   end
-
-  # Build a retriever proc for remote schemas
-  def self.build_retriever
-    return @build_retriever if defined?(@build_retriever)
-
-    remotes = {}
-    if REMOTES_PATH.exist?
-      REMOTES_PATH.glob("**/*.json").each do |file|
-        relative = file.relative_path_from(REMOTES_PATH).to_s
-        uri = "http://localhost:1234/#{relative}"
-        # Parse JSON to return Ruby hashes
-        remotes[uri] = JSON.parse(file.read)
-      end
-    end
-
-    @build_retriever = ->(uri) { remotes[uri] }
-  end
 end
 
 RSpec.describe "JSON Schema Test Suite" do
-  SuiteHelpers::DRAFT_MAP.each do |draft_name, draft_const|
-    draft_path = SuiteHelpers::SUITE_PATH.join(draft_name)
-    next unless draft_path.exist?
+  suite_files = SuiteHelpers::SUITE_PATH.glob("**/*.json").sort.filter_map do |test_file|
+    relative_file = test_file.relative_path_from(SuiteHelpers::SUITE_PATH).to_s
+    next if relative_file.start_with?("proposals/")
 
+    [relative_file, JSON.parse(SuiteHelpers.sanitize_lone_surrogates(test_file.read), decimal_class: BigDecimal)["tests"]]
+  end
+
+  SuiteHelpers::DRAFT_MAP.each do |draft_name, (draft_const, release)|
     describe draft_name do
-      draft_path.glob("**/*.json").sort.each do |test_file|
-        relative_file = test_file.relative_path_from(draft_path).to_s
-        relative_path = relative_file.sub(/\.json$/, "")
-        is_optional = relative_path.start_with?("optional/")
-
-        context relative_path do
-          test_cases = JSON.parse(SuiteHelpers.sanitize_lone_surrogates(test_file.read))
-
+      suite_files.each do |relative_file, test_cases|
+        context relative_file.sub(/\.json$/, "") do
           test_cases.each_with_index do |test_case, index|
+            next unless SuiteHelpers.compatible?(test_case["compatibility"], release)
+
             case_description = test_case["description"]
             schema = test_case["schema"]
+            external_schemas = test_case.fetch("externalSchemas", {})
+            validate_formats = SuiteHelpers.validate_formats(test_case)
             # Matches the id `magnus_suite!` gives the validator compiled for this block.
             case_id = "#{draft_name}|#{relative_file}|#{index}"
 
@@ -86,16 +90,14 @@ RSpec.describe "JSON Schema Test Suite" do
                 it test_description do
                   skip("instance has no UTF-8 representation") if SuiteHelpers.unencodable?(data)
 
-                  opts = {
-                    draft: draft_const,
-                    validate_formats: is_optional,
-                    retriever: SuiteHelpers.build_retriever
-                  }
+                  retriever = ->(uri) { external_schemas[uri] }
+                  opts = { draft: draft_const, retriever: retriever }
+                  opts[:validate_formats] = validate_formats unless validate_formats.nil?
                   # An explicit draft never retrieves `$schema`, so a custom meta-schema must be registered.
-                  meta_schema = schema.is_a?(Hash) ? SuiteHelpers.build_retriever.call(schema["$schema"]) : nil
+                  meta_schema = schema.is_a?(Hash) ? external_schemas[schema["$schema"]] : nil
                   if meta_schema
                     opts[:registry] = JSONSchema::Registry.new(
-                      [[schema["$schema"], meta_schema]], retriever: SuiteHelpers.build_retriever
+                      [[schema["$schema"], meta_schema]], retriever: retriever
                     )
                   end
                   error_ctx = "Schema: #{JSON.pretty_generate(schema)}\n" \

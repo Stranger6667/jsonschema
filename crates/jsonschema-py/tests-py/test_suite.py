@@ -1,5 +1,5 @@
 import json
-import os
+from decimal import Decimal
 from pathlib import Path
 
 import jsonschema_testsuite_pyo3
@@ -7,53 +7,49 @@ import pytest
 
 import jsonschema_rs
 
-TEST_SUITE_PATH = Path(__file__).parent.parent.parent / "jsonschema/tests/suite"
-REMOTE_PREFIXES = ("http://localhost:1234", "https://localhost:1234")
+TEST_SUITE_PATH = Path(__file__).parent.parent.parent / "jsonschema/tests/suite/validation/tests"
 
-
-def load_remote_documents():
-    remotes = TEST_SUITE_PATH / "remotes"
-    documents = {}
-    for root, _, files in os.walk(remotes):
-        for filename in files:
-            path = Path(root) / filename
-            relative = path.relative_to(remotes).as_posix()
-            contents = path.read_text(encoding="utf-8")
-            for prefix in REMOTE_PREFIXES:
-                documents[f"{prefix}/{relative}"] = contents
-    return documents
-
-
-REMOTE_DOCUMENTS = load_remote_documents()
-
-
-def make_testsuite_retriever():
-    localhost_alias = "http://127.0.0.1:1234/"
-
-    def _retriever(uri: str):
-        normalized = uri
-        if normalized.startswith(localhost_alias):
-            normalized = f"http://localhost:1234/{normalized[len(localhost_alias) :]}"
-        try:
-            return json.loads(REMOTE_DOCUMENTS[normalized])
-        except KeyError as exc:
-            raise ValueError(f"Unknown remote schema: {uri}") from exc
-
-    return _retriever
-
-
-TESTSUITE_RETRIEVER = make_testsuite_retriever()
-
-SUPPORTED_DRAFTS = ("4", "6", "7", "2019-09", "2020-12")
+# Draft name -> the number the suite's `compatibility` property uses for it.
+SUPPORTED_DRAFTS = {"4": 4, "6": 6, "7": 7, "2019-09": 2019, "2020-12": 2020}
 NOT_SUPPORTED_CASES = {
     "4": ("bignum.json",),
 }
 
 
-def load_file(path):
-    with open(path, mode="r", encoding="utf-8") as fd:
-        for block in json.load(fd):
-            yield block
+def is_compatible(compatibility, release):
+    if compatibility is None:
+        return True
+    compatible = True
+    for constraint in compatibility.split(","):
+        version = int(constraint.lstrip("<="))
+        if constraint.startswith("<="):
+            compatible = release <= version
+        elif constraint.startswith("="):
+            compatible = release == version
+        else:
+            compatible = release >= version
+        if release <= version:
+            break
+    return compatible
+
+
+def validate_formats(block):
+    tags = block.get("tags", ())
+    if "format-assertion" in tags:
+        return True
+    if "format-annotation" in tags:
+        return False
+    return None
+
+
+def make_retriever(external_schemas):
+    def _retriever(uri: str):
+        try:
+            return external_schemas[uri]
+        except KeyError as exc:
+            raise ValueError(f"Unknown remote schema: {uri}") from exc
+
+    return _retriever
 
 
 # A lone UTF-16 surrogate has no UTF-8 representation and cannot cross into Rust.
@@ -67,45 +63,55 @@ def unencodable_string(value):
     return False
 
 
-def maybe_optional(draft, schema, instance, expected, description, filename, is_optional, case_id):
-    output = (filename, draft, schema, instance, expected, description, is_optional, case_id)
+def maybe_skipped(draft, block, test, filename, case_id):
+    output = (
+        filename,
+        draft,
+        block["schema"],
+        block.get("externalSchemas", {}),
+        test["data"],
+        test["valid"],
+        test["description"],
+        validate_formats(block),
+        case_id,
+    )
     if filename in NOT_SUPPORTED_CASES.get(draft, ()):
         output = pytest.param(*output, marks=pytest.mark.skip(reason=f"{filename} is not supported"))
-    elif unencodable_string(instance):
+    elif unencodable_string(test["data"]):
         output = pytest.param(*output, marks=pytest.mark.skip(reason="instance has no UTF-8 representation"))
     return output
 
 
 def suite_cases():
-    for draft in SUPPORTED_DRAFTS:
-        base = TEST_SUITE_PATH / f"tests/draft{draft}"
-        for path in sorted(base.rglob("*.json")):
-            relative = path.relative_to(base).as_posix()
-            is_optional = "optional" in relative
-            for index, block in enumerate(load_file(path)):
+    # `Decimal` keeps literals past `float` precision.
+    files = [
+        (
+            path.relative_to(TEST_SUITE_PATH).as_posix(),
+            json.loads(path.read_text(encoding="utf-8"), parse_float=Decimal)["tests"],
+        )
+        for path in sorted(TEST_SUITE_PATH.rglob("*.json"))
+    ]
+    for draft, release in SUPPORTED_DRAFTS.items():
+        for relative, blocks in files:
+            if relative.startswith("proposals/"):
+                continue
+            for index, block in enumerate(blocks):
+                if not is_compatible(block.get("compatibility"), release):
+                    continue
                 # Matches the id `pyo3_suite!` gives the validator compiled for this block.
                 case_id = f"draft{draft}|{relative}|{index}"
                 for test in block["tests"]:
-                    yield maybe_optional(
-                        draft,
-                        block["schema"],
-                        test["data"],
-                        test["valid"],
-                        test["description"],
-                        path.name,
-                        is_optional,
-                        case_id,
-                    )
+                    yield maybe_skipped(draft, block, test, Path(relative).name, case_id)
 
 
 def pytest_generate_tests(metafunc):
     metafunc.parametrize(
-        "filename, draft, schema, instance, expected, description, is_optional, case_id",
+        "filename, draft, schema, external_schemas, instance, expected, description, validate_formats, case_id",
         list(suite_cases()),
     )
 
 
-def runtime_validator(draft, schema, is_optional):
+def runtime_validator(draft, schema, external_schemas, validate_formats):
     cls = {
         "4": jsonschema_rs.Draft4Validator,
         "6": jsonschema_rs.Draft6Validator,
@@ -113,22 +119,21 @@ def runtime_validator(draft, schema, is_optional):
         "2019-09": jsonschema_rs.Draft201909Validator,
         "2020-12": jsonschema_rs.Draft202012Validator,
     }[draft]
-    kwargs = {"retriever": TESTSUITE_RETRIEVER}
-    if is_optional:
-        kwargs["validate_formats"] = True
+    retriever = make_retriever(external_schemas)
+    kwargs = {"retriever": retriever}
+    if validate_formats is not None:
+        kwargs["validate_formats"] = validate_formats
     # An explicit draft never retrieves `$schema`, so a custom meta-schema must be registered.
     meta_schema = schema.get("$schema") if isinstance(schema, dict) else None
-    if meta_schema in REMOTE_DOCUMENTS:
-        kwargs["registry"] = jsonschema_rs.Registry(
-            [(meta_schema, json.loads(REMOTE_DOCUMENTS[meta_schema]))], retriever=TESTSUITE_RETRIEVER
-        )
+    if meta_schema in external_schemas:
+        kwargs["registry"] = jsonschema_rs.Registry([(meta_schema, external_schemas[meta_schema])], retriever=retriever)
     return cls(schema, **kwargs)
 
 
-def test_draft(filename, draft, schema, instance, expected, description, is_optional, case_id):
+def test_draft(filename, draft, schema, external_schemas, instance, expected, description, validate_formats, case_id):
     error_message = f"[{filename}] {description}: {schema} | {instance}"
     try:
-        validator = runtime_validator(draft, schema, is_optional)
+        validator = runtime_validator(draft, schema, external_schemas, validate_formats)
 
         result = validator.is_valid(instance)
         assert result is expected, f"is_valid mismatch: {error_message}"
@@ -152,7 +157,9 @@ def test_draft(filename, draft, schema, instance, expected, description, is_opti
 
 
 # `jsonschema_testsuite_pyo3` holds one `backend = Pyo3` validator per suite case.
-def test_draft_codegen(filename, draft, schema, instance, expected, description, is_optional, case_id):
+def test_draft_codegen(
+    filename, draft, schema, external_schemas, instance, expected, description, validate_formats, case_id
+):
     error_message = f"[{filename}] {description}: {schema} | {instance}"
     assert jsonschema_testsuite_pyo3.is_valid(case_id, instance) is expected, f"is_valid mismatch: {error_message}"
     assert (jsonschema_testsuite_pyo3.validate(case_id, instance) is None) is expected, (

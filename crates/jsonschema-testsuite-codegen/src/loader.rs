@@ -1,15 +1,14 @@
 use std::{borrow::Cow, collections::BTreeMap, fs, path::Path};
 
-use testsuite_internal::Case;
+use testsuite_internal::{Case, SuiteFile};
 
 use crate::files;
 
 pub(crate) type TestCaseTree = BTreeMap<String, TestCaseNode>;
 
-#[derive(Debug)]
 pub(crate) enum TestCaseNode {
     Submodule(TestCaseTree),
-    TestFile(Vec<Case>),
+    TestFile(DraftFile),
 }
 
 impl TestCaseNode {
@@ -21,22 +20,115 @@ impl TestCaseNode {
     }
 }
 
+/// A suite file's cases that apply to one draft.
+pub(crate) struct DraftFile {
+    /// Path below `validation/tests`, `/`-separated.
+    pub(crate) relative: String,
+    pub(crate) cases: Vec<Case>,
+}
+
+/// Every non-proposal suite file with at least one case that applies to `draft`.
+pub(crate) fn load_files(
+    suite_path: &str,
+    draft: &str,
+) -> Result<Vec<DraftFile>, Box<dyn std::error::Error>> {
+    let root = Path::new(suite_path).join("validation").join("tests");
+    if !root.is_dir() {
+        return Err(format!(
+            "Path does not exist or is not a directory: {}. Run `git submodule init && git submodule update`",
+            root.display()
+        )
+        .into());
+    }
+    let release = release_of(draft);
+    let mut output = Vec::new();
+    for path in files::json_files(&root)? {
+        let relative = path
+            .strip_prefix(&root)?
+            .to_str()
+            .ok_or("Invalid filename")?
+            .replace('\\', "/");
+        if relative.starts_with("proposals/") {
+            continue;
+        }
+        let contents = fs::read_to_string(&path)?;
+        let file: SuiteFile = serde_json::from_str(&sanitize_lone_surrogates(&contents))?;
+        let cases: Vec<Case> = file
+            .tests
+            .into_iter()
+            .enumerate()
+            .map(|(index, mut case)| {
+                case.index = index;
+                case
+            })
+            .filter(|case| {
+                case.compatibility
+                    .as_deref()
+                    .is_none_or(|compatibility| is_compatible(compatibility, release))
+            })
+            .collect();
+        if !cases.is_empty() {
+            output.push(DraftFile { relative, cases });
+        }
+    }
+    Ok(output)
+}
+
 pub(crate) fn load_suite(
     suite_path: &str,
     draft: &str,
 ) -> Result<TestCaseTree, Box<dyn std::error::Error>> {
-    let full_path = Path::new(suite_path).join("tests").join(draft);
     let mut root = TestCaseTree::new();
-
-    for path in files::json_files(&full_path)? {
-        let relative_path = path.strip_prefix(&full_path)?;
-        let contents = fs::read_to_string(&path)?;
-        let cases: Vec<Case> = serde_json::from_str(&sanitize_lone_surrogates(&contents))?;
-
-        insert_into_module_tree(&mut root, relative_path, cases)?;
+    for file in load_files(suite_path, draft)? {
+        insert_into_module_tree(&mut root, file)?;
     }
-
     Ok(root)
+}
+
+/// The number the suite's `compatibility` property uses for a draft.
+fn release_of(draft: &str) -> u32 {
+    match draft {
+        "draft4" => 4,
+        "draft6" => 6,
+        "draft7" => 7,
+        "draft2019-09" => 2019,
+        _ => 2020,
+    }
+}
+
+/// Whether a `compatibility` value such as `"6,<=2019"` covers `release`.
+fn is_compatible(compatibility: &str, release: u32) -> bool {
+    let mut compatible = true;
+    for constraint in compatibility.split(',') {
+        let (operator, version) = if let Some(version) = constraint.strip_prefix("<=") {
+            ("<=", version)
+        } else if let Some(version) = constraint.strip_prefix('=') {
+            ("=", version)
+        } else {
+            ("", constraint)
+        };
+        let version: u32 = version.parse().expect("Compatibility version is a number");
+        compatible = match operator {
+            "<=" => release <= version,
+            "=" => release == version,
+            _ => release >= version,
+        };
+        if release <= version {
+            break;
+        }
+    }
+    compatible
+}
+
+/// The `format` behavior a case's tags ask for.
+pub(crate) fn validate_formats(case: &Case) -> Option<bool> {
+    if case.tags.iter().any(|tag| tag == "format-assertion") {
+        Some(true)
+    } else if case.tags.iter().any(|tag| tag == "format-annotation") {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 /// Rewrite unpaired surrogate `\uXXXX` escapes to U+FFFD; `serde_json` cannot decode a
@@ -100,27 +192,23 @@ fn hex4(chars: &[char], start: usize) -> Option<u32> {
 
 fn insert_into_module_tree(
     tree: &mut TestCaseTree,
-    path: &Path,
-    cases: Vec<Case>,
+    file: DraftFile,
 ) -> Result<(), Box<dyn std::error::Error>> {
     let mut current = tree;
+    let mut segments: Vec<&str> = file.relative.split('/').collect();
+    let file_name = segments
+        .pop()
+        .and_then(|name| name.strip_suffix(".json"))
+        .expect("Invalid filename")
+        .to_owned();
 
-    // Navigate through the path components
-    for component in path.parent().unwrap_or(Path::new("")).components() {
-        let key = component.as_os_str().to_string_lossy().into_owned();
+    for segment in segments {
         current = current
-            .entry(key)
+            .entry(segment.to_owned())
             .or_insert_with(|| TestCaseNode::Submodule(TestCaseTree::new()))
             .submodule_mut()?;
     }
-
-    // Insert the test file
-    let file_name = path
-        .file_stem()
-        .expect("Invalid filename")
-        .to_string_lossy()
-        .into_owned();
-    current.insert(file_name, TestCaseNode::TestFile(cases));
+    current.insert(file_name, TestCaseNode::TestFile(file));
 
     Ok(())
 }

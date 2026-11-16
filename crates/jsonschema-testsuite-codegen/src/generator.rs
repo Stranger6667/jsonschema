@@ -11,10 +11,9 @@ pub(crate) fn generate_modules(
     functions: &mut HashSet<String>,
     xfail: &[String],
     draft: &str,
-    remote_resources: &[(String, String)],
 ) -> TokenStream {
     let root_path = vec![draft.to_string()];
-    generate_nested_structure(tree, functions, &root_path, xfail, draft, remote_resources)
+    generate_nested_structure(tree, functions, &root_path, xfail, draft)
 }
 
 fn generate_nested_structure(
@@ -23,7 +22,6 @@ fn generate_nested_structure(
     current_path: &[String],
     xfail: &[String],
     draft: &str,
-    remote_resources: &[(String, String)],
 ) -> TokenStream {
     let modules = tree.iter().map(|(name, node)| {
         let module_name = testsuite::sanitize_name(name.to_snake_case());
@@ -33,14 +31,8 @@ fn generate_nested_structure(
 
         match node {
             loader::TestCaseNode::Submodule(subtree) => {
-                let submodules = generate_nested_structure(
-                    subtree,
-                    functions,
-                    &new_path,
-                    xfail,
-                    draft,
-                    remote_resources,
-                );
+                let submodules =
+                    generate_nested_structure(subtree, functions, &new_path, xfail, draft);
                 quote! {
                     mod #module_ident {
                         use super::*;
@@ -49,7 +41,9 @@ fn generate_nested_structure(
                     }
                 }
             }
-            loader::TestCaseNode::TestFile(cases) => {
+            loader::TestCaseNode::TestFile(file) => {
+                let cases = &file.cases;
+                let relative = &file.relative;
                 let mut modules = HashSet::with_capacity(cases.len());
                 let case_modules = cases.iter().map(|case| {
                     let base_module_name = testsuite::sanitize_name(case.description.to_snake_case());
@@ -61,24 +55,34 @@ fn generate_nested_structure(
                     let schema = serde_json::to_string(&case.schema).expect("Can't serialize JSON");
                     let case_description = &case.description;
 
-                    // Build the resources attribute fragment for schemas that reference localhost:1234.
-                    let resources_attr = if schema.contains("localhost:1234") {
-                        let resource_entries = remote_resources
+                    let externals: Vec<(&String, String)> = case
+                        .external_schemas
+                        .iter()
+                        .map(|(uri, schema)| {
+                            (uri, serde_json::to_string(schema).expect("Can't serialize JSON"))
+                        })
+                        .collect();
+                    let resources_attr = if externals.is_empty() {
+                        quote! {}
+                    } else {
+                        let entries = externals
                             .iter()
-                            .map(|(uri, contents)| {
-                                quote! { #uri => { schema = #contents } }
-                            });
-                        quote! { , resources = { #(#resource_entries),* } }
-                    } else {
-                        quote! {}
+                            .map(|(uri, contents)| quote! { #uri => { schema = #contents } });
+                        quote! { , resources = { #(#entries),* } }
                     };
+                    let external_schemas = externals.iter().map(|(uri, contents)| {
+                        quote! { (#uri, serde_json::from_str(#contents).expect("Failed to load JSON")) }
+                    });
+                    let external_schemas = quote! { vec![#(#external_schemas),*] };
 
-                    let is_optional = case_path.iter().any(|segment| segment == "optional");
-                    let validate_formats_attr = if is_optional {
-                        quote! { , validate_formats = true }
-                    } else {
-                        quote! {}
-                    };
+                    let (validate_formats_attr, validate_formats) =
+                        match loader::validate_formats(case) {
+                            Some(value) => (
+                                quote! { , validate_formats = #value },
+                                quote! { Some(#value) },
+                            ),
+                            None => (quote! {}, quote! { None }),
+                        };
 
                     let supports_evaluate = jsonschema_macros_core::evaluate_supports(&case.schema, draft_named(draft));
                     let methods_attr = if supports_evaluate {
@@ -137,8 +141,10 @@ fn generate_nested_structure(
                             fn #test_ident() {
                                 let test = testsuite::Test {
                                     draft: #draft,
+                                    file: #relative,
                                     schema: serde_json::from_str(#schema).expect("Failed to load JSON"),
-                                    is_optional: #is_optional,
+                                    external_schemas: #external_schemas,
+                                    validate_formats: #validate_formats,
                                     case: #case_description,
                                     description: #test_description,
                                     data: serde_json::from_str(#data).expect("Failed to load JSON"),
@@ -231,12 +237,12 @@ pub(crate) fn evaluate_coverage(tree: &loader::TestCaseTree, draft: Draft) -> (u
     tree.values()
         .map(|node| match node {
             loader::TestCaseNode::Submodule(subtree) => evaluate_coverage(subtree, draft),
-            loader::TestCaseNode::TestFile(cases) => (
-                cases
+            loader::TestCaseNode::TestFile(file) => (
+                file.cases
                     .iter()
                     .filter(|case| jsonschema_macros_core::evaluate_supports(&case.schema, draft))
                     .count(),
-                cases.len(),
+                file.cases.len(),
             ),
         })
         .fold((0, 0), |(covered, total), (node_covered, node_total)| {

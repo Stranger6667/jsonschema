@@ -6,7 +6,7 @@ use std::sync::OnceLock;
 use testsuite::{output_suite, OutputRemote, OutputTest};
 
 #[output_suite(
-    path = "crates/jsonschema/tests/suite/output-tests",
+    path = "crates/jsonschema/tests/output-extra",
     drafts = [
         "v1"
     ]
