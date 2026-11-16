@@ -5941,6 +5941,36 @@ struct EvaluateAdditionalItemsIgnored;
 #[jsonschema::validator(schema = r#"{"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}"#, draft = Draft201909, methods = { evaluate = true })]
 struct EvaluatePrefixItemsDraft201909;
 
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContains;
+
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 2, "maxContains": 3}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContainsBounds;
+
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 2}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContainsMin;
+
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "maxContains": 1}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContainsMax;
+
+#[jsonschema::validator(schema = r#"{"contains": {"const": 1}, "minContains": 0}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContainsMinZero;
+
+#[jsonschema::validator(schema = r#"{"contains": false}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContainsFalse;
+
+#[jsonschema::validator(schema = r#"{"contains": true}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContainsTrue;
+
+#[jsonschema::validator(schema = r#"{"contains": {"properties": {"a": {"type": "integer"}}, "required": ["a"]}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContainsNested;
+
+#[jsonschema::validator(schema = r#"{"contains": {"minimum": 2}, "minContains": 5}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateContainsDraft7;
+
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minItems": 1}"#, draft = Draft4, methods = { evaluate = true })]
+struct EvaluateContainsDraft4;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -6012,6 +6042,16 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateTupleDraft201909::evaluate, serde_json::json!({"items": [{}, {}], "additionalItems": {"type": "string"}}), None, Draft::Draft201909 ; "tuple_draft2019")]
 #[test_case(EvaluateAdditionalItemsIgnored::evaluate, serde_json::json!({"items": {"type": "integer"}, "additionalItems": false}), None, Draft::Draft7 ; "additional_items_ignored")]
 #[test_case(EvaluatePrefixItemsDraft201909::evaluate, serde_json::json!({"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}), None, Draft::Draft201909 ; "prefix_items_draft2019")]
+#[test_case(EvaluateContains::evaluate, serde_json::json!({"contains": {"type": "integer"}}), None, Draft::Draft202012 ; "contains")]
+#[test_case(EvaluateContainsBounds::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minContains": 2, "maxContains": 3}), None, Draft::Draft202012 ; "contains_bounds")]
+#[test_case(EvaluateContainsMin::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minContains": 2}), None, Draft::Draft202012 ; "contains_min")]
+#[test_case(EvaluateContainsMax::evaluate, serde_json::json!({"contains": {"type": "integer"}, "maxContains": 1}), None, Draft::Draft202012 ; "contains_max")]
+#[test_case(EvaluateContainsMinZero::evaluate, serde_json::json!({"contains": {"const": 1}, "minContains": 0}), None, Draft::Draft202012 ; "contains_min_zero")]
+#[test_case(EvaluateContainsFalse::evaluate, serde_json::json!({"contains": false}), None, Draft::Draft202012 ; "contains_false")]
+#[test_case(EvaluateContainsTrue::evaluate, serde_json::json!({"contains": true}), None, Draft::Draft202012 ; "contains_true")]
+#[test_case(EvaluateContainsNested::evaluate, serde_json::json!({"contains": {"properties": {"a": {"type": "integer"}}, "required": ["a"]}}), None, Draft::Draft202012 ; "contains_nested")]
+#[test_case(EvaluateContainsDraft7::evaluate, serde_json::json!({"contains": {"minimum": 2}, "minContains": 5}), None, Draft::Draft7 ; "contains_draft7")]
+#[test_case(EvaluateContainsDraft4::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minItems": 1}), None, Draft::Draft4 ; "contains_draft4")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -6054,6 +6094,8 @@ fn test_evaluate_matches_runtime(
         serde_json::json!([1, "a", 3]),
         serde_json::json!([1, 2, "a", "b"]),
         serde_json::json!([{"a": 1}, {"a": "x"}, 5]),
+        serde_json::json!([1, 1, 1, 1, "x"]),
+        serde_json::json!([{"a": 2}, {"b": 1}, {"a": 3}]),
         // More members than the runtime scans before looking declared names up instead.
         serde_json::json!({"a": 1, "b": "x", "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1}),
     ] {

@@ -101,9 +101,10 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
-        static __TREE: __eval::Tree = __eval::Tree {
+        static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
             tables: "{\"schemas\":[{\"count\":3,\"first\":0,\"pointer\":\"\"}],\"units\":[{\"keyword\":\"type\"},{\"keyword\":\"minLength\"},{\"keyword\":\"maxLength\"}]}",
             matchers: &[],
+            valid: &[],
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);

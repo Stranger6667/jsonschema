@@ -1600,9 +1600,9 @@ pub mod generated {
     #[derive(Deserialize)]
     struct UnitTable {
         keyword: String,
-        /// Another keyword whose errors it reports.
+        /// Other keywords whose errors it reports.
         #[serde(default)]
-        alias: Option<String>,
+        aliases: Vec<String>,
         /// Its annotation of a string instance.
         #[serde(default)]
         strings: Option<Value>,
@@ -1634,6 +1634,9 @@ pub mod generated {
         rest: Option<usize>,
         #[serde(default)]
         skip: usize,
+        /// A `contains` unit's subschema, and its index in `Tree::valid`.
+        #[serde(default)]
+        contains: Option<(usize, usize)>,
         /// That subschema is `false`.
         #[serde(default)]
         closed: bool,
@@ -1659,6 +1662,10 @@ pub mod generated {
         },
         Dependencies((usize, usize)),
         Tuple((usize, usize)),
+        Contains {
+            schema: usize,
+            valid: usize,
+        },
         Rest {
             schema: usize,
             skip: usize,
@@ -1672,7 +1679,7 @@ pub mod generated {
         schema: Arc<str>,
         absolute: Option<Arc<Uri<String>>>,
         /// Where else its errors are reported.
-        alias: Option<Location>,
+        aliases: Vec<Location>,
         annotations: Option<Arc<Value>>,
         /// The annotations apply to string instances only.
         strings_only: bool,
@@ -1682,12 +1689,17 @@ pub mod generated {
     /// Whether a name matches one `patternProperties` regex.
     pub type Matcher = fn(&str) -> bool;
 
+    /// Whether an instance is valid under one `contains` subschema.
+    pub type Validity<F> = for<'a> fn(&<F as Json>::Node<'a>) -> bool;
+
     /// The units a generated `evaluate` reports, built on first use.
-    pub struct Tree {
+    pub struct Tree<F: Json> {
         /// The JSON the generator writes.
         pub tables: &'static str,
         /// One per entry of `Tables::patterns`.
         pub matchers: &'static [Matcher],
+        /// One per `contains` subschema.
+        pub valid: &'static [Validity<F>],
         pub built: OnceLock<Built>,
     }
 
@@ -1702,23 +1714,20 @@ pub mod generated {
         tuples: Box<[usize]>,
     }
 
-    impl Tree {
+    impl<F: Json> Tree<F> {
         /// The evaluation of `instance`, which the schema reports `errors` for: each unit fails
         /// with the errors reported at its location.
-        fn evaluate<F: Json>(
-            &self,
-            instance: &F::Node<'_>,
-            errors: &[ValidationError<'_>],
-        ) -> Evaluation {
+        fn evaluate(&self, instance: &F::Node<'_>, errors: &[ValidationError<'_>]) -> Evaluation {
             let errors: Vec<_> = errors.iter().collect();
-            let mut walk = Walker {
+            let mut walk: Walker<'_, '_, '_, F> = Walker {
                 built: self.built.get_or_init(|| self.build()),
                 matchers: self.matchers,
+                valid: self.valid,
                 by_path: by_path(&errors),
                 errors,
                 arena: EvaluationArena::default(),
             };
-            let root = walk.schema::<F>(0, instance, &LazyLocation::new(), InstancePosition::ROOT);
+            let root = walk.schema(0, instance, &LazyLocation::new(), InstancePosition::ROOT);
             Evaluation::with_root(walk.arena, root)
         }
 
@@ -1741,7 +1750,7 @@ pub mod generated {
                     schema: format_keyword_location(&keyword, absolute.as_ref()),
                     keyword,
                     absolute,
-                    alias: None,
+                    aliases: Vec::new(),
                     annotations: annotations.map(Arc::new),
                     strings_only: false,
                     kind: Kind::Leaf,
@@ -1759,9 +1768,11 @@ pub mod generated {
                         .take()
                         .expect("every unit belongs to one schema");
                     units[index] = Some(UnitLocation {
-                        alias: unit
-                            .alias
-                            .map(|alias| Location::from_escaped(&format!("{pointer}/{alias}"))),
+                        aliases: unit
+                            .aliases
+                            .iter()
+                            .map(|alias| Location::from_escaped(&format!("{pointer}/{alias}")))
+                            .collect(),
                         strings_only: unit.strings.is_some(),
                         kind: match unit.keyword.as_str() {
                             "properties" => Kind::Properties {
@@ -1784,6 +1795,11 @@ pub mod generated {
                             "dependencies" | "dependentSchemas" => Kind::Dependencies(
                                 unit.dependencies.expect("the range of subschemas"),
                             ),
+                            "contains" => {
+                                let (schema, valid) =
+                                    unit.contains.expect("the subschema and its validity");
+                                Kind::Contains { schema, valid }
+                            }
                             "items" | "prefixItems" | "additionalItems" => {
                                 if let Some(tuple) = unit.tuple {
                                     Kind::Tuple(tuple)
@@ -1822,7 +1838,7 @@ pub mod generated {
     /// with a generated validator.
     pub trait Walk: Json {
         fn evaluate(
-            tree: &Tree,
+            tree: &Tree<Self>,
             instance: &Self::Node<'_>,
             errors: &[ValidationError<'_>],
         ) -> Evaluation;
@@ -1830,39 +1846,40 @@ pub mod generated {
 
     impl Walk for crate::SerdeJson {
         fn evaluate(
-            tree: &Tree,
+            tree: &Tree<Self>,
             instance: &Self::Node<'_>,
             errors: &[ValidationError<'_>],
         ) -> Evaluation {
-            tree.evaluate::<Self>(instance, errors)
+            tree.evaluate(instance, errors)
         }
     }
 
     #[cfg(feature = "pyo3")]
     impl Walk for crate::json::Pyo3 {
         fn evaluate(
-            tree: &Tree,
+            tree: &Tree<Self>,
             instance: &Self::Node<'_>,
             errors: &[ValidationError<'_>],
         ) -> Evaluation {
-            tree.evaluate::<Self>(instance, errors)
+            tree.evaluate(instance, errors)
         }
     }
 
     #[cfg(feature = "magnus")]
     impl Walk for crate::json::Magnus {
         fn evaluate(
-            tree: &Tree,
+            tree: &Tree<Self>,
             instance: &Self::Node<'_>,
             errors: &[ValidationError<'_>],
         ) -> Evaluation {
-            tree.evaluate::<Self>(instance, errors)
+            tree.evaluate(instance, errors)
         }
     }
 
-    struct Walker<'t, 'e, 'i> {
+    struct Walker<'t, 'e, 'i, F: Json> {
         built: &'t Built,
         matchers: &'t [Matcher],
+        valid: &'t [Validity<F>],
         /// The errors units match against: below `propertyNames`, those of one name.
         errors: Vec<&'e ValidationError<'i>>,
         /// Indices into `errors` by schema location.
@@ -1881,8 +1898,8 @@ pub mod generated {
         by_path
     }
 
-    impl Walker<'_, '_, '_> {
-        fn schema<F: Json>(
+    impl<F: Json> Walker<'_, '_, '_, F> {
+        fn schema(
             &mut self,
             index: usize,
             instance: &F::Node<'_>,
@@ -1903,7 +1920,7 @@ pub mod generated {
                     Kind::Properties {
                         declared,
                         in_member_order,
-                    } => self.properties::<F>(
+                    } => self.properties(
                         site,
                         declared,
                         in_member_order,
@@ -1912,30 +1929,31 @@ pub mod generated {
                         position,
                     ),
                     Kind::Patterns(patterns) => {
-                        self.patterns::<F>(site, patterns, instance, location, position)
+                        self.patterns(site, patterns, instance, location, position)
                     }
                     Kind::Additional {
                         schema,
                         closed,
                         declared,
                         patterns,
-                    } => self.additional::<F>(
+                    } => self.additional(
                         site, schema, closed, declared, patterns, instance, location, position,
                     ),
                     Kind::Names { schema, closed } => {
-                        self.names::<F>(site, schema, closed, instance, location, position)
+                        self.names(site, schema, closed, instance, location, position)
                     }
                     Kind::Dependencies(schemas) => {
-                        self.dependencies::<F>(site, schemas, instance, location, position)
+                        self.dependencies(site, schemas, instance, location, position)
                     }
-                    Kind::Tuple(schemas) => {
-                        self.tuple::<F>(site, schemas, instance, location, position)
+                    Kind::Contains { schema, valid } => {
+                        self.contains(site, schema, valid, instance, location, position)
                     }
+                    Kind::Tuple(schemas) => self.tuple(site, schemas, instance, location, position),
                     Kind::Rest {
                         schema,
                         skip,
                         closed,
-                    } => self.rest::<F>(site, schema, skip, closed, instance, location, position),
+                    } => self.rest(site, schema, skip, closed, instance, location, position),
                 };
                 children.push(&mut self.arena, node);
             }
@@ -1945,7 +1963,7 @@ pub mod generated {
             Self::node(site, errors, annotations, children, position)
         }
 
-        fn properties<F: Json>(
+        fn properties(
             &mut self,
             site: &UnitLocation,
             (first, count): (usize, usize),
@@ -1984,7 +2002,7 @@ pub mod generated {
                 names.push(Value::String(name.clone()));
                 let path = location.push(name);
                 let below = self.arena.position_below(position, path.segment());
-                let child = self.schema::<F>(schema, &value, &path, below);
+                let child = self.schema(schema, &value, &path, below);
                 children.push(&mut self.arena, child);
             }
             let annotations = Some(Annotations::new(Value::Array(names)));
@@ -1993,7 +2011,7 @@ pub mod generated {
 
         /// Pattern by pattern, the members whose names match it, in member order; a name matching
         /// two patterns is annotated twice.
-        fn patterns<F: Json>(
+        fn patterns(
             &mut self,
             site: &UnitLocation,
             (first, count): (usize, usize),
@@ -2015,7 +2033,7 @@ pub mod generated {
                         names.push(Value::String(name.to_owned()));
                         let path = location.push(name);
                         let below = self.arena.position_below(position, path.segment());
-                        let child = self.schema::<F>(schema, &value, &path, below);
+                        let child = self.schema(schema, &value, &path, below);
                         children.push(&mut self.arena, child);
                     }
                 }
@@ -2027,7 +2045,7 @@ pub mod generated {
         /// The members no sibling `properties` or `patternProperties` names, in member order.
         /// `false` fails each one; the errors run reports one error for all of them instead.
         #[allow(clippy::too_many_arguments)]
-        fn additional<F: Json>(
+        fn additional(
             &mut self,
             site: &UnitLocation,
             schema: usize,
@@ -2056,10 +2074,10 @@ pub mod generated {
                 let path = location.push(name);
                 let below = self.arena.position_below(position, path.segment());
                 let child = if closed {
-                    Self::rejected::<F>(&built.schemas[schema], &value, &path, below)
+                    Self::rejected(&built.schemas[schema], &value, &path, below)
                 } else {
                     names.push(Value::String(name.to_owned()));
-                    self.schema::<F>(schema, &value, &path, below)
+                    self.schema(schema, &value, &path, below)
                 };
                 children.push(&mut self.arena, child);
             }
@@ -2067,9 +2085,41 @@ pub mod generated {
             Self::node(site, Vec::new(), annotations, children, position)
         }
 
+        /// The items valid under the subschema, annotated by their positions. Count errors are
+        /// the unit's own.
+        fn contains(
+            &mut self,
+            site: &UnitLocation,
+            schema: usize,
+            valid: usize,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let Some(array) = instance.as_array() else {
+                return Self::node(site, Vec::new(), None, ChildList::default(), position);
+            };
+            let errors = self.errors_at(site, location);
+            let is_valid = self.valid[valid];
+            let mut indices = Vec::new();
+            let mut children = ChildList::default();
+            for (idx, item) in array.elements().enumerate() {
+                if !is_valid(&item) {
+                    continue;
+                }
+                indices.push(idx);
+                let path = location.push(idx);
+                let below = self.arena.position_below(position, path.segment());
+                let child = self.schema(schema, &item, &path, below);
+                children.push(&mut self.arena, child);
+            }
+            let annotations = (!indices.is_empty()).then(|| Annotations::new(Value::from(indices)));
+            Self::node(site, errors, annotations, children, position)
+        }
+
         /// The item at each position with a subschema. The annotation is `true` when every item
         /// has one, otherwise the largest position.
-        fn tuple<F: Json>(
+        fn tuple(
             &mut self,
             site: &UnitLocation,
             (first, count): (usize, usize),
@@ -2089,7 +2139,7 @@ pub mod generated {
             {
                 let path = location.push(idx);
                 let below = self.arena.position_below(position, path.segment());
-                let child = self.schema::<F>(*schema, &item, &path, below);
+                let child = self.schema(*schema, &item, &path, below);
                 children.push(&mut self.arena, child);
             }
             let annotation = if children.len() == array.len() {
@@ -2109,7 +2159,7 @@ pub mod generated {
         /// Each item from `skip` on. `false` fails each one, where the errors run reports one
         /// error for all.
         #[allow(clippy::too_many_arguments)]
-        fn rest<F: Json>(
+        fn rest(
             &mut self,
             site: &UnitLocation,
             schema: usize,
@@ -2128,9 +2178,9 @@ pub mod generated {
                 let path = location.push(idx);
                 let below = self.arena.position_below(position, path.segment());
                 let child = if closed {
-                    Self::rejected::<F>(&built.schemas[schema], &item, &path, below)
+                    Self::rejected(&built.schemas[schema], &item, &path, below)
                 } else {
-                    self.schema::<F>(schema, &item, &path, below)
+                    self.schema(schema, &item, &path, below)
                 };
                 children.push(&mut self.arena, child);
             }
@@ -2140,7 +2190,7 @@ pub mod generated {
 
         /// Missing required names are the unit's own errors; each present property with a
         /// subschema applies it to the object, in declared order.
-        fn dependencies<F: Json>(
+        fn dependencies(
             &mut self,
             site: &UnitLocation,
             (first, count): (usize, usize),
@@ -2156,7 +2206,7 @@ pub mod generated {
             let mut children = ChildList::default();
             for (name, schema) in &built.dependencies[first..first + count] {
                 if object.get(&F::prepare_key(name)).is_some() {
-                    let child = self.schema::<F>(*schema, instance, location, position);
+                    let child = self.schema(*schema, instance, location, position);
                     children.push(&mut self.arena, child);
                 }
             }
@@ -2165,7 +2215,7 @@ pub mod generated {
 
         /// Each name at the object's location, matched with the errors whose instance is that
         /// name. `false` fails each name, where the errors run reports one error for all.
-        fn names<F: Json>(
+        fn names(
             &mut self,
             site: &UnitLocation,
             schema: usize,
@@ -2183,7 +2233,7 @@ pub mod generated {
             let ControlFlow::Continue(()) =
                 object.try_for_each_name_node::<Infallible>(&mut buffer, |name| {
                     let child = if closed {
-                        Self::rejected::<F>(&built.schemas[schema], &name, location, position)
+                        Self::rejected(&built.schemas[schema], &name, location, position)
                     } else {
                         let text = name.as_string();
                         let scoped: Vec<_> = self
@@ -2194,7 +2244,7 @@ pub mod generated {
                             .collect();
                         let outer_by_path = std::mem::replace(&mut self.by_path, by_path(&scoped));
                         let outer = std::mem::replace(&mut self.errors, scoped);
-                        let child = self.schema::<F>(schema, &name, location, position);
+                        let child = self.schema(schema, &name, location, position);
                         self.errors = outer;
                         self.by_path = outer_by_path;
                         child
@@ -2212,7 +2262,7 @@ pub mod generated {
                 return Vec::new();
             }
             let mut indices: Vec<usize> = std::iter::once(&site.keyword)
-                .chain(site.alias.as_ref())
+                .chain(&site.aliases)
                 .filter_map(|path| self.by_path.get(path.as_str()))
                 .flatten()
                 .copied()
@@ -2231,7 +2281,7 @@ pub mod generated {
         }
 
         /// The `false` subschema at `site` failing for `value`, at `location`.
-        fn rejected<F: Json>(
+        fn rejected(
             site: &UnitLocation,
             value: &F::Node<'_>,
             location: &LazyLocation,

@@ -410,6 +410,7 @@ fn evaluate_object_applicators_module() {
 #[test_case(json!({"items": [{"unevaluatedItems": false}]}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below array items")]
 #[test_case(json!({"prefixItems": [{"unevaluatedItems": false}]}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below prefixItems")]
 #[test_case(json!({"items": [{}], "additionalItems": {"unevaluatedItems": false}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below additionalItems")]
+#[test_case(json!({"contains": {"unevaluatedItems": false}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword below contains")]
 #[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
 #[test_case(json!({"patternProperties": {"(": {}}}), "`evaluate` does not support the `(` pattern" ; "invalid pattern")]
 fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
@@ -426,6 +427,16 @@ fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
     )
     .expect_err("unsupported schema");
     assert_eq!(error.to_string(), message);
+}
+
+#[test]
+fn evaluate_contains_module() {
+    let mut config = test_config(json!({"contains": {"type": "integer"}, "minContains": 2}));
+    config.methods.evaluate = true;
+    insta::assert_snapshot!(
+        "evaluate_contains_module",
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
+    );
 }
 
 #[test]
