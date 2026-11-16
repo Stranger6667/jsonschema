@@ -14,7 +14,7 @@ use super::super::{
 
 /// Match pattern for a type whose check is a bare serde variant pattern.
 /// `None` for "number"/"integer", whose checks carry an integer sub-guard.
-fn simple_type_pattern<E: ValueEmitter>(ty: &str) -> Option<TokenStream> {
+pub(crate) fn simple_type_pattern<E: ValueEmitter>(ty: &str) -> Option<TokenStream> {
     Some(match ty {
         "string" => E::pattern_string(),
         "boolean" => E::pattern_boolean(),

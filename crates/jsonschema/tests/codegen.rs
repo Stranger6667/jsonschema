@@ -5806,6 +5806,30 @@ struct EvaluateDraft4Const;
 )]
 struct EvaluateSchemaKeyword;
 
+#[jsonschema::validator(schema = r#"{"format": "email"}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateFormatAnnotation;
+
+#[jsonschema::validator(schema = r#"{"format": "email"}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateFormatAsserted;
+
+#[jsonschema::validator(schema = r#"{"format": "nope", "minLength": 1}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateUnknownFormat;
+
+#[jsonschema::validator(schema = r#"{"format": "nope"}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnknownFormatAnnotation;
+
+#[jsonschema::validator(schema = r#"{"contentEncoding": "base64", "contentMediaType": "application/json"}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateContentDraft7;
+
+#[jsonschema::validator(schema = r#"{"contentEncoding": "base64"}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateContentEncodingDraft7;
+
+#[jsonschema::validator(schema = r#"{"contentEncoding": "base64", "contentMediaType": "application/json", "contentSchema": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContent;
+
+#[jsonschema::validator(schema = r#"{"contentSchema": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContentSchemaAlone;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -5831,6 +5855,14 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateAnnotations::evaluate, serde_json::json!({"title": "t", "x-vendor": [1, {"a": null}], "$comment": "c", "minimum": 1}), None, Draft::Draft202012 ; "annotations")]
 #[test_case(EvaluateDraft4Const::evaluate, serde_json::json!({"const": 1, "maximum": 1}), None, Draft::Draft4 ; "draft4_const_annotation")]
 #[test_case(EvaluateSchemaKeyword::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"}), None, Draft::Draft202012 ; "schema_keyword")]
+#[test_case(EvaluateFormatAnnotation::evaluate, serde_json::json!({"format": "email"}), None, Draft::Draft202012 ; "format_annotation")]
+#[test_case(EvaluateFormatAsserted::evaluate, serde_json::json!({"format": "email"}), None, Draft::Draft7 ; "format_asserted")]
+#[test_case(EvaluateUnknownFormat::evaluate, serde_json::json!({"format": "nope", "minLength": 1}), None, Draft::Draft7 ; "unknown_format_asserted")]
+#[test_case(EvaluateUnknownFormatAnnotation::evaluate, serde_json::json!({"format": "nope"}), None, Draft::Draft202012 ; "unknown_format_annotation")]
+#[test_case(EvaluateContentDraft7::evaluate, serde_json::json!({"contentEncoding": "base64", "contentMediaType": "application/json"}), None, Draft::Draft7 ; "content_draft7")]
+#[test_case(EvaluateContentEncodingDraft7::evaluate, serde_json::json!({"contentEncoding": "base64"}), None, Draft::Draft7 ; "content_encoding_draft7")]
+#[test_case(EvaluateContent::evaluate, serde_json::json!({"contentEncoding": "base64", "contentMediaType": "application/json", "contentSchema": {"type": "integer"}}), None, Draft::Draft202012 ; "content_annotations")]
+#[test_case(EvaluateContentSchemaAlone::evaluate, serde_json::json!({"contentSchema": {"type": "integer"}}), None, Draft::Draft202012 ; "content_schema_alone")]
 #[test_case(EvaluateObjectsAndPattern::evaluate, serde_json::json!({"required": ["a"], "maxProperties": 2, "minProperties": 1, "pattern": "^a"}), None, Draft::Draft202012 ; "objects_and_pattern")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
@@ -5858,6 +5890,10 @@ fn test_evaluate_matches_runtime(
         serde_json::json!([1, 2, 3]),
         serde_json::json!({}),
         serde_json::json!({"a": 1, "b": 2, "c": 3}),
+        serde_json::json!("a@b.c"),
+        serde_json::json!("MQ=="),
+        serde_json::json!("ew=="),
+        serde_json::json!("!!"),
     ] {
         assert_eq!(
             evaluation_outputs(&evaluate(&instance)),
