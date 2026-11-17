@@ -3,7 +3,7 @@ mod bench {
     use codspeed_criterion_compat::{criterion_group, Criterion};
     use jsonschema::{
         canonical::{self, CanonicalSchema, Satisfiability},
-        Draft,
+        Draft, Registry,
     };
     use serde_json::{json, Map, Value};
 
@@ -128,6 +128,19 @@ mod bench {
         ]
     }
 
+    /// What each `new` response returns that its `old` one does not, as a breaking-change check for
+    /// responses reads it.
+    #[inline(never)]
+    fn response_differences(
+        new: &[CanonicalSchema],
+        old: &[CanonicalSchema],
+    ) -> Vec<Satisfiability> {
+        new.iter()
+            .zip(old)
+            .map(|(new, old)| new.subtract(old).expect("subtracts").satisfiability())
+            .collect()
+    }
+
     /// `models` object schemas, each holding a string, an integer, a list of the model before it and
     /// a map of the one before that, rooted at the last, which reaches them all.
     fn api_document(models: usize, narrow: bool) -> Value {
@@ -163,21 +176,176 @@ mod bench {
         json!({"$ref": format!("#/$defs/M{}", models - 1), "$defs": defs})
     }
 
-    pub(crate) fn bench_difference(c: &mut Criterion) {
-        for group in GROUPS {
-            let cases: Vec<Value> = serde_json::from_str(group.file).expect("valid suite file");
-            for (slug, description) in group.rows {
+    /// `targets` objects, each holding an integer and a property that may be any one of them, nested
+    /// two properties deep. `narrow` bounds the last one's integer.
+    fn union_document(targets: usize, narrow: bool) -> Value {
+        let any: Vec<Value> = (0..targets)
+            .map(|i| json!({"$ref": format!("#/$defs/A{i}")}))
+            .collect();
+        let mut defs = Map::with_capacity(targets);
+        for i in 0..targets {
+            let leaf = recursive_leaf(narrow && i == targets - 1);
+            let mut body =
+                json!({"type": "object", "properties": {"p": {"anyOf": any}, "v": leaf}});
+            for _ in 0..2 {
+                body = json!({"type": "object", "properties": {"q": body}});
+            }
+            defs.insert(format!("A{i}"), body);
+        }
+        json!({"$ref": "#/$defs/A0", "$defs": defs})
+    }
+
+    /// `targets` objects, each holding an integer and one property per target naming it. `narrow`
+    /// bounds the last one's integer.
+    fn dense_document(targets: usize, narrow: bool) -> Value {
+        let mut defs = Map::with_capacity(targets);
+        for i in 0..targets {
+            let mut properties = Map::new();
+            for j in 0..targets {
+                properties.insert(format!("p{j}"), json!({"$ref": format!("#/$defs/A{j}")}));
+            }
+            properties.insert("v".into(), recursive_leaf(narrow && i == targets - 1));
+            defs.insert(
+                format!("A{i}"),
+                json!({"type": "object", "properties": properties}),
+            );
+        }
+        json!({"$ref": "#/$defs/A0", "$defs": defs})
+    }
+
+    /// An API description of `operations` operations, each answering a user and two errors whose
+    /// details are an array of objects. `narrow` bounds every string.
+    fn service_document(operations: usize, narrow: bool) -> Value {
+        let string = if narrow {
+            json!({"type": "string", "maxLength": 3})
+        } else {
+            json!({"type": "string"})
+        };
+        let schemas = json!({
+            "User": {
+                "type": "object",
+                "properties": {
+                    "name": string,
+                    "email": string,
+                    "tags": {"type": "array", "items": string}
+                },
+                "required": ["name"]
+            },
+            "ErrorDetail": {
+                "type": "object",
+                "properties": {
+                    "msg": string,
+                    "type": string,
+                    "loc": {"type": "array", "items": {"anyOf": [{"type": "integer"}, string]}}
+                },
+                "required": ["msg"]
+            },
+            "ErrorModel": {
+                "type": "object",
+                "properties": {
+                    "detail": {
+                        "type": "array",
+                        "items": {"$ref": "#/components/schemas/ErrorDetail"}
+                    }
+                },
+                "required": ["detail"]
+            }
+        });
+        let answer =
+            |model: &str| json!({"schema": {"$ref": format!("#/components/schemas/{model}")}});
+        let mut paths = Map::with_capacity(operations);
+        for i in 0..operations {
+            paths.insert(
+                format!("/op{i}"),
+                json!({"get": {"responses": {
+                    "200": answer("User"),
+                    "400": answer("ErrorModel"),
+                    "422": answer("ErrorModel")
+                }}}),
+            );
+        }
+        json!({"openapi": "3.1.0", "paths": paths, "components": {"schemas": schemas}})
+    }
+
+    /// Every response schema of `service_document(operations, ..)`, canonicalized from the
+    /// document registered as `uri`.
+    fn responses(registry: &Registry, uri: &str, operations: usize) -> Vec<CanonicalSchema> {
+        (0..operations)
+            .flat_map(|i| {
+                ["200", "400", "422"].map(|status| {
+                    let pointer = format!("{uri}#/paths/~1op{i}/get/responses/{status}/schema");
+                    canonical::options()
+                        .with_draft(Draft::Draft202012)
+                        .should_validate_formats(true)
+                        .with_registry(registry)
+                        .canonicalize(&json!({"$ref": pointer}))
+                        .expect("valid schema")
+                })
+            })
+            .collect()
+    }
+
+    fn recursive_leaf(narrow: bool) -> Value {
+        if narrow {
+            json!({"type": "integer", "minimum": 0})
+        } else {
+            json!({"type": "integer"})
+        }
+    }
+
+    /// Each row of `group` as its bench slug and the suite case of its description.
+    fn cases(group: &Group) -> Vec<(&'static str, Value)> {
+        let cases: Vec<Value> = serde_json::from_str(group.file).expect("valid suite file");
+        group
+            .rows
+            .iter()
+            .map(|(slug, description)| {
                 let case = cases
                     .iter()
                     .find(|case| case["description"] == *description)
-                    .unwrap_or_else(|| panic!("no row `{description}`"));
+                    .unwrap_or_else(|| panic!("{}: no row `{description}`", group.name));
                 assert!(case.get("draft").is_none(), "`{description}` sets a draft");
+                (*slug, case.clone())
+            })
+            .collect()
+    }
+
+    // Built into the `canonical_difference` test, so a renamed suite row fails `cargo test`
+    // rather than only the bench run.
+    #[test]
+    fn every_row_is_a_suite_case() {
+        for group in GROUPS {
+            cases(group);
+        }
+    }
+
+    pub(crate) fn bench_difference(c: &mut Criterion) {
+        for group in GROUPS {
+            for (slug, case) in cases(group) {
                 let old = canonical(&case["old"]);
                 let new = canonical(&case["new"]);
                 c.bench_function(&format!("difference/{}/{slug}", group.name), |b| {
                     b.iter(|| differences(&old, &new));
                 });
             }
+        }
+        for (slug, old, new) in [
+            (
+                "union_k8",
+                union_document(8, false),
+                union_document(8, true),
+            ),
+            (
+                "dense_k8",
+                dense_document(8, false),
+                dense_document(8, true),
+            ),
+        ] {
+            let old = canonical(&old);
+            let new = canonical(&new);
+            c.bench_function(&format!("difference/recursive/{slug}"), |b| {
+                b.iter(|| differences(&old, &new));
+            });
         }
         let wide = canonical(&api_document(200, false));
         let twin = canonical(&api_document(200, false));
@@ -187,6 +355,21 @@ mod bench {
                 b.iter(|| differences(&wide, new));
             });
         }
+        // Both versions of one API in a registry, every response of the new one widened.
+        let operations = 16;
+        let registry = Registry::new()
+            .draft(Draft::Draft202012)
+            .add("urn:old", service_document(operations, true))
+            .expect("valid document")
+            .add("urn:new", service_document(operations, false))
+            .expect("valid document")
+            .prepare()
+            .expect("valid registry");
+        let old = responses(&registry, "urn:old", operations);
+        let new = responses(&registry, "urn:new", operations);
+        c.bench_function("difference/api/responses_widened", |b| {
+            b.iter(|| response_differences(&new, &old));
+        });
     }
 
     criterion_group!(benches, bench_difference);
