@@ -1957,6 +1957,9 @@ pub mod generated {
                         flatten(branch, into);
                     }
                 }
+                ValidationErrorKind::PropertyNames { error } => {
+                    flatten(std::slice::from_ref(error.as_ref()), into);
+                }
                 _ => into.push(error),
             }
         }

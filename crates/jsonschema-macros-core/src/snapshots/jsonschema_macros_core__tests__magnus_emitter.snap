@@ -1,6 +1,5 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 981
 expression: rendered
 ---
 struct Validator;
@@ -1968,6 +1967,31 @@ mod __validator_impl {
                                 let __path = &__path.push("record");
                                 match __NodeExt::as_object(&instance) {
                                     Some(obj) => {
+                                        for (key, value) in __ObjectExt::members(&obj) {
+                                            if (::std::convert::AsRef::<str>::as_ref(&key))
+                                                .starts_with("x-")
+                                            {
+                                                let instance = value;
+                                                let __path = &__path
+                                                    .push((::std::convert::AsRef::<str>::as_ref(&key)));
+                                                if !(__NodeExt::as_number(&instance)
+                                                    .is_some_and(|__number| __NumberExt::is_integer(&__number)))
+                                                {
+                                                    if __errors
+                                                        .push(
+                                                            __err::single_type(
+                                                                "/properties/record/patternProperties/^x-/type",
+                                                                __path.into(),
+                                                                __NodeExt::lazy_value(&instance),
+                                                                __JT::Integer,
+                                                            ),
+                                                        )
+                                                    {
+                                                        return true;
+                                                    }
+                                                }
+                                            }
+                                        }
                                         for key in __ObjectExt::members(&obj)
                                             .map(|(__name, _)| __name)
                                         {
@@ -1998,33 +2022,16 @@ mod __validator_impl {
                                                 false
                                             })();
                                             for __e in __key_errors.into_vec() {
-                                                if __errors.push(__e.to_owned()) {
-                                                    return true;
-                                                }
-                                            }
-                                        }
-                                        for (key, value) in __ObjectExt::members(&obj) {
-                                            if (::std::convert::AsRef::<str>::as_ref(&key))
-                                                .starts_with("x-")
-                                            {
-                                                let instance = value;
-                                                let __path = &__path
-                                                    .push((::std::convert::AsRef::<str>::as_ref(&key)));
-                                                if !(__NodeExt::as_number(&instance)
-                                                    .is_some_and(|__number| __NumberExt::is_integer(&__number)))
+                                                if __errors
+                                                    .push(
+                                                        __err::property_names(
+                                                            __path.into(),
+                                                            __NodeExt::lazy_value(&instance),
+                                                            __e,
+                                                        ),
+                                                    )
                                                 {
-                                                    if __errors
-                                                        .push(
-                                                            __err::single_type(
-                                                                "/properties/record/patternProperties/^x-/type",
-                                                                __path.into(),
-                                                                __NodeExt::lazy_value(&instance),
-                                                                __JT::Integer,
-                                                            ),
-                                                        )
-                                                    {
-                                                        return true;
-                                                    }
+                                                    return true;
                                                 }
                                             }
                                         }

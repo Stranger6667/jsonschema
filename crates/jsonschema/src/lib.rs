@@ -4489,6 +4489,23 @@ pub mod __private {
             )
         }
 
+        /// `propertyNames` keyword violation: `error` rejects one of the object's property names.
+        #[inline]
+        pub fn property_names<'i>(
+            instance_path: Location,
+            instance: impl Into<LazyInstance<'i>>,
+            error: ValidationError<'_>,
+        ) -> ValidationError<'i> {
+            let error = error.to_owned();
+            ValidationError::property_names(
+                error.schema_path().clone(),
+                error.evaluation_path().clone(),
+                instance_path,
+                instance.into(),
+                error,
+            )
+        }
+
         /// `required` keyword violation: object is missing `property`.
         #[inline]
         pub fn required<'i>(

@@ -168,6 +168,15 @@ fn error_context(
     }
 }
 
+fn property_names_error(
+    kind: &jsonschema::error::ValidationErrorKind,
+) -> Option<&jsonschema::ValidationError<'static>> {
+    match kind {
+        jsonschema::error::ValidationErrorKind::PropertyNames { error } => Some(error),
+        _ => None,
+    }
+}
+
 fn assert_error_parity(
     generated: &jsonschema::ValidationError<'_>,
     expected: &jsonschema::ValidationError<'_>,
@@ -179,6 +188,12 @@ fn assert_error_parity(
         std::mem::discriminant(generated.kind()),
         std::mem::discriminant(expected.kind())
     );
+    if let (Some(generated), Some(expected)) = (
+        property_names_error(generated.kind()),
+        property_names_error(expected.kind()),
+    ) {
+        assert_error_parity(generated, expected);
+    }
 
     let generated_context = error_context(generated.kind());
     let expected_context = error_context(expected.kind());
@@ -4430,6 +4445,49 @@ fn test_errors_follow_keyword_priority(
     instances: serde_json::Value,
 ) {
     let runtime = options.build(&schema).expect("valid schema");
+    for instance in instances.as_array().expect("instance list") {
+        assert_validate_parity(is_valid(instance), validate(instance), &runtime, instance);
+        assert_iter_errors_parity(iter_errors(instance), &runtime, instance);
+    }
+}
+
+#[jsonschema::validator(schema = r#"{"propertyNames": {"maxLength": 0}}"#)]
+struct PropertyNamesLeaf;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"s": {"maxLength": 0}}, "propertyNames": {"$ref": "#/$defs/s"}}"##
+)]
+struct PropertyNamesRef;
+#[jsonschema::validator(schema = r#"{"propertyNames": {"not": {"const": "a"}}}"#)]
+struct PropertyNamesSubschema;
+#[jsonschema::validator(
+    schema = r#"{"patternProperties": {"^a": {}}, "additionalProperties": false, "propertyNames": {"pattern": "^a"}}"#
+)]
+struct PropertyNamesCovered;
+#[jsonschema::validator(
+    schema = r#"{"properties": {"a": {"type": "string"}}, "patternProperties": {"^a": {"type": "boolean"}}, "additionalProperties": false, "propertyNames": {"maxLength": 0}}"#
+)]
+struct PropertyNamesAfterApplicators;
+#[jsonschema::validator(
+    schema = r#"{"type": "object", "properties": {"x": {"propertyNames": {"minLength": 2}}}}"#
+)]
+struct NestedPropertyNames;
+
+// Each rejected name reports a `propertyNames` error wrapping the subschema's error, after the
+// errors of `properties`, `patternProperties` and `additionalProperties`.
+#[test_case(PropertyNamesLeaf::is_valid, PropertyNamesLeaf::validate, PropertyNamesLeaf::iter_errors, serde_json::json!({"propertyNames": {"maxLength": 0}}), serde_json::json!([{"a": 1, "bb": 2}]) ; "leaf")]
+#[test_case(PropertyNamesRef::is_valid, PropertyNamesRef::validate, PropertyNamesRef::iter_errors, serde_json::json!({"$defs": {"s": {"maxLength": 0}}, "propertyNames": {"$ref": "#/$defs/s"}}), serde_json::json!([{"a": 1}]) ; "reference")]
+#[test_case(PropertyNamesSubschema::is_valid, PropertyNamesSubschema::validate, PropertyNamesSubschema::iter_errors, serde_json::json!({"propertyNames": {"not": {"const": "a"}}}), serde_json::json!([{"a": 1}]) ; "subschema")]
+#[test_case(PropertyNamesCovered::is_valid, PropertyNamesCovered::validate, PropertyNamesCovered::iter_errors, serde_json::json!({"patternProperties": {"^a": {}}, "additionalProperties": false, "propertyNames": {"pattern": "^a"}}), serde_json::json!([{"b": 1}, {"a": 1}]) ; "covered_by_pattern_properties")]
+#[test_case(PropertyNamesAfterApplicators::is_valid, PropertyNamesAfterApplicators::validate, PropertyNamesAfterApplicators::iter_errors, serde_json::json!({"properties": {"a": {"type": "string"}}, "patternProperties": {"^a": {"type": "boolean"}}, "additionalProperties": false, "propertyNames": {"maxLength": 0}}), serde_json::json!([{"a": 1, "bb": 2}]) ; "after_object_applicators")]
+#[test_case(NestedPropertyNames::is_valid, NestedPropertyNames::validate, NestedPropertyNames::iter_errors, serde_json::json!({"type": "object", "properties": {"x": {"propertyNames": {"minLength": 2}}}}), serde_json::json!([{"x": {"a": 1}}]) ; "nested")]
+fn test_property_names_errors_match_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    schema: serde_json::Value,
+    instances: serde_json::Value,
+) {
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
     for instance in instances.as_array().expect("instance list") {
         assert_validate_parity(is_valid(instance), validate(instance), &runtime, instance);
         assert_iter_errors_parity(iter_errors(instance), &runtime, instance);

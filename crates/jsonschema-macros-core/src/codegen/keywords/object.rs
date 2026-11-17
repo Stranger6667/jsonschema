@@ -127,7 +127,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
     let required_slot = checks.len();
 
     // The runtime checks these after `properties`, `patternProperties` and
-    // `additionalProperties`.
+    // `additionalProperties`: `propertyNames`, then `dependencies`, then `dependentSchemas`.
     let dependencies_check = schema
         .get("dependencies")
         .filter(|_| applicator_vocab_enabled)
@@ -146,13 +146,17 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         .filter(|_| applicator_vocab_enabled && ctx.draft.supports_dependent_schemas_keyword())
         .and_then(|value| dependencies::compile_dependent_schemas(ctx, value));
 
-    if applicator_vocab_enabled && ctx.draft.supports_property_names_keyword() {
-        if let Some(value) = schema.get("propertyNames") {
-            if !property_names_implied_by_coverage(schema) {
-                checks.push((property_names::compile(ctx, value), false));
-            }
-        }
-    }
+    // Names that `patternProperties` and `additionalProperties: false` already reject leave
+    // `is_valid` to the unified pass, like the cluster; their errors still report.
+    let property_names_check = schema
+        .get("propertyNames")
+        .filter(|_| applicator_vocab_enabled && ctx.draft.supports_property_names_keyword())
+        .map(|value| {
+            (
+                property_names::compile(ctx, value),
+                property_names_implied_by_coverage(schema),
+            )
+        });
 
     let additional_properties_schema = schema
         .get("additionalProperties")
@@ -271,6 +275,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         }
     }
 
+    checks.extend(property_names_check);
     for check in [dependencies_check, dependent_schemas_check]
         .into_iter()
         .flatten()

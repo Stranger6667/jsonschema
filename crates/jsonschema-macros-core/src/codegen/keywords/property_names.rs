@@ -83,7 +83,7 @@ pub(crate) fn compile<E: ValueEmitter>(
 }
 
 /// Per-key errors loop: each key becomes a temporary `Value::String`, the child reports into a
-/// scratch sink of the same mode, and every error is re-owned into `__errors`. `bind_s` also binds
+/// scratch sink of the same mode, and every error is wrapped into a `propertyNames` error. `bind_s` also binds
 /// `s` for the string fast path, whose checks read the `&str` subject directly.
 fn property_name_errors<E: ValueEmitter>(
     child_errors: &proc_macro2::TokenStream,
@@ -98,6 +98,7 @@ fn property_name_errors<E: ValueEmitter>(
     let keys_iter = E::object_keys_iter(format_ident!("obj"));
     let declare_key = E::declare_key_node(format_ident!("key"));
     let key_node = E::key_node_expr(format_ident!("key"));
+    let err_instance = E::err_instance(format_ident!("instance"));
     quote! {
         for key in #keys_iter {
             #declare_key
@@ -110,7 +111,7 @@ fn property_name_errors<E: ValueEmitter>(
                 false
             })();
             for __e in __key_errors.into_vec() {
-                if __errors.push(__e.to_owned()) {
+                if __errors.push(__err::property_names(__path.into(), #err_instance, __e)) {
                     return true;
                 }
             }
