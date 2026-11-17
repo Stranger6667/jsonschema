@@ -47,6 +47,7 @@
 - `covers` answering `Unknown`, and `subtract` keeping a difference `satisfiability` cannot decide, for a recursive `$ref` whose target contains the other's.
 - Stack overflow in `canonicalize` for `unevaluatedProperties` or `unevaluatedItems` reaching itself through a `$ref`, such as one in `dependentSchemas`.
 - `subtract` keeping a difference `satisfiability` cannot decide for a union of three or more object variants where one variant is narrowed.
+- `canonicalize` keeping `oneOf` over references to unions of tagged objects that share no tag value, where a plain union says the same.
 
 ### Performance
 

@@ -1434,6 +1434,71 @@
     ]
   },
   {
+    "description": "targets that are unions of tagged objects, no tag value shared between them, degrade to a union",
+    "schemas": [
+      {
+        "oneOf": [{"$ref": "#/$defs/in"}, {"$ref": "#/$defs/out"}],
+        "$defs": {
+          "in": {"oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}]},
+          "out": {"oneOf": [{"$ref": "#/$defs/c"}, {"$ref": "#/$defs/d"}]},
+          "a": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "a"}, "fa": {"type": "string"}}},
+          "b": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "b"}, "fb": {"type": "string"}}},
+          "c": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "c"}, "fc": {"type": "string"}}},
+          "d": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "d"}, "fd": {"type": "string"}}}
+        }
+      }
+    ],
+    "kind": "any_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "a": {"properties": {"fa": {"type": "string"}, "kind": {"const": "a"}}, "required": ["kind"], "type": "object"},
+        "b": {"properties": {"fb": {"type": "string"}, "kind": {"const": "b"}}, "required": ["kind"], "type": "object"},
+        "c": {"properties": {"fc": {"type": "string"}, "kind": {"const": "c"}}, "required": ["kind"], "type": "object"},
+        "d": {"properties": {"fd": {"type": "string"}, "kind": {"const": "d"}}, "required": ["kind"], "type": "object"},
+        "in": {"anyOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}]},
+        "out": {"anyOf": [{"$ref": "#/$defs/c"}, {"$ref": "#/$defs/d"}]}
+      },
+      "anyOf": [{"$ref": "#/$defs/in"}, {"$ref": "#/$defs/out"}]
+    },
+    "tests": [
+      {"data": {"kind": "a", "fa": "x"}, "valid": true},
+      {"data": {"kind": "d"}, "valid": true},
+      {"data": {"kind": "e"}, "valid": false},
+      {"data": {}, "valid": false}
+    ]
+  },
+  {
+    "description": "targets that are unions of tagged objects sharing a tag value keep the choice",
+    "schema": {
+      "oneOf": [{"$ref": "#/$defs/in"}, {"$ref": "#/$defs/out"}],
+      "$defs": {
+        "in": {"oneOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}]},
+        "out": {"oneOf": [{"$ref": "#/$defs/b"}, {"$ref": "#/$defs/c"}]},
+        "a": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "a"}, "fa": {"type": "string"}}},
+        "b": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "b"}, "fb": {"type": "string"}}},
+        "c": {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "c"}, "fc": {"type": "string"}}}
+      }
+    },
+    "kind": "one_of",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$defs": {
+        "a": {"properties": {"fa": {"type": "string"}, "kind": {"const": "a"}}, "required": ["kind"], "type": "object"},
+        "b": {"properties": {"fb": {"type": "string"}, "kind": {"const": "b"}}, "required": ["kind"], "type": "object"},
+        "c": {"properties": {"fc": {"type": "string"}, "kind": {"const": "c"}}, "required": ["kind"], "type": "object"},
+        "in": {"anyOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/b"}]},
+        "out": {"anyOf": [{"$ref": "#/$defs/b"}, {"$ref": "#/$defs/c"}]}
+      },
+      "oneOf": [{"$ref": "#/$defs/in"}, {"$ref": "#/$defs/out"}]
+    },
+    "tests": [
+      {"data": {"kind": "a"}, "valid": true},
+      {"data": {"kind": "b"}, "valid": false},
+      {"data": {"kind": "c"}, "valid": true}
+    ]
+  },
+  {
     "description": "object targets tagged by required enums over disjoint values degrade to a union",
     "schemas": [
       {

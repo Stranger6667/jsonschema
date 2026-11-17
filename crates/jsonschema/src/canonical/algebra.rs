@@ -226,8 +226,8 @@ fn intersect_pair(left: &Schema, right: &Schema, ctx: &CanonicalizationContext) 
             | SchemaKind::AllOf(_)
             | SchemaKind::OneOf(_)
             | SchemaKind::Reference(_),
-        ) => match without_disjoint_branches(&left, &right, ctx)
-            .or_else(|| without_disjoint_branches(&right, &left, ctx))
+        ) => match without_disjoint_branches(left, right, ctx)
+            .or_else(|| without_disjoint_branches(right, left, ctx))
         {
             Some(narrowed) => narrowed,
             None => opaque_intersection(left.clone(), right.clone(), ctx),
@@ -677,12 +677,24 @@ pub(crate) fn one_of(
     // One resolution pass feeds both tests: a lookup walks the document's whole definition map, so
     // resolving a branch twice is the expensive half of the check.
     match pointer_targets(&branches, definitions, finished, &mut awaits_body) {
-        Some(targets) if targets_are_disjoint(&branches, &targets, ctx) => {
-            return Some(union(branches, ctx))
+        Some(targets) => {
+            let awaits_nested = Cell::new(false);
+            let resolve = |pointer| {
+                let mut awaits = false;
+                let target = pointer_target(pointer, definitions, finished, &mut awaits);
+                awaits_nested.set(awaits_nested.get() || awaits);
+                target
+            };
+            if targets_are_disjoint(&branches, &targets, &resolve, ctx) {
+                return Some(union(branches, ctx));
+            }
+            if awaits_nested.get() {
+                pending.push(branches.clone());
+            }
         }
         // A body the round has yet to produce leaves the choice for the caller to settle.
         None if awaits_body => pending.push(branches.clone()),
-        Some(_) | None => {}
+        None => {}
     }
     Some(Schema::new(SchemaKind::OneOf(branches)))
 }
@@ -695,8 +707,9 @@ pub(crate) fn choice_folds(
 ) -> bool {
     let mut awaits_body = false;
     let known = DefinitionMap::new();
+    let resolve = |pointer| pointer_target(pointer, definitions, &known, &mut false);
     pointer_targets(branches, definitions, &known, &mut awaits_body)
-        .is_some_and(|targets| targets_are_disjoint(branches, &targets, ctx))
+        .is_some_and(|targets| targets_are_disjoint(branches, &targets, &resolve, ctx))
 }
 
 /// The body a branch stands for, following a pointer that names another.
@@ -738,9 +751,10 @@ fn pointer_target<'a>(
 /// A tag is weighed only where every branch is a pointer. `union` keeps those symbolic, so folding
 /// them costs one pass; inline bodies go through the leaf merge instead, which is the work keeping
 /// the choice avoids.
-fn targets_are_disjoint(
+fn targets_are_disjoint<'a>(
     branches: &[Schema],
-    targets: &[&Schema],
+    targets: &[&'a Schema],
+    resolve: &dyn Fn(&'a Schema) -> Option<&'a Schema>,
     ctx: &CanonicalizationContext,
 ) -> bool {
     types_are_disjoint(targets)
@@ -748,49 +762,102 @@ fn targets_are_disjoint(
         || (branches
             .iter()
             .all(|branch| matches!(branch.kind(), SchemaKind::Reference(_)))
-            && tagged_bodies_are_disjoint(targets))
+            && tagged_bodies_are_disjoint(targets, resolve))
 }
 
-/// Whether one required property tells the object targets apart, the way a tagged union is written.
-fn tagged_bodies_are_disjoint(targets: &[&Schema]) -> bool {
-    let mut leaves = Vec::with_capacity(targets.len());
-    for target in targets {
-        let SchemaKind::Object(leaf) = target.kind() else {
-            return false;
-        };
-        leaves.push(leaf.get());
-    }
-    if leaves.len() < 2 {
+/// Object leaves one choice may read through its targets before the tag is left unweighed.
+const TAGGED_LEAVES: usize = 64;
+
+/// Whether one required property tells the targets apart, the way a tagged union is written. A
+/// target is an object, or a union or choice of them: a tagged union of tagged unions.
+fn tagged_bodies_are_disjoint<'a>(
+    targets: &[&'a Schema],
+    resolve: &dyn Fn(&'a Schema) -> Option<&'a Schema>,
+) -> bool {
+    if targets.len() < 2 {
         return false;
     }
-    // A tag every target demands is among the keys the first one demands.
-    leaves[0]
+    let mut left = TAGGED_LEAVES;
+    let mut groups = Vec::with_capacity(targets.len());
+    for target in targets {
+        let mut leaves = Vec::new();
+        if !tagged_leaves(target, resolve, &mut left, &mut leaves) {
+            return false;
+        }
+        groups.push(leaves);
+    }
+    // A tag every leaf demands is among the keys the first one demands.
+    groups[0][0]
         .required
         .iter()
-        .any(|key| tag_tells_apart(key, &leaves))
+        .any(|key| tag_tells_apart(key, &groups))
 }
 
-/// Whether every leaf demands `key` and pins it to a value set no other leaf shares. Left optional
-/// by two of them, an object carrying no such key meets both.
-fn tag_tells_apart(key: &str, leaves: &[&ObjectLeaf]) -> bool {
-    let mut taken: ahash::AHashSet<&CanonicalJson> = ahash::AHashSet::new();
-    for leaf in leaves {
-        if !leaf.required.iter().any(|required| &**required == key) {
-            return false;
+/// Collect the object leaves `target` admits nothing outside of, or report that it is not made of
+/// objects alone.
+fn tagged_leaves<'a>(
+    target: &'a Schema,
+    resolve: &dyn Fn(&'a Schema) -> Option<&'a Schema>,
+    left: &mut usize,
+    leaves: &mut Vec<&'a ObjectLeaf>,
+) -> bool {
+    let Some(remaining) = left.checked_sub(1) else {
+        return false;
+    };
+    *left = remaining;
+    let mut nested = |branch: &'a Schema| {
+        resolve(branch).is_some_and(|body| tagged_leaves(body, resolve, left, leaves))
+    };
+    match target.kind() {
+        SchemaKind::Object(leaf) => {
+            leaves.push(leaf.get());
+            true
         }
-        // A demanded key the leaf does not name answers to `additionalProperties`, which pins nothing.
-        let Some(values) = leaf
-            .properties
-            .get(key)
-            .and_then(|schema| schema.kind().finite_values())
-        else {
-            return false;
-        };
-        for value in values {
-            if !taken.insert(value) {
+        // A choice admits no more than the union of its branches does.
+        SchemaKind::AnyOf(branches) => branches.as_slice().iter().all(&mut nested),
+        SchemaKind::OneOf(branches) => branches.iter().all(&mut nested),
+        SchemaKind::True
+        | SchemaKind::False
+        | SchemaKind::MultiType(_)
+        | SchemaKind::TypedGroup { .. }
+        | SchemaKind::String(_)
+        | SchemaKind::Integer(_)
+        | SchemaKind::Number(_)
+        | SchemaKind::Array(_)
+        | SchemaKind::Const(_)
+        | SchemaKind::Enum(_)
+        | SchemaKind::AllOf(_)
+        | SchemaKind::Not(_)
+        | SchemaKind::Reference(_)
+        | SchemaKind::Raw(_) => false,
+    }
+}
+
+/// Whether every leaf demands `key` and pins it to a value no leaf of another target shares. Left
+/// optional by two of them, an object carrying no such key meets both.
+fn tag_tells_apart(key: &str, groups: &[Vec<&ObjectLeaf>]) -> bool {
+    let mut taken: ahash::AHashSet<&CanonicalJson> = ahash::AHashSet::new();
+    for leaves in groups {
+        let mut own: ahash::AHashSet<&CanonicalJson> = ahash::AHashSet::new();
+        for leaf in leaves {
+            if !leaf.required.iter().any(|required| &**required == key) {
                 return false;
             }
+            // A demanded key the leaf does not name answers to `additionalProperties`, which pins
+            // nothing.
+            let Some(values) = leaf
+                .properties
+                .get(key)
+                .and_then(|schema| schema.kind().finite_values())
+            else {
+                return false;
+            };
+            own.extend(values);
         }
+        if own.iter().any(|value| taken.contains(value)) {
+            return false;
+        }
+        taken.extend(own);
     }
     true
 }
