@@ -1553,11 +1553,12 @@ pub mod generated {
         properties::{scan_members, HASHMAP_THRESHOLD},
         Json, Node, Object, ValidationError,
     };
-    use ahash::AHashMap;
+    use ahash::{AHashMap, AHashSet};
     use referencing::{uri, Uri};
     use serde::Deserialize;
     use serde_json::Value;
     use std::{
+        borrow::Cow,
         convert::Infallible,
         ops::ControlFlow,
         sync::{Arc, OnceLock},
@@ -1750,11 +1751,26 @@ pub mod generated {
             let mut flat = Vec::with_capacity(errors.len());
             flatten(errors, &mut flat);
             let errors = flat;
+            let mut reported = AHashSet::with_capacity(errors.len());
+            let mut by_visit: AHashMap<Visit<'_>, Vec<usize>> =
+                AHashMap::with_capacity(errors.len());
+            for (index, error) in errors.iter().enumerate() {
+                reported.insert(error.schema_path().as_str());
+                by_visit
+                    .entry(Visit {
+                        evaluation_path: error.evaluation_path().as_str(),
+                        instance_location: error.instance_path().as_str(),
+                        string: error.instance().as_str(),
+                    })
+                    .or_default()
+                    .push(index);
+            }
             let mut walk: Walker<'_, '_, '_, F> = Walker {
                 built: self.built.get_or_init(|| self.build()),
                 matchers: self.matchers,
                 valid: self.valid,
-                by_path: by_path(&errors),
+                reported,
+                by_visit,
                 errors,
                 arena: EvaluationArena::default(),
                 rebase: None,
@@ -1927,10 +1943,11 @@ pub mod generated {
         built: &'t Built,
         matchers: &'t [Matcher],
         valid: &'t [Validity<F>],
-        /// The errors units match against: below `propertyNames`, those of one name.
         errors: Vec<&'e ValidationError<'i>>,
-        /// Indices into `errors` by schema location.
-        by_path: AHashMap<&'e str, Vec<usize>>,
+        /// The schema locations with errors, so a unit without any builds no visit key.
+        reported: AHashSet<&'e str>,
+        /// Indices into `errors` by the visit that reports them.
+        by_visit: AHashMap<Visit<'e>, Vec<usize>>,
         arena: EvaluationArena,
         /// Set below a `$ref`.
         rebase: Option<Rebase>,
@@ -1965,15 +1982,14 @@ pub mod generated {
         }
     }
 
-    fn by_path<'e>(errors: &[&'e ValidationError<'_>]) -> AHashMap<&'e str, Vec<usize>> {
-        let mut by_path: AHashMap<&str, Vec<usize>> = AHashMap::new();
-        for (index, error) in errors.iter().enumerate() {
-            by_path
-                .entry(error.schema_path().as_str())
-                .or_default()
-                .push(index);
-        }
-        by_path
+    /// Where the walk reaches a unit. The visits of one unit below a `$ref` cycle, or for each
+    /// item of an array, share its schema location.
+    #[derive(PartialEq, Eq, Hash)]
+    struct Visit<'e> {
+        evaluation_path: &'e str,
+        instance_location: &'e str,
+        /// A name is walked at its object's location; its value tells the names apart.
+        string: Option<&'e str>,
     }
 
     impl<F: Json> Walker<'_, '_, '_, F> {
@@ -2094,12 +2110,20 @@ pub mod generated {
         }
 
         fn evaluation_path(&self, site: &UnitLocation) -> Location {
+            match self.rebased(&site.keyword) {
+                Cow::Borrowed(_) => site.keyword.clone(),
+                Cow::Owned(path) => Location::from_escaped(&path),
+            }
+        }
+
+        /// The evaluation path of the unit at `keyword`.
+        fn rebased<'k>(&self, keyword: &'k Location) -> Cow<'k, str> {
             match &self.rebase {
-                None => site.keyword.clone(),
-                Some(rebase) => Location::from_escaped(&format!(
+                None => Cow::Borrowed(keyword.as_str()),
+                Some(rebase) => Cow::Owned(format!(
                     "{}{}",
                     rebase.prefix.as_str(),
-                    &site.keyword.as_str()[rebase.strip..]
+                    &keyword.as_str()[rebase.strip..]
                 )),
             }
         }
@@ -2403,21 +2427,10 @@ pub mod generated {
                     let child = if closed {
                         self.rejected(&built.schemas[schema], &name, location, position)
                     } else {
-                        let text = name.as_string();
-                        let scoped: Vec<_> = self
-                            .errors
-                            .iter()
-                            .copied()
-                            .filter(|error| error.instance().as_str() == text.as_deref())
-                            .collect();
-                        let outer_by_path = std::mem::replace(&mut self.by_path, by_path(&scoped));
-                        let outer = std::mem::replace(&mut self.errors, scoped);
                         // The name is walked at the object's location, as a different instance.
                         let outer_active = std::mem::take(&mut self.active);
                         let child = self.schema(schema, &name, location, position);
                         self.active = outer_active;
-                        self.errors = outer;
-                        self.by_path = outer_by_path;
                         child
                     };
                     children.push(&mut self.arena, child);
@@ -2434,38 +2447,35 @@ pub mod generated {
             instance: &F::Node<'_>,
             location: &LazyLocation,
         ) -> Vec<ErrorDescription> {
-            if self.by_path.is_empty() {
+            if self.reported.is_empty() {
                 return Vec::new();
             }
-            let mut indices: Vec<usize> = std::iter::once(&site.keyword)
-                .chain(&site.aliases)
-                .filter_map(|path| self.by_path.get(path.as_str()))
-                .flatten()
-                .copied()
-                .collect();
-            if indices.is_empty() {
+            let paths = || {
+                std::iter::once(&site.keyword)
+                    .chain(&site.aliases)
+                    .filter(|path| self.reported.contains(path.as_str()))
+            };
+            if paths().next().is_none() {
                 return Vec::new();
             }
-            indices.sort_unstable();
             let instance_location = Location::from(location);
-            // A name is walked at its object's location; its errors are the name's.
-            let object = instance.as_object().is_some();
-            let mut errors: Vec<ErrorDescription> = Vec::with_capacity(indices.len());
-            for error in indices
-                .into_iter()
-                .map(|index| self.errors[index])
-                .filter(|error| {
-                    *error.instance_path() == instance_location
-                        && !(object && error.instance().as_str().is_some())
-                })
-                .map(ErrorDescription::from_validation_error)
-            {
-                // A target reached twice at one instance location reports its errors once per visit.
-                if !errors.contains(&error) {
-                    errors.push(error);
+            let string = instance.as_string();
+            let mut indices = Vec::new();
+            for path in paths() {
+                let evaluation_path = self.rebased(path);
+                if let Some(found) = self.by_visit.get(&Visit {
+                    evaluation_path: &evaluation_path,
+                    instance_location: instance_location.as_str(),
+                    string: string.as_deref(),
+                }) {
+                    indices.extend_from_slice(found);
                 }
             }
-            errors
+            indices.sort_unstable();
+            indices
+                .into_iter()
+                .map(|index| ErrorDescription::from_validation_error(self.errors[index]))
+                .collect()
         }
 
         /// The `false` subschema at `site` failing for `value`, at `location`.
