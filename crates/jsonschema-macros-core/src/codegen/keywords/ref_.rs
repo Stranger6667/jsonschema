@@ -80,6 +80,7 @@ fn cycle_guarded_ref_errors(
     node_address: &TokenStream,
     func_ident: &proc_macro2::Ident,
     errors_ident: &proc_macro2::Ident,
+    site: &TokenStream,
 ) -> TokenStream {
     let mark_expr = quote! {
         (
@@ -89,7 +90,7 @@ fn cycle_guarded_ref_errors(
     };
     shared_cycle_guarded_errors(
         &mark_expr,
-        &quote! { #errors_ident(instance, __path, __errors) },
+        &quote! { #errors_ident(instance, __path, __errors, #site) },
     )
 }
 
@@ -116,6 +117,15 @@ fn ref_check(is_valid: TokenStream, errors: TokenStream) -> CompiledExpr {
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     value: &Value,
+) -> CompiledExpr {
+    compile_at(ctx, value, "$ref")
+}
+
+/// A static reference, through the `keyword` that holds it.
+fn compile_at<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+    keyword: &'static str,
 ) -> CompiledExpr {
     let err_instance = E::err_instance(format_ident!("instance"));
     let node = E::node_param(None);
@@ -153,7 +163,8 @@ pub(crate) fn compile<E: ValueEmitter>(
         Vec::new()
     };
 
-    let schema_path = ctx.schema_path_for_keyword("$ref");
+    let schema_path = ctx.schema_path_for_keyword(keyword);
+    let site = quote! { #schema_path };
     if ctx.uses_dynamic_ref && !call_scope_bindings.is_empty() {
         let call_scope_pushes: Vec<_> = call_scope_bindings
             .iter()
@@ -183,13 +194,14 @@ pub(crate) fn compile<E: ValueEmitter>(
         // Use the error helper when available for accurate error paths.
         if ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
             let errors_ident = format_ident!("{}_errors", func_name);
+            let call = quote! { #errors_ident(instance, __path, __errors, #site) };
             ref_check(
                 is_valid,
                 quote! {
                     {
                         #(#call_scope_pushes)*
                         #(#call_scope_errors_pushes)*
-                        let __stop = #errors_ident(instance, __path, __errors);
+                        let __stop = #call;
                         #dynamic_errors_pop
                         #dynamic_pop
                         if __stop {
@@ -210,15 +222,15 @@ pub(crate) fn compile<E: ValueEmitter>(
             let errors_ident = format_ident!("{}_errors", func_name);
             ref_check(
                 cycle_guarded_ref_is_valid(&node, &node_address, &func_ident),
-                cycle_guarded_ref_errors(&node, &node_address, &func_ident, &errors_ident),
+                cycle_guarded_ref_errors(&node, &node_address, &func_ident, &errors_ident, &site),
             )
         } else if plain_cycle || ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
             let errors_ident = format_ident!("{}_errors", func_name);
             ref_check(
                 quote! { #func_ident(instance) },
-                call_errors(&quote! { #errors_ident(instance, __path, __errors) }),
+                call_errors(&quote! { #errors_ident(instance, __path, __errors, #site) }),
             )
-            .with_ref_errors(RefErrors::Call(func_name))
+            .with_ref_errors(RefErrors::Call(func_name, keyword))
         } else {
             CompiledExpr::from_bool_expr(
                 quote! { #func_ident(instance) },
@@ -240,7 +252,7 @@ pub(crate) fn compile_dynamic<E: ValueEmitter>(
         );
     };
 
-    let fallback = compile(ctx, value);
+    let fallback = compile_at(ctx, value, "$dynamicRef");
     let Ok(resolved) = resolve_ref(ctx, reference) else {
         return fallback;
     };
@@ -287,9 +299,10 @@ pub(crate) fn compile_dynamic<E: ValueEmitter>(
                 .map(|(_, errors)| *errors)
         })
     };
+    let site = ctx.schema_path_for_keyword("$dynamicRef");
     let guarded_errors = cycle_guarded_errors(
         &node_address,
-        &quote! { target_errors(instance, __path, __errors) },
+        &quote! { target_errors(instance, __path, __errors, #site) },
     );
     CompiledExpr::with_errors(
         is_valid,
@@ -324,11 +337,11 @@ pub(crate) fn compile_recursive<E: ValueEmitter>(
         == Some(true);
 
     if !target_has_recursive_anchor {
-        return compile(ctx, value);
+        return compile_at(ctx, value, "$recursiveRef");
     }
 
     ctx.uses_recursive_ref = true;
-    let fallback = compile(ctx, value);
+    let fallback = compile_at(ctx, value, "$recursiveRef");
     let fallback_is_valid = fallback.is_valid_token_stream();
 
     let recursive_lookup = quote! {
@@ -374,9 +387,10 @@ pub(crate) fn compile_recursive<E: ValueEmitter>(
             selected
         })
     };
+    let site = ctx.schema_path_for_keyword("$recursiveRef");
     let guarded_errors = cycle_guarded_errors(
         &node_address,
-        &quote! { target_errors(instance, __path, __errors) },
+        &quote! { target_errors(instance, __path, __errors, #site) },
     );
     CompiledExpr::with_errors(
         is_valid,

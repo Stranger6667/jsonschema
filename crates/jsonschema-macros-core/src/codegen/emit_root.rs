@@ -198,10 +198,12 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
         .map(|(fname, body)| {
             let func_ident = format_ident!("{}", fname);
             let errors_ident = format_ident!("{}_errors", fname);
-            let errors_body = ctx
+            let errors = ctx
                 .is_valid_fns
                 .get_errors_body(fname)
                 .expect("every is_valid fn stores an errors body");
+            let (entry, errors_body) = (&errors.entry, &errors.body);
+            let body_ident = format_ident!("{}_errors_body", fname);
             let errors_fn = emit_errors.then(|| {
                 quote! {
                     #[inline(never)]
@@ -209,12 +211,21 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                         instance: #borrowed_node,
                         __path: &__paths::LazyLocation,
                         __errors: &mut __err::Errors<'__i>,
+                        __site: &str,
                     ) -> bool {
                         #function_prelude
                         // A valid instance reports nothing, and `is_valid` is the cheaper walk.
                         if #func_ident(instance) {
                             return false;
                         }
+                        #entry
+                    }
+                    fn #body_ident<'__i>(
+                        instance: #borrowed_node,
+                        __path: &__paths::LazyLocation,
+                        __errors: &mut __err::Errors<'__i>,
+                    ) -> bool {
+                        #function_prelude
                         #errors_body
                     }
                 }
@@ -269,6 +280,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                         __path: &__paths::LazyLocation,
                         __errors: &mut __err::Errors<'__i>,
                         __type_path: &str,
+                        __ref_path: &str,
                     ) -> bool {
                         #function_prelude
                         #body
@@ -325,7 +337,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 Vec<(fn(#node, #array, usize, #node) -> bool, bool)>
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_RECURSIVE_ERRORS_STACK: std::cell::RefCell<
-                Vec<(for<'__r, '__a, '__b, '__c> fn(#reborrowed_node, &'__c __paths::LazyLocation<'__a, '__b>, &mut __err::Errors<'__r>) -> bool, bool)>
+                Vec<(for<'__r, '__a, '__b, '__c> fn(#reborrowed_node, &'__c __paths::LazyLocation<'__a, '__b>, &mut __err::Errors<'__r>, &str) -> bool, bool)>
             > = std::cell::RefCell::new(Vec::new());
         }
     } else {
@@ -349,7 +361,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 )>
             > = std::cell::RefCell::new(Vec::new());
             static __JSONSCHEMA_DYNAMIC_ERRORS_STACK: std::cell::RefCell<
-                Vec<(&'static str, for<'__r, '__a, '__b, '__c> fn(#reborrowed_node, &'__c __paths::LazyLocation<'__a, '__b>, &mut __err::Errors<'__r>) -> bool)>
+                Vec<(&'static str, for<'__r, '__a, '__b, '__c> fn(#reborrowed_node, &'__c __paths::LazyLocation<'__a, '__b>, &mut __err::Errors<'__r>, &str) -> bool)>
             > = std::cell::RefCell::new(Vec::new());
         }
     } else {
@@ -476,7 +488,8 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     let errors_stmts = validation_expr.errors.as_token_stream();
 
     let errors_fns = emit_errors.then(|| {
-        let errors_ident = format_ident!("errors");
+        // The recursive stack holds error functions reached through a reference at a site.
+        let errors_ident = format_ident!("errors_at");
         let errors_body = if recursive_stack_needed || dynamic_stack_needed {
             let recursive_errors_push = if recursive_stack_needed {
                 push_recursive_errors(&errors_ident, root_recursive_anchor)
@@ -517,6 +530,34 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
         } else {
             quote! { #errors_stmts false }
         };
+        // A base other than the internal default locates the root resource's keywords.
+        let base = &ctx.config.base_uri;
+        let errors_body = if base.scheme().as_str() == "json-schema" {
+            errors_body
+        } else {
+            let base = base.as_str();
+            quote! {
+                let __start = __errors.mark();
+                let __stop = (|| -> bool { #errors_body })();
+                __errors.within(__start, #base, 0);
+                __stop
+            }
+        };
+        let errors_at = recursive_stack_needed.then(|| {
+            quote! {
+                fn errors_at<'__i>(
+                    instance: #borrowed_node,
+                    __path: &__paths::LazyLocation,
+                    __errors: &mut __err::Errors<'__i>,
+                    __site: &str,
+                ) -> bool {
+                    let __start = __errors.mark();
+                    let __stop = errors(instance, __path, __errors);
+                    __errors.reached(__start, "", None, __site);
+                    __stop
+                }
+            }
+        });
         quote! {
             pub(super) fn errors<'__i>(
                 instance: #borrowed_node,
@@ -527,6 +568,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 #uri_cache_clears
                 #errors_body
             }
+            #errors_at
         }
     });
 

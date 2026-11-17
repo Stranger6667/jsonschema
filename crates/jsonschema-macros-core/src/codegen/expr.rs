@@ -16,13 +16,14 @@ pub(crate) struct CompiledExpr {
     pub(crate) ref_errors: Option<RefErrors>,
 }
 
-/// A referenced schema's error function, named by its `is_valid` function.
+/// A referenced schema's error function, named by its `is_valid` function, and the reference
+/// keyword that reaches it.
 #[derive(Clone)]
 pub(crate) enum RefErrors {
     /// Run on the instance.
-    Call(String),
+    Call(String, &'static str),
     /// Run on every array item.
-    EachItem(String),
+    EachItem(String, &'static str),
 }
 
 #[derive(Clone)]

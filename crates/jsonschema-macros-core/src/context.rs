@@ -28,6 +28,12 @@ macro_rules! impl_scope_guard {
     };
 }
 
+/// A generated function's error reporting: `entry` calls the function holding `body`.
+pub(crate) struct ErrorsFn {
+    pub(crate) entry: TokenStream,
+    pub(crate) body: TokenStream,
+}
+
 /// Generated functions of one category, interned by schema location to
 /// deduplicate repeated subschemas and break reference cycles.
 pub(crate) struct FnTable {
@@ -36,7 +42,7 @@ pub(crate) struct FnTable {
     /// Maps a generated function name to its compiled body.
     bodies: IndexMap<String, TokenStream>,
     /// Optional error-reporting bodies for functions that have one.
-    errors_bodies: IndexMap<String, TokenStream>,
+    errors_bodies: IndexMap<String, ErrorsFn>,
     /// Locations currently being compiled (cycle guard).
     in_progress: HashSet<String>,
     counter: usize,
@@ -75,12 +81,12 @@ impl FnTable {
     }
 
     /// Stores the error-reporting body alongside the `is_valid` body.
-    pub(crate) fn set_errors_body(&mut self, name: &str, errors: TokenStream) {
+    pub(crate) fn set_errors_body(&mut self, name: &str, errors: ErrorsFn) {
         self.errors_bodies.insert(name.to_string(), errors);
     }
 
     /// Returns the error-reporting body for a function, if available.
-    pub(crate) fn get_errors_body(&self, name: &str) -> Option<&TokenStream> {
+    pub(crate) fn get_errors_body(&self, name: &str) -> Option<&ErrorsFn> {
         self.errors_bodies.get(name)
     }
 

@@ -4061,6 +4061,78 @@ pub mod __private {
                 matches!(self, Self::First(_))
             }
 
+            /// Where the errors recorded next start.
+            #[inline]
+            #[must_use]
+            pub fn mark(&self) -> usize {
+                match self {
+                    Self::First(first) => usize::from(first.is_some()),
+                    Self::All(errors) => errors.len(),
+                }
+            }
+
+            fn since(&mut self, start: usize) -> &mut [ValidationError<'i>] {
+                match self {
+                    Self::First(first) => {
+                        let first = first.as_mut().map(std::slice::from_mut).unwrap_or_default();
+                        let start = start.min(first.len());
+                        &mut first[start..]
+                    }
+                    Self::All(errors) => &mut errors[start..],
+                }
+            }
+
+            /// The errors recorded since `start` come from the subschema at `pointer`, reached
+            /// through the reference at `site`: their evaluation paths move from `pointer` to
+            /// `site`, and the ones of its own resource are located against `base`, when it is not
+            /// the default one.
+            pub fn reached(&mut self, start: usize, pointer: &str, base: Option<&str>, site: &str) {
+                let errors = self.since(start);
+                if errors.is_empty() {
+                    return;
+                }
+                let base = base.map(|base| {
+                    referencing::uri::from_str(base).expect("the generator writes a URI base")
+                });
+                let mut buffer = referencing::uri::EncodedBuffer::new();
+                let moves = !pointer.is_empty() || !site.is_empty();
+                for error in errors {
+                    error.edit_all(&mut |error| {
+                        if let Some(base) = &base {
+                            if error.is_unlocated() {
+                                error.locate_in(base, 0, &mut buffer);
+                            }
+                        }
+                        if moves {
+                            error.move_evaluation_path(pointer, site);
+                        }
+                    });
+                }
+            }
+
+            /// The errors recorded since `start` come from the subschema in place at `site`, through
+            /// the function that reports them relative to that subschema.
+            pub fn inside(&mut self, start: usize, site: &str) {
+                for error in self.since(start) {
+                    error.edit_all(&mut |error| error.nest_under(site));
+                }
+            }
+
+            /// The errors recorded since `start` that no reference or other resource located are
+            /// in the resource at `base`, which starts `offset` bytes into their schema paths.
+            pub fn within(&mut self, start: usize, base: &str, offset: usize) {
+                let base =
+                    referencing::uri::from_str(base).expect("the generator writes a URI base");
+                let mut buffer = referencing::uri::EncodedBuffer::new();
+                for error in self.since(start) {
+                    error.edit_all(&mut |error| {
+                        if error.is_unlocated() {
+                            error.locate_in(&base, offset, &mut buffer);
+                        }
+                    });
+                }
+            }
+
             #[inline]
             #[must_use]
             pub fn into_first(self) -> Option<ValidationError<'i>> {

@@ -9,7 +9,7 @@ use crate::context::CompileContext;
 use super::{
     dispatch::compile_typed,
     draft::DraftExt,
-    expr::{call_errors, first_error_of, IsValidExpr},
+    expr::{call_errors, first_error_of, ErrorsBlock, IsValidExpr},
     helpers::get_or_create_is_valid_fn,
     keywords, CompiledExpr,
 };
@@ -99,7 +99,11 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         })
         .unwrap_or_else(|| ctx.current_base_uri.clone());
 
-    ctx.with_base_uri_scope(schema_base_uri, |ctx| {
+    // A subschema with an `$id` of its own is a resource the runtime locates its keywords in.
+    let embedded = (schema_base_uri.as_str() != ctx.current_base_uri.as_str()
+        && schema_base_uri.scheme().as_str() != "json-schema")
+        .then(|| (schema_base_uri.to_string(), ctx.current_schema_path().len()));
+    let mut compiled = ctx.with_base_uri_scope(schema_base_uri, |ctx| {
         if ctx.uses_recursive_ref
             && ctx.draft.supports_recursive_ref_keyword()
             && ctx.schema_depth > 1
@@ -124,11 +128,17 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
                 };
                 let func_ident = format_ident!("{}", func_name);
                 let errors_ident = format_ident!("{}_errors", func_name);
+                let site = ctx.current_schema_path();
                 return CompiledExpr::from_first_error(
                     quote! { #func_ident(instance) },
-                    first_error_of(&call_errors(
-                        &quote! { #errors_ident(instance, __path, __errors) },
-                    )),
+                    first_error_of(&call_errors(&quote! {
+                        {
+                            let __start = __errors.mark();
+                            let __stop = #errors_ident(instance, __path, __errors, "");
+                            __errors.inside(__start, #site);
+                            __stop
+                        }
+                    })),
                 );
             }
         }
@@ -281,5 +291,16 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
                     combined.and(part)
                 })
         }
-    })
+    });
+    if let (Some((base, offset)), ErrorsBlock::Expr(errors)) = (embedded, &compiled.errors) {
+        compiled.errors = ErrorsBlock::Expr(quote! {
+            let __start = __errors.mark();
+            let __stop = (|| -> bool { #errors false })();
+            __errors.within(__start, #base, #offset);
+            if __stop {
+                return true;
+            }
+        });
+    }
+    compiled
 }

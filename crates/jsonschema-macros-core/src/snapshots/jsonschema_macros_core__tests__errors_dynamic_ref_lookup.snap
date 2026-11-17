@@ -92,7 +92,12 @@ __JSONSCHEMA_DYNAMIC_STACK
                                                         }
                                                     });
                                                 if !__reentered {
-                                                    let __stop = target_errors(instance, __path, __errors);
+                                                    let __stop = target_errors(
+                                                        instance,
+                                                        __path,
+                                                        __errors,
+                                                        "/properties/child/$dynamicRef",
+                                                    );
                                                     __JSONSCHEMA_VALIDATE_MARK
                                                         .with(|__marks| __marks.borrow_mut().pop());
                                                     if __stop {
@@ -101,7 +106,12 @@ __JSONSCHEMA_DYNAMIC_STACK
                                                 }
                                             }
                                         } else {
-                                            if validate_ref_0_errors(instance, __path, __errors) {
+                                            if validate_ref_0_errors(
+                                                instance,
+                                                __path,
+                                                __errors,
+                                                "/properties/child/$dynamicRef",
+                                            ) {
                                                 return true;
                                             }
                                         }

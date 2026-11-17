@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 495
 expression: "render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)"
 ---
 struct Validator;
@@ -46,10 +47,21 @@ mod __validator_impl {
         instance: &'__i __Value,
         __path: &__paths::LazyLocation,
         __errors: &mut __err::Errors<'__i>,
+        __site: &str,
     ) -> bool {
         if validate_ref_1(instance) {
             return false;
         }
+        let __start = __errors.mark();
+        let __stop = validate_ref_1_errors_body(instance, __path, __errors);
+        __errors.reached(__start, "/$defs/value", None, __site);
+        __stop
+    }
+    fn validate_ref_1_errors_body<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
         if !(match instance {
             __Value::Number(n) => __types::is_integer(n),
             _ => false,
@@ -92,10 +104,21 @@ mod __validator_impl {
         instance: &'__i __Value,
         __path: &__paths::LazyLocation,
         __errors: &mut __err::Errors<'__i>,
+        __site: &str,
     ) -> bool {
         if validate_ref_0(instance) {
             return false;
         }
+        let __start = __errors.mark();
+        let __stop = validate_ref_0_errors_body(instance, __path, __errors);
+        __errors.reached(__start, "", None, __site);
+        __stop
+    }
+    fn validate_ref_0_errors_body<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
         match instance {
             __Value::Object(obj) => {
                 for (key, value) in obj.iter() {
@@ -104,14 +127,24 @@ mod __validator_impl {
                         "next" => {
                             let instance = value;
                             let __path = &__path.push("next");
-                            if validate_ref_0_errors(instance, __path, __errors) {
+                            if validate_ref_0_errors(
+                                instance,
+                                __path,
+                                __errors,
+                                "/properties/next/$ref",
+                            ) {
                                 return true;
                             }
                         }
                         "value" => {
                             let instance = value;
                             let __path = &__path.push("value");
-                            if validate_ref_1_errors(instance, __path, __errors) {
+                            if validate_ref_1_errors(
+                                instance,
+                                __path,
+                                __errors,
+                                "/properties/value/$ref",
+                            ) {
                                 return true;
                             }
                         }
@@ -154,14 +187,24 @@ mod __validator_impl {
                         "next" => {
                             let instance = value;
                             let __path = &__path.push("next");
-                            if validate_ref_0_errors(instance, __path, __errors) {
+                            if validate_ref_0_errors(
+                                instance,
+                                __path,
+                                __errors,
+                                "/properties/next/$ref",
+                            ) {
                                 return true;
                             }
                         }
                         "value" => {
                             let instance = value;
                             let __path = &__path.push("value");
-                            if validate_ref_1_errors(instance, __path, __errors) {
+                            if validate_ref_1_errors(
+                                instance,
+                                __path,
+                                __errors,
+                                "/properties/value/$ref",
+                            ) {
                                 return true;
                             }
                         }

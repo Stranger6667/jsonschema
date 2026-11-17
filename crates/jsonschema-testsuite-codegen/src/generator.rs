@@ -197,14 +197,16 @@ fn generate_nested_structure(
                                 fn iter_errors(
                                     &self,
                                     instance: &serde_json::Value,
-                                ) -> Vec<(String, String, String)> {
+                                ) -> Vec<testsuite::ErrorReport> {
                                     Self::iter_errors(instance)
-                                        .map(|e| {
-                                            (
-                                                e.to_string(),
-                                                e.schema_path().to_string(),
-                                                e.instance_path().to_string(),
-                                            )
+                                        .map(|e| testsuite::ErrorReport {
+                                            message: e.to_string(),
+                                            schema_path: e.schema_path().to_string(),
+                                            evaluation_path: e.evaluation_path().to_string(),
+                                            absolute_keyword_location: e
+                                                .absolute_keyword_location()
+                                                .map(|uri| uri.as_str().to_string()),
+                                            instance_path: e.instance_path().to_string(),
                                         })
                                         .collect()
                                 }

@@ -1,4 +1,5 @@
 use crate::codegen::emit::ValueEmitter;
+use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use referencing::{write_escaped_str, Uri};
 use serde_json::Value;
@@ -7,7 +8,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::context::CompileContext;
+use crate::context::{CompileContext, ErrorsFn};
 
 use super::{
     compile_schema,
@@ -310,6 +311,37 @@ pub(crate) fn get_or_create_is_valid_fn<E: ValueEmitter>(
     get_or_create_is_valid_fn_with(ctx, location, schema, schema_base_uri, compile_schema)
 }
 
+/// The base the runtime locates keywords against, or `None` for the internal default one.
+fn located_base(base: &Uri<String>) -> Option<String> {
+    (base.scheme().as_str() != "json-schema").then(|| base.as_str().to_string())
+}
+
+/// The errors function `{func_name}_errors` of the subschema at `pointer` in the resource at
+/// `base`: `body` reports its errors relative to it, between `enter` and `leave`, and the runtime
+/// places them below the reference that reaches it.
+fn errors_fn(
+    func_name: &str,
+    enter: &TokenStream,
+    leave: &TokenStream,
+    body: TokenStream,
+    pointer: &str,
+    base: Option<&str>,
+) -> ErrorsFn {
+    let body_ident = format_ident!("{}_errors_body", func_name);
+    let base = base.map_or_else(|| quote! { None }, |base| quote! { Some(#base) });
+    ErrorsFn {
+        entry: quote! {
+            let __start = __errors.mark();
+            #enter
+            let __stop = #body_ident(instance, __path, __errors);
+            #leave
+            __errors.reached(__start, #pointer, #base, __site);
+            __stop
+        },
+        body,
+    }
+}
+
 /// Like [`get_or_create_is_valid_fn`], with a custom body compiler.
 pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -327,6 +359,8 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
     // Errors inside this helper carry the target's JSON Pointer within its resource.
     let ref_schema_path = location_pointer(ctx, location, &schema_base_uri);
 
+    let pointer = ref_schema_path.clone();
+    let base = located_base(&schema_base_uri);
     let body = ctx.with_is_valid_scope(location, |ctx| {
         ctx.with_schema_env(schema, schema_base_uri, |ctx| {
             // Set schema_path to the location fragment so errors embed the correct path.
@@ -392,8 +426,8 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                 };
                 {
                     let errors_stmts = compiled.errors.as_token_stream();
-                    let errors_body = if recursive_push.is_empty() && dynamic_push.is_empty() {
-                        quote! { #errors_stmts false }
+                    let (enter, leave) = if recursive_push.is_empty() && dynamic_push.is_empty() {
+                        (quote! {}, quote! {})
                     } else {
                         let errors_ident = format_ident!("{}_errors", func_name);
                         let recursive_errors_push = if ctx.uses_recursive_ref {
@@ -424,24 +458,32 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                         } else {
                             quote! {}
                         };
-                        // A closure captures the early return, so the stacks are always popped.
-                        quote! {
-                            #recursive_push
-                            #recursive_errors_push
-                            #dynamic_push
-                            #dynamic_errors_push
-                            let __stop = (|| -> bool {
-                                #errors_stmts
-                                false
-                            })();
-                            #dynamic_errors_pop
-                            #dynamic_pop
-                            #recursive_errors_pop
-                            #recursive_pop
-                            __stop
-                        }
+                        (
+                            quote! {
+                                #recursive_push
+                                #recursive_errors_push
+                                #dynamic_push
+                                #dynamic_errors_push
+                            },
+                            quote! {
+                                #dynamic_errors_pop
+                                #dynamic_pop
+                                #recursive_errors_pop
+                                #recursive_pop
+                            },
+                        )
                     };
-                    ctx.is_valid_fns.set_errors_body(&func_name, errors_body);
+                    ctx.is_valid_fns.set_errors_body(
+                        &func_name,
+                        errors_fn(
+                            &func_name,
+                            &enter,
+                            &leave,
+                            quote! { #errors_stmts false },
+                            &pointer,
+                            base.as_deref(),
+                        ),
+                    );
                 }
                 if recursive_push.is_empty() && dynamic_push.is_empty() {
                     compiled.into_token_stream()
@@ -459,8 +501,17 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                 }
             } else {
                 let errors_stmts = compiled.errors.as_token_stream();
-                ctx.is_valid_fns
-                    .set_errors_body(&func_name, quote! { #errors_stmts false });
+                ctx.is_valid_fns.set_errors_body(
+                    &func_name,
+                    errors_fn(
+                        &func_name,
+                        &quote! {},
+                        &quote! {},
+                        quote! { #errors_stmts false },
+                        &pointer,
+                        base.as_deref(),
+                    ),
+                );
                 compiled.into_token_stream()
             }
         })
