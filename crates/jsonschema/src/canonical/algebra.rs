@@ -166,9 +166,19 @@ fn intersect_pair(left: &Schema, right: &Schema, ctx: &CanonicalizationContext) 
             unreachable!("a `True` side is answered before the pair is dispatched")
         }
         // References stay opaque. Equal references deduplicate; every other interaction remains an
-        // exact symbolic `allOf` rather than claiming facts about an unresolved target.
+        // exact symbolic `allOf` rather than claiming facts about an unresolved target, except two
+        // pointers a containment proof holds one inside the other, below.
         (SchemaKind::Reference(first), SchemaKind::Reference(second)) if first == second => {
             left.clone()
+        }
+        // Inside a containment proof, two pointers it holds one inside the other intersect as the
+        // narrower one; elsewhere they stay an exact symbolic `allOf` too.
+        (SchemaKind::Reference(first), SchemaKind::Reference(second)) => {
+            match containment::narrower(first, second, ctx) {
+                Some(narrower) if narrower == second => right.clone(),
+                Some(_) => left.clone(),
+                None => opaque_intersection(left.clone(), right.clone(), ctx),
+            }
         }
         // Both sides are unions: every pair goes into one union, not into a union per branch of
         // whichever side came first. An inner union normalizes what it holds, and a leaf folded

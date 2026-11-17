@@ -1,25 +1,35 @@
 //! Shared state for one canonicalization run: draft, pattern engine, and a compiled-regex cache.
 use std::{
     borrow::Cow,
-    cell::{Cell, RefCell},
+    cell::{Cell, OnceCell, RefCell},
     cmp::Ordering,
     collections::BTreeSet,
+    mem,
     sync::{Arc, Mutex},
 };
 
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 
 use referencing::Draft;
 
 use crate::{
     canonical::{
+        emptiness::{self, Position},
         ir::{Schema, StringFormat},
         schema::DefinitionMap,
+        ROOT_DEFINITION_KEY,
     },
     keywords::format::BuiltinFormat,
     options::{PatternEngineOptions, PatternSyntax},
     regex::{Compiled, RegexEngine},
 };
+
+/// Containment pairs the proofs of one run may assume at once. Each nested pair opens two more
+/// bodies one level deeper on the stack, and a proof needing more settles nothing.
+pub(crate) const ASSUMED_PAIRS: usize = 64;
+
+/// Two definition keys, `(inner, outer)`: a target and one a containment proof holds it inside.
+type TargetPair = (Arc<str>, Arc<str>);
 
 /// Past this many remembered pairs a run keeps recomputing rather than grow without end.
 const INTERSECTION_CACHE_CAPACITY: usize = 1 << 20;
@@ -70,6 +80,17 @@ pub(crate) struct CanonicalizationContext {
     /// The targets that lie on a reference cycle, which no walk reads through: it would not
     /// terminate. Every other target of the same map is read through as usual.
     cyclic: BTreeSet<Arc<str>>,
+    /// The targets a containment proof may assume one inside another. Found over `definitions` on
+    /// the first pair a proof asks about.
+    guarded: OnceCell<AHashSet<Arc<str>>>,
+    /// The pairs the containment proofs in progress assume, outermost first.
+    assumed: RefCell<Vec<TargetPair>>,
+    /// The pairs a proof started with nothing assumed settled, and whether each held. Those outcomes
+    /// rest on no assumption, so they hold for the whole run. A list: a run starts a handful of such
+    /// proofs, and creating a hashed map costs every run that starts none.
+    settled: RefCell<Vec<(TargetPair, bool)>>,
+    /// The pairs a nested proof was started for under the assumptions now in force.
+    attempted: RefCell<Vec<TargetPair>>,
     /// Intersections this run may still take before giving up. An `allOf` over unions multiplies them.
     intersections_left: Cell<u64>,
     /// Variants the conditional splits of this run may still produce. Nesting multiplies them.
@@ -116,6 +137,10 @@ impl CanonicalizationContext {
             declined_at: Cell::new(None),
             definitions: None,
             cyclic: BTreeSet::new(),
+            guarded: OnceCell::new(),
+            assumed: RefCell::new(Vec::new()),
+            settled: RefCell::new(Vec::new()),
+            attempted: RefCell::new(Vec::new()),
         }
     }
 
@@ -163,6 +188,9 @@ impl CanonicalizationContext {
             1,
             "a settling run holds its targets alone"
         );
+        // Found over the bodies, so an edited map is asked again.
+        self.guarded.take();
+        self.settled.get_mut().clear();
         Arc::make_mut(definitions)
     }
 
@@ -194,6 +222,138 @@ impl CanonicalizationContext {
             return None;
         }
         self.definitions.as_ref()?.get(uri)
+    }
+
+    /// The body `uri` names where a containment proof may assume it inside another target, cycle
+    /// or not: a proof opens it once per assumption and reads the pointer inside as assumed.
+    pub(crate) fn guarded_target(&self, uri: &str) -> Option<&Schema> {
+        if !self.guards(uri) {
+            return None;
+        }
+        self.definitions.as_ref()?.get(uri)
+    }
+
+    /// Runs `proof` with `inner ⊆ outer` assumed for the named targets; the assumption is gone when
+    /// it returns. `None` where either target is not guarded, where an assumption in force already
+    /// holds `inner` inside or `outer` around something, or past [`ASSUMED_PAIRS`].
+    ///
+    /// The intersections taken meanwhile rest on the assumption, so they are remembered only while
+    /// it holds.
+    pub(crate) fn assuming_contained<T>(
+        &self,
+        inner: &Arc<str>,
+        outer: &Arc<str>,
+        proof: impl FnOnce() -> T,
+    ) -> Option<T> {
+        // Sound by induction on the value. Every cycle through a guarded target passes a property
+        // value, an array element or a property name, so a proof reaches an assumed pair again on a
+        // proper part of the value it started from, or in place on a pair of targets these reach
+        // in place - never on these two themselves. A cycle closing in place would reach the pair on
+        // the same value, where the assumption would only justify itself.
+        if !self.guards(inner) || !self.guards(outer) {
+            return None;
+        }
+        let depth = {
+            let assumed = self.assumed.borrow();
+            // Each target enters each side once, so nesting stays within the targets a parse
+            // already walked; otherwise every pair of targets a union reaches nests another level.
+            if assumed.len() >= ASSUMED_PAIRS
+                || assumed.iter().any(|(assumed_inner, assumed_outer)| {
+                    assumed_inner == inner || assumed_outer == outer
+                })
+            {
+                return None;
+            }
+            assumed.len()
+        };
+        self.assumed
+            .borrow_mut()
+            .push((Arc::clone(inner), Arc::clone(outer)));
+        let _held = Held {
+            ctx: self,
+            depth,
+            outside: self.intersections.take(),
+            attempted: self.attempted.take(),
+        };
+        Some(proof())
+    }
+
+    /// Whether a proof of `inner ⊆ outer` started with nothing assumed held, where this run has
+    /// one. Asked with assumptions in force there is none: an outcome under them is theirs.
+    pub(crate) fn settled_containment(&self, inner: &Arc<str>, outer: &Arc<str>) -> Option<bool> {
+        if self.assumes_any() {
+            return None;
+        }
+        self.settled
+            .borrow()
+            .iter()
+            .find(|((settled_inner, settled_outer), _)| {
+                settled_inner == inner && settled_outer == outer
+            })
+            .map(|(_, held)| *held)
+    }
+
+    /// Record how a proof of `inner ⊆ outer` ended, kept only where it started with nothing
+    /// assumed.
+    pub(crate) fn settle_containment(&self, inner: &Arc<str>, outer: &Arc<str>, held: bool) {
+        if self.assumes_any() {
+            return;
+        }
+        debug_assert!(
+            self.settled_containment(inner, outer).is_none(),
+            "a settled pair is read back, not proven again"
+        );
+        self.settled
+            .borrow_mut()
+            .push(((Arc::clone(inner), Arc::clone(outer)), held));
+    }
+
+    /// Note that a nested proof of `inner ⊆ outer` starts under the assumptions now in force.
+    pub(crate) fn note_attempt(&self, inner: &Arc<str>, outer: &Arc<str>) {
+        debug_assert!(self.assumes_any(), "nested proofs start inside a proof");
+        if !self.attempted(inner, outer) {
+            self.attempted
+                .borrow_mut()
+                .push((Arc::clone(inner), Arc::clone(outer)));
+        }
+    }
+
+    /// Whether a nested proof of `inner ⊆ outer` already ran under the assumptions now in force.
+    pub(crate) fn attempted(&self, inner: &Arc<str>, outer: &Arc<str>) -> bool {
+        self.assumes_any()
+            && self
+                .attempted
+                .borrow()
+                .iter()
+                .any(|(attempted_inner, attempted_outer)| {
+                    attempted_inner == inner && attempted_outer == outer
+                })
+    }
+
+    /// Whether a containment proof in progress assumes `inner ⊆ outer`.
+    pub(crate) fn assumes_contained(&self, inner: &str, outer: &str) -> bool {
+        self.assumed
+            .borrow()
+            .iter()
+            .any(|(assumed_inner, assumed_outer)| {
+                debug_assert!(self.guards(assumed_inner), "an assumed target is guarded");
+                debug_assert!(self.guards(assumed_outer), "an assumed target is guarded");
+                **assumed_inner == *inner && **assumed_outer == *outer
+            })
+    }
+
+    /// Whether a containment proof is in progress.
+    pub(crate) fn assumes_any(&self) -> bool {
+        !self.assumed.borrow().is_empty()
+    }
+
+    fn guards(&self, uri: &str) -> bool {
+        let Some(definitions) = self.definitions.as_deref() else {
+            return false;
+        };
+        self.guarded
+            .get_or_init(|| guarded_targets(definitions))
+            .contains(uri)
     }
 
     pub(crate) fn draft(&self) -> Draft {
@@ -422,6 +582,51 @@ struct Remembered {
     inexact: bool,
 }
 
+/// An assumption in force. Dropping it releases the assumption and what was remembered under it, on
+/// every way out of the proof.
+struct Held<'a> {
+    ctx: &'a CanonicalizationContext,
+    /// Assumptions in force before this one.
+    depth: usize,
+    /// What the run remembered before this assumption, which holds without it.
+    outside: AHashMap<(Schema, Schema), Remembered>,
+    /// The nested proofs started before this assumption.
+    attempted: Vec<TargetPair>,
+}
+
+impl Drop for Held<'_> {
+    fn drop(&mut self) {
+        let mut assumed = self.ctx.assumed.borrow_mut();
+        debug_assert_eq!(
+            assumed.len(),
+            self.depth + 1,
+            "an assumption is released after every one made inside its proof"
+        );
+        assumed.truncate(self.depth);
+        *self.ctx.intersections.borrow_mut() = mem::take(&mut self.outside);
+        *self.ctx.attempted.borrow_mut() = mem::take(&mut self.attempted);
+    }
+}
+
+/// The targets of `definitions` every cycle through which passes a consuming position.
+///
+/// `#` names a root the map does not hold, so a cycle through it is invisible here. The root is
+/// taken to name every target in place, which leaves out any target reaching `#` in place.
+fn guarded_targets(definitions: &DefinitionMap) -> AHashSet<Arc<str>> {
+    let mut edges = emptiness::reference_edges(&Schema::truthy(), definitions);
+    edges
+        .get_mut(ROOT_DEFINITION_KEY)
+        .expect("the graph holds the root")
+        .extend(
+            definitions
+                .keys()
+                .map(|uri| (Arc::clone(uri), Position::InPlace)),
+        );
+    let mut guarded = emptiness::guarded_members(&edges);
+    guarded.remove(ROOT_DEFINITION_KEY);
+    guarded
+}
+
 fn intersection_key(left: Schema, right: Schema) -> (Schema, Schema) {
     match left.cached_hash().cmp(&right.cached_hash()) {
         Ordering::Greater => (right, left),
@@ -465,5 +670,63 @@ fn compile(options: PatternEngineOptions, pattern: &str) -> Option<CompiledMatch
         )
         .ok()
         .map(CompiledMatcher::FancyRegex),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::{json, Value};
+    use test_case::test_case;
+
+    use super::*;
+    use crate::canonical::parse;
+
+    fn guarded(schema: &Value) -> Vec<String> {
+        let registry = referencing::Registry::new()
+            .add(
+                "json-schema:///",
+                Draft::Draft202012.create_resource_ref(schema),
+            )
+            .expect("the fixture is a resource")
+            .draft(Draft::Draft202012)
+            .prepare()
+            .expect("the registry prepares");
+        let resolver = registry
+            .resolver(referencing::uri::from_str("json-schema:///").expect("a valid base URI"));
+        let ctx = CanonicalizationContext::new(
+            Draft::Draft202012,
+            PatternEngineOptions::default(),
+            false,
+        );
+        let parsed = parse::parse(schema, &ctx, &resolver, None)
+            .expect("the fixture parses")
+            .0
+            .expect("the fixture is modeled");
+        let mut names: Vec<String> = guarded_targets(&parsed.definitions)
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        names.sort();
+        names
+    }
+
+    #[test_case(
+        &json!({"$ref": "#/$defs/t", "$defs": {"t": {"type": "object", "properties": {
+            "next": {"$ref": "#/$defs/t"},
+            "root": {"$ref": "#"}
+        }}}}),
+        &["#/$defs/t"];
+        "the root named under a property"
+    )]
+    #[test_case(
+        &json!({"$ref": "#/$defs/t", "$defs": {"t": {"anyOf": [
+            {"$ref": "#"},
+            {"type": "object", "properties": {"next": {"$ref": "#/$defs/t"}}}
+        ]}}}),
+        &[];
+        "the root named in place"
+    )]
+    fn a_target_naming_the_root_in_place_is_not_guarded(schema: &Value, expected: &[&str]) {
+        assert_eq!(guarded(schema), expected);
     }
 }
