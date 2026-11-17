@@ -1,5 +1,5 @@
 //! Instances worth trying against a node, for the questions a form alone cannot answer.
-use std::cell::Cell;
+use std::{cell::Cell, ops::ControlFlow};
 
 use serde_json::Value;
 
@@ -38,17 +38,23 @@ fn demanded_length(minimum: Option<&BoundCardinality>) -> Option<usize> {
         .filter(|length| *length as u64 <= CANDIDATE_LENGTH)
 }
 
-/// Instances worth trying against `node`, shortest first. A candidate proves nothing on its own -
-/// `algebra::admits_value` decides - so the list only has to be short.
-pub(crate) fn instances<'a>(
+/// Where a candidate goes: the consumer breaks once it has what it asked for, and no later
+/// candidate is built.
+pub(crate) type Visit<'v> = dyn FnMut(Value) -> ControlFlow<()> + 'v;
+
+/// Offer each instance worth trying against `node` to `visit`, shortest first, until it breaks. A
+/// candidate proves nothing on its own - `algebra::admits_value` decides - so the sequence only has
+/// to be short.
+pub(crate) fn search<'a>(
     node: &'a Schema,
     target: &dyn Fn(&str) -> Option<&'a Schema>,
     depth: u32,
     budget: &Cell<u32>,
     ctx: &CanonicalizationContext,
-) -> Vec<Value> {
+    visit: &mut Visit<'_>,
+) -> ControlFlow<()> {
     if depth == 0 || budget.get() == 0 {
-        return Vec::new();
+        return ControlFlow::Continue(());
     }
     budget.set(budget.get() - 1);
     let walk = Walk {
@@ -59,32 +65,36 @@ pub(crate) fn instances<'a>(
     };
     match node.kind() {
         // A pointer accepts what its target does, so the instances worth trying are the target's.
-        SchemaKind::Reference(uri) => target(uri).map(|named| walk.all(named)).unwrap_or_default(),
-        SchemaKind::True => vec![Value::Null],
-        SchemaKind::Const(value) => vec![value.as_value().clone()],
+        SchemaKind::Reference(uri) => match target(uri) {
+            Some(named) => walk.each(named, visit),
+            None => ControlFlow::Continue(()),
+        },
+        SchemaKind::True => visit(Value::Null),
+        SchemaKind::Const(value) => visit(value.as_value().clone()),
         SchemaKind::Enum(values) => values
             .as_slice()
             .iter()
-            .map(|value| value.as_value().clone())
-            .collect(),
-        SchemaKind::MultiType(set) => set.iter().map(shortest_instance).collect(),
-        SchemaKind::TypedGroup { body, .. } => walk.all(body),
-        SchemaKind::String(leaf) => string::string(leaf.get()),
-        SchemaKind::Integer(leaf) => number::integer(leaf.get()),
-        SchemaKind::Number(leaf) => number::number(leaf.get()),
-        SchemaKind::Array(leaf) => array::array(leaf.get(), &walk),
-        SchemaKind::Object(leaf) => object::object(leaf.get(), &walk),
+            .try_for_each(|value| visit(value.as_value().clone())),
+        SchemaKind::MultiType(set) => set.iter().try_for_each(|ty| visit(shortest_instance(ty))),
+        SchemaKind::TypedGroup { body, .. } => walk.each(body, visit),
+        SchemaKind::String(leaf) => string::string(leaf.get()).into_iter().try_for_each(visit),
+        SchemaKind::Integer(leaf) => number::integer(leaf.get()).into_iter().try_for_each(visit),
+        SchemaKind::Number(leaf) => number::number(leaf.get()).into_iter().try_for_each(visit),
+        SchemaKind::Array(leaf) => array::array(leaf.get(), &walk)
+            .into_iter()
+            .try_for_each(visit),
+        SchemaKind::Object(leaf) => object::object(leaf.get(), &walk)
+            .into_iter()
+            .try_for_each(visit),
         // A branch's values are worth trying against the whole: `admits_value` decides.
         SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => branches
             .as_slice()
             .iter()
-            .flat_map(|branch| walk.all(branch))
-            .collect(),
+            .try_for_each(|branch| walk.each(branch, visit)),
         SchemaKind::OneOf(branches) => branches
             .iter()
-            .flat_map(|branch| walk.all(branch))
-            .collect(),
-        SchemaKind::False | SchemaKind::Not(_) | SchemaKind::Raw(_) => Vec::new(),
+            .try_for_each(|branch| walk.each(branch, visit)),
+        SchemaKind::False | SchemaKind::Not(_) | SchemaKind::Raw(_) => ControlFlow::Continue(()),
     }
 }
 
@@ -97,18 +107,36 @@ pub(super) struct Walk<'a, 'c> {
 }
 
 impl<'a> Walk<'a, '_> {
-    /// Instances worth trying against `schema`, one level down.
-    pub(super) fn all(&self, schema: &'a Schema) -> Vec<Value> {
-        instances(schema, self.target, self.depth - 1, self.budget, self.ctx)
+    /// Offer the instances worth trying against `schema`, one level down, to `visit`.
+    pub(super) fn each(&self, schema: &'a Schema, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        search(
+            schema,
+            self.target,
+            self.depth - 1,
+            self.budget,
+            self.ctx,
+            visit,
+        )
     }
 
-    /// The first instance worth trying against `schema`, one level down.
+    /// The first instance worth trying against `schema`, one level down. Only that one is built, so
+    /// a wide schema leaves the walk's node count to the schemas after it.
     pub(super) fn first(&self, schema: &'a Schema) -> Option<Value> {
-        self.all(schema).into_iter().next()
+        let mut found = None;
+        let _ = self.each(schema, &mut keep_first(&mut found));
+        found
     }
 
     pub(super) fn ctx(&self) -> &CanonicalizationContext {
         self.ctx
+    }
+}
+
+/// A visitor keeping the first candidate it is offered.
+fn keep_first(found: &mut Option<Value>) -> impl FnMut(Value) -> ControlFlow<()> + '_ {
+    |value| {
+        *found = Some(value);
+        ControlFlow::Break(())
     }
 }
 
