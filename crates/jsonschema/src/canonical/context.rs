@@ -217,6 +217,11 @@ impl CanonicalizationContext {
 
     /// The body `uri` names, or `None` where this run reads no targets and where reading through
     /// this one would not terminate.
+    /// The targets a set operation reads through; absent while a document is being canonicalized.
+    pub(crate) fn definitions(&self) -> Option<&DefinitionMap> {
+        self.definitions.as_deref()
+    }
+
     pub(crate) fn definition(&self, uri: &str) -> Option<&Schema> {
         if self.cyclic.contains(uri) {
             return None;
