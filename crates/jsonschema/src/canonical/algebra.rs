@@ -226,7 +226,12 @@ fn intersect_pair(left: &Schema, right: &Schema, ctx: &CanonicalizationContext) 
             | SchemaKind::AllOf(_)
             | SchemaKind::OneOf(_)
             | SchemaKind::Reference(_),
-        ) => opaque_intersection(left.clone(), right.clone(), ctx),
+        ) => match without_disjoint_branches(&left, &right, ctx)
+            .or_else(|| without_disjoint_branches(&right, &left, ctx))
+        {
+            Some(narrowed) => narrowed,
+            None => opaque_intersection(left.clone(), right.clone(), ctx),
+        },
         // `Const`/`Enum` is a fixed set of allowed values. Keep only those values the other side also accepts.
         (values @ (SchemaKind::Const(_) | SchemaKind::Enum(_)), _) => {
             restrict_members(members_of(values), right, ctx)
@@ -410,6 +415,48 @@ fn typed_group_within(set: JsonTypeSet, ty: JsonType, group: &Schema) -> Schema 
     } else {
         Schema::falsy()
     }
+}
+
+/// `schema` intersected with `negated`, a barred union, once the union has lost every branch
+/// sharing no value with `schema`: barring those takes nothing away, and the rest is narrow enough
+/// to negate branch by branch. `None` where nothing is lost, or the narrower union has no negation.
+/// ```text
+/// e.g.  A and not (A' or B or C), with B and C sharing no value with A
+///       =>  A and not A'
+/// ```
+fn without_disjoint_branches(
+    schema: &Schema,
+    negated: &Schema,
+    ctx: &CanonicalizationContext,
+) -> Option<Schema> {
+    let SchemaKind::Not(barred) = negated.kind() else {
+        return None;
+    };
+    if matches!(
+        schema.kind(),
+        SchemaKind::Not(_) | SchemaKind::AllOf(_) | SchemaKind::OneOf(_) | SchemaKind::Reference(_)
+    ) {
+        return None;
+    }
+    let definitions = ctx.definitions()?;
+    let barred = resolved(barred.clone(), ctx);
+    let SchemaKind::AnyOf(branches) = barred.kind() else {
+        return None;
+    };
+    let shared: Vec<Schema> = branches
+        .as_slice()
+        .iter()
+        .filter(|branch| {
+            computed_exactly(ctx, || intersect(schema.clone(), (*branch).clone(), ctx))
+                .is_none_or(|intersection| !matches!(intersection.kind(), SchemaKind::False))
+        })
+        .cloned()
+        .collect();
+    if shared.len() == branches.as_slice().len() {
+        return None;
+    }
+    let negation = negate::negate_in_place(&union(shared, ctx), definitions, ctx)?;
+    Some(intersect(schema.clone(), negation, ctx))
 }
 
 fn opaque_intersection(left: Schema, right: Schema, ctx: &CanonicalizationContext) -> Schema {

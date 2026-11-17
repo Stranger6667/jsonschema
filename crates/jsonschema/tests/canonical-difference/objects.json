@@ -267,5 +267,182 @@
       }
     },
     "relation": "narrow"
+  },
+  {
+    "description": "oneOf union of three variants via refs: variant narrowed",
+    "old": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Text"
+        },
+        {
+          "$ref": "#/$defs/Image"
+        },
+        {
+          "$ref": "#/$defs/File"
+        }
+      ],
+      "$defs": {
+        "Text": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ]
+        },
+        "Image": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "image"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "detail": {
+              "enum": [
+                "low",
+                "high"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "detail"
+          ]
+        },
+        "File": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "file"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      }
+    },
+    "new": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Text"
+        },
+        {
+          "$ref": "#/$defs/Image"
+        },
+        {
+          "$ref": "#/$defs/File"
+        }
+      ],
+      "$defs": {
+        "Text": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "text"
+            },
+            "text": {
+              "type": "string",
+              "maxLength": 1
+            }
+          },
+          "required": [
+            "kind",
+            "text"
+          ]
+        },
+        "Image": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "image"
+            },
+            "url": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "detail": {
+              "enum": [
+                "low",
+                "high"
+              ]
+            }
+          },
+          "required": [
+            "kind",
+            "detail"
+          ]
+        },
+        "File": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "file"
+            },
+            "id": {
+              "type": [
+                "string",
+                "null"
+              ]
+            },
+            "name": {
+              "type": "string"
+            },
+            "url": {
+              "type": "string"
+            },
+            "data": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "kind"
+          ]
+        }
+      }
+    },
+    "relation": "narrow"
   }
 ]
