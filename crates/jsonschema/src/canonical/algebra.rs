@@ -1952,23 +1952,28 @@ fn holds_a_value_the_siblings_miss(
     index: usize,
     ctx: &CanonicalizationContext,
 ) -> bool {
-    candidates::instances(
+    use std::ops::ControlFlow;
+    candidates::search(
         packed,
         &|uri| ctx.definition(uri),
         candidates::DEPTH,
         &Cell::new(candidates::NODES),
         ctx,
+        &mut |candidate| {
+            let Value::Object(map) = candidate else {
+                return ControlFlow::Continue(());
+            };
+            if object_leaf_admits(&leaves[index], &map, ctx) == Verdict::Admits
+                && leaves.iter().enumerate().all(|(sibling, leaf)| {
+                    sibling == index || object_leaf_admits(leaf, &map, ctx) == Verdict::Rejects
+                })
+            {
+                return ControlFlow::Break(());
+            }
+            ControlFlow::Continue(())
+        },
     )
-    .iter()
-    .any(|candidate| {
-        let Value::Object(map) = candidate else {
-            return false;
-        };
-        object_leaf_admits(&leaves[index], map, ctx) == Verdict::Admits
-            && leaves.iter().enumerate().all(|(sibling, leaf)| {
-                sibling == index || object_leaf_admits(leaf, map, ctx) == Verdict::Rejects
-            })
-    })
+    .is_break()
 }
 
 /// Pack every leaf into a node once. The coverage walk below tests one node against the same set of

@@ -3,6 +3,7 @@ use std::{
     cmp::Ordering,
     collections::{BTreeMap, BTreeSet},
     hash::{Hash, Hasher},
+    ops::ControlFlow,
     sync::Arc,
 };
 
@@ -394,21 +395,26 @@ impl CanonicalSchema {
             &[&self.document.root],
             &self.document.definitions,
         );
-        for candidate in candidates::instances(
+        // Each candidate is checked as it is built, so the walk stops at the first one admitted.
+        let mut answer = Satisfiability::Unknown;
+        let _ = candidates::search(
             node,
             &|uri| self.document.target(uri),
             candidates::DEPTH,
             &Cell::new(candidates::NODES),
             &context,
-        ) {
-            let (verdict, inexact) = context.probe(|| {
-                algebra::admits_value(node, &candidate, UncheckableFacet::Undecided, &context)
-            });
-            if verdict == Verdict::Admits && !inexact && !context.outgrew_distribution() {
-                return Satisfiability::Yes;
-            }
-        }
-        Satisfiability::Unknown
+            &mut |candidate| {
+                let (verdict, inexact) = context.probe(|| {
+                    algebra::admits_value(node, &candidate, UncheckableFacet::Undecided, &context)
+                });
+                if verdict == Verdict::Admits && !inexact && !context.outgrew_distribution() {
+                    answer = Satisfiability::Yes;
+                    return ControlFlow::Break(());
+                }
+                ControlFlow::Continue(())
+            },
+        );
+        answer
     }
 
     /// Whether this node contains no `$ref` at all, so nothing of its document can be seen through
