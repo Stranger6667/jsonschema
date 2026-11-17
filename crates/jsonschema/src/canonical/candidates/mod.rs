@@ -81,9 +81,7 @@ pub(crate) fn search<'a>(
         SchemaKind::Integer(leaf) => number::integer(leaf.get(), visit),
         SchemaKind::Number(leaf) => number::number(leaf.get(), visit),
         SchemaKind::Array(leaf) => array::array(leaf.get(), &walk, visit),
-        SchemaKind::Object(leaf) => object::object(leaf.get(), &walk)
-            .into_iter()
-            .try_for_each(visit),
+        SchemaKind::Object(leaf) => object::object(leaf.get(), &walk, visit),
         // A branch's values are worth trying against the whole: `admits_value` decides.
         SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => branches
             .as_slice()
@@ -136,6 +134,13 @@ impl<'a> Walk<'a, '_> {
     pub(super) fn first(&self, schema: &'a Schema) -> Option<Value> {
         let mut found = None;
         let _ = self.each(schema, &mut keep_first(&mut found));
+        found
+    }
+
+    /// The first instance worth trying against `schema`, a schema built during the walk.
+    pub(super) fn first_owned(&self, schema: &Schema) -> Option<Value> {
+        let mut found = None;
+        let _ = self.each_owned(schema, &mut keep_first(&mut found));
         found
     }
 

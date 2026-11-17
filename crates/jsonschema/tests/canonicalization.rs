@@ -5815,7 +5815,7 @@ fn required_key_violation_stays_when_it_can_satisfy_property_names() {
     &json!({"type": "object", "maxProperties": 2, "minProperties": 1, "required": ["a"],
             "properties": {"a": {"type": "string"}},
             "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}),
-    Satisfiability::Unknown;
+    Satisfiability::Yes;
     "a second slot admits the violating key"
 )]
 #[test_case(
@@ -6388,7 +6388,7 @@ fn a_cycle_carrying_a_chord_is_found_whatever_its_keys_are_called() {
 // A walk that could only approximate an intersection carries no verdict: `covers` reads each of its
 // three answers only where that answer's own walk finished exactly.
 #[test]
-fn coverage_over_an_intersection_the_form_cannot_express_rests_on_a_value_or_declines() {
+fn coverage_over_an_intersection_the_form_cannot_express_rests_on_a_value() {
     let additional = canonicalize(&json!({
         "type": "object",
         "properties": {"ab": {"minLength": 1}},
@@ -6406,17 +6406,16 @@ fn coverage_over_an_intersection_the_form_cannot_express_rests_on_a_value_or_dec
         additional.intersect(&patterns),
         Err(CanonicalizationError::UnsupportedResult)
     ));
-    // Refused on a value the argument takes and the receiver does not: `{"b": 1}`, which
-    // `additionalProperties` turns away for not being a string. The other way round rests on the
-    // intersection, which is what the
-    // form cannot express, so it stays undecided.
+    // Each way is refused on a value the argument takes and the receiver does not: `{"b": 1}`,
+    // which `additionalProperties` turns away for not being a string, and `{"a": "aaaaaaaaaa"}`, a
+    // key matching the pattern with a value past its ceiling.
     assert_eq!(
         additional.covers(&patterns).expect("covers"),
         Containment::No
     );
     assert_eq!(
         patterns.covers(&additional).expect("covers"),
-        Containment::Unknown
+        Containment::No
     );
     // The negation keeps the pattern facet under `not`, so the difference exists: a key matching
     // the pattern with a value past its ceiling, and nothing the pattern map admits.
@@ -7444,4 +7443,32 @@ fn engine_syntax_rejects_ecma_only_pattern() {
         error,
         CanonicalizationError::InvalidPattern { .. }
     ));
+}
+
+// Each required key takes the first value of a union, so the keys after a wide one still get theirs:
+// building every branch of every key would visit more nodes than one walk may.
+#[test]
+fn a_wide_union_under_every_key_leaves_room_for_the_next_key() {
+    // Twelve keys, each a union of ten objects requiring forty keys of their own.
+    let branch = |index: usize| {
+        let keys: Vec<String> = (0..40).map(|key| format!("b{index}_{key}")).collect();
+        let properties: Map<String, Value> = keys
+            .iter()
+            .enumerate()
+            .map(|(value, key)| (key.clone(), json!({"const": value})))
+            .collect();
+        json!({"type": "object", "required": keys, "properties": properties})
+    };
+    let branches: Vec<Value> = (0..10).map(branch).collect();
+    let keys: Vec<String> = (0..12).map(|key| format!("k{key}")).collect();
+    let properties: Map<String, Value> = keys
+        .iter()
+        .map(|key| (key.clone(), json!({"anyOf": branches})))
+        .collect();
+    let schema = json!({"type": "object", "required": keys, "properties": properties});
+    let canonical = options()
+        .with_draft(Draft::Draft202012)
+        .canonicalize(&schema)
+        .expect("canonicalizes");
+    assert_eq!(canonical.satisfiability(), Satisfiability::Yes);
 }
