@@ -6401,6 +6401,8 @@ struct EvaluateRefBelowContains;
 struct EvaluateRefIgnoredSiblings;
 #[jsonschema::validator(schema = r##"{"$defs": {"s": {"propertyNames": {"$ref": "#/$defs/s"}, "maxLength": 3}}, "$ref": "#/$defs/s"}"##, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateRefBelowNames;
+#[jsonschema::validator(schema = r##"{"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}"##, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateRefCycleInBranches;
 
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
@@ -6512,6 +6514,7 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateRefBelowContains::evaluate, serde_json::json!({"contains": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}), None, Draft::Draft202012 ; "ref_below_contains")]
 #[test_case(EvaluateRefIgnoredSiblings::evaluate, serde_json::json!({"definitions": {"a": {"type": "integer"}, "b": {"$id": "http://example.com/b"}}, "$ref": "#/definitions/a", "properties": {"x": {"$ref": "http://example.com/b"}}}), None, Draft::Draft7 ; "ref_ignored_siblings")]
 #[test_case(EvaluateRefBelowNames::evaluate, serde_json::json!({"$defs": {"s": {"propertyNames": {"$ref": "#/$defs/s"}, "maxLength": 3}}, "$ref": "#/$defs/s"}), None, Draft::Draft202012 ; "ref_below_names")]
+#[test_case(EvaluateRefCycleInBranches::evaluate, serde_json::json!({"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}), None, Draft::Draft7 ; "ref_cycle_in_branches")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -6564,6 +6567,8 @@ fn test_evaluate_matches_runtime(
         serde_json::json!({"next": {"v": 1}, "v": 2}),
         serde_json::json!({"a": 1, "b": "x"}),
         serde_json::json!({"abcd": 1, "ab": 2}),
+        serde_json::json!({"a": 1, "c": {"a": 1, "c": {"b": 2, "c": 5}}}),
+        serde_json::json!({"a": 1, "c": {"b": 1, "c": {"a": 1, "c": "x"}}}),
         // More members than the runtime scans before looking declared names up instead.
         serde_json::json!({"a": 1, "b": "x", "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1}),
     ] {
