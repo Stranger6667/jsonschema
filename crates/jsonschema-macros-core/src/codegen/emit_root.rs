@@ -55,6 +55,8 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     let entry_bodies = E::entry_bodies(methods);
     let evaluation_import =
         evaluation_body.map(|_| quote! { use jsonschema::__private::evaluation as __eval; });
+    let ref_memo_import = (!ctx.revisited_ref_targets.is_empty())
+        .then(|| quote! { use jsonschema::__private::ref_memo as __ref_memo; });
     let evaluate_fn = evaluation_body.map(|body| {
         quote! {
             pub(super) fn evaluate(instance: #node) -> jsonschema::Evaluation {
@@ -153,7 +155,8 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
 
     let mut uri_cache_statics: Vec<TokenStream> = Vec::new();
     let mut uri_cache_wrappers: Vec<TokenStream> = Vec::new();
-    let mut uri_cache_clears: Vec<TokenStream> = Vec::new();
+    // State one run keeps and the next must not see.
+    let mut run_clears: Vec<TokenStream> = Vec::new();
     for cache in &ctx.uri_format_caches {
         let static_ident =
             format_ident!("__JSONSCHEMA_{}_FORMAT_CACHE", cache.base().to_uppercase());
@@ -176,7 +179,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 })
             }
         });
-        uri_cache_clears.push(quote! {
+        run_clears.push(quote! {
             #static_ident.with_borrow_mut(|cache| cache.clear());
         });
     }
@@ -190,7 +193,10 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             #(#uri_cache_wrappers)*
         }
     };
-    let uri_cache_clears = quote! { #(#uri_cache_clears)* };
+    if !ctx.revisited_ref_targets.is_empty() {
+        run_clears.push(quote! { __ref_memo::clear(); });
+    }
+    let run_clears = quote! { #(#run_clears)* };
 
     let is_valid_fns: Vec<TokenStream> = ctx
         .is_valid_fns
@@ -565,7 +571,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 __errors: &mut __err::Errors<'__i>,
             ) -> bool {
                 #function_prelude
-                #uri_cache_clears
+                #run_clears
                 #errors_body
             }
             #errors_at
@@ -663,6 +669,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             use jsonschema::__private::fancy_regex as __fancy;
             use jsonschema::__private::format as __fmt;
             use jsonschema::__private::numeric as __num;
+            #ref_memo_import
             use jsonschema::__private::regex as __re;
             use jsonschema::__private::serde_json as __sj;
             use jsonschema::__private::types as __types;
@@ -687,7 +694,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             pub(super) fn is_valid(instance: #node) -> bool {
                 #function_prelude
                 #recompile_trigger
-                #uri_cache_clears
+                #run_clears
                 #is_valid_body
             }
 

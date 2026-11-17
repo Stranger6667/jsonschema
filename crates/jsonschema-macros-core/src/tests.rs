@@ -1,4 +1,8 @@
-use std::{collections::HashMap, path::PathBuf, sync::Arc};
+use std::{
+    collections::{BTreeSet, HashMap},
+    path::PathBuf,
+    sync::Arc,
+};
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
@@ -220,11 +224,48 @@ fn test_codegen_snapshot(schema: Value, snap_name: &str) {
 #[test_case(json!({"$defs":{"node":{"$dynamicAnchor":"node","type":["object","boolean"]},"plain":{"type":"integer"}},"type":"object","properties":{"child":{"$dynamicRef":"#node"},"other":{"$ref":"#/$defs/plain"}}}), "dynamic_schema_full_module" ; "dynamic schema")]
 #[test_case(json!({"$defs":{"item":{"type":"integer"}},"properties":{"first":{"type":"array","items":{"$ref":"#/$defs/item"}},"second":{"type":"array","items":{"$ref":"#/$defs/item"}}}}), "arrays_of_same_ref_full_module" ; "arrays of the same ref")]
 #[test_case(json!({"$defs":{"item":{"type":"integer"}},"required":["outer"],"properties":{"outer":{"additionalProperties":false,"properties":{"inner":{"properties":{"name":{"type":"string","pattern":"^a"}}}}},"list":{"type":"array","items":{"$ref":"#/$defs/item"}},"other":{"type":"array","items":{"$ref":"#/$defs/item"}}}}), "nested_objects_full_module" ; "nested objects")]
+#[test_case(json!({"$schema":"http://json-schema.org/draft-07/schema#","definitions":{"node":{"oneOf":[{"required":["a"],"properties":{"c":{"$ref":"#/definitions/node"}}},{"properties":{"c":{"$ref":"#/definitions/node"}}}]}},"$ref":"#/definitions/node"}), "ref_cycle_full_module" ; "ref cycle")]
 fn full_module_emission(schema: Value, snap_name: &str) {
     let description = serde_json::to_string(&schema).expect("schema serialization");
     insta::with_settings!({ description => &description }, {
         insta::assert_snapshot!(snap_name, schema_to_code(schema));
     });
+}
+
+/// The helpers whose calls through a `$ref` cycle keep their results for the run.
+fn memoized_helpers(code: &str) -> BTreeSet<String> {
+    code.match_indices("__ref_memo::is_valid::<")
+        .map(|(start, _)| {
+            let call = &code[start..];
+            let arguments = call[call.find(">(").expect("call arguments") + 2..].trim_start();
+            arguments[..arguments.find(',').expect("helper argument")].to_string()
+        })
+        .collect()
+}
+
+const DRAFT7: &str = "http://json-schema.org/draft-07/schema#";
+
+#[test_case(json!({"$schema": DRAFT7, "definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"c": {"$ref": "#/definitions/node"}}}, {"properties": {"c": {"$ref": "#/definitions/node"}}}]}}, "$ref": "#/definitions/node"}), &["validate_ref_0"] ; "branches reaching one property")]
+#[test_case(json!({"$schema": DRAFT7, "definitions": {"node": {"oneOf": [{"$ref": "#/definitions/list"}, {"$ref": "#/definitions/map"}]}, "list": {"type": "array", "items": {"$ref": "#/definitions/node"}}, "map": {"type": "object", "additionalProperties": {"$ref": "#/definitions/node"}}}, "$ref": "#/definitions/node"}), &[] ; "branches of disjoint types")]
+#[test_case(json!({"$schema": DRAFT7, "definitions": {"node": {"oneOf": [{"type": "object", "required": ["kind"], "properties": {"kind": {"const": "a"}, "c": {"$ref": "#/definitions/node"}}}, {"type": "object", "required": ["kind"], "properties": {"kind": {"const": "b"}, "c": {"$ref": "#/definitions/node"}}}]}}, "$ref": "#/definitions/node"}), &[] ; "discriminated branches")]
+#[test_case(json!({"$schema": DRAFT7, "allOf": [{"properties": {"c": {"$ref": "#"}}}, {"properties": {"c": {"$ref": "#"}}}]}), &["validate_ref_0"] ; "all of reaching one property")]
+#[test_case(json!({"$schema": DRAFT7, "allOf": [{"properties": {"c": {"$ref": "#"}}}, {"properties": {"d": {"$ref": "#"}}}]}), &[] ; "all of reaching different properties")]
+#[test_case(json!({"$schema": DRAFT7, "if": {"properties": {"c": {"$ref": "#"}}}, "then": {"properties": {"c": {"$ref": "#"}}}}), &["validate_ref_0"] ; "if and then")]
+#[test_case(json!({"$schema": DRAFT7, "if": {"required": ["a"]}, "then": {"properties": {"c": {"$ref": "#"}}}, "else": {"properties": {"c": {"$ref": "#"}}}}), &[] ; "then and else")]
+#[test_case(json!({"$schema": DRAFT7, "properties": {"a": {"$ref": "#"}}, "patternProperties": {"^a": {"$ref": "#"}}}), &["validate_ref_0"] ; "declared and pattern properties")]
+#[test_case(json!({"$schema": DRAFT7, "properties": {"a": {"$ref": "#"}, "b": {"$ref": "#"}}, "additionalProperties": {"$ref": "#"}}), &[] ; "declared and additional properties")]
+#[test_case(json!({"$schema": DRAFT7, "items": {"$ref": "#"}, "contains": {"$ref": "#"}}), &["validate_ref_0"] ; "items and contains")]
+#[test_case(json!({"prefixItems": [{"$ref": "#"}], "items": {"$ref": "#"}}), &[] ; "prefix and remaining items")]
+#[test_case(json!({"$schema": DRAFT7, "properties": {"next": {"$ref": "#"}}}), &[] ; "single path")]
+#[test_case(json!({"$schema": DRAFT7, "allOf": [{"$ref": "#/definitions/list"}, {"$ref": "#/definitions/list"}], "definitions": {"list": {"properties": {"next": {"$ref": "#/definitions/list"}}}}}), &[] ; "repeat outside the cycle")]
+#[test_case(json!({"$dynamicAnchor": "node", "allOf": [{"properties": {"c": {"$ref": "#"}}}, {"properties": {"c": {"$ref": "#"}}}, {"properties": {"d": {"$dynamicRef": "#node"}}}]}), &[] ; "dynamic reference")]
+#[test_case(serde_json::from_str(include_str!("../../benchmark/data/recursive_schema.json")).expect("valid JSON"), &[] ; "recursive benchmark")]
+#[test_case(serde_json::from_str(include_str!("../../benchmark/data/openapi.json")).expect("valid JSON"), &[] ; "openapi benchmark")]
+fn ref_cycle_memo(schema: Value, expected: &[&str]) {
+    assert_eq!(
+        memoized_helpers(&schema_to_code(schema)),
+        expected.iter().map(ToString::to_string).collect()
+    );
 }
 
 #[test_case(json!({"$schema":"http://json-schema.org/draft-07/schema#","type":"string","format":"uri"}), "uri_format_per_call_cache" ; "uri")]

@@ -18,7 +18,7 @@ pub(super) mod not;
 pub(super) mod number;
 pub(super) mod object;
 pub(super) mod object_pass;
-pub(super) mod one_of;
+pub(crate) mod one_of;
 pub(super) mod pattern;
 pub(super) mod pattern_coverage;
 pub(super) mod pattern_properties;

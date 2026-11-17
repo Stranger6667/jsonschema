@@ -141,7 +141,7 @@ fn in_context<T>(
 ///
 /// Cheaper results cost less to recompute than to store, and a subtree that is validated again and
 /// again reaches the threshold within a few levels, so repeated work stays bounded.
-const MEMO_MIN_VISITS: u32 = 16;
+pub(crate) const MEMO_MIN_VISITS: u32 = 16;
 
 /// Evaluation paths are only cached once this many have been built.
 ///

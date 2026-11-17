@@ -1,0 +1,316 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$ref\":\"#/definitions/node\",\"$schema\":\"http://json-schema.org/draft-07/schema#\",\"definitions\":{\"node\":{\"oneOf\":[{\"properties\":{\"c\":{\"$ref\":\"#/definitions/node\"}},\"required\":[\"a\"]},{\"properties\":{\"c\":{\"$ref\":\"#/definitions/node\"}}}]}}}"
+expression: schema_to_code(schema)
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::ref_memo as __ref_memo;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::__private::unfinished_matches as __unfinished;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use __sj::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = __sj::Map<String, __Value>;
+    fn is_branch_valid_0(instance: &__Value) -> bool {
+        match instance {
+            __Value::Object(obj) => {
+                let mut __req_0 = false;
+                let __object_pass = obj
+                    .iter()
+                    .all(|(key, instance)| {
+                        match key.as_str() {
+                            "c" => {
+                                if !(__ref_memo::is_valid::<
+                                    jsonschema::json::SerdeJson,
+                                >(validate_ref_0, instance)) {
+                                    return false;
+                                }
+                            }
+                            "a" => {
+                                __req_0 = true;
+                            }
+                            _ => {}
+                        }
+                        true
+                    });
+                __object_pass && __req_0
+            }
+            _ => true,
+        }
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_0<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        match instance {
+            __Value::Object(obj) => {
+                if let Some(__e) = '__first_error: {
+                    if !(obj.contains_key("a")) {
+                        break '__first_error Some(
+                            __err::required(
+                                "/definitions/node/oneOf/0/required",
+                                __path.into(),
+                                instance,
+                                "a",
+                            ),
+                        );
+                    }
+                    None
+                } {
+                    if __errors.push(__e) {
+                        return true;
+                    }
+                }
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "c" => {
+                            let instance = value;
+                            let __path = &__path.push("c");
+                            if validate_ref_0_errors(
+                                instance,
+                                __path,
+                                __errors,
+                                "/definitions/node/oneOf/0/properties/c/$ref",
+                            ) {
+                                return true;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+    fn is_branch_valid_1(instance: &__Value) -> bool {
+        match instance {
+            __Value::Object(obj) => '__all_1: {
+                for (key, instance) in obj.iter() {
+                    let key_str = key.as_str();
+                    if !(match key_str {
+                        "c" => {
+                            __ref_memo::is_valid::<
+                                jsonschema::json::SerdeJson,
+                            >(validate_ref_0, instance)
+                        }
+                        _ => true,
+                    }) {
+                        break '__all_1 false;
+                    }
+                }
+                true
+            }
+            _ => true,
+        }
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_1<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        match instance {
+            __Value::Object(obj) => {
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "c" => {
+                            let instance = value;
+                            let __path = &__path.push("c");
+                            if validate_ref_0_errors(
+                                instance,
+                                __path,
+                                __errors,
+                                "/definitions/node/oneOf/1/properties/c/$ref",
+                            ) {
+                                return true;
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+    fn validate_ref_0(instance: &__Value) -> bool {
+        {
+            let mut matched = is_branch_valid_0(instance);
+            (if is_branch_valid_1(instance) {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }) && matched
+        }
+    }
+    #[inline(never)]
+    fn validate_ref_0_errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+        __site: &str,
+    ) -> bool {
+        if validate_ref_0(instance) {
+            return false;
+        }
+        let __start = __errors.mark();
+        let __stop = validate_ref_0_errors_body(instance, __path, __errors);
+        __errors.reached(__start, "/definitions/node", None, __site);
+        __stop
+    }
+    fn validate_ref_0_errors_body<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        if let Some(__e) = '__first_error: {
+            {
+                let mut __count = 0usize;
+                if is_branch_valid_0(instance) {
+                    __count += 1;
+                }
+                if is_branch_valid_1(instance) {
+                    __count += 1;
+                }
+                if __count != 1 {
+                    let mut __context = Vec::with_capacity(2usize);
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_0(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
+                    }
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_1(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
+                    }
+                    break '__first_error Some(
+                        if __count == 0 {
+                            __err::one_of_not_valid(
+                                "/definitions/node/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
+                        } else {
+                            __err::one_of_multiple_valid(
+                                "/definitions/node/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
+                        },
+                    );
+                }
+            }
+            None
+        } {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        false
+    }
+    pub(super) fn is_valid(instance: &__Value) -> bool {
+        __ref_memo::clear();
+        validate_ref_0(instance)
+    }
+    pub(super) fn errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        __ref_memo::clear();
+        if validate_ref_0_errors(instance, __path, __errors, "/$ref") {
+            return true;
+        }
+        false
+    }
+    pub(super) fn run_is_valid(instance: &__Value) -> bool {
+        is_valid(instance)
+    }
+    pub(super) fn run_validate<'__i>(instance: &'__i __Value) -> Option<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
+    }
+    pub(super) fn run_collect_errors<'__i>(instance: &'__i __Value) -> Vec<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
+    }
+    pub(super) fn entry_is_valid(instance: &__Value) -> bool {
+        run_is_valid(instance)
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Value,
+    ) -> ::std::result::Result<(), __VE<'__i>> {
+        match run_validate(instance) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+    pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
+        __err::iterator_from(run_collect_errors(instance))
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &jsonschema::__private::serde_json::Value) -> bool {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> ::std::result::Result<(), jsonschema::ValidationError<'__i>> {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::ErrorIterator<'__i> {
+        __validator_impl::entry_iter_errors(instance)
+    }
+}
