@@ -4927,6 +4927,8 @@ fn covers_answers_a_recursive_pair_alike_in_either_order(wider_first: bool) {
 
 // Every target may hold any of the others, so the union of pointers compares every pair of targets
 // and each pair opens a nested proof of its own. Those stay within a thread's default stack.
+// Spawning a thread with a set stack size is unsupported on wasm targets.
+#[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn covers_and_subtract_fit_a_default_stack_where_every_target_names_every_other() {
     const TARGETS: usize = 5;
