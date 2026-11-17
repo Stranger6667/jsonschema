@@ -45,6 +45,7 @@
 - `satisfiability` answering `Unknown` for an object that must break `additionalProperties`, `patternProperties` or `propertyNames`.
 - `satisfiability` answering `Unknown` for a number that must miss a `multipleOf`, such as a non-integer.
 - `covers` answering `Unknown`, and `subtract` keeping a difference `satisfiability` cannot decide, for a recursive `$ref` whose target contains the other's.
+- Stack overflow in `canonicalize` for `unevaluatedProperties` or `unevaluatedItems` reaching itself through a `$ref`, such as one in `dependentSchemas`.
 
 ### Performance
 
