@@ -7,8 +7,7 @@
     "new": {
       "type": "number"
     },
-    "relation": "widen",
-    "pending": ["new-old"]
+    "relation": "widen"
   },
   {
     "description": "multipleOf 2 -> 4",
@@ -20,8 +19,7 @@
       "type": "integer",
       "multipleOf": 4
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "number multipleOf 0.1 -> 0.01",
@@ -33,8 +31,7 @@
       "type": "number",
       "multipleOf": 0.01
     },
-    "relation": "widen",
-    "pending": ["new-old"]
+    "relation": "widen"
   },
   {
     "description": "anyOf branch widened",
@@ -58,7 +55,55 @@
         }
       ]
     },
-    "relation": "widen",
-    "pending": ["new-old"]
+    "relation": "widen"
+  },
+  {
+    "description": "multipleOf 6 -> 4",
+    "old": {
+      "type": "integer",
+      "multipleOf": 6
+    },
+    "new": {
+      "type": "integer",
+      "multipleOf": 4
+    },
+    "relation": "incomparable"
+  },
+  {
+    "description": "multipleOf 6 -> 12 above the first multiple",
+    "old": {
+      "type": "integer",
+      "multipleOf": 6,
+      "minimum": 7
+    },
+    "new": {
+      "type": "integer",
+      "multipleOf": 12,
+      "minimum": 7
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "integer multipleOf 1.5 -> 4.5",
+    "old": {
+      "type": "integer",
+      "multipleOf": 1.5
+    },
+    "new": {
+      "type": "integer",
+      "multipleOf": 4.5
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "draft 4 number -> integer",
+    "draft": "draft4",
+    "old": {
+      "type": "number"
+    },
+    "new": {
+      "type": "integer"
+    },
+    "relation": "narrow"
   }
 ]
