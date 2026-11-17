@@ -217,6 +217,61 @@ impl GuardHoist {
     }
 }
 
+/// What the schema with an `unevaluated*` keyword reports as evaluated: a subschema it applies in
+/// place that fails evaluates nothing. The ones below them validate whenever they do, so only the
+/// schema's own are checked, each at most once per instance and only for a member it evaluates.
+#[derive(Default)]
+pub(crate) struct ReportGuards {
+    cells: Vec<TokenStream>,
+}
+
+impl ReportGuards {
+    /// Declarations to emit ahead of the loop over the instance's members.
+    pub(crate) fn cells(&self) -> &[TokenStream] {
+        &self.cells
+    }
+
+    pub(crate) fn is_empty(&self) -> bool {
+        self.cells.is_empty()
+    }
+
+    fn guard(&mut self, valid: &CompiledExpr, eval: TokenStream) -> TokenStream {
+        if valid.is_trivially_true() {
+            return eval;
+        }
+        let cell = format_ident!("__report_guard_{}", self.cells.len());
+        let valid = valid.is_valid_token_stream();
+        self.cells
+            .push(quote! { let mut #cell: Option<bool> = None; });
+        quote! {
+            (#eval) && match #cell {
+                Some(valid) => valid,
+                None => {
+                    let valid = #valid;
+                    #cell = Some(valid);
+                    valid
+                }
+            }
+        }
+    }
+}
+
+/// `eval`, counted only where `check` validates when reporting.
+fn report_guarded<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    report: &mut Option<&mut ReportGuards>,
+    eval: TokenStream,
+    check: impl FnOnce(&mut CompileContext<'_, E>) -> CompiledExpr,
+) -> TokenStream {
+    match report {
+        Some(report) => {
+            let valid = check(ctx);
+            report.guard(&valid, eval)
+        }
+        None => eval,
+    }
+}
+
 fn compile_guarded_eval(
     node: &TokenStream,
     valid_expr: &CompiledExpr,
@@ -378,8 +433,8 @@ fn recurse_eval<E: ValueEmitter>(
     hoist: &mut GuardHoist,
 ) -> TokenStream {
     match kind {
-        EvalKind::Key => compile_key_evaluated_expr(ctx, schema, true, false),
-        EvalKind::Item => compile_index_evaluated_expr(ctx, schema, hoist),
+        EvalKind::Key => compile_key_evaluated_expr(ctx, schema, true, false, None),
+        EvalKind::Item => compile_index_evaluated_expr(ctx, schema, hoist, None),
     }
 }
 
@@ -393,11 +448,15 @@ fn push_applicator_eval<E: ValueEmitter>(
     node: &TokenStream,
     kind: EvalKind,
     hoist: &mut GuardHoist,
+    report: &mut Option<&mut ReportGuards>,
 ) {
     if let Some(all_of) = schema.get("allOf").and_then(Value::as_array) {
         for subschema in all_of {
             if let Value::Object(subschema_obj) = subschema {
-                parts.push(recurse_eval(ctx, subschema_obj, kind, hoist));
+                let sub_eval = recurse_eval(ctx, subschema_obj, kind, hoist);
+                parts.push(report_guarded(ctx, report, sub_eval, |ctx| {
+                    compile_branch_guard(ctx, subschema)
+                }));
             }
         }
     }
@@ -433,14 +492,15 @@ fn push_applicator_eval<E: ValueEmitter>(
         } else {
             quote! { false }
         };
-        let then_eval = schema.get("then").and_then(Value::as_object).map_or_else(
-            || quote! { false },
-            |then_obj| recurse_eval(ctx, then_obj, kind, hoist),
-        );
-        let else_eval = schema.get("else").and_then(Value::as_object).map_or_else(
-            || quote! { false },
-            |else_obj| recurse_eval(ctx, else_obj, kind, hoist),
-        );
+        let mut branch_eval = |ctx: &mut CompileContext<'_, E>, keyword: &str| {
+            let Some(branch @ Value::Object(branch_obj)) = schema.get(keyword) else {
+                return quote! { false };
+            };
+            let eval = recurse_eval(ctx, branch_obj, kind, hoist);
+            report_guarded(ctx, report, eval, |ctx| compile_branch_guard(ctx, branch))
+        };
+        let then_eval = branch_eval(ctx, "then");
+        let else_eval = branch_eval(ctx, "else");
         parts.push(compile_if_then_else_evaluated(
             node, &if_valid, &if_eval, &then_eval, &else_eval, hoist,
         ));
@@ -454,18 +514,24 @@ fn push_ref_dispatch<E: ValueEmitter>(
     schema: &Map<String, Value>,
     parts: &mut Vec<TokenStream>,
     kind: EvalKind,
+    report: &mut Option<&mut ReportGuards>,
 ) {
     let call_args = kind.call_args();
-    if let Some(reference) = schema.get("$ref").and_then(Value::as_str) {
+    if let Some(value @ Value::String(reference)) = schema.get("$ref") {
         if let Ok(resolved) = resolve_ref(ctx, reference) {
             if !kind.is_compiling(ctx, &resolved.location) {
                 let func_ident = kind.create_eval_fn(ctx, &resolved);
-                parts.push(quote! { #func_ident(#call_args) });
+                parts.push(report_guarded(
+                    ctx,
+                    report,
+                    quote! { #func_ident(#call_args) },
+                    |ctx| super::ref_::compile(ctx, value),
+                ));
             }
         }
     }
     if ctx.draft.supports_recursive_ref_keyword() {
-        if let Some(reference) = schema.get("$recursiveRef").and_then(Value::as_str) {
+        if let Some(value @ Value::String(reference)) = schema.get("$recursiveRef") {
             if let Ok(resolved) = resolve_ref(ctx, reference) {
                 let target_has_recursive_anchor = resolved
                     .schema
@@ -488,7 +554,7 @@ fn push_ref_dispatch<E: ValueEmitter>(
                         &E::node_address(format_ident!("instance")),
                         &quote! { target(#call_args) },
                     );
-                    parts.push(quote! {
+                    let eval = quote! {
                         {
                             let __recursive_target = #stack.with(|stack| {
                                 let stack = stack.borrow();
@@ -507,15 +573,20 @@ fn push_ref_dispatch<E: ValueEmitter>(
                                 #fallback
                             }
                         }
-                    });
+                    };
+                    parts.push(report_guarded(ctx, report, eval, |ctx| {
+                        super::ref_::compile_recursive(ctx, value)
+                    }));
                 } else {
-                    parts.push(fallback);
+                    parts.push(report_guarded(ctx, report, fallback, |ctx| {
+                        super::ref_::compile_recursive(ctx, value)
+                    }));
                 }
             }
         }
     }
     if ctx.draft.supports_dynamic_ref_keyword() {
-        if let Some(reference) = schema.get("$dynamicRef").and_then(Value::as_str) {
+        if let Some(value @ Value::String(reference)) = schema.get("$dynamicRef") {
             if let Ok(resolved) = resolve_ref(ctx, reference) {
                 let fallback = if kind.is_compiling(ctx, &resolved.location) {
                     quote! { false }
@@ -530,7 +601,7 @@ fn push_ref_dispatch<E: ValueEmitter>(
                         &E::node_address(format_ident!("instance")),
                         &quote! { target(#call_args) },
                     );
-                    parts.push(quote! {
+                    let eval = quote! {
                         {
                             let __dynamic_target = #stack.with(|stack| {
                                 let stack = stack.borrow();
@@ -548,21 +619,28 @@ fn push_ref_dispatch<E: ValueEmitter>(
                                 #fallback
                             }
                         }
-                    });
+                    };
+                    parts.push(report_guarded(ctx, report, eval, |ctx| {
+                        super::ref_::compile_dynamic(ctx, value)
+                    }));
                 } else {
-                    parts.push(fallback);
+                    parts.push(report_guarded(ctx, report, fallback, |ctx| {
+                        super::ref_::compile_dynamic(ctx, value)
+                    }));
                 }
             }
         }
     }
 }
 
-/// `located` emits the expression into `validate` code, where `__path` is the object's location.
+/// `located` emits the expression into `validate` code, where `__path` is the object's location;
+/// `report` guards what it reports as evaluated, for the schema with the keyword.
 pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     include_own_unevaluated: bool,
     located: bool,
+    mut report: Option<&mut ReportGuards>,
 ) -> TokenStream {
     let mut parts = Vec::new();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
@@ -602,7 +680,11 @@ pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
         if let Some(dependent_schemas) = schema.get("dependentSchemas").and_then(Value::as_object) {
             for (property, subschema) in dependent_schemas {
                 if let Value::Object(subschema_obj) = subschema {
-                    let sub_eval = compile_key_evaluated_expr(ctx, subschema_obj, true, located);
+                    let sub_eval =
+                        compile_key_evaluated_expr(ctx, subschema_obj, true, located, None);
+                    let sub_eval = report_guarded(ctx, &mut report, sub_eval, |ctx| {
+                        compile_branch_guard(ctx, subschema)
+                    });
                     let contains_key = E::object_contains_key(format_ident!("obj"), property);
                     parts.push(quote! { #contains_key && (#sub_eval) });
                 }
@@ -612,10 +694,18 @@ pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
 
     if applicator_vocab_enabled {
         let mut hoist = GuardHoist::inline();
-        push_applicator_eval(ctx, schema, &mut parts, &node, EvalKind::Key, &mut hoist);
+        push_applicator_eval(
+            ctx,
+            schema,
+            &mut parts,
+            &node,
+            EvalKind::Key,
+            &mut hoist,
+            &mut report,
+        );
     }
 
-    push_ref_dispatch(ctx, schema, &mut parts, EvalKind::Key);
+    push_ref_dispatch(ctx, schema, &mut parts, EvalKind::Key, &mut report);
 
     let evaluated_without_unevaluated = super::combine_or(parts);
 
@@ -641,10 +731,12 @@ pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
     evaluated_without_unevaluated
 }
 
+/// `report` guards what it reports as evaluated, for the schema with the keyword.
 pub(crate) fn compile_index_evaluated_expr<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     hoist: &mut GuardHoist,
+    mut report: Option<&mut ReportGuards>,
 ) -> TokenStream {
     let mut parts = Vec::new();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
@@ -684,10 +776,18 @@ pub(crate) fn compile_index_evaluated_expr<E: ValueEmitter>(
             });
         }
 
-        push_applicator_eval(ctx, schema, &mut parts, &node, EvalKind::Item, hoist);
+        push_applicator_eval(
+            ctx,
+            schema,
+            &mut parts,
+            &node,
+            EvalKind::Item,
+            hoist,
+            &mut report,
+        );
     }
 
-    push_ref_dispatch(ctx, schema, &mut parts, EvalKind::Item);
+    push_ref_dispatch(ctx, schema, &mut parts, EvalKind::Item, &mut report);
 
     let evaluated_without_unevaluated = super::combine_or(parts);
 

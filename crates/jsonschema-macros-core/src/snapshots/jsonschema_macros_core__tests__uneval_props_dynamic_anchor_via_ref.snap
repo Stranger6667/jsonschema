@@ -7,10 +7,20 @@ match instance {
             __Value::Object(obj) => {
                 if let Some(__e) = '__first_error: {
                     if let __Value::Object(obj) = instance {
+                        let mut __report_guard_0: Option<bool> = None;
                         let mut __unexpected: Vec<String> = Vec::new();
                         for (__key, __value) in obj.iter() {
                             let key_str = __key.as_str();
-                            if !(eval_ref_0(instance, obj, key_str)) && !(false) {
+                            if !((eval_ref_0(instance, obj, key_str))
+                                && match __report_guard_0 {
+                                    Some(valid) => valid,
+                                    None => {
+                                        let valid = validate_ref_0(instance);
+                                        __report_guard_0 = Some(valid);
+                                        valid
+                                    }
+                                }) && !(false)
+                            {
                                 __unexpected.push(__key.clone());
                             }
                         }

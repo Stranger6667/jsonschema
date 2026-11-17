@@ -7,9 +7,18 @@ match instance {
             __Value::Array(arr) => {
                 if let Some(__e) = '__first_error: {
                     if let __Value::Array(arr) = instance {
+                        let mut __report_guard_0: Option<bool> = None;
                         let mut __unexpected: Vec<String> = Vec::new();
                         for (idx, item) in arr.iter().enumerate() {
-                            if !(eval_items_ref_0(instance, arr, idx, item)) && !(false)
+                            if !((eval_items_ref_0(instance, arr, idx, item))
+                                && match __report_guard_0 {
+                                    Some(valid) => valid,
+                                    None => {
+                                        let valid = validate_ref_0(instance);
+                                        __report_guard_0 = Some(valid);
+                                        valid
+                                    }
+                                }) && !(false)
                             {
                                 __unexpected.push(item.to_string());
                             }

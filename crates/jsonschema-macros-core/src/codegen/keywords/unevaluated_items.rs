@@ -11,7 +11,7 @@ use super::{
         stack_emit::{pop_recursive_item_eval, push_recursive_item_eval},
         CompiledExpr,
     },
-    unevaluated::{compile_index_evaluated_expr, GuardHoist},
+    unevaluated::{compile_index_evaluated_expr, GuardHoist, ReportGuards},
 };
 
 /// Compile the "unevaluatedItems" keyword.
@@ -32,8 +32,28 @@ pub(crate) fn compile<E: ValueEmitter>(
     let array = E::array_param();
 
     let mut hoist = GuardHoist::hoisting();
-    let evaluated_expr = compile_index_evaluated_expr(ctx, schema, &mut hoist);
+    let evaluated_expr = compile_index_evaluated_expr(ctx, schema, &mut hoist, None);
     let guard_bindings = hoist.bindings();
+    // Errors count a subschema the schema applies in place only where it validates, which needs
+    // its own expression when the schema has one.
+    let mut report = ReportGuards::default();
+    let mut report_hoist = GuardHoist::hoisting();
+    let reported = [
+        "$ref",
+        "$dynamicRef",
+        "$recursiveRef",
+        "allOf",
+        "then",
+        "else",
+    ]
+    .iter()
+    .any(|keyword| schema.contains_key(*keyword))
+    .then(|| compile_index_evaluated_expr(ctx, schema, &mut report_hoist, Some(&mut report)));
+    let (reported_expr, reported_bindings) = match &reported {
+        Some(expr) if !report.is_empty() => (expr, report_hoist.bindings()),
+        _ => (&evaluated_expr, guard_bindings),
+    };
+    let report_cells = report.cells();
     let unevaluated_check = if unevaluated.as_bool() == Some(false) {
         quote! { false }
     } else {
@@ -82,9 +102,11 @@ pub(crate) fn compile<E: ValueEmitter>(
                     #node
                 ) -> bool = |instance, arr, idx, item| { #(#guard_bindings)* #evaluated_expr };
                 #recursive_push
+                #(#reported_bindings)*
+                #(#report_cells)*
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (idx, item) in #iter_expr.enumerate() {
-                    if !__root_item_eval(instance, arr, idx, item) && !(#unevaluated_check) {
+                    if !(#reported_expr) && !(#unevaluated_check) {
                         __unexpected.push(#unexpected_item);
                     }
                 }
@@ -115,10 +137,11 @@ pub(crate) fn compile<E: ValueEmitter>(
         let first_error = E::if_array(
             format_ident!("instance"),
             quote! {
-                #(#guard_bindings)*
+                #(#reported_bindings)*
+                #(#report_cells)*
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (idx, item) in #iter_expr.enumerate() {
-                    if !(#evaluated_expr) && !(#unevaluated_check) {
+                    if !(#reported_expr) && !(#unevaluated_check) {
                         __unexpected.push(#unexpected_item);
                     }
                 }

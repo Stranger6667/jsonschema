@@ -4361,6 +4361,106 @@ fn test_type_beside_const_or_enum_reports_its_error(
     }
 }
 
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"t": {"properties": {"a": {"type": "string"}}}}, "$ref": "#/$defs/t", "unevaluatedProperties": false}"##
+)]
+struct FailingReferenceProperties;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"t": {"$dynamicAnchor": "n", "properties": {"a": {"type": "string"}}}}, "$dynamicRef": "#n", "unevaluatedProperties": false}"##
+)]
+struct FailingDynamicReferenceProperties;
+#[jsonschema::validator(
+    schema = r#"{"if": true, "then": {"properties": {"a": {"type": "string"}}}, "unevaluatedProperties": false}"#
+)]
+struct FailingThenProperties;
+#[jsonschema::validator(
+    schema = r#"{"if": false, "else": {"properties": {"a": {"type": "string"}}}, "unevaluatedProperties": false}"#
+)]
+struct FailingElseProperties;
+#[jsonschema::validator(
+    schema = r#"{"dependentSchemas": {"a": {"properties": {"c": {"type": "string"}}}}, "unevaluatedProperties": false}"#
+)]
+struct FailingDependentSchemaProperties;
+#[jsonschema::validator(
+    schema = r#"{"allOf": [{"properties": {"a": {"type": "string"}}}], "unevaluatedProperties": false}"#
+)]
+struct FailingAllOfProperties;
+#[jsonschema::validator(
+    schema = r#"{"properties": {"a": {"type": "string"}}, "unevaluatedProperties": false}"#
+)]
+struct FailingPropertiesBeside;
+#[jsonschema::validator(schema = r##"{"$defs": {"R": {"properties": {"foo": {"type": "integer"}, "child": {"$recursiveRef": "#", "unevaluatedProperties": false}}}}, "$ref": "#/$defs/R"}"##, draft = referencing::Draft::Draft201909)]
+struct FailingRecursiveReferenceProperties;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"t": {"prefixItems": [{"type": "string"}]}}, "$ref": "#/$defs/t", "unevaluatedItems": false}"##
+)]
+struct FailingReferenceItems;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"t": {"$dynamicAnchor": "n", "prefixItems": [{"type": "string"}]}}, "$dynamicRef": "#n", "unevaluatedItems": false}"##
+)]
+struct FailingDynamicReferenceItems;
+#[jsonschema::validator(
+    schema = r#"{"if": true, "then": {"prefixItems": [{"type": "string"}]}, "unevaluatedItems": false}"#
+)]
+struct FailingThenItems;
+#[jsonschema::validator(
+    schema = r#"{"if": false, "else": {"prefixItems": [{"type": "string"}]}, "unevaluatedItems": false}"#
+)]
+struct FailingElseItems;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"t": {"contains": {"const": 1}, "minContains": 2}}, "$ref": "#/$defs/t", "unevaluatedItems": false}"##
+)]
+struct FailingContainsInReferenceItems;
+#[jsonschema::validator(
+    schema = r#"{"allOf": [{"prefixItems": [{"type": "string"}]}], "unevaluatedItems": false}"#
+)]
+struct FailingAllOfItems;
+#[jsonschema::validator(
+    schema = r#"{"prefixItems": [{"type": "string"}], "unevaluatedItems": false}"#
+)]
+struct FailingPrefixItemsBeside;
+#[jsonschema::validator(schema = r##"{"$defs": {"R": {"items": [{"type": "string"}, {"$recursiveRef": "#", "unevaluatedItems": false}]}}, "$ref": "#/$defs/R"}"##, draft = referencing::Draft::Draft201909)]
+struct FailingRecursiveReferenceItems;
+#[jsonschema::validator(schema = r##"{"$recursiveAnchor": true, "$defs": {"t": {"properties": {"a": {"type": "string"}}}}, "$ref": "#/$defs/t", "properties": {"n": {"$recursiveRef": "#"}}, "unevaluatedProperties": false}"##, draft = referencing::Draft::Draft201909)]
+struct FailingReferenceBesideRecursiveAnchorProperties;
+#[jsonschema::validator(schema = r##"{"$recursiveAnchor": true, "$defs": {"t": {"items": [{}, {}, {"type": "string"}]}}, "$ref": "#/$defs/t", "items": [{"type": "string"}, {"$recursiveRef": "#"}], "unevaluatedItems": false}"##, draft = referencing::Draft::Draft201909)]
+struct FailingReferenceBesideRecursiveAnchorItems;
+
+// A subschema that fails evaluates nothing, so `unevaluated*` reports what it would have
+// evaluated; keywords beside it evaluate theirs whether they pass or not.
+#[test_case(FailingReferenceProperties::is_valid, FailingReferenceProperties::validate, FailingReferenceProperties::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"t": {"properties": {"a": {"type": "string"}}}}, "$ref": "#/$defs/t", "unevaluatedProperties": false}), serde_json::json!([{"a": 1, "b": 2}, {"a": 1}, {"a": "x", "b": 2}]) ; "reference_properties")]
+#[test_case(FailingDynamicReferenceProperties::is_valid, FailingDynamicReferenceProperties::validate, FailingDynamicReferenceProperties::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"t": {"$dynamicAnchor": "n", "properties": {"a": {"type": "string"}}}}, "$dynamicRef": "#n", "unevaluatedProperties": false}), serde_json::json!([{"a": 1, "b": 2}]) ; "dynamic_reference_properties")]
+#[test_case(FailingThenProperties::is_valid, FailingThenProperties::validate, FailingThenProperties::iter_errors, jsonschema::options(), serde_json::json!({"if": true, "then": {"properties": {"a": {"type": "string"}}}, "unevaluatedProperties": false}), serde_json::json!([{"a": 1, "b": 2}]) ; "then_properties")]
+#[test_case(FailingElseProperties::is_valid, FailingElseProperties::validate, FailingElseProperties::iter_errors, jsonschema::options(), serde_json::json!({"if": false, "else": {"properties": {"a": {"type": "string"}}}, "unevaluatedProperties": false}), serde_json::json!([{"a": 1, "b": 2}]) ; "else_properties")]
+#[test_case(FailingDependentSchemaProperties::is_valid, FailingDependentSchemaProperties::validate, FailingDependentSchemaProperties::iter_errors, jsonschema::options(), serde_json::json!({"dependentSchemas": {"a": {"properties": {"c": {"type": "string"}}}}, "unevaluatedProperties": false}), serde_json::json!([{"a": 1, "b": 3, "c": 2}]) ; "dependent_schema_properties")]
+#[test_case(FailingAllOfProperties::is_valid, FailingAllOfProperties::validate, FailingAllOfProperties::iter_errors, jsonschema::options(), serde_json::json!({"allOf": [{"properties": {"a": {"type": "string"}}}], "unevaluatedProperties": false}), serde_json::json!([{"a": 1, "b": 2}]) ; "all_of_properties")]
+#[test_case(FailingPropertiesBeside::is_valid, FailingPropertiesBeside::validate, FailingPropertiesBeside::iter_errors, jsonschema::options(), serde_json::json!({"properties": {"a": {"type": "string"}}, "unevaluatedProperties": false}), serde_json::json!([{"a": 1, "b": 2}]) ; "properties_beside")]
+#[test_case(FailingRecursiveReferenceProperties::is_valid, FailingRecursiveReferenceProperties::validate, FailingRecursiveReferenceProperties::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"$defs": {"R": {"properties": {"foo": {"type": "integer"}, "child": {"$recursiveRef": "#", "unevaluatedProperties": false}}}}, "$ref": "#/$defs/R"}), serde_json::json!([{"child": {"foo": "x"}}, {"child": {"child": {"bar": 1}}}]) ; "recursive_reference_properties")]
+#[test_case(FailingReferenceItems::is_valid, FailingReferenceItems::validate, FailingReferenceItems::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"t": {"prefixItems": [{"type": "string"}]}}, "$ref": "#/$defs/t", "unevaluatedItems": false}), serde_json::json!([[1, 2], ["x", 2]]) ; "reference_items")]
+#[test_case(FailingDynamicReferenceItems::is_valid, FailingDynamicReferenceItems::validate, FailingDynamicReferenceItems::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"t": {"$dynamicAnchor": "n", "prefixItems": [{"type": "string"}]}}, "$dynamicRef": "#n", "unevaluatedItems": false}), serde_json::json!([[1, 2]]) ; "dynamic_reference_items")]
+#[test_case(FailingThenItems::is_valid, FailingThenItems::validate, FailingThenItems::iter_errors, jsonschema::options(), serde_json::json!({"if": true, "then": {"prefixItems": [{"type": "string"}]}, "unevaluatedItems": false}), serde_json::json!([[1, 2]]) ; "then_items")]
+#[test_case(FailingElseItems::is_valid, FailingElseItems::validate, FailingElseItems::iter_errors, jsonschema::options(), serde_json::json!({"if": false, "else": {"prefixItems": [{"type": "string"}]}, "unevaluatedItems": false}), serde_json::json!([[1, 2]]) ; "else_items")]
+#[test_case(FailingContainsInReferenceItems::is_valid, FailingContainsInReferenceItems::validate, FailingContainsInReferenceItems::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"t": {"contains": {"const": 1}, "minContains": 2}}, "$ref": "#/$defs/t", "unevaluatedItems": false}), serde_json::json!([[1, 2]]) ; "contains_in_reference_items")]
+#[test_case(FailingAllOfItems::is_valid, FailingAllOfItems::validate, FailingAllOfItems::iter_errors, jsonschema::options(), serde_json::json!({"allOf": [{"prefixItems": [{"type": "string"}]}], "unevaluatedItems": false}), serde_json::json!([[1, 2]]) ; "all_of_items")]
+#[test_case(FailingPrefixItemsBeside::is_valid, FailingPrefixItemsBeside::validate, FailingPrefixItemsBeside::iter_errors, jsonschema::options(), serde_json::json!({"prefixItems": [{"type": "string"}], "unevaluatedItems": false}), serde_json::json!([[1, 2]]) ; "prefix_items_beside")]
+#[test_case(FailingRecursiveReferenceItems::is_valid, FailingRecursiveReferenceItems::validate, FailingRecursiveReferenceItems::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"$defs": {"R": {"items": [{"type": "string"}, {"$recursiveRef": "#", "unevaluatedItems": false}]}}, "$ref": "#/$defs/R"}), serde_json::json!([["a", [1]]]) ; "recursive_reference_items")]
+#[test_case(FailingReferenceBesideRecursiveAnchorProperties::is_valid, FailingReferenceBesideRecursiveAnchorProperties::validate, FailingReferenceBesideRecursiveAnchorProperties::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"$recursiveAnchor": true, "$defs": {"t": {"properties": {"a": {"type": "string"}}}}, "$ref": "#/$defs/t", "properties": {"n": {"$recursiveRef": "#"}}, "unevaluatedProperties": false}), serde_json::json!([{"a": 1, "b": 2}, {"n": {"a": 1}}]) ; "reference_beside_recursive_anchor_properties")]
+#[test_case(FailingReferenceBesideRecursiveAnchorItems::is_valid, FailingReferenceBesideRecursiveAnchorItems::validate, FailingReferenceBesideRecursiveAnchorItems::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"$recursiveAnchor": true, "$defs": {"t": {"items": [{}, {}, {"type": "string"}]}}, "$ref": "#/$defs/t", "items": [{"type": "string"}, {"$recursiveRef": "#"}], "unevaluatedItems": false}), serde_json::json!([["a", [], 3], ["a", ["x"], "y"]]) ; "reference_beside_recursive_anchor_items")]
+fn test_failing_subschema_evaluates_nothing(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    options: jsonschema::ValidationOptions,
+    schema: serde_json::Value,
+    instances: serde_json::Value,
+) {
+    let runtime = options.build(&schema).expect("valid schema");
+    for instance in instances.as_array().expect("instance list") {
+        assert_validate_parity(is_valid(instance), validate(instance), &runtime, instance);
+        assert_iter_errors_parity(iter_errors(instance), &runtime, instance);
+    }
+}
+
 #[jsonschema::validator(schema = r#"{"type": "string", "minLength": 5, "const": "abcdefg"}"#)]
 struct TypeBeforeConst;
 #[jsonschema::validator(
