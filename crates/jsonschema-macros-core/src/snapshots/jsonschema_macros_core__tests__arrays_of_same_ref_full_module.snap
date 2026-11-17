@@ -42,13 +42,14 @@ mod __validator_impl {
         __path: &__paths::LazyLocation,
         __errors: &mut __err::Errors<'__i>,
         __type_path: &str,
+        __ref_path: &str,
     ) -> bool {
         match instance {
             __Value::Array(arr) => {
                 for (idx, item) in arr.iter().enumerate() {
                     let instance = item;
                     let __path = &__path.push(idx);
-                    if validate_ref_0_errors(instance, __path, __errors) {
+                    if validate_ref_0_errors(instance, __path, __errors, __ref_path) {
                         return true;
                     }
                 }
@@ -81,10 +82,21 @@ mod __validator_impl {
         instance: &'__i __Value,
         __path: &__paths::LazyLocation,
         __errors: &mut __err::Errors<'__i>,
+        __site: &str,
     ) -> bool {
         if validate_ref_0(instance) {
             return false;
         }
+        let __start = __errors.mark();
+        let __stop = validate_ref_0_errors_body(instance, __path, __errors);
+        __errors.reached(__start, "/$defs/item", None, __site);
+        __stop
+    }
+    fn validate_ref_0_errors_body<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
         if !(match instance {
             __Value::Number(n) => __types::is_integer(n),
             _ => false,
@@ -150,6 +162,7 @@ mod __validator_impl {
                                 __path,
                                 __errors,
                                 "/properties/first/type",
+                                "/properties/first/items/$ref",
                             ) {
                                 return true;
                             }
@@ -162,6 +175,7 @@ mod __validator_impl {
                                 __path,
                                 __errors,
                                 "/properties/second/type",
+                                "/properties/second/items/$ref",
                             ) {
                                 return true;
                             }

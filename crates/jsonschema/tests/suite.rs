@@ -10,7 +10,7 @@ mod tests {
     use std::env;
     #[cfg(not(target_arch = "wasm32"))]
     use std::fs;
-    use testsuite::{suite, CodegenValidator, Test};
+    use testsuite::{suite, CodegenValidator, ErrorReport, Test};
 
     #[suite(
     path = "crates/jsonschema/tests/suite",
@@ -331,7 +331,7 @@ mod tests {
             );
                 let runtime_message = error.to_string();
                 let error_parts = error.into_parts();
-                let evaluation_path = error_parts.evaluation_path;
+                let evaluation_path = &error_parts.evaluation_path;
                 assert!(
                     evaluation_path.as_str().is_empty()
                         || evaluation_path.as_str().starts_with('/'),
@@ -366,6 +366,18 @@ mod tests {
                         pretty_json(&test.schema), pretty_json(&test.data),
                     );
                     assert_eq!(
+                        codegen_parts.evaluation_path, error_parts.evaluation_path,
+                        "codegen validate() evaluation_path mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                        test.case, test.description,
+                        pretty_json(&test.schema), pretty_json(&test.data),
+                    );
+                    assert_eq!(
+                        codegen_parts.absolute_keyword_location, error_parts.absolute_keyword_location,
+                        "codegen validate() absolute_keyword_location mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                        test.case, test.description,
+                        pretty_json(&test.schema), pretty_json(&test.data),
+                    );
+                    assert_eq!(
                         codegen_message, runtime_message,
                         "codegen validate() message mismatch:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                         test.case, test.description,
@@ -373,14 +385,16 @@ mod tests {
                     );
 
                     // Compare codegen iter_errors() against runtime iter_errors()
-                    let runtime_iter: Vec<(String, String, String)> = validator
+                    let runtime_iter: Vec<ErrorReport> = validator
                         .iter_errors(&test.data)
-                        .map(|e| {
-                            (
-                                e.to_string(),
-                                e.schema_path().to_string(),
-                                e.instance_path().to_string(),
-                            )
+                        .map(|e| ErrorReport {
+                            message: e.to_string(),
+                            schema_path: e.schema_path().to_string(),
+                            evaluation_path: e.evaluation_path().to_string(),
+                            absolute_keyword_location: e
+                                .absolute_keyword_location()
+                                .map(|uri| uri.as_str().to_string()),
+                            instance_path: e.instance_path().to_string(),
                         })
                         .collect();
                     let codegen_iter = codegen_validator.iter_errors(&test.data);

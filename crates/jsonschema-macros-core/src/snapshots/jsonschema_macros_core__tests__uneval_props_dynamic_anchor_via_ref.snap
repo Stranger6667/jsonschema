@@ -57,7 +57,7 @@ match instance {
                 }
             }
         }
-        if validate_ref_0_errors(instance, __path, __errors) {
+        if validate_ref_0_errors(instance, __path, __errors, "/$ref") {
             return true;
         }
         false

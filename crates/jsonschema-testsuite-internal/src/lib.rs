@@ -113,6 +113,16 @@ pub struct OutputRemote {
     pub contents: &'static str,
 }
 
+/// What a validation error reports, compared between generated and runtime validators.
+#[derive(Debug, PartialEq, Eq)]
+pub struct ErrorReport {
+    pub message: String,
+    pub schema_path: String,
+    pub evaluation_path: String,
+    pub absolute_keyword_location: Option<String>,
+    pub instance_path: String,
+}
+
 /// Trait for compile-time generated validators.
 ///
 /// This trait allows generated validators to be passed to test functions
@@ -123,8 +133,8 @@ pub trait CodegenValidator {
     ///
     /// Returns an error if the instance is invalid according to the schema.
     fn validate(&self, instance: &Value) -> Result<(), Box<dyn std::any::Any + Send + Sync>>;
-    /// Every error, as `(message, schema_path, instance_path)` triples in iteration order.
-    fn iter_errors(&self, instance: &Value) -> Vec<(String, String, String)>;
+    /// Every error, in iteration order.
+    fn iter_errors(&self, instance: &Value) -> Vec<ErrorReport>;
     /// The `list` and `hierarchical` outputs of `evaluate`; `None` while the generator does not
     /// support the case's schema.
     fn evaluate(&self, _instance: &Value) -> Option<(Value, Value)> {

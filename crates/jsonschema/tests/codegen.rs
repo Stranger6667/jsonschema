@@ -115,6 +115,11 @@ fn assert_validate_parity(
         (Err(generated), Err(expected)) => {
             assert_eq!(generated.to_string(), expected.to_string());
             assert_eq!(generated.schema_path(), expected.schema_path());
+            assert_eq!(generated.evaluation_path(), expected.evaluation_path());
+            assert_eq!(
+                generated.absolute_keyword_location(),
+                expected.absolute_keyword_location()
+            );
             assert_eq!(generated.instance_path(), expected.instance_path());
         }
         (generated, expected) => {
@@ -183,6 +188,11 @@ fn assert_error_parity(
 ) {
     assert_eq!(generated.to_string(), expected.to_string());
     assert_eq!(generated.schema_path(), expected.schema_path());
+    assert_eq!(generated.evaluation_path(), expected.evaluation_path());
+    assert_eq!(
+        generated.absolute_keyword_location(),
+        expected.absolute_keyword_location()
+    );
     assert_eq!(generated.instance_path(), expected.instance_path());
     assert_eq!(
         std::mem::discriminant(generated.kind()),
@@ -4581,6 +4591,38 @@ struct NestedPropertyNames;
 #[test_case(PropertyNamesAfterApplicators::is_valid, PropertyNamesAfterApplicators::validate, PropertyNamesAfterApplicators::iter_errors, serde_json::json!({"properties": {"a": {"type": "string"}}, "patternProperties": {"^a": {"type": "boolean"}}, "additionalProperties": false, "propertyNames": {"maxLength": 0}}), serde_json::json!([{"a": 1, "bb": 2}]) ; "after_object_applicators")]
 #[test_case(NestedPropertyNames::is_valid, NestedPropertyNames::validate, NestedPropertyNames::iter_errors, serde_json::json!({"type": "object", "properties": {"x": {"propertyNames": {"minLength": 2}}}}), serde_json::json!([{"x": {"a": 1}}]) ; "nested")]
 fn test_property_names_errors_match_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    schema: serde_json::Value,
+    instances: serde_json::Value,
+) {
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    for instance in instances.as_array().expect("instance list") {
+        assert_validate_parity(is_valid(instance), validate(instance), &runtime, instance);
+        assert_iter_errors_parity(iter_errors(instance), &runtime, instance);
+    }
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$defs": {"s": {"type": "string"}}, "type": "array", "items": {"$dynamicRef": "#/$defs/s"}}"##
+)]
+struct DynamicRefItems;
+#[jsonschema::validator(
+    schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "$defs": {"inner": {"$id": "inner.json", "$recursiveAnchor": true, "additionalProperties": {"$recursiveRef": "#"}}}, "if": {"propertyNames": {"pattern": "^[a-m]"}}, "then": {"$id": "leaf.json", "$recursiveAnchor": true, "$ref": "inner.json"}, "else": {"$id": "integer.json", "$recursiveAnchor": true, "$ref": "inner.json", "type": ["object", "integer"]}}"##
+)]
+struct RecursiveRefToBranch;
+#[jsonschema::validator(
+    schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "properties": {"a": {"$id": "a.json", "$recursiveAnchor": true, "additionalProperties": {"$recursiveRef": "#"}}, "b": {"$id": "b.json", "$recursiveAnchor": true, "type": "object"}}}"##
+)]
+struct RecursiveAnchorInPlace;
+
+// Errors reached through a reference carry the reference keyword in their evaluation path, and
+// the location of their keyword in its own resource.
+#[test_case(DynamicRefItems::is_valid, DynamicRefItems::validate, DynamicRefItems::iter_errors, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$defs": {"s": {"type": "string"}}, "type": "array", "items": {"$dynamicRef": "#/$defs/s"}}), serde_json::json!([[1, "a", 2]]) ; "dynamic_reference_for_every_item")]
+#[test_case(RecursiveRefToBranch::is_valid, RecursiveRefToBranch::validate, RecursiveRefToBranch::iter_errors, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "$defs": {"inner": {"$id": "inner.json", "$recursiveAnchor": true, "additionalProperties": {"$recursiveRef": "#"}}}, "if": {"propertyNames": {"pattern": "^[a-m]"}}, "then": {"$id": "leaf.json", "$recursiveAnchor": true, "$ref": "inner.json"}, "else": {"$id": "integer.json", "$recursiveAnchor": true, "$ref": "inner.json", "type": ["object", "integer"]}}), serde_json::json!([{"november": 1.1}, {"november": {"x": 1.1}}]) ; "recursive_reference_to_a_branch")]
+#[test_case(RecursiveAnchorInPlace::is_valid, RecursiveAnchorInPlace::validate, RecursiveAnchorInPlace::iter_errors, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "properties": {"a": {"$id": "a.json", "$recursiveAnchor": true, "additionalProperties": {"$recursiveRef": "#"}}, "b": {"$id": "b.json", "$recursiveAnchor": true, "type": "object"}}}), serde_json::json!([{"b": 1}, {"a": {"x": 1}}]) ; "recursive_anchor_in_place")]
+fn test_error_locations_match_runtime(
     is_valid: IsValidFn,
     validate: ValidateFn,
     iter_errors: IterErrorsFn,

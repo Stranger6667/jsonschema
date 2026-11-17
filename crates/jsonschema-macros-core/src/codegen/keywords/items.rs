@@ -79,7 +79,9 @@ fn compile_plain<E: ValueEmitter>(ctx: &mut CompileContext<'_, E>, value: &Value
         )
         .with_skips_valid(compiled.skips_valid);
         match compiled.ref_errors.take() {
-            Some(RefErrors::Call(name)) => checked.with_ref_errors(RefErrors::EachItem(name)),
+            Some(RefErrors::Call(name, keyword)) => {
+                checked.with_ref_errors(RefErrors::EachItem(name, keyword))
+            }
             _ => checked,
         }
     }

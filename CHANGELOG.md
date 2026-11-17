@@ -24,6 +24,7 @@
 - `#[jsonschema::validator]` reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
 - `#[jsonschema::validator]` leaving out the `maxLength` error when `minLength` is above `maxLength`.
 - `#[jsonschema::validator]` reporting `propertyNames` errors with another kind and in another order than `Validator`, and leaving them out where `additionalProperties: false` beside `patternProperties` rejects the same names.
+- `#[jsonschema::validator]` errors reporting other evaluation paths, absolute keyword locations and schema paths than `Validator`, such as an evaluation path without the `$ref` it went through.
 - `evaluate` output for `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.
 - `evaluate` output for one `required` name beside `properties` and `additionalProperties: false` reporting the name inside the `additionalProperties` unit, and only when missing.
 - `evaluate` output for `additionalProperties: false` reporting one error for the whole object instead of a failing unit for each extra member.

@@ -16,7 +16,7 @@ use super::{
 enum SoleType {
     /// `is_valid`, errors, and the referenced schema checking every item when that is the only
     /// error source.
-    Array(TokenStream, TokenStream, Option<String>),
+    Array(TokenStream, TokenStream, Option<(String, &'static str)>),
     Object(TokenStream, TokenStream),
 }
 
@@ -222,7 +222,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
                 for_array.is_valid_token_stream(),
                 for_array.errors.as_token_stream(),
                 match for_array.ref_errors.take() {
-                    Some(RefErrors::EachItem(name)) => Some(name),
+                    Some(RefErrors::EachItem(name, keyword)) => Some((name, keyword)),
                     _ => None,
                 },
             ));
@@ -325,18 +325,34 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             let errors = match (schema.get("type"), each_item_ref, &type_schema_path) {
                 // Arrays of one referenced schema differ only in their type error's location, so
                 // they report through one helper taking that location.
-                (Some(type_value @ Value::String(ty)), Some(ref_name), Some(type_schema_path))
-                    if ty == "array" =>
-                {
-                    let helper = ctx.array_errors_helper(ref_name, || {
+                (
+                    Some(type_value @ Value::String(ty)),
+                    Some((ref_name, keyword)),
+                    Some(type_schema_path),
+                ) if ty == "array" => {
+                    let ref_path = format!("{}/{keyword}", ctx.schema_path_for_keyword("items"));
+                    let helper = ctx.array_errors_helper(ref_name.clone(), || {
                         let type_error =
                             build_type_error_expr::<E>(type_value, format_ident!("__type_path"));
+                        let errors_ident = format_ident!("{}_errors", ref_name);
+                        let call = quote! { #errors_ident(instance, __path, __errors, __ref_path) };
+                        let iter_expr = E::array_iter(format_ident!("arr"));
                         E::sole_array_match(
-                            errors,
+                            quote! {
+                                for (idx, item) in #iter_expr.enumerate() {
+                                    let instance = item;
+                                    let __path = &__path.push(idx);
+                                    if #call {
+                                        return true;
+                                    }
+                                }
+                            },
                             quote! { { if __errors.push(#type_error) { return true; } } },
                         )
                     });
-                    call_errors(&quote! { #helper(instance, __path, __errors, #type_schema_path) })
+                    call_errors(&quote! {
+                        #helper(instance, __path, __errors, #type_schema_path, #ref_path)
+                    })
                 }
                 _ => E::sole_array_match(errors, errors_fallback()),
             };

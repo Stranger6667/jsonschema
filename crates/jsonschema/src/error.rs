@@ -508,6 +508,69 @@ impl<'a> ValidationError<'a> {
         self
     }
 
+    /// Applies `edit` to this error and to each error it holds.
+    #[cfg(feature = "macros")]
+    pub(crate) fn edit_all(&mut self, edit: &mut impl FnMut(&mut ValidationError<'_>)) {
+        edit(self);
+        match &mut self.repr.kind {
+            ValidationErrorKind::AnyOf { context }
+            | ValidationErrorKind::OneOfNotValid { context }
+            | ValidationErrorKind::OneOfMultipleValid { context } => {
+                for error in context.iter_mut().flatten() {
+                    error.edit_all(edit);
+                }
+            }
+            ValidationErrorKind::PropertyNames { error } => error.edit_all(edit),
+            _ => {}
+        }
+    }
+
+    /// Replaces the evaluation path: `prefix`, then the path past `strip`.
+    #[cfg(feature = "macros")]
+    pub(crate) fn move_evaluation_path(&mut self, strip: &str, prefix: &str) {
+        let path = self.evaluation_path().as_str();
+        let rest = path.strip_prefix(strip).unwrap_or(path);
+        let mut moved = String::with_capacity(prefix.len() + rest.len());
+        moved.push_str(prefix);
+        moved.push_str(rest);
+        self.repr.tracker = LazyEvaluationPath::Computed(Location::from_escaped(&moved));
+    }
+
+    /// Places the error below `site`. Its schema path moves too unless a reference moved its
+    /// evaluation path: the schema path of an error reached through a reference starts at the
+    /// target.
+    #[cfg(feature = "macros")]
+    pub(crate) fn nest_under(&mut self, site: &str) {
+        if matches!(self.repr.tracker, LazyEvaluationPath::SameAsSchemaPath) {
+            self.repr.schema_path =
+                Location::from_escaped(site).join_raw_suffix(self.repr.schema_path.as_str());
+        } else {
+            self.move_evaluation_path("", site);
+        }
+    }
+
+    /// No `$ref` moved its evaluation path and no resource located it yet.
+    #[cfg(feature = "macros")]
+    pub(crate) fn is_unlocated(&self) -> bool {
+        matches!(self.repr.tracker, LazyEvaluationPath::SameAsSchemaPath)
+            && self.repr.absolute_keyword_location.is_none()
+    }
+
+    /// Locates the keyword in the resource at `base`, which starts `start` bytes into its schema
+    /// path.
+    #[cfg(feature = "macros")]
+    pub(crate) fn locate_in(
+        &mut self,
+        base: &Uri<String>,
+        start: usize,
+        buffer: &mut referencing::uri::EncodedBuffer,
+    ) {
+        let pointer = &self.repr.schema_path.as_str()[start..];
+        self.repr.absolute_keyword_location = Some(Arc::new(
+            crate::compiler::resolve_absolute_location(base, pointer, buffer),
+        ));
+    }
+
     /// Place the instance location under `prefix`, for an error raised on a part of a document.
     pub(crate) fn with_instance_path_prefix(mut self, prefix: &Location) -> Self {
         self.repr.instance_path = prefix.join_raw_suffix(self.repr.instance_path.as_str());

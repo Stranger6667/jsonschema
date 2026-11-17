@@ -1,5 +1,6 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 1122
 expression: rendered
 ---
 struct Validator;
@@ -747,10 +748,21 @@ mod __validator_impl {
         instance: __Value<'__i>,
         __path: &__paths::LazyLocation,
         __errors: &mut __err::Errors<'__i>,
+        __site: &str,
     ) -> bool {
         if validate_ref_0(instance) {
             return false;
         }
+        let __start = __errors.mark();
+        let __stop = validate_ref_0_errors_body(instance, __path, __errors);
+        __errors.reached(__start, "/$defs/tree", None, __site);
+        __stop
+    }
+    fn validate_ref_0_errors_body<'__i>(
+        instance: __Value<'__i>,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
         match __NodeExt::as_object(&instance) {
             Some(obj) => {
                 for (key, value) in __ObjectExt::members(&obj) {
@@ -759,7 +771,12 @@ mod __validator_impl {
                         "child" => {
                             let instance = value;
                             let __path = &__path.push("child");
-                            if validate_ref_0_errors(instance, __path, __errors) {
+                            if validate_ref_0_errors(
+                                instance,
+                                __path,
+                                __errors,
+                                "/$defs/tree/properties/child/$ref",
+                            ) {
                                 return true;
                             }
                         }
@@ -2284,7 +2301,12 @@ mod __validator_impl {
                         "tree" => {
                             let instance = value;
                             let __path = &__path.push("tree");
-                            if validate_ref_0_errors(instance, __path, __errors) {
+                            if validate_ref_0_errors(
+                                instance,
+                                __path,
+                                __errors,
+                                "/properties/tree/$ref",
+                            ) {
                                 return true;
                             }
                         }
