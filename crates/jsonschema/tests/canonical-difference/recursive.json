@@ -78,7 +78,7 @@
       }
     },
     "relation": "narrow",
-    "pending": ["old-new", "new-old"]
+    "pending": ["old-new"]
   },
   {
     "description": "recursive: required added",
@@ -125,7 +125,7 @@
       }
     },
     "relation": "narrow",
-    "pending": ["old-new", "new-old"]
+    "pending": ["old-new"]
   },
   {
     "description": "recursive via property: leaf narrowed",
@@ -165,7 +165,7 @@
       }
     },
     "relation": "narrow",
-    "pending": ["old-new", "new-old"]
+    "pending": ["old-new"]
   },
   {
     "description": "recursive nullable link: leaf narrowed",
@@ -219,7 +219,7 @@
       }
     },
     "relation": "narrow",
-    "pending": ["old-new", "new-old"]
+    "pending": ["old-new"]
   },
   {
     "description": "mutual recursion: leaf narrowed",
@@ -277,6 +277,44 @@
       }
     },
     "relation": "narrow",
-    "pending": ["old-new", "new-old"]
+    "pending": ["old-new"]
+  },
+  {
+    "description": "recursive: ref renamed",
+    "old": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/T"
+              }
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "new": {
+      "$ref": "#/$defs/U",
+      "$defs": {
+        "U": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/U"
+              }
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "relation": "equal"
   }
 ]

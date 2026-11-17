@@ -44,6 +44,7 @@
 - `satisfiability` answering `Unknown` for an array where only some elements are valid under both `contains` and `items`.
 - `satisfiability` answering `Unknown` for an object that must break `additionalProperties`, `patternProperties` or `propertyNames`.
 - `satisfiability` answering `Unknown` for a number that must miss a `multipleOf`, such as a non-integer.
+- `covers` answering `Unknown`, and `subtract` keeping a difference `satisfiability` cannot decide, for a recursive `$ref` whose target contains the other's.
 
 ### Performance
 
