@@ -635,10 +635,9 @@ impl<F: Json> SchemaNode<F> {
     ) -> SchemaNode<F> {
         let validators = validators
             .into_iter()
-            .enumerate()
-            .map(|(index, validator)| ArrayValidatorEntry {
+            .map(|validator| ArrayValidatorEntry {
                 validator,
-                location: ctx.location().join(index),
+                location: ctx.location().clone(),
                 absolute_location: OnceLock::new(),
                 schema_location: OnceLock::new(),
             })

@@ -34,6 +34,7 @@
 - `evaluate` output for `contains` annotating an instance that is not an array.
 - Evaluation paths of `propertyNames` errors leaving out a `$ref` inside `propertyNames`.
 - `unevaluatedProperties` and `unevaluatedItems` errors and `evaluate` output counting members as evaluated by a subschema that fails, such as a `$ref` target.
+- `absolute_keyword_location` of errors for names missing under `dependentRequired` or `dependencies` pointing to a schema location that does not exist.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `float`, such as `Decimal("1e-400")`.
 
 ### Performance
