@@ -1,6 +1,5 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 454
 description: "{\"additionalProperties\":false,\"patternProperties\":{\"^[a-z]{2,}$\":{\"type\":\"string\"}},\"propertyNames\":{\"pattern\":\"^[a-z]{2,}$\"},\"type\":\"object\"}"
 expression: code
 ---
@@ -153,6 +152,45 @@ mod __validator_impl {
                         )
                     {
                         return true;
+                    }
+                }
+                for key in obj.keys() {
+                    let __key_val: __sj::Value = __sj::Value::String(key.clone());
+                    let mut __key_errors = __err::Errors::new(__errors.first_only());
+                    let _ = (|| -> bool {
+                        let s = key;
+                        let instance = &__key_val;
+                        let __errors = &mut __key_errors;
+                        if let Some(__e) = '__first_error: {
+                            if !(__jsonschema_regex_0(
+                                s,
+                                "/propertyNames/pattern",
+                                Some("^[a-z]{2,}$"),
+                                Some(__path),
+                            )) {
+                                break '__first_error Some(
+                                    __err::pattern(
+                                        "/propertyNames/pattern",
+                                        __path.into(),
+                                        instance,
+                                        "^[a-z]{2,}$",
+                                    ),
+                                );
+                            }
+                            None
+                        } {
+                            if __errors.push(__e) {
+                                return true;
+                            }
+                        }
+                        false
+                    })();
+                    for __e in __key_errors.into_vec() {
+                        if __errors
+                            .push(__err::property_names(__path.into(), instance, __e))
+                        {
+                            return true;
+                        }
                     }
                 }
             }
