@@ -1,10 +1,26 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 856
 description: "{\"$schema\":\"https://json-schema.org/draft/2020-12/schema\",\"anyOf\":[{\"else\":{\"properties\":{\"b\":{}}},\"if\":{\"required\":[\"a\"]},\"then\":{\"properties\":{\"a\":{}}}}],\"type\":\"object\",\"unevaluatedProperties\":false}"
 expression: errors_body(schema)
 ---
 match instance {
+            __Value::Object(obj) => {}
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        match instance {
             __Value::Object(obj) => {
                 if let Some(__e) = '__first_error: {
                     if let __Value::Object(obj) = instance {
@@ -44,19 +60,6 @@ match instance {
                     }
                 }
             }
-            _ => {
-                if __errors
-                    .push(
-                        __err::single_type(
-                            "/type",
-                            __path.into(),
-                            instance,
-                            __JT::Object,
-                        ),
-                    )
-                {
-                    return true;
-                }
-            }
+            _ => {}
         }
         false

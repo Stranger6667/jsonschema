@@ -4361,6 +4361,81 @@ fn test_type_beside_const_or_enum_reports_its_error(
     }
 }
 
+#[jsonschema::validator(schema = r#"{"type": "string", "minLength": 5, "const": "abcdefg"}"#)]
+struct TypeBeforeConst;
+#[jsonschema::validator(
+    schema = r#"{"type": ["string", "null"], "minLength": 5, "enum": ["abcdefg"]}"#
+)]
+struct TypesBeforeEnum;
+#[jsonschema::validator(schema = r#"{"type": "integer", "minimum": 5, "const": 7}"#)]
+struct IntegerBeforeConst;
+#[jsonschema::validator(
+    schema = r#"{"type": "string", "minLength": 5, "allOf": [{"maxLength": 2}], "anyOf": [{"maxLength": 1}], "oneOf": [{"maxLength": 2}], "not": {"type": "string"}, "if": {"type": "string"}, "then": {"maxLength": 1}}"#
+)]
+struct LeafBeforeApplicators;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"a": {"maxLength": 1}}, "minLength": 5, "allOf": [{"maxLength": 2}], "$ref": "#/$defs/a"}"##
+)]
+struct ApplicatorsBeforeRef;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"a": {"required": ["x"]}}, "$ref": "#/$defs/a", "unevaluatedProperties": false}"##
+)]
+struct UnevaluatedBeforeRef;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"a": {"maxProperties": 0}}, "type": "object", "minProperties": 3, "allOf": [{"required": ["q"]}], "unevaluatedProperties": false, "$ref": "#/$defs/a"}"##
+)]
+struct ObjectPhases;
+#[jsonschema::validator(
+    schema = r#"{"type": "array", "minItems": 5, "allOf": [{"contains": {"type": "null"}}], "unevaluatedItems": false}"#
+)]
+struct ArrayPhases;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"a": {"prefixItems": [{"type": "string"}]}}, "maxItems": 1, "$ref": "#/$defs/a", "unevaluatedItems": false}"##
+)]
+struct ArrayUnevaluatedBeforeRef;
+#[jsonschema::validator(
+    schema = r#"{"type": "string", "allOf": [{"required": ["q"]}], "unevaluatedProperties": false}"#
+)]
+struct ExcludedTypeUnevaluated;
+#[jsonschema::validator(
+    schema = r#"{"dependentSchemas": {"a": {"required": ["q"]}}, "properties": {"a": {"type": "string"}}, "required": ["r"], "dependentRequired": {"a": ["s"]}}"#
+)]
+struct DependentKeywords;
+#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["s"]}, "properties": {"a": {"type": "string"}}}"#, draft = referencing::Draft::Draft7)]
+struct DependenciesLast;
+#[jsonschema::validator(schema = r#"{"minLength": 5, "maxLength": 1}"#)]
+struct LengthBoundsBothFail;
+
+// Errors come in the runtime's keyword order: `type`, `const` and `enum`, keywords for one type,
+// `allOf` to `if`, `unevaluated*`, then references.
+#[test_case(TypeBeforeConst::is_valid, TypeBeforeConst::validate, TypeBeforeConst::iter_errors, jsonschema::options(), serde_json::json!({"type": "string", "minLength": 5, "const": "abcdefg"}), serde_json::json!([2, "ab"]) ; "type_before_const")]
+#[test_case(TypesBeforeEnum::is_valid, TypesBeforeEnum::validate, TypesBeforeEnum::iter_errors, jsonschema::options(), serde_json::json!({"type": ["string", "null"], "minLength": 5, "enum": ["abcdefg"]}), serde_json::json!([2, "ab"]) ; "types_before_enum")]
+#[test_case(IntegerBeforeConst::is_valid, IntegerBeforeConst::validate, IntegerBeforeConst::iter_errors, jsonschema::options(), serde_json::json!({"type": "integer", "minimum": 5, "const": 7}), serde_json::json!([2.5, 2]) ; "integer_before_const")]
+#[test_case(LeafBeforeApplicators::is_valid, LeafBeforeApplicators::validate, LeafBeforeApplicators::iter_errors, jsonschema::options(), serde_json::json!({"type": "string", "minLength": 5, "allOf": [{"maxLength": 2}], "anyOf": [{"maxLength": 1}], "oneOf": [{"maxLength": 2}], "not": {"type": "string"}, "if": {"type": "string"}, "then": {"maxLength": 1}}), serde_json::json!(["abc"]) ; "leaf_before_applicators")]
+#[test_case(ApplicatorsBeforeRef::is_valid, ApplicatorsBeforeRef::validate, ApplicatorsBeforeRef::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"a": {"maxLength": 1}}, "minLength": 5, "allOf": [{"maxLength": 2}], "$ref": "#/$defs/a"}), serde_json::json!(["abc"]) ; "applicators_before_ref")]
+#[test_case(UnevaluatedBeforeRef::is_valid, UnevaluatedBeforeRef::validate, UnevaluatedBeforeRef::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"a": {"required": ["x"]}}, "$ref": "#/$defs/a", "unevaluatedProperties": false}), serde_json::json!([{"b": 1}]) ; "unevaluated_before_ref")]
+#[test_case(ObjectPhases::is_valid, ObjectPhases::validate, ObjectPhases::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"a": {"maxProperties": 0}}, "type": "object", "minProperties": 3, "allOf": [{"required": ["q"]}], "unevaluatedProperties": false, "$ref": "#/$defs/a"}), serde_json::json!([{"b": 1}]) ; "object_phases")]
+#[test_case(ArrayPhases::is_valid, ArrayPhases::validate, ArrayPhases::iter_errors, jsonschema::options(), serde_json::json!({"type": "array", "minItems": 5, "allOf": [{"contains": {"type": "null"}}], "unevaluatedItems": false}), serde_json::json!([[1, 2]]) ; "array_phases")]
+#[test_case(ArrayUnevaluatedBeforeRef::is_valid, ArrayUnevaluatedBeforeRef::validate, ArrayUnevaluatedBeforeRef::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"a": {"prefixItems": [{"type": "string"}]}}, "maxItems": 1, "$ref": "#/$defs/a", "unevaluatedItems": false}), serde_json::json!([[1, 2]]) ; "array_unevaluated_before_ref")]
+#[test_case(ExcludedTypeUnevaluated::is_valid, ExcludedTypeUnevaluated::validate, ExcludedTypeUnevaluated::iter_errors, jsonschema::options(), serde_json::json!({"type": "string", "allOf": [{"required": ["q"]}], "unevaluatedProperties": false}), serde_json::json!([{"b": 1}]) ; "excluded_type_unevaluated")]
+#[test_case(DependentKeywords::is_valid, DependentKeywords::validate, DependentKeywords::iter_errors, jsonschema::options(), serde_json::json!({"dependentSchemas": {"a": {"required": ["q"]}}, "properties": {"a": {"type": "string"}}, "required": ["r"], "dependentRequired": {"a": ["s"]}}), serde_json::json!([{"a": 1}]) ; "dependent_keywords")]
+#[test_case(DependenciesLast::is_valid, DependenciesLast::validate, DependenciesLast::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft7), serde_json::json!({"dependencies": {"a": ["s"]}, "properties": {"a": {"type": "string"}}}), serde_json::json!([{"a": 1}]) ; "dependencies_last")]
+#[test_case(LengthBoundsBothFail::is_valid, LengthBoundsBothFail::validate, LengthBoundsBothFail::iter_errors, jsonschema::options(), serde_json::json!({"minLength": 5, "maxLength": 1}), serde_json::json!(["abc"]) ; "length_bounds_both_fail")]
+fn test_errors_follow_keyword_priority(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    options: jsonschema::ValidationOptions,
+    schema: serde_json::Value,
+    instances: serde_json::Value,
+) {
+    let runtime = options.build(&schema).expect("valid schema");
+    for instance in instances.as_array().expect("instance list") {
+        assert_validate_parity(is_valid(instance), validate(instance), &runtime, instance);
+        assert_iter_errors_parity(iter_errors(instance), &runtime, instance);
+    }
+}
+
 #[jsonschema::validator(
     schema = r##"{"definitions":{"pos":{"type":"integer","minimum":1}},"type":"object","properties":{"id":{"$ref":"#/definitions/pos"}},"required":["id"]}"##,
     draft = Draft7

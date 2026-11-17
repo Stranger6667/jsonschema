@@ -34,11 +34,13 @@ fn property_names_implied_by_coverage(schema: &Map<String, Value>) -> bool {
         && matches!((sole_pattern, name_pattern), (Some(pattern), Some(name)) if pattern == name)
 }
 
-/// Compile all object-specific keywords.
+/// Compile all object-specific keywords; with `split_unevaluated`, the `unevaluatedProperties`
+/// errors come apart from the other errors.
 pub(in super::super) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
-) -> CompiledExpr {
+    split_unevaluated: bool,
+) -> (CompiledExpr, Option<CompiledExpr>) {
     // Each check carries a flag: `true` marks the object cluster
     // (properties/patternProperties/additionalProperties/required) whose `is_valid` is
     // replaced by the unified single pass; errors still come from every check in order.
@@ -124,13 +126,12 @@ pub(in super::super) fn compile<E: ValueEmitter>(
     // in between.
     let required_slot = checks.len();
 
-    if applicator_vocab_enabled {
-        if let Some(value) = schema.get("dependencies") {
-            if let Some(compiled) = dependencies::compile(ctx, value) {
-                checks.push((compiled, false));
-            }
-        }
-    }
+    // The runtime checks these after `properties`, `patternProperties` and
+    // `additionalProperties`.
+    let dependencies_check = schema
+        .get("dependencies")
+        .filter(|_| applicator_vocab_enabled)
+        .and_then(|value| dependencies::compile(ctx, value));
 
     if validation_vocab_enabled && ctx.draft.supports_dependent_required_keyword() {
         if let Some(value) = schema.get("dependentRequired") {
@@ -140,13 +141,10 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         }
     }
 
-    if applicator_vocab_enabled && ctx.draft.supports_dependent_schemas_keyword() {
-        if let Some(value) = schema.get("dependentSchemas") {
-            if let Some(compiled) = dependencies::compile_dependent_schemas(ctx, value) {
-                checks.push((compiled, false));
-            }
-        }
-    }
+    let dependent_schemas_check = schema
+        .get("dependentSchemas")
+        .filter(|_| applicator_vocab_enabled && ctx.draft.supports_dependent_schemas_keyword())
+        .and_then(|value| dependencies::compile_dependent_schemas(ctx, value));
 
     if applicator_vocab_enabled && ctx.draft.supports_property_names_keyword() {
         if let Some(value) = schema.get("propertyNames") {
@@ -273,8 +271,23 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         }
     }
 
+    for check in [dependencies_check, dependent_schemas_check]
+        .into_iter()
+        .flatten()
+    {
+        checks.push((check, false));
+    }
+
+    let mut unevaluated_errors = None;
     if unevaluated_properties_enabled {
         if let Some(compiled) = unevaluated_properties::compile(ctx, schema) {
+            let compiled = if split_unevaluated {
+                let (check, errors) = compiled.split_errors();
+                unevaluated_errors = Some(errors);
+                check
+            } else {
+                compiled
+            };
             checks.push((compiled, false));
         }
     }
@@ -299,7 +312,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         reduced_discriminator_property,
     );
 
-    match unified {
+    let checks = match unified {
         Some(pass) => {
             // Cluster `is_valid` is replaced by the unified pass; non-cluster keywords still gate.
             let extra: Vec<TokenStream> = checks
@@ -322,5 +335,6 @@ pub(in super::super) fn compile<E: ValueEmitter>(
             }
         }
         None => CompiledExpr::combine_and(checks.into_iter().map(|(check, _)| check)),
-    }
+    };
+    (checks, unevaluated_errors)
 }

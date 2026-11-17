@@ -28,11 +28,16 @@ fn type_keyword_includes(type_value: &Value, name: &str) -> bool {
     }
 }
 
+/// The checks of keywords for one instance type. Without `report_type_error`, they leave the
+/// `type` error to the caller; with `split_unevaluated`, the `unevaluated*` errors come apart, in a
+/// second type dispatch.
 pub(super) fn compile_typed<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
     has_type_constraint: bool,
-) -> Option<CompiledExpr> {
+    report_type_error: bool,
+    split_unevaluated: bool,
+) -> Option<(CompiledExpr, Option<CompiledExpr>)> {
     let validation_vocab_enabled = ctx.supports_validation_vocabulary();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
     let unevaluated_items_enabled = ctx.supports_unevaluated_items();
@@ -98,10 +103,20 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     let integer_guard = E::integer_number_guard(ctx.draft);
     let type_value = schema.get("type").filter(|_| has_type_constraint);
     let type_error = type_value.map(|type_value| {
-        let type_error =
-            build_type_error_expr::<E>(type_value, &ctx.schema_path_for_keyword("type"));
-        quote! { if __errors.push(#type_error) { return true; } }
+        if report_type_error {
+            let type_error =
+                build_type_error_expr::<E>(type_value, &ctx.schema_path_for_keyword("type"));
+            quote! { if __errors.push(#type_error) { return true; } }
+        } else {
+            TokenStream::new()
+        }
     });
+    let mut unevaluated_array = None;
+    let mut unevaluated_object = None;
+    let mut unevaluated_skips_valid = true;
+    // Whether any arm reports an error: with `unevaluated*` errors in their own dispatch, none
+    // may.
+    let mut reports_errors = false;
     // The type error, when `type` leaves out every one of `names`: such instances fail, and the
     // runtime reports the type error before the errors of their keywords.
     let excluded = |names: &[&str]| {
@@ -117,6 +132,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     if has_string {
         let for_string = keywords::string::compile(ctx, schema);
         skips_valid &= for_string.skips_valid;
+        reports_errors |= matches!(for_string.errors, ErrorsBlock::Expr(_));
         if let Some(type_error) = excluded(&["string"]) {
             typed_arms += 1;
             let errors = for_string.errors.as_token_stream();
@@ -134,6 +150,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     if has_number {
         let for_number = keywords::number::compile(ctx, schema);
         skips_valid &= for_number.skips_valid;
+        reports_errors |= matches!(for_number.errors, ErrorsBlock::Expr(_));
         if has_type_constraint {
             let type_val = schema
                 .get("type")
@@ -153,16 +170,20 @@ pub(super) fn compile_typed<E: ValueEmitter>(
                 // Runtime reports both the type error and the numeric errors for a non-integer number
                 // under `type: integer`, so the numeric checks run for every number and the type
                 // error is reported inline when it is not an integer.
-                let type_schema_path = ctx.schema_path_for_keyword("type");
-                let type_error_expr = build_type_error_expr::<E>(type_val, &type_schema_path);
-                let guard = integer_guard.clone();
                 let numeric_errors = for_number.errors.as_token_stream();
-                errors_arms.push(E::match_number_arm(quote! {
-                    if !(#guard) {
-                        if __errors.push(#type_error_expr) { return true; }
-                    }
-                    #numeric_errors
-                }));
+                if report_type_error {
+                    let type_schema_path = ctx.schema_path_for_keyword("type");
+                    let type_error_expr = build_type_error_expr::<E>(type_val, &type_schema_path);
+                    let guard = integer_guard.clone();
+                    errors_arms.push(E::match_number_arm(quote! {
+                        if !(#guard) {
+                            if __errors.push(#type_error_expr) { return true; }
+                        }
+                        #numeric_errors
+                    }));
+                } else {
+                    errors_arms.push(E::match_number_arm(numeric_errors));
+                }
             } else if for_number.is_compile_error() {
                 typed_arms += 1;
                 is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
@@ -183,8 +204,13 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     }
 
     if has_array {
-        let mut for_array = keywords::array::compile(ctx, schema);
+        let (mut for_array, unevaluated) = keywords::array::compile(ctx, schema, split_unevaluated);
         skips_valid &= for_array.skips_valid;
+        reports_errors |= matches!(for_array.errors, ErrorsBlock::Expr(_));
+        if let Some(unevaluated) = unevaluated {
+            unevaluated_skips_valid &= unevaluated.skips_valid;
+            unevaluated_array = Some(unevaluated.errors.as_token_stream());
+        }
         if let Some(type_error) = excluded(&["array"]) {
             typed_arms += 1;
             let errors = for_array.errors.as_token_stream();
@@ -208,8 +234,13 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     }
 
     if has_object {
-        let for_object = keywords::object::compile(ctx, schema);
+        let (for_object, unevaluated) = keywords::object::compile(ctx, schema, split_unevaluated);
         skips_valid &= for_object.skips_valid;
+        reports_errors |= matches!(for_object.errors, ErrorsBlock::Expr(_));
+        if let Some(unevaluated) = unevaluated {
+            unevaluated_skips_valid &= unevaluated.skips_valid;
+            unevaluated_object = Some(unevaluated.errors.as_token_stream());
+        }
         if let Some(type_error) = excluded(&["object"]) {
             typed_arms += 1;
             let errors = for_object.errors.as_token_stream();
@@ -275,7 +306,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             }
         }
         is_valid_fallback = quote! { false };
-        type_schema_path = Some(ctx.schema_path_for_keyword("type"));
+        type_schema_path = report_type_error.then(|| ctx.schema_path_for_keyword("type"));
     } else if is_valid_arms.is_empty() {
         return None;
     }
@@ -325,13 +356,40 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             )
         }
     };
-    Some(CompiledExpr {
-        is_valid: IsValidExpr::Expr(is_valid_ts),
-        errors: ErrorsBlock::Expr(errors_ts),
+    let unevaluated_errors = match (unevaluated_array, unevaluated_object) {
+        (None, None) => None,
+        (Some(array), None) => Some(E::sole_array_match(array, quote! { {} })),
+        (None, Some(object)) => Some(E::sole_object_match(object, quote! { {} })),
+        (Some(array), Some(object)) => Some(E::type_match(
+            format_ident!("instance"),
+            vec![
+                E::match_array_arm(array),
+                E::match_object_arm(object),
+                quote! { _ => {} },
+            ],
+        )),
+    };
+    let unevaluated = unevaluated_errors.map(|errors| CompiledExpr {
+        is_valid: IsValidExpr::AlwaysTrue,
+        errors: ErrorsBlock::Expr(errors),
         compile_error: false,
-        skips_valid,
+        skips_valid: unevaluated_skips_valid,
         ref_errors: None,
-    })
+    });
+    Some((
+        CompiledExpr {
+            is_valid: IsValidExpr::Expr(is_valid_ts),
+            errors: if reports_errors || type_schema_path.is_some() {
+                ErrorsBlock::Expr(errors_ts)
+            } else {
+                ErrorsBlock::AlwaysValid
+            },
+            compile_error: false,
+            skips_valid,
+            ref_errors: None,
+        },
+        unevaluated,
+    ))
 }
 
 pub(super) fn build_type_error_expr<E: ValueEmitter>(

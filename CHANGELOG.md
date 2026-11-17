@@ -20,6 +20,8 @@
 - `#[jsonschema::validator]` reporting content that decodes to invalid UTF-8 beside `contentMediaType` at the schema root instead of at `contentEncoding`.
 - `#[jsonschema::validator]` accepting instances of a type that `type` leaves out when keywords for that type are beside it.
 - `#[jsonschema::validator]` leaving out the `type` error when a `const` or `enum` beside it accepts only values of that type.
+- `#[jsonschema::validator]` reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
+- `#[jsonschema::validator]` leaving out the `maxLength` error when `minLength` is above `maxLength`.
 - `evaluate` output for `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.
 - `evaluate` output for one `required` name beside `properties` and `additionalProperties: false` reporting the name inside the `additionalProperties` unit, and only when missing.
 - `evaluate` output for `additionalProperties: false` reporting one error for the whole object instead of a failing unit for each extra member.

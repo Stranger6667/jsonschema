@@ -1,13 +1,9 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 856
 description: "{\"$defs\":{\"base\":{\"prefixItems\":[{}]}},\"$ref\":\"#/$defs/base\",\"type\":\"array\",\"unevaluatedItems\":false}"
 expression: errors_body(schema)
 ---
-if validate_ref_0_errors(instance, __path, __errors) {
-            return true;
-        }
-        match instance {
+match instance {
             __Value::Array(arr) => {
                 if let Some(__e) = '__first_error: {
                     if let __Value::Array(arr) = instance {
@@ -45,5 +41,8 @@ if validate_ref_0_errors(instance, __path, __errors) {
                     return true;
                 }
             }
+        }
+        if validate_ref_0_errors(instance, __path, __errors) {
+            return true;
         }
         false

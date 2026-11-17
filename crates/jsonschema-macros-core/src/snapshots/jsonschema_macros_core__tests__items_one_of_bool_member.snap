@@ -1,10 +1,21 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 856
 description: "{\"oneOf\":[true,{\"prefixItems\":[{}]}],\"type\":\"array\",\"unevaluatedItems\":false}"
 expression: errors_body(schema)
 ---
-if let Some(__e) = '__first_error: {
+match instance {
+            __Value::Array(arr) => {}
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type("/type", __path.into(), instance, __JT::Array),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        if let Some(__e) = '__first_error: {
             {
                 let mut __count = 0usize;
                 if is_branch_valid_0(instance) {
@@ -89,14 +100,6 @@ if let Some(__e) = '__first_error: {
                     }
                 }
             }
-            _ => {
-                if __errors
-                    .push(
-                        __err::single_type("/type", __path.into(), instance, __JT::Array),
-                    )
-                {
-                    return true;
-                }
-            }
+            _ => {}
         }
         false

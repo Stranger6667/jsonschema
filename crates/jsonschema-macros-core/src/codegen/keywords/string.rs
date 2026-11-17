@@ -41,7 +41,8 @@ pub(in super::super) fn compile<E: ValueEmitter>(
                 },
             ));
         }
-        (Some(Ok(min)), Some(Ok(max))) => {
+        // Both report when `minLength` exceeds `maxLength`, which one first-error check cannot.
+        (Some(Ok(min)), Some(Ok(max))) if min <= max => {
             let min_path = ctx.schema_path_for_keyword("minLength");
             let max_path = ctx.schema_path_for_keyword("maxLength");
             let min = proc_macro2::Literal::u64_unsuffixed(*min);

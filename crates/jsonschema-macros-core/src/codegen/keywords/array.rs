@@ -10,11 +10,13 @@ use crate::codegen::emit::ValueEmitter;
 use quote::format_ident;
 use serde_json::{Map, Value};
 
-/// Compile all array-specific keywords.
+/// Compile all array-specific keywords; with `split_unevaluated`, the `unevaluatedItems` errors
+/// come apart from the other errors.
 pub(in super::super) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
-) -> CompiledExpr {
+    split_unevaluated: bool,
+) -> (CompiledExpr, Option<CompiledExpr>) {
     let mut checks: Vec<CompiledExpr> = Vec::new();
     let validation_vocab_enabled = ctx.supports_validation_vocabulary();
     let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
@@ -124,9 +126,16 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         }
     }
 
+    let mut unevaluated_errors = None;
     if let Some(compiled) = unevaluated_items::compile(ctx, schema) {
-        checks.push(compiled);
+        if split_unevaluated {
+            let (check, errors) = compiled.split_errors();
+            unevaluated_errors = Some(errors);
+            checks.push(check);
+        } else {
+            checks.push(compiled);
+        }
     }
 
-    CompiledExpr::combine_and(checks)
+    (CompiledExpr::combine_and(checks), unevaluated_errors)
 }
