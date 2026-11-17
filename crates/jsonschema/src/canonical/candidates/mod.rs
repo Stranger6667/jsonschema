@@ -78,8 +78,8 @@ pub(crate) fn search<'a>(
         SchemaKind::MultiType(set) => set.iter().try_for_each(|ty| visit(shortest_instance(ty))),
         SchemaKind::TypedGroup { body, .. } => walk.each(body, visit),
         SchemaKind::String(leaf) => string::string(leaf.get()).into_iter().try_for_each(visit),
-        SchemaKind::Integer(leaf) => number::integer(leaf.get()).into_iter().try_for_each(visit),
-        SchemaKind::Number(leaf) => number::number(leaf.get()).into_iter().try_for_each(visit),
+        SchemaKind::Integer(leaf) => number::integer(leaf.get(), visit),
+        SchemaKind::Number(leaf) => number::number(leaf.get(), visit),
         SchemaKind::Array(leaf) => array::array(leaf.get(), &walk)
             .into_iter()
             .try_for_each(visit),
