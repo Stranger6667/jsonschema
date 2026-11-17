@@ -4884,6 +4884,93 @@ fn covers_decides(outer: &Value, inner: &Value, expected: Containment) {
     assert_eq!(outer.covers(&inner).expect("compares"), expected);
 }
 
+// A cycle closing in place re-enters its target on the same value, so assuming one target inside
+// the other there proves nothing.
+#[test]
+fn covers_stays_unknown_across_an_in_place_cycle() {
+    let cycle = |leaf: Value| json!({"$ref": "#/$defs/T", "$defs": {"T": {"anyOf": [{"$ref": "#/$defs/T"}, leaf]}}});
+    let wide = canonicalize(&cycle(json!({"type": "integer"}))).expect("canonicalizes");
+    let narrow =
+        canonicalize(&cycle(json!({"type": "integer", "minimum": 0}))).expect("canonicalizes");
+    assert_eq!(
+        (
+            wide.covers(&narrow).expect("compares"),
+            narrow.covers(&wide).expect("compares")
+        ),
+        (Containment::Unknown, Containment::Unknown)
+    );
+}
+
+#[test_case(true; "the wider side asks first")]
+#[test_case(false; "the narrower side asks first")]
+fn covers_answers_a_recursive_pair_alike_in_either_order(wider_first: bool) {
+    let list = |leaf: Value| {
+        json!({"$ref": "#/$defs/T", "$defs": {"T": {
+            "type": "object",
+            "properties": {"next": {"$ref": "#/$defs/T"}, "v": leaf}
+        }}})
+    };
+    let wide = canonicalize(&list(json!({"type": "integer"}))).expect("canonicalizes");
+    let narrow =
+        canonicalize(&list(json!({"type": "integer", "minimum": 0}))).expect("canonicalizes");
+    let answers = if wider_first {
+        let wide_covers = wide.covers(&narrow).expect("compares");
+        (wide_covers, narrow.covers(&wide).expect("compares"))
+    } else {
+        let narrow_covers = narrow.covers(&wide).expect("compares");
+        (wide.covers(&narrow).expect("compares"), narrow_covers)
+    };
+    assert_eq!(answers.0, Containment::Yes);
+    // `{"v": -1}` is a value the narrow side refuses.
+    assert_ne!(answers.1, Containment::Yes);
+}
+
+// Every target may hold any of the others, so the union of pointers compares every pair of targets
+// and each pair opens a nested proof of its own. Those stay within a thread's default stack.
+// Spawning a thread with a set stack size is unsupported on wasm targets.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn covers_and_subtract_fit_a_default_stack_where_every_target_names_every_other() {
+    const TARGETS: usize = 5;
+    const WRAPPING: usize = 12;
+    let document = |narrow: bool| {
+        let any: Vec<Value> = (0..TARGETS)
+            .map(|index| json!({"$ref": format!("#/$defs/a{index}")}))
+            .collect();
+        let mut definitions = Map::new();
+        for index in 0..TARGETS {
+            let leaf = if narrow && index == TARGETS - 1 {
+                json!({"type": "integer", "minimum": 0})
+            } else {
+                json!({"type": "integer"})
+            };
+            let mut body =
+                json!({"type": "object", "properties": {"p": {"anyOf": any}, "v": leaf}});
+            for _ in 0..WRAPPING {
+                body = json!({"type": "object", "properties": {"q": body}});
+            }
+            definitions.insert(format!("a{index}"), body);
+        }
+        json!({"$ref": "#/$defs/a0", "$defs": definitions})
+    };
+    let (covered, left_over) = std::thread::Builder::new()
+        .stack_size(2 * 1024 * 1024)
+        .spawn(move || {
+            let wide = canonicalize(&document(false)).expect("canonicalizes");
+            let narrow = canonicalize(&document(true)).expect("canonicalizes");
+            (
+                wide.covers(&narrow).expect("compares"),
+                narrow.subtract(&wide).expect("subtracts").satisfiability(),
+            )
+        })
+        .expect("spawns")
+        .join()
+        .expect("returns");
+    // Only one target narrows its leaf, so the narrow document takes no value the wide one rejects.
+    assert_ne!(covered, Containment::No);
+    assert_ne!(left_over, Satisfiability::Yes);
+}
+
 #[test_case(&json!({
     "anyOf": [
         {"type": "array", "contains": {"type": "null"}},
