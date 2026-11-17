@@ -24,8 +24,7 @@
       "required": [],
       "additionalProperties": false
     },
-    "relation": "widen",
-    "pending": ["new-old"]
+    "relation": "widen"
   },
   {
     "description": "object prop removed (closed)",
@@ -52,8 +51,7 @@
       "required": [],
       "additionalProperties": false
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "additionalProperties true -> false",
@@ -76,8 +74,7 @@
       "required": [],
       "additionalProperties": false
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "dict values narrowed",
@@ -94,8 +91,7 @@
         "minimum": 0
       }
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "dict of arrays narrowed",
@@ -113,6 +109,29 @@
       "additionalProperties": {
         "type": "array",
         "items": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "dict of dicts narrowed",
+    "old": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
+          "type": "integer"
+        }
+      }
+    },
+    "new": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "object",
+        "additionalProperties": {
           "type": "integer",
           "minimum": 0
         }
@@ -140,8 +159,7 @@
         }
       }
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "propertyNames added",
@@ -154,8 +172,7 @@
         "maxLength": 5
       }
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "unevaluatedProperties: prop added",
@@ -190,7 +207,65 @@
       ],
       "unevaluatedProperties": false
     },
-    "relation": "widen",
-    "pending": ["new-old"]
+    "relation": "widen"
+  },
+  {
+    "description": "closed object at its size ceiling",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": ["a"],
+      "maxProperties": 1
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": ["a"],
+      "maxProperties": 1,
+      "additionalProperties": false
+    },
+    "relation": "equal"
+  },
+  {
+    "description": "two-entry map: propertyNames added",
+    "old": {
+      "type": "object",
+      "minProperties": 2,
+      "maxProperties": 2
+    },
+    "new": {
+      "type": "object",
+      "minProperties": 2,
+      "maxProperties": 2,
+      "propertyNames": {
+        "maxLength": 5
+      }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "single required key at the size ceiling: additionalProperties added",
+    "old": {
+      "type": "object",
+      "required": ["c"],
+      "maxProperties": 1
+    },
+    "new": {
+      "type": "object",
+      "required": ["c"],
+      "maxProperties": 1,
+      "additionalProperties": {
+        "type": "string"
+      }
+    },
+    "relation": "narrow"
   }
 ]

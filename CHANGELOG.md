@@ -41,6 +41,7 @@
 - `absolute_keyword_location` of errors for names missing under `dependentRequired` or `dependencies` pointing to a schema location that does not exist.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `f64`, such as `1e-400`, with the `arbitrary-precision` feature.
 - `satisfiability` answering `Unknown` for an array where only some elements are valid under both `contains` and `items`.
+- `satisfiability` answering `Unknown` for an object that must break `additionalProperties`, `patternProperties` or `propertyNames`.
 - `satisfiability` answering `Unknown` for a number that must miss a `multipleOf`, such as a non-integer.
 
 ### Performance
