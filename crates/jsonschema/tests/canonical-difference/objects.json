@@ -1,0 +1,196 @@
+[
+  {
+    "description": "object optional prop added (closed)",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "relation": "widen",
+    "pending": ["new-old"]
+  },
+  {
+    "description": "object prop removed (closed)",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "additionalProperties true -> false",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": []
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "dict values narrowed",
+    "old": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer"
+      }
+    },
+    "new": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "integer",
+        "minimum": 0
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "dict of arrays narrowed",
+    "old": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      }
+    },
+    "new": {
+      "type": "object",
+      "additionalProperties": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "patternProperties narrowed",
+    "old": {
+      "type": "object",
+      "patternProperties": {
+        "^x-": {
+          "type": "string"
+        }
+      }
+    },
+    "new": {
+      "type": "object",
+      "patternProperties": {
+        "^x-": {
+          "type": "string",
+          "maxLength": 3
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "propertyNames added",
+    "old": {
+      "type": "object"
+    },
+    "new": {
+      "type": "object",
+      "propertyNames": {
+        "maxLength": 5
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "unevaluatedProperties: prop added",
+    "old": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          },
+          "required": []
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "new": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            },
+            "b": {
+              "type": "string"
+            }
+          },
+          "required": []
+        }
+      ],
+      "unevaluatedProperties": false
+    },
+    "relation": "widen",
+    "pending": ["new-old"]
+  }
+]

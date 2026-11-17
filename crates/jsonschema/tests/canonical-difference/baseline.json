@@ -1,0 +1,1096 @@
+[
+  {
+    "description": "string maxLength added",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "type": "string",
+      "maxLength": 5
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "string minLength+maxLength tightened",
+    "old": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 9
+    },
+    "new": {
+      "type": "string",
+      "minLength": 2,
+      "maxLength": 5
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "pattern subset",
+    "old": {
+      "type": "string",
+      "pattern": "^a*$"
+    },
+    "new": {
+      "type": "string",
+      "pattern": "^a+$"
+    },
+    "relation": "narrow",
+    "pending": ["new-old"]
+  },
+  {
+    "description": "pattern added",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "type": "string",
+      "pattern": "^[a-z]+$"
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "pattern disjoint",
+    "old": {
+      "type": "string",
+      "pattern": "^a+$"
+    },
+    "new": {
+      "type": "string",
+      "pattern": "^b+$"
+    },
+    "relation": "incomparable"
+  },
+  {
+    "description": "pattern kept, maxLength added",
+    "old": {
+      "type": "string",
+      "pattern": "^[a-z]+$"
+    },
+    "new": {
+      "type": "string",
+      "pattern": "^[a-z]+$",
+      "maxLength": 5
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "format added",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "format changed",
+    "old": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "new": {
+      "type": "string",
+      "format": "email"
+    },
+    "relation": "incomparable"
+  },
+  {
+    "description": "format kept, maxLength added",
+    "old": {
+      "type": "string",
+      "format": "email"
+    },
+    "new": {
+      "type": "string",
+      "format": "email",
+      "maxLength": 50
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "format date-time -> date",
+    "old": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "new": {
+      "type": "string",
+      "format": "date"
+    },
+    "relation": "incomparable"
+  },
+  {
+    "description": "integer minimum raised",
+    "old": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "new": {
+      "type": "integer",
+      "minimum": 5
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "exclusiveMinimum added",
+    "old": {
+      "type": "number"
+    },
+    "new": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "enum value added",
+    "old": {
+      "enum": [
+        "a",
+        "b"
+      ]
+    },
+    "new": {
+      "enum": [
+        "a",
+        "b",
+        "c"
+      ]
+    },
+    "relation": "widen"
+  },
+  {
+    "description": "string -> enum",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "enum": [
+        "a",
+        "b"
+      ]
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "nullable added (anyOf)",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "null"
+        }
+      ]
+    },
+    "relation": "widen"
+  },
+  {
+    "description": "nullable added (type list)",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "type": [
+        "string",
+        "null"
+      ]
+    },
+    "relation": "widen"
+  },
+  {
+    "description": "array minItems added",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "minItems": 1
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "array maxItems added",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 10
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "array uniqueItems added",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "uniqueItems": true
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "tuple prefixItems narrowed",
+    "old": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ],
+      "items": false
+    },
+    "new": {
+      "type": "array",
+      "prefixItems": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer",
+          "minimum": 0
+        }
+      ],
+      "items": false
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "object required added",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a"
+      ]
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a",
+        "b"
+      ]
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "object optional prop added (open)",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": []
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": []
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "object required prop added (closed)",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "additionalProperties": false
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "b"
+      ],
+      "additionalProperties": false
+    },
+    "relation": "incomparable"
+  },
+  {
+    "description": "object prop type changed",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": []
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "integer"
+        }
+      },
+      "required": []
+    },
+    "relation": "incomparable"
+  },
+  {
+    "description": "object nested prop narrowed",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "object",
+          "properties": {
+            "b": {
+              "type": "string"
+            }
+          },
+          "required": []
+        }
+      },
+      "required": []
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "object",
+          "properties": {
+            "b": {
+              "type": "string",
+              "maxLength": 3
+            }
+          },
+          "required": []
+        }
+      },
+      "required": []
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "object prop via ref narrowed",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/U"
+        }
+      },
+      "required": [],
+      "$defs": {
+        "U": {
+          "type": "string"
+        }
+      }
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "$ref": "#/$defs/U"
+        }
+      },
+      "required": [],
+      "$defs": {
+        "U": {
+          "type": "string",
+          "maxLength": 3
+        }
+      }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "minProperties added",
+    "old": {
+      "type": "object"
+    },
+    "new": {
+      "type": "object",
+      "minProperties": 1
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "dependentRequired added",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "required": []
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "dependentRequired": {
+        "a": [
+          "b"
+        ]
+      }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "oneOf union: variant added",
+    "old": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "cat"
+            },
+            "lives": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "lives"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "dog"
+            },
+            "bark": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "bark"
+          ]
+        }
+      ]
+    },
+    "new": {
+      "oneOf": [
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "cat"
+            },
+            "lives": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "lives"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "dog"
+            },
+            "bark": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "bark"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "bird"
+            },
+            "wings": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "wings"
+          ]
+        }
+      ]
+    },
+    "relation": "widen"
+  },
+  {
+    "description": "oneOf union via refs: variant added",
+    "old": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Cat"
+        },
+        {
+          "$ref": "#/$defs/Dog"
+        }
+      ],
+      "$defs": {
+        "Cat": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "cat"
+            },
+            "lives": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "lives"
+          ]
+        },
+        "Dog": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "dog"
+            },
+            "bark": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "bark"
+          ]
+        }
+      }
+    },
+    "new": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Cat"
+        },
+        {
+          "$ref": "#/$defs/Dog"
+        },
+        {
+          "$ref": "#/$defs/Bird"
+        }
+      ],
+      "$defs": {
+        "Cat": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "cat"
+            },
+            "lives": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "lives"
+          ]
+        },
+        "Dog": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "dog"
+            },
+            "bark": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "bark"
+          ]
+        },
+        "Bird": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "bird"
+            },
+            "wings": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "wings"
+          ]
+        }
+      }
+    },
+    "relation": "widen"
+  },
+  {
+    "description": "oneOf union via refs: variant narrowed",
+    "old": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Cat"
+        },
+        {
+          "$ref": "#/$defs/Dog"
+        }
+      ],
+      "$defs": {
+        "Cat": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "cat"
+            },
+            "lives": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "lives"
+          ]
+        },
+        "Dog": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "dog"
+            },
+            "bark": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "bark"
+          ]
+        }
+      }
+    },
+    "new": {
+      "oneOf": [
+        {
+          "$ref": "#/$defs/Cat"
+        },
+        {
+          "$ref": "#/$defs/Dog"
+        }
+      ],
+      "$defs": {
+        "Cat": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "cat"
+            },
+            "lives": {
+              "type": "integer"
+            }
+          },
+          "required": [
+            "kind",
+            "lives"
+          ]
+        },
+        "Dog": {
+          "type": "object",
+          "properties": {
+            "kind": {
+              "const": "dog"
+            },
+            "bark": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": [
+            "kind",
+            "bark"
+          ]
+        }
+      }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "anyOf -> oneOf (disjoint)",
+    "old": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "new": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "relation": "equal"
+  },
+  {
+    "description": "allOf inheritance: base field added required",
+    "old": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/B"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "integer"
+            }
+          },
+          "required": []
+        }
+      ],
+      "$defs": {
+        "B": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "new": {
+      "allOf": [
+        {
+          "$ref": "#/$defs/B"
+        },
+        {
+          "type": "object",
+          "properties": {
+            "x": {
+              "type": "integer"
+            }
+          },
+          "required": []
+        }
+      ],
+      "$defs": {
+        "B": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            },
+            "c": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "c"
+          ]
+        }
+      }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "allOf flattened",
+    "old": {
+      "allOf": [
+        {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "a"
+          ]
+        },
+        {
+          "type": "object",
+          "properties": {
+            "b": {
+              "type": "integer"
+            }
+          },
+          "required": []
+        }
+      ]
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a"
+      ]
+    },
+    "relation": "equal"
+  },
+  {
+    "description": "ref inlined",
+    "old": {
+      "$ref": "#/$defs/U",
+      "$defs": {
+        "U": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "a"
+          ]
+        }
+      }
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": [
+        "a"
+      ]
+    },
+    "relation": "equal"
+  },
+  {
+    "description": "ref renamed",
+    "old": {
+      "$ref": "#/$defs/U",
+      "$defs": {
+        "U": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "a"
+          ]
+        }
+      }
+    },
+    "new": {
+      "$ref": "#/$defs/V",
+      "$defs": {
+        "V": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "a"
+          ]
+        }
+      }
+    },
+    "relation": "equal"
+  },
+  {
+    "description": "if/then added",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "required": []
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        },
+        "b": {
+          "type": "string"
+        }
+      },
+      "required": [],
+      "if": {
+        "required": [
+          "a"
+        ]
+      },
+      "then": {
+        "required": [
+          "b"
+        ]
+      }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "contains added",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      },
+      "contains": {
+        "minimum": 5
+      }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "not added",
+    "old": {
+      "type": "string"
+    },
+    "new": {
+      "type": "string",
+      "not": {
+        "enum": [
+          "admin"
+        ]
+      }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "const object changed",
+    "old": {
+      "const": {
+        "a": 1
+      }
+    },
+    "new": {
+      "const": {
+        "a": 2
+      }
+    },
+    "relation": "incomparable"
+  },
+  {
+    "description": "readOnly/annotations only",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string"
+        }
+      },
+      "required": []
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "string",
+          "readOnly": true,
+          "title": "A"
+        }
+      },
+      "required": []
+    },
+    "relation": "equal"
+  }
+]

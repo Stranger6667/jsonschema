@@ -1,0 +1,64 @@
+[
+  {
+    "description": "integer -> number",
+    "old": {
+      "type": "integer"
+    },
+    "new": {
+      "type": "number"
+    },
+    "relation": "widen",
+    "pending": ["new-old"]
+  },
+  {
+    "description": "multipleOf 2 -> 4",
+    "old": {
+      "type": "integer",
+      "multipleOf": 2
+    },
+    "new": {
+      "type": "integer",
+      "multipleOf": 4
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "number multipleOf 0.1 -> 0.01",
+    "old": {
+      "type": "number",
+      "multipleOf": 0.1
+    },
+    "new": {
+      "type": "number",
+      "multipleOf": 0.01
+    },
+    "relation": "widen",
+    "pending": ["new-old"]
+  },
+  {
+    "description": "anyOf branch widened",
+    "old": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "integer"
+        }
+      ]
+    },
+    "new": {
+      "anyOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "number"
+        }
+      ]
+    },
+    "relation": "widen",
+    "pending": ["new-old"]
+  }
+]
