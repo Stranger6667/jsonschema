@@ -1,10 +1,26 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 856
 description: "{\"anyOf\":[{\"properties\":{\"a\":{}},\"required\":[\"a\"]},{\"properties\":{\"b\":{}},\"required\":[\"b\"]}],\"type\":\"object\",\"unevaluatedProperties\":false}"
 expression: errors_body(schema)
 ---
-if let Some(__e) = '__first_error: {
+match instance {
+            __Value::Object(obj) => {}
+            _ => {
+                if __errors
+                    .push(
+                        __err::single_type(
+                            "/type",
+                            __path.into(),
+                            instance,
+                            __JT::Object,
+                        ),
+                    )
+                {
+                    return true;
+                }
+            }
+        }
+        if let Some(__e) = '__first_error: {
             if !((is_branch_valid_0(instance) || is_branch_valid_1(instance))) {
                 let mut __context = Vec::with_capacity(2usize);
                 {
@@ -69,19 +85,6 @@ if let Some(__e) = '__first_error: {
                     }
                 }
             }
-            _ => {
-                if __errors
-                    .push(
-                        __err::single_type(
-                            "/type",
-                            __path.into(),
-                            instance,
-                            __JT::Object,
-                        ),
-                    )
-                {
-                    return true;
-                }
-            }
+            _ => {}
         }
         false

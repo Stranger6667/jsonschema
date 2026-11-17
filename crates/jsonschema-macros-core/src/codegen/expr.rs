@@ -33,6 +33,23 @@ pub(crate) enum IsValidExpr {
     Expr(TokenStream),
 }
 
+impl IsValidExpr {
+    pub(crate) fn into_token_stream(self) -> TokenStream {
+        match self {
+            Self::AlwaysTrue => quote! { true },
+            Self::Expr(ts) => ts,
+        }
+    }
+
+    pub(crate) fn and(self, other: Self) -> Self {
+        match (self, other) {
+            (Self::AlwaysTrue, b) => b,
+            (a, Self::AlwaysTrue) => a,
+            (Self::Expr(a), Self::Expr(b)) => Self::Expr(quote! { (#a) && (#b) }),
+        }
+    }
+}
+
 /// Statement block reporting errors into the `__errors` sink; returns `true` from the enclosing
 /// function once the sink wants no more errors.
 #[derive(Clone)]
@@ -239,6 +256,26 @@ impl CompiledExpr {
         }
     }
 
+    /// The check without its errors, and its errors under an always-true `is_valid`, for errors
+    /// reported away from where the check runs.
+    pub(crate) fn split_errors(self) -> (Self, Self) {
+        let check = Self {
+            is_valid: self.is_valid,
+            errors: ErrorsBlock::AlwaysValid,
+            compile_error: self.compile_error,
+            skips_valid: true,
+            ref_errors: None,
+        };
+        let errors = Self {
+            is_valid: IsValidExpr::AlwaysTrue,
+            errors: self.errors,
+            compile_error: self.compile_error,
+            skips_valid: self.skips_valid,
+            ref_errors: self.ref_errors,
+        };
+        (check, errors)
+    }
+
     pub(crate) fn with_skips_valid(mut self, skips_valid: bool) -> Self {
         self.skips_valid = skips_valid;
         self
@@ -274,13 +311,7 @@ impl CompiledExpr {
             _ => None,
         };
         let errors = self.errors.and(other.errors);
-        let is_valid = match (self.is_valid, other.is_valid) {
-            (IsValidExpr::AlwaysTrue, b) => b,
-            (a, IsValidExpr::AlwaysTrue) => a,
-            (IsValidExpr::Expr(a), IsValidExpr::Expr(b)) => {
-                IsValidExpr::Expr(quote! { (#a) && (#b) })
-            }
-        };
+        let is_valid = self.is_valid.and(other.is_valid);
         Self {
             is_valid,
             errors,

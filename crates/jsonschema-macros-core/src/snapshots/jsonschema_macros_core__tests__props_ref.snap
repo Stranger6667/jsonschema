@@ -1,13 +1,9 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 856
 description: "{\"$defs\":{\"base\":{\"properties\":{\"a\":{}}}},\"$ref\":\"#/$defs/base\",\"type\":\"object\",\"unevaluatedProperties\":false}"
 expression: errors_body(schema)
 ---
-if validate_ref_0_errors(instance, __path, __errors) {
-            return true;
-        }
-        match instance {
+match instance {
             __Value::Object(obj) => {
                 if let Some(__e) = '__first_error: {
                     if let __Value::Object(obj) = instance {
@@ -50,5 +46,8 @@ if validate_ref_0_errors(instance, __path, __errors) {
                     return true;
                 }
             }
+        }
+        if validate_ref_0_errors(instance, __path, __errors) {
+            return true;
         }
         false

@@ -58,6 +58,18 @@ fn type_check_is_redundant(schema: &Map<String, Value>, draft: Draft) -> bool {
     }
 }
 
+/// Keyword groups in the order the runtime reports their errors.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+enum Phase {
+    Type,
+    Values,
+    Typed,
+    Applicators,
+    Unevaluated,
+    References,
+    Custom,
+}
+
 /// Compile an object schema.
 pub(super) fn compile_object_schema<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -125,67 +137,87 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
 
         let has_type_constraint = schema.contains_key("type") && validation_vocab_enabled;
+        let has_const_or_enum = validation_vocab_enabled
+            && ((ctx.draft.supports_const_keyword() && schema.contains_key("const"))
+                || schema.contains_key("enum"));
+        let has_applicators = applicator_vocab_enabled
+            && (["allOf", "anyOf", "oneOf", "not"]
+                .iter()
+                .any(|keyword| schema.contains_key(*keyword))
+                || (ctx.draft.supports_if_then_else_keyword() && schema.contains_key("if")));
 
-        let typed = compile_typed(ctx, schema, has_type_constraint);
+        // Errors of `const` and `enum` go between the `type` error and the typed keywords' errors,
+        // those of `allOf` to `if` between the typed keywords' and `unevaluated*` errors.
+        let typed = compile_typed(
+            ctx,
+            schema,
+            has_type_constraint,
+            !has_const_or_enum,
+            has_applicators,
+        );
         let has_typed_checks = typed.is_some();
 
-        let mut untyped: Vec<CompiledExpr> = Vec::new();
-        // `const` or `enum` reject every type but the one `type` names: `is_valid` skips the
-        // type check, errors still report it.
-        let mut implied_type = None;
-        if has_type_constraint && !has_typed_checks {
+        // `is_valid` runs checks in push order; errors follow `Phase`.
+        let mut untyped: Vec<(Phase, CompiledExpr)> = Vec::new();
+        let mut errors_only: Vec<(Phase, CompiledExpr)> = Vec::new();
+        if has_type_constraint && (!has_typed_checks || has_const_or_enum) {
             if let Some(value) = schema.get("type") {
                 let type_check = keywords::type_::compile(ctx, value);
-                if type_check_is_redundant(schema, ctx.draft) {
-                    implied_type = Some(CompiledExpr {
-                        is_valid: IsValidExpr::AlwaysTrue,
-                        ..type_check
-                    });
+                // The typed dispatch checks the type already, and so do `const` or `enum` that
+                // accept only values of that type.
+                if has_typed_checks || type_check_is_redundant(schema, ctx.draft) {
+                    errors_only.push((Phase::Type, type_check.split_errors().1));
                 } else {
-                    untyped.push(type_check);
+                    untyped.push((Phase::Type, type_check));
                 }
             }
         }
         if ctx.draft.supports_const_keyword() && validation_vocab_enabled {
             if let Some(value) = schema.get("const") {
-                untyped.push(keywords::const_::compile(ctx, value));
+                untyped.push((Phase::Values, keywords::const_::compile(ctx, value)));
             }
         }
         if validation_vocab_enabled {
             if let Some(value) = schema.get("enum") {
-                untyped.push(keywords::enum_::compile(ctx, value));
+                untyped.push((Phase::Values, keywords::enum_::compile(ctx, value)));
             }
         }
         if let Some(value) = schema.get("$ref") {
-            untyped.push(keywords::ref_::compile(ctx, value));
+            untyped.push((Phase::References, keywords::ref_::compile(ctx, value)));
         }
         if ctx.draft.supports_dynamic_ref_keyword() {
             if let Some(value) = schema.get("$dynamicRef") {
-                untyped.push(keywords::ref_::compile_dynamic(ctx, value));
+                untyped.push((
+                    Phase::References,
+                    keywords::ref_::compile_dynamic(ctx, value),
+                ));
             }
         }
         if ctx.draft.supports_recursive_ref_keyword() {
             if let Some(value) = schema.get("$recursiveRef") {
-                untyped.push(keywords::ref_::compile_recursive(ctx, value));
+                untyped.push((
+                    Phase::References,
+                    keywords::ref_::compile_recursive(ctx, value),
+                ));
             }
         }
         if applicator_vocab_enabled {
             if let Some(value) = schema.get("allOf") {
-                untyped.push(keywords::all_of::compile(ctx, value));
+                untyped.push((Phase::Applicators, keywords::all_of::compile(ctx, value)));
             }
             if let Some(value) = schema.get("anyOf") {
-                untyped.push(keywords::any_of::compile(ctx, value));
+                untyped.push((Phase::Applicators, keywords::any_of::compile(ctx, value)));
             }
             if let Some(value) = schema.get("oneOf") {
-                untyped.push(keywords::one_of::compile(ctx, value));
+                untyped.push((Phase::Applicators, keywords::one_of::compile(ctx, value)));
             }
             if let Some(value) = schema.get("not") {
-                untyped.push(keywords::not::compile(ctx, value));
+                untyped.push((Phase::Applicators, keywords::not::compile(ctx, value)));
             }
             if ctx.draft.supports_if_then_else_keyword() {
                 if let Some(value) = schema.get("if") {
                     if let Some(compiled) = keywords::if_::compile(ctx, schema, value) {
-                        untyped.push(compiled);
+                        untyped.push((Phase::Applicators, compiled));
                     }
                 }
             }
@@ -194,48 +226,60 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         if !ctx.config.custom_keywords.is_empty() {
             for (name, value) in schema {
                 if ctx.config.custom_keywords.contains_key(name.as_str()) {
-                    untyped.push(keywords::custom::compile(ctx, name, schema, value));
+                    untyped.push((
+                        Phase::Custom,
+                        keywords::custom::compile(ctx, name, schema, value),
+                    ));
                 }
             }
         }
 
-        let untyped: Vec<CompiledExpr> = untyped
+        let mut untyped: Vec<(Phase, CompiledExpr)> = untyped
             .into_iter()
-            .filter(|t| !t.is_trivially_true())
+            .filter(|(_, check)| !check.is_trivially_true())
             .collect();
-        let typed = typed.filter(|t| !t.is_trivially_true());
+        let mut typed = typed.and_then(|(typed, unevaluated)| {
+            if let Some(unevaluated) = unevaluated {
+                errors_only.push((Phase::Unevaluated, unevaluated));
+            }
+            (!typed.is_trivially_true()).then_some(typed)
+        });
 
-        match typed {
-            // Errors are reported in keyword order (untyped first, matching the
-            // runtime); `is_valid` runs the typed dispatch first so instances of other
-            // types bail before the applicators.
-            Some(type_check) if !untyped.is_empty() => {
-                let typed_is_valid = type_check.is_valid_token_stream();
-                let untyped_is_valid: Vec<TokenStream> = untyped
-                    .iter()
-                    .map(CompiledExpr::is_valid_token_stream)
+        // `is_valid` runs the typed dispatch first so instances of other types bail before the
+        // applicators.
+        let untyped_is_valid = untyped
+            .iter_mut()
+            .map(|(_, check)| std::mem::replace(&mut check.is_valid, IsValidExpr::AlwaysTrue));
+        let is_valid = match typed.as_mut() {
+            Some(typed) => {
+                let typed_is_valid =
+                    std::mem::replace(&mut typed.is_valid, IsValidExpr::AlwaysTrue);
+                let untyped_is_valid: Vec<TokenStream> = untyped_is_valid
+                    .map(IsValidExpr::into_token_stream)
                     .collect();
-                let combined = CompiledExpr::combine_and(
-                    untyped.into_iter().chain(std::iter::once(type_check)),
-                );
-                CompiledExpr {
-                    is_valid: IsValidExpr::Expr(quote! {
+                if untyped_is_valid.is_empty() {
+                    typed_is_valid
+                } else {
+                    let typed_is_valid = typed_is_valid.into_token_stream();
+                    IsValidExpr::Expr(quote! {
                         (#typed_is_valid) #(&& (#untyped_is_valid))*
-                    }),
-                    errors: combined.errors,
-                    compile_error: combined.compile_error,
-                    skips_valid: combined.skips_valid,
-                    ref_errors: combined.ref_errors,
+                    })
                 }
             }
-            Some(type_check) => type_check,
-            None => {
-                let combined = CompiledExpr::combine_and(untyped);
-                match implied_type {
-                    Some(type_check) => type_check.and(combined),
-                    None => combined,
-                }
-            }
+            None => untyped_is_valid.fold(IsValidExpr::AlwaysTrue, IsValidExpr::and),
+        };
+
+        let mut parts = untyped;
+        parts.extend(typed.map(|typed| (Phase::Typed, typed)));
+        parts.extend(errors_only);
+        parts.sort_by_key(|(phase, _)| *phase);
+        CompiledExpr {
+            is_valid,
+            ..parts
+                .into_iter()
+                .fold(CompiledExpr::always_true(), |combined, (_, part)| {
+                    combined.and(part)
+                })
         }
     })
 }

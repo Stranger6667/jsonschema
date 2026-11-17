@@ -5,22 +5,6 @@ expression: errors_body(schema)
 ---
 match instance {
             __Value::Object(obj) => {
-                if obj.contains_key("a") {
-                    if !obj.contains_key("b") {
-                        if __errors
-                            .push(
-                                __err::required(
-                                    "/dependencies",
-                                    __path.into(),
-                                    instance,
-                                    "b",
-                                ),
-                            )
-                        {
-                            return true;
-                        }
-                    }
-                }
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (key, value) in obj.iter() {
                     let key_str = key.as_str();
@@ -80,6 +64,22 @@ match instance {
                         )
                     {
                         return true;
+                    }
+                }
+                if obj.contains_key("a") {
+                    if !obj.contains_key("b") {
+                        if __errors
+                            .push(
+                                __err::required(
+                                    "/dependencies",
+                                    __path.into(),
+                                    instance,
+                                    "b",
+                                ),
+                            )
+                        {
+                            return true;
+                        }
                     }
                 }
             }
