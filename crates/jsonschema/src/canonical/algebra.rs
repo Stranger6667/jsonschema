@@ -1,5 +1,5 @@
 //! Set algebra over canonical IR nodes.
-use std::{cell::Cell, collections::BTreeSet, sync::Arc};
+use std::{cell::Cell, collections::BTreeSet, ops::ControlFlow, sync::Arc};
 
 use ahash::AHashSet;
 use referencing::Draft;
@@ -1952,7 +1952,6 @@ fn holds_a_value_the_siblings_miss(
     index: usize,
     ctx: &CanonicalizationContext,
 ) -> bool {
-    use std::ops::ControlFlow;
     candidates::search(
         packed,
         &|uri| ctx.definition(uri),

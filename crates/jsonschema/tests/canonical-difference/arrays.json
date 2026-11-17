@@ -14,8 +14,7 @@
         "maxLength": 3
       }
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "array items narrowed via ref",
@@ -42,8 +41,7 @@
         }
       }
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "array of objects: field became required",
@@ -73,8 +71,7 @@
         ]
       }
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "array items widened",
@@ -90,8 +87,7 @@
         "type": "number"
       }
     },
-    "relation": "widen",
-    "pending": ["new-old"]
+    "relation": "widen"
   },
   {
     "description": "array items type changed",
@@ -107,8 +103,7 @@
         "type": "integer"
       }
     },
-    "relation": "incomparable",
-    "pending": ["old-new", "new-old"]
+    "relation": "incomparable"
   },
   {
     "description": "array items narrowed + maxItems",
@@ -127,8 +122,7 @@
       },
       "maxItems": 3
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "nested array items narrowed",
@@ -151,8 +145,7 @@
         }
       }
     },
-    "relation": "narrow",
-    "pending": ["old-new"]
+    "relation": "narrow"
   },
   {
     "description": "object prop array of ref narrowed",
@@ -203,6 +196,56 @@
           ]
         }
       }
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "unique items narrowed to one member",
+    "old": {
+      "type": "array",
+      "items": {
+        "enum": [
+          1,
+          2
+        ]
+      },
+      "uniqueItems": true,
+      "maxItems": 2
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "const": 1
+      },
+      "uniqueItems": true,
+      "maxItems": 2
+    },
+    "relation": "narrow"
+  },
+  {
+    "description": "unique items: demanded element equals the filler",
+    "old": {
+      "type": "array",
+      "items": {
+        "enum": [
+          1,
+          2,
+          3
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 2
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "enum": [
+          2,
+          3
+        ]
+      },
+      "uniqueItems": true,
+      "minItems": 2
     },
     "relation": "narrow",
     "pending": ["old-new"]

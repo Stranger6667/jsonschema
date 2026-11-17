@@ -80,9 +80,7 @@ pub(crate) fn search<'a>(
         SchemaKind::String(leaf) => string::string(leaf.get()).into_iter().try_for_each(visit),
         SchemaKind::Integer(leaf) => number::integer(leaf.get(), visit),
         SchemaKind::Number(leaf) => number::number(leaf.get(), visit),
-        SchemaKind::Array(leaf) => array::array(leaf.get(), &walk)
-            .into_iter()
-            .try_for_each(visit),
+        SchemaKind::Array(leaf) => array::array(leaf.get(), &walk, visit),
         SchemaKind::Object(leaf) => object::object(leaf.get(), &walk)
             .into_iter()
             .try_for_each(visit),
@@ -119,6 +117,20 @@ impl<'a> Walk<'a, '_> {
         )
     }
 
+    /// Offer the instances worth trying against `schema`, a schema built during the walk, one level
+    /// down, to `visit`.
+    pub(super) fn each_owned(&self, schema: &Schema, visit: &mut Visit<'_>) -> ControlFlow<()> {
+        let target = |uri: &str| -> Option<&Schema> { (self.target)(uri) };
+        search(
+            schema,
+            &target,
+            self.depth - 1,
+            self.budget,
+            self.ctx,
+            visit,
+        )
+    }
+
     /// The first instance worth trying against `schema`, one level down. Only that one is built, so
     /// a wide schema leaves the walk's node count to the schemas after it.
     pub(super) fn first(&self, schema: &'a Schema) -> Option<Value> {
@@ -132,11 +144,38 @@ impl<'a> Walk<'a, '_> {
     }
 }
 
+/// Whether a check the walk makes to build a candidate holds. The walk only suggests values, so what
+/// such a check approximates must not mark the run it serves; an approximated answer is `false`.
+pub(super) fn holds(ctx: &CanonicalizationContext, check: impl FnOnce() -> bool) -> bool {
+    let (answer, inexact) = ctx.probe(check);
+    answer && !inexact
+}
+
 /// A visitor keeping the first candidate it is offered.
 fn keep_first(found: &mut Option<Value>) -> impl FnMut(Value) -> ControlFlow<()> + '_ {
     |value| {
         *found = Some(value);
         ControlFlow::Break(())
+    }
+}
+
+/// A visitor keeping the first candidate `accept` takes, giving up after `attempts` candidates.
+pub(super) fn keep_accepted<'f>(
+    found: &'f mut Option<Value>,
+    mut attempts: usize,
+    mut accept: impl FnMut(&Value) -> bool + 'f,
+) -> impl FnMut(Value) -> ControlFlow<()> + 'f {
+    debug_assert!(attempts > 0, "a search tries at least one candidate");
+    move |value| {
+        if accept(&value) {
+            *found = Some(value);
+            return ControlFlow::Break(());
+        }
+        attempts -= 1;
+        if attempts == 0 {
+            return ControlFlow::Break(());
+        }
+        ControlFlow::Continue(())
     }
 }
 
