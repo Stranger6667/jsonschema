@@ -14,7 +14,7 @@ use serde_json::Value;
 
 /// A typed constant value that can serve as a oneOf discriminator.
 #[derive(Clone, PartialEq, Eq, Hash, PartialOrd, Ord)]
-enum DiscriminatorLiteral {
+pub(crate) enum DiscriminatorLiteral {
     // Variant order determines the derived Ord between kinds: Str < Bool < Int.
     Str(String),
     Bool(bool),
@@ -329,6 +329,16 @@ fn vacuous_branches_safely_guarded(
         .iter()
         .zip(&plan.per_branch_values)
         .all(|(class, values)| *class != BranchObjectApplicability::Vacuous || values.is_some())
+}
+
+/// For each branch, the discriminator values it runs for, or `None` when it runs for every
+/// instance. Branches with disjoint values never run on the same instance.
+pub(crate) fn branch_discriminators<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    schemas: &[Value],
+) -> Vec<Option<Vec<DiscriminatorLiteral>>> {
+    build_discriminator_plan(ctx, schemas)
+        .map_or_else(|| vec![None; schemas.len()], |plan| plan.per_branch_values)
 }
 
 fn build_discriminator_plan<E: ValueEmitter>(

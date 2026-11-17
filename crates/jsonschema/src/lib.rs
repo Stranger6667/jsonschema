@@ -3724,6 +3724,56 @@ pub mod __private {
             }
         }
     }
+    /// Results of `$ref` cycles that reach deeper instances, so the keywords that reach one
+    /// instance through the same cycle validate it once per run.
+    pub mod ref_memo {
+        use std::cell::{Cell, RefCell};
+
+        use ahash::AHashMap;
+
+        use crate::{
+            json::{Json, Node, NodeIdentity},
+            validator::MEMO_MIN_VISITS,
+        };
+
+        std::thread_local! {
+            /// Targets computed so far; a call's share of it decides whether its result is kept.
+            static VISITS: Cell<u32> = const { Cell::new(0) };
+            static RESULTS: RefCell<Option<AHashMap<(usize, NodeIdentity), bool>>> =
+                const { RefCell::new(None) };
+        }
+
+        /// Drops the results of the previous run on this thread.
+        #[inline]
+        pub fn clear() {
+            RESULTS.with_borrow_mut(Option::take);
+        }
+
+        /// `target(instance)`, computed once per container once it costs enough to keep.
+        #[inline]
+        pub fn is_valid<'a, F: Json>(
+            target: fn(F::Node<'a>) -> bool,
+            instance: F::Node<'a>,
+        ) -> bool {
+            let Some(identity) = instance.container_identity() else {
+                return target(instance);
+            };
+            let key = (target as usize, identity);
+            if let Some(valid) = RESULTS.with_borrow(|results| results.as_ref()?.get(&key).copied())
+            {
+                return valid;
+            }
+            let visit = VISITS.get();
+            VISITS.set(visit.wrapping_add(1));
+            let valid = target(instance);
+            if VISITS.get().wrapping_sub(visit) >= MEMO_MIN_VISITS {
+                RESULTS.with_borrow_mut(|results| {
+                    results.get_or_insert_with(AHashMap::new).insert(key, valid);
+                });
+            }
+            valid
+        }
+    }
     pub mod unique_items {
         pub use crate::unique::is_unique;
     }

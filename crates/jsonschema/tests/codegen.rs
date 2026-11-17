@@ -2731,6 +2731,69 @@ fn test_recursive_ref_constraints_are_not_compiled_away(
     assert_eq!(RecursiveNodeValidator::is_valid(&instance), expected);
 }
 
+const REF_CYCLE_IN_BRANCHES: &str = r##"{"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}, "d": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}, "d": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}"##;
+
+#[jsonschema::validator(
+    schema = r##"{"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}, "d": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}, "d": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}"##,
+    draft = Draft7
+)]
+struct RefCycleInBranchesValidator;
+
+// Two `$ref` cycles that each reach every instance twice, one accepting what the other rejects.
+#[jsonschema::validator(
+    schema = r##"{"definitions": {"any": {"properties": {"c": {"$ref": "#/definitions/any"}}, "allOf": [{"properties": {"c": {"$ref": "#/definitions/any"}}}]}, "required": {"required": ["c"], "properties": {"c": {"$ref": "#/definitions/required"}}, "allOf": [{"properties": {"c": {"$ref": "#/definitions/required"}}}]}}, "allOf": [{"$ref": "#/definitions/any"}, {"$ref": "#/definitions/required"}]}"##,
+    draft = Draft7
+)]
+struct TwoRefCyclesValidator;
+
+// Each level of `levels` wraps the one below as `c`: `a` sends it through both `oneOf` branches
+// of `REF_CYCLE_IN_BRANCHES`, `b` through one.
+fn nested(levels: &str, leaf: serde_json::Value) -> serde_json::Value {
+    levels.chars().rev().fold(leaf, |child, level| match level {
+        'a' => serde_json::json!({"a": 1, "c": child}),
+        _ => serde_json::json!({"b": 1, "c": child}),
+    })
+}
+
+#[test_case(nested(&"b".repeat(20), serde_json::json!({})), true ; "single_branch_chain")]
+#[test_case(nested(&"a".repeat(20), serde_json::json!({})), false ; "both_branches_chain")]
+#[test_case(nested(&"b".repeat(20), serde_json::json!({"b": 2})), false ; "single_branch_chain_invalid_leaf")]
+#[test_case(nested(&format!("{}{}", "b".repeat(4), "a".repeat(16)), serde_json::json!({})), false ; "both_branches_below_single")]
+#[test_case(serde_json::json!({"b": 1, "c": nested(&"b".repeat(18), serde_json::json!({})), "d": nested(&"a".repeat(6), serde_json::json!({}))}), false ; "valid_sibling_before_invalid")]
+#[test_case(serde_json::json!({"b": 1, "c": nested(&"a".repeat(6), serde_json::json!({})), "d": nested(&"b".repeat(18), serde_json::json!({}))}), false ; "invalid_sibling_before_valid")]
+#[test_case(serde_json::json!({"b": 1, "c": nested(&"b".repeat(18), serde_json::json!({})), "d": nested(&"b".repeat(18), serde_json::json!({}))}), true ; "valid_siblings")]
+fn test_ref_cycle_in_branches_matches_runtime(instance: serde_json::Value, expected: bool) {
+    let schema = serde_json::from_str(REF_CYCLE_IN_BRANCHES).expect("valid JSON");
+    let runtime = jsonschema::draft7::new(&schema).expect("valid schema");
+    assert_eq!(runtime.is_valid(&instance), expected);
+    assert_eq!(RefCycleInBranchesValidator::is_valid(&instance), expected);
+}
+
+#[test]
+fn test_two_ref_cycles_on_the_same_instances() {
+    let instance = (0..20).fold(
+        serde_json::json!({}),
+        |child, _| serde_json::json!({"c": child}),
+    );
+    assert!(!TwoRefCyclesValidator::is_valid(&instance));
+}
+
+#[test]
+fn test_ref_cycle_results_do_not_outlive_their_instance() {
+    for round in 0..8 {
+        let leaf = if round % 2 == 0 {
+            serde_json::json!({})
+        } else {
+            serde_json::json!({"b": 2})
+        };
+        let instance = nested(&"b".repeat(20), leaf);
+        assert_eq!(
+            RefCycleInBranchesValidator::is_valid(&instance),
+            round % 2 == 0
+        );
+    }
+}
+
 #[test_case(serde_json::json!(1), false ; "number_rejected")]
 #[test_case(serde_json::json!("x"), false ; "string_rejected")]
 fn test_ref_siblings_are_enforced_in_draft_201909(instance: serde_json::Value, expected: bool) {

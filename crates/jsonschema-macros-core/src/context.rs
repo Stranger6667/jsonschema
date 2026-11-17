@@ -277,6 +277,8 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) uses_recursive_ref: bool,
     pub(crate) uses_dynamic_ref: bool,
     pub(crate) uses_ref_cycle: bool,
+    /// `$ref` targets in cycles one validation can take through the same instance more than once.
+    pub(crate) revisited_ref_targets: HashSet<String>,
     pub(crate) uri_format_caches: BTreeSet<UriFormatCache>,
     /// JSON Pointer tracking the current position in the schema document, embedded into the
     /// generated error constructors.
@@ -332,6 +334,7 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             uses_recursive_ref: false,
             uses_dynamic_ref: false,
             uses_ref_cycle: false,
+            revisited_ref_targets: HashSet::new(),
             uri_format_caches: BTreeSet::new(),
             schema_path: String::new(),
         }

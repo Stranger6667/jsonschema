@@ -226,8 +226,17 @@ fn compile_at<E: ValueEmitter>(
             )
         } else if plain_cycle || ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
             let errors_ident = format_ident!("{}_errors", func_name);
+            // Keywords reaching one instance through the cycle at every level would otherwise
+            // validate it once per path to it.
+            let is_valid = if plain_cycle && ctx.revisited_ref_targets.contains(&resolved.location)
+            {
+                let json = E::json_representation();
+                quote! { __ref_memo::is_valid::<#json>(#func_ident, instance) }
+            } else {
+                quote! { #func_ident(instance) }
+            };
             ref_check(
-                quote! { #func_ident(instance) },
+                is_valid,
                 call_errors(&quote! { #errors_ident(instance, __path, __errors, #site) }),
             )
             .with_ref_errors(RefErrors::Call(func_name, keyword))

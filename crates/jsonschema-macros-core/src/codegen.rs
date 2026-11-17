@@ -31,6 +31,7 @@ mod helpers;
 mod keywords;
 mod numeric;
 mod object_schema;
+mod ref_revisits;
 mod refs;
 mod regex;
 mod stack_emit;
@@ -51,6 +52,7 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
     impl_mod_name: &Ident,
 ) -> syn::Result<TokenStream> {
     let mut ctx = CompileContext::<E>::new(config);
+    ctx.revisited_ref_targets = ref_revisits::revisited_targets(&mut ctx, &config.schema);
     let validation_expr = compile_schema(&mut ctx, &config.schema);
     let recursive_stack_needed = ctx.uses_recursive_ref;
     let dynamic_stack_needed = ctx.uses_dynamic_ref;
