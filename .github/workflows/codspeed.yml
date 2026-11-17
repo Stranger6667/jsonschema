@@ -37,7 +37,7 @@ jobs:
             # validators, so the numeric work and the schema check this bench measures are the ones
             # they actually run.
             features: "--features macros,arbitrary-precision"
-            benches: "--bench canonicalize --bench canonicalize_many"
+            benches: "--bench canonicalize --bench canonicalize_many --bench canonical_difference"
           - name: jsonb
             package: jsonschema
             features: "--features jsonb"

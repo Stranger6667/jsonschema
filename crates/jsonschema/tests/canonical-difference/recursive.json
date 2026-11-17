@@ -1,0 +1,282 @@
+[
+  {
+    "description": "recursive: unchanged body, description",
+    "old": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/T"
+              }
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "new": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/T"
+              }
+            }
+          },
+          "required": [],
+          "description": "x"
+        }
+      }
+    },
+    "relation": "equal"
+  },
+  {
+    "description": "recursive: optional prop added (open)",
+    "old": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/T"
+              }
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "new": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/T"
+              }
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new", "new-old"]
+  },
+  {
+    "description": "recursive: required added",
+    "old": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/T"
+              }
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "new": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "children": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/T"
+              }
+            },
+            "name": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "name"
+          ]
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new", "new-old"]
+  },
+  {
+    "description": "recursive via property: leaf narrowed",
+    "old": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "next": {
+              "$ref": "#/$defs/T"
+            },
+            "v": {
+              "type": "integer"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "new": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "next": {
+              "$ref": "#/$defs/T"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new", "new-old"]
+  },
+  {
+    "description": "recursive nullable link: leaf narrowed",
+    "old": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "next": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/T"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "v": {
+              "type": "integer"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "new": {
+      "$ref": "#/$defs/T",
+      "$defs": {
+        "T": {
+          "type": "object",
+          "properties": {
+            "next": {
+              "anyOf": [
+                {
+                  "$ref": "#/$defs/T"
+                },
+                {
+                  "type": "null"
+                }
+              ]
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new", "new-old"]
+  },
+  {
+    "description": "mutual recursion: leaf narrowed",
+    "old": {
+      "$ref": "#/$defs/A",
+      "$defs": {
+        "A": {
+          "type": "object",
+          "properties": {
+            "b": {
+              "$ref": "#/$defs/B"
+            }
+          },
+          "required": []
+        },
+        "B": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "#/$defs/A"
+            },
+            "v": {
+              "type": "integer"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "new": {
+      "$ref": "#/$defs/A",
+      "$defs": {
+        "A": {
+          "type": "object",
+          "properties": {
+            "b": {
+              "$ref": "#/$defs/B"
+            }
+          },
+          "required": []
+        },
+        "B": {
+          "type": "object",
+          "properties": {
+            "a": {
+              "$ref": "#/$defs/A"
+            },
+            "v": {
+              "type": "integer",
+              "minimum": 0
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new", "new-old"]
+  }
+]

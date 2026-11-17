@@ -1,0 +1,210 @@
+[
+  {
+    "description": "array items narrowed inline",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 3
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "array items narrowed via ref",
+    "old": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/U"
+      },
+      "$defs": {
+        "U": {
+          "type": "string"
+        }
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "$ref": "#/$defs/U"
+      },
+      "$defs": {
+        "U": {
+          "type": "string",
+          "maxLength": 3
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "array of objects: field became required",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "required": []
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "a": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "a"
+        ]
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "array items widened",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "number"
+      }
+    },
+    "relation": "widen",
+    "pending": ["new-old"]
+  },
+  {
+    "description": "array items type changed",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "integer"
+      }
+    },
+    "relation": "incomparable",
+    "pending": ["old-new", "new-old"]
+  },
+  {
+    "description": "array items narrowed + maxItems",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      },
+      "maxItems": 3
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "string",
+        "maxLength": 3
+      },
+      "maxItems": 3
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "nested array items narrowed",
+    "old": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer"
+        }
+      }
+    },
+    "new": {
+      "type": "array",
+      "items": {
+        "type": "array",
+        "items": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  },
+  {
+    "description": "object prop array of ref narrowed",
+    "old": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/U"
+          }
+        }
+      },
+      "required": [],
+      "$defs": {
+        "U": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string"
+            }
+          },
+          "required": []
+        }
+      }
+    },
+    "new": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/U"
+          }
+        }
+      },
+      "required": [],
+      "$defs": {
+        "U": {
+          "type": "object",
+          "properties": {
+            "n": {
+              "type": "string"
+            }
+          },
+          "required": [
+            "n"
+          ]
+        }
+      }
+    },
+    "relation": "narrow",
+    "pending": ["old-new"]
+  }
+]
