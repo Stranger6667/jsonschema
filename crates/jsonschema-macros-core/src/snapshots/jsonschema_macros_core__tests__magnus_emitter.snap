@@ -1,6 +1,5 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 981
 expression: rendered
 ---
 struct Validator;
@@ -1835,12 +1834,13 @@ mod __validator_impl {
                                     Some(obj) => {
                                         if let Some(__e) = '__first_error: {
                                             if let Some(obj) = __NodeExt::as_object(&instance) {
+                                                let mut __report_guard_0: Option<bool> = None;
                                                 let mut __unexpected: Vec<String> = Vec::new();
                                                 for (__key, __value) in __ObjectExt::members(&obj) {
                                                     let key_str = (::std::convert::AsRef::<
                                                         str,
                                                     >::as_ref(&__key));
-                                                    if !((false)
+                                                    if !(((false)
                                                         || {
                                                             __ObjectExt::members(&obj)
                                                                 .find(|(__name, _)| {
@@ -1848,6 +1848,31 @@ mod __validator_impl {
                                                                 })
                                                                 .map(|(_, __value)| __value)
                                                                 .is_some_and(|instance| { __NodeExt::is_string(&instance) })
+                                                        })
+                                                        && match __report_guard_0 {
+                                                            Some(valid) => valid,
+                                                            None => {
+                                                                let valid = match __NodeExt::as_object(&instance) {
+                                                                    Some(obj) => {
+                                                                        __ObjectExt::members(&obj)
+                                                                            .all(|(__key, __value)| {
+                                                                                let key_str = (::std::convert::AsRef::<
+                                                                                    str,
+                                                                                >::as_ref(&__key));
+                                                                                if false {
+                                                                                    true
+                                                                                } else {
+                                                                                    (|instance: __Value<'_>| __NodeExt::is_string(
+                                                                                        &instance,
+                                                                                    ))(__value)
+                                                                                }
+                                                                            })
+                                                                    }
+                                                                    None => true,
+                                                                };
+                                                                __report_guard_0 = Some(valid);
+                                                                valid
+                                                            }
                                                         }) && !(false)
                                                     {
                                                         __unexpected

@@ -18,6 +18,7 @@
 - `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
 - `evaluate` messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
 - `#[jsonschema::validator]` reporting content that decodes to invalid UTF-8 beside `contentMediaType` at the schema root instead of at `contentEncoding`.
+- `#[jsonschema::validator]` errors for `unevaluatedProperties` and `unevaluatedItems` counting members as evaluated by a subschema that fails, such as an `allOf` branch.
 - `#[jsonschema::validator]` accepting instances of a type that `type` leaves out when keywords for that type are beside it.
 - `#[jsonschema::validator]` leaving out the `type` error when a `const` or `enum` beside it accepts only values of that type.
 - `#[jsonschema::validator]` reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
@@ -35,6 +36,7 @@
 - Error messages for `minContains` and `maxContains` claiming that no item is valid under the `contains` subschema.
 - `evaluate` output for `contains` annotating an instance that is not an array.
 - Evaluation paths of `propertyNames` errors leaving out a `$ref` inside `propertyNames`.
+- `unevaluatedProperties` and `unevaluatedItems` errors and `evaluate` output counting members as evaluated by a subschema that fails, such as a `$ref` target.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `f64`, such as `1e-400`, with the `arbitrary-precision` feature.
 
 ### Performance

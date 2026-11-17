@@ -11,7 +11,7 @@ use super::{
         stack_emit::{pop_recursive_key_eval, push_recursive_key_eval},
         CompiledExpr,
     },
-    unevaluated::compile_key_evaluated_expr,
+    unevaluated::{compile_key_evaluated_expr, ReportGuards},
 };
 
 /// Compile the "unevaluatedProperties" keyword.
@@ -33,7 +33,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     let uses_recursive_stack = ctx.uses_recursive_ref
         && ctx.draft.supports_recursive_ref_keyword()
         && schema.get("$recursiveAnchor").and_then(Value::as_bool) == Some(true);
-    let evaluated_expr = compile_key_evaluated_expr(ctx, schema, uses_recursive_stack, false);
+    let evaluated_expr = compile_key_evaluated_expr(ctx, schema, uses_recursive_stack, false, None);
     if !uses_recursive_stack && evaluated_expr.to_string() == "true" {
         return None;
     }
@@ -47,6 +47,9 @@ pub(crate) fn compile<E: ValueEmitter>(
     };
 
     let schema_path = ctx.schema_path_for_keyword("unevaluatedProperties");
+    let mut report = ReportGuards::default();
+    let reported_expr = compile_key_evaluated_expr(ctx, schema, false, true, Some(&mut report));
+    let report_cells = report.cells();
     if uses_recursive_stack {
         let root_key_eval_ident =
             proc_macro2::Ident::new("__root_key_eval", proc_macro2::Span::call_site());
@@ -81,10 +84,11 @@ pub(crate) fn compile<E: ValueEmitter>(
                     &str
                 ) -> bool = |instance, obj, key_str| { #evaluated_expr };
                 #recursive_push
+                #(#report_cells)*
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (__key, __value) in #entries {
                     let key_str = #key_as_str;
-                    if !__root_key_eval(instance, obj, key_str) && !(#unevaluated_check) {
+                    if !(#reported_expr) && !(#unevaluated_check) {
                         __unexpected.push(#owned_key);
                     }
                 }
@@ -98,7 +102,6 @@ pub(crate) fn compile<E: ValueEmitter>(
         );
         Some(CompiledExpr::from_first_error(is_valid, first_error))
     } else {
-        let located_expr = compile_key_evaluated_expr(ctx, schema, false, true);
         let is_valid = quote! {
             #entries.all(|(__key, __value)| {
                 let key_str = #key_as_str;
@@ -112,10 +115,11 @@ pub(crate) fn compile<E: ValueEmitter>(
         let first_error = E::if_object(
             format_ident!("instance"),
             quote! {
+                #(#report_cells)*
                 let mut __unexpected: Vec<String> = Vec::new();
                 for (__key, __value) in #entries {
                     let key_str = #key_as_str;
-                    if !(#located_expr) && !(#unevaluated_check) {
+                    if !(#reported_expr) && !(#unevaluated_check) {
                         __unexpected.push(#owned_key);
                     }
                 }

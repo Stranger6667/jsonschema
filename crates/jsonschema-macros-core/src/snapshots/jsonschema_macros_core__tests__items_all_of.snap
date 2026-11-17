@@ -49,9 +49,31 @@ match instance {
             __Value::Array(arr) => {
                 if let Some(__e) = '__first_error: {
                     if let __Value::Array(arr) = instance {
+                        let mut __report_guard_0: Option<bool> = None;
                         let mut __unexpected: Vec<String> = Vec::new();
                         for (idx, item) in arr.iter().enumerate() {
-                            if !(idx < 1usize) && !(false) {
+                            if !((idx < 1usize)
+                                && match __report_guard_0 {
+                                    Some(valid) => valid,
+                                    None => {
+                                        let valid = match instance {
+                                            __Value::Array(arr) => {
+                                                arr.get(0usize)
+                                                    .map_or(
+                                                        true,
+                                                        |instance| match instance {
+                                                            __Value::Number(n) => __types::is_integer(n),
+                                                            _ => false,
+                                                        },
+                                                    )
+                                            }
+                                            _ => true,
+                                        };
+                                        __report_guard_0 = Some(valid);
+                                        valid
+                                    }
+                                }) && !(false)
+                            {
                                 __unexpected.push(item.to_string());
                             }
                         }
