@@ -16,6 +16,32 @@ use serde_json::{json, Map, Number, Value};
 use test_case::test_case;
 
 #[test_case(&json!({"dependencies": {}, "unevaluatedProperties": false}); "unevaluated properties beside an applicator")]
+#[test_case(
+    &json!({
+        "$ref": "#/$defs/node",
+        "$defs": {"node": {"anyOf": [
+            {"properties": {"p": {"contains": {
+                "dependentSchemas": {"p": {"$ref": "#/$defs/node"}},
+                "unevaluatedProperties": false
+            }}}},
+            {}
+        ]}}
+    });
+    "unevaluated properties reaching itself through a reference"
+)]
+#[test_case(
+    &json!({
+        "$ref": "#/$defs/node",
+        "$defs": {"node": {"anyOf": [
+            {"properties": {"p": {"contains": {"not": {"anyOf": [{"not": {
+                "dependentSchemas": {"p": {"$ref": "#/$defs/node"}},
+                "unevaluatedProperties": false
+            }}]}}}}},
+            {}
+        ]}}
+    });
+    "negated unevaluated properties reaching itself through a reference"
+)]
 fn unsupported_document_round_trips_verbatim(schema: &Value) {
     let canonical = canonicalize(schema).expect("canonicalizes");
     assert_eq!(&canonical.to_json_schema(), schema);

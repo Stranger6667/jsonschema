@@ -668,6 +668,9 @@ struct ParseState<'a, 'b> {
     kept_parts: AHashMap<usize, Vec<(PartKind, Schema)>>,
     /// Nodes whose form holds a reference, with that form.
     unsettled: Vec<(usize, Schema)>,
+    /// The `unevaluated*` nodes whose rewrite is being parsed, outermost first; the outermost is
+    /// not kept.
+    rewriting: Vec<Option<Map<String, Value>>>,
 }
 
 /// Flags set anywhere in the document and read after the whole parse.
@@ -742,6 +745,7 @@ impl<'a, 'b> ParseState<'a, 'b> {
             keep_next_parts: false,
             kept_parts: AHashMap::default(),
             unsettled: Vec::new(),
+            rewriting: Vec::new(),
         }
     }
 
@@ -1085,12 +1089,23 @@ fn parse_schema_in_scope<'a>(
 
     // Runs before the `$ref` split below, which would hide a `$ref` from the applicator check.
     if has_unevaluated(map, ctx.draft()) {
+        // A rewrite copies referenced bodies in place, so a node reaching itself through a
+        // reference is inside its own rewrite and would be rewritten without end.
+        if state.rewriting.iter().flatten().any(|outer| outer == map) {
+            return Ok(None);
+        }
         let Some(degraded) = degrade_unevaluated(map, ctx.draft(), ctx, resolver)? else {
             return Ok(None);
         };
         state.keep_next_parts = keep;
+        // Only a node inside another rewrite is kept: the outermost one is seen again one level
+        // down, and most documents nest no rewrites.
+        let nested = !state.rewriting.is_empty();
+        state.rewriting.push(nested.then(|| map.clone()));
         let parsed =
-            ctx.over_rewritten(|| parse_schema_in_scope(&degraded, ctx, is_root, resolver, state))?;
+            ctx.over_rewritten(|| parse_schema_in_scope(&degraded, ctx, is_root, resolver, state));
+        state.rewriting.pop();
+        let parsed = parsed?;
         if recording {
             state.move_recorded(address(&degraded), address(value));
         }
