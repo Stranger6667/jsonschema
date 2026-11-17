@@ -2445,6 +2445,31 @@ mod tests {
         );
     }
 
+    #[test_case(json!({"dependentRequired": {"foo": ["bar"]}}), "dependentRequired" ; "dependentRequired")]
+    #[test_case(
+        json!({"$schema": "http://json-schema.org/draft-07/schema#", "dependencies": {"foo": ["bar"]}}),
+        "dependencies" ; "dependencies"
+    )]
+    fn test_absolute_keyword_location_of_dependent_names(mut schema: Value, keyword: &str) {
+        schema["$id"] = json!("https://example.com/schema.json");
+        let validator = crate::validator_for(&schema).expect("schema should compile");
+        let instance = json!({"foo": 1});
+        let expected = format!("https://example.com/schema.json#/{keyword}");
+        let err = validator.validate(&instance).unwrap_err();
+        assert_eq!(
+            err.absolute_keyword_location().map(Uri::as_str),
+            Some(expected.as_str())
+        );
+        let locations: Vec<_> = validator
+            .iter_errors(&instance)
+            .map(|err| {
+                err.absolute_keyword_location()
+                    .map(|uri| uri.as_str().to_string())
+            })
+            .collect();
+        assert_eq!(locations, [Some(expected)]);
+    }
+
     #[test]
     fn test_absolute_keyword_location_false_schema() {
         let schema = serde_json::json!(false);
