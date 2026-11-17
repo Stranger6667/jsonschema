@@ -41,7 +41,7 @@ mod __validator_impl {
         instance: &'__i __Value,
         __path: &__paths::LazyLocation,
         __errors: &mut __err::Errors<'__i>,
-        __type_path: &str,
+        __type_path: &'static str,
         __ref_path: &str,
     ) -> bool {
         match instance {

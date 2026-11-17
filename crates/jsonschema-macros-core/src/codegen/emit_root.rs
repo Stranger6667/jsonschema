@@ -283,7 +283,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                         instance: #borrowed_node,
                         __path: &__paths::LazyLocation,
                         __errors: &mut __err::Errors<'__i>,
-                        __type_path: &str,
+                        __type_path: &'static str,
                         __ref_path: &str,
                     ) -> bool {
                         #function_prelude

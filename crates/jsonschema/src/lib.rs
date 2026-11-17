@@ -3784,7 +3784,7 @@ pub mod __private {
             keyword: &dyn crate::Keyword<'i, F>,
             instance: &F::Node<'i>,
             instance_path: Location,
-            schema_path: &str,
+            schema_path: &'static str,
             keyword_name: &str,
         ) -> Option<crate::ValidationError<'i>> {
             match keyword.validate(instance.clone()) {
@@ -3792,7 +3792,7 @@ pub mod __private {
                 Err(error) => Some(error.with_generated_context(
                     instance.to_value(),
                     instance_path,
-                    Location::from_escaped(schema_path),
+                    super::schema_location(schema_path),
                     keyword_name,
                 )),
             }
@@ -3805,7 +3805,7 @@ pub mod __private {
             keyword: &dyn crate::Keyword<'i, F>,
             instance: &F::Node<'i>,
             instance_path: Location,
-            schema_path: &str,
+            schema_path: &'static str,
             keyword_name: &str,
             errors: &mut super::error::Errors<'i>,
         ) -> bool {
@@ -3822,7 +3822,7 @@ pub mod __private {
                 let _ = errors.push(error.with_generated_context(
                     value.clone(),
                     instance_path.clone(),
-                    Location::from_escaped(schema_path),
+                    super::schema_location(schema_path),
                     keyword_name,
                 ));
             }
@@ -4041,6 +4041,25 @@ pub mod __private {
     pub use crate::evaluation::generated as evaluation;
 
     /// Per-keyword error constructors for generated code; evaluation path always equals schema path.
+    /// The schema path of an error a generated validator reports, shared by every error at that
+    /// site on this thread instead of allocated per error.
+    fn schema_location(path: &'static str) -> crate::paths::Location {
+        std::thread_local! {
+            static LOCATIONS: std::cell::RefCell<ahash::AHashMap<(usize, usize), crate::paths::Location>> =
+                std::cell::RefCell::new(ahash::AHashMap::new());
+        }
+        // During thread teardown the cache is gone, and the path is built as it would be without it.
+        LOCATIONS
+            .try_with(|locations| {
+                locations
+                    .borrow_mut()
+                    .entry((path.as_ptr().addr(), path.len()))
+                    .or_insert_with(|| crate::paths::Location::from_escaped(path))
+                    .clone()
+            })
+            .unwrap_or_else(|_| crate::paths::Location::from_escaped(path))
+    }
+
     pub mod error {
         use serde_json::Value;
 
@@ -4193,13 +4212,13 @@ pub mod __private {
         /// `contentEncoding` keyword violation.
         #[inline]
         pub fn content_encoding<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             encoding: &str,
         ) -> ValidationError<'i> {
             ValidationError::content_encoding(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4211,7 +4230,7 @@ pub mod __private {
         /// as the runtime does.
         #[inline]
         pub fn content_conversion<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             error: ValidationError<'_>,
@@ -4220,7 +4239,7 @@ pub mod __private {
                 instance.into(),
                 error.into_parts().kind,
                 instance_path,
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
             )
         }
@@ -4228,13 +4247,13 @@ pub mod __private {
         /// `contentMediaType` keyword violation.
         #[inline]
         pub fn content_media_type<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             media_type: &str,
         ) -> ValidationError<'i> {
             ValidationError::content_media_type(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4245,13 +4264,13 @@ pub mod __private {
         /// `minLength` keyword violation: string is shorter than `limit` characters.
         #[inline]
         pub fn min_length<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::min_length(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4262,13 +4281,13 @@ pub mod __private {
         /// `maxLength` keyword violation: string exceeds `limit` characters.
         #[inline]
         pub fn max_length<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::max_length(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4279,13 +4298,13 @@ pub mod __private {
         /// `pattern` keyword violation.
         #[inline]
         pub fn pattern<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             pattern: &str,
         ) -> ValidationError<'i> {
             ValidationError::pattern(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4296,13 +4315,13 @@ pub mod __private {
         /// `format` keyword violation.
         #[inline]
         pub fn format<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             format: &str,
         ) -> ValidationError<'i> {
             ValidationError::format(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4315,13 +4334,13 @@ pub mod __private {
         /// Use [`single_type`] when only one type is expected, [`multiple_types`] for union types.
         #[inline]
         pub fn single_type<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             ty: JsonType,
         ) -> ValidationError<'i> {
             ValidationError::single_type_error(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4332,13 +4351,13 @@ pub mod __private {
         /// `type` keyword violation for a union of expected types.
         #[inline]
         pub fn multiple_types<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             types: JsonTypeSet,
         ) -> ValidationError<'i> {
             ValidationError::multiple_type_error(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4349,13 +4368,13 @@ pub mod __private {
         /// `minimum` keyword violation: value is less than `limit`.
         #[inline]
         pub fn minimum<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: Value,
         ) -> ValidationError<'i> {
             ValidationError::minimum(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4366,13 +4385,13 @@ pub mod __private {
         /// `maximum` keyword violation: value exceeds `limit`.
         #[inline]
         pub fn maximum<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: Value,
         ) -> ValidationError<'i> {
             ValidationError::maximum(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4383,13 +4402,13 @@ pub mod __private {
         /// `exclusiveMinimum` keyword violation: value is not strictly greater than `limit`.
         #[inline]
         pub fn exclusive_minimum<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: Value,
         ) -> ValidationError<'i> {
             ValidationError::exclusive_minimum(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4400,13 +4419,13 @@ pub mod __private {
         /// `exclusiveMaximum` keyword violation: value is not strictly less than `limit`.
         #[inline]
         pub fn exclusive_maximum<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: Value,
         ) -> ValidationError<'i> {
             ValidationError::exclusive_maximum(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4418,13 +4437,13 @@ pub mod __private {
         #[cfg(not(feature = "arbitrary-precision"))]
         #[inline]
         pub fn multiple_of<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             multiple_of: f64,
         ) -> ValidationError<'i> {
             ValidationError::multiple_of(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4436,13 +4455,13 @@ pub mod __private {
         #[cfg(feature = "arbitrary-precision")]
         #[inline]
         pub fn multiple_of<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             multiple_of: Value,
         ) -> ValidationError<'i> {
             ValidationError::multiple_of(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4453,13 +4472,13 @@ pub mod __private {
         /// `minItems` keyword violation: array has fewer items than `limit`.
         #[inline]
         pub fn min_items<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::min_items(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4470,13 +4489,13 @@ pub mod __private {
         /// `maxItems` keyword violation: array exceeds `limit` items.
         #[inline]
         pub fn max_items<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::max_items(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4487,13 +4506,13 @@ pub mod __private {
         /// `additionalItems` keyword violation (Draft 4 / 2019-09 tuple form).
         #[inline]
         pub fn additional_items<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: usize,
         ) -> ValidationError<'i> {
             ValidationError::additional_items(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4504,12 +4523,12 @@ pub mod __private {
         /// `uniqueItems` keyword violation: array contains duplicate elements.
         #[inline]
         pub fn unique_items<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
         ) -> ValidationError<'i> {
             ValidationError::unique_items(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4519,12 +4538,12 @@ pub mod __private {
         /// `contains` keyword violation: no array item matched the `contains` schema.
         #[inline]
         pub fn contains<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
         ) -> ValidationError<'i> {
             ValidationError::contains(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4534,13 +4553,13 @@ pub mod __private {
         /// `minContains` keyword violation: fewer than `limit` items match `contains`.
         #[inline]
         pub fn min_contains<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::min_contains(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4551,13 +4570,13 @@ pub mod __private {
         /// `maxContains` keyword violation: more than `limit` items match `contains`.
         #[inline]
         pub fn max_contains<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::max_contains(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4568,13 +4587,13 @@ pub mod __private {
         /// `minProperties` keyword violation: object has fewer properties than `limit`.
         #[inline]
         pub fn min_properties<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::min_properties(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4585,13 +4604,13 @@ pub mod __private {
         /// `maxProperties` keyword violation: object exceeds `limit` properties.
         #[inline]
         pub fn max_properties<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             limit: u64,
         ) -> ValidationError<'i> {
             ValidationError::max_properties(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4619,13 +4638,13 @@ pub mod __private {
         /// `required` keyword violation: object is missing `property`.
         #[inline]
         pub fn required<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             property: &str,
         ) -> ValidationError<'i> {
             ValidationError::required(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4636,13 +4655,13 @@ pub mod __private {
         /// `additionalProperties` keyword violation (the `false` schema form).
         #[inline]
         pub fn additional_properties<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             unexpected: Vec<String>,
         ) -> ValidationError<'i> {
             ValidationError::additional_properties(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4653,7 +4672,7 @@ pub mod __private {
         /// `const` keyword violation: instance does not equal the expected constant.
         #[inline]
         pub fn constant<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             expected: &std::sync::Arc<Value>,
@@ -4664,7 +4683,7 @@ pub mod __private {
                     expected_value: std::sync::Arc::clone(expected),
                 },
                 instance_path,
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
             )
         }
@@ -4672,13 +4691,13 @@ pub mod __private {
         /// `enum` keyword violation: instance does not match any of the allowed values.
         #[inline]
         pub fn enumeration<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             options: &std::sync::Arc<Value>,
         ) -> ValidationError<'i> {
             ValidationError::enumeration(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4689,12 +4708,12 @@ pub mod __private {
         /// `false` schema violation: nothing is valid against a `false` schema.
         #[inline]
         pub fn false_schema<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
         ) -> ValidationError<'i> {
             ValidationError::false_schema(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4704,13 +4723,13 @@ pub mod __private {
         /// `not` keyword violation: instance is valid against the negated schema.
         #[inline]
         pub fn not<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             schema: Value,
         ) -> ValidationError<'i> {
             ValidationError::not(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4721,13 +4740,13 @@ pub mod __private {
         /// `anyOf` keyword violation: instance is not valid under any of the listed schemas.
         #[inline]
         pub fn any_of<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             context: Vec<Vec<ValidationError<'i>>>,
         ) -> ValidationError<'i> {
             ValidationError::any_of(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4738,13 +4757,13 @@ pub mod __private {
         /// `oneOf` keyword violation: instance is not valid under any of the listed schemas.
         #[inline]
         pub fn one_of_not_valid<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             context: Vec<Vec<ValidationError<'i>>>,
         ) -> ValidationError<'i> {
             ValidationError::one_of_not_valid(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4755,13 +4774,13 @@ pub mod __private {
         /// `oneOf` keyword violation: instance is valid under more than one of the listed schemas.
         #[inline]
         pub fn one_of_multiple_valid<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             context: Vec<Vec<ValidationError<'i>>>,
         ) -> ValidationError<'i> {
             ValidationError::one_of_multiple_valid(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4772,13 +4791,13 @@ pub mod __private {
         /// `unevaluatedProperties` keyword violation.
         #[inline]
         pub fn unevaluated_properties<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             unexpected: Vec<String>,
         ) -> ValidationError<'i> {
             ValidationError::unevaluated_properties(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
@@ -4789,13 +4808,13 @@ pub mod __private {
         /// `unevaluatedItems` keyword violation.
         #[inline]
         pub fn unevaluated_items<'i>(
-            schema_path: &str,
+            schema_path: &'static str,
             instance_path: Location,
             instance: impl Into<LazyInstance<'i>>,
             unexpected: Vec<String>,
         ) -> ValidationError<'i> {
             ValidationError::unevaluated_items(
-                Location::from_escaped(schema_path),
+                super::schema_location(schema_path),
                 LazyEvaluationPath::SameAsSchemaPath,
                 instance_path,
                 instance.into(),
