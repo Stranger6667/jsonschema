@@ -279,11 +279,6 @@ class ValidationErrorKind:
         error: str
 
     @final
-    class RegexEngineFailure(ValidationErrorKind):
-        __match_args__ = ("message",)
-        message: str
-
-    @final
     class Constant(ValidationErrorKind):
         __match_args__ = ("expected_value",)
         expected_value: JsonValue

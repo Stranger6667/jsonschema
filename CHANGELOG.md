@@ -48,6 +48,7 @@
 - Stack overflow in `canonicalize` for `unevaluatedProperties` or `unevaluatedItems` reaching itself through a `$ref`, such as one in `dependentSchemas`.
 - `subtract` keeping a difference `satisfiability` cannot decide for a union of three or more object variants where one variant is narrowed.
 - `canonicalize` keeping `oneOf` over references to unions of tagged objects that share no tag value, where a plain union says the same.
+- `pattern` with a large bounded count the regex engine matches, such as `^x?.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
 
 ### Performance
 
@@ -64,6 +65,10 @@
 - `unevaluatedProperties` matching names against sequence-shaped `patternProperties`, such as `^[a-z0-9-]+$` or `^[1-5](?:[0-9]{2}|XX)$`, without a regex engine.
 - `properties` and a sibling `unevaluatedProperties` checked in one pass over the object by `is_valid`.
 - `pattern` and `patternProperties` with fixed-length optional groups, exactly repeated groups, a leading group of alternatives, or a run of varying length after fixed characters, such as `^[a-z][a-z0-9-_]{1,63}$`, matched without a regex engine.
+
+### Removed
+
+- **BREAKING**: `ValidationErrorKind::RegexEngineFailure`.
 
 ## [0.61.2] - 2026-11-12
 

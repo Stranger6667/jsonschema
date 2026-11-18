@@ -3582,27 +3582,25 @@ pub mod __private {
         }
 
         /// Whether `regex` matches `subject`. A match the engine cannot finish is recorded at
-        /// `schema_path` with the `pattern` keyword's source pattern and the instance location
-        /// when the caller tracks one.
+        /// `schema_path` with the instance location when the caller tracks one.
         #[inline]
         #[must_use]
         pub fn fancy_is_match(
             regex: &fancy_regex::Regex,
             subject: &str,
             schema_path: &str,
-            pattern: Option<&str>,
             instance_path: Option<&LazyLocation>,
         ) -> bool {
             if MET.get() {
                 if let Some(matches) =
-                    resolve_unfinished(regex, subject, schema_path, pattern, instance_path)
+                    resolve_unfinished(regex, subject, schema_path, instance_path)
                 {
                     return matches;
                 }
             }
             match regex.is_match(subject) {
                 Ok(matches) => matches,
-                Err(error) => resolve(regex, subject, error, schema_path, pattern, instance_path),
+                Err(error) => resolve(regex, subject, error, schema_path, instance_path),
             }
         }
 
@@ -3613,14 +3611,13 @@ pub mod __private {
             regex: &fancy_regex::Regex,
             subject: &str,
             schema_path: &str,
-            pattern: Option<&str>,
             instance_path: Option<&LazyLocation>,
         ) -> Option<bool> {
             MATCHES.with_borrow_mut(|matches| {
                 let matches = matches.as_mut()?;
                 matches.is_unfinished(regex.as_str(), subject).then(|| {
                     matches.resolve_unfinished(regex.as_str(), subject, || {
-                        site(schema_path, pattern, instance_path)
+                        site(schema_path, instance_path)
                     })
                 })
             })
@@ -3632,10 +3629,9 @@ pub mod __private {
             subject: &str,
             error: fancy_regex::Error,
             schema_path: &str,
-            pattern: Option<&str>,
             instance_path: Option<&LazyLocation>,
         ) -> bool {
-            let error = FancyRegexError::Engine {
+            let error = FancyRegexError {
                 error,
                 pattern: regex.as_str().into(),
             };
@@ -3643,20 +3639,12 @@ pub mod __private {
             MATCHES.with_borrow_mut(|matches| {
                 matches
                     .get_or_insert_with(Box::default)
-                    .resolve(subject, error, || site(schema_path, pattern, instance_path))
+                    .resolve(subject, error, || site(schema_path, instance_path))
             })
         }
 
-        fn site(
-            schema_path: &str,
-            pattern: Option<&str>,
-            instance_path: Option<&LazyLocation>,
-        ) -> MatchSite {
-            let site = MatchSite::escaped(schema_path, instance_path.map(Into::into));
-            match pattern {
-                Some(pattern) => site.pattern(pattern),
-                None => site,
-            }
+        fn site(schema_path: &str, instance_path: Option<&LazyLocation>) -> MatchSite {
+            MatchSite::escaped(schema_path, instance_path.map(Into::into))
         }
 
         fn swap(matches: &mut Option<Box<MatchAssumptions>>) {

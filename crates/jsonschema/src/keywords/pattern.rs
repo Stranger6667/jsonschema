@@ -230,7 +230,7 @@ impl<R: RegexEngine> PatternValidator<R> {
         ctx: &mut ValidationContext,
         site: impl FnOnce() -> MatchSite,
     ) -> bool {
-        ctx.is_match(&*self.regex, item, || site().pattern(&self.pattern))
+        ctx.is_match(&*self.regex, item, site)
     }
 }
 
@@ -649,28 +649,26 @@ mod tests {
         assert!(!validator.is_valid(&invalid));
     }
 
-    // `catch_unwind` is a no-op under `panic = "abort"` (e.g. the wasm32-wasip1 default), so the
-    // recovery path can't be exercised there.
-    #[cfg(panic = "unwind")]
-    #[test]
-    fn empty_string_with_large_bounded_quantifier_fancy_regex() {
-        // Recovery for https://github.com/rust-lang/regex/issues/1344.
+    // `x?` keeps the count in the engine instead of the character counter.
+    #[test_case("", true; "empty")]
+    #[test_case("x", true; "optional prefix")]
+    #[test_case("xab", true; "prefix and count")]
+    #[test_case("a\nb", false; "line feed")]
+    fn large_bounded_count_in_the_engine(text: &str, is_matching: bool) {
         let schema = json!({"type": "string", "pattern": r"^x?.{0,404600}$"});
-        let validator = crate::options()
+        let text = json!(text);
+        let fancy = crate::options()
             .with_pattern_options(PatternOptions::fancy_regex().size_limit(1_000_000_000))
             .build(&schema)
             .expect("Schema should be valid");
-
-        assert!(validator.is_valid(&json!("x")));
-        assert!(!validator.is_valid(&json!("")));
-        let empty = json!("");
-        let error = validator
-            .validate(&empty)
-            .expect_err("expected a validation error");
-        assert_eq!(
-            error.to_string(),
-            "Regex engine failed to evaluate pattern '^x?.{0,404600}$'"
-        );
+        let regex = crate::options()
+            .with_pattern_options(PatternOptions::regex().size_limit(1_000_000_000))
+            .build(&schema)
+            .expect("Schema should be valid");
+        for validator in [&fancy, &regex] {
+            assert_eq!(validator.is_valid(&text), is_matching);
+            assert_eq!(validator.validate(&text).is_ok(), is_matching);
+        }
     }
 
     #[test]
@@ -696,28 +694,6 @@ mod tests {
         assert_eq!(
             error.to_string(),
             "Error executing regex: Max limit for backtracking count exceeded"
-        );
-    }
-
-    #[cfg(panic = "unwind")]
-    #[test]
-    fn empty_string_with_large_bounded_quantifier_regex() {
-        // Recovery for https://github.com/rust-lang/regex/issues/1344.
-        let schema = json!({"type": "string", "pattern": r"^x?.{0,404600}$"});
-        let validator = crate::options()
-            .with_pattern_options(PatternOptions::regex().size_limit(1_000_000_000))
-            .build(&schema)
-            .expect("Schema should be valid");
-
-        assert!(validator.is_valid(&json!("x")));
-        assert!(!validator.is_valid(&json!("")));
-        let empty = json!("");
-        let error = validator
-            .validate(&empty)
-            .expect_err("expected a validation error");
-        assert_eq!(
-            error.to_string(),
-            "Regex engine failed to evaluate pattern '^x?.{0,404600}$'"
         );
     }
 

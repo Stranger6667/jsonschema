@@ -28,27 +28,6 @@ def test_regex_engine_validation():
     assert not validator.is_valid("Hello123")
 
 
-# Recovery for https://github.com/rust-lang/regex/issues/1344.
-@pytest.mark.parametrize(
-    "options",
-    [
-        FancyRegexOptions(size_limit=1_000_000_000),
-        RegexOptions(size_limit=1_000_000_000),
-    ],
-    ids=["fancy_regex", "regex"],
-)
-def test_pattern_panic_surfaces_as_validation_error(options):
-    schema = {"type": "string", "pattern": r"^x?.{0,404600}$"}
-    validator = jsonschema_rs.validator_for(schema, pattern_options=options)
-
-    assert validator.is_valid("x")
-    assert not validator.is_valid("")
-    with pytest.raises(jsonschema_rs.ValidationError) as excinfo:
-        validator.validate("")
-    assert "Regex engine failed to evaluate pattern '^x?.{0,404600}$'" in str(excinfo.value)
-    assert excinfo.value.kind.name == "pattern"
-
-
 # The engine cannot finish the first alternative within the default backtrack limit; the second,
 # `a+!$`, matches
 UNFINISHED_PATTERN = r"^(?:((a|aa)(?=a?))+$|a+!$)"

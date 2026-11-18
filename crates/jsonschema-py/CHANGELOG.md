@@ -36,6 +36,7 @@
 - `unevaluatedProperties` and `unevaluatedItems` errors and `evaluate` output counting members as evaluated by a subschema that fails, such as a `$ref` target.
 - `absolute_keyword_location` of errors for names missing under `dependentRequired` or `dependencies` pointing to a schema location that does not exist.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `float`, such as `Decimal("1e-400")`.
+- `pattern` with a large bounded count the regex engine matches, such as `^x?.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
 
 ### Performance
 
@@ -47,6 +48,10 @@
 - `properties` and a sibling `unevaluatedProperties` checked in one pass over the object by `is_valid`.
 - `properties` looking up each declared name in a `dict` that has more members than names, instead of walking its members.
 - `pattern` and `patternProperties` with fixed-length optional groups, exactly repeated groups, a leading group of alternatives, or a run of varying length after fixed characters, such as `^[a-z][a-z0-9-_]{1,63}$`, matched without a regex engine.
+
+### Removed
+
+- **BREAKING**: `ValidationErrorKind.RegexEngineFailure`.
 
 ## [0.61.2] - 2026-11-12
 

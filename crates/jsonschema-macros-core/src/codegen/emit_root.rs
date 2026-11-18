@@ -76,7 +76,6 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                     PatternEngineConfig::FancyRegex { .. } => quote! {
                         subject: &str,
                         _schema_path: &str,
-                        _pattern: Option<&str>,
                         _instance_path: Option<&__paths::LazyLocation>,
                     },
                     PatternEngineConfig::Regex { .. } => quote! { subject: &str },
@@ -108,7 +107,6 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                         fn #helper_ident(
                             subject: &str,
                             schema_path: &str,
-                            pattern: Option<&str>,
                             instance_path: Option<&__paths::LazyLocation>,
                         ) -> bool {
                             static REGEX: __Lazy<Option<__fancy::Regex>> =
@@ -121,7 +119,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                                 });
                             REGEX.as_ref().is_some_and(|re| {
                                 __unfinished::fancy_is_match(
-                                    re, subject, schema_path, pattern, instance_path,
+                                    re, subject, schema_path, instance_path,
                                 )
                             })
                         }

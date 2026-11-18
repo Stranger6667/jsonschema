@@ -39,7 +39,6 @@ mod __validator_impl {
     fn __jsonschema_regex_0(
         subject: &str,
         schema_path: &str,
-        pattern: Option<&str>,
         instance_path: Option<&__paths::LazyLocation>,
     ) -> bool {
         static REGEX: __Lazy<Option<__fancy::Regex>> = __Lazy::new(|| {
@@ -49,13 +48,7 @@ mod __validator_impl {
         REGEX
             .as_ref()
             .is_some_and(|re| {
-                __unfinished::fancy_is_match(
-                    re,
-                    subject,
-                    schema_path,
-                    pattern,
-                    instance_path,
-                )
+                __unfinished::fancy_is_match(re, subject, schema_path, instance_path)
             })
     }
     pub(super) fn is_valid(instance: &__Value) -> bool {
@@ -69,7 +62,6 @@ mod __validator_impl {
                             __jsonschema_regex_0(
                                 key.as_str(),
                                 "/patternProperties/^[a-z]{2,}$",
-                                None,
                                 None,
                             )
                         } {
@@ -103,7 +95,6 @@ mod __validator_impl {
                         __jsonschema_regex_0(
                             key.as_str(),
                             "/patternProperties/^[a-z]{2,}$",
-                            None,
                             Some(__path),
                         )
                     } {
@@ -165,7 +156,6 @@ mod __validator_impl {
                             if !(__jsonschema_regex_0(
                                 s,
                                 "/propertyNames/pattern",
-                                Some("^[a-z]{2,}$"),
                                 Some(__path),
                             )) {
                                 break '__first_error Some(

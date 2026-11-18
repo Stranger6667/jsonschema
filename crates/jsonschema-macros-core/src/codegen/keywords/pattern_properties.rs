@@ -123,7 +123,6 @@ pub(crate) fn name_match_expr<E: ValueEmitter>(
                 });
                 let mut site = RegexSite {
                     schema_path: &schema_path,
-                    pattern: None,
                     located: false,
                 };
                 let is_valid =

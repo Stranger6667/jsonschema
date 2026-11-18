@@ -39,7 +39,6 @@ mod __validator_impl {
     fn __jsonschema_regex_0(
         subject: &str,
         schema_path: &str,
-        pattern: Option<&str>,
         instance_path: Option<&__paths::LazyLocation>,
     ) -> bool {
         static REGEX: __Lazy<Option<__fancy::Regex>> = __Lazy::new(|| {
@@ -49,13 +48,7 @@ mod __validator_impl {
         REGEX
             .as_ref()
             .is_some_and(|re| {
-                __unfinished::fancy_is_match(
-                    re,
-                    subject,
-                    schema_path,
-                    pattern,
-                    instance_path,
-                )
+                __unfinished::fancy_is_match(re, subject, schema_path, instance_path)
             })
     }
     pub(super) fn is_valid(instance: &__Value) -> bool {
@@ -76,7 +69,6 @@ mod __validator_impl {
                                 __jsonschema_regex_0(
                                     key.as_str(),
                                     "/patternProperties/[0-9]$",
-                                    None,
                                     None,
                                 )
                             } {
@@ -123,7 +115,6 @@ mod __validator_impl {
                         __jsonschema_regex_0(
                             key.as_str(),
                             "/patternProperties/[0-9]$",
-                            None,
                             Some(__path),
                         )
                     } {
@@ -257,7 +248,7 @@ mod __validator_impl {
     }
     pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
         fn __matches_0(name: &str) -> bool {
-            { __jsonschema_regex_0(name, "/patternProperties/[0-9]$", None, None) }
+            { __jsonschema_regex_0(name, "/patternProperties/[0-9]$", None) }
         }
         fn __matches_1(name: &str) -> bool {
             name.starts_with("x-")

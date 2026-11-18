@@ -81,7 +81,7 @@ percent-encoding = "2.3"
 magnus = { version = "0.9", optional = true, features = ["rb-sys"] }
 pyo3 = { version = "0.30", optional = true }
 referencing = { version = "0.61.2", path = "../jsonschema-referencing" }
-regex = "1.11.1"
+regex = "1.13.2"
 serde.workspace = true
 # `float_roundtrip`: canonical JSON serialization round-trips floats through re-parses downstream.
 serde_json = { workspace = true, features = ["float_roundtrip"] }

@@ -44,7 +44,6 @@ pub(crate) enum Kind {
     AdditionalProperties { unexpected: Vec<String> },
     AnyOf { context: Vec<Vec<Error>> },
     BacktrackLimitExceeded { message: String },
-    RegexEngineFailure { message: String },
     Constant { expected_value: Value },
     Contains,
     ContentEncoding { content_encoding: String },
@@ -96,9 +95,6 @@ impl From<&ValidationErrorKind> for Kind {
             },
             ValidationErrorKind::BacktrackLimitExceeded { error } => Kind::BacktrackLimitExceeded {
                 message: error.to_string(),
-            },
-            ValidationErrorKind::RegexEngineFailure { message } => Kind::RegexEngineFailure {
-                message: message.clone(),
             },
             ValidationErrorKind::Constant { expected_value } => Kind::Constant {
                 expected_value: Value::clone(expected_value),
@@ -649,34 +645,6 @@ mod tests {
                     "kind": {
                         "type": "backtrackLimitExceeded",
                         "message": "Error executing regex: Max limit for backtracking count exceeded"
-                    }
-                }
-            ])
-        );
-    }
-
-    // `catch_unwind` is a no-op under `panic = "abort"` (wasm32-wasip1's default), so this
-    // recovered-panic path only runs where the panic strategy is `unwind`.
-    #[cfg(panic = "unwind")]
-    #[test]
-    fn regex_engine_panic_recovery_maps_to_regex_engine_failure_kind() {
-        // Recovered `regex-automata` panic: https://github.com/rust-lang/regex/issues/1344.
-        let schema = json!({"type": "string", "pattern": r"^x?.{0,404600}$"});
-        let validator = options()
-            .with_pattern_options(PatternOptions::fancy_regex().size_limit(1_000_000_000))
-            .build(&schema)
-            .unwrap();
-        let instance = json!("");
-        assert_eq!(
-            errors_of(&validator, &instance),
-            json!([
-                {
-                    "message": "Regex engine failed to evaluate pattern '^x?.{0,404600}$'",
-                    "instancePath": [],
-                    "schemaPath": ["pattern"],
-                    "kind": {
-                        "type": "regexEngineFailure",
-                        "message": "Regex engine failed to evaluate pattern '^x?.{0,404600}$'"
                     }
                 }
             ])
