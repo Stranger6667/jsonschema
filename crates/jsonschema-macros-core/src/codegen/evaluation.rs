@@ -306,15 +306,6 @@ impl Tree {
         let mut annotations = None;
         if let Value::Object(keywords) = schema {
             let keywords = &active_keywords(ctx, keywords);
-            if let Some(keyword) = keywords
-                .keys()
-                .find(|keyword| ctx.config.custom_keywords.contains_key(*keyword))
-            {
-                return Err(syn::Error::new(
-                    proc_macro2::Span::call_site(),
-                    format!("`evaluate` does not support the custom `{keyword}` keyword yet"),
-                ));
-            }
             let reference = keywords.get("$ref").and_then(Value::as_str);
             if let Some(reference) = reference.filter(|_| !ctx.draft.supports_adjacent_validation())
             {
@@ -562,10 +553,20 @@ impl Tree {
                     units.push(self.reference(ctx, keyword, reference)?);
                 }
             }
+            // Custom keywords apply last, in the schema's order.
+            units.extend(
+                keywords
+                    .keys()
+                    .filter(|keyword| ctx.config.custom_keywords.contains_key(*keyword))
+                    .map(|keyword| TreeUnit::Leaf(Unit::new(keyword))),
+            );
             // The draft's unknown keywords annotate the schema, as the runtime reports them.
             let unknown: Map<_, _> = keywords
                 .iter()
-                .filter(|(keyword, _)| !ctx.draft.is_known_keyword(keyword))
+                .filter(|(keyword, _)| {
+                    !ctx.draft.is_known_keyword(keyword)
+                        && !ctx.config.custom_keywords.contains_key(*keyword)
+                })
                 .map(|(keyword, value)| (keyword.clone(), value.clone()))
                 .collect();
             if !unknown.is_empty() {

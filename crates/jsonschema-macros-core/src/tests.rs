@@ -439,8 +439,6 @@ fn evaluate_object_applicators_module() {
     );
 }
 
-#[test_case(json!({"even": true}), "`evaluate` does not support the custom `even` keyword yet" ; "custom keyword")]
-#[test_case(json!({"properties": {"a": {"even": true}}}), "`evaluate` does not support the custom `even` keyword yet" ; "custom keyword below properties")]
 #[test_case(json!({"properties": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below properties")]
 #[test_case(json!({"patternProperties": {"^a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below patternProperties")]
 #[test_case(json!({"additionalProperties": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below additionalProperties")]

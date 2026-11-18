@@ -6597,6 +6597,24 @@ struct EvaluateRecursiveRefInAnchoredBranch;
     methods = { evaluate = true }
 )]
 struct EvaluateFolderId;
+#[jsonschema::validator(schema = r#"{"type":"integer","even":true,"minimum":2,"title":"t"}"#, keywords = { "even" => crate::even_factory }, methods = { evaluate = true })]
+struct EvaluateCustomKeyword;
+#[jsonschema::validator(schema = r#"{"properties":{"a":{"multi":true}},"multi":true}"#, keywords = { "multi" => crate::multi_error_factory }, methods = { evaluate = true })]
+struct EvaluateCustomKeywordErrors;
+#[jsonschema::validator(schema = r#"{"description":"strings-bad","title":"t"}"#, keywords = { "description" => crate::string_gate_factory }, methods = { evaluate = true })]
+struct EvaluateCustomKeywordKnownName;
+#[jsonschema::validator(schema = r#"{"type":"string","format":"currency"}"#, draft = Draft7, formats = { "currency" => crate::is_currency_format }, methods = { evaluate = true })]
+struct EvaluateCustomFormat;
+#[jsonschema::validator(schema = r#"{"type":"string","format":"currency"}"#, draft = Draft201909, validate_formats = true, formats = { "currency" => crate::is_currency_format }, methods = { evaluate = true })]
+struct EvaluateCustomFormatAsserted;
+#[jsonschema::validator(schema = r#"{"type":"string","format":"email"}"#, draft = Draft7, validate_formats = true, formats = { "email" => crate::is_literal_x }, methods = { evaluate = true })]
+struct EvaluateCustomFormatOverride;
+#[jsonschema::validator(schema = r#"{"type":"string","format":"made-up"}"#, draft = Draft7, validate_formats = true, ignore_unknown_formats = true, methods = { evaluate = true })]
+struct EvaluateIgnoredUnknownFormat;
+#[jsonschema::validator(schema = r#"{"contentMediaType":"text/hex"}"#, draft = Draft7, content_media_types = { "text/hex" => crate::is_hex_content }, methods = { evaluate = true })]
+struct EvaluateCustomContentMediaType;
+#[jsonschema::validator(schema = r#"{"contentEncoding":"prefixed","contentMediaType":"application/json"}"#, draft = Draft7, content_encodings = { "prefixed" => { check = crate::check_prefixed, convert = crate::convert_prefixed } }, methods = { evaluate = true })]
+struct EvaluateCustomContentEncoding;
 #[jsonschema::validator(
     schema = r#"{"$schema":"json-schema:///meta/no-validation","properties":{"a":{"minimum":10,"type":"string"},"b":false},"minLength":2,"required":["c"]}"#,
     draft = Draft202012,
@@ -6890,6 +6908,26 @@ fn test_evaluate_with_resources_matches_runtime(
     assert_evaluations_match(evaluate, &runtime);
 }
 
+#[test_case(EvaluateCustomKeyword::evaluate, serde_json::json!({"type": "integer", "even": true, "minimum": 2, "title": "t"}), |options| options.with_keyword("even", even_factory) ; "custom_keyword")]
+#[test_case(EvaluateCustomKeywordErrors::evaluate, serde_json::json!({"properties": {"a": {"multi": true}}, "multi": true}), |options| options.with_keyword("multi", multi_error_factory) ; "custom_keyword_errors")]
+#[test_case(EvaluateCustomKeywordKnownName::evaluate, serde_json::json!({"description": "strings-bad", "title": "t"}), |options| options.with_keyword("description", string_gate_factory) ; "custom_keyword_known_name")]
+#[test_case(EvaluateCustomFormat::evaluate, serde_json::json!({"type": "string", "format": "currency"}), |options| options.with_draft(Draft::Draft7).with_format("currency", is_currency_format) ; "custom_format")]
+#[test_case(EvaluateCustomFormatAsserted::evaluate, serde_json::json!({"type": "string", "format": "currency"}), |options| options.with_draft(Draft::Draft201909).with_format("currency", is_currency_format).should_validate_formats(true) ; "custom_format_asserted")]
+#[test_case(EvaluateCustomFormatOverride::evaluate, serde_json::json!({"type": "string", "format": "email"}), |options| options.with_draft(Draft::Draft7).with_format("email", is_literal_x).should_validate_formats(true) ; "custom_format_override")]
+#[test_case(EvaluateIgnoredUnknownFormat::evaluate, serde_json::json!({"type": "string", "format": "made-up"}), |options| options.with_draft(Draft::Draft7).should_validate_formats(true).should_ignore_unknown_formats(true) ; "ignored_unknown_format")]
+#[test_case(EvaluateCustomContentMediaType::evaluate, serde_json::json!({"contentMediaType": "text/hex"}), |options| options.with_draft(Draft::Draft7).with_content_media_type("text/hex", is_hex_content) ; "custom_content_media_type")]
+#[test_case(EvaluateCustomContentEncoding::evaluate, serde_json::json!({"contentEncoding": "prefixed", "contentMediaType": "application/json"}), |options| options.with_draft(Draft::Draft7).with_content_encoding("prefixed", check_prefixed, convert_prefixed) ; "custom_content_encoding")]
+fn test_evaluate_with_options_matches_runtime(
+    evaluate: EvaluateFn,
+    schema: serde_json::Value,
+    configure: fn(jsonschema::ValidationOptions) -> jsonschema::ValidationOptions,
+) {
+    let runtime = configure(jsonschema::options())
+        .build(&schema)
+        .expect("valid schema");
+    assert_evaluations_match(evaluate, &runtime);
+}
+
 fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validator) {
     for instance in [
         serde_json::json!(null),
@@ -6965,6 +7003,17 @@ fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validato
         serde_json::json!({"a": "xyzw"}),
         serde_json::json!({"a": 1}),
         serde_json::json!({"a": {"b": 1}}),
+        serde_json::json!(3),
+        serde_json::json!(200),
+        serde_json::json!("$12"),
+        serde_json::json!("$"),
+        serde_json::json!("x"),
+        serde_json::json!("a@b"),
+        serde_json::json!("0aF"),
+        serde_json::json!("zz"),
+        serde_json::json!("p:{}"),
+        serde_json::json!("p:{"),
+        serde_json::json!("q"),
         serde_json::json!({"c": {"d": {"next": {"marker": 1}}}}),
         serde_json::json!({"c": {"d": {"next": {"marker": true}}, "x": 1}}),
     ] {
