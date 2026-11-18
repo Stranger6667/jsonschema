@@ -6507,6 +6507,25 @@ struct EvaluateUnevaluatedPropertiesFailingAllOf;
 struct EvaluateUnevaluatedPropertiesFailingRef;
 #[jsonschema::validator(schema = r##"{"allOf": [{"prefixItems": [{"type": "string"}]}], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateUnevaluatedItemsFailingAllOf;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDynamicRefOutermostAnchor;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/plain", "$defs": {"foo": {"type": "string"}}, "items": {"$dynamicRef": "#/$defs/foo"}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDynamicRefWithoutAnchor;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/anchored", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$anchor": "items", "type": "integer"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDynamicRefToPlainAnchor;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "properties": {"foo": {"$recursiveRef": "#"}}, "additionalProperties": false}"##, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateRecursiveRefWithoutAnchor;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/recursive", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateRecursiveRefOutermostAnchor;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/unanchored", "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}, "marker": {"type": "integer"}}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateRecursiveRefUnanchoredOuter;
+#[jsonschema::validator(
+    schema = r##"{"$id": "http://localhost:1234/scope_change_defs1.json", "type": "object", "properties": {"list": {"$ref": "baseUriChangeFolder/"}}, "$defs": {"baz": {"$id": "baseUriChangeFolder/", "type": "array", "items": {"$ref": "folderInteger.json"}}}}"##,
+    resources = { "http://localhost:1234/baseUriChangeFolder/folderInteger.json" => { schema = r##"{"type": "integer"}"## } },
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct EvaluateFolderId;
 const OTHER: &str = r##"{"$defs": {"s": {"type": "string"}}, "type": "object", "properties": {"n": {"$ref": "#/$defs/s"}}}"##;
 #[jsonschema::validator(
     schema = r##"{"properties": {"a": {"$ref": "http://example.com/other.json"}, "b": {"$ref": "http://example.com/other.json#/$defs/s"}}}"##,
@@ -6657,6 +6676,12 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateUnevaluatedPropertiesFailingAllOf::evaluate, serde_json::json!({"allOf": [{"properties": {"a": {"type": "string"}}}], "unevaluatedProperties": {"type": "integer"}}), None, Draft::Draft202012 ; "unevaluated_properties_failing_all_of")]
 #[test_case(EvaluateUnevaluatedPropertiesFailingRef::evaluate, serde_json::json!({"$defs": {"x": {"properties": {"b": {"type": "string"}}}}, "$ref": "#/$defs/x", "unevaluatedProperties": {"type": "integer"}}), None, Draft::Draft202012 ; "unevaluated_properties_failing_ref")]
 #[test_case(EvaluateUnevaluatedItemsFailingAllOf::evaluate, serde_json::json!({"allOf": [{"prefixItems": [{"type": "string"}]}], "unevaluatedItems": {"type": "integer"}}), None, Draft::Draft202012 ; "unevaluated_items_failing_all_of")]
+#[test_case(EvaluateDynamicRefOutermostAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}), None, Draft::Draft202012 ; "dynamic_ref_outermost_anchor")]
+#[test_case(EvaluateDynamicRefWithoutAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/plain", "$defs": {"foo": {"type": "string"}}, "items": {"$dynamicRef": "#/$defs/foo"}}), None, Draft::Draft202012 ; "dynamic_ref_without_anchor")]
+#[test_case(EvaluateDynamicRefToPlainAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/anchored", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$anchor": "items", "type": "integer"}}}}}), None, Draft::Draft202012 ; "dynamic_ref_to_plain_anchor")]
+#[test_case(EvaluateRecursiveRefWithoutAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "properties": {"foo": {"$recursiveRef": "#"}}, "additionalProperties": false}), None, Draft::Draft201909 ; "recursive_ref_without_anchor")]
+#[test_case(EvaluateRecursiveRefOutermostAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/recursive", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}}}}}), None, Draft::Draft201909 ; "recursive_ref_outermost_anchor")]
+#[test_case(EvaluateRecursiveRefUnanchoredOuter::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/unanchored", "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}, "marker": {"type": "integer"}}}}}), None, Draft::Draft201909 ; "recursive_ref_unanchored_outer")]
 #[test_case(EvaluateRefCycleInBranches::evaluate, serde_json::json!({"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}), None, Draft::Draft7 ; "ref_cycle_in_branches")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
@@ -6678,6 +6703,7 @@ fn test_evaluate_matches_runtime(
 #[test_case(EvaluateRefToEmbeddedResource::evaluate, serde_json::json!({"$defs": {"x": {"$id": "http://example.com/x", "type": "string"}}, "properties": {"a": {"$ref": "http://example.com/x"}}}), &[], Draft::Draft202012 ; "ref_to_embedded_resource")]
 #[test_case(EvaluateRefByPointerIntoEmbeddedResource::evaluate, serde_json::json!({"$id": "http://example.com/root", "properties": {"a": {"$ref": "#/$defs/x/properties/y"}}, "$defs": {"x": {"$id": "x", "properties": {"y": {"type": "integer"}}}}}), &[], Draft::Draft202012 ; "ref_by_pointer_into_embedded_resource")]
 #[test_case(EvaluateEmbeddedIdDraft4::evaluate, serde_json::json!({"properties": {"a": {"id": "http://example.com/a.json", "type": "object", "properties": {"b": {"$ref": "#/definitions/s"}}, "definitions": {"s": {"minimum": 3}}}}}), &[], Draft::Draft4 ; "embedded_id_draft4")]
+#[test_case(EvaluateFolderId::evaluate, serde_json::json!({"$id": "http://localhost:1234/scope_change_defs1.json", "type": "object", "properties": {"list": {"$ref": "baseUriChangeFolder/"}}, "$defs": {"baz": {"$id": "baseUriChangeFolder/", "type": "array", "items": {"$ref": "folderInteger.json"}}}}), &[("http://localhost:1234/baseUriChangeFolder/folderInteger.json", r#"{"type": "integer"}"#)], Draft::Draft202012 ; "folder_id")]
 #[test_case(EvaluateUrnBase::evaluate, serde_json::json!({"$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed", "properties": {"a": {"$ref": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed#/$defs/s"}}, "$defs": {"s": {"type": "string"}}}), &[], Draft::Draft202012 ; "urn_base")]
 fn test_evaluate_with_resources_matches_runtime(
     evaluate: EvaluateFn,
@@ -6763,6 +6789,13 @@ fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validato
         serde_json::json!(["s", 1, 2]),
         serde_json::json!([1, "a", "b"]),
         serde_json::json!(["a", "b", 3]),
+        serde_json::json!({"list": [1, 2]}),
+        serde_json::json!({"list": ["a"]}),
+        serde_json::json!(["foo", 42]),
+        serde_json::json!(["foo", "bar"]),
+        serde_json::json!({"t": {"child": {"marker": 1}}}),
+        serde_json::json!({"t": {"child": {"marker": true}}}),
+        serde_json::json!({"t": {"child": {"t": {"child": {"marker": "x"}}}}}),
     ] {
         assert_eq!(
             evaluation_outputs(&evaluate(&instance)),

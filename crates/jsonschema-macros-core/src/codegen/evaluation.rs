@@ -11,7 +11,7 @@ use super::{
     compile_schema,
     draft::DraftExt,
     emit::ValueEmitter,
-    helpers::location_pointer,
+    helpers::{dynamic_ref_anchor_name, location_pointer},
     keywords::{
         format::format_emits_assertion, pattern_properties::name_match_expr,
         unevaluated_items::unevaluated_items, unevaluated_properties::unevaluated_members,
@@ -116,8 +116,17 @@ enum TreeUnit {
         keyword: &'static str,
         schema: usize,
     },
-    /// `$ref`, with its target's index.
-    Ref(usize),
+    /// `$ref`, `$dynamicRef` or `$recursiveRef`, with its static target's index.
+    Ref {
+        keyword: &'static str,
+        target: usize,
+        /// Its target is in another document than the schema holding it.
+        leaves: bool,
+        /// The `$dynamicAnchor` a `$dynamicRef` resolves through the dynamic scope.
+        anchor: Option<String>,
+        /// A `$recursiveRef` resolves through the dynamic scope.
+        recursive: bool,
+    },
     /// Array-form `items` or `prefixItems`, with a range of `Tree::tuples`.
     Tuple {
         keyword: &'static str,
@@ -147,6 +156,8 @@ enum TreeUnit {
 
 struct TreeSchema {
     pointer: String,
+    /// Its index in `Tree::resources`.
+    resource: usize,
     /// The resource it sits in, where that is not the root's.
     base: Option<String>,
     /// Its pointer within that resource, where that is not `pointer`.
@@ -182,6 +193,24 @@ struct Tree {
     by_pointer: HashMap<(String, String), usize>,
     /// Where the resource being added starts, as a prefix of the pointers below it.
     resource_root: String,
+    /// The next schema added is a reference target, whose resolution already applied its `$id`.
+    based: bool,
+    /// Each resource a schema sits in, the root's first.
+    resources: Vec<TreeResource>,
+    resource_ids: HashMap<String, usize>,
+}
+
+/// A resource the dynamic scope may hold.
+struct TreeResource {
+    base: Arc<Uri<String>>,
+    /// Its root, where a `$recursiveRef` may resolve to.
+    root: Option<usize>,
+    /// Its root has `$recursiveAnchor: true`.
+    recursive: bool,
+    /// Its `$dynamicAnchor` schemas, where a `$dynamicRef` may resolve to.
+    anchors: Vec<(String, usize)>,
+    /// Anchor names already looked up in it.
+    looked_up: HashSet<String>,
 }
 
 impl Tree {
@@ -220,6 +249,7 @@ impl Tree {
         schema: &Value,
         pointer: String,
     ) -> syn::Result<usize> {
+        let based = std::mem::take(&mut self.based);
         let key = (ctx.current_base_uri.to_string(), pointer);
         if let Some(&index) = self.by_pointer.get(&key) {
             return Ok(index);
@@ -228,6 +258,7 @@ impl Tree {
         let index = self.schemas.len();
         self.schemas.push(TreeSchema {
             pointer: String::new(),
+            resource: 0,
             base: None,
             at: None,
             annotations: None,
@@ -235,7 +266,7 @@ impl Tree {
             count: 0,
         });
         self.by_pointer.insert(key, index);
-        match resource_base(ctx, schema).filter(|_| index != 0) {
+        match resource_base(ctx, schema).filter(|_| index != 0 && !based) {
             Some(base) => {
                 let outer = std::mem::replace(&mut self.resource_root, pointer.clone());
                 let added = ctx.with_base_uri_scope(base, |ctx| {
@@ -271,8 +302,8 @@ impl Tree {
             if let Some(reference) = reference.filter(|_| !ctx.draft.supports_adjacent_validation())
             {
                 // The keywords beside `$ref` apply from Draft 2019-09 on.
-                let target = self.add_reference(ctx, reference)?;
-                self.finish(ctx, index, pointer, None, vec![TreeUnit::Ref(target)]);
+                let unit = self.reference(ctx, "$ref", reference)?;
+                self.finish(ctx, index, pointer, None, vec![unit]);
                 return Ok(index);
             }
             units.extend(
@@ -501,7 +532,16 @@ impl Tree {
                 });
             }
             if let Some(reference) = reference {
-                units.push(TreeUnit::Ref(self.add_reference(ctx, reference)?));
+                units.push(self.reference(ctx, "$ref", reference)?);
+            }
+            for keyword in ["$recursiveRef", "$dynamicRef"] {
+                if let Some(reference) = keywords
+                    .get(keyword)
+                    .and_then(Value::as_str)
+                    .filter(|_| ctx.draft.is_known_keyword(keyword))
+                {
+                    units.push(self.reference(ctx, keyword, reference)?);
+                }
             }
             // The draft's unknown keywords annotate the schema, as the runtime reports them.
             let unknown: Map<_, _> = keywords
@@ -525,6 +565,7 @@ impl Tree {
         annotations: Option<Value>,
         units: Vec<TreeUnit>,
     ) {
+        let resource = self.resource(ctx);
         let base = &ctx.current_base_uri;
         // The output locates keywords of a resource without an absolute URI by pointer alone.
         let base = (base.as_str() != ctx.config.base_uri.as_str()
@@ -536,6 +577,7 @@ impl Tree {
             .map(str::to_string);
         self.schemas[index] = TreeSchema {
             pointer,
+            resource,
             base,
             at,
             annotations,
@@ -543,6 +585,123 @@ impl Tree {
             count: units.len(),
         };
         self.units.extend(units);
+    }
+
+    /// The index in `resources` of the resource `ctx` is in.
+    fn resource<E: ValueEmitter>(&mut self, ctx: &CompileContext<'_, E>) -> usize {
+        let base = ctx.current_base_uri.to_string();
+        if let Some(&id) = self.resource_ids.get(&base) {
+            return id;
+        }
+        let id = self.resources.len();
+        self.resources.push(TreeResource {
+            base: ctx.current_base_uri.clone(),
+            root: None,
+            recursive: false,
+            anchors: Vec::new(),
+            looked_up: HashSet::new(),
+        });
+        self.resource_ids.insert(base, id);
+        id
+    }
+
+    /// The unit of a `$ref`, `$dynamicRef` or `$recursiveRef`.
+    fn reference<E: ValueEmitter>(
+        &mut self,
+        ctx: &mut CompileContext<'_, E>,
+        keyword: &'static str,
+        reference: &str,
+    ) -> syn::Result<TreeUnit> {
+        let resolved = resolve_ref(ctx, reference).ok();
+        let anchor = resolved
+            .as_ref()
+            .filter(|_| keyword == "$dynamicRef")
+            .and_then(|resolved| dynamic_ref_anchor_name(reference, resolved.schema));
+        let recursive = keyword == "$recursiveRef"
+            && resolved.as_ref().is_some_and(|resolved| {
+                resolved.schema.get("$recursiveAnchor") == Some(&Value::Bool(true))
+            });
+        Ok(TreeUnit::Ref {
+            keyword,
+            leaves: leaves_document(ctx, reference),
+            target: self.add_reference(ctx, reference)?,
+            anchor,
+            recursive,
+        })
+    }
+
+    /// Every schema a reference resolving through the dynamic scope may land on, in every
+    /// resource the scope may hold.
+    fn add_scope_targets<E: ValueEmitter>(
+        &mut self,
+        ctx: &mut CompileContext<'_, E>,
+    ) -> syn::Result<()> {
+        loop {
+            let mut names: Vec<String> = Vec::new();
+            let mut recursive = false;
+            for unit in &self.units {
+                if let TreeUnit::Ref {
+                    anchor,
+                    recursive: through_scope,
+                    ..
+                } = unit
+                {
+                    recursive |= *through_scope;
+                    if let Some(anchor) = anchor {
+                        if !names.contains(anchor) {
+                            names.push(anchor.clone());
+                        }
+                    }
+                }
+            }
+            let added = (self.schemas.len(), self.resources.len());
+            for index in 0..self.resources.len() {
+                let base = self.resources[index].base.clone();
+                let resolver = ctx.config.registry.resolver((*base).clone());
+                for name in &names {
+                    if !self.resources[index].looked_up.insert(name.clone()) {
+                        continue;
+                    }
+                    let reference = format!("#{name}");
+                    let Ok(resolved) = resolver.lookup(&reference) else {
+                        continue;
+                    };
+                    if dynamic_ref_anchor_name(&reference, resolved.contents()).is_none() {
+                        continue;
+                    }
+                    let location = format!("{}{reference}", base.as_str());
+                    let pointer = location_pointer(ctx, &location, &base);
+                    let target = self.add_in(ctx, &base, resolved.contents(), pointer)?;
+                    self.resources[index].anchors.push((name.clone(), target));
+                }
+                if recursive && self.resources[index].root.is_none() {
+                    let Ok(resolved) = resolver.lookup("#") else {
+                        continue;
+                    };
+                    self.resources[index].recursive = ctx.draft.supports_recursive_ref_keyword()
+                        && resolved.contents().get("$recursiveAnchor") == Some(&Value::Bool(true));
+                    let root = self.add_in(ctx, &base, resolved.contents(), String::new())?;
+                    self.resources[index].root = Some(root);
+                }
+            }
+            if (self.schemas.len(), self.resources.len()) == added {
+                return Ok(());
+            }
+        }
+    }
+
+    /// `schema` at `pointer` within the resource at `base`.
+    fn add_in<E: ValueEmitter>(
+        &mut self,
+        ctx: &mut CompileContext<'_, E>,
+        base: &Arc<Uri<String>>,
+        schema: &Value,
+        pointer: String,
+    ) -> syn::Result<usize> {
+        let outer = std::mem::take(&mut self.resource_root);
+        let added = ctx.with_base_uri_scope(base.clone(), |ctx| self.add(ctx, schema, pointer));
+        self.resource_root = outer;
+        added
     }
 
     /// The schema a `$ref` points to, located within its resource.
@@ -569,6 +728,7 @@ impl Tree {
             .to_string();
         let outer = std::mem::replace(&mut self.resource_root, root);
         let added = ctx.with_base_uri_scope(resolved.base_uri, |ctx| {
+            self.based = true;
             self.add(ctx, resolved.schema, pointer)
         });
         self.resource_root = outer;
@@ -620,6 +780,24 @@ fn find_pointer(node: &Value, target: &Value, pointer: &mut String) -> bool {
     found
 }
 
+/// Whether `reference` names another document than the one `ctx` is in, so following it adds that
+/// one to the dynamic scope.
+fn leaves_document<E: ValueEmitter>(ctx: &CompileContext<'_, E>, reference: &str) -> bool {
+    if reference.starts_with('#') {
+        return false;
+    }
+    let document = reference
+        .split_once('#')
+        .map_or(reference, |(document, _)| document);
+    ctx.config
+        .registry
+        .resolver((*ctx.current_base_uri).clone())
+        .lookup(document)
+        .map_or(true, |resolved| {
+            resolved.resolver().base_uri().as_str() != ctx.current_base_uri.as_str()
+        })
+}
+
 /// The base URI `schema`'s own `$id` sets, if it names another resource.
 fn resource_base<E: ValueEmitter>(
     ctx: &CompileContext<'_, E>,
@@ -666,6 +844,7 @@ pub(super) fn compile<E: ValueEmitter>(
     }
     let mut tree = Tree::default();
     tree.add(ctx, schema, String::new())?;
+    tree.add_scope_targets(ctx)?;
     let schemas: Vec<Value> = tree
         .schemas
         .into_iter()
@@ -677,6 +856,9 @@ pub(super) fn compile<E: ValueEmitter>(
             });
             if let Some(annotations) = schema.annotations {
                 entry["annotations"] = annotations;
+            }
+            if schema.resource != 0 {
+                entry["resource"] = json!(schema.resource);
             }
             if let Some(base) = schema.base {
                 entry["base"] = json!(base);
@@ -738,7 +920,29 @@ pub(super) fn compile<E: ValueEmitter>(
                 json!({"keyword": "if", "condition": [schema, valid]})
             }
             TreeUnit::Branch { keyword, schema } => json!({"keyword": keyword, "branch": schema}),
-            TreeUnit::Ref(target) => json!({"keyword": "$ref", "target": target}),
+            TreeUnit::Ref {
+                keyword,
+                target,
+                leaves,
+                anchor,
+                recursive,
+            } => {
+                let mut entry = json!({"keyword": keyword, "target": target});
+                let mut scope = Map::new();
+                if leaves {
+                    scope.insert("leaves".to_string(), json!(true));
+                }
+                if let Some(anchor) = anchor {
+                    scope.insert("anchor".to_string(), json!(anchor));
+                }
+                if recursive {
+                    scope.insert("recursive".to_string(), json!(true));
+                }
+                if !scope.is_empty() {
+                    entry["scope"] = Value::Object(scope);
+                }
+                entry
+            }
             // The errors run reports the count errors at the bound keywords.
             TreeUnit::Contains { schema, valid } => json!({
                 "keyword": "contains",
@@ -764,6 +968,23 @@ pub(super) fn compile<E: ValueEmitter>(
         })
         .collect();
     let mut tables = json!({"schemas": schemas, "units": units});
+    if tree
+        .resources
+        .iter()
+        .any(|resource| resource.root.is_some() || !resource.anchors.is_empty())
+    {
+        tables["resources"] = tree
+            .resources
+            .iter()
+            .map(|resource| {
+                json!({
+                    "root": resource.root,
+                    "recursive": resource.recursive,
+                    "anchors": resource.anchors,
+                })
+            })
+            .collect();
+    }
     if !tree.properties.is_empty() {
         tables["properties"] = json!(tree.properties);
     }
@@ -909,23 +1130,52 @@ pub(crate) fn unsupported(
     let resolver = registry.resolver(base.clone());
     let mut support = Support {
         draft,
-        resolver,
+        resolver: resolver.clone(),
         checked: HashSet::from([std::ptr::from_ref(schema).addr()]),
+        resources: vec![resolver],
+        dynamic: None,
+        walked: None,
+        anchors: Vec::new(),
+        recursive: false,
     };
-    support.check(schema, true)
+    support
+        .check(schema, true)
+        .or_else(|| support.dynamic_targets())
 }
 
-/// Walks what `evaluate` reports, following each `$ref` once.
+/// Keywords whose subschemas' validity `evaluate` checks through generated code, which resolves a
+/// dynamic reference without the scope the walk is in.
+const CHECKED_BY_VALIDITY: [&str; 6] = [
+    "anyOf",
+    "oneOf",
+    "if",
+    "contains",
+    "unevaluatedProperties",
+    "unevaluatedItems",
+];
+
+/// Walks what `evaluate` reports, following each reference once.
 struct Support<'r> {
     draft: Draft,
     /// Resolves the references of the resource being walked.
     resolver: Resolver<'r>,
     /// The schemas already walked, by address.
     checked: HashSet<usize>,
+    /// Each resource walked, as a resolver based at it.
+    resources: Vec<Resolver<'r>>,
+    /// The first keyword resolving through the dynamic scope.
+    dynamic: Option<&'static str>,
+    /// The first keyword from `CHECKED_BY_VALIDITY` walked.
+    walked: Option<String>,
+    /// The `$dynamicAnchor` names a `$dynamicRef` resolves through the dynamic scope.
+    anchors: Vec<String>,
+    /// A `$recursiveRef` resolves through the dynamic scope.
+    recursive: bool,
 }
 
-impl Support<'_> {
-    fn check(&mut self, schema: &Value, root: bool) -> Option<String> {
+impl<'r> Support<'r> {
+    /// `based`: the resolver already sits at the schema's own base, as at a reference target.
+    fn check(&mut self, schema: &Value, based: bool) -> Option<String> {
         let keywords = match schema {
             Value::Bool(_) => return None,
             Value::Object(keywords) => keywords,
@@ -934,18 +1184,23 @@ impl Support<'_> {
             }
         };
         let adjacent = self.draft.supports_adjacent_validation();
-        if !root && (adjacent || !keywords.contains_key("$ref")) {
-            if let Some(id) = keywords.get(id_keyword(self.draft)).and_then(Value::as_str) {
-                // Its references resolve against its own base.
-                let Ok(inner) = self.resolver.lookup(id) else {
-                    return Some(format!("`evaluate` cannot resolve the `{id}` base"));
-                };
-                let inner = inner.resolver().clone();
-                let outer = std::mem::replace(&mut self.resolver, inner);
-                let message = self.check_keywords(keywords);
-                self.resolver = outer;
-                return message;
-            }
+        if !based
+            && (adjacent || !keywords.contains_key("$ref"))
+            && keywords.get(id_keyword(self.draft)).is_some()
+        {
+            // Its references resolve against its own base.
+            let inner = match self
+                .resolver
+                .in_subresource(self.draft.create_resource_ref(schema))
+            {
+                Ok(inner) => inner,
+                Err(error) => return Some(error.to_string()),
+            };
+            self.entered(&inner);
+            let outer = std::mem::replace(&mut self.resolver, inner);
+            let message = self.check_keywords(keywords);
+            self.resolver = outer;
+            return message;
         }
         self.check_keywords(keywords)
     }
@@ -960,10 +1215,46 @@ impl Support<'_> {
                 return None;
             }
         }
+        if let Some(reference) = keywords
+            .get("$dynamicRef")
+            .filter(|_| self.draft.is_known_keyword("$dynamicRef"))
+        {
+            if let Some(name) = reference.as_str().and_then(|reference| {
+                let resolved = self.resolver.lookup(reference).ok()?;
+                dynamic_ref_anchor_name(reference, resolved.contents())
+            }) {
+                self.dynamic.get_or_insert("$dynamicRef");
+                if !self.anchors.contains(&name) {
+                    self.anchors.push(name);
+                }
+            }
+            if let Some(message) = self.reference(reference) {
+                return Some(message);
+            }
+        }
+        if let Some(reference) = keywords
+            .get("$recursiveRef")
+            .filter(|_| self.draft.is_known_keyword("$recursiveRef"))
+        {
+            if reference.as_str().is_some_and(|reference| {
+                self.resolver.lookup(reference).is_ok_and(|resolved| {
+                    resolved.contents().get("$recursiveAnchor") == Some(&Value::Bool(true))
+                })
+            }) {
+                self.dynamic.get_or_insert("$recursiveRef");
+                self.recursive = true;
+            }
+            if let Some(message) = self.reference(reference) {
+                return Some(message);
+            }
+        }
         keywords.iter().find_map(|(keyword, value)| {
             if !self.draft.is_known_keyword(keyword) {
                 // An unknown keyword is an annotation.
                 return None;
+            }
+            if self.walked.is_none() && CHECKED_BY_VALIDITY.contains(&keyword.as_str()) {
+                self.walked = Some(keyword.clone());
             }
             match (keyword.as_str(), value) {
                 ("properties" | "patternProperties", Value::Object(subschemas)) => {
@@ -1006,23 +1297,66 @@ impl Support<'_> {
         })
     }
 
-    /// Checks the target of a `$ref` the first time it is reached.
+    /// Checks the target of a reference the first time it is reached.
     fn reference(&mut self, reference: &Value) -> Option<String> {
         let reference = reference.as_str()?;
         let resolved = match self.resolver.lookup(reference) {
             Ok(resolved) => resolved,
             Err(error) => return Some(error.to_string()),
         };
-        let target = resolved.contents();
+        self.target(resolved.contents(), resolved.resolver())
+    }
+
+    fn target(&mut self, target: &Value, resolver: &Resolver<'r>) -> Option<String> {
         if !self.checked.insert(std::ptr::from_ref(target).addr()) {
             return None;
         }
         // The target's references resolve against its own resource.
-        let inner = resolved.resolver().clone();
+        let inner = resolver.clone();
+        self.entered(&inner);
         let outer = std::mem::replace(&mut self.resolver, inner);
-        let message = self.check(target, false);
+        let message = self.check(target, true);
         self.resolver = outer;
         message
+    }
+
+    fn entered(&mut self, resolver: &Resolver<'r>) {
+        let base = resolver.base_uri();
+        if !self.resources.iter().any(|known| known.base_uri() == base) {
+            self.resources.push(resolver.clone());
+        }
+    }
+
+    /// Checks what a reference resolving through the dynamic scope may land on: the anchors it
+    /// names, or the roots, in every resource the scope may hold.
+    fn dynamic_targets(&mut self) -> Option<String> {
+        let dynamic = self.dynamic?;
+        let mut index = 0;
+        while index < self.resources.len() {
+            let resolver = self.resources[index].clone();
+            for name in self.anchors.clone() {
+                let reference = format!("#{name}");
+                if let Ok(resolved) = resolver.lookup(&reference) {
+                    if dynamic_ref_anchor_name(&reference, resolved.contents()).is_some() {
+                        if let Some(message) = self.target(resolved.contents(), resolved.resolver())
+                        {
+                            return Some(message);
+                        }
+                    }
+                }
+            }
+            if self.recursive {
+                if let Ok(resolved) = resolver.lookup("#") {
+                    if let Some(message) = self.target(resolved.contents(), resolved.resolver()) {
+                        return Some(message);
+                    }
+                }
+            }
+            index += 1;
+        }
+        self.walked
+            .as_ref()
+            .map(|walked| format!("`evaluate` does not support `{walked}` beside `{dynamic}` yet"))
     }
 }
 
@@ -1036,7 +1370,8 @@ fn supports(keyword: &str, value: &Value, draft: Draft) -> bool {
         "multipleOf" => value.as_f64().is_some_and(f64::is_finite),
         // `contains` reports the bounds' errors, and `Support` walks each `$ref` target.
         "minContains" | "maxContains" | "$ref" | "$defs" | "definitions" | "$anchor"
-        | "$comment" | "$id" | "id" => true,
+        | "$comment" | "$id" | "id" | "$dynamicRef" | "$dynamicAnchor" | "$recursiveRef"
+        | "$recursiveAnchor" => true,
         _ => LEAF_KEYWORDS.contains(&keyword),
     }
 }

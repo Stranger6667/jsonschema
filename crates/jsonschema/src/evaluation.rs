@@ -1587,11 +1587,43 @@ pub mod generated {
         /// The absolute URI the pointers resolve against, if the schema has one.
         #[serde(default)]
         base: Option<String>,
+        /// Each resource a schema sits in, where references resolving through the dynamic scope
+        /// use them.
+        #[serde(default)]
+        resources: Vec<ResourceTable>,
+    }
+
+    /// How following a reference moves through the dynamic scope.
+    #[derive(Deserialize, Default)]
+    struct ScopeTable {
+        /// Its target is in another document than the schema holding it.
+        #[serde(default)]
+        leaves: bool,
+        /// The `$dynamicAnchor` a `$dynamicRef` resolves through the dynamic scope.
+        #[serde(default)]
+        anchor: Option<String>,
+        /// A `$recursiveRef` resolves through the dynamic scope.
+        #[serde(default)]
+        recursive: bool,
+    }
+
+    /// A resource the dynamic scope may hold.
+    #[derive(Deserialize)]
+    struct ResourceTable {
+        /// Its root, where a `$recursiveRef` may resolve to.
+        root: Option<usize>,
+        /// Its root has `$recursiveAnchor: true`.
+        recursive: bool,
+        /// Its `$dynamicAnchor` schemas, where a `$dynamicRef` may resolve to.
+        anchors: Vec<(String, usize)>,
     }
 
     #[derive(Deserialize)]
     struct SchemaTable {
         pointer: String,
+        /// Its index in `Tables::resources`.
+        #[serde(default)]
+        resource: usize,
         /// The resource it sits in, where that is not the root's.
         #[serde(default)]
         base: Option<String>,
@@ -1658,9 +1690,12 @@ pub mod generated {
         /// A `then` or `else` unit's subschema.
         #[serde(default)]
         branch: Option<usize>,
-        /// A `$ref` unit's target.
+        /// A `$ref`, `$dynamicRef` or `$recursiveRef` unit's static target.
         #[serde(default)]
         target: Option<usize>,
+        /// How following it moves through the dynamic scope.
+        #[serde(default)]
+        scope: ScopeTable,
         /// An `unevaluatedProperties` or `unevaluatedItems` unit's subschema, and its index in
         /// `Tree::unevaluated`.
         #[serde(default)]
@@ -1706,7 +1741,12 @@ pub mod generated {
             schema: usize,
             then: bool,
         },
-        Ref(usize),
+        Ref {
+            target: usize,
+            leaves: bool,
+            anchor: Option<Box<str>>,
+            recursive: bool,
+        },
         Unevaluated {
             schema: usize,
             closed: bool,
@@ -1762,6 +1802,9 @@ pub mod generated {
 
     pub struct Built {
         schemas: Box<[UnitLocation]>,
+        /// Each schema's index in `resources`.
+        schema_resources: Box<[usize]>,
+        resources: Box<[ResourceTable]>,
         /// Each schema's units, a range of `units`.
         schema_units: Box<[(usize, usize)]>,
         units: Box<[UnitLocation]>,
@@ -1794,6 +1837,7 @@ pub mod generated {
                 arena: EvaluationArena::default(),
                 rebase: None,
                 active: Vec::new(),
+                scope: Vec::new(),
             };
             let root = walk.schema(0, instance, &LazyLocation::new(), InstancePosition::ROOT);
             Evaluation::with_root(walk.arena, root)
@@ -1830,6 +1874,7 @@ pub mod generated {
             let mut unit_tables: Vec<Option<UnitTable>> =
                 tables.units.into_iter().map(Some).collect();
             let mut schema_units = Vec::with_capacity(tables.schemas.len());
+            let mut schema_resources = Vec::with_capacity(tables.schemas.len());
             let mut schemas = Vec::with_capacity(tables.schemas.len());
             for schema in tables.schemas {
                 let pointer = &schema.pointer;
@@ -1888,7 +1933,12 @@ pub mod generated {
                                 schema: unit.branch.expect("the subschema's index"),
                                 then: unit.keyword == "then",
                             },
-                            "$ref" => Kind::Ref(unit.target.expect("the target's index")),
+                            "$ref" | "$dynamicRef" | "$recursiveRef" => Kind::Ref {
+                                target: unit.target.expect("the target's index"),
+                                leaves: unit.scope.leaves,
+                                anchor: unit.scope.anchor.map(Into::into),
+                                recursive: unit.scope.recursive,
+                            },
                             "unevaluatedProperties" | "unevaluatedItems" => {
                                 let (schema, evaluated) = unit
                                     .unevaluated
@@ -1921,10 +1971,13 @@ pub mod generated {
                     });
                 }
                 schema_units.push((schema.first, schema.count));
+                schema_resources.push(schema.resource);
                 schemas.push(locate(base, pointer, at, schema.annotations));
             }
             Built {
                 schemas: schemas.into_boxed_slice(),
+                schema_resources: schema_resources.into_boxed_slice(),
+                resources: tables.resources.into_boxed_slice(),
                 schema_units: schema_units.into_boxed_slice(),
                 units: units
                     .into_iter()
@@ -1996,6 +2049,8 @@ pub mod generated {
         rebase: Option<Rebase>,
         /// Each schema being walked, with the address of its instance location.
         active: Vec<(usize, usize)>,
+        /// The dynamic scope: the resources references left, the outermost first.
+        scope: Vec<usize>,
     }
 
     /// Where the units of a `$ref` target are reported: their pointers below the target, after
@@ -2150,12 +2205,20 @@ pub mod generated {
                         }
                         self.node(site, Vec::new(), None, children, position)
                     }
-                    Kind::Ref(target) => {
+                    Kind::Ref {
+                        target,
+                        leaves,
+                        ref anchor,
+                        recursive,
+                    } => {
+                        let caller = built.schema_resources[index];
+                        let (target, pushed) =
+                            self.resolve(target, leaves, anchor.as_deref(), recursive, caller);
                         // A target re-entered at the same instance location adds nothing.
                         if self.active.contains(&(target, here)) {
                             continue;
                         }
-                        self.reference(site, target, instance, location, position)
+                        self.reference(site, target, pushed, instance, location, position)
                     }
                     Kind::Branch { schema, then } => {
                         if passed != then {
@@ -2192,10 +2255,12 @@ pub mod generated {
         // This and the other `Kind` handlers stay out of line, so the leaf path in `schema` keeps
         // its values in registers.
         #[inline(never)]
+        #[allow(clippy::too_many_arguments)]
         fn reference(
             &mut self,
             site: &UnitLocation,
             target: usize,
+            pushed: Option<usize>,
             instance: &F::Node<'_>,
             location: &LazyLocation,
             position: InstancePosition,
@@ -2205,9 +2270,53 @@ pub mod generated {
                 prefix: self.evaluation_path(site),
             };
             let outer = self.rebase.replace(rebase);
+            self.scope.extend(pushed);
             let node = self.schema(target, instance, location, position);
+            if pushed.is_some() {
+                self.scope.pop();
+            }
             self.rebase = outer;
             node
+        }
+
+        /// The schema a reference in the resource `caller` lands on, and the resource following it
+        /// adds to the dynamic scope: the caller's, when the scope is empty or the reference leaves
+        /// its document.
+        fn resolve(
+            &self,
+            target: usize,
+            leaves: bool,
+            anchor: Option<&str>,
+            recursive: bool,
+            caller: usize,
+        ) -> (usize, Option<usize>) {
+            let resources = &self.built.resources;
+            if recursive {
+                // Outward through the scope while each resource's root has `$recursiveAnchor: true`.
+                let mut landed = (target, caller);
+                for &resource in self.scope.iter().rev() {
+                    let entered = &resources[resource];
+                    if !entered.recursive {
+                        break;
+                    }
+                    landed = (entered.root.expect("a recursive resource's root"), resource);
+                }
+                let pushed = (self.scope.is_empty() || landed.1 != caller).then_some(caller);
+                return (landed.0, pushed);
+            }
+            let pushed = (self.scope.is_empty() || leaves).then_some(caller);
+            let Some(name) = anchor else {
+                return (target, pushed);
+            };
+            // The outermost resource in the scope with that anchor, the pushed one included.
+            let found = self.scope.iter().chain(&pushed).find_map(|&resource| {
+                resources[resource]
+                    .anchors
+                    .iter()
+                    .find(|(anchor, _)| anchor == name)
+                    .map(|&(_, schema)| schema)
+            });
+            (found.unwrap_or(target), pushed)
         }
 
         #[inline]
@@ -2580,6 +2689,7 @@ pub mod generated {
                 arena: std::mem::take(&mut self.arena),
                 rebase: self.rebase.clone(),
                 active: self.active.clone(),
+                scope: self.scope.clone(),
             };
             let node = nested.schema(schema, value, path, below);
             self.arena = nested.arena;
