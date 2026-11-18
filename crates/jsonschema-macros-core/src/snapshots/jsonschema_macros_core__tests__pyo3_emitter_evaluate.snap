@@ -89,6 +89,8 @@ mod __validator_impl {
             tables: "{\"schemas\":[{\"count\":0,\"first\":0,\"pointer\":\"\"}],\"units\":[]}",
             matchers: &[],
             valid: &[],
+            unevaluated: &[],
+            unevaluated_errors: &[],
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);

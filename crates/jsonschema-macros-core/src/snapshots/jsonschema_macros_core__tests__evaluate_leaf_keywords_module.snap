@@ -105,6 +105,8 @@ mod __validator_impl {
             tables: "{\"schemas\":[{\"count\":3,\"first\":0,\"pointer\":\"\"}],\"units\":[{\"keyword\":\"type\"},{\"keyword\":\"minLength\"},{\"keyword\":\"maxLength\"}]}",
             matchers: &[],
             valid: &[],
+            unevaluated: &[],
+            unevaluated_errors: &[],
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);

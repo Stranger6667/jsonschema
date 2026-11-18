@@ -14,6 +14,34 @@ use super::{
     unevaluated::{compile_index_evaluated_expr, GuardHoist, ReportGuards},
 };
 
+/// Code pushing to `__unevaluated` the positions of the items of an array `instance` that `schema`
+/// leaves unevaluated, as its errors count them.
+pub(crate) fn unevaluated_items<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    schema: &Map<String, Value>,
+) -> proc_macro2::TokenStream {
+    // The keyword's own subschema evaluates items for a parent schema only.
+    let mut others = schema.clone();
+    others.remove("unevaluatedItems");
+    let mut report = ReportGuards::default();
+    let mut hoist = GuardHoist::hoisting();
+    let reported = compile_index_evaluated_expr(ctx, &others, &mut hoist, Some(&mut report));
+    let (bindings, cells) = (hoist.bindings(), report.cells());
+    let iter = E::array_iter(format_ident!("arr"));
+    E::if_array(
+        format_ident!("instance"),
+        quote! {
+            #(#bindings)*
+            #(#cells)*
+            for (idx, item) in #iter.enumerate() {
+                if !(#reported) {
+                    __unevaluated.push(idx);
+                }
+            }
+        },
+    )
+}
+
 /// Compile the "unevaluatedItems" keyword.
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
