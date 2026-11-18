@@ -360,6 +360,36 @@ fn test_one_of_direct_discriminator_keeps_non_implied_checks_and_context() {
 )]
 struct AnyOfDynamicRefContextValidator;
 
+// A Draft 4 resource, whose `id` sets a plain-name anchor.
+#[jsonschema::validator(
+    schema = r##"{"$ref":"http://example.com/draft4.json#integer"}"##,
+    draft = referencing::Draft::Draft202012,
+    resources = { "http://example.com/draft4.json" => { schema = r##"{"$schema":"http://json-schema.org/draft-04/schema#","id":"http://example.com/draft4.json","definitions":{"integer":{"id":"#integer","type":"integer"}}}"## } }
+)]
+struct ResourceInItsOwnDraftValidator;
+
+#[test_case(serde_json::json!(1) ; "integer")]
+#[test_case(serde_json::json!("a") ; "string")]
+fn test_resource_in_its_own_draft_matches_runtime(instance: serde_json::Value) {
+    let resource = serde_json::json!({"$schema": "http://json-schema.org/draft-04/schema#", "id": "http://example.com/draft4.json", "definitions": {"integer": {"id": "#integer", "type": "integer"}}});
+    let registry = jsonschema::Registry::new()
+        .add("http://example.com/draft4.json", &resource)
+        .expect("resource should be accepted")
+        .prepare()
+        .expect("registry builds");
+    let runtime = jsonschema::options()
+        .with_draft(referencing::Draft::Draft202012)
+        .with_registry(&registry)
+        .build(&serde_json::json!({"$ref": "http://example.com/draft4.json#integer"}))
+        .expect("valid schema");
+    assert_validate_parity(
+        ResourceInItsOwnDraftValidator::is_valid(&instance),
+        ResourceInItsOwnDraftValidator::validate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
 // `myobject` is reached by `$ref` through the outer document, then by `$recursiveRef` within its own.
 #[jsonschema::validator(
     schema = r##"{"$defs":{"myobject":{"$id":"myobject.json","$recursiveAnchor":true,"anyOf":[{"type":"string"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}},"anyOf":[{"type":"integer"},{"$ref":"#/$defs/myobject"}]}"##,
@@ -6567,6 +6597,78 @@ struct EvaluateRecursiveRefInAnchoredBranch;
     methods = { evaluate = true }
 )]
 struct EvaluateFolderId;
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/no-validation","properties":{"a":{"minimum":10,"type":"string"},"b":false},"minLength":2,"required":["c"]}"#,
+    draft = Draft202012,
+    resources = { "json-schema:///meta/no-validation" => { schema = r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}}"# } },
+    methods = { evaluate = true }
+)]
+struct EvaluateNoValidationVocabulary;
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/no-applicator","type":["array","object"],"items":{"type":"string"},"contains":{"type":"integer"},"properties":{"a":false}}"#,
+    draft = Draft202012,
+    resources = { "json-schema:///meta/no-applicator" => { schema = r#"{"$id":"json-schema:///meta/no-applicator","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"# } },
+    methods = { evaluate = true }
+)]
+struct EvaluateNoApplicatorVocabulary;
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/optional","type":"number","minimum":2}"#,
+    draft = Draft201909,
+    resources = { "json-schema:///meta/optional" => { schema = r#"{"$id":"json-schema:///meta/optional","$schema":"https://json-schema.org/draft/2019-09/schema","$vocabulary":{"https://json-schema.org/draft/2019-09/vocab/core":true,"https://json-schema.org/draft/2019-09/vocab/validation":true,"json-schema:///vocab/custom":false}}"# } },
+    methods = { evaluate = true }
+)]
+struct EvaluateOptionalUnknownVocabulary;
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/no-validation-2019","properties":{"a":{"minimum":10}},"unevaluatedProperties":{"type":"string"}}"#,
+    draft = Draft201909,
+    resources = { "json-schema:///meta/no-validation-2019" => { schema = r#"{"$id":"json-schema:///meta/no-validation-2019","$schema":"https://json-schema.org/draft/2019-09/schema","$vocabulary":{"https://json-schema.org/draft/2019-09/vocab/core":true,"https://json-schema.org/draft/2019-09/vocab/applicator":true}}"# } },
+    methods = { evaluate = true }
+)]
+struct EvaluateNoValidationVocabularyDraft201909;
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/no-unevaluated","properties":{"a":{"type":"string"}},"unevaluatedProperties":false,"unevaluatedItems":false}"#,
+    draft = Draft202012,
+    resources = { "json-schema:///meta/no-unevaluated" => { schema = r#"{"$id":"json-schema:///meta/no-unevaluated","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"# } },
+    methods = { evaluate = true }
+)]
+struct EvaluateNoUnevaluatedVocabulary;
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/no-content","type":"string","contentEncoding":"base64","contentMediaType":"application/json","contentSchema":{"type":"integer"}}"#,
+    draft = Draft202012,
+    resources = { "json-schema:///meta/no-content" => { schema = r#"{"$id":"json-schema:///meta/no-content","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"# } },
+    methods = { evaluate = true }
+)]
+struct EvaluateNoContentVocabulary;
+#[jsonschema::validator(
+    schema = r##"{"$schema":"json-schema:///meta/no-validation","properties":{"a":{"$ref":"#/$defs/x"}},"$defs":{"x":{"minimum":10,"properties":{"b":false}}}}"##,
+    draft = Draft202012,
+    resources = { "json-schema:///meta/no-validation" => { schema = r##"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}}"## } },
+    methods = { evaluate = true }
+)]
+struct EvaluateNoValidationVocabularyThroughRef;
+#[jsonschema::validator(
+    schema = r#"{"$ref":"http://example.com/ignore-prefix-items.json","type":"array"}"#,
+    draft = Draft202012,
+    resources = { "http://example.com/ignore-prefix-items.json" => { schema = r#"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"http://example.com/ignore-prefix-items.json","prefixItems":[{"type":"integer"}]}"# } },
+    methods = { evaluate = true }
+)]
+struct EvaluateRefToEarlierDraft;
+#[jsonschema::validator(
+    schema = r#"{"allOf":[{"properties":{"foo":true}},{"$ref":"http://example.com/dependent-required.json"}],"type":"object"}"#,
+    draft = Draft7,
+    resources = { "http://example.com/dependent-required.json" => { schema = r#"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"http://example.com/dependent-required.json","dependentRequired":{"foo":["bar"]}}"# } },
+    methods = { evaluate = true }
+)]
+struct EvaluateRefToLaterDraft;
+#[jsonschema::validator(
+    schema = r##"{"$ref":"http://example.com/draft7.json"}"##,
+    draft = Draft202012,
+    resources = { "http://example.com/draft7.json" => { schema = r##"{"$schema":"http://json-schema.org/draft-07/schema#","$id":"http://example.com/draft7.json","definitions":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/definitions/s","minLength":3}}}"## } },
+    methods = { evaluate = true }
+)]
+struct EvaluateRefToDraft7Siblings;
+#[jsonschema::validator(schema = r##"{"$ref":"http://example.com/a","$defs":{"a":{"$id":"http://example.com/a","$schema":"http://json-schema.org/draft-07/schema#","definitions":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/definitions/s","minLength":3}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefToEmbeddedEarlierDraft;
 const OTHER: &str = r##"{"$defs": {"s": {"type": "string"}}, "type": "object", "properties": {"n": {"$ref": "#/$defs/s"}}}"##;
 #[jsonschema::validator(
     schema = r##"{"properties": {"a": {"$ref": "http://example.com/other.json"}, "b": {"$ref": "http://example.com/other.json#/$defs/s"}}}"##,
@@ -6729,6 +6831,7 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateRecursiveRefUnevaluatedItems::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/items", "$recursiveAnchor": true, "type": "object", "properties": {"l": {"$ref": "list"}}, "$defs": {"list": {"$id": "list", "$recursiveAnchor": true, "type": ["array", "integer"], "unevaluatedItems": {"$recursiveRef": "#"}}}}), None, Draft::Draft201909 ; "recursive_ref_unevaluated_items")]
 #[test_case(EvaluateRecursiveRefThroughBranchReference::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/hops", "properties": {"c": {"$ref": "c"}}, "$defs": {"c": {"$id": "c", "$recursiveAnchor": true, "type": "object", "properties": {"marker": {"type": "boolean"}}, "anyOf": [{"properties": {"d": {"$ref": "d"}}}, {"required": ["x"]}]}, "d": {"$id": "d", "$recursiveAnchor": true, "properties": {"next": {"$recursiveRef": "#"}}}}}), None, Draft::Draft201909 ; "recursive_ref_through_branch_reference")]
 #[test_case(EvaluateRecursiveRefInAnchoredBranch::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/nesting", "$defs": {"myobject": {"$id": "myobject.json", "$recursiveAnchor": true, "anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}, "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/myobject"}]}), None, Draft::Draft201909 ; "recursive_ref_in_anchored_branch")]
+#[test_case(EvaluateRefToEmbeddedEarlierDraft::evaluate, serde_json::json!({"$ref": "http://example.com/a", "$defs": {"a": {"$id": "http://example.com/a", "$schema": "http://json-schema.org/draft-07/schema#", "definitions": {"s": {"type": "string"}}, "properties": {"a": {"$ref": "#/definitions/s", "minLength": 3}}}}}), None, Draft::Draft202012 ; "ref_to_embedded_earlier_draft")]
 #[test_case(EvaluateRefCycleInBranches::evaluate, serde_json::json!({"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}), None, Draft::Draft7 ; "ref_cycle_in_branches")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
@@ -6751,6 +6854,16 @@ fn test_evaluate_matches_runtime(
 #[test_case(EvaluateRefByPointerIntoEmbeddedResource::evaluate, serde_json::json!({"$id": "http://example.com/root", "properties": {"a": {"$ref": "#/$defs/x/properties/y"}}, "$defs": {"x": {"$id": "x", "properties": {"y": {"type": "integer"}}}}}), &[], Draft::Draft202012 ; "ref_by_pointer_into_embedded_resource")]
 #[test_case(EvaluateEmbeddedIdDraft4::evaluate, serde_json::json!({"properties": {"a": {"id": "http://example.com/a.json", "type": "object", "properties": {"b": {"$ref": "#/definitions/s"}}, "definitions": {"s": {"minimum": 3}}}}}), &[], Draft::Draft4 ; "embedded_id_draft4")]
 #[test_case(EvaluateFolderId::evaluate, serde_json::json!({"$id": "http://localhost:1234/scope_change_defs1.json", "type": "object", "properties": {"list": {"$ref": "baseUriChangeFolder/"}}, "$defs": {"baz": {"$id": "baseUriChangeFolder/", "type": "array", "items": {"$ref": "folderInteger.json"}}}}), &[("http://localhost:1234/baseUriChangeFolder/folderInteger.json", r#"{"type": "integer"}"#)], Draft::Draft202012 ; "folder_id")]
+#[test_case(EvaluateNoValidationVocabulary::evaluate, serde_json::json!({"$schema": "json-schema:///meta/no-validation", "properties": {"a": {"minimum": 10, "type": "string"}, "b": false}, "minLength": 2, "required": ["c"]}), &[("json-schema:///meta/no-validation", r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}}"#)], Draft::Draft202012 ; "no_validation_vocabulary")]
+#[test_case(EvaluateNoApplicatorVocabulary::evaluate, serde_json::json!({"$schema": "json-schema:///meta/no-applicator", "type": ["array", "object"], "items": {"type": "string"}, "contains": {"type": "integer"}, "properties": {"a": false}}), &[("json-schema:///meta/no-applicator", r#"{"$id":"json-schema:///meta/no-applicator","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"#)], Draft::Draft202012 ; "no_applicator_vocabulary")]
+#[test_case(EvaluateOptionalUnknownVocabulary::evaluate, serde_json::json!({"$schema": "json-schema:///meta/optional", "type": "number", "minimum": 2}), &[("json-schema:///meta/optional", r#"{"$id":"json-schema:///meta/optional","$schema":"https://json-schema.org/draft/2019-09/schema","$vocabulary":{"https://json-schema.org/draft/2019-09/vocab/core":true,"https://json-schema.org/draft/2019-09/vocab/validation":true,"json-schema:///vocab/custom":false}}"#)], Draft::Draft201909 ; "optional_unknown_vocabulary")]
+#[test_case(EvaluateNoValidationVocabularyDraft201909::evaluate, serde_json::json!({"$schema": "json-schema:///meta/no-validation-2019", "properties": {"a": {"minimum": 10}}, "unevaluatedProperties": {"type": "string"}}), &[("json-schema:///meta/no-validation-2019", r#"{"$id":"json-schema:///meta/no-validation-2019","$schema":"https://json-schema.org/draft/2019-09/schema","$vocabulary":{"https://json-schema.org/draft/2019-09/vocab/core":true,"https://json-schema.org/draft/2019-09/vocab/applicator":true}}"#)], Draft::Draft201909 ; "no_validation_vocabulary_draft2019_09")]
+#[test_case(EvaluateNoUnevaluatedVocabulary::evaluate, serde_json::json!({"$schema": "json-schema:///meta/no-unevaluated", "properties": {"a": {"type": "string"}}, "unevaluatedProperties": false, "unevaluatedItems": false}), &[("json-schema:///meta/no-unevaluated", r#"{"$id":"json-schema:///meta/no-unevaluated","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"#)], Draft::Draft202012 ; "no_unevaluated_vocabulary")]
+#[test_case(EvaluateNoContentVocabulary::evaluate, serde_json::json!({"$schema": "json-schema:///meta/no-content", "type": "string", "contentEncoding": "base64", "contentMediaType": "application/json", "contentSchema": {"type": "integer"}}), &[("json-schema:///meta/no-content", r#"{"$id":"json-schema:///meta/no-content","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"#)], Draft::Draft202012 ; "no_content_vocabulary")]
+#[test_case(EvaluateRefToEarlierDraft::evaluate, serde_json::json!({"$ref": "http://example.com/ignore-prefix-items.json", "type": "array"}), &[("http://example.com/ignore-prefix-items.json", r#"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"http://example.com/ignore-prefix-items.json","prefixItems":[{"type":"integer"}]}"#)], Draft::Draft202012 ; "ref_to_earlier_draft")]
+#[test_case(EvaluateRefToLaterDraft::evaluate, serde_json::json!({"allOf": [{"properties": {"foo": true}}, {"$ref": "http://example.com/dependent-required.json"}], "type": "object"}), &[("http://example.com/dependent-required.json", r#"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"http://example.com/dependent-required.json","dependentRequired":{"foo":["bar"]}}"#)], Draft::Draft7 ; "ref_to_later_draft")]
+#[test_case(EvaluateRefToDraft7Siblings::evaluate, serde_json::json!({"$ref": "http://example.com/draft7.json"}), &[("http://example.com/draft7.json", r##"{"$schema":"http://json-schema.org/draft-07/schema#","$id":"http://example.com/draft7.json","definitions":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/definitions/s","minLength":3}}}"##)], Draft::Draft202012 ; "ref_to_draft7_siblings")]
+#[test_case(EvaluateNoValidationVocabularyThroughRef::evaluate, serde_json::json!({"$schema": "json-schema:///meta/no-validation", "properties": {"a": {"$ref": "#/$defs/x"}}, "$defs": {"x": {"minimum": 10, "properties": {"b": false}}}}), &[("json-schema:///meta/no-validation", r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}}"#)], Draft::Draft202012 ; "no_validation_vocabulary_through_ref")]
 #[test_case(EvaluateUrnBase::evaluate, serde_json::json!({"$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed", "properties": {"a": {"$ref": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed#/$defs/s"}}, "$defs": {"s": {"type": "string"}}}), &[], Draft::Draft202012 ; "urn_base")]
 fn test_evaluate_with_resources_matches_runtime(
     evaluate: EvaluateFn,
@@ -6848,6 +6961,10 @@ fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validato
         serde_json::json!({"foo": "x", "bar": "y", "baz": 1}),
         serde_json::json!({"l": [1]}),
         serde_json::json!({"l": [{}]}),
+        serde_json::json!({"foo": 1, "bar": 2}),
+        serde_json::json!({"a": "xyzw"}),
+        serde_json::json!({"a": 1}),
+        serde_json::json!({"a": {"b": 1}}),
         serde_json::json!({"c": {"d": {"next": {"marker": 1}}}}),
         serde_json::json!({"c": {"d": {"next": {"marker": true}}, "x": 1}}),
     ] {

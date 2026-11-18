@@ -1,7 +1,7 @@
 use crate::codegen::emit::ValueEmitter;
 use std::sync::Arc;
 
-use referencing::Uri;
+use referencing::{Draft, Uri};
 use serde_json::Value;
 
 use super::{draft::DraftExt, CompileContext};
@@ -11,6 +11,8 @@ pub(crate) struct ResolvedRef<'cfg> {
     pub(crate) location: String,
     /// Base URI of the resolved schema (for resolving nested references)
     pub(crate) base_uri: Arc<Uri<String>>,
+    /// The draft of the resource it sits in.
+    pub(crate) draft: Draft,
 }
 
 /// Resolve a short top-level `$ref` chain for schema-shape analysis.
@@ -69,11 +71,12 @@ pub(crate) fn resolve_ref<'cfg, E: ValueEmitter>(
     } else {
         resolved_base_uri.to_string()
     };
-    let (contents, _, _) = resolved.into_inner();
+    let (contents, _, draft) = resolved.into_inner();
 
     Ok(ResolvedRef {
         schema: contents,
         location: location_key,
         base_uri: resolved_base_uri,
+        draft,
     })
 }

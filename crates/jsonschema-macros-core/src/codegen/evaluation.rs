@@ -1,8 +1,9 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use referencing::{write_escaped_str, Draft, Registry, Resolver, Uri};
+use referencing::{write_escaped_str, Draft, Registry, Resolved, Resolver, Uri};
 use serde_json::{json, Map, Value};
 use std::{
+    borrow::Cow,
     collections::{HashMap, HashSet},
     sync::Arc,
 };
@@ -304,6 +305,7 @@ impl Tree {
         let mut units = Vec::new();
         let mut annotations = None;
         if let Value::Object(keywords) = schema {
+            let keywords = &active_keywords(ctx, keywords);
             if let Some(keyword) = keywords
                 .keys()
                 .find(|keyword| ctx.config.custom_keywords.contains_key(*keyword))
@@ -683,21 +685,23 @@ impl Tree {
                     let Ok(resolved) = resolver.lookup(&reference) else {
                         continue;
                     };
-                    if dynamic_ref_anchor_name(&reference, resolved.contents()).is_none() {
+                    let (contents, _, draft) = resolved.into_inner();
+                    if dynamic_ref_anchor_name(&reference, contents).is_none() {
                         continue;
                     }
                     let location = format!("{}{reference}", base.as_str());
                     let pointer = location_pointer(ctx, &location, &base);
-                    let target = self.add_in(ctx, &base, resolved.contents(), pointer)?;
+                    let target = self.add_in(ctx, &base, draft, contents, pointer)?;
                     self.resources[index].anchors.push((name.clone(), target));
                 }
                 if recursive && self.resources[index].root.is_none() {
                     let Ok(resolved) = resolver.lookup("#") else {
                         continue;
                     };
-                    self.resources[index].recursive = ctx.draft.supports_recursive_ref_keyword()
-                        && resolved.contents().get("$recursiveAnchor") == Some(&Value::Bool(true));
-                    let root = self.add_in(ctx, &base, resolved.contents(), String::new())?;
+                    let (contents, _, draft) = resolved.into_inner();
+                    self.resources[index].recursive = draft.supports_recursive_ref_keyword()
+                        && contents.get("$recursiveAnchor") == Some(&Value::Bool(true));
+                    let root = self.add_in(ctx, &base, draft, contents, String::new())?;
                     self.resources[index].root = Some(root);
                 }
             }
@@ -707,16 +711,19 @@ impl Tree {
         }
     }
 
-    /// `schema` at `pointer` within the resource at `base`.
+    /// `schema` at `pointer` within the resource at `base`, in that resource's `draft`.
     fn add_in<E: ValueEmitter>(
         &mut self,
         ctx: &mut CompileContext<'_, E>,
         base: &Arc<Uri<String>>,
+        draft: Draft,
         schema: &Value,
         pointer: String,
     ) -> syn::Result<usize> {
         let outer = std::mem::take(&mut self.resource_root);
-        let added = ctx.with_base_uri_scope(base.clone(), |ctx| self.add(ctx, schema, pointer));
+        let added = in_resource(ctx, base.clone(), draft, schema, |ctx| {
+            self.add(ctx, schema, pointer)
+        });
         self.resource_root = outer;
         added
     }
@@ -744,10 +751,16 @@ impl Tree {
             .unwrap_or_default()
             .to_string();
         let outer = std::mem::replace(&mut self.resource_root, root);
-        let added = ctx.with_base_uri_scope(resolved.base_uri, |ctx| {
-            self.based = true;
-            self.add(ctx, resolved.schema, pointer)
-        });
+        let added = in_resource(
+            ctx,
+            resolved.base_uri,
+            resolved.draft,
+            resolved.schema,
+            |ctx| {
+                self.based = true;
+                self.add(ctx, resolved.schema, pointer)
+            },
+        );
         self.resource_root = outer;
         added
     }
@@ -795,6 +808,50 @@ fn find_pointer(node: &Value, target: &Value, pointer: &mut String) -> bool {
         pointer.truncate(len);
     }
     found
+}
+
+/// `f` with `ctx` at a reference target `contents` in the resource at `base`: in that resource's
+/// `draft`, with the vocabularies the target or its resource names.
+fn in_resource<'cfg, E: ValueEmitter, T>(
+    ctx: &mut CompileContext<'cfg, E>,
+    base: Arc<Uri<String>>,
+    draft: Draft,
+    contents: &Value,
+    f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
+) -> T {
+    let vocabularies = ctx
+        .config
+        .registry
+        .resolver((*base).clone())
+        .find_vocabularies(draft, contents);
+    let outer_draft = std::mem::replace(&mut ctx.draft, draft);
+    let outer_vocabularies = std::mem::replace(&mut ctx.vocabularies, vocabularies);
+    let result = ctx.with_base_uri_scope(base, f);
+    ctx.draft = outer_draft;
+    ctx.vocabularies = outer_vocabularies;
+    result
+}
+
+/// `keywords` without those the active vocabularies leave without effect: the runtime gives them
+/// neither a unit nor an annotation.
+fn active_keywords<'k, E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    keywords: &'k Map<String, Value>,
+) -> Cow<'k, Map<String, Value>> {
+    let inactive = |keyword: &String| {
+        ctx.draft.is_known_keyword(keyword) && !ctx.keyword_in_vocabulary(keyword)
+    };
+    if keywords.keys().any(inactive) {
+        Cow::Owned(
+            keywords
+                .iter()
+                .filter(|(keyword, _)| !inactive(keyword))
+                .map(|(keyword, value)| (keyword.clone(), value.clone()))
+                .collect(),
+        )
+    } else {
+        Cow::Borrowed(keywords)
+    }
 }
 
 /// Whether `reference` names another document than the one `ctx` is in, so following it adds that
@@ -1251,6 +1308,9 @@ pub(crate) fn unsupported(
         draft,
         resolver: resolver.clone(),
         checked: HashSet::from([std::ptr::from_ref(schema).addr()]),
+        root: schema
+            .as_object()
+            .map(|keywords| std::ptr::from_ref(keywords).addr()),
         resources: vec![resolver],
         anchors: Vec::new(),
         recursive: false,
@@ -1267,6 +1327,9 @@ struct Support<'r> {
     resolver: Resolver<'r>,
     /// The schemas already walked, by address.
     checked: HashSet<usize>,
+    /// The root's keywords, by address: its `$schema` sets the draft and vocabularies `evaluate`
+    /// compiles with.
+    root: Option<usize>,
     /// Each resource walked, as a resolver based at it.
     resources: Vec<Resolver<'r>>,
     /// The `$dynamicAnchor` names a `$dynamicRef` resolves through the dynamic scope.
@@ -1389,6 +1452,9 @@ impl<'r> Support<'r> {
                 }
                 _ => {}
             }
+            if keyword == "$schema" && self.root == Some(std::ptr::from_ref(keywords).addr()) {
+                return None;
+            }
             (!supports(keyword, value, self.draft))
                 .then(|| format!("`evaluate` does not support the `{keyword}` keyword yet"))
         })
@@ -1401,18 +1467,21 @@ impl<'r> Support<'r> {
             Ok(resolved) => resolved,
             Err(error) => return Some(error.to_string()),
         };
-        self.target(resolved.contents(), resolved.resolver())
+        self.target(resolved)
     }
 
-    fn target(&mut self, target: &Value, resolver: &Resolver<'r>) -> Option<String> {
+    /// The target's references resolve against its own resource, and its keywords apply as its
+    /// resource's draft defines them.
+    fn target(&mut self, resolved: Resolved<'r>) -> Option<String> {
+        let (target, inner, draft) = resolved.into_inner();
         if !self.checked.insert(std::ptr::from_ref(target).addr()) {
             return None;
         }
-        // The target's references resolve against its own resource.
-        let inner = resolver.clone();
         self.entered(&inner);
         let outer = std::mem::replace(&mut self.resolver, inner);
+        let outer_draft = std::mem::replace(&mut self.draft, draft);
         let message = self.check(target, true);
+        self.draft = outer_draft;
         self.resolver = outer;
         message
     }
@@ -1434,8 +1503,7 @@ impl<'r> Support<'r> {
                 let reference = format!("#{name}");
                 if let Ok(resolved) = resolver.lookup(&reference) {
                     if dynamic_ref_anchor_name(&reference, resolved.contents()).is_some() {
-                        if let Some(message) = self.target(resolved.contents(), resolved.resolver())
-                        {
+                        if let Some(message) = self.target(resolved) {
                             return Some(message);
                         }
                     }
@@ -1443,7 +1511,7 @@ impl<'r> Support<'r> {
             }
             if self.recursive {
                 if let Ok(resolved) = resolver.lookup("#") {
-                    if let Some(message) = self.target(resolved.contents(), resolved.resolver()) {
+                    if let Some(message) = self.target(resolved) {
                         return Some(message);
                     }
                 }

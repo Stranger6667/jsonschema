@@ -153,6 +153,36 @@ impl<E: ValueEmitter> CompileContext<'_, E> {
         self.has_vocabulary(&Vocabulary::Applicator)
     }
 
+    /// Whether the active vocabularies give `keyword`, one the draft knows, any effect.
+    pub(crate) fn keyword_in_vocabulary(&self, keyword: &str) -> bool {
+        let vocabulary = match keyword {
+            "additionalItems"
+            | "additionalProperties"
+            | "allOf"
+            | "anyOf"
+            | "contains"
+            | "dependencies"
+            | "dependentSchemas"
+            | "if"
+            | "items"
+            | "not"
+            | "oneOf"
+            | "patternProperties"
+            | "prefixItems"
+            | "properties"
+            | "propertyNames" => Vocabulary::Applicator,
+            "const" | "dependentRequired" | "enum" | "exclusiveMaximum" | "exclusiveMinimum"
+            | "maxItems" | "maxLength" | "maxProperties" | "maximum" | "minItems" | "minLength"
+            | "minProperties" | "minimum" | "multipleOf" | "pattern" | "required" | "type"
+            | "uniqueItems" => Vocabulary::Validation,
+            "contentEncoding" | "contentMediaType" | "contentSchema" => Vocabulary::Content,
+            "unevaluatedItems" => return self.supports_unevaluated_items(),
+            "unevaluatedProperties" => return self.supports_unevaluated_properties(),
+            _ => return true,
+        };
+        self.has_vocabulary(&vocabulary)
+    }
+
     #[inline]
     pub(crate) fn supports_unevaluated_items(&self) -> bool {
         match self.draft {

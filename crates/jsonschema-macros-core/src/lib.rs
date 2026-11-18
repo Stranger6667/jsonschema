@@ -55,11 +55,12 @@ pub fn evaluate_supports<'a>(
         return false;
     };
     let mut documents = vec![(base.clone(), draft.create_resource(schema.clone()))];
-    documents.extend(
-        resources
-            .into_iter()
-            .map(|(uri, contents)| (uri.to_string(), draft.create_resource(contents.clone()))),
-    );
+    documents.extend(resources.into_iter().map(|(uri, contents)| {
+        (
+            uri.to_string(),
+            draft.detect(contents).create_resource(contents.clone()),
+        )
+    }));
     Registry::new()
         .draft(draft)
         .extend(
@@ -900,7 +901,12 @@ so the generated methods cannot depend on type parameters",
                     })?
             }
         };
-        resource_pairs.push((entry.uri.clone(), draft.create_resource(schema_value)));
+        // Like a retrieved document, a resource is in the draft its own `$schema` names.
+        let resource_draft = draft.detect(&schema_value);
+        resource_pairs.push((
+            entry.uri.clone(),
+            resource_draft.create_resource(schema_value),
+        ));
     }
 
     // Validate the base URI first so a malformed one gives a clear error, not an opaque registry one.
