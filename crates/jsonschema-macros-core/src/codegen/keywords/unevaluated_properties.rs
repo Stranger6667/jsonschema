@@ -14,6 +14,31 @@ use super::{
     unevaluated::{compile_key_evaluated_expr, ReportGuards},
 };
 
+/// Code pushing to `__unevaluated` the positions of the members of an object `instance` that
+/// `schema` leaves unevaluated, as its errors count them.
+pub(crate) fn unevaluated_members<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    schema: &Map<String, Value>,
+) -> proc_macro2::TokenStream {
+    let mut report = ReportGuards::default();
+    let reported = compile_key_evaluated_expr(ctx, schema, false, false, Some(&mut report));
+    let cells = report.cells();
+    let key_as_str = E::key_as_str(format_ident!("__key"));
+    let entries = E::object_iter_entries(format_ident!("obj"));
+    E::if_object(
+        format_ident!("instance"),
+        quote! {
+            #(#cells)*
+            for (__position, (__key, __value)) in #entries.enumerate() {
+                let key_str = #key_as_str;
+                if !(#reported) {
+                    __unevaluated.push(__position);
+                }
+            }
+        },
+    )
+}
+
 /// Compile the "unevaluatedProperties" keyword.
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,

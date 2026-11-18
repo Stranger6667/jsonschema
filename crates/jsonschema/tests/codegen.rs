@@ -6471,6 +6471,42 @@ struct EvaluateRefBelowNames;
 #[jsonschema::validator(schema = r##"{"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}"##, draft = Draft7, methods = { evaluate = true })]
 struct EvaluateRefCycleInBranches;
 
+#[jsonschema::validator(schema = r##"{"properties": {"a": {}}, "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesFalse;
+#[jsonschema::validator(schema = r##"{"properties": {"a": {}}, "unevaluatedProperties": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesSchema;
+#[jsonschema::validator(schema = r##"{"allOf": [{"properties": {"a": true}}], "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesAllOf;
+#[jsonschema::validator(schema = r##"{"anyOf": [{"properties": {"a": {"type": "string"}}}, {"properties": {"b": true}}], "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesFailingBranch;
+#[jsonschema::validator(schema = r##"{"$defs": {"x": {"properties": {"a": true}}}, "$ref": "#/$defs/x", "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesRef;
+#[jsonschema::validator(schema = r##"{"if": {"properties": {"a": {"const": 1}}}, "then": {"properties": {"b": true}}, "else": {"properties": {"c": true}}, "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesConditional;
+#[jsonschema::validator(schema = r##"{"patternProperties": {"^x": true}, "unevaluatedProperties": {"minimum": 2}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesPatterns;
+#[jsonschema::validator(schema = r##"{"dependentSchemas": {"a": {"properties": {"b": true}}}, "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesDependentSchemas;
+#[jsonschema::validator(schema = r##"{"properties": {"o": {"properties": {"p": true}, "unevaluatedProperties": false}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesNested;
+#[jsonschema::validator(schema = r##"{"prefixItems": [{"type": "integer"}], "unevaluatedItems": false}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedItemsFalse;
+#[jsonschema::validator(schema = r##"{"prefixItems": [true], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedItemsSchema;
+#[jsonschema::validator(schema = r##"{"contains": {"type": "string"}, "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedItemsContains;
+#[jsonschema::validator(schema = r##"{"anyOf": [{"prefixItems": [{"type": "string"}]}, {"prefixItems": [true, true]}], "unevaluatedItems": false}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedItemsFailingBranch;
+#[jsonschema::validator(schema = r##"{"items": [{"type": "integer"}], "additionalItems": {"type": "string"}, "unevaluatedItems": false}"##, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateUnevaluatedItemsDraft201909;
+#[jsonschema::validator(schema = r##"{"items": [true], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateUnevaluatedItemsTupleDraft201909;
+#[jsonschema::validator(schema = r##"{"allOf": [{"properties": {"a": {"type": "string"}}}], "unevaluatedProperties": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesFailingAllOf;
+#[jsonschema::validator(schema = r##"{"$defs": {"x": {"properties": {"b": {"type": "string"}}}}, "$ref": "#/$defs/x", "unevaluatedProperties": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedPropertiesFailingRef;
+#[jsonschema::validator(schema = r##"{"allOf": [{"prefixItems": [{"type": "string"}]}], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUnevaluatedItemsFailingAllOf;
 const OTHER: &str = r##"{"$defs": {"s": {"type": "string"}}, "type": "object", "properties": {"n": {"$ref": "#/$defs/s"}}}"##;
 #[jsonschema::validator(
     schema = r##"{"properties": {"a": {"$ref": "http://example.com/other.json"}, "b": {"$ref": "http://example.com/other.json#/$defs/s"}}}"##,
@@ -6603,6 +6639,24 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateRefBelowContains::evaluate, serde_json::json!({"contains": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}), None, Draft::Draft202012 ; "ref_below_contains")]
 #[test_case(EvaluateRefIgnoredSiblings::evaluate, serde_json::json!({"definitions": {"a": {"type": "integer"}, "b": {"$id": "http://example.com/b"}}, "$ref": "#/definitions/a", "properties": {"x": {"$ref": "http://example.com/b"}}}), None, Draft::Draft7 ; "ref_ignored_siblings")]
 #[test_case(EvaluateRefBelowNames::evaluate, serde_json::json!({"$defs": {"s": {"propertyNames": {"$ref": "#/$defs/s"}, "maxLength": 3}}, "$ref": "#/$defs/s"}), None, Draft::Draft202012 ; "ref_below_names")]
+#[test_case(EvaluateUnevaluatedPropertiesFalse::evaluate, serde_json::json!({"properties": {"a": {}}, "unevaluatedProperties": false}), None, Draft::Draft202012 ; "unevaluated_properties_false")]
+#[test_case(EvaluateUnevaluatedPropertiesSchema::evaluate, serde_json::json!({"properties": {"a": {}}, "unevaluatedProperties": {"type": "integer"}}), None, Draft::Draft202012 ; "unevaluated_properties_schema")]
+#[test_case(EvaluateUnevaluatedPropertiesAllOf::evaluate, serde_json::json!({"allOf": [{"properties": {"a": true}}], "unevaluatedProperties": false}), None, Draft::Draft202012 ; "unevaluated_properties_all_of")]
+#[test_case(EvaluateUnevaluatedPropertiesFailingBranch::evaluate, serde_json::json!({"anyOf": [{"properties": {"a": {"type": "string"}}}, {"properties": {"b": true}}], "unevaluatedProperties": false}), None, Draft::Draft202012 ; "unevaluated_properties_failing_branch")]
+#[test_case(EvaluateUnevaluatedPropertiesRef::evaluate, serde_json::json!({"$defs": {"x": {"properties": {"a": true}}}, "$ref": "#/$defs/x", "unevaluatedProperties": false}), None, Draft::Draft202012 ; "unevaluated_properties_ref")]
+#[test_case(EvaluateUnevaluatedPropertiesConditional::evaluate, serde_json::json!({"if": {"properties": {"a": {"const": 1}}}, "then": {"properties": {"b": true}}, "else": {"properties": {"c": true}}, "unevaluatedProperties": false}), None, Draft::Draft202012 ; "unevaluated_properties_conditional")]
+#[test_case(EvaluateUnevaluatedPropertiesPatterns::evaluate, serde_json::json!({"patternProperties": {"^x": true}, "unevaluatedProperties": {"minimum": 2}}), None, Draft::Draft202012 ; "unevaluated_properties_patterns")]
+#[test_case(EvaluateUnevaluatedPropertiesDependentSchemas::evaluate, serde_json::json!({"dependentSchemas": {"a": {"properties": {"b": true}}}, "unevaluatedProperties": false}), None, Draft::Draft202012 ; "unevaluated_properties_dependent_schemas")]
+#[test_case(EvaluateUnevaluatedPropertiesNested::evaluate, serde_json::json!({"properties": {"o": {"properties": {"p": true}, "unevaluatedProperties": false}}}), None, Draft::Draft202012 ; "unevaluated_properties_nested")]
+#[test_case(EvaluateUnevaluatedItemsFalse::evaluate, serde_json::json!({"prefixItems": [{"type": "integer"}], "unevaluatedItems": false}), None, Draft::Draft202012 ; "unevaluated_items_false")]
+#[test_case(EvaluateUnevaluatedItemsSchema::evaluate, serde_json::json!({"prefixItems": [true], "unevaluatedItems": {"type": "integer"}}), None, Draft::Draft202012 ; "unevaluated_items_schema")]
+#[test_case(EvaluateUnevaluatedItemsContains::evaluate, serde_json::json!({"contains": {"type": "string"}, "unevaluatedItems": {"type": "integer"}}), None, Draft::Draft202012 ; "unevaluated_items_contains")]
+#[test_case(EvaluateUnevaluatedItemsFailingBranch::evaluate, serde_json::json!({"anyOf": [{"prefixItems": [{"type": "string"}]}, {"prefixItems": [true, true]}], "unevaluatedItems": false}), None, Draft::Draft202012 ; "unevaluated_items_failing_branch")]
+#[test_case(EvaluateUnevaluatedItemsDraft201909::evaluate, serde_json::json!({"items": [{"type": "integer"}], "additionalItems": {"type": "string"}, "unevaluatedItems": false}), None, Draft::Draft201909 ; "unevaluated_items_draft2019")]
+#[test_case(EvaluateUnevaluatedItemsTupleDraft201909::evaluate, serde_json::json!({"items": [true], "unevaluatedItems": {"type": "integer"}}), None, Draft::Draft201909 ; "unevaluated_items_tuple_draft2019")]
+#[test_case(EvaluateUnevaluatedPropertiesFailingAllOf::evaluate, serde_json::json!({"allOf": [{"properties": {"a": {"type": "string"}}}], "unevaluatedProperties": {"type": "integer"}}), None, Draft::Draft202012 ; "unevaluated_properties_failing_all_of")]
+#[test_case(EvaluateUnevaluatedPropertiesFailingRef::evaluate, serde_json::json!({"$defs": {"x": {"properties": {"b": {"type": "string"}}}}, "$ref": "#/$defs/x", "unevaluatedProperties": {"type": "integer"}}), None, Draft::Draft202012 ; "unevaluated_properties_failing_ref")]
+#[test_case(EvaluateUnevaluatedItemsFailingAllOf::evaluate, serde_json::json!({"allOf": [{"prefixItems": [{"type": "string"}]}], "unevaluatedItems": {"type": "integer"}}), None, Draft::Draft202012 ; "unevaluated_items_failing_all_of")]
 #[test_case(EvaluateRefCycleInBranches::evaluate, serde_json::json!({"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}), None, Draft::Draft7 ; "ref_cycle_in_branches")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
@@ -6702,6 +6756,13 @@ fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validato
         serde_json::json!({"a": {"n": "s"}, "b": "x"}),
         serde_json::json!({"a": {"y": "x", "b": 1}}),
         serde_json::json!({"a": {"b": 4}}),
+        serde_json::json!({"x1": 1, "x2": 5, "a": 1}),
+        serde_json::json!({"o": {"p": 1, "q": 2}}),
+        serde_json::json!({"a": "s", "b": 1, "c": 2}),
+        serde_json::json!({"a": 1, "c": 1}),
+        serde_json::json!(["s", 1, 2]),
+        serde_json::json!([1, "a", "b"]),
+        serde_json::json!(["a", "b", 3]),
     ] {
         assert_eq!(
             evaluation_outputs(&evaluate(&instance)),

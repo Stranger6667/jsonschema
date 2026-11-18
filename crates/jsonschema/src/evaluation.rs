@@ -1661,6 +1661,10 @@ pub mod generated {
         /// A `$ref` unit's target.
         #[serde(default)]
         target: Option<usize>,
+        /// An `unevaluatedProperties` or `unevaluatedItems` unit's subschema, and its index in
+        /// `Tree::unevaluated`.
+        #[serde(default)]
+        unevaluated: Option<(usize, usize)>,
         /// That subschema is `false`.
         #[serde(default)]
         closed: bool,
@@ -1703,6 +1707,11 @@ pub mod generated {
             then: bool,
         },
         Ref(usize),
+        Unevaluated {
+            schema: usize,
+            closed: bool,
+            evaluated: usize,
+        },
         Rest {
             schema: usize,
             skip: usize,
@@ -1729,6 +1738,13 @@ pub mod generated {
     /// Whether an instance is valid under one subschema.
     pub type Validity<F> = for<'a> fn(&<F as Json>::Node<'a>) -> bool;
 
+    /// The positions of an instance's members or items that a schema leaves unevaluated.
+    pub type Unevaluated<F> = for<'a> fn(&<F as Json>::Node<'a>) -> Vec<usize>;
+
+    /// The errors of one subschema for an instance at a location.
+    pub type SubschemaErrors<F> =
+        for<'a> fn(&<F as Json>::Node<'a>, &LazyLocation) -> Vec<ValidationError<'static>>;
+
     /// The units a generated `evaluate` reports, built on first use.
     pub struct Tree<F: Json> {
         /// The JSON the generator writes.
@@ -1737,6 +1753,10 @@ pub mod generated {
         pub matchers: &'static [Matcher],
         /// One per subschema a unit checks.
         pub valid: &'static [Validity<F>],
+        /// One per `unevaluated*` unit.
+        pub unevaluated: &'static [Unevaluated<F>],
+        /// The errors of each `unevaluated*` unit's subschema, which the errors run leaves out.
+        pub unevaluated_errors: &'static [SubschemaErrors<F>],
         pub built: OnceLock<Built>,
     }
 
@@ -1757,29 +1777,20 @@ pub mod generated {
         fn evaluate(&self, instance: &F::Node<'_>, errors: &[ValidationError<'_>]) -> Evaluation {
             let mut flat = Vec::with_capacity(errors.len());
             flatten(errors, &mut flat);
-            let errors = flat;
-            let mut reported = AHashSet::with_capacity(errors.len());
-            let mut by_visit: AHashMap<Visit<'_>, Reported> = AHashMap::with_capacity(errors.len());
-            for (index, error) in errors.iter().enumerate() {
-                reported.insert(error.schema_path().as_str());
-                match by_visit.entry(Visit {
-                    evaluation_path: error.evaluation_path().as_str(),
-                    instance_location: error.instance_path().as_str(),
-                    string: error.instance().as_str(),
-                }) {
-                    Entry::Occupied(mut entry) => entry.get_mut().push(index),
-                    Entry::Vacant(entry) => {
-                        entry.insert(Reported::One(index));
-                    }
-                }
-            }
+            let paths: Vec<&str> = flat
+                .iter()
+                .map(|error| error.evaluation_path().as_str())
+                .collect();
+            let (reported, by_visit) = index(&flat, &paths);
             let mut walk: Walker<'_, '_, '_, F> = Walker {
                 built: self.built.get_or_init(|| self.build()),
                 matchers: self.matchers,
                 valid: self.valid,
+                unevaluated: self.unevaluated,
+                unevaluated_errors: self.unevaluated_errors,
                 reported,
                 by_visit,
-                errors,
+                errors: flat,
                 arena: EvaluationArena::default(),
                 rebase: None,
                 active: Vec::new(),
@@ -1878,6 +1889,16 @@ pub mod generated {
                                 then: unit.keyword == "then",
                             },
                             "$ref" => Kind::Ref(unit.target.expect("the target's index")),
+                            "unevaluatedProperties" | "unevaluatedItems" => {
+                                let (schema, evaluated) = unit
+                                    .unevaluated
+                                    .expect("the subschema and its evaluated positions");
+                                Kind::Unevaluated {
+                                    schema,
+                                    closed: unit.closed,
+                                    evaluated,
+                                }
+                            }
                             "items" | "prefixItems" | "additionalItems" => {
                                 if let Some(tuple) = unit.tuple {
                                     Kind::Tuple(tuple)
@@ -1963,6 +1984,8 @@ pub mod generated {
         built: &'t Built,
         matchers: &'t [Matcher],
         valid: &'t [Validity<F>],
+        unevaluated: &'t [Unevaluated<F>],
+        unevaluated_errors: &'t [SubschemaErrors<F>],
         errors: Vec<&'e ValidationError<'i>>,
         /// The schema locations with errors, so a unit without any builds no visit key.
         reported: AHashSet<&'e str>,
@@ -1977,10 +2000,35 @@ pub mod generated {
 
     /// Where the units of a `$ref` target are reported: their pointers below the target, after
     /// the evaluation path of the `$ref`.
+    #[derive(Clone)]
     struct Rebase {
         /// The length of the target's pointer.
         strip: usize,
         prefix: Location,
+    }
+
+    /// The schema locations with errors, and each visit's errors by index into `errors`, whose
+    /// evaluation paths are `paths`.
+    fn index<'e>(
+        errors: &[&'e ValidationError<'_>],
+        paths: &[&'e str],
+    ) -> (AHashSet<&'e str>, AHashMap<Visit<'e>, Reported>) {
+        let mut reported = AHashSet::with_capacity(errors.len());
+        let mut by_visit: AHashMap<Visit<'_>, Reported> = AHashMap::with_capacity(errors.len());
+        for (index, (error, evaluation_path)) in errors.iter().zip(paths).enumerate() {
+            reported.insert(error.schema_path().as_str());
+            match by_visit.entry(Visit {
+                evaluation_path,
+                instance_location: error.instance_path().as_str(),
+                string: error.instance().as_str(),
+            }) {
+                Entry::Occupied(mut entry) => entry.get_mut().push(index),
+                Entry::Vacant(entry) => {
+                    entry.insert(Reported::One(index));
+                }
+            }
+        }
+        (reported, by_visit)
     }
 
     /// `errors`, with the branch errors of a failing `anyOf`, or of a `oneOf` with no valid branch,
@@ -2118,6 +2166,13 @@ pub mod generated {
                         self.node(site, Vec::new(), None, children, position)
                     }
                     Kind::Tuple(schemas) => self.tuple(site, schemas, instance, location, position),
+                    Kind::Unevaluated {
+                        schema,
+                        closed,
+                        evaluated,
+                    } => self.unevaluated(
+                        site, schema, closed, evaluated, instance, location, position,
+                    ),
                     Kind::Rest {
                         schema,
                         skip,
@@ -2171,12 +2226,16 @@ pub mod generated {
 
         /// The evaluation path of the unit at `keyword`.
         fn rebased<'k>(&self, keyword: &'k Location) -> Cow<'k, str> {
+            self.rebased_str(keyword.as_str())
+        }
+
+        fn rebased_str<'k>(&self, path: &'k str) -> Cow<'k, str> {
             match &self.rebase {
-                None => Cow::Borrowed(keyword.as_str()),
+                None => Cow::Borrowed(path),
                 Some(rebase) => Cow::Owned(format!(
                     "{}{}",
                     rebase.prefix.as_str(),
-                    &keyword.as_str()[rebase.strip..]
+                    &path[rebase.strip..]
                 )),
             }
         }
@@ -2442,6 +2501,91 @@ pub mod generated {
 
         /// Missing required names are the unit's own errors; each present property with a
         /// subschema applies it to the object, in declared order.
+        /// The subschema for each member or item the schema leaves unevaluated; `false` fails each.
+        /// Its errors are the unit's own.
+        #[allow(clippy::too_many_arguments)]
+        #[inline(never)]
+        fn unevaluated(
+            &mut self,
+            site: &UnitLocation,
+            schema: usize,
+            closed: bool,
+            evaluated: usize,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let errors = self.errors_at(site, instance, location);
+            let positions = (self.unevaluated[evaluated])(instance);
+            let mut positions = positions.iter().peekable();
+            let mut children = ChildList::default();
+            if let Some(object) = instance.as_object() {
+                for (index, (name, value)) in object.members().enumerate() {
+                    if positions.next_if_eq(&&index).is_some() {
+                        let path = location.push(name.as_ref());
+                        let child =
+                            self.applied(schema, closed, evaluated, &value, &path, position);
+                        children.push(&mut self.arena, child);
+                    }
+                }
+            } else if let Some(array) = instance.as_array() {
+                for (index, item) in array.elements().enumerate() {
+                    if positions.next_if_eq(&&index).is_some() {
+                        let path = location.push(index);
+                        let child = self.applied(schema, closed, evaluated, &item, &path, position);
+                        children.push(&mut self.arena, child);
+                    }
+                }
+            }
+            self.node(site, errors, None, children, position)
+        }
+
+        /// The subschema at `path` below `position`, or its rejection when it is `false`.
+        #[allow(clippy::too_many_arguments)]
+        fn applied(
+            &mut self,
+            schema: usize,
+            closed: bool,
+            evaluated: usize,
+            value: &F::Node<'_>,
+            path: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let below = self.arena.position_below(position, path.segment());
+            if closed {
+                return self.rejected(&self.built.schemas[schema], value, path, below);
+            }
+            let errors = (self.unevaluated_errors[evaluated])(value, path);
+            if errors.is_empty() {
+                return self.schema(schema, value, path, below);
+            }
+            // Its errors, reported at the evaluation paths the walk gives their keywords.
+            let mut flat = Vec::with_capacity(errors.len());
+            flatten(&errors, &mut flat);
+            let rebased: Vec<Cow<'_, str>> = flat
+                .iter()
+                .map(|error| self.rebased_str(error.evaluation_path().as_str()))
+                .collect();
+            let paths: Vec<&str> = rebased.iter().map(AsRef::as_ref).collect();
+            let (reported, by_visit) = index(&flat, &paths);
+            let mut nested: Walker<'_, '_, '_, F> = Walker {
+                built: self.built,
+                matchers: self.matchers,
+                valid: self.valid,
+                unevaluated: self.unevaluated,
+                unevaluated_errors: self.unevaluated_errors,
+                errors: flat,
+                reported,
+                by_visit,
+                arena: std::mem::take(&mut self.arena),
+                rebase: self.rebase.clone(),
+                active: self.active.clone(),
+            };
+            let node = nested.schema(schema, value, path, below);
+            self.arena = nested.arena;
+            node
+        }
+
         #[inline(never)]
         fn dependencies(
             &mut self,

@@ -126,6 +126,8 @@ mod __validator_impl {
             tables: "{\"schemas\":[{\"count\":1,\"first\":1,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/contains\"}],\"units\":[{\"keyword\":\"type\"},{\"aliases\":[\"minContains\",\"maxContains\"],\"contains\":[1,0],\"keyword\":\"contains\"}]}",
             matchers: &[],
             valid: &[__valid_0],
+            unevaluated: &[],
+            unevaluated_errors: &[],
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);

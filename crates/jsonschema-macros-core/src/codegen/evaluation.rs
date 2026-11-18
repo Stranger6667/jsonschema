@@ -12,7 +12,10 @@ use super::{
     draft::DraftExt,
     emit::ValueEmitter,
     helpers::location_pointer,
-    keywords::{format::format_emits_assertion, pattern_properties::name_match_expr},
+    keywords::{
+        format::format_emits_assertion, pattern_properties::name_match_expr,
+        unevaluated_items::unevaluated_items, unevaluated_properties::unevaluated_members,
+    },
     refs::resolve_ref,
 };
 use crate::context::CompileContext;
@@ -132,6 +135,14 @@ enum TreeUnit {
         keyword: &'static str,
         schemas: (usize, usize),
     },
+    /// `unevaluatedProperties` or `unevaluatedItems`: its subschema for each member or item the
+    /// schema leaves unevaluated, which `Tree::unevaluated` lists.
+    Unevaluated {
+        keyword: &'static str,
+        schema: usize,
+        closed: bool,
+        evaluated: usize,
+    },
 }
 
 struct TreeSchema {
@@ -163,6 +174,10 @@ struct Tree {
     tuples: Vec<usize>,
     /// The `is_valid` code of each subschema a unit checks, run against `instance`.
     valid: Vec<TokenStream>,
+    /// For each `unevaluated*` unit, code pushing to `__unevaluated` the positions of the members
+    /// or items of `instance` its schema leaves unevaluated, and the errors code of its subschema:
+    /// the errors run only checks that subschema's validity.
+    unevaluated: Vec<(TokenStream, TokenStream)>,
     /// Each schema's index by its resource and pointer, so a `$ref` target is added once.
     by_pointer: HashMap<(String, String), usize>,
     /// Where the resource being added starts, as a prefix of the pointers below it.
@@ -450,6 +465,41 @@ impl Tree {
                     }
                 }
             }
+            for keyword in ["unevaluatedProperties", "unevaluatedItems"] {
+                let Some(subschema) = keywords
+                    .get(keyword)
+                    .filter(|value| **value != Value::Bool(true))
+                    .filter(|_| ctx.draft.is_known_keyword(keyword))
+                else {
+                    continue;
+                };
+                let location = format!("{pointer}/{keyword}");
+                let schema = self.add(ctx, subschema, location.clone())?;
+                let closed = *subschema == Value::Bool(false);
+                let errors = if closed {
+                    TokenStream::new()
+                } else {
+                    let compiled = ctx.with_schema_path_swap(location, |ctx| {
+                        ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
+                    });
+                    compiled.guard_errors(&compiled.errors.as_token_stream())
+                };
+                let evaluated = self.unevaluated.len();
+                let positions = ctx.with_schema_path_swap(pointer.clone(), |ctx| {
+                    if keyword == "unevaluatedProperties" {
+                        unevaluated_members(ctx, keywords)
+                    } else {
+                        unevaluated_items(ctx, keywords)
+                    }
+                });
+                self.unevaluated.push((positions, errors));
+                units.push(TreeUnit::Unevaluated {
+                    keyword,
+                    schema,
+                    closed,
+                    evaluated,
+                });
+            }
             if let Some(reference) = reference {
                 units.push(TreeUnit::Ref(self.add_reference(ctx, reference)?));
             }
@@ -701,6 +751,16 @@ pub(super) fn compile<E: ValueEmitter>(
                 skip,
                 closed,
             } => json!({"keyword": keyword, "rest": schema, "skip": skip, "closed": closed}),
+            TreeUnit::Unevaluated {
+                keyword,
+                schema,
+                closed,
+                evaluated,
+            } => json!({
+                "keyword": keyword,
+                "unevaluated": [schema, evaluated],
+                "closed": closed,
+            }),
         })
         .collect();
     let mut tables = json!({"schemas": schemas, "units": units});
@@ -728,6 +788,18 @@ pub(super) fn compile<E: ValueEmitter>(
         .map(|index| format_ident!("__valid_{index}"))
         .collect();
     let checks = &tree.valid;
+    let unevaluated: Vec<_> = (0..tree.unevaluated.len())
+        .map(|index| format_ident!("__unevaluated_{index}"))
+        .collect();
+    let unevaluated_errors: Vec<_> = (0..tree.unevaluated.len())
+        .map(|index| format_ident!("__unevaluated_errors_{index}"))
+        .collect();
+    let unevaluated_errors_bodies: Vec<_> = (0..tree.unevaluated.len())
+        .map(|index| format_ident!("__unevaluated_errors_{index}_body"))
+        .collect();
+    let positions = tree.unevaluated.iter().map(|(positions, _)| positions);
+    let subschema_errors = tree.unevaluated.iter().map(|(_, errors)| errors);
+    let borrowed_node = E::node_param(Some(quote! { '__i }));
     let prelude = E::function_prelude();
     let base = ctx.config.base_uri.as_str();
     // Without a base of its own the schema gets a synthetic one, which the output leaves out.
@@ -745,10 +817,38 @@ pub(super) fn compile<E: ValueEmitter>(
                 #checks
             }
         )*
+        #(
+            fn #unevaluated(instance: &<#json as jsonschema::json::Json>::Node<'_>) -> Vec<usize> {
+                let instance = ::core::clone::Clone::clone(instance);
+                #prelude
+                let mut __unevaluated = Vec::new();
+                #positions
+                __unevaluated
+            }
+            fn #unevaluated_errors<'__i>(
+                instance: &<#json as jsonschema::json::Json>::Node<'__i>,
+                __path: &__paths::LazyLocation,
+            ) -> Vec<__VE<'static>> {
+                let mut __errors = __err::Errors::new(false);
+                let _ = #unevaluated_errors_bodies(::core::clone::Clone::clone(instance), __path, &mut __errors);
+                __errors.into_vec().into_iter().map(__VE::to_owned).collect()
+            }
+            fn #unevaluated_errors_bodies<'__i>(
+                instance: #borrowed_node,
+                __path: &__paths::LazyLocation,
+                __errors: &mut __err::Errors<'__i>,
+            ) -> bool {
+                #prelude
+                #subschema_errors
+                false
+            }
+        )*
         static __TREE: __eval::Tree<#json> = __eval::Tree {
             tables: #tables,
             matchers: &[#(#matchers),*],
             valid: &[#(#validities),*],
+            unevaluated: &[#(#unevaluated),*],
+            unevaluated_errors: &[#(#unevaluated_errors),*],
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);
@@ -892,7 +992,9 @@ impl Support<'_> {
                     | "contains"
                     | "if"
                     | "then"
-                    | "else",
+                    | "else"
+                    | "unevaluatedProperties"
+                    | "unevaluatedItems",
                     Value::Bool(_) | Value::Object(_),
                 ) => {
                     return self.check(value, false);
