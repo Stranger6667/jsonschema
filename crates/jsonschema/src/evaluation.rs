@@ -2116,6 +2116,9 @@ pub mod generated {
         }
 
         /// The target's units, reported below the `$ref`.
+        // This and the other `Kind` handlers stay out of line, so the leaf path in `schema` keeps
+        // its values in registers.
+        #[inline(never)]
         fn reference(
             &mut self,
             site: &UnitLocation,
@@ -2134,11 +2137,18 @@ pub mod generated {
             node
         }
 
+        #[inline]
         fn evaluation_path(&self, site: &UnitLocation) -> Location {
-            match self.rebased(&site.keyword) {
-                Cow::Borrowed(_) => site.keyword.clone(),
-                Cow::Owned(path) => Location::from_escaped(&path),
+            match self.rebase {
+                None => site.keyword.clone(),
+                Some(_) => self.rebased_path(site),
             }
+        }
+
+        // Out of line, so the clone above needs no stack frame.
+        #[inline(never)]
+        fn rebased_path(&self, site: &UnitLocation) -> Location {
+            Location::from_escaped(&self.rebased(&site.keyword))
         }
 
         /// The evaluation path of the unit at `keyword`.
@@ -2153,6 +2163,7 @@ pub mod generated {
             }
         }
 
+        #[inline(never)]
         fn properties(
             &mut self,
             site: &UnitLocation,
@@ -2199,6 +2210,7 @@ pub mod generated {
 
         /// Pattern by pattern, the members whose names match it, in member order; a name matching
         /// two patterns is annotated twice.
+        #[inline(never)]
         fn patterns(
             &mut self,
             site: &UnitLocation,
@@ -2233,6 +2245,7 @@ pub mod generated {
         /// The members no sibling `properties` or `patternProperties` names, in member order.
         /// `false` fails each one; the errors run reports one error for all of them instead.
         #[allow(clippy::too_many_arguments)]
+        #[inline(never)]
         fn additional(
             &mut self,
             site: &UnitLocation,
@@ -2275,6 +2288,7 @@ pub mod generated {
 
         /// The items valid under the subschema, annotated by their positions. Count errors are
         /// the unit's own.
+        #[inline(never)]
         fn contains(
             &mut self,
             site: &UnitLocation,
@@ -2307,6 +2321,7 @@ pub mod generated {
 
         /// Each branch applied to the instance: under `anyOf` and `oneOf`, the valid ones if any.
         /// A `oneOf` error is the unit's own.
+        #[inline(never)]
         fn branches(
             &mut self,
             site: &UnitLocation,
@@ -2336,6 +2351,7 @@ pub mod generated {
 
         /// The item at each position with a subschema. The annotation is `true` when every item
         /// has one, otherwise the largest position.
+        #[inline(never)]
         fn tuple(
             &mut self,
             site: &UnitLocation,
@@ -2376,6 +2392,7 @@ pub mod generated {
         /// Each item from `skip` on. `false` fails each one, where the errors run reports one
         /// error for all.
         #[allow(clippy::too_many_arguments)]
+        #[inline(never)]
         fn rest(
             &mut self,
             site: &UnitLocation,
@@ -2407,6 +2424,7 @@ pub mod generated {
 
         /// Missing required names are the unit's own errors; each present property with a
         /// subschema applies it to the object, in declared order.
+        #[inline(never)]
         fn dependencies(
             &mut self,
             site: &UnitLocation,
@@ -2432,6 +2450,7 @@ pub mod generated {
 
         /// Each name at the object's location, matched with the errors whose instance is that
         /// name. `false` fails each name, where the errors run reports one error for all.
+        #[inline(never)]
         fn names(
             &mut self,
             site: &UnitLocation,
