@@ -4,8 +4,6 @@ description: "{\"pattern\":\"^[a-z]+$\",\"type\":\"string\"}"
 expression: is_valid_body(schema)
 ---
 match instance {
-            __Value::String(s) => {
-                __jsonschema_regex_0(s, "/pattern", Some("^[a-z]+$"), None)
-            }
+            __Value::String(s) => __jsonschema_regex_0(s, "/pattern", None),
             _ => false,
         }

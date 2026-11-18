@@ -102,7 +102,6 @@ pub(super) fn build_pattern_coverage<E: ValueEmitter>(
                 });
                 let site = RegexSite {
                     schema_path: &schema_path,
-                    pattern: None,
                     located,
                 };
                 compile_regex_match(ctx, regex, &quote! { key_str }, &site)

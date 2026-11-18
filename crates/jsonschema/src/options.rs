@@ -902,11 +902,6 @@ impl<R, F: Json> fmt::Debug for ValidationOptions<'_, R, F> {
 }
 
 /// Configuration for how regular expressions are handled in schema keywords like `pattern` and `patternProperties`.
-///
-/// Some pattern/input combinations panic inside the underlying regex engine (see
-/// [rust-lang/regex#1344](https://github.com/rust-lang/regex/issues/1344)). Such panics are caught
-/// and surfaced as a [`ValidationErrorKind::RegexEngineFailure`](crate::error::ValidationErrorKind::RegexEngineFailure)
-/// when the binary is built with `panic = "unwind"`; with `panic = "abort"` the process aborts.
 #[derive(Debug, Clone)]
 pub struct PatternOptions<E> {
     pub(crate) inner: PatternEngineOptions,

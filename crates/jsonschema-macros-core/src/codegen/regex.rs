@@ -102,8 +102,6 @@ fn get_or_create_regex_helper<E: ValueEmitter>(
 /// Where a regex match happens, for reporting a match `fancy-regex` cannot finish.
 pub(super) struct RegexSite<'a> {
     pub(super) schema_path: &'a str,
-    /// The `pattern` keyword's source pattern.
-    pub(super) pattern: Option<&'a str>,
     /// Emitted into error-reporting code, where `__path` is the instance location.
     pub(super) located: bool,
 }
@@ -118,15 +116,12 @@ pub(super) fn compile_regex_match<E: ValueEmitter>(
     match ctx.config.pattern_options {
         PatternEngineConfig::FancyRegex { .. } => {
             let schema_path = site.schema_path;
-            let source = site
-                .pattern
-                .map_or_else(|| quote! { None }, |p| quote! { Some(#p) });
             let instance_path = if site.located {
                 quote! { Some(__path) }
             } else {
                 quote! { None }
             };
-            quote! { #helper(#subject, #schema_path, #source, #instance_path) }
+            quote! { #helper(#subject, #schema_path, #instance_path) }
         }
         PatternEngineConfig::Regex { .. } => quote! { #helper(#subject) },
     }

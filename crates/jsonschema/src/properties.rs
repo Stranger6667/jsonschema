@@ -4,10 +4,7 @@ use crate::{
     compiler,
     keywords::pattern_properties::invalid_regex,
     node::SchemaNode,
-    regex::{
-        contains_ecma_whitespace, Compiled, LazyRegex, PatternOptimization, RegexBackendPanic,
-        SequenceMatcher,
-    },
+    regex::{contains_ecma_whitespace, Compiled, LazyRegex, PatternOptimization, SequenceMatcher},
     Json, Object, SerdeJson, ValidationContext,
 };
 use serde_json::{Map, Value};
@@ -31,10 +28,7 @@ pub(crate) enum CompiledPattern<R> {
     Regex(R),
 }
 
-impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern<R>
-where
-    R::Error: From<RegexBackendPanic>,
-{
+impl<R: crate::regex::RegexEngine> crate::regex::RegexEngine for CompiledPattern<R> {
     type Error = R::Error;
 
     #[inline]
@@ -44,7 +38,10 @@ where
             CompiledPattern::Exact(exact) => Ok(text == exact.as_ref()),
             CompiledPattern::Alternation(alts) => Ok(alts.iter().any(|a| a.as_str() == text)),
             CompiledPattern::NoWhitespace => Ok(!contains_ecma_whitespace(text)),
-            CompiledPattern::Sequence(sequence) => sequence.is_match(text).map_err(Into::into),
+            CompiledPattern::Sequence(sequence) => {
+                let Ok(matched) = sequence.is_match(text);
+                Ok(matched)
+            }
             CompiledPattern::Regex(re) => re.is_match(text),
         }
     }
@@ -61,10 +58,7 @@ pub(crate) trait PropertyPattern: crate::regex::RegexEngine {
     ) -> bool;
 }
 
-impl<R: crate::regex::RegexEngine> PropertyPattern for CompiledPattern<R>
-where
-    R::Error: From<RegexBackendPanic>,
-{
+impl<R: crate::regex::RegexEngine> PropertyPattern for CompiledPattern<R> {
     #[inline]
     fn is_match_in(
         &self,

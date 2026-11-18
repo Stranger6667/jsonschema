@@ -67,7 +67,6 @@ pub(crate) fn compile<E: ValueEmitter>(
             Ok(regex) => {
                 let mut site = RegexSite {
                     schema_path: &schema_path,
-                    pattern: Some(pattern),
                     located: false,
                 };
                 let check = compile_regex_match(ctx, &regex, &quote! { s }, &site);

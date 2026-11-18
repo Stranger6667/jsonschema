@@ -1,6 +1,5 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 856
 description: "{\"patternProperties\":{\"^a\":{},\"^b.c\":{}},\"type\":\"object\",\"unevaluatedProperties\":false}"
 expression: errors_body(schema)
 ---
@@ -15,7 +14,6 @@ match instance {
                                 || __jsonschema_regex_0(
                                     key_str,
                                     "/patternProperties/^b.c",
-                                    None,
                                     Some(__path),
                                 )) && !(false)
                             {

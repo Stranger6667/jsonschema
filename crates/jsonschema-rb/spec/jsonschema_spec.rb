@@ -1740,19 +1740,6 @@ RSpec.describe JSONSchema::RegexOptions do
       expect(opts.inspect).to eq("#<JSONSchema::RegexOptions #{rendered}, syntax=:ecma262>")
     end
   end
-
-  # Recovery for https://github.com/rust-lang/regex/issues/1344.
-  it "surfaces regex-automata panics as a ValidationError" do
-    opts = JSONSchema::RegexOptions.new(size_limit: 1_000_000_000)
-    schema = { "type" => "string", "pattern" => "^x?.{0,404600}$" }
-    validator = JSONSchema.validator_for(schema, pattern_options: opts)
-    expect(validator.valid?("x")).to be true
-    expect(validator.valid?("")).to be false
-    expect { validator.validate!("") }.to raise_error(JSONSchema::ValidationError) do |error|
-      expect(error.message).to include("Regex engine failed to evaluate pattern '^x?.{0,404600}$'")
-      expect(error.kind.name).to eq("pattern")
-    end
-  end
 end
 
 RSpec.describe JSONSchema::FancyRegexOptions do
@@ -1792,19 +1779,6 @@ RSpec.describe JSONSchema::FancyRegexOptions do
     validator = JSONSchema.validator_for({ "pattern" => "^a+$" }, pattern_options: opts)
     expect(validator.valid?("aa")).to be true
     expect(validator.valid?("b")).to be false
-  end
-
-  # Recovery for https://github.com/rust-lang/regex/issues/1344.
-  it "surfaces regex-automata panics as a ValidationError" do
-    opts = JSONSchema::FancyRegexOptions.new(size_limit: 1_000_000_000)
-    schema = { "type" => "string", "pattern" => "^x?.{0,404600}$" }
-    validator = JSONSchema.validator_for(schema, pattern_options: opts)
-    expect(validator.valid?("x")).to be true
-    expect(validator.valid?("")).to be false
-    expect { validator.validate!("") }.to raise_error(JSONSchema::ValidationError) do |error|
-      expect(error.message).to include("Regex engine failed to evaluate pattern '^x?.{0,404600}$'")
-      expect(error.kind.name).to eq("pattern")
-    end
   end
 end
 

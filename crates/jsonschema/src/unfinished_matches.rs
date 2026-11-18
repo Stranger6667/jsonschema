@@ -8,7 +8,7 @@ use ahash::{AHashMap, AHashSet};
 
 use crate::{
     paths::{LazyEvaluationPath, LazyLocation, Location, RefTracker},
-    regex::{RegexError, RegexFailureReason},
+    regex::RegexError,
     LazyInstance, ValidationError,
 };
 
@@ -30,21 +30,18 @@ struct AssumedMatch {
 
 /// Where a regex match happens, for reporting it when the engine cannot finish it.
 pub(crate) struct MatchSite {
-    schema_path: Location,
+    schema_location: Location,
     evaluation_path: LazyEvaluationPath,
     /// `None` where validation does not track the instance location, as in `is_valid`.
     instance_path: Option<Location>,
-    /// The `pattern` keyword's source pattern.
-    pattern: Option<String>,
 }
 
 impl MatchSite {
     pub(crate) fn schema(schema_path: &Location) -> Self {
         MatchSite {
-            schema_path: schema_path.clone(),
+            schema_location: schema_path.clone(),
             evaluation_path: LazyEvaluationPath::SameAsSchemaPath,
             instance_path: None,
-            pattern: None,
         }
     }
 
@@ -54,10 +51,9 @@ impl MatchSite {
         instance_path: &LazyLocation,
     ) -> Self {
         MatchSite {
-            schema_path: schema_path.clone(),
+            schema_location: schema_path.clone(),
             evaluation_path: crate::paths::capture_evaluation_path(tracker, schema_path),
             instance_path: Some(instance_path.into()),
-            pattern: None,
         }
     }
 
@@ -65,41 +61,31 @@ impl MatchSite {
     #[cfg(feature = "macros")]
     pub(crate) fn escaped(schema_path: &str, instance_path: Option<Location>) -> Self {
         MatchSite {
-            schema_path: Location::from_escaped(schema_path),
+            schema_location: Location::from_escaped(schema_path),
             evaluation_path: LazyEvaluationPath::SameAsSchemaPath,
             instance_path,
-            pattern: None,
         }
-    }
-
-    pub(crate) fn pattern(mut self, pattern: &str) -> Self {
-        self.pattern = Some(pattern.to_owned());
-        self
     }
 
     /// Takes `other`'s location when only `other` knows the instance location.
     fn prefer_located(&mut self, other: MatchSite) {
         if self.instance_path.is_none() && other.instance_path.is_some() {
-            let pattern = other.pattern.or(self.pattern.take());
-            *self = MatchSite { pattern, ..other };
+            *self = other;
         }
     }
 }
 
 pub(crate) struct MatchFailure {
-    reason: RegexFailureReason,
+    error: fancy_regex::Error,
     site: MatchSite,
-    /// The compiled pattern, named when the site has no `pattern` keyword source.
-    compiled: Box<str>,
 }
 
 impl MatchFailure {
     fn into_error<'i>(self, root: impl FnOnce() -> LazyInstance<'i>) -> ValidationError<'i> {
         let MatchSite {
-            schema_path,
+            schema_location,
             evaluation_path,
             instance_path,
-            pattern,
         } = self.site;
         let root = root().into_cow();
         let (instance_path, instance) = match instance_path {
@@ -120,25 +106,13 @@ impl MatchFailure {
             None => (Location::new(), root),
         };
         let instance = LazyInstance::Ready(instance);
-        match self.reason {
-            RegexFailureReason::FancyRegex(error) => ValidationError::backtrack_limit(
-                schema_path,
-                evaluation_path,
-                instance_path,
-                instance,
-                error,
-            ),
-            RegexFailureReason::Panicked => ValidationError::regex_engine_failure(
-                schema_path,
-                evaluation_path,
-                instance_path,
-                instance,
-                format!(
-                    "Regex engine failed to evaluate pattern '{}'",
-                    pattern.as_deref().unwrap_or(&self.compiled)
-                ),
-            ),
-        }
+        ValidationError::backtrack_limit(
+            schema_location,
+            evaluation_path,
+            instance_path,
+            instance,
+            self.error,
+        )
     }
 }
 
@@ -184,7 +158,7 @@ impl MatchAssumptions {
                 .or_default()
                 .push(pattern.clone());
         }
-        self.outcome(&pattern, subject, Some(error.into_failure_reason()), site)
+        self.outcome(&pattern, subject, Some(error.into_engine_error()), site)
     }
 
     /// [`Self::resolve`] for a match an earlier run could not finish, without the engine.
@@ -202,7 +176,7 @@ impl MatchAssumptions {
         &mut self,
         pattern: &str,
         subject: &str,
-        reason: Option<RegexFailureReason>,
+        error: Option<fancy_regex::Error>,
         site: impl FnOnce() -> MatchSite,
     ) -> bool {
         if let Some(assumed) = self.assumed.iter().find(|assumed| {
@@ -223,9 +197,8 @@ impl MatchAssumptions {
                         pattern: pattern.into(),
                         subject: subject.into(),
                     },
-                    failure: reason.map(|reason| MatchFailure {
-                        compiled: pattern.into(),
-                        reason,
+                    failure: error.map(|error| MatchFailure {
+                        error,
                         site: site(),
                     }),
                 });
