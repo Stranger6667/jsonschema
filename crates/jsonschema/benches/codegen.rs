@@ -137,6 +137,16 @@ mod bench {
             ItemsValidator::evaluate,
             &strings,
         );
+        c.bench_with_input(
+            BenchmarkId::new("codegen/Items/iter_errors", "Strings"),
+            &strings,
+            |b, instance| b.iter(|| black_box(ItemsValidator::iter_errors(instance).count())),
+        );
+        c.bench_with_input(
+            BenchmarkId::new("iter_errors", "Items/Strings"),
+            &strings,
+            |b, instance| b.iter(|| black_box(items.iter_errors(instance).count())),
+        );
 
         let names = jsonschema::validator_for(&json!({"propertyNames": {"maxLength": 1}}))
             .expect("Valid schema");
