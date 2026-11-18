@@ -342,6 +342,29 @@ fn errors_fn(
     }
 }
 
+/// The function whose errors a `$recursiveRef` landing on `schema` reports, when `schema` is a
+/// resource root reached through another `location`: the runtime reports them from that root.
+fn recursive_errors_name<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    location: &str,
+    schema: &Value,
+    is_recursive_anchor: bool,
+) -> Option<String> {
+    if !is_recursive_anchor {
+        return None;
+    }
+    let root = resolve_ref(ctx, "#").expect("a resource's root resolves");
+    if root.location == location || !std::ptr::eq(root.schema, schema) {
+        return None;
+    }
+    Some(get_or_create_is_valid_fn(
+        ctx,
+        &root.location,
+        root.schema,
+        root.base_uri,
+    ))
+}
+
 /// Like [`get_or_create_is_valid_fn`], with a custom body compiler.
 pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -429,7 +452,11 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                     let (enter, leave) = if recursive_push.is_empty() && dynamic_push.is_empty() {
                         (quote! {}, quote! {})
                     } else {
-                        let errors_ident = format_ident!("{}_errors", func_name);
+                        let errors_ident = format_ident!(
+                            "{}_errors",
+                            recursive_errors_name(ctx, location, schema, is_recursive_anchor)
+                                .unwrap_or_else(|| func_name.clone())
+                        );
                         let recursive_errors_push = if ctx.uses_recursive_ref {
                             push_recursive_errors(&errors_ident, is_recursive_anchor)
                         } else {

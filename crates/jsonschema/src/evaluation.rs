@@ -1591,6 +1591,12 @@ pub mod generated {
         /// use them.
         #[serde(default)]
         resources: Vec<ResourceTable>,
+        /// The resource each `Tree::valid` entry runs in, where the walk's scope reaches them.
+        #[serde(default)]
+        valid_resources: Vec<usize>,
+        /// The resource each `Tree::unevaluated` entry runs in, likewise.
+        #[serde(default)]
+        unevaluated_resources: Vec<usize>,
     }
 
     /// How following a reference moves through the dynamic scope.
@@ -1797,7 +1803,17 @@ pub mod generated {
         pub unevaluated: &'static [Unevaluated<F>],
         /// The errors of each `unevaluated*` unit's subschema, which the errors run leaves out.
         pub unevaluated_errors: &'static [SubschemaErrors<F>],
+        /// Set when the code above resolves references through the dynamic scope.
+        pub scope: Option<ScopeStacks>,
         pub built: OnceLock<Built>,
+    }
+
+    /// Put one resource's entries on the generated code's dynamic-scope stacks, and take them off:
+    /// its `$dynamicAnchor` schemas, and its root for `$recursiveRef` when the flag is set.
+    #[derive(Clone, Copy)]
+    pub struct ScopeStacks {
+        pub enter: fn(usize, bool),
+        pub leave: fn(usize, bool),
     }
 
     pub struct Built {
@@ -1805,6 +1821,8 @@ pub mod generated {
         /// Each schema's index in `resources`.
         schema_resources: Box<[usize]>,
         resources: Box<[ResourceTable]>,
+        valid_resources: Box<[usize]>,
+        unevaluated_resources: Box<[usize]>,
         /// Each schema's units, a range of `units`.
         schema_units: Box<[(usize, usize)]>,
         units: Box<[UnitLocation]>,
@@ -1831,6 +1849,7 @@ pub mod generated {
                 valid: self.valid,
                 unevaluated: self.unevaluated,
                 unevaluated_errors: self.unevaluated_errors,
+                stacks: self.scope,
                 reported,
                 by_visit,
                 errors: flat,
@@ -1978,6 +1997,8 @@ pub mod generated {
                 schemas: schemas.into_boxed_slice(),
                 schema_resources: schema_resources.into_boxed_slice(),
                 resources: tables.resources.into_boxed_slice(),
+                valid_resources: tables.valid_resources.into_boxed_slice(),
+                unevaluated_resources: tables.unevaluated_resources.into_boxed_slice(),
                 schema_units: schema_units.into_boxed_slice(),
                 units: units
                     .into_iter()
@@ -2039,6 +2060,7 @@ pub mod generated {
         valid: &'t [Validity<F>],
         unevaluated: &'t [Unevaluated<F>],
         unevaluated_errors: &'t [SubschemaErrors<F>],
+        stacks: Option<ScopeStacks>,
         errors: Vec<&'e ValidationError<'i>>,
         /// The schema locations with errors, so a unit without any builds no visit key.
         reported: AHashSet<&'e str>,
@@ -2197,7 +2219,7 @@ pub mod generated {
                         self.branches(site, schemas, valid, instance, location, position)
                     }
                     Kind::Condition { schema, valid } => {
-                        passed = self.valid[valid](instance);
+                        passed = self.is_valid(valid, instance);
                         let mut children = ChildList::default();
                         if passed {
                             let child = self.schema(schema, instance, location, position);
@@ -2277,6 +2299,42 @@ pub mod generated {
             }
             self.rebase = outer;
             node
+        }
+
+        /// Whether `instance` is valid under the subschema of `Tree::valid` entry `valid`.
+        #[inline]
+        fn is_valid(&self, valid: usize, instance: &F::Node<'_>) -> bool {
+            let check = self.valid[valid];
+            self.in_scope(&self.built.valid_resources, valid, || check(instance))
+        }
+
+        /// Runs generated code, which runs in `resources[index]`, with the generated stacks
+        /// holding the walk's dynamic scope. Under `$recursiveRef`, only the resources from the
+        /// innermost outward while each root has `$recursiveAnchor: true` count.
+        #[inline]
+        fn in_scope<T>(&self, resources: &[usize], index: usize, run: impl FnOnce() -> T) -> T {
+            let Some(stacks) = self.stacks else {
+                return run();
+            };
+            let current = resources[index];
+            let scope = &self.scope;
+            let anchored = scope
+                .iter()
+                .chain([&current])
+                .rev()
+                .take_while(|&&resource| self.built.resources[resource].recursive)
+                .count();
+            let outer = scope.len() + 1 - anchored;
+            for (position, &resource) in scope.iter().enumerate() {
+                (stacks.enter)(resource, position >= outer);
+            }
+            (stacks.enter)(current, anchored > 0);
+            let result = run();
+            (stacks.leave)(current, anchored > 0);
+            for (position, &resource) in scope.iter().enumerate().rev() {
+                (stacks.leave)(resource, position >= outer);
+            }
+            result
         }
 
         /// The schema a reference in the resource `caller` lands on, and the resource following it
@@ -2488,11 +2546,10 @@ pub mod generated {
                 return self.node(site, Vec::new(), None, ChildList::default(), position);
             };
             let errors = self.errors_at(site, instance, location);
-            let is_valid = self.valid[valid];
             let mut indices = Vec::new();
             let mut children = ChildList::default();
             for (idx, item) in array.elements().enumerate() {
-                if !is_valid(&item) {
+                if !self.is_valid(valid, &item) {
                     continue;
                 }
                 indices.push(idx);
@@ -2518,13 +2575,15 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let built = self.built;
-            let checks = valid.map(|valid| &self.valid[valid..valid + count]);
-            let first_valid =
-                checks.and_then(|checks| checks.iter().position(|is_valid| is_valid(instance)));
+            let first_valid = valid.and_then(|valid| {
+                (0..count).position(|offset| self.is_valid(valid + offset, instance))
+            });
             let mut children = ChildList::default();
             for (idx, schema) in built.tuples[first..first + count].iter().enumerate() {
-                if let (Some(checks), Some(first_valid)) = (checks, first_valid) {
-                    if idx < first_valid || (idx > first_valid && !checks[idx](instance)) {
+                if let (Some(valid), Some(first_valid)) = (valid, first_valid) {
+                    if idx < first_valid
+                        || (idx > first_valid && !self.is_valid(valid + idx, instance))
+                    {
                         continue;
                     }
                 }
@@ -2625,7 +2684,10 @@ pub mod generated {
             position: InstancePosition,
         ) -> EvaluationNode {
             let errors = self.errors_at(site, instance, location);
-            let positions = (self.unevaluated[evaluated])(instance);
+            let unevaluated = self.unevaluated[evaluated];
+            let positions = self.in_scope(&self.built.unevaluated_resources, evaluated, || {
+                unevaluated(instance)
+            });
             let mut positions = positions.iter().peekable();
             let mut children = ChildList::default();
             if let Some(object) = instance.as_object() {
@@ -2664,7 +2726,10 @@ pub mod generated {
             if closed {
                 return self.rejected(&self.built.schemas[schema], value, path, below);
             }
-            let errors = (self.unevaluated_errors[evaluated])(value, path);
+            let unevaluated_errors = self.unevaluated_errors[evaluated];
+            let errors = self.in_scope(&self.built.unevaluated_resources, evaluated, || {
+                unevaluated_errors(value, path)
+            });
             if errors.is_empty() {
                 return self.schema(schema, value, path, below);
             }
@@ -2683,6 +2748,7 @@ pub mod generated {
                 valid: self.valid,
                 unevaluated: self.unevaluated,
                 unevaluated_errors: self.unevaluated_errors,
+                stacks: self.stacks,
                 errors: flat,
                 reported,
                 by_visit,

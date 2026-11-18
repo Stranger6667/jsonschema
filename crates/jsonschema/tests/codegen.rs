@@ -360,6 +360,35 @@ fn test_one_of_direct_discriminator_keeps_non_implied_checks_and_context() {
 )]
 struct AnyOfDynamicRefContextValidator;
 
+// `myobject` is reached by `$ref` through the outer document, then by `$recursiveRef` within its own.
+#[jsonschema::validator(
+    schema = r##"{"$defs":{"myobject":{"$id":"myobject.json","$recursiveAnchor":true,"anyOf":[{"type":"string"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}},"anyOf":[{"type":"integer"},{"$ref":"#/$defs/myobject"}]}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct RecursiveRefThroughDefinitionContextValidator;
+
+#[test_case(serde_json::json!({"foo": 1}) ; "one level")]
+#[test_case(serde_json::json!({"foo": {"bar": 1}}) ; "two levels")]
+fn test_recursive_ref_through_definition_error_context_matches_runtime(
+    instance: serde_json::Value,
+) {
+    let schema = serde_json::json!({"$defs": {"myobject": {"$id": "myobject.json", "$recursiveAnchor": true, "anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}, "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/myobject"}]});
+    let runtime = jsonschema::options()
+        .with_draft(referencing::Draft::Draft201909)
+        .build(&schema)
+        .expect("valid schema");
+    assert_error_parity(
+        &RecursiveRefThroughDefinitionContextValidator::validate(&instance)
+            .expect_err("invalid instance"),
+        &runtime.validate(&instance).expect_err("invalid instance"),
+    );
+    assert_iter_errors_parity(
+        RecursiveRefThroughDefinitionContextValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
 #[test]
 fn test_any_of_dynamic_ref_error_context_matches_runtime() {
     let schema = serde_json::json!({
@@ -6519,6 +6548,18 @@ struct EvaluateRecursiveRefWithoutAnchor;
 struct EvaluateRecursiveRefOutermostAnchor;
 #[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/unanchored", "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}, "marker": {"type": "integer"}}}}}"##, draft = Draft201909, methods = { evaluate = true })]
 struct EvaluateRecursiveRefUnanchoredOuter;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/branches", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"anyOf": [{"$dynamicRef": "#items"}, {"type": "null"}]}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDynamicRefInAnyOf;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/condition", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "if": {"properties": {"child": {"$recursiveRef": "#"}}}, "then": {"required": ["ok"]}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateRecursiveRefInIf;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/derived", "$ref": "base", "$defs": {"derived": {"$dynamicAnchor": "addons", "properties": {"bar": {"type": "string"}}}, "base": {"$id": "base", "unevaluatedProperties": false, "type": "object", "properties": {"foo": {"type": "string"}}, "$dynamicRef": "#addons", "$defs": {"defaultAddons": {"$dynamicAnchor": "addons"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDynamicRefUnevaluatedProperties;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/items", "$recursiveAnchor": true, "type": "object", "properties": {"l": {"$ref": "list"}}, "$defs": {"list": {"$id": "list", "$recursiveAnchor": true, "type": ["array", "integer"], "unevaluatedItems": {"$recursiveRef": "#"}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateRecursiveRefUnevaluatedItems;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/hops", "properties": {"c": {"$ref": "c"}}, "$defs": {"c": {"$id": "c", "$recursiveAnchor": true, "type": "object", "properties": {"marker": {"type": "boolean"}}, "anyOf": [{"properties": {"d": {"$ref": "d"}}}, {"required": ["x"]}]}, "d": {"$id": "d", "$recursiveAnchor": true, "properties": {"next": {"$recursiveRef": "#"}}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateRecursiveRefThroughBranchReference;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/nesting", "$defs": {"myobject": {"$id": "myobject.json", "$recursiveAnchor": true, "anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}, "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/myobject"}]}"##, draft = Draft201909, methods = { evaluate = true })]
+struct EvaluateRecursiveRefInAnchoredBranch;
 #[jsonschema::validator(
     schema = r##"{"$id": "http://localhost:1234/scope_change_defs1.json", "type": "object", "properties": {"list": {"$ref": "baseUriChangeFolder/"}}, "$defs": {"baz": {"$id": "baseUriChangeFolder/", "type": "array", "items": {"$ref": "folderInteger.json"}}}}"##,
     resources = { "http://localhost:1234/baseUriChangeFolder/folderInteger.json" => { schema = r##"{"type": "integer"}"## } },
@@ -6682,6 +6723,12 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateRecursiveRefWithoutAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "properties": {"foo": {"$recursiveRef": "#"}}, "additionalProperties": false}), None, Draft::Draft201909 ; "recursive_ref_without_anchor")]
 #[test_case(EvaluateRecursiveRefOutermostAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/recursive", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}}}}}), None, Draft::Draft201909 ; "recursive_ref_outermost_anchor")]
 #[test_case(EvaluateRecursiveRefUnanchoredOuter::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/unanchored", "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}, "marker": {"type": "integer"}}}}}), None, Draft::Draft201909 ; "recursive_ref_unanchored_outer")]
+#[test_case(EvaluateDynamicRefInAnyOf::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/branches", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"anyOf": [{"$dynamicRef": "#items"}, {"type": "null"}]}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}), None, Draft::Draft202012 ; "dynamic_ref_in_any_of")]
+#[test_case(EvaluateRecursiveRefInIf::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/condition", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "if": {"properties": {"child": {"$recursiveRef": "#"}}}, "then": {"required": ["ok"]}}}}), None, Draft::Draft201909 ; "recursive_ref_in_if")]
+#[test_case(EvaluateDynamicRefUnevaluatedProperties::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/derived", "$ref": "base", "$defs": {"derived": {"$dynamicAnchor": "addons", "properties": {"bar": {"type": "string"}}}, "base": {"$id": "base", "unevaluatedProperties": false, "type": "object", "properties": {"foo": {"type": "string"}}, "$dynamicRef": "#addons", "$defs": {"defaultAddons": {"$dynamicAnchor": "addons"}}}}}), None, Draft::Draft202012 ; "dynamic_ref_unevaluated_properties")]
+#[test_case(EvaluateRecursiveRefUnevaluatedItems::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/items", "$recursiveAnchor": true, "type": "object", "properties": {"l": {"$ref": "list"}}, "$defs": {"list": {"$id": "list", "$recursiveAnchor": true, "type": ["array", "integer"], "unevaluatedItems": {"$recursiveRef": "#"}}}}), None, Draft::Draft201909 ; "recursive_ref_unevaluated_items")]
+#[test_case(EvaluateRecursiveRefThroughBranchReference::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/hops", "properties": {"c": {"$ref": "c"}}, "$defs": {"c": {"$id": "c", "$recursiveAnchor": true, "type": "object", "properties": {"marker": {"type": "boolean"}}, "anyOf": [{"properties": {"d": {"$ref": "d"}}}, {"required": ["x"]}]}, "d": {"$id": "d", "$recursiveAnchor": true, "properties": {"next": {"$recursiveRef": "#"}}}}}), None, Draft::Draft201909 ; "recursive_ref_through_branch_reference")]
+#[test_case(EvaluateRecursiveRefInAnchoredBranch::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/nesting", "$defs": {"myobject": {"$id": "myobject.json", "$recursiveAnchor": true, "anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}, "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/myobject"}]}), None, Draft::Draft201909 ; "recursive_ref_in_anchored_branch")]
 #[test_case(EvaluateRefCycleInBranches::evaluate, serde_json::json!({"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}), None, Draft::Draft7 ; "ref_cycle_in_branches")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
@@ -6796,6 +6843,13 @@ fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validato
         serde_json::json!({"t": {"child": {"marker": 1}}}),
         serde_json::json!({"t": {"child": {"marker": true}}}),
         serde_json::json!({"t": {"child": {"t": {"child": {"marker": "x"}}}}}),
+        serde_json::json!({"t": {"child": {"marker": 1, "ok": 1}, "ok": 1}}),
+        serde_json::json!({"foo": "x", "bar": "y"}),
+        serde_json::json!({"foo": "x", "bar": "y", "baz": 1}),
+        serde_json::json!({"l": [1]}),
+        serde_json::json!({"l": [{}]}),
+        serde_json::json!({"c": {"d": {"next": {"marker": 1}}}}),
+        serde_json::json!({"c": {"d": {"next": {"marker": true}}, "x": 1}}),
     ] {
         assert_eq!(
             evaluation_outputs(&evaluate(&instance)),

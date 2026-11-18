@@ -461,8 +461,6 @@ fn evaluate_object_applicators_module() {
 #[test_case(json!({"$ref": "#/$defs/a", "$defs": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in a ref target")]
 #[test_case(json!({"$ref": "#a", "$defs": {"a": {"$anchor": "a", "properties": {"b": {"$schema": "http://json-schema.org/draft-07/schema#"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in an anchor target")]
 #[test_case(json!({"$ref": "#/$defs/missing"}), "Pointer '/$defs/missing' does not exist" ; "unresolvable ref")]
-#[test_case(json!({"$id": "https://example.com/r", "$dynamicAnchor": "x", "anyOf": [{"$dynamicRef": "#x"}]}), "`evaluate` does not support `anyOf` beside `$dynamicRef` yet" ; "dynamic ref beside a keyword checked by validity")]
-#[test_case(json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/r", "$recursiveAnchor": true, "if": {"properties": {"a": {"$recursiveRef": "#"}}}, "then": {}}), "`evaluate` does not support `if` beside `$recursiveRef` yet" ; "recursive ref beside a keyword checked by validity")]
 #[test_case(json!({"$id": "https://example.com/r", "$ref": "https://example.com/list", "$defs": {"override": {"$dynamicAnchor": "items", "properties": {"b": {"$schema": "http://json-schema.org/draft-07/schema#"}}}, "list": {"$id": "https://example.com/list", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in a dynamic anchor target of another resource")]
 #[test_case(json!({"$ref": "http://example.com/a", "$defs": {"a": {"$id": "http://example.com/a", "$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "unsupported keyword behind a ref to another resource")]
 #[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "unsupported keyword in an embedded resource")]
@@ -483,6 +481,17 @@ fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
     )
     .expect_err("unsupported schema");
     assert_eq!(error.to_string(), message);
+}
+
+#[test_case(json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$dynamicAnchor": "node", "items": {"anyOf": [{"$dynamicRef": "#node"}, {"type": "null"}]}}), "evaluate_dynamic_scope_module" ; "dynamic ref")]
+#[test_case(json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$recursiveAnchor": true, "properties": {"child": {"if": {"$recursiveRef": "#"}, "then": {"required": ["ok"]}}}}), "evaluate_recursive_scope_module" ; "recursive ref")]
+fn evaluate_scope_module(schema: Value, name: &str) {
+    let mut config = test_config(schema);
+    config.methods.evaluate = true;
+    insta::assert_snapshot!(
+        name,
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
+    );
 }
 
 #[test]

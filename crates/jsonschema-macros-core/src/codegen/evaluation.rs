@@ -11,12 +11,21 @@ use super::{
     compile_schema,
     draft::DraftExt,
     emit::ValueEmitter,
-    helpers::{dynamic_ref_anchor_name, location_pointer},
+    helpers::{
+        collect_dynamic_anchor_bindings, dynamic_ref_anchor_name, get_or_create_is_valid_fn,
+        get_or_create_item_eval_fn, get_or_create_key_eval_fn, location_pointer,
+    },
     keywords::{
         format::format_emits_assertion, pattern_properties::name_match_expr,
         unevaluated_items::unevaluated_items, unevaluated_properties::unevaluated_members,
     },
     refs::resolve_ref,
+    stack_emit::{
+        pop_dynamic_errors_n, pop_recursive_errors, pop_recursive_is_valid,
+        pop_recursive_item_eval, pop_recursive_key_eval, push_dynamic_errors,
+        push_recursive_errors, push_recursive_is_valid, push_recursive_item_eval,
+        push_recursive_key_eval, IS_VALID_FAMILY, ITEM_EVAL_FAMILY, KEY_EVAL_FAMILY,
+    },
 };
 use crate::context::CompileContext;
 
@@ -185,10 +194,14 @@ struct Tree {
     tuples: Vec<usize>,
     /// The `is_valid` code of each subschema a unit checks, run against `instance`.
     valid: Vec<TokenStream>,
+    /// The resource each `valid` entry runs in.
+    valid_resources: Vec<usize>,
     /// For each `unevaluated*` unit, code pushing to `__unevaluated` the positions of the members
     /// or items of `instance` its schema leaves unevaluated, and the errors code of its subschema:
     /// the errors run only checks that subschema's validity.
     unevaluated: Vec<(TokenStream, TokenStream)>,
+    /// The resource each `unevaluated` entry runs in.
+    unevaluated_resources: Vec<usize>,
     /// Each schema's index by its resource and pointer, so a `$ref` target is added once.
     by_pointer: HashMap<(String, String), usize>,
     /// Where the resource being added starts, as a prefix of the pointers below it.
@@ -225,6 +238,8 @@ impl Tree {
             ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
         });
         self.valid.push(check.is_valid_token_stream());
+        let resource = self.resource(ctx);
+        self.valid_resources.push(resource);
     }
 
     fn add_tuple<E: ValueEmitter>(
@@ -524,6 +539,8 @@ impl Tree {
                     }
                 });
                 self.unevaluated.push((positions, errors));
+                let resource = self.resource(ctx);
+                self.unevaluated_resources.push(resource);
                 units.push(TreeUnit::Unevaluated {
                     keyword,
                     schema,
@@ -985,6 +1002,15 @@ pub(super) fn compile<E: ValueEmitter>(
             })
             .collect();
     }
+    let scope = scope_stacks(ctx, &tree.resources);
+    if scope.is_some() {
+        if !tree.valid_resources.is_empty() {
+            tables["valid_resources"] = json!(tree.valid_resources);
+        }
+        if !tree.unevaluated_resources.is_empty() {
+            tables["unevaluated_resources"] = json!(tree.unevaluated_resources);
+        }
+    }
     if !tree.properties.is_empty() {
         tables["properties"] = json!(tree.properties);
     }
@@ -1029,7 +1055,13 @@ pub(super) fn compile<E: ValueEmitter>(
     }
     let tables = tables.to_string();
     let json = E::json_representation();
+    let scope_field = if scope.is_some() {
+        quote! { Some(__eval::ScopeStacks { enter: __enter_resource, leave: __leave_resource }) }
+    } else {
+        quote! { None }
+    };
     Ok(quote! {
+        #scope
         #(fn #matchers(name: &str) -> bool { #matches })*
         #(
             fn #validities(instance: &<#json as jsonschema::json::Json>::Node<'_>) -> bool {
@@ -1070,11 +1102,98 @@ pub(super) fn compile<E: ValueEmitter>(
             valid: &[#(#validities),*],
             unevaluated: &[#(#unevaluated),*],
             unevaluated_errors: &[#(#unevaluated_errors),*],
+            scope: #scope_field,
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);
         let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
         <#json as __eval::Walk>::evaluate(&__TREE, &instance, &__errors.into_vec())
+    })
+}
+
+/// Functions putting a resource's entries on the generated code's dynamic-scope stacks, and taking
+/// them off, so the code the walk calls resolves dynamic references in the walk's scope. The
+/// `$recursiveRef` entry goes on only when `anchored`.
+fn scope_stacks<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    resources: &[TreeResource],
+) -> Option<TokenStream> {
+    let mut enter_arms = Vec::new();
+    let mut leave_arms = Vec::new();
+    for (index, resource) in resources.iter().enumerate() {
+        let mut enter = Vec::new();
+        let mut leave = Vec::new();
+        if ctx.uses_dynamic_ref {
+            let bindings = collect_dynamic_anchor_bindings(ctx, resource.base.clone());
+            if !bindings.is_empty() {
+                let count = bindings.len();
+                for family in [&IS_VALID_FAMILY, &KEY_EVAL_FAMILY, &ITEM_EVAL_FAMILY] {
+                    enter.extend(family.dynamic_pushes(&bindings));
+                    leave.push((family.pop_dynamic_n)(count));
+                }
+                enter.extend(bindings.iter().map(|binding| {
+                    push_dynamic_errors(
+                        &binding.anchor,
+                        &format_ident!("{}_errors", binding.is_valid_name),
+                    )
+                }));
+                leave.push(pop_dynamic_errors_n(count));
+            }
+        }
+        if ctx.uses_recursive_ref && resource.recursive {
+            let resolved = ctx
+                .with_base_uri_scope(resource.base.clone(), |ctx| resolve_ref(ctx, "#"))
+                .expect("a resource's root resolves");
+            let (location, schema, base) = (resolved.location, resolved.schema, resolved.base_uri);
+            let is_valid = format_ident!(
+                "{}",
+                get_or_create_is_valid_fn(ctx, &location, schema, base.clone())
+            );
+            let key_eval = format_ident!(
+                "{}",
+                get_or_create_key_eval_fn(ctx, &location, schema, base.clone())
+            );
+            let item_eval = format_ident!(
+                "{}",
+                get_or_create_item_eval_fn(ctx, &location, schema, base)
+            );
+            let errors = format_ident!("{is_valid}_errors");
+            let pushes = [
+                push_recursive_is_valid(&is_valid, true),
+                push_recursive_key_eval(&key_eval, true),
+                push_recursive_item_eval(&item_eval, true),
+                push_recursive_errors(&errors, true),
+            ];
+            let pops = [
+                pop_recursive_errors(),
+                pop_recursive_item_eval(),
+                pop_recursive_key_eval(),
+                pop_recursive_is_valid(),
+            ];
+            enter.push(quote! { if anchored { #(#pushes)* } });
+            leave.push(quote! { if anchored { #(#pops)* } });
+        }
+        if !enter.is_empty() {
+            enter_arms.push(quote! { #index => { #(#enter)* } });
+            leave_arms.push(quote! { #index => { #(#leave)* } });
+        }
+    }
+    if enter_arms.is_empty() {
+        return None;
+    }
+    Some(quote! {
+        fn __enter_resource(resource: usize, anchored: bool) {
+            match resource {
+                #(#enter_arms)*
+                _ => {}
+            }
+        }
+        fn __leave_resource(resource: usize, anchored: bool) {
+            match resource {
+                #(#leave_arms)*
+                _ => {}
+            }
+        }
     })
 }
 
@@ -1133,8 +1252,6 @@ pub(crate) fn unsupported(
         resolver: resolver.clone(),
         checked: HashSet::from([std::ptr::from_ref(schema).addr()]),
         resources: vec![resolver],
-        dynamic: None,
-        walked: None,
         anchors: Vec::new(),
         recursive: false,
     };
@@ -1142,17 +1259,6 @@ pub(crate) fn unsupported(
         .check(schema, true)
         .or_else(|| support.dynamic_targets())
 }
-
-/// Keywords whose subschemas' validity `evaluate` checks through generated code, which resolves a
-/// dynamic reference without the scope the walk is in.
-const CHECKED_BY_VALIDITY: [&str; 6] = [
-    "anyOf",
-    "oneOf",
-    "if",
-    "contains",
-    "unevaluatedProperties",
-    "unevaluatedItems",
-];
 
 /// Walks what `evaluate` reports, following each reference once.
 struct Support<'r> {
@@ -1163,10 +1269,6 @@ struct Support<'r> {
     checked: HashSet<usize>,
     /// Each resource walked, as a resolver based at it.
     resources: Vec<Resolver<'r>>,
-    /// The first keyword resolving through the dynamic scope.
-    dynamic: Option<&'static str>,
-    /// The first keyword from `CHECKED_BY_VALIDITY` walked.
-    walked: Option<String>,
     /// The `$dynamicAnchor` names a `$dynamicRef` resolves through the dynamic scope.
     anchors: Vec<String>,
     /// A `$recursiveRef` resolves through the dynamic scope.
@@ -1223,7 +1325,6 @@ impl<'r> Support<'r> {
                 let resolved = self.resolver.lookup(reference).ok()?;
                 dynamic_ref_anchor_name(reference, resolved.contents())
             }) {
-                self.dynamic.get_or_insert("$dynamicRef");
                 if !self.anchors.contains(&name) {
                     self.anchors.push(name);
                 }
@@ -1241,7 +1342,6 @@ impl<'r> Support<'r> {
                     resolved.contents().get("$recursiveAnchor") == Some(&Value::Bool(true))
                 })
             }) {
-                self.dynamic.get_or_insert("$recursiveRef");
                 self.recursive = true;
             }
             if let Some(message) = self.reference(reference) {
@@ -1252,9 +1352,6 @@ impl<'r> Support<'r> {
             if !self.draft.is_known_keyword(keyword) {
                 // An unknown keyword is an annotation.
                 return None;
-            }
-            if self.walked.is_none() && CHECKED_BY_VALIDITY.contains(&keyword.as_str()) {
-                self.walked = Some(keyword.clone());
             }
             match (keyword.as_str(), value) {
                 ("properties" | "patternProperties", Value::Object(subschemas)) => {
@@ -1330,7 +1427,6 @@ impl<'r> Support<'r> {
     /// Checks what a reference resolving through the dynamic scope may land on: the anchors it
     /// names, or the roots, in every resource the scope may hold.
     fn dynamic_targets(&mut self) -> Option<String> {
-        let dynamic = self.dynamic?;
         let mut index = 0;
         while index < self.resources.len() {
             let resolver = self.resources[index].clone();
@@ -1354,9 +1450,7 @@ impl<'r> Support<'r> {
             }
             index += 1;
         }
-        self.walked
-            .as_ref()
-            .map(|walked| format!("`evaluate` does not support `{walked}` beside `{dynamic}` yet"))
+        None
     }
 }
 
