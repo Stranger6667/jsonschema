@@ -441,29 +441,32 @@ fn evaluate_object_applicators_module() {
 
 #[test_case(json!({"even": true}), "`evaluate` does not support the custom `even` keyword yet" ; "custom keyword")]
 #[test_case(json!({"properties": {"a": {"even": true}}}), "`evaluate` does not support the custom `even` keyword yet" ; "custom keyword below properties")]
-#[test_case(json!({"properties": {"a": {"$dynamicAnchor": "x"}}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below properties")]
-#[test_case(json!({"patternProperties": {"^a": {"$dynamicAnchor": "x"}}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below patternProperties")]
-#[test_case(json!({"additionalProperties": {"$dynamicAnchor": "x"}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below additionalProperties")]
-#[test_case(json!({"propertyNames": {"$dynamicAnchor": "x"}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below propertyNames")]
-#[test_case(json!({"dependencies": {"a": ["b"], "c": {"$dynamicAnchor": "x"}}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below dependencies")]
-#[test_case(json!({"dependentSchemas": {"a": {"$dynamicAnchor": "x"}}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below dependentSchemas")]
-#[test_case(json!({"items": {"$dynamicAnchor": "x"}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below items")]
-#[test_case(json!({"items": [{"$dynamicAnchor": "x"}]}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below array items")]
-#[test_case(json!({"prefixItems": [{"$dynamicAnchor": "x"}]}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below prefixItems")]
-#[test_case(json!({"items": [{}], "additionalItems": {"$dynamicAnchor": "x"}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below additionalItems")]
-#[test_case(json!({"contains": {"$dynamicAnchor": "x"}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below contains")]
-#[test_case(json!({"allOf": [{}, {"$dynamicAnchor": "x"}]}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below allOf")]
-#[test_case(json!({"anyOf": [{"$dynamicAnchor": "x"}]}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below anyOf")]
-#[test_case(json!({"oneOf": [{"$dynamicAnchor": "x"}]}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below oneOf")]
-#[test_case(json!({"if": {"$dynamicAnchor": "x"}, "then": {}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below if")]
-#[test_case(json!({"if": {}, "then": {"$dynamicAnchor": "x"}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below then")]
-#[test_case(json!({"if": {}, "else": {"$dynamicAnchor": "x"}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword below else")]
-#[test_case(json!({"$ref": "#/$defs/a", "$defs": {"a": {"$dynamicAnchor": "x"}}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword in a ref target")]
-#[test_case(json!({"$ref": "#a", "$defs": {"a": {"$anchor": "a", "$dynamicAnchor": "x"}}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "keyword in an anchor target")]
+#[test_case(json!({"properties": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below properties")]
+#[test_case(json!({"patternProperties": {"^a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below patternProperties")]
+#[test_case(json!({"additionalProperties": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below additionalProperties")]
+#[test_case(json!({"propertyNames": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below propertyNames")]
+#[test_case(json!({"dependencies": {"a": ["b"], "c": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below dependencies")]
+#[test_case(json!({"dependentSchemas": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below dependentSchemas")]
+#[test_case(json!({"items": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below items")]
+#[test_case(json!({"items": [{"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below array items")]
+#[test_case(json!({"prefixItems": [{"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below prefixItems")]
+#[test_case(json!({"items": [{}], "additionalItems": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below additionalItems")]
+#[test_case(json!({"contains": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below contains")]
+#[test_case(json!({"allOf": [{}, {"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below allOf")]
+#[test_case(json!({"anyOf": [{"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below anyOf")]
+#[test_case(json!({"oneOf": [{"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below oneOf")]
+#[test_case(json!({"if": {"$schema": "http://json-schema.org/draft-07/schema#"}, "then": {}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below if")]
+#[test_case(json!({"if": {}, "then": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below then")]
+#[test_case(json!({"if": {}, "else": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below else")]
+#[test_case(json!({"$ref": "#/$defs/a", "$defs": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in a ref target")]
+#[test_case(json!({"$ref": "#a", "$defs": {"a": {"$anchor": "a", "properties": {"b": {"$schema": "http://json-schema.org/draft-07/schema#"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in an anchor target")]
 #[test_case(json!({"$ref": "#/$defs/missing"}), "Pointer '/$defs/missing' does not exist" ; "unresolvable ref")]
-#[test_case(json!({"$ref": "http://example.com/a", "$defs": {"a": {"$id": "http://example.com/a", "$dynamicAnchor": "x"}}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "unsupported keyword behind a ref to another resource")]
-#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "$dynamicAnchor": "x"}}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "unsupported keyword in an embedded resource")]
-#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "$ref": "#/$defs/b", "$defs": {"b": {"$dynamicAnchor": "x"}}}}}), "`evaluate` does not support the `$dynamicAnchor` keyword yet" ; "unsupported keyword behind a ref within an embedded resource")]
+#[test_case(json!({"$id": "https://example.com/r", "$dynamicAnchor": "x", "anyOf": [{"$dynamicRef": "#x"}]}), "`evaluate` does not support `anyOf` beside `$dynamicRef` yet" ; "dynamic ref beside a keyword checked by validity")]
+#[test_case(json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/r", "$recursiveAnchor": true, "if": {"properties": {"a": {"$recursiveRef": "#"}}}, "then": {}}), "`evaluate` does not support `if` beside `$recursiveRef` yet" ; "recursive ref beside a keyword checked by validity")]
+#[test_case(json!({"$id": "https://example.com/r", "$ref": "https://example.com/list", "$defs": {"override": {"$dynamicAnchor": "items", "properties": {"b": {"$schema": "http://json-schema.org/draft-07/schema#"}}}, "list": {"$id": "https://example.com/list", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in a dynamic anchor target of another resource")]
+#[test_case(json!({"$ref": "http://example.com/a", "$defs": {"a": {"$id": "http://example.com/a", "$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "unsupported keyword behind a ref to another resource")]
+#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "unsupported keyword in an embedded resource")]
+#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "$ref": "#/$defs/b", "$defs": {"b": {"$schema": "http://json-schema.org/draft-07/schema#"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "unsupported keyword behind a ref within an embedded resource")]
 #[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
 #[test_case(json!({"patternProperties": {"(": {}}}), "`evaluate` does not support the `(` pattern" ; "invalid pattern")]
 fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
@@ -512,7 +515,7 @@ fn evaluate_combinators_module() {
 fn evaluate_rejects_an_unsupported_keyword_in_a_provided_resource() {
     let config: crate::Config = syn::parse2(quote! {
         schema = r#"{"$ref": "json-schema:///other"}"#,
-        resources = { "json-schema:///other" => { schema = r#"{"$dynamicAnchor": "x"}"# } },
+        resources = { "json-schema:///other" => { schema = r#"{"properties": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}"# } },
         methods = { evaluate = true },
     })
     .expect("Config should parse");
@@ -521,7 +524,7 @@ fn evaluate_rejects_an_unsupported_keyword_in_a_provided_resource() {
     let error = crate::validator_impl(&config, &item).expect_err("unsupported schema");
     assert_eq!(
         error.to_string(),
-        "`evaluate` does not support the `$dynamicAnchor` keyword yet"
+        "`evaluate` does not support the `$schema` keyword yet"
     );
 }
 

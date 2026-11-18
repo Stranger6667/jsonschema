@@ -1,8 +1,8 @@
-error: `evaluate` does not support the `$dynamicAnchor` keyword yet
+error: `evaluate` does not support the `$schema` keyword yet
  --> tests/ui/evaluate_unsupported_keyword.rs:1:1
   |
 1 | / #[jsonschema::validator(
-2 | |     schema = r#"{"properties": {"a": {"$dynamicAnchor": "x"}}}"#,
+2 | |     schema = r#"{"properties": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}"#,
 3 | |     methods = { evaluate = true }
 4 | | )]
   | |__^
