@@ -3,7 +3,7 @@
 use jsonschema::{validator_for, Draft, Evaluation, Retrieve, Uri, Validator};
 use serde_json::Value;
 use std::sync::OnceLock;
-use testsuite::{output_suite, OutputRemote, OutputTest};
+use testsuite::{output_suite, EvaluateOutputs, OutputRemote, OutputTest};
 
 #[output_suite(
     path = "crates/jsonschema/tests/output-extra",
@@ -36,11 +36,19 @@ fn run_output_case(test: OutputTest) {
         data,
         outputs,
         remotes,
+        evaluate,
     } = test;
 
     let prepared_schema = prepare_schema_for_version(&schema, version);
     let validator = build_validator(&prepared_schema, version, file);
     let evaluation = validator.evaluate(&data);
+    if let Some(generated) = evaluate {
+        assert_eq!(
+            generated(&data),
+            evaluate_outputs(&evaluation),
+            "Generated `evaluate` differs for {file} (case: `{case}`, test: `{description}`)"
+        );
+    }
     let retriever = output_schema_retriever(remotes);
 
     for expected in outputs {
@@ -68,6 +76,14 @@ fn run_output_case(test: OutputTest) {
                 "Output format `{format}` failed for {file} (case: `{case}`, test: `{description}`): {error}"
             );
         }
+    }
+}
+
+fn evaluate_outputs(evaluation: &jsonschema::Evaluation) -> EvaluateOutputs {
+    EvaluateOutputs {
+        list: serde_json::to_value(evaluation.list()).expect("list output serializable"),
+        hierarchical: serde_json::to_value(evaluation.hierarchical())
+            .expect("hierarchical output serializable"),
     }
 }
 
