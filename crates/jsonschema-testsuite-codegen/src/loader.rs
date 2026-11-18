@@ -97,7 +97,7 @@ fn release_of(draft: &str) -> u32 {
 }
 
 /// Whether a `compatibility` value such as `"6,<=2019"` covers `release`.
-fn is_compatible(compatibility: &str, release: u32) -> bool {
+pub(crate) fn is_compatible(compatibility: &str, release: u32) -> bool {
     let mut compatible = true;
     for constraint in compatibility.split(',') {
         let (operator, version) = if let Some(version) = constraint.strip_prefix("<=") {

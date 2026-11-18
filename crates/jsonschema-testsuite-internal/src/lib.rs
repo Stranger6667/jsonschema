@@ -104,6 +104,15 @@ pub struct OutputTest {
     pub data: Value,
     pub outputs: Vec<OutputFormat>,
     pub remotes: &'static [OutputRemote],
+    /// The generated validator's `evaluate`, when the generator supports the schema.
+    pub evaluate: Option<fn(&Value) -> EvaluateOutputs>,
+}
+
+/// The `list` and `hierarchical` outputs of one `evaluate` run.
+#[derive(Debug, PartialEq)]
+pub struct EvaluateOutputs {
+    pub list: Value,
+    pub hierarchical: Value,
 }
 
 /// Remote schema contents used by the output test-suite.

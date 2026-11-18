@@ -4,6 +4,7 @@ use ahash::HashMap;
 use serde::Deserialize;
 use serde_json::Value;
 use std::{fs, path::Path};
+use testsuite::{annotation_suite, EvaluateOutputs};
 
 #[derive(Debug, Deserialize)]
 struct AnnotationTestFile {
@@ -95,6 +96,17 @@ fn is_schema_valued_keyword(keyword: &str) -> bool {
     keyword == "contentSchema"
 }
 
+fn evaluate_outputs(evaluation: &jsonschema::Evaluation) -> EvaluateOutputs {
+    EvaluateOutputs {
+        list: serde_json::to_value(evaluation.list()).expect("list output serializable"),
+        hierarchical: serde_json::to_value(evaluation.hierarchical())
+            .expect("hierarchical output serializable"),
+    }
+}
+
+#[annotation_suite(path = "crates/jsonschema/tests/suite/annotations/tests")]
+fn generated_evaluate(file: &str, case: &str) -> Option<fn(&Value) -> EvaluateOutputs> {}
+
 #[test]
 fn test_annotation_suite() {
     let suite_path = Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -145,10 +157,16 @@ fn test_annotation_suite() {
                 }
             };
 
+            let generated = generated_evaluate(filename, description);
             for (test_idx, test_case) in suite_case.tests.iter().enumerate() {
                 let test_id = format!("{filename} / {description} / {test_idx}");
 
                 let evaluation = validator.evaluate(&test_case.instance);
+                if let Some(generated) = generated {
+                    if generated(&test_case.instance) != evaluate_outputs(&evaluation) {
+                        failures.push(format!("FAILED: {test_id}\nGenerated `evaluate` differs"));
+                    }
+                }
                 let collected = collect_annotations(&evaluation);
 
                 let mut test_failed = false;

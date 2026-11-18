@@ -61,6 +61,7 @@ fn generate_nested_structure(
                     let schema =
                         serde_json::to_string(&case.schema).expect("Can't serialize JSON");
                     let case_description = &case.description;
+                    let generated = generated_evaluate(&case.schema, version);
 
                     let test_functions = case.tests.iter().map(|test| {
                         let base_test_name =
@@ -109,6 +110,7 @@ fn generate_nested_structure(
                                         .expect("Failed to load JSON"),
                                     outputs: vec![#(#outputs),*],
                                     remotes: #remotes_ident,
+                                    evaluate: GENERATED,
                                 };
                                 inner_test(test);
                             }
@@ -118,6 +120,8 @@ fn generate_nested_structure(
                     quote! {
                         mod #module_ident {
                             use super::*;
+
+                            #generated
 
                             #(#test_functions)*
                         }
@@ -137,5 +141,52 @@ fn generate_nested_structure(
 
     quote! {
         #(#modules)*
+    }
+}
+
+/// A validator generated for `schema` as the version's tests build it, and `GENERATED`: its
+/// `evaluate`, when the generator supports the schema.
+fn generated_evaluate(schema: &serde_json::Value, version: &str) -> TokenStream {
+    // Version 1 cases run under Draft 2020-12, whatever their `$schema` says.
+    let (schema, draft, draft_attr) = if version == "v1" || version.starts_with("v1-") {
+        let mut schema = schema.clone();
+        if let Some(keywords) = schema.as_object_mut() {
+            keywords.remove("$schema");
+        }
+        (
+            schema,
+            referencing::Draft::Draft202012,
+            quote! { , draft = Draft202012 },
+        )
+    } else {
+        let draft = referencing::Draft::default().detect(schema);
+        (schema.clone(), draft, quote! {})
+    };
+    if !jsonschema_macros_core::evaluate_supports(&schema, draft, []) {
+        return quote! {
+            const GENERATED: Option<fn(&serde_json::Value) -> testsuite::EvaluateOutputs> = None;
+        };
+    }
+    let schema = serde_json::to_string(&schema).expect("Can't serialize JSON");
+    quote! {
+        #[cfg(feature = "macros")]
+        #[jsonschema::validator(schema = #schema #draft_attr, methods = { evaluate = true })]
+        struct Validator;
+
+        #[cfg(feature = "macros")]
+        fn generated(instance: &serde_json::Value) -> testsuite::EvaluateOutputs {
+            let evaluation = Validator::evaluate(instance);
+            testsuite::EvaluateOutputs {
+                list: serde_json::to_value(evaluation.list()).expect("list output serializable"),
+                hierarchical: serde_json::to_value(evaluation.hierarchical())
+                    .expect("hierarchical output serializable"),
+            }
+        }
+
+        #[cfg(feature = "macros")]
+        const GENERATED: Option<fn(&serde_json::Value) -> testsuite::EvaluateOutputs> =
+            Some(generated);
+        #[cfg(not(feature = "macros"))]
+        const GENERATED: Option<fn(&serde_json::Value) -> testsuite::EvaluateOutputs> = None;
     }
 }

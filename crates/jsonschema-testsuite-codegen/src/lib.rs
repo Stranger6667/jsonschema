@@ -3,6 +3,7 @@ use quote::{format_ident, quote};
 use std::collections::HashSet;
 use syn::{parse_macro_input, ItemFn};
 
+mod annotation;
 mod backend_generator;
 mod canonical;
 mod files;
@@ -158,6 +159,18 @@ pub fn canonical_suite(args: TokenStream, input: TokenStream) -> TokenStream {
         #modules
     };
     output.into()
+}
+
+/// Replaces a function with one returning the generated `evaluate` of each annotation suite case
+/// under `path` whose schema the generator supports, by file name and case description.
+#[proc_macro_attribute]
+pub fn annotation_suite(args: TokenStream, input: TokenStream) -> TokenStream {
+    let config = parse_macro_input!(args as testsuite::CanonicalSuiteConfig);
+    let lookup = parse_macro_input!(input as ItemFn);
+    match annotation::generate(&config.path, &lookup.sig.ident) {
+        Ok(tokens) => tokens.into(),
+        Err(e) => compile_error_ts(e),
+    }
 }
 
 fn compile_error_ts(err: impl quote::ToTokens) -> TokenStream {
