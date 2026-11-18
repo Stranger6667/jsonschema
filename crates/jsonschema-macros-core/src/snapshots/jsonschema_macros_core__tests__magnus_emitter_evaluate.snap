@@ -85,6 +85,7 @@ mod __validator_impl {
             valid: &[],
             unevaluated: &[],
             unevaluated_errors: &[],
+            scope: None,
             built: ::std::sync::OnceLock::new(),
         };
         let mut __errors = __err::Errors::new(false);

@@ -1,0 +1,999 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+expression: "render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)"
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::evaluation as __eval;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::__private::unfinished_matches as __unfinished;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use __sj::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = __sj::Map<String, __Value>;
+    std::thread_local! {
+        static __JSONSCHEMA_RECURSIVE_STACK : std::cell::RefCell < Vec < (fn (& __Value)
+        -> bool, bool) >> = std::cell::RefCell::new(Vec::new()); static
+        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK : std::cell::RefCell < Vec < (fn (&
+        __Value, & __Map, & str) -> bool, bool) > > =
+        std::cell::RefCell::new(Vec::new()); static
+        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK : std::cell::RefCell < Vec < (fn (&
+        __Value, & [__Value], usize, & __Value) -> bool, bool) > > =
+        std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_RECURSIVE_ERRORS_STACK :
+        std::cell::RefCell < Vec < (for < '__r, '__a, '__b, '__c > fn (& '__r __Value, &
+        '__c __paths::LazyLocation < '__a, '__b >, & mut __err::Errors < '__r >, & str)
+        -> bool, bool) > > = std::cell::RefCell::new(Vec::new()); static
+        __JSONSCHEMA_VALIDATE_MARK : std::cell::RefCell < Vec < (usize, usize) >> =
+        std::cell::RefCell::new(Vec::new()); static __JSONSCHEMA_EVAL_MARK :
+        std::cell::RefCell < Vec < (usize, usize) >> =
+        std::cell::RefCell::new(Vec::new());
+    }
+    fn validate_ref_1(instance: &__Value) -> bool {
+        {
+            __JSONSCHEMA_RECURSIVE_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((validate_ref_1, true));
+                });
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_ref_0, true));
+                });
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_items_ref_0, true));
+                });
+            let __result = {
+                match instance {
+                    __Value::Object(obj) => '__all_0: {
+                        for (key, instance) in obj.iter() {
+                            let key_str = key.as_str();
+                            if !(match key_str {
+                                "child" => {
+                                    if {
+                                        let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                            .with(|stack| {
+                                                let stack = stack.borrow();
+                                                let mut selected = None;
+                                                for (is_valid, is_anchor) in stack.iter() {
+                                                    if *is_anchor {
+                                                        selected = Some(*is_valid);
+                                                        break;
+                                                    }
+                                                }
+                                                selected
+                                            });
+                                        if let Some(target) = __recursive_target {
+                                            {
+                                                let __mark = (
+                                                    target as usize,
+                                                    std::ptr::from_ref(instance) as usize,
+                                                );
+                                                let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                                    .with(|__marks| {
+                                                        let mut __marks = __marks.borrow_mut();
+                                                        if __marks.contains(&__mark) {
+                                                            true
+                                                        } else {
+                                                            __marks.push(__mark);
+                                                            false
+                                                        }
+                                                    });
+                                                if __reentered {
+                                                    true
+                                                } else {
+                                                    let __valid = target(instance);
+                                                    __JSONSCHEMA_VALIDATE_MARK
+                                                        .with(|__marks| __marks.borrow_mut().pop());
+                                                    __valid
+                                                }
+                                            }
+                                        } else {
+                                            validate_ref_0(instance)
+                                        }
+                                    } {
+                                        match instance {
+                                            __Value::Object(obj) => obj.contains_key("ok"),
+                                            _ => true,
+                                        }
+                                    } else {
+                                        true
+                                    }
+                                }
+                                _ => true,
+                            }) {
+                                break '__all_0 false;
+                            }
+                        }
+                        true
+                    }
+                    _ => true,
+                }
+            };
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __JSONSCHEMA_RECURSIVE_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __result
+        }
+    }
+    #[inline(never)]
+    fn validate_ref_1_errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+        __site: &str,
+    ) -> bool {
+        if validate_ref_1(instance) {
+            return false;
+        }
+        let __start = __errors.mark();
+        __JSONSCHEMA_RECURSIVE_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((validate_ref_1, true));
+            });
+        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((eval_ref_0, true));
+            });
+        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((eval_items_ref_0, true));
+            });
+        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((validate_ref_1_errors, true));
+            });
+        let __stop = validate_ref_1_errors_body(instance, __path, __errors);
+        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __errors.reached(__start, "", None, __site);
+        __stop
+    }
+    fn validate_ref_1_errors_body<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        match instance {
+            __Value::Object(obj) => {
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "child" => {
+                            let instance = value;
+                            if !(if {
+                                let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                    .with(|stack| {
+                                        let stack = stack.borrow();
+                                        let mut selected = None;
+                                        for (is_valid, is_anchor) in stack.iter() {
+                                            if *is_anchor {
+                                                selected = Some(*is_valid);
+                                                break;
+                                            }
+                                        }
+                                        selected
+                                    });
+                                if let Some(target) = __recursive_target {
+                                    {
+                                        let __mark = (
+                                            target as usize,
+                                            std::ptr::from_ref(instance) as usize,
+                                        );
+                                        let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                            .with(|__marks| {
+                                                let mut __marks = __marks.borrow_mut();
+                                                if __marks.contains(&__mark) {
+                                                    true
+                                                } else {
+                                                    __marks.push(__mark);
+                                                    false
+                                                }
+                                            });
+                                        if __reentered {
+                                            true
+                                        } else {
+                                            let __valid = target(instance);
+                                            __JSONSCHEMA_VALIDATE_MARK
+                                                .with(|__marks| __marks.borrow_mut().pop());
+                                            __valid
+                                        }
+                                    }
+                                } else {
+                                    validate_ref_0(instance)
+                                }
+                            } {
+                                match instance {
+                                    __Value::Object(obj) => obj.contains_key("ok"),
+                                    _ => true,
+                                }
+                            } else {
+                                true
+                            }) {
+                                let __path = &__path.push("child");
+                                if {
+                                    let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                        .with(|stack| {
+                                            let stack = stack.borrow();
+                                            let mut selected = None;
+                                            for (is_valid, is_anchor) in stack.iter() {
+                                                if *is_anchor {
+                                                    selected = Some(*is_valid);
+                                                    break;
+                                                }
+                                            }
+                                            selected
+                                        });
+                                    if let Some(target) = __recursive_target {
+                                        {
+                                            let __mark = (
+                                                target as usize,
+                                                std::ptr::from_ref(instance) as usize,
+                                            );
+                                            let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                                .with(|__marks| {
+                                                    let mut __marks = __marks.borrow_mut();
+                                                    if __marks.contains(&__mark) {
+                                                        true
+                                                    } else {
+                                                        __marks.push(__mark);
+                                                        false
+                                                    }
+                                                });
+                                            if __reentered {
+                                                true
+                                            } else {
+                                                let __valid = target(instance);
+                                                __JSONSCHEMA_VALIDATE_MARK
+                                                    .with(|__marks| __marks.borrow_mut().pop());
+                                                __valid
+                                            }
+                                        }
+                                    } else {
+                                        validate_ref_0(instance)
+                                    }
+                                } {
+                                    match instance {
+                                        __Value::Object(obj) => {
+                                            if let Some(__e) = '__first_error: {
+                                                if !(obj.contains_key("ok")) {
+                                                    break '__first_error Some(
+                                                        __err::required(
+                                                            "/properties/child/then/required",
+                                                            __path.into(),
+                                                            instance,
+                                                            "ok",
+                                                        ),
+                                                    );
+                                                }
+                                                None
+                                            } {
+                                                if __errors.push(__e) {
+                                                    return true;
+                                                }
+                                            }
+                                        }
+                                        _ => {}
+                                    }
+                                } else {}
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+    fn validate_ref_0(instance: &__Value) -> bool {
+        {
+            __JSONSCHEMA_RECURSIVE_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((validate_ref_0, true));
+                });
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_ref_1, true));
+                });
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_items_ref_1, true));
+                });
+            let __result = { validate_ref_1(instance) };
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __JSONSCHEMA_RECURSIVE_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __result
+        }
+    }
+    #[inline(never)]
+    fn validate_ref_0_errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+        __site: &str,
+    ) -> bool {
+        if validate_ref_0(instance) {
+            return false;
+        }
+        let __start = __errors.mark();
+        __JSONSCHEMA_RECURSIVE_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((validate_ref_0, true));
+            });
+        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((eval_ref_1, true));
+            });
+        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((eval_items_ref_1, true));
+            });
+        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((validate_ref_0_errors, true));
+            });
+        let __stop = validate_ref_0_errors_body(instance, __path, __errors);
+        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __errors.reached(__start, "", None, __site);
+        __stop
+    }
+    fn validate_ref_0_errors_body<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        if let Some(__e) = '__first_error: {
+            {
+                let mut __first = __err::Errors::new(true);
+                let _ = (|| -> bool {
+                    let __errors = &mut __first;
+                    if {
+                        let __start = __errors.mark();
+                        let __stop = validate_ref_1_errors(
+                            instance,
+                            __path,
+                            __errors,
+                            "",
+                        );
+                        __errors.inside(__start, "");
+                        __stop
+                    } {
+                        return true;
+                    }
+                    false
+                })();
+                if let Some(__e) = __first.into_first() {
+                    break '__first_error Some(__e);
+                }
+            }
+            None
+        } {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        false
+    }
+    #[inline]
+    fn eval_ref_0(instance: &__Value, obj: &__Map, key_str: &str) -> bool {
+        {
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_ref_0, true));
+                });
+            let __result = { matches!(key_str, "child") };
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __result
+        }
+    }
+    #[inline]
+    fn eval_ref_1(instance: &__Value, obj: &__Map, key_str: &str) -> bool {
+        {
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_ref_1, true));
+                });
+            let __result = { matches!(key_str, "child") };
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __result
+        }
+    }
+    #[inline]
+    fn eval_ref_2(instance: &__Value, obj: &__Map, key_str: &str) -> bool {
+        {
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_ref_2, true));
+                });
+            let __result = { matches!(key_str, "child") };
+            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __result
+        }
+    }
+    #[inline]
+    fn eval_items_ref_0(
+        instance: &__Value,
+        arr: &[__Value],
+        idx: usize,
+        item: &__Value,
+    ) -> bool {
+        {
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_items_ref_0, true));
+                });
+            let __result = { false };
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __result
+        }
+    }
+    #[inline]
+    fn eval_items_ref_1(
+        instance: &__Value,
+        arr: &[__Value],
+        idx: usize,
+        item: &__Value,
+    ) -> bool {
+        {
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_items_ref_1, true));
+                });
+            let __result = { false };
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __result
+        }
+    }
+    #[inline]
+    fn eval_items_ref_2(
+        instance: &__Value,
+        arr: &[__Value],
+        idx: usize,
+        item: &__Value,
+    ) -> bool {
+        {
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().push((eval_items_ref_2, true));
+                });
+            let __result = { false };
+            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                .with(|stack| {
+                    stack.borrow_mut().pop();
+                });
+            __result
+        }
+    }
+    pub(super) fn is_valid(instance: &__Value) -> bool {
+        __JSONSCHEMA_RECURSIVE_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((is_valid, true));
+            });
+        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((eval_ref_2, true));
+            });
+        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((eval_items_ref_2, true));
+            });
+        let __result = {
+            match instance {
+                __Value::Object(obj) => '__all_1: {
+                    for (key, instance) in obj.iter() {
+                        let key_str = key.as_str();
+                        if !(match key_str {
+                            "child" => {
+                                if {
+                                    let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                        .with(|stack| {
+                                            let stack = stack.borrow();
+                                            let mut selected = None;
+                                            for (is_valid, is_anchor) in stack.iter() {
+                                                if *is_anchor {
+                                                    selected = Some(*is_valid);
+                                                    break;
+                                                }
+                                            }
+                                            selected
+                                        });
+                                    if let Some(target) = __recursive_target {
+                                        {
+                                            let __mark = (
+                                                target as usize,
+                                                std::ptr::from_ref(instance) as usize,
+                                            );
+                                            let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                                .with(|__marks| {
+                                                    let mut __marks = __marks.borrow_mut();
+                                                    if __marks.contains(&__mark) {
+                                                        true
+                                                    } else {
+                                                        __marks.push(__mark);
+                                                        false
+                                                    }
+                                                });
+                                            if __reentered {
+                                                true
+                                            } else {
+                                                let __valid = target(instance);
+                                                __JSONSCHEMA_VALIDATE_MARK
+                                                    .with(|__marks| __marks.borrow_mut().pop());
+                                                __valid
+                                            }
+                                        }
+                                    } else {
+                                        validate_ref_0(instance)
+                                    }
+                                } {
+                                    match instance {
+                                        __Value::Object(obj) => obj.contains_key("ok"),
+                                        _ => true,
+                                    }
+                                } else {
+                                    true
+                                }
+                            }
+                            _ => true,
+                        }) {
+                            break '__all_1 false;
+                        }
+                    }
+                    true
+                }
+                _ => true,
+            }
+        };
+        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __result
+    }
+    pub(super) fn errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        __JSONSCHEMA_RECURSIVE_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((is_valid, true));
+            });
+        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((eval_ref_2, true));
+            });
+        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((eval_items_ref_2, true));
+            });
+        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+            .with(|stack| {
+                stack.borrow_mut().push((errors_at, true));
+            });
+        let __stop = (|| -> bool {
+            match instance {
+                __Value::Object(obj) => {
+                    for (key, value) in obj.iter() {
+                        let key_str = key.as_str();
+                        match key_str {
+                            "child" => {
+                                let instance = value;
+                                if !(if {
+                                    let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                        .with(|stack| {
+                                            let stack = stack.borrow();
+                                            let mut selected = None;
+                                            for (is_valid, is_anchor) in stack.iter() {
+                                                if *is_anchor {
+                                                    selected = Some(*is_valid);
+                                                    break;
+                                                }
+                                            }
+                                            selected
+                                        });
+                                    if let Some(target) = __recursive_target {
+                                        {
+                                            let __mark = (
+                                                target as usize,
+                                                std::ptr::from_ref(instance) as usize,
+                                            );
+                                            let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                                .with(|__marks| {
+                                                    let mut __marks = __marks.borrow_mut();
+                                                    if __marks.contains(&__mark) {
+                                                        true
+                                                    } else {
+                                                        __marks.push(__mark);
+                                                        false
+                                                    }
+                                                });
+                                            if __reentered {
+                                                true
+                                            } else {
+                                                let __valid = target(instance);
+                                                __JSONSCHEMA_VALIDATE_MARK
+                                                    .with(|__marks| __marks.borrow_mut().pop());
+                                                __valid
+                                            }
+                                        }
+                                    } else {
+                                        validate_ref_0(instance)
+                                    }
+                                } {
+                                    match instance {
+                                        __Value::Object(obj) => obj.contains_key("ok"),
+                                        _ => true,
+                                    }
+                                } else {
+                                    true
+                                }) {
+                                    let __path = &__path.push("child");
+                                    if {
+                                        let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                            .with(|stack| {
+                                                let stack = stack.borrow();
+                                                let mut selected = None;
+                                                for (is_valid, is_anchor) in stack.iter() {
+                                                    if *is_anchor {
+                                                        selected = Some(*is_valid);
+                                                        break;
+                                                    }
+                                                }
+                                                selected
+                                            });
+                                        if let Some(target) = __recursive_target {
+                                            {
+                                                let __mark = (
+                                                    target as usize,
+                                                    std::ptr::from_ref(instance) as usize,
+                                                );
+                                                let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                                    .with(|__marks| {
+                                                        let mut __marks = __marks.borrow_mut();
+                                                        if __marks.contains(&__mark) {
+                                                            true
+                                                        } else {
+                                                            __marks.push(__mark);
+                                                            false
+                                                        }
+                                                    });
+                                                if __reentered {
+                                                    true
+                                                } else {
+                                                    let __valid = target(instance);
+                                                    __JSONSCHEMA_VALIDATE_MARK
+                                                        .with(|__marks| __marks.borrow_mut().pop());
+                                                    __valid
+                                                }
+                                            }
+                                        } else {
+                                            validate_ref_0(instance)
+                                        }
+                                    } {
+                                        match instance {
+                                            __Value::Object(obj) => {
+                                                if let Some(__e) = '__first_error: {
+                                                    if !(obj.contains_key("ok")) {
+                                                        break '__first_error Some(
+                                                            __err::required(
+                                                                "/properties/child/then/required",
+                                                                __path.into(),
+                                                                instance,
+                                                                "ok",
+                                                            ),
+                                                        );
+                                                    }
+                                                    None
+                                                } {
+                                                    if __errors.push(__e) {
+                                                        return true;
+                                                    }
+                                                }
+                                            }
+                                            _ => {}
+                                        }
+                                    } else {}
+                                }
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                _ => {}
+            }
+            false
+        })();
+        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __JSONSCHEMA_RECURSIVE_STACK
+            .with(|stack| {
+                stack.borrow_mut().pop();
+            });
+        __stop
+    }
+    fn errors_at<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+        __site: &str,
+    ) -> bool {
+        let __start = __errors.mark();
+        let __stop = errors(instance, __path, __errors);
+        __errors.reached(__start, "", None, __site);
+        __stop
+    }
+    pub(super) fn run_is_valid(instance: &__Value) -> bool {
+        is_valid(instance)
+    }
+    pub(super) fn run_validate<'__i>(instance: &'__i __Value) -> Option<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
+    }
+    pub(super) fn run_collect_errors<'__i>(instance: &'__i __Value) -> Vec<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
+    }
+    pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        fn __enter_resource(resource: usize, anchored: bool) {
+            match resource {
+                0usize => {
+                    if anchored {
+                        __JSONSCHEMA_RECURSIVE_STACK
+                            .with(|stack| {
+                                stack.borrow_mut().push((validate_ref_0, true));
+                            });
+                        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                            .with(|stack| {
+                                stack.borrow_mut().push((eval_ref_1, true));
+                            });
+                        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                            .with(|stack| {
+                                stack.borrow_mut().push((eval_items_ref_1, true));
+                            });
+                        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+                            .with(|stack| {
+                                stack.borrow_mut().push((validate_ref_0_errors, true));
+                            });
+                    }
+                }
+                _ => {}
+            }
+        }
+        fn __leave_resource(resource: usize, anchored: bool) {
+            match resource {
+                0usize => {
+                    if anchored {
+                        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+                            .with(|stack| {
+                                stack.borrow_mut().pop();
+                            });
+                        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                            .with(|stack| {
+                                stack.borrow_mut().pop();
+                            });
+                        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                            .with(|stack| {
+                                stack.borrow_mut().pop();
+                            });
+                        __JSONSCHEMA_RECURSIVE_STACK
+                            .with(|stack| {
+                                stack.borrow_mut().pop();
+                            });
+                    }
+                }
+                _ => {}
+            }
+        }
+        fn __valid_0(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+        ) -> bool {
+            let instance = ::core::clone::Clone::clone(instance);
+            {
+                let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                    .with(|stack| {
+                        let stack = stack.borrow();
+                        let mut selected = None;
+                        for (is_valid, is_anchor) in stack.iter() {
+                            if *is_anchor {
+                                selected = Some(*is_valid);
+                                break;
+                            }
+                        }
+                        selected
+                    });
+                if let Some(target) = __recursive_target {
+                    {
+                        let __mark = (
+                            target as usize,
+                            std::ptr::from_ref(instance) as usize,
+                        );
+                        let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                            .with(|__marks| {
+                                let mut __marks = __marks.borrow_mut();
+                                if __marks.contains(&__mark) {
+                                    true
+                                } else {
+                                    __marks.push(__mark);
+                                    false
+                                }
+                            });
+                        if __reentered {
+                            true
+                        } else {
+                            let __valid = target(instance);
+                            __JSONSCHEMA_VALIDATE_MARK
+                                .with(|__marks| __marks.borrow_mut().pop());
+                            __valid
+                        }
+                    }
+                } else {
+                    validate_ref_0(instance)
+                }
+            }
+        }
+        static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
+            tables: "{\"properties\":[[\"child\",1]],\"resources\":[{\"anchors\":[],\"recursive\":true,\"root\":0}],\"schemas\":[{\"count\":1,\"first\":4,\"pointer\":\"\"},{\"count\":2,\"first\":2,\"pointer\":\"/properties/child\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/child/if\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/child/then\"}],\"units\":[{\"keyword\":\"$recursiveRef\",\"scope\":{\"recursive\":true},\"target\":0},{\"keyword\":\"required\"},{\"condition\":[2,0],\"keyword\":\"if\"},{\"branch\":3,\"keyword\":\"then\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]}],\"valid_resources\":[0]}",
+            matchers: &[],
+            valid: &[__valid_0],
+            unevaluated: &[],
+            unevaluated_errors: &[],
+            scope: Some(__eval::ScopeStacks {
+                enter: __enter_resource,
+                leave: __leave_resource,
+            }),
+            built: ::std::sync::OnceLock::new(),
+        };
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate(
+            &__TREE,
+            &instance,
+            &__errors.into_vec(),
+        )
+    }
+    pub(super) fn entry_is_valid(instance: &__Value) -> bool {
+        run_is_valid(instance)
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Value,
+    ) -> ::std::result::Result<(), __VE<'__i>> {
+        match run_validate(instance) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+    pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
+        __err::iterator_from(run_collect_errors(instance))
+    }
+    pub(super) fn entry_evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        evaluate(instance)
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &jsonschema::__private::serde_json::Value) -> bool {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> ::std::result::Result<(), jsonschema::ValidationError<'__i>> {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::ErrorIterator<'__i> {
+        __validator_impl::entry_iter_errors(instance)
+    }
+    pub fn evaluate(
+        instance: &jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::Evaluation {
+        __validator_impl::entry_evaluate(instance)
+    }
+}
