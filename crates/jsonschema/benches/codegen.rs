@@ -6,19 +6,19 @@ mod bench {
     use codspeed_criterion_compat::{criterion_group, BenchmarkId, Criterion};
     use serde_json::{json, Value};
 
-    #[jsonschema::validator(path = "../benchmark/data/fast_schema.json")]
+    #[jsonschema::validator(path = "../benchmark/data/fast_schema.json", methods = { evaluate = true })]
     struct FastSchemaValidator;
-    #[jsonschema::validator(path = "../benchmark/data/openapi.json")]
+    #[jsonschema::validator(path = "../benchmark/data/openapi.json", methods = { evaluate = true })]
     struct OpenAPIValidator;
     #[jsonschema::validator(path = "../benchmark/data/swagger.json")]
     struct SwaggerValidator;
-    #[jsonschema::validator(path = "../benchmark/data/geojson.json")]
+    #[jsonschema::validator(path = "../benchmark/data/geojson.json", methods = { evaluate = true })]
     struct GeoJSONValidator;
-    #[jsonschema::validator(path = "../benchmark/data/citm_catalog_schema.json")]
+    #[jsonschema::validator(path = "../benchmark/data/citm_catalog_schema.json", methods = { evaluate = true })]
     struct CITMValidator;
-    #[jsonschema::validator(path = "../benchmark/data/fhir.schema.json")]
+    #[jsonschema::validator(path = "../benchmark/data/fhir.schema.json", methods = { evaluate = true })]
     struct FHIRValidator;
-    #[jsonschema::validator(path = "../benchmark/data/recursive_schema.json")]
+    #[jsonschema::validator(path = "../benchmark/data/recursive_schema.json", methods = { evaluate = true })]
     struct RecursiveValidator;
 
     #[jsonschema::validator(schema = r#"{"items": {"type": "integer"}}"#, methods = { evaluate = true })]
@@ -35,46 +35,59 @@ mod bench {
     type IsValid = fn(&Value) -> bool;
     type Validate = for<'a> fn(&'a Value) -> Result<(), jsonschema::ValidationError<'a>>;
     type IterErrors = for<'a> fn(&'a Value) -> jsonschema::ErrorIterator<'a>;
+    type Evaluate = fn(&Value) -> jsonschema::Evaluation;
 
     fn bench(c: &mut Criterion) {
         for benchmark in Benchmark::iter() {
             benchmark.run(&mut |name, _schema, instances| {
-                let (is_valid, validate, iter_errors): (IsValid, Validate, IterErrors) = match name
-                {
+                let (is_valid, validate, iter_errors, evaluate): (
+                    IsValid,
+                    Validate,
+                    IterErrors,
+                    Option<Evaluate>,
+                ) = match name {
                     "Fast" => (
                         FastSchemaValidator::is_valid,
                         FastSchemaValidator::validate,
                         FastSchemaValidator::iter_errors,
+                        Some(FastSchemaValidator::evaluate),
                     ),
                     "Open API" => (
                         OpenAPIValidator::is_valid,
                         OpenAPIValidator::validate,
                         OpenAPIValidator::iter_errors,
+                        Some(OpenAPIValidator::evaluate),
                     ),
+                    // `evaluate` is not generated for it yet.
                     "Swagger" => (
                         SwaggerValidator::is_valid,
                         SwaggerValidator::validate,
                         SwaggerValidator::iter_errors,
+                        None,
                     ),
                     "GeoJSON" => (
                         GeoJSONValidator::is_valid,
                         GeoJSONValidator::validate,
                         GeoJSONValidator::iter_errors,
+                        Some(GeoJSONValidator::evaluate),
                     ),
                     "CITM" => (
                         CITMValidator::is_valid,
                         CITMValidator::validate,
                         CITMValidator::iter_errors,
+                        Some(CITMValidator::evaluate),
                     ),
                     "FHIR" => (
                         FHIRValidator::is_valid,
                         FHIRValidator::validate,
                         FHIRValidator::iter_errors,
+                        Some(FHIRValidator::evaluate),
                     ),
                     "Recursive" => (
                         RecursiveValidator::is_valid,
                         RecursiveValidator::validate,
                         RecursiveValidator::iter_errors,
+                        Some(RecursiveValidator::evaluate),
                     ),
                     _ => return,
                 };
@@ -94,6 +107,13 @@ mod bench {
                         &instance.data,
                         |b, data| b.iter(|| black_box(iter_errors(data).count())),
                     );
+                    if let Some(evaluate) = evaluate {
+                        c.bench_with_input(
+                            BenchmarkId::new(format!("codegen/{name}/evaluate"), &instance.name),
+                            &instance.data,
+                            |b, data| b.iter_with_large_drop(|| black_box(evaluate(data))),
+                        );
+                    }
                 }
             });
         }
