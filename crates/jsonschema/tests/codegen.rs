@@ -6471,6 +6471,27 @@ struct EvaluateRefBelowNames;
 #[jsonschema::validator(schema = r##"{"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}"##, draft = Draft7, methods = { evaluate = true })]
 struct EvaluateRefCycleInBranches;
 
+const OTHER: &str = r##"{"$defs": {"s": {"type": "string"}}, "type": "object", "properties": {"n": {"$ref": "#/$defs/s"}}}"##;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"a": {"$ref": "http://example.com/other.json"}, "b": {"$ref": "http://example.com/other.json#/$defs/s"}}}"##,
+    resources = { "http://example.com/other.json" => { schema = r##"{"$defs": {"s": {"type": "string"}}, "type": "object", "properties": {"n": {"$ref": "#/$defs/s"}}}"## } },
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct EvaluateExternalRef;
+#[jsonschema::validator(schema = r##"{"$id": "http://example.com/root.json", "properties": {"foo": {"$id": "foo.json", "type": "object", "properties": {"bar": {"$ref": "#/$defs/s"}}, "$defs": {"s": {"minimum": 3}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateEmbeddedId;
+#[jsonschema::validator(schema = r##"{"properties": {"a": {"$id": "http://example.com/a.json", "type": "integer", "minimum": 2}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateEmbeddedIdWithoutRootId;
+#[jsonschema::validator(schema = r##"{"$defs": {"x": {"$id": "http://example.com/x", "type": "string"}}, "properties": {"a": {"$ref": "http://example.com/x"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefToEmbeddedResource;
+#[jsonschema::validator(schema = r##"{"$id": "http://example.com/root", "properties": {"a": {"$ref": "#/$defs/x/properties/y"}}, "$defs": {"x": {"$id": "x", "properties": {"y": {"type": "integer"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefByPointerIntoEmbeddedResource;
+#[jsonschema::validator(schema = r##"{"properties": {"a": {"id": "http://example.com/a.json", "type": "object", "properties": {"b": {"$ref": "#/definitions/s"}}, "definitions": {"s": {"minimum": 3}}}}}"##, draft = Draft4, methods = { evaluate = true })]
+struct EvaluateEmbeddedIdDraft4;
+#[jsonschema::validator(schema = r##"{"$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed", "properties": {"a": {"$ref": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed#/$defs/s"}}, "$defs": {"s": {"type": "string"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateUrnBase;
+
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
@@ -6594,6 +6615,42 @@ fn test_evaluate_matches_runtime(
         options = options.with_base_uri(base_uri);
     }
     let runtime = options.build(&schema).expect("valid schema");
+    assert_evaluations_match(evaluate, &runtime);
+}
+
+#[test_case(EvaluateExternalRef::evaluate, serde_json::json!({"properties": {"a": {"$ref": "http://example.com/other.json"}, "b": {"$ref": "http://example.com/other.json#/$defs/s"}}}), &[("http://example.com/other.json", OTHER)], Draft::Draft202012 ; "external_ref")]
+#[test_case(EvaluateEmbeddedId::evaluate, serde_json::json!({"$id": "http://example.com/root.json", "properties": {"foo": {"$id": "foo.json", "type": "object", "properties": {"bar": {"$ref": "#/$defs/s"}}, "$defs": {"s": {"minimum": 3}}}}}), &[], Draft::Draft202012 ; "embedded_id")]
+#[test_case(EvaluateEmbeddedIdWithoutRootId::evaluate, serde_json::json!({"properties": {"a": {"$id": "http://example.com/a.json", "type": "integer", "minimum": 2}}}), &[], Draft::Draft202012 ; "embedded_id_without_root_id")]
+#[test_case(EvaluateRefToEmbeddedResource::evaluate, serde_json::json!({"$defs": {"x": {"$id": "http://example.com/x", "type": "string"}}, "properties": {"a": {"$ref": "http://example.com/x"}}}), &[], Draft::Draft202012 ; "ref_to_embedded_resource")]
+#[test_case(EvaluateRefByPointerIntoEmbeddedResource::evaluate, serde_json::json!({"$id": "http://example.com/root", "properties": {"a": {"$ref": "#/$defs/x/properties/y"}}, "$defs": {"x": {"$id": "x", "properties": {"y": {"type": "integer"}}}}}), &[], Draft::Draft202012 ; "ref_by_pointer_into_embedded_resource")]
+#[test_case(EvaluateEmbeddedIdDraft4::evaluate, serde_json::json!({"properties": {"a": {"id": "http://example.com/a.json", "type": "object", "properties": {"b": {"$ref": "#/definitions/s"}}, "definitions": {"s": {"minimum": 3}}}}}), &[], Draft::Draft4 ; "embedded_id_draft4")]
+#[test_case(EvaluateUrnBase::evaluate, serde_json::json!({"$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed", "properties": {"a": {"$ref": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed#/$defs/s"}}, "$defs": {"s": {"type": "string"}}}), &[], Draft::Draft202012 ; "urn_base")]
+fn test_evaluate_with_resources_matches_runtime(
+    evaluate: EvaluateFn,
+    schema: serde_json::Value,
+    resources: &[(&str, &str)],
+    draft: Draft,
+) {
+    let contents: Vec<(&str, serde_json::Value)> = resources
+        .iter()
+        .map(|(uri, schema)| (*uri, serde_json::from_str(schema).expect("valid JSON")))
+        .collect();
+    let mut registry = jsonschema::Registry::new();
+    for (uri, schema) in &contents {
+        registry = registry
+            .add(*uri, schema)
+            .expect("resource should be accepted");
+    }
+    let registry = registry.prepare().expect("registry builds");
+    let runtime = jsonschema::options()
+        .with_draft(draft)
+        .with_registry(&registry)
+        .build(&schema)
+        .expect("valid schema");
+    assert_evaluations_match(evaluate, &runtime);
+}
+
+fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validator) {
     for instance in [
         serde_json::json!(null),
         serde_json::json!({"a": [1, "x"]}),
@@ -6639,6 +6696,12 @@ fn test_evaluate_matches_runtime(
         serde_json::json!({"a": 1, "c": {"b": 1, "c": {"a": 1, "c": "x"}}}),
         // More members than the runtime scans before looking declared names up instead.
         serde_json::json!({"a": 1, "b": "x", "c": 1, "d": 1, "e": 1, "f": 1, "g": 1, "h": 1, "i": 1, "j": 1}),
+        serde_json::json!({"foo": {"bar": 1}}),
+        serde_json::json!({"foo": {"bar": 5}}),
+        serde_json::json!({"a": {"n": 1}, "b": 2}),
+        serde_json::json!({"a": {"n": "s"}, "b": "x"}),
+        serde_json::json!({"a": {"y": "x", "b": 1}}),
+        serde_json::json!({"a": {"b": 4}}),
     ] {
         assert_eq!(
             evaluation_outputs(&evaluate(&instance)),

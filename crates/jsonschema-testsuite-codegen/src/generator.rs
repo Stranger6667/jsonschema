@@ -84,7 +84,7 @@ fn generate_nested_structure(
                             None => (quote! {}, quote! { None }),
                         };
 
-                    let supports_evaluate = jsonschema_macros_core::evaluate_supports(&case.schema, draft_named(draft));
+                    let supports_evaluate = jsonschema_macros_core::evaluate_supports(&case.schema, draft_named(draft), case.external_schemas.iter().map(|(uri, schema)| (uri.as_str(), schema)));
                     let methods_attr = if supports_evaluate {
                         quote! { , methods = { evaluate = true } }
                     } else {
@@ -242,7 +242,15 @@ pub(crate) fn evaluate_coverage(tree: &loader::TestCaseTree, draft: Draft) -> (u
             loader::TestCaseNode::TestFile(file) => (
                 file.cases
                     .iter()
-                    .filter(|case| jsonschema_macros_core::evaluate_supports(&case.schema, draft))
+                    .filter(|case| {
+                        jsonschema_macros_core::evaluate_supports(
+                            &case.schema,
+                            draft,
+                            case.external_schemas
+                                .iter()
+                                .map(|(uri, schema)| (uri.as_str(), schema)),
+                        )
+                    })
                     .count(),
                 file.cases.len(),
             ),

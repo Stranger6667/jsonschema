@@ -52,20 +52,44 @@ pub(crate) fn generate(
                 let supports_evaluate = jsonschema_macros_core::evaluate_supports(
                     &case.schema,
                     crate::generator::draft_named(draft),
+                    case.external_schemas
+                        .iter()
+                        .map(|(uri, schema)| (uri.as_str(), schema)),
                 );
                 let methods = if supports_evaluate {
                     quote! { , methods = { evaluate = true } }
                 } else {
                     quote! {}
                 };
+                // The runtime gets the documents the generated validator was given, not the network.
+                let externals = case
+                    .external_schemas
+                    .iter()
+                    .map(|(uri, schema)| {
+                        let contents = serde_json::to_string(schema)?;
+                        Ok(quote! {
+                            (#uri, serde_json::from_str(#contents).expect("suite resource is JSON"))
+                        })
+                    })
+                    .collect::<Result<Vec<_>, serde_json::Error>>()?;
                 let evaluate = if supports_evaluate {
                     quote! {
                         |instance| {
                             static RUNTIME: std::sync::LazyLock<
                                 jsonschema::Validator<jsonschema::json::#backend>,
                             > = std::sync::LazyLock::new(|| {
+                                let externals: Vec<(&str, serde_json::Value)> = vec![#(#externals),*];
+                                let mut registry =
+                                    jsonschema::Registry::new().draft(jsonschema::Draft::#draft_variant);
+                                for (uri, contents) in &externals {
+                                    registry = registry
+                                        .add(*uri, contents)
+                                        .expect("suite resource is accepted");
+                                }
+                                let registry = registry.prepare().expect("suite resources resolve");
                                 jsonschema::options_for::<jsonschema::json::#backend>()
                                     .with_draft(jsonschema::Draft::#draft_variant)
+                                    .with_registry(&registry)
                                     #runtime_formats
                                     .build(&serde_json::from_str(#schema).expect("suite schema is JSON"))
                                     .expect("suite schema compiles")

@@ -37,6 +37,7 @@
 - `absolute_keyword_location` of errors for names missing under `dependentRequired` or `dependencies` pointing to a schema location that does not exist.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `float`, such as `Decimal("1e-400")`.
 - `pattern` with a large bounded count the regex engine matches, such as `^x?.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
+- `evaluate` output locating a `$ref` target at the URI its document was registered under instead of the `$id` that document declares.
 
 ### Performance
 

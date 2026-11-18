@@ -36,12 +36,41 @@ pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     }
 }
 
-/// Whether `#[validator]` can generate `evaluate` for `schema`.
+/// Whether `#[validator]` can generate `evaluate` for `schema`, with `resources` holding the
+/// documents its references leave it for.
 #[cfg(feature = "testsuite")]
 #[doc(hidden)]
 #[must_use]
-pub fn evaluate_supports(schema: &serde_json::Value, draft: Draft) -> bool {
-    codegen::evaluation::unsupported(schema, draft).is_none()
+pub fn evaluate_supports<'a>(
+    schema: &Value,
+    draft: Draft,
+    resources: impl IntoIterator<Item = (&'a str, &'a Value)>,
+) -> bool {
+    let base = draft
+        .create_resource_ref(schema)
+        .id()
+        .unwrap_or("json-schema:///evaluate")
+        .to_string();
+    let Ok(base_uri) = uri::from_str(&base) else {
+        return false;
+    };
+    let mut documents = vec![(base.clone(), draft.create_resource(schema.clone()))];
+    documents.extend(
+        resources
+            .into_iter()
+            .map(|(uri, contents)| (uri.to_string(), draft.create_resource(contents.clone()))),
+    );
+    Registry::new()
+        .draft(draft)
+        .extend(
+            documents
+                .iter()
+                .map(|(uri, resource)| (uri.as_str(), resource.clone())),
+        )
+        .and_then(referencing::RegistryBuilder::prepare)
+        .is_ok_and(|registry| {
+            codegen::evaluation::unsupported(&registry, &base_uri, schema, draft).is_none()
+        })
 }
 
 #[cfg(feature = "bench")]

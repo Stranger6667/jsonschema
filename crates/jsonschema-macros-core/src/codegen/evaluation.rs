@@ -1,8 +1,11 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use referencing::{write_escaped_str, Draft, Registry, RegistryBuilder, Resolver, Uri};
+use referencing::{write_escaped_str, Draft, Registry, Resolver, Uri};
 use serde_json::{json, Map, Value};
-use std::collections::{HashMap, HashSet};
+use std::{
+    collections::{HashMap, HashSet},
+    sync::Arc,
+};
 
 use super::{
     compile_schema,
@@ -133,6 +136,10 @@ enum TreeUnit {
 
 struct TreeSchema {
     pointer: String,
+    /// The resource it sits in, where that is not the root's.
+    base: Option<String>,
+    /// Its pointer within that resource, where that is not `pointer`.
+    at: Option<String>,
     /// The draft's unknown keywords.
     annotations: Option<Value>,
     /// A range of `Tree::units`.
@@ -156,8 +163,10 @@ struct Tree {
     tuples: Vec<usize>,
     /// The `is_valid` code of each subschema a unit checks, run against `instance`.
     valid: Vec<TokenStream>,
-    /// Each schema's index by its pointer, so a `$ref` target is added once.
-    by_pointer: HashMap<String, usize>,
+    /// Each schema's index by its resource and pointer, so a `$ref` target is added once.
+    by_pointer: HashMap<(String, String), usize>,
+    /// Where the resource being added starts, as a prefix of the pointers below it.
+    resource_root: String,
 }
 
 impl Tree {
@@ -196,17 +205,41 @@ impl Tree {
         schema: &Value,
         pointer: String,
     ) -> syn::Result<usize> {
-        if let Some(&index) = self.by_pointer.get(&pointer) {
+        let key = (ctx.current_base_uri.to_string(), pointer);
+        if let Some(&index) = self.by_pointer.get(&key) {
             return Ok(index);
         }
+        let (_, pointer) = key.clone();
         let index = self.schemas.len();
         self.schemas.push(TreeSchema {
             pointer: String::new(),
+            base: None,
+            at: None,
             annotations: None,
             first: 0,
             count: 0,
         });
-        self.by_pointer.insert(pointer.clone(), index);
+        self.by_pointer.insert(key, index);
+        match resource_base(ctx, schema).filter(|_| index != 0) {
+            Some(base) => {
+                let outer = std::mem::replace(&mut self.resource_root, pointer.clone());
+                let added = ctx.with_base_uri_scope(base, |ctx| {
+                    self.add_keywords(ctx, schema, index, pointer)
+                });
+                self.resource_root = outer;
+                added
+            }
+            None => self.add_keywords(ctx, schema, index, pointer),
+        }
+    }
+
+    fn add_keywords<E: ValueEmitter>(
+        &mut self,
+        ctx: &mut CompileContext<'_, E>,
+        schema: &Value,
+        index: usize,
+        pointer: String,
+    ) -> syn::Result<usize> {
         let mut units = Vec::new();
         let mut annotations = None;
         if let Value::Object(keywords) = schema {
@@ -224,7 +257,7 @@ impl Tree {
             {
                 // The keywords beside `$ref` apply from Draft 2019-09 on.
                 let target = self.add_reference(ctx, reference)?;
-                self.finish(index, pointer, None, vec![TreeUnit::Ref(target)]);
+                self.finish(ctx, index, pointer, None, vec![TreeUnit::Ref(target)]);
                 return Ok(index);
             }
             units.extend(
@@ -430,19 +463,31 @@ impl Tree {
                 annotations = Some(Value::Object(unknown));
             }
         }
-        self.finish(index, pointer, annotations, units);
+        self.finish(ctx, index, pointer, annotations, units);
         Ok(index)
     }
 
-    fn finish(
+    fn finish<E: ValueEmitter>(
         &mut self,
+        ctx: &CompileContext<'_, E>,
         index: usize,
         pointer: String,
         annotations: Option<Value>,
         units: Vec<TreeUnit>,
     ) {
+        let base = &ctx.current_base_uri;
+        // The output locates keywords of a resource without an absolute URI by pointer alone.
+        let base = (base.as_str() != ctx.config.base_uri.as_str()
+            && base.scheme().as_str() != "json-schema")
+            .then(|| base.as_str().trim_end_matches('#').to_string());
+        let at = pointer
+            .strip_prefix(self.resource_root.as_str())
+            .filter(|at| at.len() != pointer.len())
+            .map(str::to_string);
         self.schemas[index] = TreeSchema {
             pointer,
+            base,
+            at,
             annotations,
             first: self.units.len(),
             count: units.len(),
@@ -450,7 +495,7 @@ impl Tree {
         self.units.extend(units);
     }
 
-    /// The schema a `$ref` points to, in the same resource.
+    /// The schema a `$ref` points to, located within its resource.
     fn add_reference<E: ValueEmitter>(
         &mut self,
         ctx: &mut CompileContext<'_, E>,
@@ -459,7 +504,98 @@ impl Tree {
         let resolved =
             resolve_ref(ctx, reference).expect("`unsupported` resolves every `$ref` first");
         let pointer = location_pointer(ctx, &resolved.location, &resolved.base_uri);
-        self.add(ctx, resolved.schema, pointer)
+        // A pointer can reach into a resource embedded in the document it starts from.
+        let resource = ctx
+            .config
+            .registry
+            .resolver((*resolved.base_uri).clone())
+            .lookup("")
+            .map_err(|error| syn::Error::new(proc_macro2::Span::call_site(), error.to_string()))?;
+        let within = pointer_within(resource.contents(), &pointer, resolved.schema)
+            .unwrap_or_else(|| pointer.clone());
+        let root = pointer
+            .strip_suffix(within.as_str())
+            .unwrap_or_default()
+            .to_string();
+        let outer = std::mem::replace(&mut self.resource_root, root);
+        let added = ctx.with_base_uri_scope(resolved.base_uri, |ctx| {
+            self.add(ctx, resolved.schema, pointer)
+        });
+        self.resource_root = outer;
+        added
+    }
+}
+
+/// Where `target` sits below `root`: at `pointer` if that leads to it, otherwise wherever it is.
+fn pointer_within(root: &Value, pointer: &str, target: &Value) -> Option<String> {
+    let mut node = Some(root);
+    for segment in pointer.split('/').skip(1) {
+        let segment = segment.replace("~1", "/").replace("~0", "~");
+        node = node.and_then(|node| match node {
+            Value::Object(map) => map.get(&segment),
+            Value::Array(items) => segment.parse::<usize>().ok().and_then(|i| items.get(i)),
+            _ => None,
+        });
+    }
+    if node.is_some_and(|node| std::ptr::eq(node, target)) {
+        return Some(pointer.to_string());
+    }
+    let mut found = String::new();
+    find_pointer(root, target, &mut found).then_some(found)
+}
+
+fn find_pointer(node: &Value, target: &Value, pointer: &mut String) -> bool {
+    if std::ptr::eq(node, target) {
+        return true;
+    }
+    let len = pointer.len();
+    let found = match node {
+        Value::Object(map) => map.iter().any(|(key, child)| {
+            pointer.truncate(len);
+            pointer.push('/');
+            write_escaped_str(pointer, key);
+            find_pointer(child, target, pointer)
+        }),
+        Value::Array(items) => items.iter().enumerate().any(|(index, child)| {
+            pointer.truncate(len);
+            pointer.push('/');
+            pointer.push_str(&index.to_string());
+            find_pointer(child, target, pointer)
+        }),
+        _ => false,
+    };
+    if !found {
+        pointer.truncate(len);
+    }
+    found
+}
+
+/// The base URI `schema`'s own `$id` sets, if it names another resource.
+fn resource_base<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    schema: &Value,
+) -> Option<Arc<Uri<String>>> {
+    // Up to Draft 7 the keywords beside `$ref`, `$id` included, do not apply.
+    if !ctx.draft.supports_adjacent_validation() && schema.get("$ref").is_some() {
+        return None;
+    }
+    let id = schema.get(id_keyword(ctx.draft))?.as_str()?;
+    let base = ctx
+        .config
+        .registry
+        .resolver((*ctx.current_base_uri).clone())
+        .lookup(id)
+        .ok()?
+        .resolver()
+        .base_uri();
+    (base.as_str() != ctx.current_base_uri.as_str()).then_some(base)
+}
+
+fn id_keyword(draft: Draft) -> &'static str {
+    if draft == Draft::Draft4 {
+        "id"
+    } else {
+        "$id"
     }
 }
 
@@ -470,7 +606,12 @@ pub(super) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Value,
 ) -> syn::Result<TokenStream> {
-    if let Some(message) = unsupported(schema, ctx.draft) {
+    if let Some(message) = unsupported(
+        &ctx.config.registry,
+        &ctx.config.base_uri,
+        schema,
+        ctx.draft,
+    ) {
         return Err(syn::Error::new(proc_macro2::Span::call_site(), message));
     }
     let mut tree = Tree::default();
@@ -486,6 +627,12 @@ pub(super) fn compile<E: ValueEmitter>(
             });
             if let Some(annotations) = schema.annotations {
                 entry["annotations"] = annotations;
+            }
+            if let Some(base) = schema.base {
+                entry["base"] = json!(base);
+            }
+            if let Some(at) = schema.at {
+                entry["at"] = json!(at);
             }
             entry
         })
@@ -651,37 +798,27 @@ fn unit<E: ValueEmitter>(
     }
 }
 
-/// Why the generated `evaluate` cannot handle `schema` yet, if it cannot.
-pub(crate) fn unsupported(schema: &Value, draft: Draft) -> Option<String> {
-    const BASE: &str = "json-schema:///evaluate";
-    // Without the other documents, the registry builds only when every `$ref` stays in this one.
-    let Ok(registry) = Registry::new()
-        .draft(draft)
-        .extend([(BASE, draft.create_resource(schema.clone()))])
-        .and_then(RegistryBuilder::prepare)
-    else {
-        return Some(another_resource());
-    };
-    let resolver = registry.resolver(referencing::uri::from_str(BASE).expect("a valid URI"));
-    let root = resolver.lookup("#").expect("the root resolves");
+/// Why the generated `evaluate` cannot handle `schema`, the resource at `base` in `registry`, yet,
+/// if it cannot.
+pub(crate) fn unsupported(
+    registry: &Registry,
+    base: &Uri<String>,
+    schema: &Value,
+    draft: Draft,
+) -> Option<String> {
+    let resolver = registry.resolver(base.clone());
     let mut support = Support {
         draft,
-        base: root.resolver().base_uri().as_ref().clone(),
         resolver,
-        checked: HashSet::from([std::ptr::from_ref(root.contents()).addr()]),
+        checked: HashSet::from([std::ptr::from_ref(schema).addr()]),
     };
-    support.check(root.contents(), true)
-}
-
-fn another_resource() -> String {
-    "`evaluate` does not support a `$ref` to another resource yet".to_string()
+    support.check(schema, true)
 }
 
 /// Walks what `evaluate` reports, following each `$ref` once.
 struct Support<'r> {
     draft: Draft,
-    /// The resource every `$ref` must stay in.
-    base: Uri<String>,
+    /// Resolves the references of the resource being walked.
     resolver: Resolver<'r>,
     /// The schemas already walked, by address.
     checked: HashSet<usize>,
@@ -696,21 +833,24 @@ impl Support<'_> {
                 return Some("`evaluate` needs a schema that is a boolean or an object".to_string())
             }
         };
-        let id = if self.draft == Draft::Draft4 {
-            "id"
-        } else {
-            "$id"
-        };
-        if !root
-            && keywords
-                .get(id)
-                .and_then(Value::as_str)
-                .is_some_and(|id| !id.starts_with('#'))
-        {
-            return Some(format!(
-                "`evaluate` does not support `{id}` below the root yet"
-            ));
+        let adjacent = self.draft.supports_adjacent_validation();
+        if !root && (adjacent || !keywords.contains_key("$ref")) {
+            if let Some(id) = keywords.get(id_keyword(self.draft)).and_then(Value::as_str) {
+                // Its references resolve against its own base.
+                let Ok(inner) = self.resolver.lookup(id) else {
+                    return Some(format!("`evaluate` cannot resolve the `{id}` base"));
+                };
+                let inner = inner.resolver().clone();
+                let outer = std::mem::replace(&mut self.resolver, inner);
+                let message = self.check_keywords(keywords);
+                self.resolver = outer;
+                return message;
+            }
         }
+        self.check_keywords(keywords)
+    }
+
+    fn check_keywords(&mut self, keywords: &Map<String, Value>) -> Option<String> {
         if let Some(reference) = keywords.get("$ref") {
             if let Some(message) = self.reference(reference) {
                 return Some(message);
@@ -766,24 +906,21 @@ impl Support<'_> {
 
     /// Checks the target of a `$ref` the first time it is reached.
     fn reference(&mut self, reference: &Value) -> Option<String> {
-        let Some(reference) = reference
-            .as_str()
-            .filter(|reference| reference.starts_with('#'))
-        else {
-            return Some(another_resource());
-        };
+        let reference = reference.as_str()?;
         let resolved = match self.resolver.lookup(reference) {
             Ok(resolved) => resolved,
             Err(error) => return Some(error.to_string()),
         };
-        if *resolved.resolver().base_uri().as_ref() != self.base {
-            return Some(another_resource());
-        }
         let target = resolved.contents();
         if !self.checked.insert(std::ptr::from_ref(target).addr()) {
             return None;
         }
-        self.check(target, false)
+        // The target's references resolve against its own resource.
+        let inner = resolved.resolver().clone();
+        let outer = std::mem::replace(&mut self.resolver, inner);
+        let message = self.check(target, false);
+        self.resolver = outer;
+        message
     }
 }
 
