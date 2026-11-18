@@ -362,7 +362,8 @@ fn compile_reference_validator<'a, F: Json>(
     } else {
         match embedded_resource_start(ctx, &alias, &ref_target_base, &resolved) {
             Ok(0) => {
-                let target = target_location(&alias, &ref_target_base);
+                // The resource's own URI, which a document registered under another one keeps.
+                let target = target_location(&resolved.resolver().base_uri(), &ref_target_base);
                 (ref_target_base, target, 0)
             }
             Ok(start) => {
@@ -1128,6 +1129,39 @@ mod tests {
         ],
         &["https://example.com/leaf#/type"]
     ; "pointer to an embedded resource")]
+    #[test_case(
+        &json!({
+            "$id": "https://example.com/root",
+            "properties": {"a": {"$ref": "https://example.com/alias"}}
+        }),
+        &[("https://example.com/alias", json!({"$id": "https://example.com/real", "type": "string"}))],
+        &[
+            ("", "https://example.com/root#"),
+            ("/properties", "https://example.com/root#/properties"),
+            ("/properties/a", "https://example.com/root#/properties/a"),
+            ("/properties/a/$ref", "https://example.com/real#"),
+            ("/properties/a/$ref/type", "https://example.com/real#/type"),
+        ],
+        &["https://example.com/real#/type"]
+    ; "resource registered under another URI than its id")]
+    #[test_case(
+        &json!({
+            "$id": "https://example.com/root",
+            "properties": {"a": {"$ref": "https://example.com/alias#/$defs/s"}}
+        }),
+        &[(
+            "https://example.com/alias",
+            json!({"$id": "https://example.com/real", "$defs": {"s": {"type": "string"}}})
+        )],
+        &[
+            ("", "https://example.com/root#"),
+            ("/properties", "https://example.com/root#/properties"),
+            ("/properties/a", "https://example.com/root#/properties/a"),
+            ("/properties/a/$ref", "https://example.com/real#/$defs/s"),
+            ("/properties/a/$ref/type", "https://example.com/real#/$defs/s/type"),
+        ],
+        &["https://example.com/real#/$defs/s/type"]
+    ; "pointer into a resource registered under another URI than its id")]
     #[test_case(
         &json!({
             "properties": {"a": {"$ref": "#/$defs/leaf/properties/x"}},

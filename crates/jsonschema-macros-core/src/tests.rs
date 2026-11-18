@@ -461,10 +461,9 @@ fn evaluate_object_applicators_module() {
 #[test_case(json!({"$ref": "#/$defs/a", "$defs": {"a": {"unevaluatedItems": false}}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword in a ref target")]
 #[test_case(json!({"$ref": "#a", "$defs": {"a": {"$anchor": "a", "unevaluatedItems": false}}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "keyword in an anchor target")]
 #[test_case(json!({"$ref": "#/$defs/missing"}), "Pointer '/$defs/missing' does not exist" ; "unresolvable ref")]
-#[test_case(json!({"$ref": "http://example.com/a", "$defs": {"a": {"$id": "http://example.com/a"}}}), "`evaluate` does not support a `$ref` to another resource yet" ; "ref to another resource")]
-#[test_case(json!({"$ref": "#/$defs/a/properties/x", "$defs": {"a": {"$id": "http://example.com/a", "properties": {"x": {}}}}}), "`evaluate` does not support a `$ref` to another resource yet" ; "ref into an embedded resource")]
-#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a"}}}), "`evaluate` does not support `$id` below the root yet" ; "id below the root")]
-#[test_case(json!({"$schema": "http://json-schema.org/draft-04/schema#", "properties": {"a": {"id": "http://example.com/a"}}}), "`evaluate` does not support `id` below the root yet" ; "draft4 id below the root")]
+#[test_case(json!({"$ref": "http://example.com/a", "$defs": {"a": {"$id": "http://example.com/a", "unevaluatedProperties": false}}}), "`evaluate` does not support the `unevaluatedProperties` keyword yet" ; "unsupported keyword behind a ref to another resource")]
+#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "unevaluatedItems": false}}}), "`evaluate` does not support the `unevaluatedItems` keyword yet" ; "unsupported keyword in an embedded resource")]
+#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "$ref": "#/$defs/b", "$defs": {"b": {"unevaluatedProperties": false}}}}}), "`evaluate` does not support the `unevaluatedProperties` keyword yet" ; "unsupported keyword behind a ref within an embedded resource")]
 #[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
 #[test_case(json!({"patternProperties": {"(": {}}}), "`evaluate` does not support the `(` pattern" ; "invalid pattern")]
 fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
@@ -510,10 +509,10 @@ fn evaluate_combinators_module() {
 }
 
 #[test]
-fn evaluate_rejects_a_ref_to_a_provided_resource() {
+fn evaluate_rejects_an_unsupported_keyword_in_a_provided_resource() {
     let config: crate::Config = syn::parse2(quote! {
         schema = r#"{"$ref": "json-schema:///other"}"#,
-        resources = { "json-schema:///other" => { schema = r#"{"type": "integer"}"# } },
+        resources = { "json-schema:///other" => { schema = r#"{"unevaluatedProperties": false}"# } },
         methods = { evaluate = true },
     })
     .expect("Config should parse");
@@ -522,7 +521,7 @@ fn evaluate_rejects_a_ref_to_a_provided_resource() {
     let error = crate::validator_impl(&config, &item).expect_err("unsupported schema");
     assert_eq!(
         error.to_string(),
-        "`evaluate` does not support a `$ref` to another resource yet"
+        "`evaluate` does not support the `unevaluatedProperties` keyword yet"
     );
 }
 

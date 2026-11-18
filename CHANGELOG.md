@@ -49,6 +49,7 @@
 - `subtract` keeping a difference `satisfiability` cannot decide for a union of three or more object variants where one variant is narrowed.
 - `canonicalize` keeping `oneOf` over references to unions of tagged objects that share no tag value, where a plain union says the same.
 - `pattern` with a large bounded count the regex engine matches, such as `^x?.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
+- `evaluate` output locating a `$ref` target at the URI its document was registered under instead of the `$id` that document declares.
 
 ### Performance
 

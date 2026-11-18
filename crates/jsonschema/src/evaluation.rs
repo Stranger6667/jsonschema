@@ -1592,6 +1592,12 @@ pub mod generated {
     #[derive(Deserialize)]
     struct SchemaTable {
         pointer: String,
+        /// The resource it sits in, where that is not the root's.
+        #[serde(default)]
+        base: Option<String>,
+        /// Its pointer within that resource, where that is not `pointer`.
+        #[serde(default)]
+        at: Option<String>,
         /// Its units, a range of `Tables::units` in the runtime's priority order.
         first: usize,
         count: usize,
@@ -1792,11 +1798,13 @@ pub mod generated {
                 .base
                 .map(|base| Uri::parse(base).expect("the generator writes a URI base"));
             let mut buffer = uri::EncodedBuffer::new();
-            let mut locate = |pointer: &str, annotations: Option<Value>| {
+            let mut locate = |base: Option<&Uri<String>>,
+                              pointer: &str,
+                              at: &str,
+                              annotations: Option<Value>| {
                 let keyword = Location::from_escaped(pointer);
-                let absolute = base
-                    .as_ref()
-                    .map(|base| Arc::new(resolve_absolute_location(base, pointer, &mut buffer)));
+                let absolute =
+                    base.map(|base| Arc::new(resolve_absolute_location(base, at, &mut buffer)));
                 UnitLocation {
                     schema: format_keyword_location(&keyword, absolute.as_ref()),
                     keyword,
@@ -1814,6 +1822,11 @@ pub mod generated {
             let mut schemas = Vec::with_capacity(tables.schemas.len());
             for schema in tables.schemas {
                 let pointer = &schema.pointer;
+                let at = schema.at.as_deref().unwrap_or(pointer);
+                let own = schema
+                    .base
+                    .map(|base| Uri::parse(base).expect("the generator writes a URI base"));
+                let base = own.as_ref().or(base.as_ref());
                 for index in schema.first..schema.first + schema.count {
                     let unit = unit_tables[index]
                         .take()
@@ -1878,11 +1891,16 @@ pub mod generated {
                             }
                             _ => Kind::Leaf,
                         },
-                        ..locate(&format!("{pointer}/{}", unit.keyword), unit.strings)
+                        ..locate(
+                            base,
+                            &format!("{pointer}/{}", unit.keyword),
+                            &format!("{at}/{}", unit.keyword),
+                            unit.strings,
+                        )
                     });
                 }
                 schema_units.push((schema.first, schema.count));
-                schemas.push(locate(pointer, schema.annotations));
+                schemas.push(locate(base, pointer, at, schema.annotations));
             }
             Built {
                 schemas: schemas.into_boxed_slice(),
