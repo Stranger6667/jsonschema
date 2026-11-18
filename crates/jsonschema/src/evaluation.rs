@@ -1559,6 +1559,7 @@ pub mod generated {
     use serde_json::Value;
     use std::{
         borrow::Cow,
+        collections::hash_map::Entry,
         convert::Infallible,
         ops::ControlFlow,
         sync::{Arc, OnceLock},
@@ -1752,18 +1753,19 @@ pub mod generated {
             flatten(errors, &mut flat);
             let errors = flat;
             let mut reported = AHashSet::with_capacity(errors.len());
-            let mut by_visit: AHashMap<Visit<'_>, Vec<usize>> =
-                AHashMap::with_capacity(errors.len());
+            let mut by_visit: AHashMap<Visit<'_>, Reported> = AHashMap::with_capacity(errors.len());
             for (index, error) in errors.iter().enumerate() {
                 reported.insert(error.schema_path().as_str());
-                by_visit
-                    .entry(Visit {
-                        evaluation_path: error.evaluation_path().as_str(),
-                        instance_location: error.instance_path().as_str(),
-                        string: error.instance().as_str(),
-                    })
-                    .or_default()
-                    .push(index);
+                match by_visit.entry(Visit {
+                    evaluation_path: error.evaluation_path().as_str(),
+                    instance_location: error.instance_path().as_str(),
+                    string: error.instance().as_str(),
+                }) {
+                    Entry::Occupied(mut entry) => entry.get_mut().push(index),
+                    Entry::Vacant(entry) => {
+                        entry.insert(Reported::One(index));
+                    }
+                }
             }
             let mut walk: Walker<'_, '_, '_, F> = Walker {
                 built: self.built.get_or_init(|| self.build()),
@@ -1947,7 +1949,7 @@ pub mod generated {
         /// The schema locations with errors, so a unit without any builds no visit key.
         reported: AHashSet<&'e str>,
         /// Indices into `errors` by the visit that reports them.
-        by_visit: AHashMap<Visit<'e>, Vec<usize>>,
+        by_visit: AHashMap<Visit<'e>, Reported>,
         arena: EvaluationArena,
         /// Set below a `$ref`.
         rebase: Option<Rebase>,
@@ -1990,6 +1992,29 @@ pub mod generated {
         instance_location: &'e str,
         /// A name is walked at its object's location; its value tells the names apart.
         string: Option<&'e str>,
+    }
+
+    /// The errors one visit reports, as indices into `errors` in report order. Most visits report
+    /// one, which needs no allocation.
+    enum Reported {
+        One(usize),
+        Many(Vec<usize>),
+    }
+
+    impl Reported {
+        fn push(&mut self, index: usize) {
+            match self {
+                Reported::One(first) => *self = Reported::Many(vec![*first, index]),
+                Reported::Many(all) => all.push(index),
+            }
+        }
+
+        fn as_slice(&self) -> &[usize] {
+            match self {
+                Reported::One(index) => std::slice::from_ref(index),
+                Reported::Many(all) => all,
+            }
+        }
     }
 
     impl<F: Json> Walker<'_, '_, '_, F> {
@@ -2441,6 +2466,7 @@ pub mod generated {
 
         /// The errors reported at `site` or its alias for the instance at `location`, in the order
         /// they were reported.
+        #[inline]
         fn errors_at(
             &self,
             site: &UnitLocation,
@@ -2448,34 +2474,43 @@ pub mod generated {
             location: &LazyLocation,
         ) -> Vec<ErrorDescription> {
             if self.reported.is_empty() {
-                return Vec::new();
+                Vec::new()
+            } else {
+                self.reported_errors_at(site, instance, location)
             }
-            let paths = || {
-                std::iter::once(&site.keyword)
-                    .chain(&site.aliases)
-                    .filter(|path| self.reported.contains(path.as_str()))
-            };
-            if paths().next().is_none() {
-                return Vec::new();
-            }
-            let instance_location = Location::from(location);
-            let string = instance.as_string();
-            let mut indices = Vec::new();
-            for path in paths() {
+        }
+
+        fn reported_errors_at(
+            &self,
+            site: &UnitLocation,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+        ) -> Vec<ErrorDescription> {
+            // Built once a schema location of the unit turns out to have errors.
+            let mut instance_location = None;
+            let mut string = None;
+            // A visit's errors all come from one of the unit's schema locations.
+            for path in std::iter::once(&site.keyword)
+                .chain(&site.aliases)
+                .filter(|path| self.reported.contains(path.as_str()))
+            {
+                let instance_location: &Location =
+                    instance_location.get_or_insert_with(|| Location::from(location));
+                let string = string.get_or_insert_with(|| instance.as_string());
                 let evaluation_path = self.rebased(path);
                 if let Some(found) = self.by_visit.get(&Visit {
                     evaluation_path: &evaluation_path,
                     instance_location: instance_location.as_str(),
                     string: string.as_deref(),
                 }) {
-                    indices.extend_from_slice(found);
+                    return found
+                        .as_slice()
+                        .iter()
+                        .map(|&index| ErrorDescription::from_validation_error(self.errors[index]))
+                        .collect();
                 }
             }
-            indices.sort_unstable();
-            indices
-                .into_iter()
-                .map(|index| ErrorDescription::from_validation_error(self.errors[index]))
-                .collect()
+            Vec::new()
         }
 
         /// The `false` subschema at `site` failing for `value`, at `location`.

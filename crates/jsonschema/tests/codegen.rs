@@ -6376,6 +6376,10 @@ struct EvaluateContainsBounds;
 #[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 2}"#, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateContainsMin;
 
+// Both bounds fail for two matching items, so one unit reports errors from two keywords.
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 3, "maxContains": 1}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateContainsBoundsCrossed;
+
 #[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "maxContains": 1}"#, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateContainsMax;
 
@@ -6540,6 +6544,7 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluatePrefixItemsDraft201909::evaluate, serde_json::json!({"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}), None, Draft::Draft201909 ; "prefix_items_draft2019")]
 #[test_case(EvaluateContains::evaluate, serde_json::json!({"contains": {"type": "integer"}}), None, Draft::Draft202012 ; "contains")]
 #[test_case(EvaluateContainsBounds::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minContains": 2, "maxContains": 3}), None, Draft::Draft202012 ; "contains_bounds")]
+#[test_case(EvaluateContainsBoundsCrossed::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minContains": 3, "maxContains": 1}), None, Draft::Draft202012 ; "contains_bounds_crossed")]
 #[test_case(EvaluateContainsMin::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minContains": 2}), None, Draft::Draft202012 ; "contains_min")]
 #[test_case(EvaluateContainsMax::evaluate, serde_json::json!({"contains": {"type": "integer"}, "maxContains": 1}), None, Draft::Draft202012 ; "contains_max")]
 #[test_case(EvaluateContainsMinZero::evaluate, serde_json::json!({"contains": {"const": 1}, "minContains": 0}), None, Draft::Draft202012 ; "contains_min_zero")]
