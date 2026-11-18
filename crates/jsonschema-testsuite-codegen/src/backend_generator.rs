@@ -82,8 +82,12 @@ pub(crate) fn generate(
                                 let mut registry =
                                     jsonschema::Registry::new().draft(jsonschema::Draft::#draft_variant);
                                 for (uri, contents) in &externals {
+                                    // Like a retrieved document, each is in the draft its own `$schema` names.
+                                    let resource = jsonschema::Draft::#draft_variant
+                                        .detect(contents)
+                                        .create_resource(contents.clone());
                                     registry = registry
-                                        .add(*uri, contents)
+                                        .add(*uri, resource)
                                         .expect("suite resource is accepted");
                                 }
                                 let registry = registry.prepare().expect("suite resources resolve");
