@@ -6890,6 +6890,45 @@ struct EvaluateAdditionalItemsBesideSchemaItems;
 #[jsonschema::validator(schema = r#"{"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}"#, draft = Draft201909, methods = { evaluate = true })]
 struct EvaluatePrefixItemsDraft201909;
 
+#[jsonschema::validator(schema = r#"{"items": {"type": "number"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsNumber;
+
+#[jsonschema::validator(schema = r#"{"items": {"type": "array", "items": {"type": "number"}}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateNestedItems;
+
+#[jsonschema::validator(schema = r#"{"items": {"type": "array", "minItems": 2, "items": {"type": "number"}}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateNestedItemsShape;
+
+#[jsonschema::validator(schema = r#"{"items": {"minimum": 1, "maximum": 5}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsRange;
+
+#[jsonschema::validator(schema = r#"{"items": {}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsEmpty;
+
+#[jsonschema::validator(schema = r#"{"items": {"type": "string", "title": "t"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsTitled;
+
+#[jsonschema::validator(schema = r#"{"items": {"format": "email"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsFormat;
+
+#[jsonschema::validator(schema = r#"{"items": {"x-unknown": 1, "minimum": 1}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsUnknownKeyword;
+
+#[jsonschema::validator(schema = r##"{"$defs": {"n": {"type": "number"}}, "items": {"$ref": "#/$defs/n"}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateItemsRefToLeaf;
+
+#[jsonschema::validator(schema = r##"{"$defs": {"list": {"items": {"type": "number"}}}, "$ref": "#/$defs/list"}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefToLeafItems;
+
+#[jsonschema::validator(schema = r##"{"$defs": {"list": {"items": {"type": "number"}}}, "properties": {"a": {"$ref": "#/$defs/list"}, "b": {"$ref": "#/$defs/list"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateLeafItemsBelowTwoRefs;
+
+#[jsonschema::validator(schema = r#"{"items": {"type": "number"}}"#, base_uri = "https://example.com/root.json", methods = { evaluate = true })]
+struct EvaluateItemsNumberWithBase;
+
+#[jsonschema::validator(schema = r#"{"items": [{"type": "integer"}], "additionalItems": {"minimum": 1}}"#, draft = Draft7, methods = { evaluate = true })]
+struct EvaluateAdditionalItemsLeaf;
+
 #[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateContains;
 
@@ -7202,11 +7241,55 @@ struct EvaluateUrnBase;
 )]
 struct EvaluateResourcesUnderDefaultBase;
 
-fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
+fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 6] {
+    let annotations = evaluation
+        .iter_annotations()
+        .map(|entry| {
+            serde_json::json!([
+                entry.schema_location,
+                entry.absolute_keyword_location.map(jsonschema::Uri::as_str),
+                entry.instance_location.as_str(),
+                entry.annotations.value()
+            ])
+        })
+        .collect();
+    let errors = evaluation
+        .iter_errors()
+        .map(|entry| {
+            serde_json::json!([
+                entry.schema_location,
+                entry.absolute_keyword_location.map(jsonschema::Uri::as_str),
+                entry.instance_location.as_str(),
+                entry.error.to_string()
+            ])
+        })
+        .collect();
     [
         serde_json::to_value(evaluation.list()).expect("list output serializes"),
         serde_json::to_value(evaluation.hierarchical()).expect("hierarchical output serializes"),
+        serde_json::Value::Bool(evaluation.flag().valid),
+        serde_json::Value::Array(annotations),
+        serde_json::Value::Array(errors),
+        output_units(evaluation.root()),
     ]
+}
+
+// Every unit below `unit`, read through `OutputUnit` accessors.
+fn output_units(unit: jsonschema::OutputUnit<'_>) -> serde_json::Value {
+    serde_json::json!({
+        "valid": unit.valid(),
+        "evaluationPath": unit.evaluation_path().as_str(),
+        "schemaLocation": unit.schema_location(),
+        "instanceLocation": unit.instance_location().as_str(),
+        "annotations": unit.annotations().map(jsonschema::output::Annotations::value),
+        "droppedAnnotations": unit.dropped_annotations().map(jsonschema::output::Annotations::value),
+        "errors": unit
+            .errors()
+            .iter()
+            .map(|error| [error.keyword(), error.message()])
+            .collect::<Vec<_>>(),
+        "details": unit.children().map(output_units).collect::<Vec<_>>(),
+    })
 }
 
 type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
@@ -7275,6 +7358,19 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateAdditionalItemsWithoutItems::evaluate, serde_json::json!({"additionalItems": {"$id": "http://example.com/tail", "$ref": "#/$defs/s", "$defs": {"s": {"type": "string"}}}}), None, Draft::Draft202012 ; "additional_items_without_items")]
 #[test_case(EvaluateAdditionalItemsBesideSchemaItems::evaluate, serde_json::json!({"items": {"type": "integer"}, "additionalItems": {"$id": "http://a b"}}), None, Draft::Draft202012 ; "additional_items_beside_schema_items")]
 #[test_case(EvaluatePrefixItemsDraft201909::evaluate, serde_json::json!({"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}), None, Draft::Draft201909 ; "prefix_items_draft2019")]
+#[test_case(EvaluateItemsNumber::evaluate, serde_json::json!({"items": {"type": "number"}}), None, Draft::Draft202012 ; "items_number")]
+#[test_case(EvaluateNestedItems::evaluate, serde_json::json!({"items": {"type": "array", "items": {"type": "number"}}}), None, Draft::Draft202012 ; "nested_items")]
+#[test_case(EvaluateNestedItemsShape::evaluate, serde_json::json!({"items": {"type": "array", "minItems": 2, "items": {"type": "number"}}}), None, Draft::Draft202012 ; "nested_items_shape")]
+#[test_case(EvaluateItemsRange::evaluate, serde_json::json!({"items": {"minimum": 1, "maximum": 5}}), None, Draft::Draft202012 ; "items_range")]
+#[test_case(EvaluateItemsEmpty::evaluate, serde_json::json!({"items": {}}), None, Draft::Draft202012 ; "items_empty")]
+#[test_case(EvaluateItemsTitled::evaluate, serde_json::json!({"items": {"type": "string", "title": "t"}}), None, Draft::Draft202012 ; "items_titled")]
+#[test_case(EvaluateItemsFormat::evaluate, serde_json::json!({"items": {"format": "email"}}), None, Draft::Draft202012 ; "items_format")]
+#[test_case(EvaluateItemsUnknownKeyword::evaluate, serde_json::json!({"items": {"x-unknown": 1, "minimum": 1}}), None, Draft::Draft202012 ; "items_unknown_keyword")]
+#[test_case(EvaluateItemsRefToLeaf::evaluate, serde_json::json!({"$defs": {"n": {"type": "number"}}, "items": {"$ref": "#/$defs/n"}}), None, Draft::Draft202012 ; "items_ref_to_leaf")]
+#[test_case(EvaluateRefToLeafItems::evaluate, serde_json::json!({"$defs": {"list": {"items": {"type": "number"}}}, "$ref": "#/$defs/list"}), None, Draft::Draft202012 ; "ref_to_leaf_items")]
+#[test_case(EvaluateLeafItemsBelowTwoRefs::evaluate, serde_json::json!({"$defs": {"list": {"items": {"type": "number"}}}, "properties": {"a": {"$ref": "#/$defs/list"}, "b": {"$ref": "#/$defs/list"}}}), None, Draft::Draft202012 ; "leaf_items_below_two_refs")]
+#[test_case(EvaluateItemsNumberWithBase::evaluate, serde_json::json!({"items": {"type": "number"}}), Some("https://example.com/root.json"), Draft::Draft202012 ; "items_number_with_base")]
+#[test_case(EvaluateAdditionalItemsLeaf::evaluate, serde_json::json!({"items": [{"type": "integer"}], "additionalItems": {"minimum": 1}}), None, Draft::Draft7 ; "additional_items_leaf")]
 #[test_case(EvaluateContains::evaluate, serde_json::json!({"contains": {"type": "integer"}}), None, Draft::Draft202012 ; "contains")]
 #[test_case(EvaluateContainsBounds::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minContains": 2, "maxContains": 3}), None, Draft::Draft202012 ; "contains_bounds")]
 #[test_case(EvaluateContainsBoundsCrossed::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minContains": 3, "maxContains": 1}), None, Draft::Draft202012 ; "contains_bounds_crossed")]
@@ -7627,6 +7723,18 @@ fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validato
         serde_json::json!("q"),
         serde_json::json!({"c": {"d": {"next": {"marker": 1}}}}),
         serde_json::json!({"c": {"d": {"next": {"marker": true}}, "x": 1}}),
+        serde_json::json!([1, 2.5, 3]),
+        serde_json::json!([1, "x", 3, 4]),
+        serde_json::json!(["x", 1, 2, "y"]),
+        serde_json::json!(["a", 1, "b", 3]),
+        serde_json::json!([1, 2, 7, 3]),
+        serde_json::json!([1, "a", "b", 2, "c"]),
+        serde_json::json!([1, 2, 0, 3, 4]),
+        serde_json::json!(["a@b.c", "x"]),
+        serde_json::json!([[1, 2], [], [3, "x", 4]]),
+        serde_json::json!([[1, 2], [3, 4, 5], [6, "x"]]),
+        serde_json::json!({"a": [1, 2], "b": [3, "x", 4]}),
+        serde_json::json!({"a": [1, 2], "b": [3, 4]}),
     ] {
         assert_eq!(
             evaluation_outputs(&evaluate(&instance)),

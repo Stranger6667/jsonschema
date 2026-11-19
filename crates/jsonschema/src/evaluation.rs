@@ -231,6 +231,9 @@ impl fmt::Display for ErrorDescription {
 
 pub(crate) const NO_NODE: u32 = u32::MAX;
 
+/// Set on a child link that names an entry of `EvaluationArena::runs` rather than a node.
+const RUN_LINK: u32 = 1 << 31;
+
 /// An instance position recorded during evaluation. Its JSON Pointer is rendered on first read,
 /// since most positions are never shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -356,6 +359,70 @@ const POSITION_CHUNK: usize = 256;
 /// Nodes per chunk. A power of two so the index split is a shift and a mask.
 const CHUNK: usize = 32;
 
+/// Consecutive items of one array, each valid under the same subschema with no unit reporting an
+/// error or an annotation. Their output units are read from `units`, and their positions are not
+/// recorded: each item's pointer is the array's followed by the item's index.
+#[derive(Debug)]
+struct ItemRun {
+    /// The array's position.
+    parent: InstancePosition,
+    /// The first item's index in the array.
+    start: usize,
+    count: u32,
+    /// Where the items' pointers start in `EvaluationArena::run_locations`.
+    offset: u32,
+    units: RunUnits,
+    next_sibling: u32,
+}
+
+/// One output unit that every item of a run reports.
+#[derive(Debug)]
+pub(crate) struct RunUnit {
+    pub(crate) evaluation_path: Location,
+    pub(crate) schema_location: Arc<str>,
+}
+
+/// A range of `EvaluationArena::run_units`: the subschema's unit, then its keywords' in output
+/// order.
+#[derive(Debug, Clone, Copy)]
+pub(crate) struct RunUnits {
+    start: u32,
+    len: u32,
+}
+
+/// The units the latest runs share, by what fixes them: the code that recorded them, and the
+/// subschema's evaluation path.
+#[derive(Debug)]
+struct LatestRunUnits {
+    owner: usize,
+    evaluation_path: Location,
+    units: RunUnits,
+}
+
+/// The items collected for one run until an item breaks it.
+#[derive(Debug, Default, Clone, Copy)]
+pub(crate) struct PendingRun {
+    start: usize,
+    count: u32,
+}
+
+impl PendingRun {
+    /// Adds the item at `index`, which follows the previous item.
+    #[inline]
+    pub(crate) fn add(&mut self, index: usize) {
+        if self.count == 0 {
+            self.start = index;
+        }
+        debug_assert_eq!(index, self.start + self.count as usize);
+        self.count += 1;
+    }
+
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.count == 0
+    }
+}
+
 /// Every node of one evaluation, in chunks that are never resized, so growth copies nothing.
 ///
 /// Children are a sibling chain rather than a `Vec` per node: subtrees are finished in the order
@@ -365,6 +432,15 @@ pub(crate) struct EvaluationArena {
     chunks: Vec<Vec<EvaluationNode>>,
     len: usize,
     positions: InstancePositions,
+    /// Every run, by the index its child link carries.
+    runs: Vec<ItemRun>,
+    /// The items of every run.
+    run_items: u32,
+    /// Every run item's pointer, rendered together on the first read.
+    run_locations: OnceLock<Box<[Location]>>,
+    /// The units each run's items share, one range per subschema and evaluation path.
+    run_units: Vec<RunUnit>,
+    latest_run_units: Option<LatestRunUnits>,
 }
 
 impl EvaluationArena {
@@ -415,7 +491,10 @@ impl EvaluationArena {
 
     #[inline]
     pub(crate) fn push(&mut self, node: EvaluationNode) -> u32 {
-        let index = u32::try_from(self.len).expect("evaluation exceeded u32 nodes");
+        let index = match u32::try_from(self.len) {
+            Ok(index) if index < RUN_LINK => index,
+            _ => panic!("evaluation exceeded 2^31 nodes"),
+        };
         if self.len % CHUNK == 0 {
             self.chunks.push(Vec::with_capacity(CHUNK));
         }
@@ -445,6 +524,107 @@ impl EvaluationArena {
             current: self.node(index).first_child,
         }
     }
+
+    /// The units of the latest runs, if `owner` recorded them for a subschema at `evaluation_path`.
+    #[inline]
+    pub(crate) fn latest_run_units(
+        &self,
+        owner: usize,
+        evaluation_path: &Location,
+    ) -> Option<RunUnits> {
+        self.latest_run_units
+            .as_ref()
+            .filter(|latest| latest.owner == owner && latest.evaluation_path == *evaluation_path)
+            .map(|latest| latest.units)
+    }
+
+    /// Records `units`, the subschema's first, for the runs `owner` makes of that subschema's items.
+    pub(crate) fn add_run_units(
+        &mut self,
+        owner: usize,
+        units: impl IntoIterator<Item = RunUnit>,
+    ) -> RunUnits {
+        let start = self.run_units.len();
+        self.run_units.extend(units);
+        let units = RunUnits {
+            start: u32::try_from(start).expect("evaluation exceeded u32 run units"),
+            len: u32::try_from(self.run_units.len() - start)
+                .expect("evaluation exceeded u32 run units"),
+        };
+        self.latest_run_units = Some(LatestRunUnits {
+            owner,
+            evaluation_path: self.run_units[start].evaluation_path.clone(),
+            units,
+        });
+        units
+    }
+
+    fn shared_units(&self, units: RunUnits) -> &[RunUnit] {
+        &self.run_units[units.start as usize..(units.start + units.len) as usize]
+    }
+
+    /// The link to a new run of the `pending` items of the array at `parent`.
+    #[inline]
+    fn push_run(&mut self, parent: InstancePosition, pending: PendingRun, units: RunUnits) -> u32 {
+        let index = match u32::try_from(self.runs.len()) {
+            Ok(index) if index < RUN_LINK => index,
+            _ => panic!("evaluation exceeded 2^31 runs"),
+        };
+        self.runs.push(ItemRun {
+            parent,
+            start: pending.start,
+            count: pending.count,
+            offset: self.run_items,
+            units,
+            next_sibling: NO_NODE,
+        });
+        self.run_items = self
+            .run_items
+            .checked_add(pending.count)
+            .expect("evaluation exceeded u32 run items");
+        index | RUN_LINK
+    }
+
+    /// The pointer of the item at `item` in `run`, once every position is recorded.
+    fn run_item_location(&self, run: &ItemRun, item: u32) -> &Location {
+        let rendered = self.run_locations.get_or_init(|| self.render_run_items());
+        &rendered[(run.offset + item) as usize]
+    }
+
+    fn render_run_items(&self) -> Box<[Location]> {
+        let mut rendered = Vec::with_capacity(self.run_items as usize);
+        for run in &self.runs {
+            let parent = self.location(run.parent);
+            rendered.extend(
+                (run.start..run.start + run.count as usize)
+                    .map(|index| parent.join_pointer_segment(&JsonPointerSegment::Index(index))),
+            );
+        }
+        rendered.into_boxed_slice()
+    }
+
+    #[inline]
+    fn run(&self, index: u32) -> &ItemRun {
+        &self.runs[index as usize]
+    }
+
+    #[inline]
+    fn next_sibling(&self, link: u32) -> u32 {
+        if link & RUN_LINK == 0 {
+            self.node(link).next_sibling
+        } else {
+            self.run(link & !RUN_LINK).next_sibling
+        }
+    }
+
+    #[inline]
+    fn set_next_sibling(&mut self, link: u32, next: u32) {
+        if link & RUN_LINK == 0 {
+            self.node_mut(link).next_sibling = next;
+        } else {
+            self.runs[(link & !RUN_LINK) as usize].next_sibling = next;
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -461,7 +641,7 @@ impl Iterator for ChildIndices<'_> {
             return None;
         }
         let index = self.current;
-        self.current = self.arena.node(index).next_sibling;
+        self.current = self.arena.next_sibling(index);
         Some(index)
     }
 }
@@ -492,13 +672,35 @@ impl ChildList {
     pub(crate) fn push(&mut self, arena: &mut EvaluationArena, node: EvaluationNode) {
         self.valid &= node.valid;
         let index = arena.push(node);
-        if self.last == NO_NODE {
-            self.first = index;
-        } else {
-            arena.node_mut(self.last).next_sibling = index;
-        }
-        self.last = index;
+        self.link(arena, index);
         self.len += 1;
+    }
+
+    /// Moves the items `pending` holds, of the array at `parent`, onto the list as one run whose
+    /// items share `units`.
+    #[inline]
+    pub(crate) fn push_run(
+        &mut self,
+        arena: &mut EvaluationArena,
+        parent: InstancePosition,
+        pending: &mut PendingRun,
+        units: RunUnits,
+    ) {
+        let pending = std::mem::take(pending);
+        let count = pending.count;
+        let link = arena.push_run(parent, pending, units);
+        self.link(arena, link);
+        self.len += count;
+    }
+
+    #[inline]
+    fn link(&mut self, arena: &mut EvaluationArena, link: u32) {
+        if self.last == NO_NODE {
+            self.first = link;
+        } else {
+            arena.set_next_sibling(self.last, link);
+        }
+        self.last = link;
     }
 
     /// Moves `other`'s nodes after this list's.
@@ -510,7 +712,7 @@ impl ChildList {
             *self = other;
             return;
         }
-        arena.node_mut(self.last).next_sibling = other.first;
+        arena.set_next_sibling(self.last, other.first);
         self.last = other.last;
         self.len += other.len;
         self.valid &= other.valid;
@@ -683,10 +885,7 @@ impl Evaluation {
     /// ```
     #[must_use]
     pub fn root(&self) -> OutputUnit<'_> {
-        OutputUnit {
-            arena: &self.arena,
-            index: self.root,
-        }
+        OutputUnit::node(&self.arena, self.root)
     }
     /// Returns the flag output format.
     ///
@@ -1080,9 +1279,9 @@ where
 {
     let mut state = serializer.serialize_struct("ListOutput", 2)?;
     state.serialize_field("valid", &arena.node(root).valid)?;
-    let mut entries = Vec::new();
-    collect_list_entries(arena, root, &mut entries);
-    state.serialize_field("details", &entries)?;
+    let mut units = Vec::new();
+    collect_list_entries(arena, root, &mut units);
+    state.serialize_field("details", &ListEntries { arena, units })?;
     state.end()
 }
 
@@ -1097,13 +1296,24 @@ where
     serialize_unit(arena, root, serializer, true)
 }
 
-fn collect_list_entries<'a>(arena: &'a EvaluationArena, index: u32, out: &mut Vec<ListEntry<'a>>) {
+fn collect_list_entries(arena: &EvaluationArena, index: u32, out: &mut Vec<Unit>) {
     // Note: The spec says "Output units which do not contain errors or annotations SHOULD be
     // excluded" but the official test suite includes all nodes. We include all nodes to match
     // the reference implementation and test suite expectations.
-    out.push(ListEntry::new(arena, index));
-    for child in arena.child_indices(index) {
-        collect_list_entries(arena, child, out);
+    out.push(Unit::Node(index));
+    let mut link = arena.node(index).first_child;
+    while link != NO_NODE {
+        if link & RUN_LINK == 0 {
+            collect_list_entries(arena, link, out);
+            link = arena.node(link).next_sibling;
+        } else {
+            let run = link & !RUN_LINK;
+            let entry = arena.run(run);
+            for item in 0..entry.count {
+                out.extend((0..entry.units.len).map(|unit| Unit::RunItem { run, item, unit }));
+            }
+            link = entry.next_sibling;
+        }
     }
 }
 
@@ -1140,6 +1350,37 @@ where
     state.end()
 }
 
+/// The unit at `unit` among the shared units of `run`, for its item at `item`: valid, with
+/// neither annotations nor errors.
+fn serialize_run_unit<S>(
+    arena: &EvaluationArena,
+    run: u32,
+    item: u32,
+    unit: u32,
+    serializer: S,
+    include_children: bool,
+) -> Result<S::Ok, S::Error>
+where
+    S: serde::Serializer,
+{
+    let entry = arena.run(run);
+    let units = arena.shared_units(entry.units);
+    let shared = &units[unit as usize];
+    let mut state = serializer.serialize_struct("OutputUnit", 7)?;
+    state.serialize_field("valid", &true)?;
+    state.serialize_field("evaluationPath", shared.evaluation_path.as_str())?;
+    state.serialize_field("schemaLocation", shared.schema_location.as_ref())?;
+    state.serialize_field(
+        "instanceLocation",
+        arena.run_item_location(entry, item).as_str(),
+    )?;
+    // A run item's subschema unit holds its keyword units.
+    if include_children && unit == 0 && units.len() > 1 {
+        state.serialize_field("details", &RunItemDetails { arena, run, item })?;
+    }
+    state.end()
+}
+
 /// `schemaLocation` of a keyword: its absolute URI when it has one, otherwise its JSON Pointer.
 ///
 /// The URI's fragment counts from the root of the keyword's own resource, which a subschema
@@ -1156,62 +1397,119 @@ pub(crate) fn format_keyword_location(
 #[derive(Clone, Copy, Debug)]
 pub struct OutputUnit<'a> {
     arena: &'a EvaluationArena,
-    index: u32,
+    unit: Unit,
+}
+
+/// Where an output unit's members are read from.
+#[derive(Clone, Copy, Debug)]
+enum Unit {
+    Node(u32),
+    /// The unit at `unit` among the shared units of run `run`, for its item at `item`.
+    RunItem {
+        run: u32,
+        item: u32,
+        unit: u32,
+    },
 }
 
 impl<'a> OutputUnit<'a> {
     #[inline]
-    fn node(&self) -> &'a EvaluationNode {
-        self.arena.node(self.index)
+    fn node(arena: &'a EvaluationArena, index: u32) -> Self {
+        OutputUnit {
+            arena,
+            unit: Unit::Node(index),
+        }
+    }
+
+    /// The shared unit at `unit` of run `run`.
+    #[inline]
+    fn shared(&self, run: u32, unit: u32) -> &'a RunUnit {
+        let arena = self.arena;
+        &arena.shared_units(arena.run(run).units)[unit as usize]
     }
     /// Whether the instance is valid at this unit.
     #[inline]
     #[must_use]
     pub fn valid(&self) -> bool {
-        self.node().valid
+        match self.unit {
+            Unit::Node(index) => self.arena.node(index).valid,
+            Unit::RunItem { .. } => true,
+        }
     }
     /// The path of keywords followed to reach this unit (`evaluationPath`).
     #[inline]
     #[must_use]
     pub fn evaluation_path(&self) -> &'a Location {
-        &self.node().keyword_location
+        match self.unit {
+            Unit::Node(index) => &self.arena.node(index).keyword_location,
+            Unit::RunItem { run, unit, .. } => &self.shared(run, unit).evaluation_path,
+        }
     }
     /// The keyword's absolute URI when it has one, otherwise its JSON Pointer (`schemaLocation`).
     #[inline]
     #[must_use]
     pub fn schema_location(&self) -> &'a str {
-        &self.node().schema_location
+        match self.unit {
+            Unit::Node(index) => &self.arena.node(index).schema_location,
+            Unit::RunItem { run, unit, .. } => &self.shared(run, unit).schema_location,
+        }
     }
     /// The location in the instance this unit evaluated (`instanceLocation`).
     #[inline]
     #[must_use]
     pub fn instance_location(&self) -> &'a Location {
-        self.arena.location(self.node().instance_location)
+        let arena = self.arena;
+        match self.unit {
+            Unit::Node(index) => arena.location(arena.node(index).instance_location),
+            Unit::RunItem { run, item, .. } => arena.run_item_location(arena.run(run), item),
+        }
     }
     /// Annotations this unit produced (`annotations`).
     #[inline]
     #[must_use]
     pub fn annotations(&self) -> Option<&'a Annotations> {
-        self.node().annotations.as_ref()
+        match self.unit {
+            Unit::Node(index) => self.arena.node(index).annotations.as_ref(),
+            Unit::RunItem { .. } => None,
+        }
     }
     /// Annotations this unit produced and then dropped because it failed (`droppedAnnotations`).
     #[inline]
     #[must_use]
     pub fn dropped_annotations(&self) -> Option<&'a Annotations> {
-        self.node().dropped_annotations.as_ref()
+        match self.unit {
+            Unit::Node(index) => self.arena.node(index).dropped_annotations.as_ref(),
+            Unit::RunItem { .. } => None,
+        }
     }
     /// Errors this unit reported, in the order they were produced (`errors`).
     #[inline]
     #[must_use]
     pub fn errors(&self) -> &'a [ErrorDescription] {
-        &self.node().errors
+        match self.unit {
+            Unit::Node(index) => &self.arena.node(index).errors,
+            Unit::RunItem { .. } => &[],
+        }
     }
     /// Output units of the subschemas evaluated below this one (`details`).
     #[inline]
     #[must_use]
     pub fn children(&self) -> OutputUnitChildren<'a> {
+        let next = match self.unit {
+            Unit::Node(index) => NextChild::Chain {
+                link: self.arena.node(index).first_child,
+                item: 0,
+            },
+            // A run item's subschema unit holds its keyword units.
+            Unit::RunItem { run, item, unit: 0 } => NextChild::Shared { run, item, unit: 1 },
+            Unit::RunItem { .. } => NextChild::Chain {
+                link: NO_NODE,
+                item: 0,
+            },
+        };
         OutputUnitChildren {
-            indices: self.arena.child_indices(self.index),
+            arena: self.arena,
+            next,
         }
     }
 }
@@ -1219,7 +1517,16 @@ impl<'a> OutputUnit<'a> {
 /// Iterator over the children of an [`OutputUnit`].
 #[derive(Debug)]
 pub struct OutputUnitChildren<'a> {
-    indices: ChildIndices<'a>,
+    arena: &'a EvaluationArena,
+    next: NextChild,
+}
+
+#[derive(Debug, Clone, Copy)]
+enum NextChild {
+    /// The sibling chain from `link`; at a run, the subschema unit of its item at `item`.
+    Chain { link: u32, item: u32 },
+    /// The shared units of run `run` from `unit` on, for its item at `item`.
+    Shared { run: u32, item: u32, unit: u32 },
 }
 
 impl<'a> Iterator for OutputUnitChildren<'a> {
@@ -1227,20 +1534,80 @@ impl<'a> Iterator for OutputUnitChildren<'a> {
 
     #[inline]
     fn next(&mut self) -> Option<OutputUnit<'a>> {
-        let arena = self.indices.arena;
-        self.indices.next().map(|index| OutputUnit { arena, index })
+        let arena = self.arena;
+        let unit = match self.next {
+            NextChild::Chain { link, item } => {
+                if link == NO_NODE {
+                    return None;
+                }
+                if link & RUN_LINK == 0 {
+                    self.next = NextChild::Chain {
+                        link: arena.node(link).next_sibling,
+                        item: 0,
+                    };
+                    Unit::Node(link)
+                } else {
+                    let index = link & !RUN_LINK;
+                    let run = arena.run(index);
+                    self.next = if item + 1 < run.count {
+                        NextChild::Chain {
+                            link,
+                            item: item + 1,
+                        }
+                    } else {
+                        NextChild::Chain {
+                            link: run.next_sibling,
+                            item: 0,
+                        }
+                    };
+                    Unit::RunItem {
+                        run: index,
+                        item,
+                        unit: 0,
+                    }
+                }
+            }
+            NextChild::Shared { run, item, unit } => {
+                if unit == arena.run(run).units.len {
+                    return None;
+                }
+                self.next = NextChild::Shared {
+                    run,
+                    item,
+                    unit: unit + 1,
+                };
+                Unit::RunItem { run, item, unit }
+            }
+        };
+        Some(OutputUnit { arena, unit })
+    }
+}
+
+/// The list output's units, in pre-order.
+struct ListEntries<'a> {
+    arena: &'a EvaluationArena,
+    units: Vec<Unit>,
+}
+
+impl Serialize for ListEntries<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut seq = serializer.serialize_seq(Some(self.units.len()))?;
+        for &unit in &self.units {
+            seq.serialize_element(&ListEntry {
+                arena: self.arena,
+                unit,
+            })?;
+        }
+        seq.end()
     }
 }
 
 struct ListEntry<'a> {
     arena: &'a EvaluationArena,
-    index: u32,
-}
-
-impl<'a> ListEntry<'a> {
-    fn new(arena: &'a EvaluationArena, index: u32) -> Self {
-        ListEntry { arena, index }
-    }
+    unit: Unit,
 }
 
 impl Serialize for ListEntry<'_> {
@@ -1248,7 +1615,12 @@ impl Serialize for ListEntry<'_> {
     where
         S: serde::Serializer,
     {
-        serialize_unit(self.arena, self.index, serializer, false)
+        match self.unit {
+            Unit::Node(index) => serialize_unit(self.arena, index, serializer, false),
+            Unit::RunItem { run, item, unit } => {
+                serialize_run_unit(self.arena, run, item, unit, serializer, false)
+            }
+        }
     }
 }
 
@@ -1262,12 +1634,26 @@ impl Serialize for DetailsSerializer<'_> {
     where
         S: serde::Serializer,
     {
+        let arena = self.arena;
         let mut seq = serializer.serialize_seq(None)?;
-        for child in self.arena.child_indices(self.index) {
-            seq.serialize_element(&SeqEntry {
-                arena: self.arena,
-                index: child,
-            })?;
+        let mut link = arena.node(self.index).first_child;
+        while link != NO_NODE {
+            if link & RUN_LINK == 0 {
+                seq.serialize_element(&SeqEntry { arena, index: link })?;
+                link = arena.node(link).next_sibling;
+            } else {
+                let run = link & !RUN_LINK;
+                let entry = arena.run(run);
+                for item in 0..entry.count {
+                    seq.serialize_element(&RunUnitEntry {
+                        arena,
+                        run,
+                        item,
+                        unit: 0,
+                    })?;
+                }
+                link = entry.next_sibling;
+            }
         }
         seq.end()
     }
@@ -1284,6 +1670,47 @@ impl Serialize for SeqEntry<'_> {
         S: serde::Serializer,
     {
         serialize_unit(self.arena, self.index, serializer, true)
+    }
+}
+
+/// The keyword units of a run item.
+struct RunItemDetails<'a> {
+    arena: &'a EvaluationArena,
+    run: u32,
+    item: u32,
+}
+
+impl Serialize for RunItemDetails<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        let mut seq = serializer.serialize_seq(None)?;
+        for unit in 1..self.arena.run(self.run).units.len {
+            seq.serialize_element(&RunUnitEntry {
+                arena: self.arena,
+                run: self.run,
+                item: self.item,
+                unit,
+            })?;
+        }
+        seq.end()
+    }
+}
+
+struct RunUnitEntry<'a> {
+    arena: &'a EvaluationArena,
+    run: u32,
+    item: u32,
+    unit: u32,
+}
+
+impl Serialize for RunUnitEntry<'_> {
+    fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: serde::Serializer,
+    {
+        serialize_run_unit(self.arena, self.run, self.item, self.unit, serializer, true)
     }
 }
 
@@ -1425,7 +1852,12 @@ impl<'a> Iterator for NodeIter<'a> {
                 continue;
             }
             let start = self.stack.len();
-            self.stack.extend(self.arena.child_indices(index));
+            // Runs hold neither errors nor annotations.
+            self.stack.extend(
+                self.arena
+                    .child_indices(index)
+                    .filter(|&link| link & RUN_LINK == 0),
+            );
             self.stack[start..].reverse();
             return Some(node);
         }
@@ -1620,7 +2052,7 @@ pub mod generated {
     pub use super::ErrorDescription;
     use super::{
         format_keyword_location, Annotations, ChildList, Evaluation, EvaluationArena,
-        EvaluationNode, InstancePosition,
+        EvaluationNode, InstancePosition, PendingRun, RunUnit, RunUnits,
     };
     use crate::{
         compiler::resolve_absolute_location,
@@ -2029,6 +2461,9 @@ pub mod generated {
         targets: Box<[bool]>,
         /// Whether each schema has leaf units only.
         leaves: Box<[bool]>,
+        /// Whether each schema has leaf units only and nothing in it annotates, so its valid items
+        /// join runs.
+        item_runs: Box<[bool]>,
         /// Whether each schema is `false`.
         rejects: Box<[bool]>,
         /// Each schema's index in `resources`.
@@ -2267,12 +2702,23 @@ pub mod generated {
                     sites.entry(path.as_str().into()).or_default().push(id);
                 }
             }
-            let leaves = schema_units
+            let leaves: Box<[bool]> = schema_units
                 .iter()
                 .map(|&(first, count)| {
                     units[first..first + count].iter().all(|unit| {
                         matches!(unit.kind, Kind::Leaf | Kind::Direct(_) | Kind::NotOfType(_))
                     })
+                })
+                .collect();
+            let item_runs = schema_units
+                .iter()
+                .zip(&schemas)
+                .zip(&leaves)
+                .map(|((&(first, count), schema), &leaf)| {
+                    leaf && schema.annotations.is_none()
+                        && units[first..first + count]
+                            .iter()
+                            .all(|unit| unit.annotations.is_none())
                 })
                 .collect();
             let mut targets = vec![false; schemas.len()];
@@ -2295,6 +2741,7 @@ pub mod generated {
                 schemas: schemas.into_boxed_slice(),
                 targets: targets.into_boxed_slice(),
                 leaves,
+                item_runs,
                 rejects,
                 schema_resources: schema_resources.into_boxed_slice(),
                 resources: tables.resources.into_boxed_slice(),
@@ -3152,19 +3599,49 @@ pub mod generated {
             };
             let built = self.built;
             let mut children = ChildList::default();
-            let leaves = built.leaves[schema].then(|| built.leaf_schema(schema));
-            for (idx, item) in array.elements().enumerate().skip(skip) {
-                let path = location.push(idx);
-                let below = self.arena.position_below(position, path.segment());
-                let child = if closed {
-                    self.rejected(&built.schemas[schema], &item, &path, below)
-                } else if let Some(leaves) = &leaves {
-                    // Each item runs the same small schema, so its walk stays in the loop.
-                    self.leaves_of(leaves, &item, &path, below)
-                } else {
-                    self.applicators(schema, &item, &path, below)
-                };
-                children.push(&mut self.arena, child);
+            if !closed && built.item_runs[schema] {
+                let leaves = built.leaf_schema(schema);
+                let mut run = PendingRun::default();
+                let mut units = None;
+                for (idx, item) in array.elements().enumerate().skip(skip) {
+                    let path = location.push(idx);
+                    if let Some(child) = self.leaf_item(&leaves, &item, &path, position) {
+                        self.end_run(
+                            &mut run,
+                            &mut units,
+                            &leaves,
+                            schema,
+                            position,
+                            &mut children,
+                        );
+                        children.push(&mut self.arena, child);
+                    } else {
+                        run.add(idx);
+                    }
+                }
+                self.end_run(
+                    &mut run,
+                    &mut units,
+                    &leaves,
+                    schema,
+                    position,
+                    &mut children,
+                );
+            } else {
+                let leaves = built.leaves[schema].then(|| built.leaf_schema(schema));
+                for (idx, item) in array.elements().enumerate().skip(skip) {
+                    let path = location.push(idx);
+                    let below = self.arena.position_below(position, path.segment());
+                    let child = if closed {
+                        self.rejected(&built.schemas[schema], &item, &path, below)
+                    } else if let Some(leaves) = &leaves {
+                        // Each item runs the same small schema, so its walk stays in the loop.
+                        self.leaves_of(leaves, &item, &path, below)
+                    } else {
+                        self.applicators(schema, &item, &path, below)
+                    };
+                    children.push(&mut self.arena, child);
+                }
             }
             let annotation = Annotations::boolean(array.len() > skip);
             self.node(site, Vec::new(), Some(annotation), children, position)
@@ -3502,11 +3979,7 @@ pub mod generated {
             let string = instance.is_string();
             let mut children = ChildList::default();
             for site in schema.units {
-                let errors = match site.kind {
-                    Kind::NotOfType(check) => self.not_of_type(check, instance),
-                    Kind::Direct(direct) => self.direct_errors(direct, instance),
-                    _ => self.errors_at(site, instance, location),
-                };
+                let errors = self.leaf_errors(site, instance, location);
                 let node = self.node(
                     site,
                     errors,
@@ -3524,6 +3997,120 @@ pub mod generated {
                 children,
                 position,
             )
+        }
+
+        /// The leaf `schema`, which annotates nothing, at an item of the array at `parent`: `None`
+        /// when no unit reports an error, as the item then joins a run and needs no position.
+        #[allow(clippy::inline_always)]
+        #[inline(always)]
+        fn leaf_item(
+            &mut self,
+            schema: &LeafSchema<'_>,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+            parent: InstancePosition,
+        ) -> Option<EvaluationNode> {
+            // Set once a unit reports an error: the item's position, and the units walked so far.
+            let mut reported = None;
+            for (offset, site) in schema.units.iter().enumerate() {
+                let errors = self.leaf_errors(site, instance, location);
+                if reported.is_none() && errors.is_empty() {
+                    continue;
+                }
+                let (position, walked) = reported.get_or_insert_with(|| {
+                    self.reporting_nothing(&schema.units[..offset], parent, location)
+                });
+                let node = self.node(site, errors, None, ChildList::default(), *position);
+                walked.push(&mut self.arena, node);
+            }
+            let errors = self.schema_errors(schema.site, schema.rejects, instance, location);
+            let (position, children) = match reported {
+                Some(reported) => reported,
+                None if errors.is_empty() => return None,
+                None => self.reporting_nothing(schema.units, parent, location),
+            };
+            Some(self.node(schema.site, errors, None, children, position))
+        }
+
+        /// The position of the item at `location` in the array at `parent`, and the nodes of
+        /// `units` there, which report no error and no annotation.
+        #[cold]
+        #[inline(never)]
+        fn reporting_nothing(
+            &mut self,
+            units: &[UnitLocation],
+            parent: InstancePosition,
+            location: &LazyLocation,
+        ) -> (InstancePosition, ChildList) {
+            let position = self.arena.position_below(parent, location.segment());
+            let mut children = ChildList::default();
+            for site in units {
+                let node = self.node(site, Vec::new(), None, ChildList::default(), position);
+                children.push(&mut self.arena, node);
+            }
+            (position, children)
+        }
+
+        /// Moves the items `run` holds onto `children`, as one run of the leaf `schema` at `index`
+        /// over the array at `parent`.
+        #[inline]
+        fn end_run(
+            &mut self,
+            run: &mut PendingRun,
+            units: &mut Option<RunUnits>,
+            schema: &LeafSchema<'_>,
+            index: usize,
+            parent: InstancePosition,
+            children: &mut ChildList,
+        ) {
+            if run.is_empty() {
+                return;
+            }
+            let units = *units.get_or_insert_with(|| self.run_units(schema, index));
+            children.push_run(&mut self.arena, parent, run, units);
+        }
+
+        /// The units each valid item of the leaf `schema` at `index` reports, below the current
+        /// `$ref`s.
+        #[inline]
+        fn run_units(&mut self, schema: &LeafSchema<'_>, index: usize) -> RunUnits {
+            let latest = if self.rebases.is_empty() {
+                self.arena.latest_run_units(index, &schema.site.keyword)
+            } else {
+                self.arena
+                    .latest_run_units(index, &self.rebased_path(schema.site))
+            };
+            latest.unwrap_or_else(|| self.add_run_units(schema, index))
+        }
+
+        /// Records the units [`Self::run_units`] finds no latest ones for.
+        #[cold]
+        #[inline(never)]
+        fn add_run_units(&mut self, schema: &LeafSchema<'_>, index: usize) -> RunUnits {
+            let shared: Vec<RunUnit> = std::iter::once(schema.site)
+                .chain(schema.units)
+                .map(|site| RunUnit {
+                    evaluation_path: self.evaluation_path(site),
+                    schema_location: Arc::clone(&site.schema),
+                })
+                .collect();
+            self.arena.add_run_units(index, shared)
+        }
+
+        /// The errors of the leaf unit at `site` for the instance at `location`.
+        #[allow(clippy::inline_always)]
+        #[inline(always)]
+        fn leaf_errors(
+            &self,
+            site: &UnitLocation,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+        ) -> Vec<ErrorDescription> {
+            match site.kind {
+                Kind::NotOfType(check) => self.not_of_type(check, instance),
+                Kind::Direct(direct) => self.direct_errors(direct, instance),
+                _ => self.errors_at(site, instance, location),
+            }
         }
 
         // With `#[inline]` alone it stays a call per node in the walk's loops.
@@ -4487,6 +5074,550 @@ mod tests {
                 1
             )
         );
+    }
+
+    // One line per unit: `[valid, evaluationPath, schemaLocation, instanceLocation]`, then any other
+    // members, indented by depth in the hierarchical output.
+    fn unit_line(unit: &Value, depth: usize) -> String {
+        let mut members = unit.as_object().expect("a unit is an object").clone();
+        let mut line = vec![
+            members.remove("valid").expect("every unit has `valid`"),
+            members
+                .remove("evaluationPath")
+                .expect("every unit has `evaluationPath`"),
+            members
+                .remove("schemaLocation")
+                .expect("every unit has `schemaLocation`"),
+            members
+                .remove("instanceLocation")
+                .expect("every unit has `instanceLocation`"),
+        ];
+        if !members.is_empty() {
+            line.push(Value::Object(members));
+        }
+        format!("{}{}", "  ".repeat(depth), Value::Array(line))
+    }
+
+    fn hierarchical_lines(unit: &Value, depth: usize, out: &mut Vec<String>) {
+        let mut unit = unit.clone();
+        let details = unit
+            .as_object_mut()
+            .expect("a unit is an object")
+            .remove("details");
+        out.push(unit_line(&unit, depth));
+        for child in details
+            .iter()
+            .flat_map(|details| details.as_array().expect("`details` is an array"))
+        {
+            hierarchical_lines(child, depth + 1, out);
+        }
+    }
+
+    // The hierarchical output, read through `OutputUnit` accessors.
+    fn walk(unit: OutputUnit<'_>) -> Value {
+        let mut members = serde_json::Map::new();
+        members.insert("valid".into(), Value::Bool(unit.valid()));
+        members.insert(
+            "evaluationPath".into(),
+            json!(unit.evaluation_path().as_str()),
+        );
+        members.insert("schemaLocation".into(), json!(unit.schema_location()));
+        members.insert(
+            "instanceLocation".into(),
+            json!(unit.instance_location().as_str()),
+        );
+        if let Some(annotations) = unit.annotations() {
+            members.insert("annotations".into(), annotations.value().clone());
+        }
+        if let Some(annotations) = unit.dropped_annotations() {
+            members.insert("droppedAnnotations".into(), annotations.value().clone());
+        }
+        if !unit.errors().is_empty() {
+            let mut errors = serde_json::Map::new();
+            for error in unit.errors() {
+                match errors.get_mut(error.keyword()) {
+                    None => {
+                        errors.insert(error.keyword().into(), json!(error.message()));
+                    }
+                    Some(Value::Array(messages)) => messages.push(json!(error.message())),
+                    Some(first) => {
+                        let message = first.take();
+                        *first = json!([message, error.message()]);
+                    }
+                }
+            }
+            members.insert("errors".into(), Value::Object(errors));
+        }
+        let details: Vec<Value> = unit.children().map(walk).collect();
+        if !details.is_empty() {
+            members.insert("details".into(), Value::Array(details));
+        }
+        Value::Object(members)
+    }
+
+    #[test_case(
+        json!({"items":{"type":"number"}}),
+        json!([1,2.5,3]),
+        &[
+            r#"[true,"","",""]"#,
+            r#"  [true,"/items","/items","",{"annotations":true}]"#,
+            r#"    [true,"/items","/items","/0"]"#,
+            r#"      [true,"/items/type","/items/type","/0"]"#,
+            r#"    [true,"/items","/items","/1"]"#,
+            r#"      [true,"/items/type","/items/type","/1"]"#,
+            r#"    [true,"/items","/items","/2"]"#,
+            r#"      [true,"/items/type","/items/type","/2"]"#,
+        ],
+        &[
+            r#"["/items",null,"",true]"#,
+        ],
+        &[];
+        "valid leaf items"
+    )]
+    #[test_case(
+        json!({"items":{"type":"number"}}),
+        json!([1,"x",3,4]),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [false,"/items","/items","",{"droppedAnnotations":true}]"#,
+            r#"    [true,"/items","/items","/0"]"#,
+            r#"      [true,"/items/type","/items/type","/0"]"#,
+            r#"    [false,"/items","/items","/1"]"#,
+            r#"      [false,"/items/type","/items/type","/1",{"errors":{"type":"\"x\" is not of type \"number\""}}]"#,
+            r#"    [true,"/items","/items","/2"]"#,
+            r#"      [true,"/items/type","/items/type","/2"]"#,
+            r#"    [true,"/items","/items","/3"]"#,
+            r#"      [true,"/items/type","/items/type","/3"]"#,
+        ],
+        &[],
+        &[
+            r#"["/items/type",null,"/1","\"x\" is not of type \"number\""]"#,
+        ];
+        "failing item splits the run"
+    )]
+    #[test_case(
+        json!({"items":{"type":"number"}}),
+        json!(["x",1,2,"y"]),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [false,"/items","/items","",{"droppedAnnotations":true}]"#,
+            r#"    [false,"/items","/items","/0"]"#,
+            r#"      [false,"/items/type","/items/type","/0",{"errors":{"type":"\"x\" is not of type \"number\""}}]"#,
+            r#"    [true,"/items","/items","/1"]"#,
+            r#"      [true,"/items/type","/items/type","/1"]"#,
+            r#"    [true,"/items","/items","/2"]"#,
+            r#"      [true,"/items/type","/items/type","/2"]"#,
+            r#"    [false,"/items","/items","/3"]"#,
+            r#"      [false,"/items/type","/items/type","/3",{"errors":{"type":"\"y\" is not of type \"number\""}}]"#,
+        ],
+        &[],
+        &[
+            r#"["/items/type",null,"/0","\"x\" is not of type \"number\""]"#,
+            r#"["/items/type",null,"/3","\"y\" is not of type \"number\""]"#,
+        ];
+        "failing first and last items"
+    )]
+    #[test_case(
+        json!({"items":{"type":"number"}}),
+        json!([]),
+        &[
+            r#"[true,"","",""]"#,
+            r#"  [true,"/items","/items","",{"annotations":false}]"#,
+        ],
+        &[
+            r#"["/items",null,"",false]"#,
+        ],
+        &[];
+        "empty array"
+    )]
+    #[test_case(
+        json!({"items":{"type":"integer"},"prefixItems":[{"type":"string"}]}),
+        json!(["a",1,2]),
+        &[
+            r#"[true,"","",""]"#,
+            r#"  [true,"/items","/items","",{"annotations":true}]"#,
+            r#"    [true,"/items","/items","/1"]"#,
+            r#"      [true,"/items/type","/items/type","/1"]"#,
+            r#"    [true,"/items","/items","/2"]"#,
+            r#"      [true,"/items/type","/items/type","/2"]"#,
+            r#"  [true,"/prefixItems","/prefixItems","",{"annotations":0}]"#,
+            r#"    [true,"/prefixItems/0","/prefixItems/0","/0"]"#,
+            r#"      [true,"/prefixItems/0/type","/prefixItems/0/type","/0"]"#,
+        ],
+        &[
+            r#"["/items",null,"",true]"#,
+            r#"["/prefixItems",null,"",0]"#,
+        ],
+        &[];
+        "prefix items then rest"
+    )]
+    #[test_case(
+        json!({"items":{"type":"integer"},"prefixItems":[{"type":"string"}]}),
+        json!(["a",1,"b",3]),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [false,"/items","/items","",{"droppedAnnotations":true}]"#,
+            r#"    [true,"/items","/items","/1"]"#,
+            r#"      [true,"/items/type","/items/type","/1"]"#,
+            r#"    [false,"/items","/items","/2"]"#,
+            r#"      [false,"/items/type","/items/type","/2",{"errors":{"type":"\"b\" is not of type \"integer\""}}]"#,
+            r#"    [true,"/items","/items","/3"]"#,
+            r#"      [true,"/items/type","/items/type","/3"]"#,
+            r#"  [true,"/prefixItems","/prefixItems","",{"annotations":0}]"#,
+            r#"    [true,"/prefixItems/0","/prefixItems/0","/0"]"#,
+            r#"      [true,"/prefixItems/0/type","/prefixItems/0/type","/0"]"#,
+        ],
+        &[],
+        &[
+            r#"["/items/type",null,"/2","\"b\" is not of type \"integer\""]"#,
+        ];
+        "prefix items then failing rest"
+    )]
+    #[test_case(
+        json!({"$schema":"http://json-schema.org/draft-07/schema#","additionalItems":{"type":"string"},"items":[{"type":"integer"}]}),
+        json!([1,"a","b",2,"c"]),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [true,"/items","/items","",{"annotations":0}]"#,
+            r#"    [true,"/items/0","/items/0","/0"]"#,
+            r#"      [true,"/items/0/type","/items/0/type","/0"]"#,
+            r#"  [false,"/additionalItems","/additionalItems","",{"droppedAnnotations":true}]"#,
+            r#"    [true,"/additionalItems","/additionalItems","/1"]"#,
+            r#"      [true,"/additionalItems/type","/additionalItems/type","/1"]"#,
+            r#"    [true,"/additionalItems","/additionalItems","/2"]"#,
+            r#"      [true,"/additionalItems/type","/additionalItems/type","/2"]"#,
+            r#"    [false,"/additionalItems","/additionalItems","/3"]"#,
+            r#"      [false,"/additionalItems/type","/additionalItems/type","/3",{"errors":{"type":"2 is not of type \"string\""}}]"#,
+            r#"    [true,"/additionalItems","/additionalItems","/4"]"#,
+            r#"      [true,"/additionalItems/type","/additionalItems/type","/4"]"#,
+        ],
+        &[],
+        &[
+            r#"["/additionalItems/type",null,"/3","2 is not of type \"string\""]"#,
+        ];
+        "additional items"
+    )]
+    #[test_case(
+        json!({"items":{"items":{"type":"number"},"type":"array"}}),
+        json!([[1,2],[],[3,"x",4]]),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [false,"/items","/items","",{"droppedAnnotations":true}]"#,
+            r#"    [true,"/items","/items","/0"]"#,
+            r#"      [true,"/items/type","/items/type","/0"]"#,
+            r#"      [true,"/items/items","/items/items","/0",{"annotations":true}]"#,
+            r#"        [true,"/items/items","/items/items","/0/0"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/0/0"]"#,
+            r#"        [true,"/items/items","/items/items","/0/1"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/0/1"]"#,
+            r#"    [true,"/items","/items","/1"]"#,
+            r#"      [true,"/items/type","/items/type","/1"]"#,
+            r#"      [true,"/items/items","/items/items","/1",{"annotations":false}]"#,
+            r#"    [false,"/items","/items","/2"]"#,
+            r#"      [true,"/items/type","/items/type","/2"]"#,
+            r#"      [false,"/items/items","/items/items","/2",{"droppedAnnotations":true}]"#,
+            r#"        [true,"/items/items","/items/items","/2/0"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/2/0"]"#,
+            r#"        [false,"/items/items","/items/items","/2/1"]"#,
+            r#"          [false,"/items/items/type","/items/items/type","/2/1",{"errors":{"type":"\"x\" is not of type \"number\""}}]"#,
+            r#"        [true,"/items/items","/items/items","/2/2"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/2/2"]"#,
+        ],
+        &[],
+        &[
+            r#"["/items/items/type",null,"/2/1","\"x\" is not of type \"number\""]"#,
+        ];
+        "nested arrays"
+    )]
+    #[test_case(
+        json!({"items":{"items":{"type":"number"},"minItems":2,"type":"array"}}),
+        json!([[1,2],[3,4,5],[6,"x"]]),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [false,"/items","/items","",{"droppedAnnotations":true}]"#,
+            r#"    [true,"/items","/items","/0"]"#,
+            r#"      [true,"/items/type","/items/type","/0"]"#,
+            r#"      [true,"/items/minItems","/items/minItems","/0"]"#,
+            r#"      [true,"/items/items","/items/items","/0",{"annotations":true}]"#,
+            r#"        [true,"/items/items","/items/items","/0/0"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/0/0"]"#,
+            r#"        [true,"/items/items","/items/items","/0/1"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/0/1"]"#,
+            r#"    [true,"/items","/items","/1"]"#,
+            r#"      [true,"/items/type","/items/type","/1"]"#,
+            r#"      [true,"/items/minItems","/items/minItems","/1"]"#,
+            r#"      [true,"/items/items","/items/items","/1",{"annotations":true}]"#,
+            r#"        [true,"/items/items","/items/items","/1/0"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/1/0"]"#,
+            r#"        [true,"/items/items","/items/items","/1/1"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/1/1"]"#,
+            r#"        [true,"/items/items","/items/items","/1/2"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/1/2"]"#,
+            r#"    [false,"/items","/items","/2"]"#,
+            r#"      [true,"/items/type","/items/type","/2"]"#,
+            r#"      [true,"/items/minItems","/items/minItems","/2"]"#,
+            r#"      [false,"/items/items","/items/items","/2",{"droppedAnnotations":true}]"#,
+            r#"        [true,"/items/items","/items/items","/2/0"]"#,
+            r#"          [true,"/items/items/type","/items/items/type","/2/0"]"#,
+            r#"        [false,"/items/items","/items/items","/2/1"]"#,
+            r#"          [false,"/items/items/type","/items/items/type","/2/1",{"errors":{"type":"\"x\" is not of type \"number\""}}]"#,
+        ],
+        &[],
+        &[
+            r#"["/items/items/type",null,"/2/1","\"x\" is not of type \"number\""]"#,
+        ];
+        "nested array shapes"
+    )]
+    #[test_case(
+        json!({"items":{"maximum":5,"minimum":1}}),
+        json!([1,2,7,3]),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [false,"/items","/items","",{"droppedAnnotations":true}]"#,
+            r#"    [true,"/items","/items","/0"]"#,
+            r#"      [true,"/items/minimum","/items/minimum","/0"]"#,
+            r#"      [true,"/items/maximum","/items/maximum","/0"]"#,
+            r#"    [true,"/items","/items","/1"]"#,
+            r#"      [true,"/items/minimum","/items/minimum","/1"]"#,
+            r#"      [true,"/items/maximum","/items/maximum","/1"]"#,
+            r#"    [false,"/items","/items","/2"]"#,
+            r#"      [true,"/items/minimum","/items/minimum","/2"]"#,
+            r#"      [false,"/items/maximum","/items/maximum","/2",{"errors":{"maximum":"7 is greater than the maximum of 5"}}]"#,
+            r#"    [true,"/items","/items","/3"]"#,
+            r#"      [true,"/items/minimum","/items/minimum","/3"]"#,
+            r#"      [true,"/items/maximum","/items/maximum","/3"]"#,
+        ],
+        &[],
+        &[
+            r#"["/items/maximum",null,"/2","7 is greater than the maximum of 5"]"#,
+        ];
+        "leaf with several keywords"
+    )]
+    #[test_case(
+        json!({"items":{}}),
+        json!([1,"a"]),
+        &[
+            r#"[true,"","",""]"#,
+            r#"  [true,"/items","/items","",{"annotations":true}]"#,
+            r#"    [true,"/items","/items","/0"]"#,
+            r#"    [true,"/items","/items","/1"]"#,
+        ],
+        &[
+            r#"["/items",null,"",true]"#,
+        ],
+        &[];
+        "empty subschema"
+    )]
+    #[test_case(
+        json!({"items":true}),
+        json!([1,"a"]),
+        &[
+            r#"[true,"","",""]"#,
+        ],
+        &[],
+        &[];
+        "true subschema"
+    )]
+    #[test_case(
+        json!({"items":{"title":"t","type":"string"}}),
+        json!(["a","b"]),
+        &[
+            r#"[true,"","",""]"#,
+            r#"  [true,"/items","/items","",{"annotations":true}]"#,
+            r#"    [true,"/items","/items","/0",{"annotations":{"title":"t"}}]"#,
+            r#"      [true,"/items/type","/items/type","/0"]"#,
+            r#"    [true,"/items","/items","/1",{"annotations":{"title":"t"}}]"#,
+            r#"      [true,"/items/type","/items/type","/1"]"#,
+        ],
+        &[
+            r#"["/items",null,"",true]"#,
+            r#"["/items",null,"/0",{"title":"t"}]"#,
+            r#"["/items",null,"/1",{"title":"t"}]"#,
+        ],
+        &[];
+        "subschema annotations"
+    )]
+    #[test_case(
+        json!({"items":{"format":"email"}}),
+        json!(["a@b.c","x"]),
+        &[
+            r#"[true,"","",""]"#,
+            r#"  [true,"/items","/items","",{"annotations":true}]"#,
+            r#"    [true,"/items","/items","/0"]"#,
+            r#"      [true,"/items/format","/items/format","/0",{"annotations":"email"}]"#,
+            r#"    [true,"/items","/items","/1"]"#,
+            r#"      [true,"/items/format","/items/format","/1",{"annotations":"email"}]"#,
+        ],
+        &[
+            r#"["/items",null,"",true]"#,
+            r#"["/items/format",null,"/0","email"]"#,
+            r#"["/items/format",null,"/1","email"]"#,
+        ],
+        &[];
+        "format annotations"
+    )]
+    #[test_case(
+        json!({"items":{"minimum":1,"x-unknown":1}}),
+        json!([1,2]),
+        &[
+            r#"[true,"","",""]"#,
+            r#"  [true,"/items","/items","",{"annotations":true}]"#,
+            r#"    [true,"/items","/items","/0",{"annotations":{"x-unknown":1}}]"#,
+            r#"      [true,"/items/minimum","/items/minimum","/0"]"#,
+            r#"    [true,"/items","/items","/1",{"annotations":{"x-unknown":1}}]"#,
+            r#"      [true,"/items/minimum","/items/minimum","/1"]"#,
+        ],
+        &[
+            r#"["/items",null,"",true]"#,
+            r#"["/items",null,"/0",{"x-unknown":1}]"#,
+            r#"["/items",null,"/1",{"x-unknown":1}]"#,
+        ],
+        &[];
+        "unknown keyword annotations"
+    )]
+    #[test_case(
+        json!({"$defs":{"n":{"type":"number"}},"items":{"$ref":"#/$defs/n"}}),
+        json!([1,"x",2]),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [false,"/items","/items","",{"droppedAnnotations":true}]"#,
+            r#"    [true,"/items","/items","/0"]"#,
+            r#"      [true,"/items/$ref","/$defs/n","/0"]"#,
+            r#"        [true,"/items/$ref/type","/$defs/n/type","/0"]"#,
+            r#"    [false,"/items","/items","/1"]"#,
+            r#"      [false,"/items/$ref","/$defs/n","/1"]"#,
+            r#"        [false,"/items/$ref/type","/$defs/n/type","/1",{"errors":{"type":"\"x\" is not of type \"number\""}}]"#,
+            r#"    [true,"/items","/items","/2"]"#,
+            r#"      [true,"/items/$ref","/$defs/n","/2"]"#,
+            r#"        [true,"/items/$ref/type","/$defs/n/type","/2"]"#,
+        ],
+        &[],
+        &[
+            r#"["/$defs/n/type",null,"/1","\"x\" is not of type \"number\""]"#,
+        ];
+        "reference to a leaf"
+    )]
+    #[test_case(
+        json!({"$defs":{"list":{"items":{"type":"number"}}},"$ref":"#/$defs/list"}),
+        json!([1,2,"x",3]),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [false,"/$ref","/$defs/list",""]"#,
+            r#"    [false,"/$ref/items","/$defs/list/items","",{"droppedAnnotations":true}]"#,
+            r#"      [true,"/$ref/items","/$defs/list/items","/0"]"#,
+            r#"        [true,"/$ref/items/type","/$defs/list/items/type","/0"]"#,
+            r#"      [true,"/$ref/items","/$defs/list/items","/1"]"#,
+            r#"        [true,"/$ref/items/type","/$defs/list/items/type","/1"]"#,
+            r#"      [false,"/$ref/items","/$defs/list/items","/2"]"#,
+            r#"        [false,"/$ref/items/type","/$defs/list/items/type","/2",{"errors":{"type":"\"x\" is not of type \"number\""}}]"#,
+            r#"      [true,"/$ref/items","/$defs/list/items","/3"]"#,
+            r#"        [true,"/$ref/items/type","/$defs/list/items/type","/3"]"#,
+        ],
+        &[],
+        &[
+            r#"["/$defs/list/items/type",null,"/2","\"x\" is not of type \"number\""]"#,
+        ];
+        "leaf items below a reference"
+    )]
+    #[test_case(
+        json!({"$defs":{"list":{"items":{"type":"number"}}},"properties":{"a":{"$ref":"#/$defs/list"},"b":{"$ref":"#/$defs/list"}}}),
+        json!({"a":[1,2],"b":[3,"x",4]}),
+        &[
+            r#"[false,"","",""]"#,
+            r#"  [false,"/properties","/properties","",{"droppedAnnotations":["a","b"]}]"#,
+            r#"    [true,"/properties/a","/properties/a","/a"]"#,
+            r#"      [true,"/properties/a/$ref","/$defs/list","/a"]"#,
+            r#"        [true,"/properties/a/$ref/items","/$defs/list/items","/a",{"annotations":true}]"#,
+            r#"          [true,"/properties/a/$ref/items","/$defs/list/items","/a/0"]"#,
+            r#"            [true,"/properties/a/$ref/items/type","/$defs/list/items/type","/a/0"]"#,
+            r#"          [true,"/properties/a/$ref/items","/$defs/list/items","/a/1"]"#,
+            r#"            [true,"/properties/a/$ref/items/type","/$defs/list/items/type","/a/1"]"#,
+            r#"    [false,"/properties/b","/properties/b","/b"]"#,
+            r#"      [false,"/properties/b/$ref","/$defs/list","/b"]"#,
+            r#"        [false,"/properties/b/$ref/items","/$defs/list/items","/b",{"droppedAnnotations":true}]"#,
+            r#"          [true,"/properties/b/$ref/items","/$defs/list/items","/b/0"]"#,
+            r#"            [true,"/properties/b/$ref/items/type","/$defs/list/items/type","/b/0"]"#,
+            r#"          [false,"/properties/b/$ref/items","/$defs/list/items","/b/1"]"#,
+            r#"            [false,"/properties/b/$ref/items/type","/$defs/list/items/type","/b/1",{"errors":{"type":"\"x\" is not of type \"number\""}}]"#,
+            r#"          [true,"/properties/b/$ref/items","/$defs/list/items","/b/2"]"#,
+            r#"            [true,"/properties/b/$ref/items/type","/$defs/list/items/type","/b/2"]"#,
+        ],
+        &[],
+        &[
+            r#"["/$defs/list/items/type",null,"/b/1","\"x\" is not of type \"number\""]"#,
+        ];
+        "one subschema below two references"
+    )]
+    #[test_case(
+        json!({"$id":"https://example.com/root.json","items":{"type":"number"}}),
+        json!([1,2]),
+        &[
+            r#"[true,"","https://example.com/root.json#",""]"#,
+            r#"  [true,"/items","https://example.com/root.json#/items","",{"annotations":true}]"#,
+            r#"    [true,"/items","https://example.com/root.json#/items","/0"]"#,
+            r#"      [true,"/items/type","https://example.com/root.json#/items/type","/0"]"#,
+            r#"    [true,"/items","https://example.com/root.json#/items","/1"]"#,
+            r#"      [true,"/items/type","https://example.com/root.json#/items/type","/1"]"#,
+        ],
+        &[
+            r#"["https://example.com/root.json#/items","https://example.com/root.json#/items","",true]"#,
+        ],
+        &[];
+        "absolute locations"
+    )]
+    #[allow(clippy::needless_pass_by_value)]
+    fn array_item_outputs(
+        schema: Value,
+        instance: Value,
+        units: &[&str],
+        annotations: &[&str],
+        errors: &[&str],
+    ) {
+        let validator = crate::validator_for(&schema).expect("valid schema");
+        let evaluation = validator.evaluate(&instance);
+        let hierarchical =
+            serde_json::to_value(evaluation.hierarchical()).expect("serialization succeeds");
+        let mut lines = Vec::new();
+        hierarchical_lines(&hierarchical, 0, &mut lines);
+        assert_eq!(lines, units);
+        let list = serde_json::to_value(evaluation.list()).expect("serialization succeeds");
+        let list_lines: Vec<String> = list["details"]
+            .as_array()
+            .expect("`details` is an array")
+            .iter()
+            .map(|unit| unit_line(unit, 0))
+            .collect();
+        let flat: Vec<&str> = units.iter().map(|line| line.trim_start()).collect();
+        assert_eq!(list_lines, flat);
+        assert_eq!(list["valid"], hierarchical["valid"]);
+        assert_eq!(Value::Bool(evaluation.flag().valid), hierarchical["valid"]);
+        assert_eq!(walk(evaluation.root()), hierarchical);
+        let annotation_lines: Vec<String> = evaluation
+            .iter_annotations()
+            .map(|entry| {
+                json!([
+                    entry.schema_location,
+                    entry.absolute_keyword_location.map(Uri::as_str),
+                    entry.instance_location.as_str(),
+                    entry.annotations.value()
+                ])
+                .to_string()
+            })
+            .collect();
+        assert_eq!(annotation_lines, annotations);
+        let error_lines: Vec<String> = evaluation
+            .iter_errors()
+            .map(|entry| {
+                json!([
+                    entry.schema_location,
+                    entry.absolute_keyword_location.map(Uri::as_str),
+                    entry.instance_location.as_str(),
+                    entry.error.to_string()
+                ])
+                .to_string()
+            })
+            .collect();
+        assert_eq!(error_lines, errors);
     }
 }
 

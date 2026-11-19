@@ -1,6 +1,9 @@
 use crate::{
     compiler,
-    evaluation::{Annotations, ChildList, ErrorDescription, EvaluationNode, InstancePosition},
+    evaluation::{
+        Annotations, ChildList, ErrorDescription, EvaluationNode, InstancePosition, PendingRun,
+        RunUnit, RunUnits,
+    },
     keywords::{
         helpers::{unit, SchemaSite},
         BoxedValidator, CompilationResult,
@@ -546,14 +549,82 @@ impl<T: ItemType, F: Json> Validate<F> for ItemsTypeValidator<T, F> {
         let Some(array) = instance.as_array() else {
             return EvaluationResult::valid_empty();
         };
+        let parent = ctx.current_instance_position();
         let mut children = ChildList::default();
+        // A matching element reports nothing in either unit, so it joins a run.
+        let mut run = PendingRun::default();
+        let mut units = None;
         for (idx, item) in array.elements().enumerate() {
-            let child = self.evaluate_item(&item, &location.push(idx), tracker, ctx);
-            children.push(ctx.arena(), child);
+            if T::matches::<F>(&item) {
+                run.add(idx);
+            } else {
+                self.end_run(&mut run, &mut units, parent, &mut children, tracker, ctx);
+                let child = self.evaluate_item(&item, &location.push(idx), tracker, ctx);
+                children.push(ctx.arena(), child);
+            }
         }
+        self.end_run(&mut run, &mut units, parent, &mut children, tracker, ctx);
         let mut result = EvaluationResult::from_children(children);
         result.annotate(Annotations::boolean(array.len() != 0));
         result
+    }
+}
+
+impl<T: ItemType, F: Json> ItemsTypeValidator<T, F> {
+    /// Moves the items `run` holds onto `children`, as one run over the array at `parent`.
+    #[inline]
+    fn end_run(
+        &self,
+        run: &mut PendingRun,
+        units: &mut Option<RunUnits>,
+        parent: InstancePosition,
+        children: &mut ChildList,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) {
+        if run.is_empty() {
+            return;
+        }
+        let units = *units.get_or_insert_with(|| self.run_units(tracker, ctx));
+        children.push_run(ctx.arena(), parent, run, units);
+    }
+
+    /// The subschema and `type` units each matching element reports.
+    #[inline]
+    fn run_units(&self, tracker: Option<&RefTracker>, ctx: &mut ValidationContext) -> RunUnits {
+        let owner = std::ptr::from_ref(self).addr();
+        let latest = match tracker {
+            None => ctx.arena().latest_run_units(owner, &self.items.location),
+            Some(tracker) => {
+                let evaluation_path = ctx.evaluation_path(tracker, &self.items.location);
+                ctx.arena().latest_run_units(owner, &evaluation_path)
+            }
+        };
+        latest.unwrap_or_else(|| self.add_run_units(owner, tracker, ctx))
+    }
+
+    /// Records the units [`Self::run_units`] finds no latest ones for.
+    #[cold]
+    #[inline(never)]
+    fn add_run_units(
+        &self,
+        owner: usize,
+        tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> RunUnits {
+        let evaluation_path = crate::paths::evaluation_path(tracker, &self.items.location, ctx);
+        let type_path = crate::paths::evaluation_path(tracker, &self.type_.location, ctx);
+        let shared = [
+            RunUnit {
+                evaluation_path,
+                schema_location: self.items.schema_location(),
+            },
+            RunUnit {
+                evaluation_path: type_path,
+                schema_location: self.type_.schema_location(),
+            },
+        ];
+        ctx.arena().add_run_units(owner, shared)
     }
 }
 
