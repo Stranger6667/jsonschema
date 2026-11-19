@@ -52,11 +52,11 @@ mod __validator_impl {
         std::cell::RefCell < Vec < (usize, usize) >> =
         std::cell::RefCell::new(Vec::new());
     }
-    fn validate_ref_1(instance: &__Value) -> bool {
+    fn validate_ref_0(instance: &__Value) -> bool {
         {
             __JSONSCHEMA_RECURSIVE_STACK
                 .with(|stack| {
-                    stack.borrow_mut().push((validate_ref_1, true));
+                    stack.borrow_mut().push((validate_ref_0, true));
                 });
             __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
                 .with(|stack| {
@@ -149,19 +149,19 @@ mod __validator_impl {
         }
     }
     #[inline(never)]
-    fn validate_ref_1_errors<'__i>(
+    fn validate_ref_0_errors<'__i>(
         instance: &'__i __Value,
         __path: &__paths::LazyLocation,
         __errors: &mut __err::Errors<'__i>,
         __site: &str,
     ) -> bool {
-        if validate_ref_1(instance) {
+        if validate_ref_0(instance) {
             return false;
         }
         let __start = __errors.mark();
         __JSONSCHEMA_RECURSIVE_STACK
             .with(|stack| {
-                stack.borrow_mut().push((validate_ref_1, true));
+                stack.borrow_mut().push((validate_ref_0, true));
             });
         __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
             .with(|stack| {
@@ -173,9 +173,9 @@ mod __validator_impl {
             });
         __JSONSCHEMA_RECURSIVE_ERRORS_STACK
             .with(|stack| {
-                stack.borrow_mut().push((validate_ref_1_errors, true));
+                stack.borrow_mut().push((validate_ref_0_errors, true));
             });
-        let __stop = validate_ref_1_errors_body(instance, __path, __errors);
+        let __stop = validate_ref_0_errors_body(instance, __path, __errors);
         __JSONSCHEMA_RECURSIVE_ERRORS_STACK
             .with(|stack| {
                 stack.borrow_mut().pop();
@@ -195,7 +195,7 @@ mod __validator_impl {
         __errors.reached(__start, "", None, __site);
         __stop
     }
-    fn validate_ref_1_errors_body<'__i>(
+    fn validate_ref_0_errors_body<'__i>(
         instance: &'__i __Value,
         __path: &__paths::LazyLocation,
         __errors: &mut __err::Errors<'__i>,
@@ -332,98 +332,6 @@ mod __validator_impl {
         }
         false
     }
-    fn validate_ref_0(instance: &__Value) -> bool {
-        {
-            __JSONSCHEMA_RECURSIVE_STACK
-                .with(|stack| {
-                    stack.borrow_mut().push((validate_ref_0, true));
-                });
-            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
-                .with(|stack| {
-                    stack.borrow_mut().push((eval_ref_1, true));
-                });
-            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
-                .with(|stack| {
-                    stack.borrow_mut().push((eval_items_ref_1, true));
-                });
-            let __result = { validate_ref_1(instance) };
-            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
-                .with(|stack| {
-                    stack.borrow_mut().pop();
-                });
-            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
-                .with(|stack| {
-                    stack.borrow_mut().pop();
-                });
-            __JSONSCHEMA_RECURSIVE_STACK
-                .with(|stack| {
-                    stack.borrow_mut().pop();
-                });
-            __result
-        }
-    }
-    #[inline(never)]
-    fn validate_ref_0_errors<'__i>(
-        instance: &'__i __Value,
-        __path: &__paths::LazyLocation,
-        __errors: &mut __err::Errors<'__i>,
-        __site: &str,
-    ) -> bool {
-        if validate_ref_0(instance) {
-            return false;
-        }
-        let __start = __errors.mark();
-        __JSONSCHEMA_RECURSIVE_STACK
-            .with(|stack| {
-                stack.borrow_mut().push((validate_ref_0, true));
-            });
-        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
-            .with(|stack| {
-                stack.borrow_mut().push((eval_ref_1, true));
-            });
-        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
-            .with(|stack| {
-                stack.borrow_mut().push((eval_items_ref_1, true));
-            });
-        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
-            .with(|stack| {
-                stack.borrow_mut().push((validate_ref_0_errors, true));
-            });
-        let __stop = validate_ref_0_errors_body(instance, __path, __errors);
-        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
-            .with(|stack| {
-                stack.borrow_mut().pop();
-            });
-        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
-            .with(|stack| {
-                stack.borrow_mut().pop();
-            });
-        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
-            .with(|stack| {
-                stack.borrow_mut().pop();
-            });
-        __JSONSCHEMA_RECURSIVE_STACK
-            .with(|stack| {
-                stack.borrow_mut().pop();
-            });
-        __errors.reached(__start, "", None, __site);
-        __stop
-    }
-    fn validate_ref_0_errors_body<'__i>(
-        instance: &'__i __Value,
-        __path: &__paths::LazyLocation,
-        __errors: &mut __err::Errors<'__i>,
-    ) -> bool {
-        if {
-            let __start = __errors.mark();
-            let __stop = validate_ref_1_errors(instance, __path, __errors, "");
-            __errors.inside(__start, "");
-            __stop
-        } {
-            return true;
-        }
-        false
-    }
     #[inline]
     fn eval_ref_0(instance: &__Value, obj: &__Map, key_str: &str) -> bool {
         {
@@ -445,21 +353,6 @@ mod __validator_impl {
             __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
                 .with(|stack| {
                     stack.borrow_mut().push((eval_ref_1, true));
-                });
-            let __result = { matches!(key_str, "child") };
-            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
-                .with(|stack| {
-                    stack.borrow_mut().pop();
-                });
-            __result
-        }
-    }
-    #[inline]
-    fn eval_ref_2(instance: &__Value, obj: &__Map, key_str: &str) -> bool {
-        {
-            __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
-                .with(|stack| {
-                    stack.borrow_mut().push((eval_ref_2, true));
                 });
             let __result = { matches!(key_str, "child") };
             __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
@@ -509,26 +402,6 @@ mod __validator_impl {
             __result
         }
     }
-    #[inline]
-    fn eval_items_ref_2(
-        instance: &__Value,
-        arr: &[__Value],
-        idx: usize,
-        item: &__Value,
-    ) -> bool {
-        {
-            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
-                .with(|stack| {
-                    stack.borrow_mut().push((eval_items_ref_2, true));
-                });
-            let __result = { false };
-            __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
-                .with(|stack| {
-                    stack.borrow_mut().pop();
-                });
-            __result
-        }
-    }
     pub(super) fn is_valid(instance: &__Value) -> bool {
         __JSONSCHEMA_RECURSIVE_STACK
             .with(|stack| {
@@ -536,11 +409,11 @@ mod __validator_impl {
             });
         __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
             .with(|stack| {
-                stack.borrow_mut().push((eval_ref_2, true));
+                stack.borrow_mut().push((eval_ref_1, true));
             });
         __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
             .with(|stack| {
-                stack.borrow_mut().push((eval_items_ref_2, true));
+                stack.borrow_mut().push((eval_items_ref_1, true));
             });
         let __result = {
             match instance {
@@ -634,11 +507,11 @@ mod __validator_impl {
             });
         __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
             .with(|stack| {
-                stack.borrow_mut().push((eval_ref_2, true));
+                stack.borrow_mut().push((eval_ref_1, true));
             });
         __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
             .with(|stack| {
-                stack.borrow_mut().push((eval_items_ref_2, true));
+                stack.borrow_mut().push((eval_items_ref_1, true));
             });
         __JSONSCHEMA_RECURSIVE_ERRORS_STACK
             .with(|stack| {
@@ -830,11 +703,11 @@ mod __validator_impl {
                             });
                         __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
                             .with(|stack| {
-                                stack.borrow_mut().push((eval_ref_1, true));
+                                stack.borrow_mut().push((eval_ref_0, true));
                             });
                         __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
                             .with(|stack| {
-                                stack.borrow_mut().push((eval_items_ref_1, true));
+                                stack.borrow_mut().push((eval_items_ref_0, true));
                             });
                         __JSONSCHEMA_RECURSIVE_ERRORS_STACK
                             .with(|stack| {

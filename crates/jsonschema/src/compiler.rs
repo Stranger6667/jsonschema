@@ -190,16 +190,43 @@ impl ItemsValidatorsPendingKey {
     }
 }
 
+/// The schema a `$ref` target is, however the reference names it: the target's address and its
+/// JSON Pointer from the root of the document the reference names, or of the resource holding the
+/// anchor it names. A pointer from an outer document into an embedded resource is another identity
+/// than the resource's own URI, as the locations of errors below them differ. Like
+/// [`NodeCacheKey`], the address is never dereferenced.
 #[derive(PartialEq, Eq, Clone, Debug)]
-pub(crate) struct AliasCacheKey {
-    uri: Arc<Uri<String>>,
+pub(crate) struct TargetIdentity {
+    schema_ptr: usize,
+    location: Location,
+}
+
+impl TargetIdentity {
+    pub(crate) fn new(schema: &Value, location: Location) -> Self {
+        TargetIdentity {
+            schema_ptr: std::ptr::from_ref(schema) as usize,
+            location,
+        }
+    }
+}
+
+/// The schema address almost always tells identities apart on its own; equality compares the rest.
+impl std::hash::Hash for TargetIdentity {
+    fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
+        self.schema_ptr.hash(state);
+    }
+}
+
+#[derive(PartialEq, Eq, Clone, Debug)]
+pub(crate) struct TargetCacheKey {
+    identity: TargetIdentity,
     dynamic_scope: List<Uri<String>>,
 }
 
-/// Keys for one URI differ only by dynamic scope, which equality compares.
-impl std::hash::Hash for AliasCacheKey {
+/// Keys for one target differ only by dynamic scope, which equality compares.
+impl std::hash::Hash for TargetCacheKey {
     fn hash<H: std::hash::Hasher>(&self, state: &mut H) {
-        self.uri.hash(state);
+        self.identity.hash(state);
     }
 }
 
@@ -242,12 +269,12 @@ struct DeferredTarget<'a, F: Json> {
     resolver: Resolver<'a>,
     draft: Draft,
     resource_base: Location,
-    alias: Arc<Uri<String>>,
-    key: AliasCacheKey,
+    identity: TargetIdentity,
+    key: TargetCacheKey,
     placeholder: PendingSchemaNode<F>,
     /// Placeholders in progress when this target was deferred, restored while it compiles so cycles
     /// through them close as on the call stack.
-    in_progress: AHashMap<Arc<Uri<String>>, InProgressTarget<F>>,
+    in_progress: AHashMap<TargetIdentity, InProgressTarget<F>>,
 }
 
 /// The placeholder of a `$ref` target being compiled, and of the same target compiling further
@@ -323,21 +350,21 @@ impl<F: Json> TargetNode<F> {
 }
 
 /// Keyed by dynamic scope, since `$dynamicRef` resolves per scope.
-fn deferred_key(resolved: &Resolved<'_>, alias: &Arc<Uri<String>>) -> AliasCacheKey {
-    AliasCacheKey {
-        uri: Arc::clone(alias),
+fn deferred_key(resolved: &Resolved<'_>, identity: &TargetIdentity) -> TargetCacheKey {
+    TargetCacheKey {
+        identity: identity.clone(),
         dynamic_scope: resolved.resolver().dynamic_scope(),
     }
 }
 
 /// Shared caches reused across every `Context` derived from a schema root.
 struct SharedContextState<'a, F: Json = SerdeJson> {
-    seen: SharedSet<Arc<Uri<String>>>,
+    seen: SharedSet<TargetIdentity>,
     location_nodes: SharedCache<NodeCacheKey, CachedNode<F>>,
-    alias_nodes: SharedCache<AliasCacheKey, CachedNode<F>>,
-    alias_placeholders: SharedCache<Arc<Uri<String>>, InProgressTarget<F>>,
+    target_nodes: SharedCache<TargetCacheKey, CachedNode<F>>,
+    target_placeholders: SharedCache<TargetIdentity, InProgressTarget<F>>,
     /// Deferred targets whose round has not started, one per dynamic scope.
-    deferred_placeholders: SharedCache<AliasCacheKey, PendingSchemaNode<F>>,
+    deferred_placeholders: SharedCache<TargetCacheKey, PendingSchemaNode<F>>,
     pending_property_validators_by_schema:
         SharedCache<PropertyValidatorsPendingKey, PendingPropertyValidators<F>>,
     pending_items_validators_by_schema:
@@ -379,8 +406,8 @@ impl<F: Json> SharedContextState<'_, F> {
         Self {
             seen: RefCell::new(AHashSet::new()),
             location_nodes: RefCell::new(AHashMap::with_capacity(capacity)),
-            alias_nodes: RefCell::new(AHashMap::new()),
-            alias_placeholders: RefCell::new(AHashMap::new()),
+            target_nodes: RefCell::new(AHashMap::new()),
+            target_placeholders: RefCell::new(AHashMap::new()),
             deferred_placeholders: RefCell::new(AHashMap::new()),
             pending_property_validators_by_schema: RefCell::new(AHashMap::new()),
             pending_items_validators_by_schema: RefCell::new(AHashMap::new()),
@@ -539,9 +566,9 @@ impl<'a, F: Json> Context<'a, F> {
         }
     }
 
-    fn alias_cache_key(&self, alias: Arc<Uri<String>>) -> AliasCacheKey {
-        AliasCacheKey {
-            uri: alias,
+    fn target_cache_key(&self, identity: TargetIdentity) -> TargetCacheKey {
+        TargetCacheKey {
+            identity,
             dynamic_scope: self.resolver.dynamic_scope(),
         }
     }
@@ -677,8 +704,8 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
         self.config.get_format(format)
     }
-    pub(crate) fn mark_seen(&self, alias: &Arc<Uri<String>>) {
-        self.shared.seen.borrow_mut().insert(Arc::clone(alias));
+    pub(crate) fn mark_seen(&self, identity: &TargetIdentity) {
+        self.shared.seen.borrow_mut().insert(identity.clone());
     }
 
     pub(crate) fn lookup_recursive_reference(&self) -> Result<Resolved<'a>, referencing::Error> {
@@ -829,12 +856,12 @@ impl<'a, F: Json> Context<'a, F> {
         self.shared.location_nodes.borrow_mut().insert(key, node);
     }
 
-    fn cached_alias_node(&self, key: &AliasCacheKey) -> Option<CachedNode<F>> {
-        self.shared.alias_nodes.borrow().get(key).cloned()
+    fn cached_target_node(&self, key: &TargetCacheKey) -> Option<CachedNode<F>> {
+        self.shared.target_nodes.borrow().get(key).cloned()
     }
 
-    fn cache_alias_node(&self, key: AliasCacheKey, node: CachedNode<F>) {
-        self.shared.alias_nodes.borrow_mut().insert(key, node);
+    fn cache_target_node(&self, key: TargetCacheKey, node: CachedNode<F>) {
+        self.shared.target_nodes.borrow_mut().insert(key, node);
     }
 
     fn property_schema_key(schema: &Map<String, Value>) -> PropertyValidatorsPendingKey {
@@ -944,18 +971,18 @@ impl<'a, F: Json> Context<'a, F> {
         pending
     }
 
-    /// The placeholder of `alias` compiling under a dynamic scope where `$dynamicRef` resolves as
+    /// The placeholder of `identity` compiling under a dynamic scope where `$dynamicRef` resolves as
     /// under `target`'s.
     ///
     /// A target compiled under a scope that binds `$dynamicRef` otherwise is another node, so
     /// such a `$ref` cycle closes only once the bindings repeat.
     fn in_progress_placeholder(
         &self,
-        alias: &Arc<Uri<String>>,
+        identity: &TargetIdentity,
         target: &Resolver<'_>,
     ) -> Option<PendingSchemaNode<F>> {
-        let placeholders = self.shared.alias_placeholders.borrow();
-        let mut in_progress = placeholders.get(alias);
+        let placeholders = self.shared.target_placeholders.borrow();
+        let mut in_progress = placeholders.get(identity);
         while let Some(compiling) = in_progress {
             if target.binds_dynamic_anchors_like(&compiling.dynamic_scope) {
                 return Some(compiling.placeholder.clone());
@@ -965,8 +992,8 @@ impl<'a, F: Json> Context<'a, F> {
         None
     }
 
-    /// Register `placeholder` for `alias` compiling under this context's dynamic scope.
-    fn set_alias_placeholder(&self, alias: &Arc<Uri<String>>, placeholder: PendingSchemaNode<F>) {
+    /// Register `placeholder` for `identity` compiling under this context's dynamic scope.
+    fn set_target_placeholder(&self, identity: &TargetIdentity, placeholder: PendingSchemaNode<F>) {
         let compiling = InProgressTarget {
             dynamic_scope: self.resolver.dynamic_scope(),
             placeholder,
@@ -974,9 +1001,9 @@ impl<'a, F: Json> Context<'a, F> {
         };
         match self
             .shared
-            .alias_placeholders
+            .target_placeholders
             .borrow_mut()
-            .entry(Arc::clone(alias))
+            .entry(identity.clone())
         {
             Entry::Occupied(mut entry) => {
                 let shadowed = std::mem::replace(entry.get_mut(), compiling);
@@ -988,15 +1015,15 @@ impl<'a, F: Json> Context<'a, F> {
         }
     }
 
-    /// Drop the innermost placeholder of `alias`, restoring the one it shadows.
-    fn remove_alias_placeholder(&self, alias: &Arc<Uri<String>>) {
-        let mut placeholders = self.shared.alias_placeholders.borrow_mut();
+    /// Drop the innermost placeholder of `identity`, restoring the one it shadows.
+    fn remove_target_placeholder(&self, identity: &TargetIdentity) {
+        let mut placeholders = self.shared.target_placeholders.borrow_mut();
         if let Some(InProgressTarget {
             shadowed: Some(shadowed),
             ..
-        }) = placeholders.remove(alias)
+        }) = placeholders.remove(identity)
         {
-            placeholders.insert(Arc::clone(alias), *shadowed);
+            placeholders.insert(identity.clone(), *shadowed);
         }
     }
 
@@ -1161,31 +1188,31 @@ impl<'a, F: Json> Context<'a, F> {
     /// scope it was compiled in, which is the target's, not this context's.
     pub(crate) fn lookup_maybe_recursive(
         &self,
-        alias: &Arc<Uri<String>>,
+        identity: &TargetIdentity,
         target: &Resolver<'_>,
     ) -> Option<Box<dyn Validate<F>>> {
-        self.lookup_cached_target(alias, target)
+        self.lookup_cached_target(identity, target)
             .map(|target| match target {
                 CachedTarget::Node(node) => node.into_validator(),
                 CachedTarget::Placeholder(placeholder) => Box::new(placeholder),
             })
     }
 
-    /// The target of `alias` among the nodes compiled or deferred so far.
+    /// The target `identity` names among the nodes compiled or deferred so far.
     pub(crate) fn lookup_cached_target(
         &self,
-        alias: &Arc<Uri<String>>,
+        identity: &TargetIdentity,
         target: &Resolver<'_>,
     ) -> Option<CachedTarget<F>> {
-        if self.shared.seen.borrow().contains(alias) {
-            let key = AliasCacheKey {
-                uri: Arc::clone(alias),
+        if self.shared.seen.borrow().contains(identity) {
+            let key = TargetCacheKey {
+                identity: identity.clone(),
                 dynamic_scope: target.dynamic_scope(),
             };
-            if let Some(node) = self.cached_alias_node(&key) {
+            if let Some(node) = self.cached_target_node(&key) {
                 return Some(CachedTarget::Node(self.reuse(node)));
             }
-            if let Some(node) = self.in_progress_placeholder(alias, target) {
+            if let Some(node) = self.in_progress_placeholder(identity, target) {
                 self.reach_unsettled();
                 return Some(CachedTarget::Placeholder(node));
             }
@@ -1193,18 +1220,18 @@ impl<'a, F: Json> Context<'a, F> {
         None
     }
 
-    /// Whether the target of `alias` goes to the worklist: the call stack holds too many `$ref`
-    /// targets, or the target is deferred already.
+    /// Whether the target `identity` names goes to the worklist: the call stack holds too many
+    /// `$ref` targets, or the target is deferred already.
     pub(crate) fn defers_ref_target(
         &self,
         resolved: &Resolved<'a>,
-        alias: &Arc<Uri<String>>,
+        identity: &TargetIdentity,
     ) -> bool {
         if self.shared.nested_ref_compilations.get() >= MAX_NESTED_REF_COMPILATIONS {
             return true;
         }
         let deferred = self.shared.deferred_placeholders.borrow();
-        !deferred.is_empty() && deferred.contains_key(&deferred_key(resolved, alias))
+        !deferred.is_empty() && deferred.contains_key(&deferred_key(resolved, identity))
     }
 
     /// Run `compile` for a `$ref` target on the call stack.
@@ -1216,15 +1243,15 @@ impl<'a, F: Json> Context<'a, F> {
         result
     }
 
-    /// Defer the target of `alias`; later `$ref`s to it get the returned placeholder.
+    /// Defer the target `identity` names; later `$ref`s to it get the returned placeholder.
     pub(crate) fn defer_ref_target(
         &self,
         resolved: Resolved<'a>,
         resource_base: Location,
-        alias: Arc<Uri<String>>,
+        identity: TargetIdentity,
     ) -> PendingSchemaNode<F> {
         self.reach_unsettled();
-        let key = deferred_key(&resolved, &alias);
+        let key = deferred_key(&resolved, &identity);
         let existing = self
             .shared
             .deferred_placeholders
@@ -1240,7 +1267,7 @@ impl<'a, F: Json> Context<'a, F> {
             .deferred_placeholders
             .borrow_mut()
             .insert(key.clone(), placeholder.clone());
-        let in_progress = self.shared.alias_placeholders.borrow().clone();
+        let in_progress = self.shared.target_placeholders.borrow().clone();
         self.shared
             .deferred_targets
             .borrow_mut()
@@ -1249,7 +1276,7 @@ impl<'a, F: Json> Context<'a, F> {
                 resolver,
                 draft,
                 resource_base,
-                alias,
+                identity,
                 key,
                 placeholder: placeholder.clone(),
                 in_progress,
@@ -1270,11 +1297,11 @@ impl<'a, F: Json> Context<'a, F> {
         Some(target)
     }
 
-    fn replace_alias_placeholders(
+    fn replace_target_placeholders(
         &self,
-        placeholders: AHashMap<Arc<Uri<String>>, InProgressTarget<F>>,
+        placeholders: AHashMap<TargetIdentity, InProgressTarget<F>>,
     ) {
-        *self.shared.alias_placeholders.borrow_mut() = placeholders;
+        *self.shared.target_placeholders.borrow_mut() = placeholders;
     }
 
     pub(crate) fn location(&self) -> &Location {
@@ -1502,7 +1529,7 @@ fn compile_deferred_targets<F: Json>(
 ) -> Result<Vec<SchemaNode<F>>, ValidationError<'static>> {
     let mut targets = Vec::new();
     while let Some(target) = ctx.next_deferred_target() {
-        ctx.replace_alias_placeholders(target.in_progress);
+        ctx.replace_target_placeholders(target.in_progress);
         let vocabularies = target
             .resolver
             .find_vocabularies(target.draft, target.contents);
@@ -1515,7 +1542,7 @@ fn compile_deferred_targets<F: Json>(
                 target.resource_base,
             )
             .map_err(ValidationError::into_build_error)?;
-        match compile_with_alias(&target_ctx, resource, target.alias)
+        match compile_with_identity(&target_ctx, resource, &target.identity)
             .map_err(ValidationError::into_build_error)?
         {
             TargetNode::Owned(node) => {
@@ -1524,7 +1551,7 @@ fn compile_deferred_targets<F: Json>(
             }
             TargetNode::Shared(node) => target.placeholder.initialize(&node),
         }
-        ctx.replace_alias_placeholders(AHashMap::new());
+        ctx.replace_target_placeholders(AHashMap::new());
     }
     Ok(targets)
 }
@@ -1733,18 +1760,18 @@ pub(crate) fn compile<'a, F: Json>(
     compile_with_internal(&ctx, resource, None).map(TargetNode::into_node)
 }
 
-/// Compile the target of `alias`, or reuse the compiled one.
-pub(crate) fn compile_with_alias<'a, F: Json>(
+/// Compile the `$ref` target `identity` names, or reuse the compiled one.
+pub(crate) fn compile_with_identity<'a, F: Json>(
     ctx: &Context<F>,
     resource: ResourceRef<'a>,
-    alias: Arc<Uri<String>>,
+    identity: &TargetIdentity,
 ) -> Result<TargetNode<F>, ValidationError<'a>> {
-    compile_with_internal(ctx, resource, Some(alias))
+    compile_with_internal(ctx, resource, Some(identity))
 }
 
 /// The cached node for `resource`, or the key to cache a new one under.
 ///
-/// `$ref` targets already compiled under their alias are found before compilation reaches here.
+/// `$ref` targets already compiled under their identity are found before compilation reaches here.
 fn find_compiled<F: Json>(
     ctx: &Context<F>,
     resource: ResourceRef<'_>,
@@ -1763,10 +1790,10 @@ fn find_compiled<F: Json>(
     Err(key)
 }
 
-/// The placeholder `$ref` cycles to `alias` use until its node compiles.
-fn start_compiling<F: Json>(ctx: &Context<F>, alias: &Arc<Uri<String>>) -> PendingSchemaNode<F> {
+/// The placeholder `$ref` cycles to `identity` use until its node compiles.
+fn start_compiling<F: Json>(ctx: &Context<F>, identity: &TargetIdentity) -> PendingSchemaNode<F> {
     let placeholder = PendingSchemaNode::new();
-    ctx.set_alias_placeholder(alias, placeholder.clone());
+    ctx.set_target_placeholder(identity, placeholder.clone());
     placeholder
 }
 
@@ -1774,7 +1801,7 @@ fn start_compiling<F: Json>(ctx: &Context<F>, alias: &Arc<Uri<String>>) -> Pendi
 fn finish_compiling<F: Json>(
     ctx: &Context<F>,
     key: NodeCacheKey,
-    target: Option<(&Arc<Uri<String>>, PendingSchemaNode<F>)>,
+    target: Option<(&TargetIdentity, PendingSchemaNode<F>)>,
     node: &SchemaNode<F>,
     settled: bool,
 ) {
@@ -1783,29 +1810,26 @@ fn finish_compiling<F: Json>(
         round: ctx.shared.round.get(),
         settled,
     };
-    if let Some((alias, placeholder)) = target {
+    if let Some((identity, placeholder)) = target {
         placeholder.initialize(node);
-        ctx.remove_alias_placeholder(alias);
-        ctx.cache_alias_node(ctx.alias_cache_key(Arc::clone(alias)), cached.clone());
+        ctx.remove_target_placeholder(identity);
+        ctx.cache_target_node(ctx.target_cache_key(identity.clone()), cached.clone());
     }
     ctx.cache_location_node(key, cached);
 }
 
 /// Lookups and bookkeeping live in separate functions to keep each nested frame small.
-#[allow(clippy::needless_pass_by_value)]
 fn compile_with_internal<'a, F: Json>(
     ctx: &Context<F>,
     resource: ResourceRef<'a>,
-    alias: Option<Arc<Uri<String>>>,
+    identity: Option<&TargetIdentity>,
 ) -> Result<TargetNode<F>, ValidationError<'a>> {
-    let key = match find_compiled(ctx, resource, alias.is_some()) {
+    let key = match find_compiled(ctx, resource, identity.is_some()) {
         Ok(existing) => return Ok(existing),
         Err(key) => key,
     };
     let outer = ctx.start_node();
-    let target = alias
-        .as_ref()
-        .map(|alias| (alias, start_compiling(ctx, alias)));
+    let target = identity.map(|identity| (identity, start_compiling(ctx, identity)));
     let node = compile_without_cache(ctx, resource);
     let settled = ctx.finish_node(outer);
     let node = node?;
