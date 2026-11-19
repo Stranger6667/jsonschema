@@ -304,6 +304,34 @@ impl<'r> Resolver<'r> {
     pub fn dynamic_scope(&self) -> List<Uri<String>> {
         self.scopes.clone()
     }
+    /// Whether every `$dynamicRef` resolves alike in the dynamic scope `outer` and in this one,
+    /// also after both extend by the same resources; `false` unless this scope extends `outer`.
+    ///
+    /// A `$dynamicRef` resolves to the outermost resource in the scope with a `$dynamicAnchor` of
+    /// its name, so the resources this scope adds change only names no resource in `outer`
+    /// declares.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn binds_dynamic_anchors_like(&self, outer: &List<Uri<String>>) -> bool {
+        let Some(mut added) = self.scopes.prefix_before(outer) else {
+            return false;
+        };
+        added.all(|uri| {
+            outer.iter().any(|resource| resource == uri) || {
+                let mut declared = true;
+                self.registry.for_each_dynamic_anchor(uri, |name| {
+                    declared = declared && self.declares_dynamic_anchor(outer, name);
+                });
+                declared
+            }
+        })
+    }
+    /// Whether a resource in `scope` declares a `$dynamicAnchor` called `name`.
+    fn declares_dynamic_anchor(&self, scope: &List<Uri<String>>, name: &str) -> bool {
+        scope
+            .iter()
+            .any(|uri| matches!(self.registry.anchor(uri, name), Ok(Anchor::Dynamic { .. })))
+    }
     #[inline]
     fn evolve(&self, base_uri: Arc<Uri<String>>) -> Resolver<'r> {
         if !self.base_uri.as_str().is_empty()

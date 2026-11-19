@@ -57,6 +57,17 @@ impl<K, V, const N: usize> SmallMap<K, V, N> {
         }
     }
 
+    pub(crate) fn keys(&self) -> impl Iterator<Item = &K> {
+        let (small, large) = match self {
+            SmallMap::Small(map) => (Some(map.keys()), None),
+            SmallMap::Large(map) => (None, Some(map.keys())),
+        };
+        small
+            .into_iter()
+            .flatten()
+            .chain(large.into_iter().flatten())
+    }
+
     #[inline]
     pub(crate) fn get_or_insert_default(&mut self, key: K) -> &mut V
     where

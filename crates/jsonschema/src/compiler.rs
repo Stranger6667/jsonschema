@@ -27,7 +27,7 @@ use serde_json::{Map, Value};
 use std::{
     borrow::Cow,
     cell::{Cell, RefCell},
-    collections::VecDeque,
+    collections::{hash_map::Entry, VecDeque},
     fmt,
     rc::Rc,
     sync::{Arc, LazyLock},
@@ -247,7 +247,26 @@ struct DeferredTarget<'a, F: Json> {
     placeholder: PendingSchemaNode<F>,
     /// Placeholders in progress when this target was deferred, restored while it compiles so cycles
     /// through them close as on the call stack.
-    in_progress: AHashMap<Arc<Uri<String>>, PendingSchemaNode<F>>,
+    in_progress: AHashMap<Arc<Uri<String>>, InProgressTarget<F>>,
+}
+
+/// The placeholder of a `$ref` target being compiled, and of the same target compiling further
+/// out under a dynamic scope that binds `$dynamicRef` otherwise.
+struct InProgressTarget<F: Json> {
+    /// The dynamic scope the target compiles in.
+    dynamic_scope: List<Uri<String>>,
+    placeholder: PendingSchemaNode<F>,
+    shadowed: Option<Box<InProgressTarget<F>>>,
+}
+
+impl<F: Json> Clone for InProgressTarget<F> {
+    fn clone(&self) -> Self {
+        InProgressTarget {
+            dynamic_scope: self.dynamic_scope.clone(),
+            placeholder: self.placeholder.clone(),
+            shadowed: self.shadowed.clone(),
+        }
+    }
 }
 
 /// A cached node, the round that compiled it, and whether it is settled.
@@ -316,7 +335,7 @@ struct SharedContextState<'a, F: Json = SerdeJson> {
     seen: SharedSet<Arc<Uri<String>>>,
     location_nodes: SharedCache<NodeCacheKey, CachedNode<F>>,
     alias_nodes: SharedCache<AliasCacheKey, CachedNode<F>>,
-    alias_placeholders: SharedCache<Arc<Uri<String>>, PendingSchemaNode<F>>,
+    alias_placeholders: SharedCache<Arc<Uri<String>>, InProgressTarget<F>>,
     /// Deferred targets whose round has not started, one per dynamic scope.
     deferred_placeholders: SharedCache<AliasCacheKey, PendingSchemaNode<F>>,
     pending_property_validators_by_schema:
@@ -925,26 +944,60 @@ impl<'a, F: Json> Context<'a, F> {
         pending
     }
 
-    pub(crate) fn cached_alias_placeholder(
+    /// The placeholder of `alias` compiling under a dynamic scope where `$dynamicRef` resolves as
+    /// under `target`'s.
+    ///
+    /// A target compiled under a scope that binds `$dynamicRef` otherwise is another node, so
+    /// such a `$ref` cycle closes only once the bindings repeat.
+    fn in_progress_placeholder(
         &self,
         alias: &Arc<Uri<String>>,
+        target: &Resolver<'_>,
     ) -> Option<PendingSchemaNode<F>> {
-        self.shared.alias_placeholders.borrow().get(alias).cloned()
+        let placeholders = self.shared.alias_placeholders.borrow();
+        let mut in_progress = placeholders.get(alias);
+        while let Some(compiling) = in_progress {
+            if target.binds_dynamic_anchors_like(&compiling.dynamic_scope) {
+                return Some(compiling.placeholder.clone());
+            }
+            in_progress = compiling.shadowed.as_deref();
+        }
+        None
     }
 
-    pub(crate) fn set_alias_placeholder(
-        &self,
-        alias: Arc<Uri<String>>,
-        node: PendingSchemaNode<F>,
-    ) {
-        self.shared
+    /// Register `placeholder` for `alias` compiling under this context's dynamic scope.
+    fn set_alias_placeholder(&self, alias: &Arc<Uri<String>>, placeholder: PendingSchemaNode<F>) {
+        let compiling = InProgressTarget {
+            dynamic_scope: self.resolver.dynamic_scope(),
+            placeholder,
+            shadowed: None,
+        };
+        match self
+            .shared
             .alias_placeholders
             .borrow_mut()
-            .insert(alias, node);
+            .entry(Arc::clone(alias))
+        {
+            Entry::Occupied(mut entry) => {
+                let shadowed = std::mem::replace(entry.get_mut(), compiling);
+                entry.get_mut().shadowed = Some(Box::new(shadowed));
+            }
+            Entry::Vacant(entry) => {
+                entry.insert(compiling);
+            }
+        }
     }
 
-    pub(crate) fn remove_alias_placeholder(&self, alias: &Arc<Uri<String>>) {
-        self.shared.alias_placeholders.borrow_mut().remove(alias);
+    /// Drop the innermost placeholder of `alias`, restoring the one it shadows.
+    fn remove_alias_placeholder(&self, alias: &Arc<Uri<String>>) {
+        let mut placeholders = self.shared.alias_placeholders.borrow_mut();
+        if let Some(InProgressTarget {
+            shadowed: Some(shadowed),
+            ..
+        }) = placeholders.remove(alias)
+        {
+            placeholders.insert(Arc::clone(alias), *shadowed);
+        }
     }
 
     /// `Some` when patterns are ECMA 262, which every engine-free matcher reads them as.
@@ -1132,7 +1185,7 @@ impl<'a, F: Json> Context<'a, F> {
             if let Some(node) = self.cached_alias_node(&key) {
                 return Some(CachedTarget::Node(self.reuse(node)));
             }
-            if let Some(node) = self.cached_alias_placeholder(alias) {
+            if let Some(node) = self.in_progress_placeholder(alias, target) {
                 self.reach_unsettled();
                 return Some(CachedTarget::Placeholder(node));
             }
@@ -1219,7 +1272,7 @@ impl<'a, F: Json> Context<'a, F> {
 
     fn replace_alias_placeholders(
         &self,
-        placeholders: AHashMap<Arc<Uri<String>>, PendingSchemaNode<F>>,
+        placeholders: AHashMap<Arc<Uri<String>>, InProgressTarget<F>>,
     ) {
         *self.shared.alias_placeholders.borrow_mut() = placeholders;
     }
@@ -1713,7 +1766,7 @@ fn find_compiled<F: Json>(
 /// The placeholder `$ref` cycles to `alias` use until its node compiles.
 fn start_compiling<F: Json>(ctx: &Context<F>, alias: &Arc<Uri<String>>) -> PendingSchemaNode<F> {
     let placeholder = PendingSchemaNode::new();
-    ctx.set_alias_placeholder(Arc::clone(alias), placeholder.clone());
+    ctx.set_alias_placeholder(alias, placeholder.clone());
     placeholder
 }
 
