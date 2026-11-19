@@ -20,6 +20,7 @@
 - `#[jsonschema::validator]` reporting content that decodes to invalid UTF-8 beside `contentMediaType` at the schema root instead of at `contentEncoding`.
 - `#[jsonschema::validator]` errors for `unevaluatedProperties` and `unevaluatedItems` counting members as evaluated by a subschema that fails, such as an `allOf` branch.
 - `#[jsonschema::validator]` accepting instances of a type that `type` leaves out when keywords for that type are beside it.
+- `#[jsonschema::validator]` resolving a `$ref` reached through another `$ref` against the schema it started from instead of the resource the first one entered, so `propertyNames` accepted names and `oneOf` rejected instances that `Validator` does not.
 - `#[jsonschema::validator]` leaving out the `type` error when a `const` or `enum` beside it accepts only values of that type.
 - `#[jsonschema::validator]` reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
 - `#[jsonschema::validator]` leaving out the `maxLength` error when `minLength` is above `maxLength`.

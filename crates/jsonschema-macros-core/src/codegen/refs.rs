@@ -20,7 +20,11 @@ pub(super) fn resolve_lone_top_level_ref<'cfg: 'b, 'b, E: ValueEmitter>(
     ctx: &mut CompileContext<'cfg, E>,
     schema: &'b Value,
 ) -> &'b Value {
+    let config = ctx.config;
     let mut current = schema;
+    // Each hop resolves in the resource the previous one landed in.
+    let mut base = ctx.current_base_uri.clone();
+    let mut draft = ctx.draft;
     // Bounded hop count: discriminator analysis is a best-effort optimization,
     // so give up on longer (or cyclic) $ref chains instead of tracking visited
     // locations. 8 hops covers realistic hand-written indirection.
@@ -33,13 +37,14 @@ pub(super) fn resolve_lone_top_level_ref<'cfg: 'b, 'b, E: ValueEmitter>(
         };
         // Hopping discards `$ref` siblings; on drafts where siblings validate
         // alongside `$ref`, only a lone `$ref` can be followed.
-        if ctx.draft.supports_adjacent_validation() && obj.len() > 1 {
+        if draft.supports_adjacent_validation() && obj.len() > 1 {
             break;
         }
-        let Ok(resolved) = resolve_ref(ctx, reference) else {
+        let Ok(resolved) = config.registry.resolver((*base).clone()).lookup(reference) else {
             break;
         };
-        current = resolved.schema;
+        base = resolved.resolver().base_uri().clone();
+        (current, _, draft) = resolved.into_inner();
     }
     current
 }
