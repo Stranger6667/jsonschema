@@ -622,15 +622,18 @@ impl<'a> ValidationError<'a> {
     /// Converts the `ValidationError` into an owned version with `'static` lifetime.
     #[must_use]
     pub fn to_owned(self) -> ValidationError<'static> {
-        let parts = self.into_parts();
-        ValidationError::new(
-            LazyInstance::Ready(Cow::Owned(parts.instance.into_owned())),
-            parts.kind,
-            parts.instance_path,
-            parts.schema_path,
-            parts.evaluation_path,
-        )
-        .with_absolute_keyword_location(parts.absolute_keyword_location)
+        let repr = *self.repr;
+        ValidationError {
+            repr: Box::new(ValidationErrorRepr {
+                instance: LazyInstance::Ready(Cow::Owned(repr.instance.into_cow().into_owned())),
+                kind: repr.kind,
+                instance_path: repr.instance_path,
+                schema_path: repr.schema_path,
+                // Generated validators locate only errors whose evaluation path no `$ref` moved.
+                tracker: repr.tracker,
+                absolute_keyword_location: repr.absolute_keyword_location,
+            }),
+        }
     }
 
     /// Restates a compile-time failure as a judgement on the schema: the location that failed
@@ -1117,22 +1120,25 @@ impl<'a> ValidationError<'a> {
             tracker,
         )
     }
+    /// The object's error for a name that `error` rejects, located where `error` is.
     pub(crate) fn property_names(
-        schema_path: Location,
-        tracker: impl Into<LazyEvaluationPath>,
         instance_path: Location,
         instance: LazyInstance<'a>,
-        error: ValidationError<'a>,
+        error: ValidationError<'static>,
     ) -> ValidationError<'a> {
+        let schema_path = error.repr.schema_path.clone();
+        let tracker = error.repr.tracker.clone();
+        let absolute_keyword_location = error.repr.absolute_keyword_location.clone();
         Self::borrowed(
             instance,
             ValidationErrorKind::PropertyNames {
-                error: Box::new(error.to_owned()),
+                error: Box::new(error),
             },
             instance_path,
             schema_path,
             tracker,
         )
+        .with_absolute_keyword_location(absolute_keyword_location)
     }
     pub(crate) fn required(
         schema_path: Location,

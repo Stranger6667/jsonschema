@@ -281,6 +281,42 @@ fn test_one_of_multiple_valid_error_context_matches_runtime() {
 }
 
 #[jsonschema::validator(
+    schema = r#"{"$id": "http://example.com/root", "anyOf": [{"maxLength": 0}, {"minLength": 5}]}"#
+)]
+struct AnyOfContextInResource;
+#[jsonschema::validator(
+    schema = r#"{"$id": "http://example.com/root", "oneOf": [{"maxLength": 0}, {"minLength": 5}]}"#
+)]
+struct OneOfContextInResource;
+#[jsonschema::validator(
+    schema = r#"{"$id": "http://example.com/root", "oneOf": [{"maxLength": 5}, {"minLength": 1}, {"maxLength": 0}]}"#
+)]
+struct OneOfMultipleValidContextInResource;
+#[jsonschema::validator(
+    schema = r#"{"$id": "http://example.com/root", "items": {"$id": "http://example.com/item", "anyOf": [{"maxLength": 0}, {"minLength": 5}]}}"#
+)]
+struct AnyOfContextInEmbeddedResource;
+
+// Errors of `anyOf` and `oneOf` branches are located in the resource of their keyword.
+#[test_case(AnyOfContextInResource::validate, AnyOfContextInResource::iter_errors, serde_json::json!({"$id": "http://example.com/root", "anyOf": [{"maxLength": 0}, {"minLength": 5}]}), serde_json::json!("ab") ; "any_of")]
+#[test_case(OneOfContextInResource::validate, OneOfContextInResource::iter_errors, serde_json::json!({"$id": "http://example.com/root", "oneOf": [{"maxLength": 0}, {"minLength": 5}]}), serde_json::json!("ab") ; "one_of")]
+#[test_case(OneOfMultipleValidContextInResource::validate, OneOfMultipleValidContextInResource::iter_errors, serde_json::json!({"$id": "http://example.com/root", "oneOf": [{"maxLength": 5}, {"minLength": 1}, {"maxLength": 0}]}), serde_json::json!("ab") ; "one_of_multiple_valid")]
+#[test_case(AnyOfContextInEmbeddedResource::validate, AnyOfContextInEmbeddedResource::iter_errors, serde_json::json!({"$id": "http://example.com/root", "items": {"$id": "http://example.com/item", "anyOf": [{"maxLength": 0}, {"minLength": 5}]}}), serde_json::json!(["ab"]) ; "any_of_in_embedded_resource")]
+fn test_error_context_locations_match_runtime(
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    schema: serde_json::Value,
+    instance: serde_json::Value,
+) {
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_error_parity(
+        &validate(&instance).expect_err("invalid instance"),
+        &runtime.validate(&instance).expect_err("invalid instance"),
+    );
+    assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+}
+
+#[jsonschema::validator(
     schema = r##"{"$defs":{"circle":{"type":"object","required":["kind","radius"],"properties":{"kind":{"const":"circle"},"radius":{"type":"number"}}},"square":{"type":"object","required":["kind","side"],"properties":{"kind":{"const":"square"},"side":{"type":"number"}}}},"oneOf":[{"$ref":"#/$defs/circle"},{"$ref":"#/$defs/square"}]}"##
 )]
 struct OneOfDiscriminatorContextValidator;
@@ -4703,6 +4739,26 @@ struct PropertyNamesAfterApplicators;
     schema = r#"{"type": "object", "properties": {"x": {"propertyNames": {"minLength": 2}}}}"#
 )]
 struct NestedPropertyNames;
+#[jsonschema::validator(
+    schema = r#"{"$id": "http://example.com/root", "propertyNames": {"maxLength": 0}}"#
+)]
+struct PropertyNamesLeafInResource;
+#[jsonschema::validator(
+    schema = r#"{"$id": "http://example.com/root", "propertyNames": {"not": {"const": "a"}}}"#
+)]
+struct PropertyNamesSubschemaInResource;
+#[jsonschema::validator(
+    schema = r##"{"$id": "http://example.com/root", "$defs": {"s": {"maxLength": 0}}, "propertyNames": {"$ref": "#/$defs/s"}}"##
+)]
+struct PropertyNamesRefInResource;
+#[jsonschema::validator(
+    schema = r#"{"$id": "http://example.com/root", "$defs": {"other": {"$id": "http://example.com/other", "maxLength": 0}}, "propertyNames": {"$ref": "http://example.com/other"}}"#
+)]
+struct PropertyNamesRefIntoAnotherResource;
+#[jsonschema::validator(
+    schema = r#"{"$id": "http://example.com/root", "properties": {"x": {"$id": "http://example.com/x", "propertyNames": {"maxLength": 0}}}}"#
+)]
+struct PropertyNamesInEmbeddedResource;
 
 // Each rejected name reports a `propertyNames` error wrapping the subschema's error, after the
 // errors of `properties`, `patternProperties` and `additionalProperties`.
@@ -4712,6 +4768,11 @@ struct NestedPropertyNames;
 #[test_case(PropertyNamesCovered::is_valid, PropertyNamesCovered::validate, PropertyNamesCovered::iter_errors, serde_json::json!({"patternProperties": {"^a": {}}, "additionalProperties": false, "propertyNames": {"pattern": "^a"}}), serde_json::json!([{"b": 1}, {"a": 1}]) ; "covered_by_pattern_properties")]
 #[test_case(PropertyNamesAfterApplicators::is_valid, PropertyNamesAfterApplicators::validate, PropertyNamesAfterApplicators::iter_errors, serde_json::json!({"properties": {"a": {"type": "string"}}, "patternProperties": {"^a": {"type": "boolean"}}, "additionalProperties": false, "propertyNames": {"maxLength": 0}}), serde_json::json!([{"a": 1, "bb": 2}]) ; "after_object_applicators")]
 #[test_case(NestedPropertyNames::is_valid, NestedPropertyNames::validate, NestedPropertyNames::iter_errors, serde_json::json!({"type": "object", "properties": {"x": {"propertyNames": {"minLength": 2}}}}), serde_json::json!([{"x": {"a": 1}}]) ; "nested")]
+#[test_case(PropertyNamesLeafInResource::is_valid, PropertyNamesLeafInResource::validate, PropertyNamesLeafInResource::iter_errors, serde_json::json!({"$id": "http://example.com/root", "propertyNames": {"maxLength": 0}}), serde_json::json!([{"a": 1, "bb": 2}]) ; "leaf_in_resource")]
+#[test_case(PropertyNamesSubschemaInResource::is_valid, PropertyNamesSubschemaInResource::validate, PropertyNamesSubschemaInResource::iter_errors, serde_json::json!({"$id": "http://example.com/root", "propertyNames": {"not": {"const": "a"}}}), serde_json::json!([{"a": 1}]) ; "subschema_in_resource")]
+#[test_case(PropertyNamesRefInResource::is_valid, PropertyNamesRefInResource::validate, PropertyNamesRefInResource::iter_errors, serde_json::json!({"$id": "http://example.com/root", "$defs": {"s": {"maxLength": 0}}, "propertyNames": {"$ref": "#/$defs/s"}}), serde_json::json!([{"a": 1}]) ; "reference_in_resource")]
+#[test_case(PropertyNamesRefIntoAnotherResource::is_valid, PropertyNamesRefIntoAnotherResource::validate, PropertyNamesRefIntoAnotherResource::iter_errors, serde_json::json!({"$id": "http://example.com/root", "$defs": {"other": {"$id": "http://example.com/other", "maxLength": 0}}, "propertyNames": {"$ref": "http://example.com/other"}}), serde_json::json!([{"a": 1}]) ; "reference_into_another_resource")]
+#[test_case(PropertyNamesInEmbeddedResource::is_valid, PropertyNamesInEmbeddedResource::validate, PropertyNamesInEmbeddedResource::iter_errors, serde_json::json!({"$id": "http://example.com/root", "properties": {"x": {"$id": "http://example.com/x", "propertyNames": {"maxLength": 0}}}}), serde_json::json!([{"x": {"a": 1}}]) ; "in_embedded_resource")]
 fn test_property_names_errors_match_runtime(
     is_valid: IsValidFn,
     validate: ValidateFn,
@@ -4738,12 +4799,22 @@ struct RecursiveRefToBranch;
     schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "properties": {"a": {"$id": "a.json", "$recursiveAnchor": true, "additionalProperties": {"$recursiveRef": "#"}}, "b": {"$id": "b.json", "$recursiveAnchor": true, "type": "object"}}}"##
 )]
 struct RecursiveAnchorInPlace;
+#[jsonschema::validator(
+    schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "properties": {"a": {"$id": "a.json", "$recursiveAnchor": true, "propertyNames": {"maxLength": 0}, "additionalProperties": {"$recursiveRef": "#"}}}}"##
+)]
+struct RecursiveAnchorInPlacePropertyNames;
+#[jsonschema::validator(
+    schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "properties": {"a": {"$id": "a.json", "$recursiveAnchor": true, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}}"##
+)]
+struct RecursiveAnchorInPlaceAnyOf;
 
 // Errors reached through a reference carry the reference keyword in their evaluation path, and
 // the location of their keyword in its own resource.
 #[test_case(DynamicRefItems::is_valid, DynamicRefItems::validate, DynamicRefItems::iter_errors, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$defs": {"s": {"type": "string"}}, "type": "array", "items": {"$dynamicRef": "#/$defs/s"}}), serde_json::json!([[1, "a", 2]]) ; "dynamic_reference_for_every_item")]
 #[test_case(RecursiveRefToBranch::is_valid, RecursiveRefToBranch::validate, RecursiveRefToBranch::iter_errors, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "$defs": {"inner": {"$id": "inner.json", "$recursiveAnchor": true, "additionalProperties": {"$recursiveRef": "#"}}}, "if": {"propertyNames": {"pattern": "^[a-m]"}}, "then": {"$id": "leaf.json", "$recursiveAnchor": true, "$ref": "inner.json"}, "else": {"$id": "integer.json", "$recursiveAnchor": true, "$ref": "inner.json", "type": ["object", "integer"]}}), serde_json::json!([{"november": 1.1}, {"november": {"x": 1.1}}]) ; "recursive_reference_to_a_branch")]
 #[test_case(RecursiveAnchorInPlace::is_valid, RecursiveAnchorInPlace::validate, RecursiveAnchorInPlace::iter_errors, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "properties": {"a": {"$id": "a.json", "$recursiveAnchor": true, "additionalProperties": {"$recursiveRef": "#"}}, "b": {"$id": "b.json", "$recursiveAnchor": true, "type": "object"}}}), serde_json::json!([{"b": 1}, {"a": {"x": 1}}]) ; "recursive_anchor_in_place")]
+#[test_case(RecursiveAnchorInPlacePropertyNames::is_valid, RecursiveAnchorInPlacePropertyNames::validate, RecursiveAnchorInPlacePropertyNames::iter_errors, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "properties": {"a": {"$id": "a.json", "$recursiveAnchor": true, "propertyNames": {"maxLength": 0}, "additionalProperties": {"$recursiveRef": "#"}}}}), serde_json::json!([{"a": {"x": {"y": 1}}}]) ; "recursive_anchor_in_place_property_names")]
+#[test_case(RecursiveAnchorInPlaceAnyOf::is_valid, RecursiveAnchorInPlaceAnyOf::validate, RecursiveAnchorInPlaceAnyOf::iter_errors, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/main.json", "properties": {"a": {"$id": "a.json", "$recursiveAnchor": true, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}}), serde_json::json!([{"a": {"x": {"y": 1}}}]) ; "recursive_anchor_in_place_any_of")]
 fn test_error_locations_match_runtime(
     is_valid: IsValidFn,
     validate: ValidateFn,

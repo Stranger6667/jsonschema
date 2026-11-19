@@ -65,8 +65,6 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
             });
             if let ControlFlow::Break(error) = flow {
                 return Err(ValidationError::property_names(
-                    error.schema_path().clone(),
-                    error.evaluation_path().clone(),
                     location.into(),
                     instance.lazy_value(),
                     error,
@@ -94,13 +92,10 @@ impl<F: Json> Validate<F> for PropertyNamesObjectValidator<F> {
                 self.node
                     .collect_errors(&node, location, tracker, ctx, &mut collected);
                 for error in collected {
-                    let error = error.to_owned();
                     errors.push(ValidationError::property_names(
-                        error.schema_path().clone(),
-                        error.evaluation_path().clone(),
                         location.into(),
                         instance.lazy_value(),
-                        error,
+                        error.to_owned(),
                     ));
                 }
                 ControlFlow::Continue(())
@@ -227,9 +222,44 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::tests_util;
+    use crate::{error::ValidationErrorKind, tests_util, ValidationError};
     use serde_json::{json, Value};
     use test_case::test_case;
+
+    // The `propertyNames` error and the error it wraps, outermost first.
+    fn absolute_locations(error: &ValidationError<'_>) -> Vec<Option<String>> {
+        let mut locations = vec![error.absolute_keyword_location().map(ToString::to_string)];
+        if let ValidationErrorKind::PropertyNames { error } = error.kind() {
+            locations.extend(absolute_locations(error));
+        }
+        locations
+    }
+
+    // A name's error is located at the keyword that rejected it, in that keyword's resource.
+    #[test_case(
+        &json!({"$id": "http://example.com/root", "propertyNames": {"maxLength": 0}}),
+        "http://example.com/root#/propertyNames/maxLength" ; "in place"
+    )]
+    #[test_case(
+        &json!({"$id": "http://example.com/root", "$defs": {"s": {"maxLength": 0}}, "propertyNames": {"$ref": "#/$defs/s"}}),
+        "http://example.com/root#/$defs/s/maxLength" ; "ref in the same resource"
+    )]
+    #[test_case(
+        &json!({"$id": "http://example.com/root", "$defs": {"other": {"$id": "http://example.com/other", "maxLength": 0}}, "propertyNames": {"$ref": "http://example.com/other"}}),
+        "http://example.com/other#/maxLength" ; "ref into another resource"
+    )]
+    fn absolute_keyword_location(schema: &Value, expected: &str) {
+        let validator = crate::validator_for(schema).expect("valid schema");
+        let instance = json!({"a": 1});
+        let expected = vec![Some(expected.to_string()), Some(expected.to_string())];
+        let error = validator.validate(&instance).expect_err("invalid");
+        assert_eq!(absolute_locations(&error), expected);
+        let locations: Vec<_> = validator
+            .iter_errors(&instance)
+            .map(|error| absolute_locations(&error))
+            .collect();
+        assert_eq!(locations, [expected]);
+    }
 
     // A name's error is reported along the path that reached it, `$ref`s included.
     #[test_case(

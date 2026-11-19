@@ -4642,14 +4642,7 @@ pub mod __private {
             instance: impl Into<LazyInstance<'i>>,
             error: ValidationError<'_>,
         ) -> ValidationError<'i> {
-            let error = error.to_owned();
-            ValidationError::property_names(
-                error.schema_path().clone(),
-                error.evaluation_path().clone(),
-                instance_path,
-                instance.into(),
-                error,
-            )
+            ValidationError::property_names(instance_path, instance.into(), error.to_owned())
         }
 
         /// `required` keyword violation: object is missing `property`.
