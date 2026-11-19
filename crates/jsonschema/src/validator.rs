@@ -258,6 +258,13 @@ impl ValidationContext {
         self.arena().rendered_position(location.into())
     }
 
+    /// The position being evaluated: a keyword runs inside its schema node's evaluation, which
+    /// records it.
+    pub(crate) fn current_instance_position(&self) -> InstancePosition {
+        self.instance_location
+            .expect("keywords are evaluated inside their schema node")
+    }
+
     /// The position one segment below the one being evaluated, rendered only when read.
     pub(crate) fn instance_position_below(&mut self, location: &LazyLocation) -> InstancePosition {
         match self.instance_location {
