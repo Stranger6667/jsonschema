@@ -643,6 +643,112 @@ fn test_dynamic_scope_cycle_back_to_its_instance_matches_runtime(
     );
 }
 
+#[jsonschema::validator(schema = r##"{"not": {"$ref": "#"}}"##, methods = { evaluate = true })]
+struct RootNotReferencingItself;
+
+#[jsonschema::validator(
+    schema = r##"{"minProperties": 2, "allOf": [{"$ref": "#"}]}"##,
+    methods = { evaluate = true }
+)]
+struct RootAllOfReferencingItself;
+
+#[jsonschema::validator(
+    schema = r##"{"minProperties": 2, "allOf": [{"$ref": "#"}]}"##,
+    draft = referencing::Draft::Draft4,
+    methods = { evaluate = true }
+)]
+struct RootAllOfReferencingItselfDraft4;
+
+#[jsonschema::validator(
+    schema = r##"{"$id": "https://example.com/x", "minProperties": 2, "allOf": [{"$ref": "#"}]}"##,
+    draft = referencing::Draft::Draft7,
+    methods = { evaluate = true }
+)]
+struct RootWithIdAllOfReferencingItselfDraft7;
+
+#[jsonschema::validator(
+    schema = r##"{"$id": "https://example.com/x", "not": {"$ref": "#"}}"##,
+    draft = referencing::Draft::Draft201909,
+    methods = { evaluate = true }
+)]
+struct RootWithIdNotReferencingItselfDraft201909;
+
+#[jsonschema::validator(
+    schema = r##"{"type": "object", "properties": {"c": {"$ref": "#"}}, "patternProperties": {"^c": {"$ref": "#"}}, "allOf": [{"$ref": "#"}]}"##,
+    methods = { evaluate = true }
+)]
+struct RootTreeReferencingItself;
+
+#[jsonschema::validator(
+    schema = r##"{"type": "object", "properties": {"c": {"$ref": "#"}}, "patternProperties": {"^c": {"$ref": "#"}}, "allOf": [{"$ref": "#"}]}"##,
+    draft = referencing::Draft::Draft7,
+    methods = { evaluate = true }
+)]
+struct RootTreeReferencingItselfDraft7;
+
+#[jsonschema::validator(
+    schema = r##"{"$dynamicAnchor": "node", "minProperties": 2, "allOf": [{"$ref": "#"}]}"##,
+    methods = { evaluate = true }
+)]
+struct RootWithDynamicAnchorAllOfReferencingItself;
+
+#[jsonschema::validator(
+    schema = r##"{"$dynamicAnchor": "node", "not": {"$ref": "#"}}"##,
+    methods = { evaluate = true }
+)]
+struct RootWithDynamicAnchorNotReferencingItself;
+
+#[jsonschema::validator(
+    schema = r##"{"$ref": "#", "minimum": 1, "allOf": [{"$ref": "#"}]}"##,
+    methods = { evaluate = true }
+)]
+struct RootBesideReferenceToItself;
+
+// The root is the code a `$ref` naming it by `#` runs, so such a reference on a cycle back to the
+// root's instance stops where it stops below a root that only references the schema, and one the
+// root holds itself applies nothing.
+#[test_case(RootNotReferencingItself::is_valid, RootNotReferencingItself::validate, RootNotReferencingItself::iter_errors, RootNotReferencingItself::evaluate, jsonschema::options(), serde_json::json!({"not": {"$ref": "#"}}) ; "not")]
+#[test_case(RootAllOfReferencingItself::is_valid, RootAllOfReferencingItself::validate, RootAllOfReferencingItself::iter_errors, RootAllOfReferencingItself::evaluate, jsonschema::options(), serde_json::json!({"minProperties": 2, "allOf": [{"$ref": "#"}]}) ; "all_of")]
+#[test_case(RootAllOfReferencingItselfDraft4::is_valid, RootAllOfReferencingItselfDraft4::validate, RootAllOfReferencingItselfDraft4::iter_errors, RootAllOfReferencingItselfDraft4::evaluate, jsonschema::options().with_draft(referencing::Draft::Draft4), serde_json::json!({"minProperties": 2, "allOf": [{"$ref": "#"}]}) ; "all_of_draft4")]
+#[test_case(RootWithIdAllOfReferencingItselfDraft7::is_valid, RootWithIdAllOfReferencingItselfDraft7::validate, RootWithIdAllOfReferencingItselfDraft7::iter_errors, RootWithIdAllOfReferencingItselfDraft7::evaluate, jsonschema::options().with_draft(referencing::Draft::Draft7), serde_json::json!({"$id": "https://example.com/x", "minProperties": 2, "allOf": [{"$ref": "#"}]}) ; "all_of_with_id_draft7")]
+#[test_case(RootWithIdNotReferencingItselfDraft201909::is_valid, RootWithIdNotReferencingItselfDraft201909::validate, RootWithIdNotReferencingItselfDraft201909::iter_errors, RootWithIdNotReferencingItselfDraft201909::evaluate, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"$id": "https://example.com/x", "not": {"$ref": "#"}}) ; "not_with_id_draft2019_09")]
+#[test_case(RootTreeReferencingItself::is_valid, RootTreeReferencingItself::validate, RootTreeReferencingItself::iter_errors, RootTreeReferencingItself::evaluate, jsonschema::options(), serde_json::json!({"type": "object", "properties": {"c": {"$ref": "#"}}, "patternProperties": {"^c": {"$ref": "#"}}, "allOf": [{"$ref": "#"}]}) ; "tree")]
+#[test_case(RootTreeReferencingItselfDraft7::is_valid, RootTreeReferencingItselfDraft7::validate, RootTreeReferencingItselfDraft7::iter_errors, RootTreeReferencingItselfDraft7::evaluate, jsonschema::options().with_draft(referencing::Draft::Draft7), serde_json::json!({"type": "object", "properties": {"c": {"$ref": "#"}}, "patternProperties": {"^c": {"$ref": "#"}}, "allOf": [{"$ref": "#"}]}) ; "tree_draft7")]
+#[test_case(RootWithDynamicAnchorAllOfReferencingItself::is_valid, RootWithDynamicAnchorAllOfReferencingItself::validate, RootWithDynamicAnchorAllOfReferencingItself::iter_errors, RootWithDynamicAnchorAllOfReferencingItself::evaluate, jsonschema::options(), serde_json::json!({"$dynamicAnchor": "node", "minProperties": 2, "allOf": [{"$ref": "#"}]}) ; "all_of_beside_dynamic_anchor")]
+#[test_case(RootWithDynamicAnchorNotReferencingItself::is_valid, RootWithDynamicAnchorNotReferencingItself::validate, RootWithDynamicAnchorNotReferencingItself::iter_errors, RootWithDynamicAnchorNotReferencingItself::evaluate, jsonschema::options(), serde_json::json!({"$dynamicAnchor": "node", "not": {"$ref": "#"}}) ; "not_beside_dynamic_anchor")]
+#[test_case(RootBesideReferenceToItself::is_valid, RootBesideReferenceToItself::validate, RootBesideReferenceToItself::iter_errors, RootBesideReferenceToItself::evaluate, jsonschema::options(), serde_json::json!({"$ref": "#", "minimum": 1, "allOf": [{"$ref": "#"}]}) ; "beside_reference_to_itself")]
+fn test_root_referencing_itself_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    options: jsonschema::ValidationOptions,
+    schema: serde_json::Value,
+) {
+    let runtime = options.build(&schema).expect("valid schema");
+    for instance in [
+        serde_json::json!({}),
+        serde_json::json!({"a": 1, "b": 2}),
+        serde_json::json!({"c": {"c": 1}}),
+        serde_json::json!({"c": {"c": {}}}),
+        serde_json::json!(0),
+        serde_json::json!(1),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+        assert_eq!(
+            evaluation_outputs(&evaluate(&instance)),
+            evaluation_outputs(&runtime.evaluate(&instance)),
+            "{instance}"
+        );
+    }
+}
+
 const DYNAMIC_SCOPE_NESTED_THEN_SAME_INSTANCE: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","type":"object","allOf":[{"$ref":"#"}],"additionalProperties":{"$dynamicRef":"#node"}}"##;
 const DYNAMIC_SCOPE_TWO_PATHS: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","type":"object","properties":{"c":{"$dynamicRef":"#node"}},"patternProperties":{"^c":{"$dynamicRef":"#node"}}}"##;
 const RECURSIVE_SCOPE_TWO_PATHS: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveAnchor":true,"type":"object","properties":{"c":{"$recursiveRef":"#"}},"patternProperties":{"^c":{"$recursiveRef":"#"}}}"##;

@@ -298,6 +298,9 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) target_locations: HashMap<usize, Vec<String>>,
     /// `$ref` targets in cycles that come back to the instance they hold.
     pub(crate) same_instance_ref_targets: HashSet<String>,
+    /// The location of the `$ref` target the root's code is, when a cycle through the root comes
+    /// back to the instance it holds.
+    pub(crate) root_target: Option<String>,
     /// What the results of `$ref` cycles are kept by.
     pub(crate) ref_results_key: RefResultsKey,
     /// The dynamic-scope stacks references in validity code look up, by name.
@@ -368,6 +371,7 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             reentered_targets: HashSet::new(),
             target_locations: HashMap::new(),
             same_instance_ref_targets: HashSet::new(),
+            root_target: None,
             ref_results_key: RefResultsKey::Instance,
             looked_up_stacks: BTreeSet::new(),
             uri_format_caches: BTreeSet::new(),

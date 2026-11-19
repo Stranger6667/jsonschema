@@ -1330,6 +1330,13 @@ pub(super) fn compile<E: ValueEmitter>(
     if !tree.functions.is_empty() {
         tables["functions"] = json!(functions);
     }
+    if let Some(function) = ctx
+        .root_target
+        .as_ref()
+        .and_then(|location| tree.function_ids.get(location))
+    {
+        tables["root_function"] = json!(function);
+    }
     if !guarded.is_empty() {
         ctx.uses_ref_cycle = true;
     }

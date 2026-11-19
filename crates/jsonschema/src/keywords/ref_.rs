@@ -3275,8 +3275,7 @@ mod tests {
         &json!({"a": {"b": 1}}),
         &json!([
             {"message": "{\"b\":1} has more than 0 properties", "instancePath": "/a", "schemaPath": "//maxProperties", "evaluationPath": "/additionalProperties/$ref/maxProperties", "absoluteKeywordLocation": "https://example.com/root#//maxProperties"},
-            {"message": "{\"b\":1} has more than 0 properties", "instancePath": "/a", "schemaPath": "//maxProperties", "evaluationPath": "/allOf/0/$ref/additionalProperties/$ref/maxProperties", "absoluteKeywordLocation": "https://example.com/root#//maxProperties"},
-            {"message": "{\"b\":1} has more than 0 properties", "instancePath": "/a", "schemaPath": "//maxProperties", "evaluationPath": "/allOf/0/$ref/allOf/0/$ref/additionalProperties/$ref/maxProperties", "absoluteKeywordLocation": "https://example.com/root#//maxProperties"}
+            {"message": "{\"b\":1} has more than 0 properties", "instancePath": "/a", "schemaPath": "//maxProperties", "evaluationPath": "/allOf/0/$ref/additionalProperties/$ref/maxProperties", "absoluteKeywordLocation": "https://example.com/root#//maxProperties"}
         ])
         ; "root fragment and member with an empty name"
     )]
@@ -3291,6 +3290,212 @@ mod tests {
             .map(|error| reported_error(&error))
             .collect();
         assert_eq!(json!(errors), *expected);
+    }
+
+    const SELF_REFERENCING_ID: &str = "https://example.com/x";
+
+    fn definitions_keyword(draft: crate::Draft) -> &'static str {
+        if draft < crate::Draft::Draft201909 {
+            "definitions"
+        } else {
+            "$defs"
+        }
+    }
+
+    fn with_id(schema: &Value, draft: crate::Draft) -> Value {
+        let keyword = if draft == crate::Draft::Draft4 {
+            "id"
+        } else {
+            "$id"
+        };
+        let mut schema = schema.clone();
+        schema
+            .as_object_mut()
+            .expect("An object schema")
+            .insert(keyword.to_string(), json!(SELF_REFERENCING_ID));
+        schema
+    }
+
+    // `schema` with every `$ref` naming its root by `#` naming it by `pointer`.
+    fn naming_root_by(schema: &Value, pointer: &str) -> Value {
+        match schema {
+            Value::Object(object) => Value::Object(
+                object
+                    .iter()
+                    .map(|(keyword, value)| {
+                        let value = if keyword == "$ref" && value == "#" {
+                            json!(pointer)
+                        } else {
+                            naming_root_by(value, pointer)
+                        };
+                        (keyword.clone(), value)
+                    })
+                    .collect(),
+            ),
+            Value::Array(items) => Value::Array(
+                items
+                    .iter()
+                    .map(|item| naming_root_by(item, pointer))
+                    .collect(),
+            ),
+            _ => schema.clone(),
+        }
+    }
+
+    // `value` without the `definition` that schema paths start from and the `$ref` that evaluation
+    // paths start from.
+    fn strip_wrapper(value: &mut Value, definition: &str) {
+        match value {
+            Value::Object(object) => {
+                for (keyword, value) in object.iter_mut() {
+                    let prefix = match keyword.as_str() {
+                        "schemaPath" | "schemaLocation" => definition,
+                        "evaluationPath" => "/$ref",
+                        _ => {
+                            strip_wrapper(value, definition);
+                            continue;
+                        }
+                    };
+                    if let Some(rest) = value.as_str().and_then(|path| path.strip_prefix(prefix)) {
+                        *value = json!(rest);
+                    }
+                }
+            }
+            Value::Array(items) => {
+                for item in items {
+                    strip_wrapper(item, definition);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    // `reported` of a root whose `$ref` reaches the schema at `/{definitions}/x`, located as if that
+    // schema were the root: the root's own unit goes, and the `$ref` and the definition leave every
+    // path.
+    fn located_as_root(mut reported: Value, definitions: &str) -> Value {
+        reported["evaluate"]["details"]
+            .as_array_mut()
+            .expect("List output details")
+            .retain(|unit| unit["evaluationPath"] != "");
+        strip_wrapper(&mut reported, &format!("/{definitions}/x"));
+        reported
+    }
+
+    fn assert_reported_alike(draft: crate::Draft, root: &Value, wrapped: &Value) {
+        let options = crate::options().with_draft(draft);
+        let as_root = options.build(root).expect("Valid schema");
+        let as_ref_target = options.build(wrapped).expect("Valid schema");
+        for instance in [
+            json!({}),
+            json!({"a": 1, "b": 2}),
+            json!({"c": {"c": 1}}),
+            json!({"c": {"c": {}}}),
+            json!(0),
+            json!(1),
+        ] {
+            assert_eq!(
+                reported(&as_root, &instance),
+                located_as_root(
+                    reported(&as_ref_target, &instance),
+                    definitions_keyword(draft)
+                ),
+                "{draft:?} {root} {instance}"
+            );
+        }
+    }
+
+    // The root is the node a `$ref` to it names, so a schema reports the same as the root and below
+    // a root that only references it, by pointer or by its `$id`.
+    #[test_case(&json!({"not": {"$ref": "#"}}); "under not")]
+    #[test_case(&json!({"minProperties": 2, "allOf": [{"$ref": "#"}]}); "from allOf")]
+    #[test_case(
+        &json!({"type": "object", "properties": {"c": {"$ref": "#"}}, "patternProperties": {"^c": {"$ref": "#"}}, "allOf": [{"$ref": "#"}]});
+        "from allOf and two keywords for one member"
+    )]
+    #[test_case(
+        &json!({"$dynamicAnchor": "node", "minProperties": 2, "allOf": [{"$ref": "#"}]});
+        "from allOf beside a dynamic anchor"
+    )]
+    #[test_case(&json!({"$dynamicAnchor": "node", "not": {"$ref": "#"}}); "under not beside a dynamic anchor")]
+    fn root_referencing_itself_reports_as_a_ref_target(schema: &Value) {
+        for draft in [
+            crate::Draft::Draft4,
+            crate::Draft::Draft7,
+            crate::Draft::Draft201909,
+            crate::Draft::Draft202012,
+        ] {
+            let definitions = definitions_keyword(draft);
+            let pointer = format!("#/{definitions}/x");
+            assert_reported_alike(
+                draft,
+                schema,
+                &json!({"$ref": pointer, definitions: {"x": naming_root_by(schema, &pointer)}}),
+            );
+            let identified = with_id(schema, draft);
+            assert_reported_alike(
+                draft,
+                &identified,
+                &json!({"$ref": SELF_REFERENCING_ID, definitions: {"x": identified}}),
+            );
+        }
+    }
+
+    #[test_case(
+        crate::Draft::Draft201909,
+        &json!({"$recursiveAnchor": true, "minimum": 1, "allOf": [{"$recursiveRef": "#"}]});
+        "recursive reference from allOf"
+    )]
+    #[test_case(
+        crate::Draft::Draft201909,
+        &json!({"$recursiveAnchor": true, "not": {"$recursiveRef": "#"}});
+        "recursive reference under not"
+    )]
+    #[test_case(
+        crate::Draft::Draft201909,
+        &json!({"$recursiveAnchor": true, "type": "object", "properties": {"c": {"$recursiveRef": "#"}}, "patternProperties": {"^c": {"$recursiveRef": "#"}}, "allOf": [{"$recursiveRef": "#"}]});
+        "recursive reference from allOf and two keywords for one member"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$dynamicAnchor": "node", "minimum": 1, "allOf": [{"$dynamicRef": "#node"}]});
+        "dynamic reference from allOf"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$dynamicAnchor": "node", "not": {"$dynamicRef": "#node"}});
+        "dynamic reference under not"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$dynamicAnchor": "node", "type": "object", "properties": {"c": {"$dynamicRef": "#node"}}, "patternProperties": {"^c": {"$dynamicRef": "#node"}}, "allOf": [{"$dynamicRef": "#node"}]});
+        "dynamic reference from allOf and two keywords for one member"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$ref": "#", "minimum": 1, "allOf": [{"$ref": "#"}]});
+        "from allOf beside a reference to itself"
+    )]
+    #[test_case(
+        crate::Draft::Draft201909,
+        &json!({"$recursiveAnchor": true, "type": "object", "properties": {"c": {"$id": "inner", "$recursiveAnchor": true, "properties": {"c": {"$recursiveRef": "#"}}}}});
+        "recursive reference from an embedded resource"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$dynamicAnchor": "node", "type": "object", "properties": {"c": {"$id": "inner", "$dynamicAnchor": "node", "properties": {"c": {"$dynamicRef": "#node"}}}}});
+        "dynamic reference from an embedded resource"
+    )]
+    fn root_with_id_referencing_itself_reports_as_a_ref_target(
+        draft: crate::Draft,
+        schema: &Value,
+    ) {
+        let identified = with_id(schema, draft);
+        assert_reported_alike(
+            draft,
+            &identified,
+            &json!({"$ref": SELF_REFERENCING_ID, "$defs": {"x": identified}}),
+        );
     }
 
     #[test_case("$ref"; "ref")]

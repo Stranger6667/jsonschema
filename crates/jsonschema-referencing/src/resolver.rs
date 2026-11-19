@@ -288,6 +288,13 @@ impl<'r> Resolver<'r> {
             Ok(self.clone())
         }
     }
+    /// The resolver a reference to the resource at this resolver's base URI enters: that resource
+    /// joins the dynamic scope.
+    #[doc(hidden)]
+    #[must_use]
+    pub fn in_dynamic_scope(&self) -> Self {
+        self.evolve(Arc::clone(&self.base_uri))
+    }
     /// The same resolver based at `uri`, keeping the dynamic scope.
     #[inline]
     pub(crate) fn at_uri(&self, uri: &Uri<String>) -> Result<Self, Error> {

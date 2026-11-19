@@ -641,6 +641,19 @@ impl CanonicalSchema {
             return Err(CanonicalizationError::UnsupportedResult);
         }
         let document = Self::combined_document(&merged, &inner, definitions);
+        let inner = if merged.root_as_pointer && is_root_pointer(&inner) {
+            // A root read as `#` that comes back alone is that root again.
+            document.root.clone()
+        } else if inner == document.root
+            && emptiness::root_inverts_on_an_in_place_cycle(&inner, &document.definitions)
+        {
+            // Written as the root's own body, the result reads `#` as a copy of that body does,
+            // which accepts other values than the root. A handle holding the root's node is the
+            // root.
+            return Err(CanonicalizationError::UnsupportedResult);
+        } else {
+            inner
+        };
         Ok(Self::within(
             inner,
             self.draft,
@@ -713,6 +726,7 @@ impl CanonicalSchema {
             left_root: merged.right_root.clone(),
             right_root: merged.left_root.clone(),
             local: Arc::clone(&merged.local),
+            root_as_pointer: merged.root_as_pointer,
         };
         // Bounded: the difference is a side question, and one over two wide schemas costs more than
         // the answer is worth. Out of allowance it says `Unknown`, where the long walk almost always
@@ -891,17 +905,38 @@ impl CanonicalSchema {
         Err(CanonicalizationError::IncompatibleOperands(mismatch))
     }
 
+    /// Whether an operation reads this schema as `#` rather than as its node.
+    ///
+    /// The document root is the target of its own `#`. Where it reads itself back on the same value
+    /// through `not` or `oneOf`, a copy of its body accepts other values than it does, so the root
+    /// takes part as `#` itself.
+    fn takes_part_as_root_pointer(&self) -> bool {
+        self.inner == self.document.root
+            && emptiness::root_inverts_on_an_in_place_cycle(&self.inner, &self.document.definitions)
+    }
+
     /// The map the result resolves references through.
     fn merged_definitions(&self, other: &Self) -> Result<Combined, CanonicalizationError> {
         let ours = &self.document.definitions;
         let theirs = &other.document.definitions;
+        let left_as_root_pointer = self.takes_part_as_root_pointer();
+        let right_as_root_pointer = other.takes_part_as_root_pointer();
         let mut combined = Combined {
             definitions: Arc::clone(ours),
-            left: self.inner.clone(),
-            right: other.inner.clone(),
+            left: if left_as_root_pointer {
+                root_pointer()
+            } else {
+                self.inner.clone()
+            },
+            right: if right_as_root_pointer {
+                root_pointer()
+            } else {
+                other.inner.clone()
+            },
             left_root: self.document.root.clone(),
             right_root: other.document.root.clone(),
             local: Arc::clone(&self.document.local),
+            root_as_pointer: left_as_root_pointer || right_as_root_pointer,
         };
         // Both sides' private names travel with the result whichever map it keeps, or the operand
         // order would decide which of them a later operation may rename apart.
@@ -927,8 +962,8 @@ impl CanonicalSchema {
         let (ours, theirs) = if renames.is_empty() {
             (Arc::clone(ours), Arc::clone(theirs))
         } else {
-            combined.left = rename::rename_references(&self.inner, &renames.left);
-            combined.right = rename::rename_references(&other.inner, &renames.right);
+            combined.left = rename::rename_references(&combined.left, &renames.left);
+            combined.right = rename::rename_references(&combined.right, &renames.right);
             combined.left_root = rename::rename_references(&self.document.root, &renames.left);
             combined.right_root = rename::rename_references(&other.document.root, &renames.right);
             combined.local = Arc::new(rename::rename_keys(
@@ -958,6 +993,16 @@ impl CanonicalSchema {
         };
         Ok(combined)
     }
+}
+
+/// `#`, standing for the document root.
+fn root_pointer() -> Schema {
+    Schema::new(SchemaKind::Reference(Arc::from(ROOT_DEFINITION_KEY)))
+}
+
+/// Whether `schema` is `#` and nothing else.
+fn is_root_pointer(schema: &Schema) -> bool {
+    matches!(schema.kind(), SchemaKind::Reference(uri) if uri.as_ref() == ROOT_DEFINITION_KEY)
 }
 
 /// The private names a pruned map still holds. A marker outliving its body would let a later
@@ -999,4 +1044,6 @@ struct Combined {
     left_root: Schema,
     right_root: Schema,
     local: Arc<BTreeSet<Arc<str>>>,
+    /// Whether an operand is a document root read as `#`.
+    root_as_pointer: bool,
 }

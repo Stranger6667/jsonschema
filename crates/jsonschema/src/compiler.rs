@@ -529,6 +529,12 @@ impl<'a, F: Json> Context<'a, F> {
             shared: Rc::clone(&self.shared),
         })
     }
+    /// This context as a `$ref` to its own resource enters it: the resource joins the dynamic
+    /// scope.
+    fn in_dynamic_scope(mut self) -> Context<'a, F> {
+        self.resolver = self.resolver.in_dynamic_scope();
+        self
+    }
     pub(crate) fn as_resource_ref<'r>(&self, contents: &'r Value) -> ResourceRef<'r> {
         self.draft.detect(contents).create_resource_ref(contents)
     }
@@ -1013,6 +1019,41 @@ impl<'a, F: Json> Context<'a, F> {
                 entry.insert(compiling);
             }
         }
+    }
+
+    /// Make `placeholder` the target of `$ref`s naming the root by `identity` in this context's
+    /// dynamic scope while the root compiles. Kept apart from the helpers every `$ref` target
+    /// compiles through, which stay inlined there.
+    fn start_root(&self, identity: &TargetIdentity, placeholder: PendingSchemaNode<F>) {
+        self.shared.seen.borrow_mut().insert(identity.clone());
+        self.shared.target_placeholders.borrow_mut().insert(
+            identity.clone(),
+            InProgressTarget {
+                dynamic_scope: self.resolver.dynamic_scope(),
+                placeholder,
+                shadowed: None,
+            },
+        );
+    }
+
+    /// Make the compiled root `node` the target of `$ref`s naming it by `identity` in this
+    /// context's dynamic scope.
+    fn finish_root(&self, identity: TargetIdentity, node: &SchemaNode<F>, settled: bool) {
+        self.shared
+            .target_placeholders
+            .borrow_mut()
+            .remove(&identity);
+        self.shared.target_nodes.borrow_mut().insert(
+            TargetCacheKey {
+                identity,
+                dynamic_scope: self.resolver.dynamic_scope(),
+            },
+            CachedNode {
+                node: node.clone(),
+                round: self.shared.round.get(),
+                settled,
+            },
+        );
     }
 
     /// Drop the innermost placeholder of `identity`, restoring the one it shadows.
@@ -1511,7 +1552,7 @@ fn compile_validator<F: Json>(
     resource: ResourceRef<'_>,
     draft: Draft,
 ) -> Result<Validator<F>, ValidationError<'static>> {
-    let root = compile(ctx, resource).map_err(ValidationError::into_build_error)?;
+    let root = compile_root(ctx, resource).map_err(ValidationError::into_build_error)?;
     let targets = compile_deferred_targets(ctx)?;
     Ok(Validator {
         root,
@@ -1758,6 +1799,28 @@ pub(crate) fn compile<'a, F: Json>(
 ) -> Result<SchemaNode<F>, ValidationError<'a>> {
     let ctx = ctx.in_subresource(resource)?;
     compile_with_internal(&ctx, resource, None).map(TargetNode::into_node)
+}
+
+/// Compile the root as the target of a `$ref` naming it by `#`, so such a reference in it closes a
+/// cycle on the root itself.
+///
+/// The root compiles in the dynamic scope it starts in, and is the target in the scope such a
+/// reference enters, which holds the root's resource too.
+fn compile_root<'a, F: Json>(
+    ctx: &Context<F>,
+    resource: ResourceRef<'a>,
+) -> Result<SchemaNode<F>, ValidationError<'a>> {
+    let ctx = ctx.in_subresource(resource)?;
+    let referenced = ctx.clone().in_dynamic_scope();
+    let identity = TargetIdentity::new(resource.contents(), Location::new());
+    let placeholder = PendingSchemaNode::new();
+    referenced.start_root(&identity, placeholder.clone());
+    let outer = ctx.start_node();
+    let node = compile_with_internal(&ctx, resource, None)?.into_node();
+    let settled = ctx.finish_node(outer);
+    placeholder.initialize(&node);
+    referenced.finish_root(identity, &node, settled);
+    Ok(node)
 }
 
 /// Compile the `$ref` target `identity` names, or reuse the compiled one.

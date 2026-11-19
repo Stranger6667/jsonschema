@@ -16,6 +16,7 @@
 - `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
 - `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
 - `Validator` results depending on how references name a schema that a `$ref` cycle passes through, such as `cycle` and `#` inside it.
+- `Validator` results for a schema that references itself with `#` differing from the same schema reached through a `$ref`, such as `{"not": {"$ref": "#"}}` rejecting every instance.
 - `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.
 - `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
 - `evaluate` messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
@@ -27,6 +28,7 @@
 - `#[jsonschema::validator]` going through a `$ref` cycle once more when its references name one schema in different ways, such as `cycle` and `#` inside it, and applying another schema in place of the one a JSON Pointer reaches through an embedded `$id` resource.
 - `#[jsonschema::validator]` reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
 - `#[jsonschema::validator]` leaving out the `maxLength` error when `minLength` is above `maxLength`.
+- `#[jsonschema::validator]` `iter_errors` reporting the errors of a root that references itself with `$ref: "#"` beside other keywords twice, such as `{"$ref": "#", "minimum": 1}`.
 - `#[jsonschema::validator]` leaving out all errors but the first of a subschema with `$recursiveAnchor` below the root of a schema that uses `$recursiveRef`, such as an `anyOf` error beside a failing `minProperties`.
 - `#[jsonschema::validator]` reporting fewer errors than `Validator` from `iter_errors` and `evaluate`, or the same error more than once beside a `$ref` to the same schema, where a `$recursiveRef` or `$dynamicRef` comes back to the instance it holds, such as a schema with `$recursiveAnchor` that references itself from `allOf`.
 - `#[jsonschema::validator]` `is_valid` taking time exponential in the instance depth on a `$ref` cycle that reaches each nested instance more than once, in a schema with `$recursiveRef` or `$dynamicRef`.
