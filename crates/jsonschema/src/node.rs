@@ -8,7 +8,6 @@ use crate::{
     Array, Json, Node, SerdeJson, ValidationError,
 };
 use referencing::Uri;
-use serde_json::Value;
 use std::{
     fmt,
     sync::{Arc, OnceLock, Weak},
@@ -192,7 +191,7 @@ impl<F: Json> fmt::Debug for NodeValidators<F> {
 struct KeywordValidators<F: Json> {
     /// The keywords on this node which were not recognized by any vocabularies. These are
     /// stored so we can later produce them as annotations
-    unmatched_keywords: Option<Arc<Value>>,
+    unmatched_keywords: Option<Annotations>,
     // We should probably use AHashMap here but it breaks a bunch of tests which assume
     // validators are in a particular order
     validators: KeywordList<F>,
@@ -546,7 +545,7 @@ impl<F: Json> SchemaNode<F> {
         ctx: &Context<'_, F>,
         mut validators: V,
         absorbed: Option<Arc<AbsorbedKeywords>>,
-        unmatched_keywords: Option<Arc<Value>>,
+        unmatched_keywords: Option<Annotations>,
     ) -> SchemaNode<F>
     where
         V: AsMut<[(Keyword, BoxedValidator<F>)]>
@@ -1242,9 +1241,7 @@ impl<F: Json> SchemaNode<F> {
                 } = *kvals;
                 let validators = validators.as_slice();
                 let absolute_base = self.inner.absolute_base.as_ref();
-                let annotations: Option<Annotations> = unmatched_keywords
-                    .as_ref()
-                    .map(|v| Annotations::from_arc(Arc::clone(v)));
+                let annotations: Option<Annotations> = unmatched_keywords.clone();
                 if let Some(absorbed) = absorbed {
                     Self::evaluate_with_absorbed(
                         instance,
