@@ -49,18 +49,6 @@ pub(crate) fn generate(
                 };
                 let ident = format_ident!("Validator{}", definitions.len());
                 let id = format!("{draft}|{relative}|{index}");
-                let supports_evaluate = jsonschema_macros_core::evaluate_supports(
-                    &case.schema,
-                    crate::generator::draft_named(draft),
-                    case.external_schemas
-                        .iter()
-                        .map(|(uri, schema)| (uri.as_str(), schema)),
-                );
-                let methods = if supports_evaluate {
-                    quote! { , methods = { evaluate = true } }
-                } else {
-                    quote! {}
-                };
                 // The runtime gets the documents the generated validator was given, not the network.
                 let externals = case
                     .external_schemas
@@ -72,41 +60,37 @@ pub(crate) fn generate(
                         })
                     })
                     .collect::<Result<Vec<_>, serde_json::Error>>()?;
-                let evaluate = if supports_evaluate {
-                    quote! {
-                        |instance| {
-                            static RUNTIME: std::sync::LazyLock<
-                                jsonschema::Validator<jsonschema::json::#backend>,
-                            > = std::sync::LazyLock::new(|| {
-                                let externals: Vec<(&str, serde_json::Value)> = vec![#(#externals),*];
-                                let mut registry =
-                                    jsonschema::Registry::new().draft(jsonschema::Draft::#draft_variant);
-                                for (uri, contents) in &externals {
-                                    // Like a retrieved document, each is in the draft its own `$schema` names.
-                                    let resource = jsonschema::Draft::#draft_variant
-                                        .detect(contents)
-                                        .create_resource(contents.clone());
-                                    registry = registry
-                                        .add(*uri, resource)
-                                        .expect("suite resource is accepted");
-                                }
-                                let registry = registry.prepare().expect("suite resources resolve");
-                                jsonschema::options_for::<jsonschema::json::#backend>()
-                                    .with_draft(jsonschema::Draft::#draft_variant)
-                                    .with_registry(&registry)
-                                    #runtime_formats
-                                    .build(&serde_json::from_str(#schema).expect("suite schema is JSON"))
-                                    .expect("suite schema compiles")
-                            });
-                            let generated = #ident::evaluate(instance)?;
-                            let runtime = runtime_evaluate(&RUNTIME, instance)?;
-                            Ok(Some(
-                                serde_json::json!([outputs(&generated), outputs(&runtime)]).to_string(),
-                            ))
-                        }
+                let evaluate = quote! {
+                    |instance| {
+                        static RUNTIME: std::sync::LazyLock<
+                            jsonschema::Validator<jsonschema::json::#backend>,
+                        > = std::sync::LazyLock::new(|| {
+                            let externals: Vec<(&str, serde_json::Value)> = vec![#(#externals),*];
+                            let mut registry =
+                                jsonschema::Registry::new().draft(jsonschema::Draft::#draft_variant);
+                            for (uri, contents) in &externals {
+                                // Like a retrieved document, each is in the draft its own `$schema` names.
+                                let resource = jsonschema::Draft::#draft_variant
+                                    .detect(contents)
+                                    .create_resource(contents.clone());
+                                registry = registry
+                                    .add(*uri, resource)
+                                    .expect("suite resource is accepted");
+                            }
+                            let registry = registry.prepare().expect("suite resources resolve");
+                            jsonschema::options_for::<jsonschema::json::#backend>()
+                                .with_draft(jsonschema::Draft::#draft_variant)
+                                .with_registry(&registry)
+                                #runtime_formats
+                                .build(&serde_json::from_str(#schema).expect("suite schema is JSON"))
+                                .expect("suite schema compiles")
+                        });
+                        let generated = #ident::evaluate(instance)?;
+                        let runtime = runtime_evaluate(&RUNTIME, instance)?;
+                        Ok(Some(
+                            serde_json::json!([outputs(&generated), outputs(&runtime)]).to_string(),
+                        ))
                     }
-                } else {
-                    quote! { |_| Ok(None) }
                 };
                 definitions.push(quote! {
                     #[jsonschema::validator(
@@ -115,7 +99,6 @@ pub(crate) fn generate(
                         backend = #backend
                         #resources
                         #validate_formats
-                        #methods
                     )]
                     struct #ident;
                 });

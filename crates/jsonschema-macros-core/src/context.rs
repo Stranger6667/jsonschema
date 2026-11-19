@@ -207,7 +207,7 @@ impl Default for MethodGates {
             is_valid: true,
             validate: true,
             iter_errors: true,
-            evaluate: false,
+            evaluate: true,
         }
     }
 }
@@ -496,6 +496,37 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
         f(&mut scope)
     }
 
+    /// `f` in the draft and vocabularies `schema`'s `$schema` names.
+    pub(crate) fn with_dialect_of<T>(
+        &mut self,
+        schema: &serde_json::Map<String, serde_json::Value>,
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
+    ) -> T {
+        let Some(dialect) = schema.get("$schema").and_then(serde_json::Value::as_str) else {
+            return f(self);
+        };
+        let draft = Draft::from_schema_uri(dialect);
+        if draft == self.draft {
+            return f(self);
+        }
+        let (vocabularies, undeclared_vocabulary) = find_vocabularies(
+            self.config,
+            draft,
+            &serde_json::json!({ "$schema": dialect }),
+        );
+        if self.undeclared_vocabulary.is_none() {
+            self.undeclared_vocabulary = undeclared_vocabulary;
+        }
+        let prev_draft = std::mem::replace(&mut self.draft, draft);
+        let prev_vocabularies = std::mem::replace(&mut self.vocabularies, vocabularies);
+        let mut scope = DialectGuard {
+            ctx: self,
+            prev_draft,
+            prev_vocabularies,
+        };
+        f(&mut scope)
+    }
+
     pub(crate) fn with_helper_root_scope<T>(
         &mut self,
         f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
@@ -687,6 +718,21 @@ impl<E: ValueEmitter> Drop for SchemaEnvGuard<'_, '_, E> {
         self.ctx.current_base_uri = self.prev_base_uri.clone();
         self.ctx.draft = self.prev_draft;
         self.ctx.vocabularies = self.prev_vocabularies.clone();
+    }
+}
+
+pub(crate) struct DialectGuard<'a, 'cfg, E: ValueEmitter> {
+    ctx: &'a mut CompileContext<'cfg, E>,
+    prev_draft: Draft,
+    prev_vocabularies: VocabularySet,
+}
+
+impl_scope_guard!(DialectGuard);
+
+impl<E: ValueEmitter> Drop for DialectGuard<'_, '_, E> {
+    fn drop(&mut self) {
+        self.ctx.draft = self.prev_draft;
+        self.ctx.vocabularies = std::mem::take(&mut self.prev_vocabularies);
     }
 }
 

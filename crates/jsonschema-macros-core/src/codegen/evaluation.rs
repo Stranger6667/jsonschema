@@ -1,6 +1,6 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use referencing::{write_escaped_str, Draft, Registry, Resolved, Resolver, Uri, VocabularySet};
+use referencing::{write_escaped_str, Draft, Uri, VocabularySet};
 use serde_json::{json, Map, Value};
 use std::{
     borrow::Cow,
@@ -366,7 +366,26 @@ impl Tree {
         });
         self.by_pointer.insert(place, index);
         self.inline.push(std::ptr::from_ref(schema).addr());
-        let added = match resource_base(ctx, schema).filter(|_| index != 0 && !based) {
+        // The root keeps the configured draft.
+        let added = match schema {
+            Value::Object(keywords) if index != 0 => ctx.with_dialect_of(keywords, |ctx| {
+                self.add_in_dialect(ctx, schema, index, pointer, based)
+            }),
+            _ => self.add_in_dialect(ctx, schema, index, pointer, based),
+        };
+        self.inline.pop();
+        added
+    }
+
+    fn add_in_dialect<E: ValueEmitter>(
+        &mut self,
+        ctx: &mut CompileContext<'_, E>,
+        schema: &Value,
+        index: usize,
+        pointer: String,
+        based: bool,
+    ) -> syn::Result<usize> {
+        match resource_base(ctx, schema).filter(|_| index != 0 && !based) {
             Some(base) => {
                 let outer = std::mem::replace(&mut self.resource_root, pointer.clone());
                 let added = ctx.with_base_uri_scope(base, |ctx| {
@@ -376,9 +395,7 @@ impl Tree {
                 added
             }
             None => self.add_keywords(ctx, schema, index, pointer),
-        };
-        self.inline.pop();
-        added
+        }
     }
 
     /// The locations of the reference targets whose code holds the schema being added, while
@@ -471,17 +488,16 @@ impl Tree {
                     let mut child = format!("{pointer}/patternProperties/");
                     write_escaped_str(&mut child, pattern);
                     let schema = self.add(ctx, subschema, child)?;
+                    // An invalid pattern's matcher fails the build as the validation code does.
                     let matches = ctx
                         .with_schema_path_swap(pointer.clone(), |ctx| {
                             name_match_expr(ctx, pattern, &quote! { name })
                         })
-                        .map_err(|_| {
-                            syn::Error::new(
-                                proc_macro2::Span::call_site(),
-                                format!("`evaluate` does not support the `{pattern}` pattern"),
-                            )
-                        })?;
-                    entries.push((schema, matches.is_valid));
+                        .map_or_else(
+                            |invalid| invalid.is_valid_token_stream(),
+                            |matches| matches.is_valid,
+                        );
+                    entries.push((schema, matches));
                 }
                 let range = (self.patterns.len(), entries.len());
                 self.patterns.extend(entries);
@@ -782,8 +798,8 @@ impl Tree {
         id
     }
 
-    /// The unit of a `$ref`, `$dynamicRef` or `$recursiveRef` in the schema at `index`. A
-    /// reference to that schema itself has none, as the runtime compiles none.
+    /// The unit of a `$ref`, `$dynamicRef` or `$recursiveRef` in the schema at `index`; none for a
+    /// reference to that schema itself, as the runtime compiles none, or one that does not resolve.
     fn reference<E: ValueEmitter>(
         &mut self,
         ctx: &mut CompileContext<'_, E>,
@@ -791,8 +807,9 @@ impl Tree {
         keyword: &'static str,
         reference: &str,
     ) -> syn::Result<Option<TreeUnit>> {
-        let resolved =
-            resolve_ref(ctx, reference).expect("`unsupported` resolves every `$ref` first");
+        let Ok(resolved) = resolve_ref(ctx, reference) else {
+            return Ok(None);
+        };
         let anchor = (keyword == "$dynamicRef")
             .then(|| dynamic_ref_anchor_name(reference, resolved.schema))
             .flatten();
@@ -915,8 +932,7 @@ impl Tree {
         ctx: &mut CompileContext<'_, E>,
         reference: &str,
     ) -> syn::Result<usize> {
-        let resolved =
-            resolve_ref(ctx, reference).expect("`unsupported` resolves every `$ref` first");
+        let resolved = resolve_ref(ctx, reference).expect("`reference` resolved it");
         let pointer = location_pointer(ctx, &resolved.location, &resolved.base_uri);
         let root = pointer[..resolved.resource_start].to_string();
         let outer = std::mem::replace(&mut self.resource_root, root);
@@ -1031,16 +1047,7 @@ fn id_keyword(draft: Draft) -> &'static str {
 /// run of the schema's errors function, by schema location and instance location.
 pub(super) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
-    schema: &Value,
 ) -> syn::Result<TokenStream> {
-    if let Some(message) = unsupported(
-        &ctx.config.registry,
-        &ctx.config.base_uri,
-        schema,
-        ctx.draft,
-    ) {
-        return Err(syn::Error::new(proc_macro2::Span::call_site(), message));
-    }
     let config = ctx.config;
     // The registry's copy, which the code of reference targets compiles from: a schema has one
     // address in both.
@@ -1069,45 +1076,11 @@ pub(super) fn compile<E: ValueEmitter>(
         | TreeUnit::Contains { .. } => true,
         TreeUnit::Dependencies { .. } | TreeUnit::Unevaluated { .. } => false,
     });
-    let mut direct = Vec::new();
-    if without_errors_run {
-        let mut by_code = HashMap::new();
-        for unit in &mut tree.units {
-            let TreeUnit::Leaf(unit) = unit else {
-                continue;
-            };
-            let LeafCheck {
-                schema,
-                draft,
-                vocabularies,
-            } = unit.check.take().expect("every leaf unit is checked alone");
-            let outer_draft = std::mem::replace(&mut ctx.draft, draft);
-            let outer_vocabularies = std::mem::replace(&mut ctx.vocabularies, vocabularies);
-            // Its errors do not depend on where it is, so equal leaves share a check.
-            let check =
-                ctx.with_schema_path_swap(String::new(), |ctx| compile_schema(ctx, &schema));
-            ctx.draft = outer_draft;
-            ctx.vocabularies = outer_vocabularies;
-            let is_valid = check.is_valid_token_stream();
-            let errors = match schema.get("type") {
-                // The runtime words a single type's error without building it.
-                Some(Value::String(type_)) if !check.is_compile_error() => {
-                    DirectErrors::NotOfType(format!(r#"{{}} is not of type "{type_}""#))
-                }
-                _ => DirectErrors::Reported(check.errors.as_token_stream()),
-            };
-            let key = match &errors {
-                DirectErrors::NotOfType(message) => format!("{is_valid}{message}"),
-                DirectErrors::Reported(errors) => format!("{is_valid}{errors}"),
-            };
-            let count = direct.len();
-            let index = *by_code.entry(key).or_insert(count);
-            if index == count {
-                direct.push((is_valid, errors));
-            }
-            unit.direct = Some(index);
-        }
-    }
+    let direct = without_errors_run
+        .then(|| direct_checks(ctx, &mut tree.units))
+        .flatten();
+    let without_errors_run = direct.is_some();
+    let direct = direct.unwrap_or_default();
     // Each check's place among the generated checks of its shape.
     let mut shapes = (0, 0);
     let direct_slots: Vec<DirectSlot> = direct
@@ -1537,6 +1510,58 @@ pub(super) fn compile<E: ValueEmitter>(
     })
 }
 
+/// One check per distinct leaf keyword, shared by its equal copies; `None` if a keyword does not
+/// compile on its own, and the errors run reports for every unit.
+fn direct_checks<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    units: &mut [TreeUnit],
+) -> Option<Vec<(TokenStream, DirectErrors)>> {
+    let mut compiled = Vec::new();
+    for unit in units {
+        let TreeUnit::Leaf(unit) = unit else {
+            continue;
+        };
+        let LeafCheck {
+            schema,
+            draft,
+            vocabularies,
+        } = unit.check.take().expect("every leaf unit is checked alone");
+        let outer_draft = std::mem::replace(&mut ctx.draft, draft);
+        let outer_vocabularies = std::mem::replace(&mut ctx.vocabularies, vocabularies);
+        // Its errors do not depend on where it is, so equal leaves share a check.
+        let check = ctx.with_schema_path_swap(String::new(), |ctx| compile_schema(ctx, &schema));
+        ctx.draft = outer_draft;
+        ctx.vocabularies = outer_vocabularies;
+        if check.is_compile_error() {
+            return None;
+        }
+        compiled.push((unit, schema, check));
+    }
+    let mut direct = Vec::new();
+    let mut by_code = HashMap::new();
+    for (unit, schema, check) in compiled {
+        let is_valid = check.is_valid_token_stream();
+        let errors = match schema.get("type") {
+            // The runtime words a single type's error without building it.
+            Some(Value::String(type_)) => {
+                DirectErrors::NotOfType(format!(r#"{{}} is not of type "{type_}""#))
+            }
+            _ => DirectErrors::Reported(check.errors.as_token_stream()),
+        };
+        let key = match &errors {
+            DirectErrors::NotOfType(message) => format!("{is_valid}{message}"),
+            DirectErrors::Reported(errors) => format!("{is_valid}{errors}"),
+        };
+        let count = direct.len();
+        let index = *by_code.entry(key).or_insert(count);
+        if index == count {
+            direct.push((is_valid, errors));
+        }
+        unit.direct = Some(index);
+    }
+    Some(direct)
+}
+
 /// Functions putting a resource's entries on the generated code's dynamic-scope stacks, and taking
 /// them off, so the code the walk calls resolves dynamic references in the walk's scope. The
 /// `$recursiveRef` entry goes on only when `anchored`.
@@ -1715,257 +1740,5 @@ fn unit<E: ValueEmitter>(
             Some(unit.annotating(value))
         }
         _ => Some(unit),
-    }
-}
-
-/// Why the generated `evaluate` cannot handle `schema`, the resource at `base` in `registry`, yet,
-/// if it cannot.
-pub(crate) fn unsupported(
-    registry: &Registry,
-    base: &Uri<String>,
-    schema: &Value,
-    draft: Draft,
-) -> Option<String> {
-    let resolver = registry.resolver(base.clone());
-    let mut support = Support {
-        draft,
-        resolver: resolver.clone(),
-        checked: HashSet::from([std::ptr::from_ref(schema).addr()]),
-        root: schema
-            .as_object()
-            .map(|keywords| std::ptr::from_ref(keywords).addr()),
-        resources: vec![resolver],
-        anchors: Vec::new(),
-        recursive: false,
-    };
-    support
-        .check(schema, true)
-        .or_else(|| support.dynamic_targets())
-}
-
-/// Walks what `evaluate` reports, following each reference once.
-struct Support<'r> {
-    draft: Draft,
-    /// Resolves the references of the resource being walked.
-    resolver: Resolver<'r>,
-    /// The schemas already walked, by address.
-    checked: HashSet<usize>,
-    /// The root's keywords, by address: its `$schema` sets the draft and vocabularies `evaluate`
-    /// compiles with.
-    root: Option<usize>,
-    /// Each resource walked, as a resolver based at it.
-    resources: Vec<Resolver<'r>>,
-    /// The `$dynamicAnchor` names a `$dynamicRef` resolves through the dynamic scope.
-    anchors: Vec<String>,
-    /// A `$recursiveRef` resolves through the dynamic scope.
-    recursive: bool,
-}
-
-impl<'r> Support<'r> {
-    /// `based`: the resolver already sits at the schema's own base, as at a reference target.
-    fn check(&mut self, schema: &Value, based: bool) -> Option<String> {
-        let keywords = match schema {
-            Value::Bool(_) => return None,
-            Value::Object(keywords) => keywords,
-            _ => {
-                return Some("`evaluate` needs a schema that is a boolean or an object".to_string())
-            }
-        };
-        let adjacent = self.draft.supports_adjacent_validation();
-        if !based
-            && (adjacent || !keywords.contains_key("$ref"))
-            && keywords.get(id_keyword(self.draft)).is_some()
-        {
-            // Its references resolve against its own base.
-            let inner = match self
-                .resolver
-                .in_subresource(self.draft.create_resource_ref(schema))
-            {
-                Ok(inner) => inner,
-                Err(error) => return Some(error.to_string()),
-            };
-            self.entered(&inner);
-            let outer = std::mem::replace(&mut self.resolver, inner);
-            let message = self.check_keywords(keywords);
-            self.resolver = outer;
-            return message;
-        }
-        self.check_keywords(keywords)
-    }
-
-    fn check_keywords(&mut self, keywords: &Map<String, Value>) -> Option<String> {
-        if let Some(reference) = keywords.get("$ref") {
-            if let Some(message) = self.reference(reference) {
-                return Some(message);
-            }
-            if !self.draft.supports_adjacent_validation() {
-                // Earlier drafts ignore the keywords beside `$ref`.
-                return None;
-            }
-        }
-        if let Some(reference) = keywords
-            .get("$dynamicRef")
-            .filter(|_| self.draft.is_known_keyword("$dynamicRef"))
-        {
-            if let Some(name) = reference.as_str().and_then(|reference| {
-                let resolved = self.resolver.lookup(reference).ok()?;
-                dynamic_ref_anchor_name(reference, resolved.contents())
-            }) {
-                if !self.anchors.contains(&name) {
-                    self.anchors.push(name);
-                }
-            }
-            if let Some(message) = self.reference(reference) {
-                return Some(message);
-            }
-        }
-        if let Some(reference) = keywords
-            .get("$recursiveRef")
-            .filter(|_| self.draft.is_known_keyword("$recursiveRef"))
-        {
-            if reference.as_str().is_some_and(|reference| {
-                self.resolver.lookup(reference).is_ok_and(|resolved| {
-                    resolved.contents().get("$recursiveAnchor") == Some(&Value::Bool(true))
-                })
-            }) {
-                self.recursive = true;
-            }
-            if let Some(message) = self.reference(reference) {
-                return Some(message);
-            }
-        }
-        keywords.iter().find_map(|(keyword, value)| {
-            if !self.draft.is_known_keyword(keyword) {
-                // An unknown keyword is an annotation.
-                return None;
-            }
-            match (keyword.as_str(), value) {
-                ("properties" | "patternProperties", Value::Object(subschemas)) => {
-                    return subschemas
-                        .values()
-                        .find_map(|subschema| self.check(subschema, false));
-                }
-                ("dependencies" | "dependentSchemas", Value::Object(dependencies)) => {
-                    return dependencies
-                        .values()
-                        .filter(|dependency| !dependency.is_array())
-                        .find_map(|subschema| self.check(subschema, false));
-                }
-                // Only its validity is checked.
-                ("not", _) => return None,
-                // `additionalItems` applies past an array-form `items` only; `if` beside `then` or
-                // `else` only, and they beside `if` only.
-                ("additionalItems", _) if !keywords.get("items").is_some_and(Value::is_array) => {
-                    return None;
-                }
-                ("if", _) if !keywords.contains_key("then") && !keywords.contains_key("else") => {
-                    return None;
-                }
-                ("then" | "else", _) if !keywords.contains_key("if") => return None,
-                ("items" | "prefixItems" | "allOf" | "anyOf" | "oneOf", Value::Array(schemas)) => {
-                    return schemas
-                        .iter()
-                        .find_map(|subschema| self.check(subschema, false));
-                }
-                (
-                    "additionalProperties"
-                    | "propertyNames"
-                    | "items"
-                    | "additionalItems"
-                    | "contains"
-                    | "if"
-                    | "then"
-                    | "else"
-                    | "unevaluatedProperties"
-                    | "unevaluatedItems",
-                    Value::Bool(_) | Value::Object(_),
-                ) => {
-                    return self.check(value, false);
-                }
-                _ => {}
-            }
-            if keyword == "$schema" && self.root == Some(std::ptr::from_ref(keywords).addr()) {
-                return None;
-            }
-            (!supports(keyword, value, self.draft))
-                .then(|| format!("`evaluate` does not support the `{keyword}` keyword yet"))
-        })
-    }
-
-    /// Checks the target of a reference the first time it is reached.
-    fn reference(&mut self, reference: &Value) -> Option<String> {
-        let reference = reference.as_str()?;
-        let resolved = match self.resolver.lookup(reference) {
-            Ok(resolved) => resolved,
-            Err(error) => return Some(error.to_string()),
-        };
-        self.target(resolved)
-    }
-
-    /// The target's references resolve against its own resource, and its keywords apply as its
-    /// resource's draft defines them.
-    fn target(&mut self, resolved: Resolved<'r>) -> Option<String> {
-        let (target, inner, draft) = resolved.into_inner();
-        if !self.checked.insert(std::ptr::from_ref(target).addr()) {
-            return None;
-        }
-        self.entered(&inner);
-        let outer = std::mem::replace(&mut self.resolver, inner);
-        let outer_draft = std::mem::replace(&mut self.draft, draft);
-        let message = self.check(target, true);
-        self.draft = outer_draft;
-        self.resolver = outer;
-        message
-    }
-
-    fn entered(&mut self, resolver: &Resolver<'r>) {
-        let base = resolver.base_uri();
-        if !self.resources.iter().any(|known| known.base_uri() == base) {
-            self.resources.push(resolver.clone());
-        }
-    }
-
-    /// Checks what a reference resolving through the dynamic scope may land on: the anchors it
-    /// names, or the roots, in every resource the scope may hold.
-    fn dynamic_targets(&mut self) -> Option<String> {
-        let mut index = 0;
-        while index < self.resources.len() {
-            let resolver = self.resources[index].clone();
-            for name in self.anchors.clone() {
-                let reference = format!("#{name}");
-                if let Ok(resolved) = resolver.lookup(&reference) {
-                    if dynamic_ref_anchor_name(&reference, resolved.contents()).is_some() {
-                        if let Some(message) = self.target(resolved) {
-                            return Some(message);
-                        }
-                    }
-                }
-            }
-            if self.recursive {
-                if let Ok(resolved) = resolver.lookup("#") {
-                    if let Some(message) = self.target(resolved) {
-                        return Some(message);
-                    }
-                }
-            }
-            index += 1;
-        }
-        None
-    }
-}
-
-fn supports(keyword: &str, value: &Value, draft: Draft) -> bool {
-    match keyword {
-        // A custom meta-schema could change which keywords apply.
-        "$schema" => value
-            .as_str()
-            .is_some_and(|uri| Draft::from_schema_uri(uri) == draft),
-        // The runtime skips a divisor beyond `f64`.
-        "multipleOf" => value.as_f64().is_some_and(f64::is_finite),
-        // `contains` reports the bounds' errors, and `Support` walks each `$ref` target.
-        "minContains" | "maxContains" | "$ref" | "$defs" | "definitions" | "$anchor"
-        | "$comment" | "$id" | "id" | "$dynamicRef" | "$dynamicAnchor" | "$recursiveRef"
-        | "$recursiveAnchor" => true,
-        _ => LEAF_KEYWORDS.contains(&keyword),
     }
 }

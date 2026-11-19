@@ -4,7 +4,6 @@ use std::collections::HashSet;
 
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use referencing::Draft;
 
 pub(crate) fn generate_modules(
     tree: &loader::TestCaseTree,
@@ -84,29 +83,6 @@ fn generate_nested_structure(
                             None => (quote! {}, quote! { None }),
                         };
 
-                    let supports_evaluate = jsonschema_macros_core::evaluate_supports(&case.schema, draft_named(draft), case.external_schemas.iter().map(|(uri, schema)| (uri.as_str(), schema)));
-                    let methods_attr = if supports_evaluate {
-                        quote! { , methods = { evaluate = true } }
-                    } else {
-                        quote! {}
-                    };
-                    let evaluate_impl = supports_evaluate.then(|| {
-                        quote! {
-                            fn evaluate(
-                                &self,
-                                instance: &serde_json::Value,
-                            ) -> Option<(serde_json::Value, serde_json::Value)> {
-                                let evaluation = Self::evaluate(instance);
-                                Some((
-                                    serde_json::to_value(evaluation.list())
-                                        .expect("List output should serialize"),
-                                    serde_json::to_value(evaluation.hierarchical())
-                                        .expect("Hierarchical output should serialize"),
-                                ))
-                            }
-                        }
-                    });
-
                     let draft_variant = match draft {
                         "draft4" => quote! { referencing::Draft::Draft4 },
                         "draft6" => quote! { referencing::Draft::Draft6 },
@@ -176,7 +152,6 @@ fn generate_nested_structure(
                                 draft = #draft_variant
                                 #resources_attr
                                 #validate_formats_attr
-                                #methods_attr
                             )]
                             struct Validator;
 
@@ -210,7 +185,18 @@ fn generate_nested_structure(
                                         })
                                         .collect()
                                 }
-                                #evaluate_impl
+                                fn evaluate(
+                                    &self,
+                                    instance: &serde_json::Value,
+                                ) -> (serde_json::Value, serde_json::Value) {
+                                    let evaluation = Self::evaluate(instance);
+                                    (
+                                        serde_json::to_value(evaluation.list())
+                                            .expect("List output should serialize"),
+                                        serde_json::to_value(evaluation.hierarchical())
+                                            .expect("Hierarchical output should serialize"),
+                                    )
+                                }
                             }
 
                             #(#test_functions)*
@@ -231,42 +217,5 @@ fn generate_nested_structure(
 
     quote! {
         #(#modules)*
-    }
-}
-
-/// Suite cases whose schema the generated `evaluate` supports, and all suite cases.
-pub(crate) fn evaluate_coverage(tree: &loader::TestCaseTree, draft: Draft) -> (usize, usize) {
-    tree.values()
-        .map(|node| match node {
-            loader::TestCaseNode::Submodule(subtree) => evaluate_coverage(subtree, draft),
-            loader::TestCaseNode::TestFile(file) => (
-                file.cases
-                    .iter()
-                    .filter(|case| {
-                        jsonschema_macros_core::evaluate_supports(
-                            &case.schema,
-                            draft,
-                            case.external_schemas
-                                .iter()
-                                .map(|(uri, schema)| (uri.as_str(), schema)),
-                        )
-                    })
-                    .count(),
-                file.cases.len(),
-            ),
-        })
-        .fold((0, 0), |(covered, total), (node_covered, node_total)| {
-            (covered + node_covered, total + node_total)
-        })
-}
-
-/// The draft a suite directory name stands for.
-pub(crate) fn draft_named(name: &str) -> Draft {
-    match name {
-        "draft4" => Draft::Draft4,
-        "draft6" => Draft::Draft6,
-        "draft7" => Draft::Draft7,
-        "draft2019-09" => Draft::Draft201909,
-        _ => Draft::Draft202012,
     }
 }

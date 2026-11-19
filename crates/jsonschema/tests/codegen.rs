@@ -477,8 +477,7 @@ fn test_any_of_dynamic_ref_error_context_matches_runtime() {
 
 // `wrap` enters the dynamic scope on the way back to the `$ref` target `cycle` and binds `node`.
 #[jsonschema::validator(
-    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"start","$defs":{"start":{"$id":"start","$ref":"#/$defs/cycle","$defs":{"cycle":{"properties":{"next":{"$ref":"wrap"}},"additionalProperties":{"$dynamicRef":"leaf#node"}}}},"leaf":{"$id":"leaf","$dynamicAnchor":"node","type":"integer"},"wrap":{"$id":"wrap","$dynamicAnchor":"node","type":"object","$ref":"start#/$defs/cycle"}}}"##,
-    methods = { evaluate = true }
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"start","$defs":{"start":{"$id":"start","$ref":"#/$defs/cycle","$defs":{"cycle":{"properties":{"next":{"$ref":"wrap"}},"additionalProperties":{"$dynamicRef":"leaf#node"}}}},"leaf":{"$id":"leaf","$dynamicAnchor":"node","type":"integer"},"wrap":{"$id":"wrap","$dynamicAnchor":"node","type":"object","$ref":"start#/$defs/cycle"}}}"##
 )]
 struct DynamicAnchorBoundInsideRefCycle;
 
@@ -507,6 +506,136 @@ fn test_dynamic_anchor_bound_inside_ref_cycle_matches_runtime(instance: serde_js
     );
 }
 
+const NO_VALIDATION_META_SCHEMA: &str = r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":false,"https://json-schema.org/draft/2020-12/vocab/unevaluated":true,"https://json-schema.org/draft/2020-12/vocab/format-annotation":true}}"#;
+const SUBSCHEMA_IN_DRAFT_4: &str = r#"{"properties":{"a":{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}"#;
+const BRANCH_IN_DRAFT_4: &str = r#"{"anyOf":[{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"},{"type":"string"}]}"#;
+const SUBSCHEMA_IN_DRAFT_7_BESIDE_REF: &str = r##"{"properties":{"a":{"$schema":"http://json-schema.org/draft-07/schema#","$ref":"#/$defs/x","minimum":5}},"$defs":{"x":{}}}"##;
+const EMBEDDED_RESOURCE_IN_DRAFT_7: &str = r#"{"properties":{"a":{"$id":"http://example.com/a","$schema":"http://json-schema.org/draft-07/schema#","dependentRequired":{"x":["y"]},"minimum":2}}}"#;
+const EMBEDDED_RESOURCE_IN_DRAFT_4: &str = r#"{"properties":{"a":{"$id":"http://example.com/a","$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}"#;
+const SUBSCHEMA_IN_DRAFT_4_BELOW_REF_TARGET: &str = r##"{"$ref":"#a","$defs":{"a":{"$anchor":"a","properties":{"b":{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}}}"##;
+const SUBSCHEMA_WITH_META_SCHEMA: &str =
+    r#"{"properties":{"a":{"$schema":"json-schema:///meta/no-validation","minimum":5}}}"#;
+const EMBEDDED_RESOURCE_WITH_META_SCHEMA: &str = r#"{"properties":{"a":{"$id":"http://example.com/a","$schema":"json-schema:///meta/no-validation","minimum":5}}}"#;
+const SUBSCHEMA_IN_DRAFT_4_IN_RESOURCE: &str = r#"{"$ref":"json-schema:///other"}"#;
+const RESOURCE_WITH_SUBSCHEMA_IN_DRAFT_4: &str = r#"{"properties":{"a":{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}"#;
+const SUBSCHEMA_IN_ROOT_DRAFT_UNDER_ANOTHER: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","dependentRequired":{"x":["y"]},"properties":{"a":{"$schema":"https://json-schema.org/draft/2020-12/schema","dependentRequired":{"x":["y"]}}}}"#;
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"a":{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}"#
+)]
+struct SubschemaInDraft4;
+
+#[jsonschema::validator(
+    schema = r#"{"anyOf":[{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"},{"type":"string"}]}"#
+)]
+struct BranchInDraft4;
+
+// Draft 7 ignores the keywords beside `$ref`.
+#[jsonschema::validator(
+    schema = r##"{"properties":{"a":{"$schema":"http://json-schema.org/draft-07/schema#","$ref":"#/$defs/x","minimum":5}},"$defs":{"x":{}}}"##
+)]
+struct SubschemaInDraft7BesideRef;
+
+// Draft 7 has no `dependentRequired`.
+#[jsonschema::validator(
+    schema = r#"{"properties":{"a":{"$id":"http://example.com/a","$schema":"http://json-schema.org/draft-07/schema#","dependentRequired":{"x":["y"]},"minimum":2}}}"#
+)]
+struct EmbeddedResourceInDraft7;
+
+// Draft 4 names a resource with `id`, so `$id` is an unknown keyword there.
+#[jsonschema::validator(
+    schema = r#"{"properties":{"a":{"$id":"http://example.com/a","$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}"#
+)]
+struct EmbeddedResourceInDraft4;
+
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#a","$defs":{"a":{"$anchor":"a","properties":{"b":{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}}}"##
+)]
+struct SubschemaInDraft4BelowRefTarget;
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"a":{"$schema":"json-schema:///meta/no-validation","minimum":5}}}"#,
+    resources = {
+        "json-schema:///meta/no-validation" => { schema = r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":false,"https://json-schema.org/draft/2020-12/vocab/unevaluated":true,"https://json-schema.org/draft/2020-12/vocab/format-annotation":true}}"# },
+    }
+)]
+struct SubschemaWithMetaSchema;
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"a":{"$id":"http://example.com/a","$schema":"json-schema:///meta/no-validation","minimum":5}}}"#,
+    resources = {
+        "json-schema:///meta/no-validation" => { schema = r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":false,"https://json-schema.org/draft/2020-12/vocab/unevaluated":true,"https://json-schema.org/draft/2020-12/vocab/format-annotation":true}}"# },
+    }
+)]
+struct EmbeddedResourceWithMetaSchema;
+
+#[jsonschema::validator(
+    schema = r#"{"$ref":"json-schema:///other"}"#,
+    resources = {
+        "json-schema:///other" => { schema = r#"{"properties":{"a":{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}"# },
+    }
+)]
+struct SubschemaInDraft4InResource;
+
+// The root stays in the configured draft; the subschema is in the draft its `$schema` names.
+#[jsonschema::validator(
+    schema = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","dependentRequired":{"x":["y"]},"properties":{"a":{"$schema":"https://json-schema.org/draft/2020-12/schema","dependentRequired":{"x":["y"]}}}}"#,
+    draft = referencing::Draft::Draft7
+)]
+struct SubschemaInRootDraftUnderAnother;
+
+#[test_case(SubschemaInDraft4::is_valid, SubschemaInDraft4::validate, SubschemaInDraft4::iter_errors, SubschemaInDraft4::evaluate, SUBSCHEMA_IN_DRAFT_4, referencing::Draft::Draft202012, serde_json::json!({"a": 1.0}) ; "draft4_subschema_float")]
+#[test_case(SubschemaInDraft4::is_valid, SubschemaInDraft4::validate, SubschemaInDraft4::iter_errors, SubschemaInDraft4::evaluate, SUBSCHEMA_IN_DRAFT_4, referencing::Draft::Draft202012, serde_json::json!({"a": 1}) ; "draft4_subschema_integer")]
+#[test_case(BranchInDraft4::is_valid, BranchInDraft4::validate, BranchInDraft4::iter_errors, BranchInDraft4::evaluate, BRANCH_IN_DRAFT_4, referencing::Draft::Draft202012, serde_json::json!(1.0) ; "draft4_branch_float")]
+#[test_case(BranchInDraft4::is_valid, BranchInDraft4::validate, BranchInDraft4::iter_errors, BranchInDraft4::evaluate, BRANCH_IN_DRAFT_4, referencing::Draft::Draft202012, serde_json::json!(1) ; "draft4_branch_integer")]
+#[test_case(SubschemaInDraft7BesideRef::is_valid, SubschemaInDraft7BesideRef::validate, SubschemaInDraft7BesideRef::iter_errors, SubschemaInDraft7BesideRef::evaluate, SUBSCHEMA_IN_DRAFT_7_BESIDE_REF, referencing::Draft::Draft202012, serde_json::json!({"a": 1}) ; "draft7_keyword_beside_ref")]
+#[test_case(EmbeddedResourceInDraft7::is_valid, EmbeddedResourceInDraft7::validate, EmbeddedResourceInDraft7::iter_errors, EmbeddedResourceInDraft7::evaluate, EMBEDDED_RESOURCE_IN_DRAFT_7, referencing::Draft::Draft202012, serde_json::json!({"a": {"x": 1}}) ; "draft7_resource_unknown_keyword")]
+#[test_case(EmbeddedResourceInDraft7::is_valid, EmbeddedResourceInDraft7::validate, EmbeddedResourceInDraft7::iter_errors, EmbeddedResourceInDraft7::evaluate, EMBEDDED_RESOURCE_IN_DRAFT_7, referencing::Draft::Draft202012, serde_json::json!({"a": 1}) ; "draft7_resource_error")]
+#[test_case(EmbeddedResourceInDraft4::is_valid, EmbeddedResourceInDraft4::validate, EmbeddedResourceInDraft4::iter_errors, EmbeddedResourceInDraft4::evaluate, EMBEDDED_RESOURCE_IN_DRAFT_4, referencing::Draft::Draft202012, serde_json::json!({"a": 1.0}) ; "draft4_resource_float")]
+#[test_case(SubschemaInDraft4BelowRefTarget::is_valid, SubschemaInDraft4BelowRefTarget::validate, SubschemaInDraft4BelowRefTarget::iter_errors, SubschemaInDraft4BelowRefTarget::evaluate, SUBSCHEMA_IN_DRAFT_4_BELOW_REF_TARGET, referencing::Draft::Draft202012, serde_json::json!({"b": 1.0}) ; "draft4_subschema_below_ref_target")]
+#[test_case(SubschemaWithMetaSchema::is_valid, SubschemaWithMetaSchema::validate, SubschemaWithMetaSchema::iter_errors, SubschemaWithMetaSchema::evaluate, SUBSCHEMA_WITH_META_SCHEMA, referencing::Draft::Draft202012, serde_json::json!({"a": 1}) ; "meta_schema_subschema")]
+#[test_case(EmbeddedResourceWithMetaSchema::is_valid, EmbeddedResourceWithMetaSchema::validate, EmbeddedResourceWithMetaSchema::iter_errors, EmbeddedResourceWithMetaSchema::evaluate, EMBEDDED_RESOURCE_WITH_META_SCHEMA, referencing::Draft::Draft202012, serde_json::json!({"a": 1}) ; "meta_schema_resource")]
+#[test_case(SubschemaInDraft4InResource::is_valid, SubschemaInDraft4InResource::validate, SubschemaInDraft4InResource::iter_errors, SubschemaInDraft4InResource::evaluate, SUBSCHEMA_IN_DRAFT_4_IN_RESOURCE, referencing::Draft::Draft202012, serde_json::json!({"a": 1.0}) ; "draft4_subschema_in_resource")]
+#[test_case(SubschemaInRootDraftUnderAnother::is_valid, SubschemaInRootDraftUnderAnother::validate, SubschemaInRootDraftUnderAnother::iter_errors, SubschemaInRootDraftUnderAnother::evaluate, SUBSCHEMA_IN_ROOT_DRAFT_UNDER_ANOTHER, referencing::Draft::Draft7, serde_json::json!({"x": 1}) ; "configured_draft_root")]
+#[test_case(SubschemaInRootDraftUnderAnother::is_valid, SubschemaInRootDraftUnderAnother::validate, SubschemaInRootDraftUnderAnother::iter_errors, SubschemaInRootDraftUnderAnother::evaluate, SUBSCHEMA_IN_ROOT_DRAFT_UNDER_ANOTHER, referencing::Draft::Draft7, serde_json::json!({"a": {"x": 1}}) ; "configured_draft_subschema")]
+fn test_subschema_in_the_dialect_its_schema_names_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    schema: &str,
+    draft: referencing::Draft,
+    instance: serde_json::Value,
+) {
+    let meta_schema: serde_json::Value =
+        serde_json::from_str(NO_VALIDATION_META_SCHEMA).expect("valid JSON");
+    let other: serde_json::Value =
+        serde_json::from_str(RESOURCE_WITH_SUBSCHEMA_IN_DRAFT_4).expect("valid JSON");
+    let registry = jsonschema::Registry::new()
+        .add("json-schema:///meta/no-validation", &meta_schema)
+        .expect("resource should be accepted")
+        .add("json-schema:///other", &other)
+        .expect("resource should be accepted")
+        .prepare()
+        .expect("registry builds");
+    let runtime = jsonschema::options()
+        .with_draft(draft)
+        .with_registry(&registry)
+        .build(&serde_json::from_str(schema).expect("valid JSON"))
+        .expect("valid schema");
+    assert_validate_parity(
+        is_valid(&instance),
+        validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+    assert_eq!(
+        evaluation_outputs(&evaluate(&instance)),
+        evaluation_outputs(&runtime.evaluate(&instance)),
+    );
+}
+
 const RECURSIVE_REF_CYCLE_ON_ROOT: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$recursiveAnchor":true,"minimum":1,"allOf":[{"$recursiveRef":"#"}]}"##;
 const RECURSIVE_REF_BESIDE_REF_CYCLE_ON_ROOT: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveAnchor":true,"minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$recursiveRef":"#"}}"##;
 const RECURSIVE_REF_CYCLE_INTO_NESTED_THEN_SAME_INSTANCE: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveAnchor":true,"minProperties":1,"allOf":[{"$recursiveRef":"#"}],"additionalProperties":{"$recursiveRef":"#"}}"##;
@@ -524,79 +653,67 @@ const DYNAMIC_REF_NOT_CYCLE_ON_REF_TARGET: &str = r##"{"$schema":"https://json-s
 // instance it holds. Under `not`, validity tells how many times it does.
 #[jsonschema::validator(
     schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$recursiveAnchor":true,"minimum":1,"allOf":[{"$recursiveRef":"#"}]}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct RecursiveRefCycleOnRoot;
 
 #[jsonschema::validator(
     schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveAnchor":true,"minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$recursiveRef":"#"}}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct RecursiveRefBesideRefCycleOnRoot;
 
 #[jsonschema::validator(
     schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveAnchor":true,"minProperties":1,"allOf":[{"$recursiveRef":"#"}],"additionalProperties":{"$recursiveRef":"#"}}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct RecursiveRefCycleIntoNestedThenSameInstance;
 
 #[jsonschema::validator(
     schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$ref":"tree","$defs":{"tree":{"$id":"tree","$recursiveAnchor":true,"minimum":1,"allOf":[{"$recursiveRef":"#"}]}}}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct RecursiveRefCycleOnRefTarget;
 
 #[jsonschema::validator(
-    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"node","minimum":1,"allOf":[{"$dynamicRef":"#node"}]}"##,
-    methods = { evaluate = true }
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"node","minimum":1,"allOf":[{"$dynamicRef":"#node"}]}"##
 )]
 struct DynamicRefCycleOnRoot;
 
 #[jsonschema::validator(
-    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$dynamicRef":"#node"}}"##,
-    methods = { evaluate = true }
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$dynamicRef":"#node"}}"##
 )]
 struct DynamicRefBesideRefCycleOnRoot;
 
 #[jsonschema::validator(
-    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","minProperties":1,"allOf":[{"$dynamicRef":"#node"}],"additionalProperties":{"$dynamicRef":"#node"}}"##,
-    methods = { evaluate = true }
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","minProperties":1,"allOf":[{"$dynamicRef":"#node"}],"additionalProperties":{"$dynamicRef":"#node"}}"##
 )]
 struct DynamicRefCycleIntoNestedThenSameInstance;
 
 #[jsonschema::validator(
-    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"tree","$defs":{"tree":{"$id":"tree","$dynamicAnchor":"node","minimum":1,"allOf":[{"$dynamicRef":"#node"}]}}}"##,
-    methods = { evaluate = true }
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"tree","$defs":{"tree":{"$id":"tree","$dynamicAnchor":"node","minimum":1,"allOf":[{"$dynamicRef":"#node"}]}}}"##
 )]
 struct DynamicRefCycleOnRefTarget;
 
 #[jsonschema::validator(
     schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveAnchor":true,"not":{"$recursiveRef":"#"}}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct RecursiveRefNotCycleOnRoot;
 
 #[jsonschema::validator(
     schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$ref":"tree","$defs":{"tree":{"$id":"tree","$recursiveAnchor":true,"not":{"$recursiveRef":"#"}}}}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct RecursiveRefNotCycleOnRefTarget;
 
 #[jsonschema::validator(
-    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","not":{"$dynamicRef":"#node"}}"##,
-    methods = { evaluate = true }
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","not":{"$dynamicRef":"#node"}}"##
 )]
 struct DynamicRefNotCycleOnRoot;
 
 #[jsonschema::validator(
-    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"tree","$defs":{"tree":{"$id":"tree","$dynamicAnchor":"node","not":{"$dynamicRef":"#node"}}}}"##,
-    methods = { evaluate = true }
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"tree","$defs":{"tree":{"$id":"tree","$dynamicAnchor":"node","not":{"$dynamicRef":"#node"}}}}"##
 )]
 struct DynamicRefNotCycleOnRefTarget;
 
@@ -3010,6 +3127,27 @@ fn test_arbitrary_precision_codegen_past_digit_budget(
     assert_eq!(is_valid(&instance), expected);
 }
 
+// A divisor beyond `f64`.
+#[cfg(feature = "arbitrary-precision")]
+#[test_case(ArbitraryPrecisionMultipleOfExtremeValidator::evaluate, r#"{"type":"number","multipleOf":1e400}"#, "1" ; "extreme_vs_one")]
+#[test_case(ArbitraryPrecisionMultipleOfExtremeValidator::evaluate, r#"{"type":"number","multipleOf":1e400}"#, "2e400" ; "extreme_vs_multiple")]
+#[test_case(ArbitraryPrecisionHugeMultipleOfValidator::evaluate, r#"{"type":"number","multipleOf":1e2000000}"#, "1" ; "huge_vs_one")]
+#[test_case(ArbitraryPrecisionHugeMultipleOfValidator::evaluate, r#"{"type":"number","multipleOf":1e2000000}"#, "0" ; "huge_vs_zero")]
+fn test_multiple_of_beyond_f64_evaluate_matches_runtime(
+    evaluate: EvaluateFn,
+    schema_json: &str,
+    instance_json: &str,
+) {
+    let schema: serde_json::Value = serde_json::from_str(schema_json).expect("valid schema json");
+    let instance: serde_json::Value =
+        serde_json::from_str(instance_json).expect("valid instance json");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_eq!(
+        evaluation_outputs(&evaluate(&instance)),
+        evaluation_outputs(&runtime.evaluate(&instance)),
+    );
+}
+
 #[cfg(feature = "arbitrary-precision")]
 #[test_case(
     r#"{"type":"number","minimum":18446744073709551616}"#,
@@ -3381,104 +3519,87 @@ fn test_ref_cycle_into_nested_then_same_instance_keeps_results() {
 // Schemas naming one `$ref` target in different ways, and different targets in similar ways.
 #[jsonschema::validator(
     schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$ref":"cycle","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct RefCycleResourceAndRootFragment;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","$ref":"cycle#","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleResourceWithEmptyFragment;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","$ref":"https://example.com/cycle","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"cycle"}],"additionalProperties":{"$ref":"#"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleAbsoluteAndRelativeUri;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","$ref":"cycle","$defs":{"cycle":{"$id":"cycle","$anchor":"node","minProperties":1,"allOf":[{"$ref":"#node"}],"additionalProperties":{"$ref":"#"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleAnchorAndRootFragment;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","$ref":"cycle#node","$defs":{"cycle":{"$id":"cycle","$anchor":"node","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#node"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleAnchorFromAnotherResource;
 #[jsonschema::validator(
     schema = r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"$anchor":"node","minProperties":1,"allOf":[{"$ref":"#node"}],"additionalProperties":{"$ref":"#/$defs/cycle"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleAnchorAndPointer;
 #[jsonschema::validator(
     schema = r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"minProperties":1,"allOf":[{"$ref":"#/%24defs/cycle"}],"additionalProperties":{"$ref":"#/$defs/%63ycle"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCyclePercentEncodedPointer;
 #[jsonschema::validator(
     schema = r##"{"$ref":"#/$defs/a%23%25b","$defs":{"a#%b":{"minProperties":1,"allOf":[{"$ref":"#/$defs/a%23%25%62"}],"additionalProperties":{"$ref":"#/$defs/a%23%25b"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCyclePercentEncodedNumberSignAndPercent;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/cycle","$defs":{"leaf":{"$id":"leaf","minProperties":1},"cycle":{"$id":"cycle","allOf":[{"$ref":"leaf"},{"$ref":"root#/$defs/cycle"}],"additionalProperties":{"$ref":"https://example.com/root#/$defs/cycle"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCyclePointerThroughResource;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/cycle","$defs":{"leaf":{"$id":"leaf","minProperties":1},"cycle":{"$id":"cycle","allOf":[{"$ref":"leaf"},{"$ref":"#"}],"additionalProperties":{"$ref":"root#/$defs/cycle"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCyclePointerThroughResourceAndRootFragment;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"https://example.com/root"}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleRootAndItsUri;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","":{"maxProperties":0},"minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#/"}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleRootAndEmptyNameMember;
 #[jsonschema::validator(
     schema = r#"{"$id":"https://example.com/root","properties":{"a":{"$ref":"root#/$defs/cycle"},"b":{"$ref":"cycle#/$defs/cycle"}},"$defs":{"cycle":{"$id":"cycle","$defs":{"cycle":{"maxProperties":0}}}}}"#,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefPointerThroughResourceAndPointerInIt;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","allOf":[{"$ref":"cycle"}],"definitions":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##,
-    draft = Draft7,
-    methods = { evaluate = true }
+    draft = Draft7
 )]
 struct RefCycleResourceDraft7;
 #[jsonschema::validator(
     schema = r##"{"$id":"https://example.com/root","allOf":[{"$ref":"#node"}],"definitions":{"cycle":{"$id":"#node","minProperties":1,"allOf":[{"$ref":"#/definitions/cycle"}],"additionalProperties":{"$ref":"#node"}}}}"##,
-    draft = Draft7,
-    methods = { evaluate = true }
+    draft = Draft7
 )]
 struct RefCyclePlainNameIdDraft7;
 #[jsonschema::validator(
     schema = r##"{"id":"https://example.com/root","allOf":[{"$ref":"cycle"}],"definitions":{"cycle":{"id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##,
-    draft = Draft4,
-    methods = { evaluate = true }
+    draft = Draft4
 )]
 struct RefCycleResourceDraft4;
 #[jsonschema::validator(
     schema = r##"{"id":"https://example.com/root","allOf":[{"$ref":"#node"}],"definitions":{"cycle":{"id":"#node","minProperties":1,"allOf":[{"$ref":"https://example.com/root#/definitions/cycle"}],"additionalProperties":{"$ref":"#node"}}}}"##,
-    draft = Draft4,
-    methods = { evaluate = true }
+    draft = Draft4
 )]
 struct RefCyclePlainNameIdDraft4;
 
@@ -4702,38 +4823,32 @@ fn test_pure_ref_cycles_match_runtime(instance: serde_json::Value) {
 // scope: through nested instances, through the same instance, and to one target from two scopes.
 #[jsonschema::validator(
     schema = r##"{"$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$ref": "#/$defs/node"}}}}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct RefCycleBesideRecursiveRef;
 #[jsonschema::validator(
     schema = r##"{"$dynamicAnchor": "meta", "properties": {"a": {"$dynamicRef": "#meta"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$ref": "#/$defs/node"}}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleBesideDynamicRef;
 #[jsonschema::validator(
     schema = r##"{"$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct SameInstanceRefCycleBesideRecursiveRef;
 #[jsonschema::validator(
     schema = r##"{"$dynamicAnchor": "meta", "properties": {"a": {"$dynamicRef": "#meta"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct SameInstanceRefCycleBesideDynamicRef;
 #[jsonschema::validator(
     schema = r##"{"$id": "https://example.com/root", "allOf": [{"$ref": "strict"}, {"$ref": "tree"}], "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "$ref": "#/$defs/cycle", "$defs": {"cycle": {"minProperties": 1, "allOf": [{"$ref": "#/$defs/cycle"}], "additionalProperties": {"$recursiveRef": "#"}}}}, "strict": {"$id": "strict", "$recursiveAnchor": true, "$ref": "tree", "maxProperties": 1}}}"##,
-    draft = Draft201909,
-    methods = { evaluate = true }
+    draft = Draft201909
 )]
 struct RefCycleUnderTwoRecursiveScopes;
 #[jsonschema::validator(
     schema = r##"{"$id": "https://example.com/root", "allOf": [{"$ref": "strict"}, {"$ref": "tree"}], "$defs": {"tree": {"$id": "tree", "$dynamicAnchor": "node", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"minProperties": 1, "allOf": [{"$ref": "#/$defs/cycle"}], "additionalProperties": {"$dynamicRef": "#node"}}}}, "strict": {"$id": "strict", "$dynamicAnchor": "node", "$ref": "tree", "maxProperties": 1}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleUnderTwoDynamicScopes;
 
@@ -4787,8 +4902,7 @@ fn test_ref_cycle_under_dynamic_scope_matches_runtime(
 
 #[jsonschema::validator(
     schema = r##"{"$id": "https://example.com/root", "$ref": "start", "$defs": {"start": {"$id": "start", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"properties": {"next": {"$ref": "wrap"}}, "additionalProperties": {"$dynamicRef": "leaf#node"}}}}, "leaf": {"$id": "leaf", "$dynamicAnchor": "node", "type": "integer"}, "wrap": {"$id": "wrap", "$dynamicAnchor": "node", "type": "object", "$ref": "start#/$defs/cycle"}}}"##,
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct RefCycleReachedUnderAnotherDynamicAnchor;
 
@@ -6306,6 +6420,7 @@ struct DynamicRefNoUnevaluatedVocab;
 #[test_case(serde_json::json!({}) ; "empty")]
 #[test_case(serde_json::json!({"children":[{}]}) ; "nested")]
 #[test_case(serde_json::json!({"children":[{"children":[{}]}]}) ; "deep")]
+#[test_case(serde_json::json!({"children":[{"children":[1]}]}) ; "deep_not_an_object")]
 fn test_dynamic_ref_no_unevaluated_vocab(instance: serde_json::Value) {
     let schema = serde_json::json!({"$schema":"json-schema:///meta/no-unevaluated","$id":"json-schema:///tree-no-uneval","$dynamicAnchor":"node","type":"object","properties":{"children":{"type":"array","items":{"$dynamicRef":"#node"}}}});
     let runtime = build_runtime_with_resources(
@@ -6318,6 +6433,10 @@ fn test_dynamic_ref_no_unevaluated_vocab(instance: serde_json::Value) {
     assert_eq!(
         DynamicRefNoUnevaluatedVocab::is_valid(&instance),
         runtime.is_valid(&instance)
+    );
+    assert_eq!(
+        evaluation_outputs(&DynamicRefNoUnevaluatedVocab::evaluate(&instance)),
+        evaluation_outputs(&runtime.evaluate(&instance)),
     );
 }
 
@@ -6347,6 +6466,7 @@ fn test_type_non_string_array_value(instance: serde_json::Value) {
     // reject-everything validator rather than a compile error.
     assert!(!TypeNonStringArrayValue::is_valid(&instance));
     assert!(TypeNonStringArrayValue::validate(&instance).is_err());
+    assert!(!TypeNonStringArrayValue::evaluate(&instance).flag().valid);
 }
 
 #[jsonschema::validator(
@@ -7470,35 +7590,27 @@ fn test_arrays_of_same_ref_match_runtime(instance: serde_json::Value) {
     );
 }
 
-#[jsonschema::validator(schema = "true", methods = { evaluate = true })]
+#[jsonschema::validator(schema = "true")]
 struct EvaluateTrue;
 
-#[jsonschema::validator(schema = "false", methods = { evaluate = true })]
+#[jsonschema::validator(schema = "false")]
 struct EvaluateFalse;
 
-#[jsonschema::validator(schema = "{}", methods = { evaluate = true })]
+#[jsonschema::validator(schema = "{}")]
 struct EvaluateEmpty;
 
-#[jsonschema::validator(
-    schema = "false",
-    base_uri = "https://example.com/root.json",
-    methods = { evaluate = true }
-)]
+#[jsonschema::validator(schema = "false", base_uri = "https://example.com/root.json")]
 struct EvaluateFalseWithBase;
 
-#[jsonschema::validator(schema = r#"{"type": ["string", "null"]}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"type": ["string", "null"]}"#)]
 struct EvaluateType;
 
-#[jsonschema::validator(
-    schema = r#"{"maxLength": 3, "minLength": 2, "type": "string"}"#,
-    methods = { evaluate = true }
-)]
+#[jsonschema::validator(schema = r#"{"maxLength": 3, "minLength": 2, "type": "string"}"#)]
 struct EvaluateLengths;
 
 #[jsonschema::validator(
     schema = r#"{"maxLength": 3, "minLength": 2, "type": "string"}"#,
-    base_uri = "https://example.com/root.json",
-    methods = { evaluate = true }
+    base_uri = "https://example.com/root.json"
 )]
 struct EvaluateLengthsWithBase;
 
@@ -7508,557 +7620,559 @@ struct EvaluateLengthsWithBase;
 )]
 struct EvaluateOnly;
 
-#[jsonschema::validator(
-    schema = r#"{"exclusiveMaximum": 5, "minimum": 1, "multipleOf": 2}"#,
-    methods = { evaluate = true }
-)]
+#[jsonschema::validator(schema = r#"{"exclusiveMaximum": 5, "minimum": 1, "multipleOf": 2}"#)]
 struct EvaluateNumbers;
 
 #[jsonschema::validator(
     schema = r#"{"maximum": 5, "exclusiveMaximum": true, "minimum": 1, "exclusiveMinimum": true}"#,
-    draft = Draft4,
-    methods = { evaluate = true }
+    draft = Draft4
 )]
 struct EvaluateDraft4Bounds;
 
-#[jsonschema::validator(schema = r#"{"enum": [1, 2, "a"], "const": 1}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"enum": [1, 2, "a"], "const": 1}"#)]
 struct EvaluateValues;
 
-#[jsonschema::validator(
-    schema = r#"{"maxItems": 2, "minItems": 1, "uniqueItems": true}"#,
-    methods = { evaluate = true }
-)]
+#[jsonschema::validator(schema = r#"{"maxItems": 2, "minItems": 1, "uniqueItems": true}"#)]
 struct EvaluateItemCounts;
 
-#[jsonschema::validator(
-    schema = r#"{"uniqueItems": false, "minItems": 1}"#,
-    methods = { evaluate = true }
-)]
+#[jsonschema::validator(schema = r#"{"uniqueItems": false, "minItems": 1}"#)]
 struct EvaluateUniqueItemsFalse;
 
 #[jsonschema::validator(
-    schema = r#"{"required": ["a"], "maxProperties": 2, "minProperties": 1, "pattern": "^a"}"#,
-    methods = { evaluate = true }
+    schema = r#"{"required": ["a"], "maxProperties": 2, "minProperties": 1, "pattern": "^a"}"#
 )]
 struct EvaluateObjectsAndPattern;
 
 #[jsonschema::validator(
-    schema = r#"{"title": "t", "x-vendor": [1, {"a": null}], "$comment": "c", "minimum": 1}"#,
-    methods = { evaluate = true }
+    schema = r#"{"title": "t", "x-vendor": [1, {"a": null}], "$comment": "c", "minimum": 1}"#
 )]
 struct EvaluateAnnotations;
 
-#[jsonschema::validator(schema = r#"{"const": 1, "maximum": 1}"#, draft = Draft4, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"const": 1, "maximum": 1}"#, draft = Draft4)]
 struct EvaluateDraft4Const;
 
 #[jsonschema::validator(
-    schema = r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"}"#,
-    methods = { evaluate = true }
+    schema = r#"{"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string"}"#
 )]
 struct EvaluateSchemaKeyword;
 
-#[jsonschema::validator(schema = r#"{"format": "email"}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"format": "email"}"#, draft = Draft202012)]
 struct EvaluateFormatAnnotation;
 
-#[jsonschema::validator(schema = r#"{"format": "email"}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"format": "email"}"#, draft = Draft7)]
 struct EvaluateFormatAsserted;
 
-#[jsonschema::validator(schema = r#"{"format": "nope", "minLength": 1}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"format": "nope", "minLength": 1}"#, draft = Draft7)]
 struct EvaluateUnknownFormat;
 
-#[jsonschema::validator(schema = r#"{"format": "nope"}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"format": "nope"}"#, draft = Draft202012)]
 struct EvaluateUnknownFormatAnnotation;
 
-#[jsonschema::validator(schema = r#"{"contentEncoding": "base64", "contentMediaType": "application/json"}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contentEncoding": "base64", "contentMediaType": "application/json"}"#, draft = Draft7)]
 struct EvaluateContentDraft7;
 
-#[jsonschema::validator(schema = r#"{"contentEncoding": "base64"}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contentEncoding": "base64"}"#, draft = Draft7)]
 struct EvaluateContentEncodingDraft7;
 
-#[jsonschema::validator(schema = r#"{"contentEncoding": "base64", "contentMediaType": "application/json", "contentSchema": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contentEncoding": "base64", "contentMediaType": "application/json", "contentSchema": {"type": "integer"}}"#, draft = Draft202012)]
 struct EvaluateContent;
 
-#[jsonschema::validator(schema = r#"{"contentSchema": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contentSchema": {"type": "integer"}}"#, draft = Draft202012)]
 struct EvaluateContentSchemaAlone;
 
-#[jsonschema::validator(schema = r#"{"properties": {"a": {"type": "integer"}, "b": false, "c": true, "d": {}, "e~/f": {"minLength": 1, "x-note": 1}}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"properties": {"a": {"type": "integer"}, "b": false, "c": true, "d": {}, "e~/f": {"minLength": 1, "x-note": 1}}}"#
+)]
 struct EvaluateProperties;
 
-#[jsonschema::validator(schema = r#"{"properties": {"s p": {"type": "string"}, "^a": {"properties": {"b": {"minimum": 2}}}}}"#, base_uri = "https://example.com/root.json", methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"properties": {"s p": {"type": "string"}, "^a": {"properties": {"b": {"minimum": 2}}}}}"#,
+    base_uri = "https://example.com/root.json"
+)]
 struct EvaluatePropertiesWithBase;
 
-#[jsonschema::validator(schema = r#"{"type": "object", "properties": {"b": {"type": "integer"}, "a": {}}, "required": ["a", "b"]}"#, methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"type": "object", "properties": {"b": {"type": "integer"}, "a": {}}, "required": ["a", "b"]}"#
+)]
 struct EvaluatePropertiesRequired;
 
-#[jsonschema::validator(schema = r#"{"patternProperties": {"^a": {"type": "integer"}, "b$": true, "^c": false, "^[0-9]+$": {"minimum": 2}}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"patternProperties": {"^a": {"type": "integer"}, "b$": true, "^c": false, "^[0-9]+$": {"minimum": 2}}}"#
+)]
 struct EvaluatePatternProperties;
 
-#[jsonschema::validator(schema = r#"{"additionalProperties": {"type": "string"}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"additionalProperties": {"type": "string"}}"#)]
 struct EvaluateAdditionalSchema;
 
-#[jsonschema::validator(schema = r#"{"additionalProperties": false}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"additionalProperties": false}"#)]
 struct EvaluateAdditionalFalse;
 
-#[jsonschema::validator(schema = r#"{"additionalProperties": {}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"additionalProperties": {}}"#)]
 struct EvaluateAdditionalEmpty;
 
-#[jsonschema::validator(schema = r#"{"properties": {"b": {}, "a": {"type": "integer"}}, "additionalProperties": true}"#, methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"properties": {"b": {}, "a": {"type": "integer"}}, "additionalProperties": true}"#
+)]
 struct EvaluateAdditionalTrue;
 
-#[jsonschema::validator(schema = r#"{"properties": {"b": {"type": "integer"}, "a": {}}, "patternProperties": {"^x": {"minLength": 2}}, "additionalProperties": {"type": "string"}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"properties": {"b": {"type": "integer"}, "a": {}}, "patternProperties": {"^x": {"minLength": 2}}, "additionalProperties": {"type": "string"}}"#
+)]
 struct EvaluateObjectApplicators;
 
-#[jsonschema::validator(schema = r#"{"properties": {"a": {}}, "patternProperties": {"^x": {}}, "additionalProperties": false}"#, methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"properties": {"a": {}}, "patternProperties": {"^x": {}}, "additionalProperties": false}"#
+)]
 struct EvaluateObjectApplicatorsFalse;
 
-#[jsonschema::validator(schema = r#"{"properties": {"a": {}}, "required": ["a"], "additionalProperties": false}"#, methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"properties": {"a": {}}, "required": ["a"], "additionalProperties": false}"#
+)]
 struct EvaluateClosedRequired;
 
-#[jsonschema::validator(schema = r#"{"properties": {"a": {}, "b": {}}, "required": ["a", "b"], "additionalProperties": false}"#, methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"properties": {"a": {}, "b": {}}, "required": ["a", "b"], "additionalProperties": false}"#
+)]
 struct EvaluateClosedEveryRequired;
 
-#[jsonschema::validator(schema = r#"{"patternProperties": {"^a/b~": {"type": "integer"}, "^ ": {}}, "additionalProperties": {"properties": {"a": false}}}"#, base_uri = "https://example.com/root.json", methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"patternProperties": {"^a/b~": {"type": "integer"}, "^ ": {}}, "additionalProperties": {"properties": {"a": false}}}"#,
+    base_uri = "https://example.com/root.json"
+)]
 struct EvaluatePatternsWithBase;
 
-#[jsonschema::validator(schema = r#"{"propertyNames": {"maxLength": 1}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"propertyNames": {"maxLength": 1}}"#)]
 struct EvaluatePropertyNames;
 
-#[jsonschema::validator(schema = r#"{"propertyNames": false}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"propertyNames": false}"#)]
 struct EvaluatePropertyNamesFalse;
 
-#[jsonschema::validator(schema = r#"{"propertyNames": true, "minProperties": 1}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"propertyNames": true, "minProperties": 1}"#)]
 struct EvaluatePropertyNamesTrue;
 
-#[jsonschema::validator(schema = r#"{"propertyNames": {"format": "email", "minLength": 2}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"propertyNames": {"format": "email", "minLength": 2}}"#)]
 struct EvaluatePropertyNamesFormat;
 
-#[jsonschema::validator(schema = r#"{"properties": {"a": {}}, "patternProperties": {"^x": {}}, "additionalProperties": {"type": "integer"}, "propertyNames": {"pattern": "^[a-z]+$", "minLength": 1}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"properties": {"a": {}}, "patternProperties": {"^x": {}}, "additionalProperties": {"type": "integer"}, "propertyNames": {"pattern": "^[a-z]+$", "minLength": 1}}"#
+)]
 struct EvaluatePropertyNamesBesideApplicators;
 
-#[jsonschema::validator(schema = r#"{"properties": {"a": {"propertyNames": {"maxLength": 1}}}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"properties": {"a": {"propertyNames": {"maxLength": 1}}}}"#)]
 struct EvaluatePropertyNamesNested;
 
-#[jsonschema::validator(schema = r#"{"propertyNames": {"maxLength": 1}, "minProperties": 1}"#, draft = Draft4, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"propertyNames": {"maxLength": 1}, "minProperties": 1}"#, draft = Draft4)]
 struct EvaluatePropertyNamesDraft4;
 
-#[jsonschema::validator(schema = r#"{"dependentRequired": {"a": ["b", "c"], "x": ["y"]}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"dependentRequired": {"a": ["b", "c"], "x": ["y"]}}"#, draft = Draft202012)]
 struct EvaluateDependentRequired;
 
-#[jsonschema::validator(schema = r#"{"dependentSchemas": {"a": {"required": ["b"]}, "c": true, "d": false, "e": {"x-note": 1, "minProperties": 2}}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"dependentSchemas": {"a": {"required": ["b"]}, "c": true, "d": false, "e": {"x-note": 1, "minProperties": 2}}}"#, draft = Draft202012)]
 struct EvaluateDependentSchemas;
 
-#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["b"], "c": {"required": ["d"]}, "e": false, "f": []}}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["b"], "c": {"required": ["d"]}, "e": false, "f": []}}"#, draft = Draft7)]
 struct EvaluateDependenciesDraft7;
 
-#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["b"], "c": {"properties": {"c": {"type": "integer"}}}}}"#, draft = Draft4, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["b"], "c": {"properties": {"c": {"type": "integer"}}}}}"#, draft = Draft4)]
 struct EvaluateDependenciesDraft4;
 
-#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["b"], "c": {"minProperties": 3}}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"dependencies": {"a": ["b"], "c": {"minProperties": 3}}}"#, draft = Draft202012)]
 struct EvaluateDependencies;
 
-#[jsonschema::validator(schema = r#"{"dependentRequired": {"a": ["b"]}, "minProperties": 1}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"dependentRequired": {"a": ["b"]}, "minProperties": 1}"#, draft = Draft7)]
 struct EvaluateDependentRequiredDraft7;
 
-#[jsonschema::validator(schema = r#"{"prefixItems": [{"type": "integer"}, true], "items": {"type": "string"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"prefixItems": [{"type": "integer"}, true], "items": {"type": "string"}}"#, draft = Draft202012)]
 struct EvaluatePrefixItems;
 
-#[jsonschema::validator(schema = r#"{"prefixItems": [{}], "items": false}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"prefixItems": [{}], "items": false}"#, draft = Draft202012)]
 struct EvaluateItemsFalse;
 
-#[jsonschema::validator(schema = r#"{"items": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"type": "integer"}}"#, draft = Draft202012)]
 struct EvaluateItemsType;
 
-#[jsonschema::validator(schema = r#"{"type": "array", "minItems": 1, "maxItems": 3, "items": {"minimum": 1}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"type": "array", "minItems": 1, "maxItems": 3, "items": {"minimum": 1}}"#, draft = Draft202012)]
 struct EvaluateItemsShape;
 
-#[jsonschema::validator(schema = r#"{"items": true, "prefixItems": [{"const": 1}]}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": true, "prefixItems": [{"const": 1}]}"#, draft = Draft202012)]
 struct EvaluateItemsTrue;
 
-#[jsonschema::validator(schema = r#"{"items": {"properties": {"a": {"type": "integer"}}}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"properties": {"a": {"type": "integer"}}}}"#, draft = Draft202012)]
 struct EvaluateItemsNested;
 
-#[jsonschema::validator(schema = r#"{"items": [{"type": "integer"}, {}], "additionalItems": {"type": "string"}}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": [{"type": "integer"}, {}], "additionalItems": {"type": "string"}}"#, draft = Draft7)]
 struct EvaluateTupleDraft7;
 
-#[jsonschema::validator(schema = r#"{"items": [{}], "additionalItems": false}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": [{}], "additionalItems": false}"#, draft = Draft7)]
 struct EvaluateAdditionalItemsFalse;
 
-#[jsonschema::validator(schema = r#"{"items": [{}, {}], "additionalItems": {"type": "string"}}"#, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": [{}, {}], "additionalItems": {"type": "string"}}"#, draft = Draft201909)]
 struct EvaluateTupleDraft201909;
 
-#[jsonschema::validator(schema = r#"{"items": {"type": "integer"}, "additionalItems": false}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"type": "integer"}, "additionalItems": false}"#, draft = Draft7)]
 struct EvaluateAdditionalItemsIgnored;
 
 // Without array-form `items`, the runtime compiles nothing below `additionalItems`, `$id` included.
-#[jsonschema::validator(schema = r##"{"additionalItems": {"$id": "http://example.com/tail", "$ref": "#/$defs/s", "$defs": {"s": {"type": "string"}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"additionalItems": {"$id": "http://example.com/tail", "$ref": "#/$defs/s", "$defs": {"s": {"type": "string"}}}}"##, draft = Draft202012)]
 struct EvaluateAdditionalItemsWithoutItems;
 
-#[jsonschema::validator(schema = r#"{"items": {"type": "integer"}, "additionalItems": {"$id": "http://a b"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"type": "integer"}, "additionalItems": {"$id": "http://a b"}}"#, draft = Draft202012)]
 struct EvaluateAdditionalItemsBesideSchemaItems;
 
-#[jsonschema::validator(schema = r#"{"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}"#, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}"#, draft = Draft201909)]
 struct EvaluatePrefixItemsDraft201909;
 
-#[jsonschema::validator(schema = r#"{"items": {"type": "number"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"type": "number"}}"#, draft = Draft202012)]
 struct EvaluateItemsNumber;
 
-#[jsonschema::validator(schema = r#"{"items": {"type": "array", "items": {"type": "number"}}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"type": "array", "items": {"type": "number"}}}"#, draft = Draft202012)]
 struct EvaluateNestedItems;
 
-#[jsonschema::validator(schema = r#"{"items": {"type": "array", "minItems": 2, "items": {"type": "number"}}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"type": "array", "minItems": 2, "items": {"type": "number"}}}"#, draft = Draft202012)]
 struct EvaluateNestedItemsShape;
 
-#[jsonschema::validator(schema = r#"{"items": {"minimum": 1, "maximum": 5}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"minimum": 1, "maximum": 5}}"#, draft = Draft202012)]
 struct EvaluateItemsRange;
 
-#[jsonschema::validator(schema = r#"{"items": {}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {}}"#, draft = Draft202012)]
 struct EvaluateItemsEmpty;
 
-#[jsonschema::validator(schema = r#"{"items": {"type": "string", "title": "t"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"type": "string", "title": "t"}}"#, draft = Draft202012)]
 struct EvaluateItemsTitled;
 
-#[jsonschema::validator(schema = r#"{"items": {"format": "email"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"format": "email"}}"#, draft = Draft202012)]
 struct EvaluateItemsFormat;
 
-#[jsonschema::validator(schema = r#"{"items": {"x-unknown": 1, "minimum": 1}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": {"x-unknown": 1, "minimum": 1}}"#, draft = Draft202012)]
 struct EvaluateItemsUnknownKeyword;
 
-#[jsonschema::validator(schema = r##"{"$defs": {"n": {"type": "number"}}, "items": {"$ref": "#/$defs/n"}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"n": {"type": "number"}}, "items": {"$ref": "#/$defs/n"}}"##, draft = Draft202012)]
 struct EvaluateItemsRefToLeaf;
 
-#[jsonschema::validator(schema = r##"{"$defs": {"list": {"items": {"type": "number"}}}, "$ref": "#/$defs/list"}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"list": {"items": {"type": "number"}}}, "$ref": "#/$defs/list"}"##, draft = Draft202012)]
 struct EvaluateRefToLeafItems;
 
-#[jsonschema::validator(schema = r##"{"$defs": {"list": {"items": {"type": "number"}}}, "properties": {"a": {"$ref": "#/$defs/list"}, "b": {"$ref": "#/$defs/list"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"list": {"items": {"type": "number"}}}, "properties": {"a": {"$ref": "#/$defs/list"}, "b": {"$ref": "#/$defs/list"}}}"##, draft = Draft202012)]
 struct EvaluateLeafItemsBelowTwoRefs;
 
-#[jsonschema::validator(schema = r#"{"items": {"type": "number"}}"#, base_uri = "https://example.com/root.json", methods = { evaluate = true })]
+#[jsonschema::validator(
+    schema = r#"{"items": {"type": "number"}}"#,
+    base_uri = "https://example.com/root.json"
+)]
 struct EvaluateItemsNumberWithBase;
 
-#[jsonschema::validator(schema = r#"{"items": [{"type": "integer"}], "additionalItems": {"minimum": 1}}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"items": [{"type": "integer"}], "additionalItems": {"minimum": 1}}"#, draft = Draft7)]
 struct EvaluateAdditionalItemsLeaf;
 
-#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}}"#, draft = Draft202012)]
 struct EvaluateContains;
 
-#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 2, "maxContains": 3}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 2, "maxContains": 3}"#, draft = Draft202012)]
 struct EvaluateContainsBounds;
 
-#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 2}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 2}"#, draft = Draft202012)]
 struct EvaluateContainsMin;
 
 // Both bounds fail for two matching items, so one unit reports errors from two keywords.
-#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 3, "maxContains": 1}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minContains": 3, "maxContains": 1}"#, draft = Draft202012)]
 struct EvaluateContainsBoundsCrossed;
 
-#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "maxContains": 1}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "maxContains": 1}"#, draft = Draft202012)]
 struct EvaluateContainsMax;
 
-#[jsonschema::validator(schema = r#"{"contains": {"const": 1}, "minContains": 0}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": {"const": 1}, "minContains": 0}"#, draft = Draft202012)]
 struct EvaluateContainsMinZero;
 
-#[jsonschema::validator(schema = r#"{"contains": false}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": false}"#, draft = Draft202012)]
 struct EvaluateContainsFalse;
 
-#[jsonschema::validator(schema = r#"{"contains": true}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": true}"#, draft = Draft202012)]
 struct EvaluateContainsTrue;
 
-#[jsonschema::validator(schema = r#"{"contains": {"properties": {"a": {"type": "integer"}}, "required": ["a"]}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": {"properties": {"a": {"type": "integer"}}, "required": ["a"]}}"#, draft = Draft202012)]
 struct EvaluateContainsNested;
 
-#[jsonschema::validator(schema = r#"{"contains": {"minimum": 2}, "minContains": 5}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": {"minimum": 2}, "minContains": 5}"#, draft = Draft7)]
 struct EvaluateContainsDraft7;
 
-#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minItems": 1}"#, draft = Draft4, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "minItems": 1}"#, draft = Draft4)]
 struct EvaluateContainsDraft4;
 
-#[jsonschema::validator(schema = r#"{"allOf": [{"type": "integer"}, {"minimum": 2}, true]}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"allOf": [{"type": "integer"}, {"minimum": 2}, true]}"#, draft = Draft202012)]
 struct EvaluateAllOf;
 
-#[jsonschema::validator(schema = r#"{"anyOf": [{"type": "string"}, {"minimum": 2}, {"type": "integer"}]}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"anyOf": [{"type": "string"}, {"minimum": 2}, {"type": "integer"}]}"#, draft = Draft202012)]
 struct EvaluateAnyOf;
 
-#[jsonschema::validator(schema = r#"{"oneOf": [{"type": "integer"}, {"minimum": 2}, {"type": "string"}]}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"oneOf": [{"type": "integer"}, {"minimum": 2}, {"type": "string"}]}"#, draft = Draft202012)]
 struct EvaluateOneOf;
 
-#[jsonschema::validator(schema = r#"{"oneOf": [{"properties": {"a": {"type": "integer"}}, "required": ["a"]}, {"properties": {"b": {"const": 1}}, "required": ["b"]}]}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"oneOf": [{"properties": {"a": {"type": "integer"}}, "required": ["a"]}, {"properties": {"b": {"const": 1}}, "required": ["b"]}]}"#, draft = Draft202012)]
 struct EvaluateOneOfObjects;
 
-#[jsonschema::validator(schema = r#"{"not": {"type": "integer"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"not": {"type": "integer"}}"#, draft = Draft202012)]
 struct EvaluateNot;
-#[jsonschema::validator(schema = r#"{"not": {"items": {"type": "string"}, "unevaluatedItems": false}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"not": {"items": {"type": "string"}, "unevaluatedItems": false}}"#, draft = Draft202012)]
 struct EvaluateNotUnwalked;
 
-#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "then": {"minimum": 2}, "else": {"type": "string"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "then": {"minimum": 2}, "else": {"type": "string"}}"#, draft = Draft202012)]
 struct EvaluateConditional;
 
-#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "then": {"minimum": 2}}"#, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "then": {"minimum": 2}}"#, draft = Draft7)]
 struct EvaluateIfThen;
 
-#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "else": {"type": "string"}}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "else": {"type": "string"}}"#, draft = Draft202012)]
 struct EvaluateIfElse;
 
-#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "minLength": 1}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "minLength": 1}"#, draft = Draft202012)]
 struct EvaluateIfAlone;
 
 // The runtime compiles `if`, `then` and `else` only together, leaving these references unresolved.
-#[jsonschema::validator(schema = r##"{"if": {"$ref": "#/$defs/missing"}, "minLength": 1}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"if": {"$ref": "#/$defs/missing"}, "minLength": 1}"##, draft = Draft202012)]
 struct EvaluateIfWithoutBranches;
 
-#[jsonschema::validator(schema = r##"{"then": {"$ref": "#/$defs/missing"}, "else": {"$ref": "#/$defs/missing"}, "minLength": 1}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"then": {"$ref": "#/$defs/missing"}, "else": {"$ref": "#/$defs/missing"}, "minLength": 1}"##, draft = Draft202012)]
 struct EvaluateBranchesWithoutIf;
 
-#[jsonschema::validator(schema = r#"{"anyOf": [{"allOf": [{"type": "array"}, {"items": {"not": {"type": "string"}}}]}, {"oneOf": [{"type": "object"}, {"type": "null"}]}]}"#, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"anyOf": [{"allOf": [{"type": "array"}, {"items": {"not": {"type": "string"}}}]}, {"oneOf": [{"type": "object"}, {"type": "null"}]}]}"#, draft = Draft202012)]
 struct EvaluateNestedCombinators;
-#[jsonschema::validator(schema = r##"{"$defs": {"a": {"type": "integer", "minimum": 2}}, "$ref": "#/$defs/a"}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"a": {"type": "integer", "minimum": 2}}, "$ref": "#/$defs/a"}"##, draft = Draft202012)]
 struct EvaluateRef;
-#[jsonschema::validator(schema = r##"{"$defs": {"a": {"type": "integer"}}, "$ref": "#/$defs/a", "minimum": 5, "title": "t"}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"a": {"type": "integer"}}, "$ref": "#/$defs/a", "minimum": 5, "title": "t"}"##, draft = Draft202012)]
 struct EvaluateRefSiblings;
-#[jsonschema::validator(schema = r##"{"definitions": {"a": {"type": "integer"}}, "$ref": "#/definitions/a", "minimum": 5, "title": "t"}"##, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"definitions": {"a": {"type": "integer"}}, "$ref": "#/definitions/a", "minimum": 5, "title": "t"}"##, draft = Draft7)]
 struct EvaluateRefSiblingsDraft7;
-#[jsonschema::validator(schema = r##"{"properties": {"foo": {"$ref": "#/$defs/a"}}, "$defs": {"a": {"minLength": 2, "title": "t"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"foo": {"$ref": "#/$defs/a"}}, "$defs": {"a": {"minLength": 2, "title": "t"}}}"##, draft = Draft202012)]
 struct EvaluateRefBelowProperties;
-#[jsonschema::validator(schema = r##"{"type": "object", "properties": {"next": {"$ref": "#"}, "v": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"type": "object", "properties": {"next": {"$ref": "#"}, "v": {"type": "integer"}}}"##, draft = Draft202012)]
 struct EvaluateRefRecursive;
-#[jsonschema::validator(schema = r##"{"anyOf": [{"$ref": "#/$defs/a"}, {"type": "null"}], "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"anyOf": [{"$ref": "#/$defs/a"}, {"type": "null"}], "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012)]
 struct EvaluateRefInBranches;
-#[jsonschema::validator(schema = r##"{"$ref": "#/$defs/f", "$defs": {"f": false}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$ref": "#/$defs/f", "$defs": {"f": false}}"##, draft = Draft202012)]
 struct EvaluateRefFalse;
-#[jsonschema::validator(schema = r##"{"$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"type": "integer"}}, "$ref": "#/$defs/a"}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"type": "integer"}}, "$ref": "#/$defs/a"}"##, draft = Draft202012)]
 struct EvaluateRefChain;
-#[jsonschema::validator(schema = r##"{"$id": "https://example.com/root", "$defs": {"a": {"$anchor": "here", "type": "integer"}}, "$ref": "#here"}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$id": "https://example.com/root", "$defs": {"a": {"$anchor": "here", "type": "integer"}}, "$ref": "#here"}"##, draft = Draft202012)]
 struct EvaluateRefAnchor;
-#[jsonschema::validator(schema = r##"{"allOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/a"}], "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"allOf": [{"$ref": "#/$defs/a"}, {"$ref": "#/$defs/a"}], "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012)]
 struct EvaluateRefTwice;
-#[jsonschema::validator(schema = r##"{"$ref": "#", "type": "integer"}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$ref": "#", "type": "integer"}"##, draft = Draft202012)]
 struct EvaluateRefRoot;
-#[jsonschema::validator(schema = r##"{"$defs": {"a": {"$ref": "#/$defs/a", "type": "integer"}}, "$ref": "#/$defs/a"}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"a": {"$ref": "#/$defs/a", "type": "integer"}}, "$ref": "#/$defs/a"}"##, draft = Draft202012)]
 struct EvaluateRefSelf;
-#[jsonschema::validator(schema = r##"{"properties": {"a": {"type": "integer"}, "b": {"$ref": "#/properties/a"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"a": {"type": "integer"}, "b": {"$ref": "#/properties/a"}}}"##, draft = Draft202012)]
 struct EvaluateRefToProperty;
-#[jsonschema::validator(schema = r##"{"items": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"items": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012)]
 struct EvaluateRefBelowItems;
-#[jsonschema::validator(schema = r##"{"definitions": {"a": {"type": "integer"}}, "properties": {"a": {"$ref": "#/definitions/a"}}}"##, draft = Draft4, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"definitions": {"a": {"type": "integer"}}, "properties": {"a": {"$ref": "#/definitions/a"}}}"##, draft = Draft4)]
 struct EvaluateRefDraft4;
-#[jsonschema::validator(schema = r##"{"contains": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"contains": {"$ref": "#/$defs/a"}, "$defs": {"a": {"type": "integer"}}}"##, draft = Draft202012)]
 struct EvaluateRefBelowContains;
-#[jsonschema::validator(schema = r##"{"definitions": {"a": {"type": "integer"}, "b": {"$id": "http://example.com/b"}}, "$ref": "#/definitions/a", "properties": {"x": {"$ref": "http://example.com/b"}}}"##, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"definitions": {"a": {"type": "integer"}, "b": {"$id": "http://example.com/b"}}, "$ref": "#/definitions/a", "properties": {"x": {"$ref": "http://example.com/b"}}}"##, draft = Draft7)]
 struct EvaluateRefIgnoredSiblings;
-#[jsonschema::validator(schema = r##"{"$defs": {"s": {"propertyNames": {"$ref": "#/$defs/s"}, "maxLength": 3}}, "$ref": "#/$defs/s"}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"s": {"propertyNames": {"$ref": "#/$defs/s"}, "maxLength": 3}}, "$ref": "#/$defs/s"}"##, draft = Draft202012)]
 struct EvaluateRefBelowNames;
-#[jsonschema::validator(schema = r##"{"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}"##, draft = Draft7, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}"##, draft = Draft7)]
 struct EvaluateRefCycleInBranches;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/tree", "$dynamicAnchor": "node", "type": "object", "properties": {"a": {"$dynamicRef": "#node"}, "b": {"$dynamicRef": "#node"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/tree", "$dynamicAnchor": "node", "type": "object", "properties": {"a": {"$dynamicRef": "#node"}, "b": {"$dynamicRef": "#node"}}}"##, draft = Draft202012)]
 struct EvaluateTwoDynamicRefsToOneAnchor;
-#[jsonschema::validator(schema = r##"{"$id": "http://example.com/root", "items": {"$id": "x", "items": false, "prefixItems": [{"type": "integer"}]}, "properties": {"a": {"$ref": "#/items/prefixItems/0"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$id": "http://example.com/root", "items": {"$id": "x", "items": false, "prefixItems": [{"type": "integer"}]}, "properties": {"a": {"$ref": "#/items/prefixItems/0"}}}"##, draft = Draft202012)]
 struct EvaluateRefByPointerPastBooleanItems;
-#[jsonschema::validator(schema = r##"{"contentEncoding": "base64", "contentMediaType": "application/json"}"##, draft = Draft6, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"contentEncoding": "base64", "contentMediaType": "application/json"}"##, draft = Draft6)]
 struct EvaluateContentDraft6;
-#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012)]
 struct EvaluateRefCycleOnOneInstance;
-#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012)]
 struct EvaluateFailingRefCycleOnOneInstance;
-#[jsonschema::validator(schema = r##"{"minimum": 1, "allOf": [{"$ref": "#"}]}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"minimum": 1, "allOf": [{"$ref": "#"}]}"##, draft = Draft202012)]
 struct EvaluateRefCycleThroughRoot;
-#[jsonschema::validator(schema = r##"{"properties": {"b": {"maximum": 1, "allOf": [{"$ref": "#/properties/b"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"maximum": 1, "allOf": [{"$ref": "#/properties/b"}]}}}"##, draft = Draft202012)]
 struct EvaluateRefCycleThroughInlineTarget;
-#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/a"}}, "$defs": {"a": {"minimum": 1, "allOf": [{"$ref": "#/$defs/b"}]}, "b": {"maximum": 1, "allOf": [{"$ref": "#/$defs/a"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/a"}}, "$defs": {"a": {"minimum": 1, "allOf": [{"$ref": "#/$defs/b"}]}, "b": {"maximum": 1, "allOf": [{"$ref": "#/$defs/a"}]}}}"##, draft = Draft202012)]
 struct EvaluateMutualRefCycleOnOneInstance;
-#[jsonschema::validator(schema = r##"{"$ref": "#/$defs/node", "$defs": {"node": {"required": ["a"], "properties": {"c": {"$ref": "#/$defs/node"}}, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$ref": "#/$defs/node", "$defs": {"node": {"required": ["a"], "properties": {"c": {"$ref": "#/$defs/node"}}, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012)]
 struct EvaluateRefCycleOnOneInstanceAndBelow;
-#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "anyOf": [{"$ref": "#/$defs/node"}, {"type": "string"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "anyOf": [{"$ref": "#/$defs/node"}, {"type": "string"}]}}}"##, draft = Draft202012)]
 struct EvaluateRefCycleThroughAnyOf;
-#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "oneOf": [{"$ref": "#/$defs/node"}, {"type": "string"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "oneOf": [{"$ref": "#/$defs/node"}, {"type": "string"}]}}}"##, draft = Draft202012)]
 struct EvaluateRefCycleThroughOneOf;
-#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "if": {"$ref": "#/$defs/node"}, "then": {"title": "t"}, "else": {"title": "e"}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "if": {"$ref": "#/$defs/node"}, "then": {"title": "t"}, "else": {"title": "e"}}}}"##, draft = Draft202012)]
 struct EvaluateRefCycleThroughIf;
-#[jsonschema::validator(schema = r##"{"maximum": 1, "anyOf": [{"$ref": "#"}, {"type": "string"}]}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"maximum": 1, "anyOf": [{"$ref": "#"}, {"type": "string"}]}"##, draft = Draft202012)]
 struct EvaluateRefCycleThroughRootAndAnyOf;
-#[jsonschema::validator(schema = r##"{"$ref": "#/$defs/node", "$defs": {"node": {"properties": {"c": {"$ref": "#/$defs/node"}}, "anyOf": [{"$ref": "#/$defs/node"}, {"required": ["x"]}], "minProperties": 2}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$ref": "#/$defs/node", "$defs": {"node": {"properties": {"c": {"$ref": "#/$defs/node"}}, "anyOf": [{"$ref": "#/$defs/node"}, {"required": ["x"]}], "minProperties": 2}}}"##, draft = Draft202012)]
 struct EvaluateRefCycleThroughAnyOfBelow;
 
-#[jsonschema::validator(schema = r##"{"properties": {"a": {}}, "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"a": {}}, "unevaluatedProperties": false}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesFalse;
-#[jsonschema::validator(schema = r##"{"properties": {"a": {}}, "unevaluatedProperties": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"a": {}}, "unevaluatedProperties": {"type": "integer"}}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesSchema;
-#[jsonschema::validator(schema = r##"{"allOf": [{"properties": {"a": true}}], "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"allOf": [{"properties": {"a": true}}], "unevaluatedProperties": false}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesAllOf;
-#[jsonschema::validator(schema = r##"{"anyOf": [{"properties": {"a": {"type": "string"}}}, {"properties": {"b": true}}], "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"anyOf": [{"properties": {"a": {"type": "string"}}}, {"properties": {"b": true}}], "unevaluatedProperties": false}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesFailingBranch;
-#[jsonschema::validator(schema = r##"{"$defs": {"x": {"properties": {"a": true}}}, "$ref": "#/$defs/x", "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"x": {"properties": {"a": true}}}, "$ref": "#/$defs/x", "unevaluatedProperties": false}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesRef;
-#[jsonschema::validator(schema = r##"{"if": {"properties": {"a": {"const": 1}}}, "then": {"properties": {"b": true}}, "else": {"properties": {"c": true}}, "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"if": {"properties": {"a": {"const": 1}}}, "then": {"properties": {"b": true}}, "else": {"properties": {"c": true}}, "unevaluatedProperties": false}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesConditional;
-#[jsonschema::validator(schema = r##"{"patternProperties": {"^x": true}, "unevaluatedProperties": {"minimum": 2}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"patternProperties": {"^x": true}, "unevaluatedProperties": {"minimum": 2}}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesPatterns;
-#[jsonschema::validator(schema = r##"{"dependentSchemas": {"a": {"properties": {"b": true}}}, "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"dependentSchemas": {"a": {"properties": {"b": true}}}, "unevaluatedProperties": false}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesDependentSchemas;
-#[jsonschema::validator(schema = r##"{"properties": {"o": {"properties": {"p": true}, "unevaluatedProperties": false}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"o": {"properties": {"p": true}, "unevaluatedProperties": false}}}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesNested;
-#[jsonschema::validator(schema = r##"{"prefixItems": [{"type": "integer"}], "unevaluatedItems": false}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"prefixItems": [{"type": "integer"}], "unevaluatedItems": false}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedItemsFalse;
-#[jsonschema::validator(schema = r##"{"prefixItems": [true], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"prefixItems": [true], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedItemsSchema;
-#[jsonschema::validator(schema = r##"{"contains": {"type": "string"}, "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"contains": {"type": "string"}, "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedItemsContains;
-#[jsonschema::validator(schema = r##"{"anyOf": [{"prefixItems": [{"type": "string"}]}, {"prefixItems": [true, true]}], "unevaluatedItems": false}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"anyOf": [{"prefixItems": [{"type": "string"}]}, {"prefixItems": [true, true]}], "unevaluatedItems": false}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedItemsFailingBranch;
-#[jsonschema::validator(schema = r##"{"items": [{"type": "integer"}], "additionalItems": {"type": "string"}, "unevaluatedItems": false}"##, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"items": [{"type": "integer"}], "additionalItems": {"type": "string"}, "unevaluatedItems": false}"##, draft = Draft201909)]
 struct EvaluateUnevaluatedItemsDraft201909;
-#[jsonschema::validator(schema = r##"{"items": [true], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"items": [true], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft201909)]
 struct EvaluateUnevaluatedItemsTupleDraft201909;
-#[jsonschema::validator(schema = r##"{"allOf": [{"properties": {"a": {"type": "string"}}}], "unevaluatedProperties": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"allOf": [{"properties": {"a": {"type": "string"}}}], "unevaluatedProperties": {"type": "integer"}}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesFailingAllOf;
-#[jsonschema::validator(schema = r##"{"$defs": {"x": {"properties": {"b": {"type": "string"}}}}, "$ref": "#/$defs/x", "unevaluatedProperties": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"x": {"properties": {"b": {"type": "string"}}}}, "$ref": "#/$defs/x", "unevaluatedProperties": {"type": "integer"}}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedPropertiesFailingRef;
-#[jsonschema::validator(schema = r##"{"allOf": [{"prefixItems": [{"type": "string"}]}], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"allOf": [{"prefixItems": [{"type": "string"}]}], "unevaluatedItems": {"type": "integer"}}"##, draft = Draft202012)]
 struct EvaluateUnevaluatedItemsFailingAllOf;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}"##, draft = Draft202012)]
 struct EvaluateDynamicRefOutermostAnchor;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/plain", "$defs": {"foo": {"type": "string"}}, "items": {"$dynamicRef": "#/$defs/foo"}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/plain", "$defs": {"foo": {"type": "string"}}, "items": {"$dynamicRef": "#/$defs/foo"}}"##, draft = Draft202012)]
 struct EvaluateDynamicRefWithoutAnchor;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/anchored", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$anchor": "items", "type": "integer"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/anchored", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$anchor": "items", "type": "integer"}}}}}"##, draft = Draft202012)]
 struct EvaluateDynamicRefToPlainAnchor;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "properties": {"foo": {"$recursiveRef": "#"}}, "additionalProperties": false}"##, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "properties": {"foo": {"$recursiveRef": "#"}}, "additionalProperties": false}"##, draft = Draft201909)]
 struct EvaluateRecursiveRefWithoutAnchor;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/recursive", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/recursive", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}}}}}"##, draft = Draft201909)]
 struct EvaluateRecursiveRefOutermostAnchor;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/unanchored", "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}, "marker": {"type": "integer"}}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/unanchored", "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}, "marker": {"type": "integer"}}}}}"##, draft = Draft201909)]
 struct EvaluateRecursiveRefUnanchoredOuter;
-#[jsonschema::validator(schema = r##"{"oneOf": [{"properties": {"kind": {"const": "a"}, "v": {"type": "integer"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "b"}, "v": {"type": "string"}}, "required": ["kind"]}, {"properties": {"kind": {"enum": ["c", "d"]}}, "required": ["kind"], "minProperties": 3}]}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"oneOf": [{"properties": {"kind": {"const": "a"}, "v": {"type": "integer"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "b"}, "v": {"type": "string"}}, "required": ["kind"]}, {"properties": {"kind": {"enum": ["c", "d"]}}, "required": ["kind"], "minProperties": 3}]}"##, draft = Draft202012)]
 struct EvaluateDiscriminatedOneOf;
-#[jsonschema::validator(schema = r##"{"anyOf": [{"properties": {"kind": {"const": "a"}, "v": {"type": "integer"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "b"}, "v": {"type": "string"}}, "required": ["kind"]}, {"properties": {"kind": {"enum": ["c", "d"]}}, "required": ["kind"], "minProperties": 3}]}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"anyOf": [{"properties": {"kind": {"const": "a"}, "v": {"type": "integer"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "b"}, "v": {"type": "string"}}, "required": ["kind"]}, {"properties": {"kind": {"enum": ["c", "d"]}}, "required": ["kind"], "minProperties": 3}]}"##, draft = Draft202012)]
 struct EvaluateDiscriminatedAnyOf;
-#[jsonschema::validator(schema = r##"{"$id": "https://example.com/root", "properties": {"a": {"$ref": "inner"}}, "$defs": {"inner": {"$id": "inner", "not": {"$ref": "#/$defs/small"}, "$defs": {"small": {"maximum": 2}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$id": "https://example.com/root", "properties": {"a": {"$ref": "inner"}}, "$defs": {"inner": {"$id": "inner", "not": {"$ref": "#/$defs/small"}, "$defs": {"small": {"maximum": 2}}}}}"##, draft = Draft202012)]
 struct EvaluateNotAroundRefInEmbeddedResource;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/branches", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"anyOf": [{"$dynamicRef": "#items"}, {"type": "null"}]}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/branches", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"anyOf": [{"$dynamicRef": "#items"}, {"type": "null"}]}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}"##, draft = Draft202012)]
 struct EvaluateDynamicRefInAnyOf;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/condition", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "if": {"properties": {"child": {"$recursiveRef": "#"}}}, "then": {"required": ["ok"]}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/condition", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "if": {"properties": {"child": {"$recursiveRef": "#"}}}, "then": {"required": ["ok"]}}}}"##, draft = Draft201909)]
 struct EvaluateRecursiveRefInIf;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/derived", "$ref": "base", "$defs": {"derived": {"$dynamicAnchor": "addons", "properties": {"bar": {"type": "string"}}}, "base": {"$id": "base", "unevaluatedProperties": false, "type": "object", "properties": {"foo": {"type": "string"}}, "$dynamicRef": "#addons", "$defs": {"defaultAddons": {"$dynamicAnchor": "addons"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/derived", "$ref": "base", "$defs": {"derived": {"$dynamicAnchor": "addons", "properties": {"bar": {"type": "string"}}}, "base": {"$id": "base", "unevaluatedProperties": false, "type": "object", "properties": {"foo": {"type": "string"}}, "$dynamicRef": "#addons", "$defs": {"defaultAddons": {"$dynamicAnchor": "addons"}}}}}"##, draft = Draft202012)]
 struct EvaluateDynamicRefUnevaluatedProperties;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/items", "$recursiveAnchor": true, "type": "object", "properties": {"l": {"$ref": "list"}}, "$defs": {"list": {"$id": "list", "$recursiveAnchor": true, "type": ["array", "integer"], "unevaluatedItems": {"$recursiveRef": "#"}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/items", "$recursiveAnchor": true, "type": "object", "properties": {"l": {"$ref": "list"}}, "$defs": {"list": {"$id": "list", "$recursiveAnchor": true, "type": ["array", "integer"], "unevaluatedItems": {"$recursiveRef": "#"}}}}"##, draft = Draft201909)]
 struct EvaluateRecursiveRefUnevaluatedItems;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/hops", "properties": {"c": {"$ref": "c"}}, "$defs": {"c": {"$id": "c", "$recursiveAnchor": true, "type": "object", "properties": {"marker": {"type": "boolean"}}, "anyOf": [{"properties": {"d": {"$ref": "d"}}}, {"required": ["x"]}]}, "d": {"$id": "d", "$recursiveAnchor": true, "properties": {"next": {"$recursiveRef": "#"}}}}}"##, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/hops", "properties": {"c": {"$ref": "c"}}, "$defs": {"c": {"$id": "c", "$recursiveAnchor": true, "type": "object", "properties": {"marker": {"type": "boolean"}}, "anyOf": [{"properties": {"d": {"$ref": "d"}}}, {"required": ["x"]}]}, "d": {"$id": "d", "$recursiveAnchor": true, "properties": {"next": {"$recursiveRef": "#"}}}}}"##, draft = Draft201909)]
 struct EvaluateRecursiveRefThroughBranchReference;
-#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/nesting", "$defs": {"myobject": {"$id": "myobject.json", "$recursiveAnchor": true, "anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}, "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/myobject"}]}"##, draft = Draft201909, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/nesting", "$defs": {"myobject": {"$id": "myobject.json", "$recursiveAnchor": true, "anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}, "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/myobject"}]}"##, draft = Draft201909)]
 struct EvaluateRecursiveRefInAnchoredBranch;
 #[jsonschema::validator(
     schema = r##"{"$id": "http://localhost:1234/scope_change_defs1.json", "type": "object", "properties": {"list": {"$ref": "baseUriChangeFolder/"}}, "$defs": {"baz": {"$id": "baseUriChangeFolder/", "type": "array", "items": {"$ref": "folderInteger.json"}}}}"##,
     resources = { "http://localhost:1234/baseUriChangeFolder/folderInteger.json" => { schema = r##"{"type": "integer"}"## } },
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct EvaluateFolderId;
-#[jsonschema::validator(schema = r#"{"type":"integer","even":true,"minimum":2,"title":"t"}"#, keywords = { "even" => crate::even_factory }, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"type":"integer","even":true,"minimum":2,"title":"t"}"#, keywords = { "even" => crate::even_factory })]
 struct EvaluateCustomKeyword;
-#[jsonschema::validator(schema = r#"{"properties":{"a":{"multi":true}},"multi":true}"#, keywords = { "multi" => crate::multi_error_factory }, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"properties":{"a":{"multi":true}},"multi":true}"#, keywords = { "multi" => crate::multi_error_factory })]
 struct EvaluateCustomKeywordErrors;
-#[jsonschema::validator(schema = r#"{"description":"strings-bad","title":"t"}"#, keywords = { "description" => crate::string_gate_factory }, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"description":"strings-bad","title":"t"}"#, keywords = { "description" => crate::string_gate_factory })]
 struct EvaluateCustomKeywordKnownName;
-#[jsonschema::validator(schema = r#"{"type":"string","format":"currency"}"#, draft = Draft7, formats = { "currency" => crate::is_currency_format }, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"type":"string","format":"currency"}"#, draft = Draft7, formats = { "currency" => crate::is_currency_format })]
 struct EvaluateCustomFormat;
-#[jsonschema::validator(schema = r#"{"type":"string","format":"currency"}"#, draft = Draft201909, validate_formats = true, formats = { "currency" => crate::is_currency_format }, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"type":"string","format":"currency"}"#, draft = Draft201909, validate_formats = true, formats = { "currency" => crate::is_currency_format })]
 struct EvaluateCustomFormatAsserted;
-#[jsonschema::validator(schema = r#"{"type":"string","format":"email"}"#, draft = Draft7, validate_formats = true, formats = { "email" => crate::is_literal_x }, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"type":"string","format":"email"}"#, draft = Draft7, validate_formats = true, formats = { "email" => crate::is_literal_x })]
 struct EvaluateCustomFormatOverride;
-#[jsonschema::validator(schema = r#"{"type":"string","format":"made-up"}"#, draft = Draft7, validate_formats = true, ignore_unknown_formats = true, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"type":"string","format":"made-up"}"#, draft = Draft7, validate_formats = true, ignore_unknown_formats = true)]
 struct EvaluateIgnoredUnknownFormat;
-#[jsonschema::validator(schema = r#"{"contentMediaType":"text/hex"}"#, draft = Draft7, content_media_types = { "text/hex" => crate::is_hex_content }, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contentMediaType":"text/hex"}"#, draft = Draft7, content_media_types = { "text/hex" => crate::is_hex_content })]
 struct EvaluateCustomContentMediaType;
-#[jsonschema::validator(schema = r#"{"contentEncoding":"prefixed","contentMediaType":"application/json"}"#, draft = Draft7, content_encodings = { "prefixed" => { check = crate::check_prefixed, convert = crate::convert_prefixed } }, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"contentEncoding":"prefixed","contentMediaType":"application/json"}"#, draft = Draft7, content_encodings = { "prefixed" => { check = crate::check_prefixed, convert = crate::convert_prefixed } })]
 struct EvaluateCustomContentEncoding;
 #[jsonschema::validator(
     schema = r#"{"$schema":"json-schema:///meta/no-validation","properties":{"a":{"minimum":10,"type":"string"},"b":false},"minLength":2,"required":["c"]}"#,
     draft = Draft202012,
-    resources = { "json-schema:///meta/no-validation" => { schema = r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}}"# } },
-    methods = { evaluate = true }
+    resources = { "json-schema:///meta/no-validation" => { schema = r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}}"# } }
 )]
 struct EvaluateNoValidationVocabulary;
 #[jsonschema::validator(
     schema = r#"{"$schema":"json-schema:///meta/no-applicator","type":["array","object"],"items":{"type":"string"},"contains":{"type":"integer"},"properties":{"a":false}}"#,
     draft = Draft202012,
-    resources = { "json-schema:///meta/no-applicator" => { schema = r#"{"$id":"json-schema:///meta/no-applicator","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"# } },
-    methods = { evaluate = true }
+    resources = { "json-schema:///meta/no-applicator" => { schema = r#"{"$id":"json-schema:///meta/no-applicator","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"# } }
 )]
 struct EvaluateNoApplicatorVocabulary;
 #[jsonschema::validator(
     schema = r#"{"$schema":"json-schema:///meta/optional","type":"number","minimum":2}"#,
     draft = Draft201909,
-    resources = { "json-schema:///meta/optional" => { schema = r#"{"$id":"json-schema:///meta/optional","$schema":"https://json-schema.org/draft/2019-09/schema","$vocabulary":{"https://json-schema.org/draft/2019-09/vocab/core":true,"https://json-schema.org/draft/2019-09/vocab/validation":true,"json-schema:///vocab/custom":false}}"# } },
-    methods = { evaluate = true }
+    resources = { "json-schema:///meta/optional" => { schema = r#"{"$id":"json-schema:///meta/optional","$schema":"https://json-schema.org/draft/2019-09/schema","$vocabulary":{"https://json-schema.org/draft/2019-09/vocab/core":true,"https://json-schema.org/draft/2019-09/vocab/validation":true,"json-schema:///vocab/custom":false}}"# } }
 )]
 struct EvaluateOptionalUnknownVocabulary;
 #[jsonschema::validator(
     schema = r#"{"$schema":"json-schema:///meta/no-validation-2019","properties":{"a":{"minimum":10}},"unevaluatedProperties":{"type":"string"}}"#,
     draft = Draft201909,
-    resources = { "json-schema:///meta/no-validation-2019" => { schema = r#"{"$id":"json-schema:///meta/no-validation-2019","$schema":"https://json-schema.org/draft/2019-09/schema","$vocabulary":{"https://json-schema.org/draft/2019-09/vocab/core":true,"https://json-schema.org/draft/2019-09/vocab/applicator":true}}"# } },
-    methods = { evaluate = true }
+    resources = { "json-schema:///meta/no-validation-2019" => { schema = r#"{"$id":"json-schema:///meta/no-validation-2019","$schema":"https://json-schema.org/draft/2019-09/schema","$vocabulary":{"https://json-schema.org/draft/2019-09/vocab/core":true,"https://json-schema.org/draft/2019-09/vocab/applicator":true}}"# } }
 )]
 struct EvaluateNoValidationVocabularyDraft201909;
 #[jsonschema::validator(
     schema = r#"{"$schema":"json-schema:///meta/no-unevaluated","properties":{"a":{"type":"string"}},"unevaluatedProperties":false,"unevaluatedItems":false}"#,
     draft = Draft202012,
-    resources = { "json-schema:///meta/no-unevaluated" => { schema = r#"{"$id":"json-schema:///meta/no-unevaluated","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"# } },
-    methods = { evaluate = true }
+    resources = { "json-schema:///meta/no-unevaluated" => { schema = r#"{"$id":"json-schema:///meta/no-unevaluated","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"# } }
 )]
 struct EvaluateNoUnevaluatedVocabulary;
 #[jsonschema::validator(
     schema = r#"{"$schema":"json-schema:///meta/no-content","type":"string","contentEncoding":"base64","contentMediaType":"application/json","contentSchema":{"type":"integer"}}"#,
     draft = Draft202012,
-    resources = { "json-schema:///meta/no-content" => { schema = r#"{"$id":"json-schema:///meta/no-content","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"# } },
-    methods = { evaluate = true }
+    resources = { "json-schema:///meta/no-content" => { schema = r#"{"$id":"json-schema:///meta/no-content","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":true}}"# } }
 )]
 struct EvaluateNoContentVocabulary;
 #[jsonschema::validator(
     schema = r##"{"$schema":"json-schema:///meta/no-validation","properties":{"a":{"$ref":"#/$defs/x"}},"$defs":{"x":{"minimum":10,"properties":{"b":false}}}}"##,
     draft = Draft202012,
-    resources = { "json-schema:///meta/no-validation" => { schema = r##"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}}"## } },
-    methods = { evaluate = true }
+    resources = { "json-schema:///meta/no-validation" => { schema = r##"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}}"## } }
 )]
 struct EvaluateNoValidationVocabularyThroughRef;
 #[jsonschema::validator(
     schema = r#"{"$ref":"http://example.com/ignore-prefix-items.json","type":"array"}"#,
     draft = Draft202012,
-    resources = { "http://example.com/ignore-prefix-items.json" => { schema = r#"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"http://example.com/ignore-prefix-items.json","prefixItems":[{"type":"integer"}]}"# } },
-    methods = { evaluate = true }
+    resources = { "http://example.com/ignore-prefix-items.json" => { schema = r#"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"http://example.com/ignore-prefix-items.json","prefixItems":[{"type":"integer"}]}"# } }
 )]
 struct EvaluateRefToEarlierDraft;
 #[jsonschema::validator(
     schema = r#"{"allOf":[{"properties":{"foo":true}},{"$ref":"http://example.com/dependent-required.json"}],"type":"object"}"#,
     draft = Draft7,
-    resources = { "http://example.com/dependent-required.json" => { schema = r#"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"http://example.com/dependent-required.json","dependentRequired":{"foo":["bar"]}}"# } },
-    methods = { evaluate = true }
+    resources = { "http://example.com/dependent-required.json" => { schema = r#"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"http://example.com/dependent-required.json","dependentRequired":{"foo":["bar"]}}"# } }
 )]
 struct EvaluateRefToLaterDraft;
 #[jsonschema::validator(
     schema = r##"{"$ref":"http://example.com/draft7.json"}"##,
     draft = Draft202012,
-    resources = { "http://example.com/draft7.json" => { schema = r##"{"$schema":"http://json-schema.org/draft-07/schema#","$id":"http://example.com/draft7.json","definitions":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/definitions/s","minLength":3}}}"## } },
-    methods = { evaluate = true }
+    resources = { "http://example.com/draft7.json" => { schema = r##"{"$schema":"http://json-schema.org/draft-07/schema#","$id":"http://example.com/draft7.json","definitions":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/definitions/s","minLength":3}}}"## } }
 )]
 struct EvaluateRefToDraft7Siblings;
-#[jsonschema::validator(schema = r##"{"$ref":"http://example.com/a","$defs":{"a":{"$id":"http://example.com/a","$schema":"http://json-schema.org/draft-07/schema#","definitions":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/definitions/s","minLength":3}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$ref":"http://example.com/a","$defs":{"a":{"$id":"http://example.com/a","$schema":"http://json-schema.org/draft-07/schema#","definitions":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/definitions/s","minLength":3}}}}}"##, draft = Draft202012)]
 struct EvaluateRefToEmbeddedEarlierDraft;
 const OTHER: &str = r##"{"$defs": {"s": {"type": "string"}}, "type": "object", "properties": {"n": {"$ref": "#/$defs/s"}}}"##;
 #[jsonschema::validator(
     schema = r##"{"properties": {"a": {"$ref": "http://example.com/other.json"}, "b": {"$ref": "http://example.com/other.json#/$defs/s"}}}"##,
     resources = { "http://example.com/other.json" => { schema = r##"{"$defs": {"s": {"type": "string"}}, "type": "object", "properties": {"n": {"$ref": "#/$defs/s"}}}"## } },
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct EvaluateExternalRef;
-#[jsonschema::validator(schema = r##"{"$id": "http://example.com/root.json", "properties": {"foo": {"$id": "foo.json", "type": "object", "properties": {"bar": {"$ref": "#/$defs/s"}}, "$defs": {"s": {"minimum": 3}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$id": "http://example.com/root.json", "properties": {"foo": {"$id": "foo.json", "type": "object", "properties": {"bar": {"$ref": "#/$defs/s"}}, "$defs": {"s": {"minimum": 3}}}}}"##, draft = Draft202012)]
 struct EvaluateEmbeddedId;
-#[jsonschema::validator(schema = r##"{"properties": {"a": {"$id": "http://example.com/a.json", "type": "integer", "minimum": 2}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"a": {"$id": "http://example.com/a.json", "type": "integer", "minimum": 2}}}"##, draft = Draft202012)]
 struct EvaluateEmbeddedIdWithoutRootId;
-#[jsonschema::validator(schema = r##"{"$defs": {"x": {"$id": "http://example.com/x", "type": "string"}}, "properties": {"a": {"$ref": "http://example.com/x"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$defs": {"x": {"$id": "http://example.com/x", "type": "string"}}, "properties": {"a": {"$ref": "http://example.com/x"}}}"##, draft = Draft202012)]
 struct EvaluateRefToEmbeddedResource;
-#[jsonschema::validator(schema = r##"{"$id": "http://example.com/root", "properties": {"a": {"$ref": "#/$defs/x/properties/y"}}, "$defs": {"x": {"$id": "x", "properties": {"y": {"type": "integer"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$id": "http://example.com/root", "properties": {"a": {"$ref": "#/$defs/x/properties/y"}}, "$defs": {"x": {"$id": "x", "properties": {"y": {"type": "integer"}}}}}"##, draft = Draft202012)]
 struct EvaluateRefByPointerIntoEmbeddedResource;
-#[jsonschema::validator(schema = r##"{"properties": {"a": {"id": "http://example.com/a.json", "type": "object", "properties": {"b": {"$ref": "#/definitions/s"}}, "definitions": {"s": {"minimum": 3}}}}}"##, draft = Draft4, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"properties": {"a": {"id": "http://example.com/a.json", "type": "object", "properties": {"b": {"$ref": "#/definitions/s"}}, "definitions": {"s": {"minimum": 3}}}}}"##, draft = Draft4)]
 struct EvaluateEmbeddedIdDraft4;
-#[jsonschema::validator(schema = r##"{"$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed", "properties": {"a": {"$ref": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed#/$defs/s"}}, "$defs": {"s": {"type": "string"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r##"{"$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed", "properties": {"a": {"$ref": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed#/$defs/s"}}, "$defs": {"s": {"type": "string"}}}"##, draft = Draft202012)]
 struct EvaluateUrnBase;
 #[jsonschema::validator(
     schema = r##"{"$id": "http://example.com/root", "properties": {"a": {"$ref": "json-schema:///other"}, "b": {"$ref": "json-schema:///other#/$defs/s"}, "c": {"$ref": "json-schema:///never"}, "d": {"$id": "json-schema:///inner", "maxLength": 0}}, "propertyNames": {"$ref": "json-schema:///names"}}"##,
@@ -8067,8 +8181,7 @@ struct EvaluateUrnBase;
         "json-schema:///never" => { schema = "false" },
         "json-schema:///names" => { schema = r#"{"maxLength": 1}"# },
     },
-    draft = Draft202012,
-    methods = { evaluate = true }
+    draft = Draft202012
 )]
 struct EvaluateResourcesUnderDefaultBase;
 
@@ -8373,8 +8486,7 @@ fn test_evaluate_with_options_matches_runtime(
 
 // Enough units below the same `$ref`s to cache their evaluation paths, each `$ref` below two others.
 #[jsonschema::validator(
-    schema = r##"{"$defs": {"node": {"properties": {"v": {"$ref": "#/$defs/leaf"}, "w": {"$ref": "#/$defs/node/$defs/inner"}}, "$defs": {"inner": {"$ref": "#/$defs/leaf"}}}, "leaf": {"type": "integer", "minimum": 0}}, "items": {"allOf": [{"$ref": "#/$defs/node"}, {"$ref": "#/$defs/node"}]}}"##,
-    methods = { evaluate = true }
+    schema = r##"{"$defs": {"node": {"properties": {"v": {"$ref": "#/$defs/leaf"}, "w": {"$ref": "#/$defs/node/$defs/inner"}}, "$defs": {"inner": {"$ref": "#/$defs/leaf"}}}, "leaf": {"type": "integer", "minimum": 0}}, "items": {"allOf": [{"$ref": "#/$defs/node"}, {"$ref": "#/$defs/node"}]}}"##
 )]
 struct EvaluateManyRefVisits;
 
@@ -8397,8 +8509,7 @@ fn test_evaluate_matches_runtime_with_cached_evaluation_paths() {
 // none.
 #[jsonschema::validator(
     schema = r#"{"dependencies": {"a": ["b"]}, "items": {"minimum": 10}}"#,
-    draft = Draft7,
-    methods = { evaluate = true }
+    draft = Draft7
 )]
 struct EvaluateManyErrorsBesideDependencies;
 
@@ -8413,7 +8524,7 @@ fn test_evaluate_matches_runtime_with_many_errors_beside_dependencies() {
     );
 }
 
-#[jsonschema::validator(schema = r#"{"properties": {"a": true, "b": {"type": "integer"}}}"#, methods = { evaluate = true })]
+#[jsonschema::validator(schema = r#"{"properties": {"a": true, "b": {"type": "integer"}}}"#)]
 struct EvaluatePropertiesAnnotation;
 
 // The names `properties` annotates read the same however the annotation is first used.

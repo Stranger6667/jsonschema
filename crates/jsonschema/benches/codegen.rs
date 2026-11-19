@@ -6,29 +6,28 @@ mod bench {
     use codspeed_criterion_compat::{criterion_group, BenchmarkId, Criterion};
     use serde_json::{json, Value};
 
-    #[jsonschema::validator(path = "../benchmark/data/fast_schema.json", methods = { evaluate = true })]
+    #[jsonschema::validator(path = "../benchmark/data/fast_schema.json")]
     struct FastSchemaValidator;
-    #[jsonschema::validator(path = "../benchmark/data/openapi.json", methods = { evaluate = true })]
+    #[jsonschema::validator(path = "../benchmark/data/openapi.json")]
     struct OpenAPIValidator;
     #[jsonschema::validator(path = "../benchmark/data/swagger.json")]
     struct SwaggerValidator;
-    #[jsonschema::validator(path = "../benchmark/data/geojson.json", methods = { evaluate = true })]
+    #[jsonschema::validator(path = "../benchmark/data/geojson.json")]
     struct GeoJSONValidator;
-    #[jsonschema::validator(path = "../benchmark/data/citm_catalog_schema.json", methods = { evaluate = true })]
+    #[jsonschema::validator(path = "../benchmark/data/citm_catalog_schema.json")]
     struct CITMValidator;
-    #[jsonschema::validator(path = "../benchmark/data/fhir.schema.json", methods = { evaluate = true })]
+    #[jsonschema::validator(path = "../benchmark/data/fhir.schema.json")]
     struct FHIRValidator;
-    #[jsonschema::validator(path = "../benchmark/data/recursive_schema.json", methods = { evaluate = true })]
+    #[jsonschema::validator(path = "../benchmark/data/recursive_schema.json")]
     struct RecursiveValidator;
 
-    #[jsonschema::validator(schema = r#"{"items": {"type": "integer"}}"#, methods = { evaluate = true })]
+    #[jsonschema::validator(schema = r#"{"items": {"type": "integer"}}"#)]
     struct ItemsValidator;
-    #[jsonschema::validator(schema = r#"{"propertyNames": {"maxLength": 1}}"#, methods = { evaluate = true })]
+    #[jsonschema::validator(schema = r#"{"propertyNames": {"maxLength": 1}}"#)]
     struct PropertyNamesValidator;
     #[jsonschema::validator(
         schema = r##"{"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}"##,
-        draft = Draft7,
-        methods = { evaluate = true }
+        draft = Draft7
     )]
     struct RefCycleInBranchesValidator;
 

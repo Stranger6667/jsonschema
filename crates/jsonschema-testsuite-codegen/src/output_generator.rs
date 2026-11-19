@@ -144,33 +144,23 @@ fn generate_nested_structure(
     }
 }
 
-/// A validator generated for `schema` as the version's tests build it, and `GENERATED`: its
-/// `evaluate`, when the generator supports the schema.
+/// The validator generated for `schema` as the version's tests build it, with `GENERATED` set to
+/// its `evaluate`.
 fn generated_evaluate(schema: &serde_json::Value, version: &str) -> TokenStream {
     // Version 1 cases run under Draft 2020-12, whatever their `$schema` says.
-    let (schema, draft, draft_attr) = if version == "v1" || version.starts_with("v1-") {
+    let (schema, draft_attr) = if version == "v1" || version.starts_with("v1-") {
         let mut schema = schema.clone();
         if let Some(keywords) = schema.as_object_mut() {
             keywords.remove("$schema");
         }
-        (
-            schema,
-            referencing::Draft::Draft202012,
-            quote! { , draft = Draft202012 },
-        )
+        (schema, quote! { , draft = Draft202012 })
     } else {
-        let draft = referencing::Draft::default().detect(schema);
-        (schema.clone(), draft, quote! {})
+        (schema.clone(), quote! {})
     };
-    if !jsonschema_macros_core::evaluate_supports(&schema, draft, []) {
-        return quote! {
-            const GENERATED: Option<fn(&serde_json::Value) -> testsuite::EvaluateOutputs> = None;
-        };
-    }
     let schema = serde_json::to_string(&schema).expect("Can't serialize JSON");
     quote! {
         #[cfg(feature = "macros")]
-        #[jsonschema::validator(schema = #schema #draft_attr, methods = { evaluate = true })]
+        #[jsonschema::validator(schema = #schema #draft_attr)]
         struct Validator;
 
         #[cfg(feature = "macros")]

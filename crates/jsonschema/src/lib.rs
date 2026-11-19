@@ -162,7 +162,8 @@
 //!
 //! let instance = serde_json::json!("value");
 //! assert!(Short::is_valid(&instance));
-//! Short::validate(&instance)?;
+//! assert!(Short::validate(&instance).is_ok());
+//! assert!(Short::evaluate(&instance).is_valid());
 //! ```
 //!
 //! Supported macro attributes; each mirrors the matching [`ValidationOptions`] builder method,
@@ -185,7 +186,7 @@
 //! - `content_encodings = { "name" => { check = ..., convert = ... } }` -> [`ValidationOptions::with_content_encoding`]
 //! - `pattern_options = { ... }` -> [`PatternOptions`]
 //! - `email_options = { ... }` -> [`EmailOptions`]
-//! - `methods = { is_valid = true, validate = false, iter_errors = false }`, which methods to
+//! - `methods = { validate = false, iter_errors = false, evaluate = false }`, which methods to
 //!   generate (all default to `true`; at least one must stay enabled)
 //!
 //! ## Python Extension Modules
@@ -245,11 +246,8 @@
 //!
 //! ## Limitations
 //!
-//! - `is_valid`, `validate`, and `iter_errors` are generated; `evaluate` is not implemented yet.
 //! - Custom keywords cannot override built-in ones: a `keywords` entry named like a built-in keyword runs in
 //!   addition to the built-in check, not instead of it.
-//! - When an instance violates several keywords, the first error reported by `validate()` may differ from the runtime
-//!   validator's, since generated checks are not ordered by keyword priority; `is_valid` and validity are unaffected.
 //!
 //! # Structured Output
 //!

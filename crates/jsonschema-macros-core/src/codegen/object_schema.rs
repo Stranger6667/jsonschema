@@ -96,8 +96,24 @@ pub(super) fn resource_base_uri<E: ValueEmitter>(
         .unwrap_or_else(|| ctx.current_base_uri.clone())
 }
 
-/// Compile an object schema.
+/// Compile an object schema; the root keeps the configured draft.
 pub(super) fn compile_object_schema<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    schema: &Map<String, Value>,
+) -> CompiledExpr {
+    if ctx
+        .config
+        .schema
+        .as_object()
+        .is_some_and(|root| std::ptr::eq(root, schema))
+    {
+        compile_in_dialect(ctx, schema)
+    } else {
+        ctx.with_dialect_of(schema, |ctx| compile_in_dialect(ctx, schema))
+    }
+}
+
+fn compile_in_dialect<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> CompiledExpr {
