@@ -23,6 +23,7 @@
 - `#[jsonschema::validator]` leaving out the `type` error when a `const` or `enum` beside it accepts only values of that type.
 - `#[jsonschema::validator]` reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
 - `#[jsonschema::validator]` leaving out the `maxLength` error when `minLength` is above `maxLength`.
+- `#[jsonschema::validator]` leaving out all errors but the first of a subschema with `$recursiveAnchor` below the root of a schema that uses `$recursiveRef`, such as an `anyOf` error beside a failing `minProperties`.
 - `#[jsonschema::validator]` reporting `propertyNames` errors with another kind and in another order than `Validator`, and leaving them out where `additionalProperties: false` beside `patternProperties` rejects the same names.
 - `#[jsonschema::validator]` errors reporting other evaluation paths, absolute keyword locations and schema paths than `Validator`, such as an evaluation path without the `$ref` it went through.
 - `#[jsonschema::validator]` reading `resources` in the draft of the schema instead of the draft their own `$schema` names, such as the anchors a Draft 4 `id` sets.

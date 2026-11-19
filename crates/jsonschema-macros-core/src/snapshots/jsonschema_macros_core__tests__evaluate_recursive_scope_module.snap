@@ -414,35 +414,13 @@ mod __validator_impl {
         __path: &__paths::LazyLocation,
         __errors: &mut __err::Errors<'__i>,
     ) -> bool {
-        if let Some(__e) = '__first_error: {
-            {
-                let mut __first = __err::Errors::new(true);
-                let _ = (|| -> bool {
-                    let __errors = &mut __first;
-                    if {
-                        let __start = __errors.mark();
-                        let __stop = validate_ref_1_errors(
-                            instance,
-                            __path,
-                            __errors,
-                            "",
-                        );
-                        __errors.inside(__start, "");
-                        __stop
-                    } {
-                        return true;
-                    }
-                    false
-                })();
-                if let Some(__e) = __first.into_first() {
-                    break '__first_error Some(__e);
-                }
-            }
-            None
+        if {
+            let __start = __errors.mark();
+            let __stop = validate_ref_1_errors(instance, __path, __errors, "");
+            __errors.inside(__start, "");
+            __stop
         } {
-            if __errors.push(__e) {
-                return true;
-            }
+            return true;
         }
         false
     }

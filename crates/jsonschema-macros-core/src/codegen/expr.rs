@@ -101,24 +101,6 @@ pub(crate) fn call_errors(call: &TokenStream) -> TokenStream {
     }
 }
 
-/// A first-error block, as [`CompiledExpr::from_first_error`] takes, yielding the first error
-/// an errors block reports.
-pub(crate) fn first_error_of(errors: &TokenStream) -> TokenStream {
-    quote! {
-        {
-            let mut __first = __err::Errors::new(true);
-            let _ = (|| -> bool {
-                let __errors = &mut __first;
-                #errors
-                false
-            })();
-            if let Some(__e) = __first.into_first() {
-                break '__first_error Some(__e);
-            }
-        }
-    }
-}
-
 /// Run a first-error block in a labelled block and report its error, if any. First-error blocks
 /// never nest outside a closure, so the label is never shadowed.
 fn report_first_error(first_error: &TokenStream) -> ErrorsBlock {
