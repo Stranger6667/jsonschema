@@ -294,20 +294,12 @@ fn valid_tree_reached_by_two_keywords_stays_linear(reach: Reach, mode: Mode) {
     &[
         "/properties/c/$ref/properties/c/$ref/type",
         "/properties/c/$ref/patternProperties/^c/$ref/type",
-        "/properties/c/$ref/allOf/0/$ref/properties/c/$ref/type",
-        "/properties/c/$ref/allOf/0/$ref/patternProperties/^c/$ref/type",
         "/patternProperties/^c/$ref/properties/c/$ref/type",
         "/patternProperties/^c/$ref/patternProperties/^c/$ref/type",
-        "/patternProperties/^c/$ref/allOf/0/$ref/properties/c/$ref/type",
-        "/patternProperties/^c/$ref/allOf/0/$ref/patternProperties/^c/$ref/type",
         "/allOf/0/$ref/properties/c/$ref/properties/c/$ref/type",
         "/allOf/0/$ref/properties/c/$ref/patternProperties/^c/$ref/type",
         "/allOf/0/$ref/patternProperties/^c/$ref/properties/c/$ref/type",
         "/allOf/0/$ref/patternProperties/^c/$ref/patternProperties/^c/$ref/type",
-        "/allOf/0/$ref/allOf/0/$ref/properties/c/$ref/properties/c/$ref/type",
-        "/allOf/0/$ref/allOf/0/$ref/properties/c/$ref/patternProperties/^c/$ref/type",
-        "/allOf/0/$ref/allOf/0/$ref/patternProperties/^c/$ref/properties/c/$ref/type",
-        "/allOf/0/$ref/allOf/0/$ref/patternProperties/^c/$ref/patternProperties/^c/$ref/type",
     ];
     "two keywords and allOf at the innermost level"
 )]
@@ -336,9 +328,7 @@ fn valid_tree_reached_by_two_keywords_stays_linear(reach: Reach, mode: Mode) {
     "/cx/cy/cz",
     &[
         "/patternProperties/^c/$ref/patternProperties/^c/$ref/patternProperties/^c/$ref/type",
-        "/patternProperties/^c/$ref/allOf/0/$ref/patternProperties/^c/$ref/patternProperties/^c/$ref/type",
         "/allOf/0/$ref/patternProperties/^c/$ref/patternProperties/^c/$ref/patternProperties/^c/$ref/type",
-        "/allOf/0/$ref/allOf/0/$ref/patternProperties/^c/$ref/patternProperties/^c/$ref/patternProperties/^c/$ref/type",
     ];
     "two keywords and allOf beside valid subtrees"
 )]
@@ -430,46 +420,52 @@ fn locate(error: &ValidationError<'_>) -> String {
     )
 }
 
-// The first walk of the root at `/k/k` asks `is_valid` of the root at `/k/k/p` before `Y` is
-// entered there: the root rejects it before visiting enough targets to be cached. A later walk asks
-// again with `Y` entered at `/k/k/p`, where the cycle guard stands in for `Y`, so the root accepts
-// it and the result is cached. Walking the root at `/k/k` again reads that result and reports the
-// `not` errors.
-#[test_case(
-    &json!({"never": 1, "k": {"never": 1, "k": {"never": 1, "p": {"deep": nested(20, json!({}))}, "deep": nested(20, json!({}))}}}),
-    &[
-        "/k/k/p (/$defs/Y/required | /allOf/1/properties/k/$ref/allOf/2/properties/k/properties/p/$ref/required)",
-        "/k/k/p (/properties/p/not | /allOf/1/properties/k/$ref/allOf/3/properties/k/$ref/properties/p/not)",
-        "/k (/allOf/4/not | /allOf/1/properties/k/$ref/allOf/4/not)",
-        "/k/k/p (/properties/p/not | /allOf/3/properties/k/$ref/allOf/1/properties/k/$ref/properties/p/not)",
-        "/k/k/p (/$defs/Y/required | /allOf/3/properties/k/$ref/allOf/2/properties/k/properties/p/$ref/required)",
-        "/k/k/p (/properties/p/not | /allOf/3/properties/k/$ref/allOf/3/properties/k/$ref/properties/p/not)",
-        "/k (/allOf/4/not | /allOf/3/properties/k/$ref/allOf/4/not)",
-        " (/allOf/4/not | /allOf/4/not)",
-    ];
-    "is_valid result cached after the first walk"
-)]
-fn ref_cycle_reading_a_later_cached_result_keeps_every_error(instance: &Value, expected: &[&str]) {
+// The schema `R`, referring to itself by `target`.
+fn walking_k_twice(target: &str) -> Value {
     let deep = json!({"properties": {"deep": {"$ref": "#/$defs/chain"}}});
-    let validator = jsonschema::validator_for(&json!({
-        "$defs": {
-            "chain": {"properties": {"c": {"$ref": "#/$defs/chain"}}},
-            "Y": {"required": ["y"], "allOf": [{"$ref": "#"}]}
-        },
+    json!({
         "allOf": [
             {
                 "if": {"required": ["never"]},
                 "then": deep,
                 "else": {"if": {"$ref": "#/$defs/Y"}, "then": deep, "else": false}
             },
-            {"properties": {"k": {"$ref": "#"}}},
+            {"properties": {"k": {"$ref": target}}},
             {"properties": {"k": {"properties": {"p": {"$ref": "#/$defs/Y"}}}}},
-            {"properties": {"k": {"$ref": "#"}}},
-            {"not": {"not": {"$ref": "#"}}}
+            {"properties": {"k": {"$ref": target}}},
+            {"not": {"not": {"$ref": target}}}
         ],
-        "properties": {"p": {"not": {"$ref": "#"}}}
-    }))
-    .expect("the cycle compiles");
+        "properties": {"p": {"not": {"$ref": target}}}
+    })
+}
+
+// The root is a copy of `R`, so each `$ref` in it enters `R` without a guard entry. The first walk
+// of `R` at `/k/k` asks `is_valid` of `R` at `/k/k/p` before `Y` is entered there: `R` rejects it
+// before visiting enough targets to be cached. A later walk asks again with `Y` entered at
+// `/k/k/p`, where the cycle guard stands in for `Y`, so `R` accepts it and the result is cached.
+// Walking `R` at `/k/k` again reads that result and reports the `not` errors.
+#[test_case(
+    &json!({"never": 1, "k": {"never": 1, "k": {"never": 1, "p": {"deep": nested(20, json!({}))}, "deep": nested(20, json!({}))}}}),
+    &[
+        "/k/k/p (/$defs/Y/required | /allOf/1/properties/k/$ref/allOf/2/properties/k/properties/p/$ref/required)",
+        "/k/k/p (/$defs/R/properties/p/not | /allOf/1/properties/k/$ref/allOf/3/properties/k/$ref/properties/p/not)",
+        "/k (/$defs/R/allOf/4/not | /allOf/1/properties/k/$ref/allOf/4/not)",
+        "/k/k/p (/$defs/R/properties/p/not | /allOf/3/properties/k/$ref/allOf/1/properties/k/$ref/properties/p/not)",
+        "/k/k/p (/$defs/Y/required | /allOf/3/properties/k/$ref/allOf/2/properties/k/properties/p/$ref/required)",
+        "/k/k/p (/$defs/R/properties/p/not | /allOf/3/properties/k/$ref/allOf/3/properties/k/$ref/properties/p/not)",
+        "/k (/$defs/R/allOf/4/not | /allOf/3/properties/k/$ref/allOf/4/not)",
+        " (/allOf/4/not | /allOf/4/not)",
+    ];
+    "is_valid result cached after the first walk"
+)]
+fn ref_cycle_reading_a_later_cached_result_keeps_every_error(instance: &Value, expected: &[&str]) {
+    let mut schema = walking_k_twice("#/$defs/R");
+    schema["$defs"] = json!({
+        "chain": {"properties": {"c": {"$ref": "#/$defs/chain"}}},
+        "Y": {"required": ["y"], "allOf": [{"$ref": "#/$defs/R"}]},
+        "R": walking_k_twice("#/$defs/R")
+    });
+    let validator = jsonschema::validator_for(&schema).expect("the cycle compiles");
     let errors: Vec<String> = validator
         .iter_errors(instance)
         .map(|error| locate(&error))

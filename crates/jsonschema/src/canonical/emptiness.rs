@@ -287,6 +287,71 @@ pub(crate) fn in_place_cycle_keys(
         .collect()
 }
 
+/// Whether `root` reads itself back on the same value through a body that inverts its operand.
+///
+/// The root is the target of its own `#`. The validator answers a cycle through `not` or `oneOf`
+/// by where it enters the cycle, so on such a cycle a copy of the root's body accepts other values
+/// than the root does.
+pub(crate) fn root_inverts_on_an_in_place_cycle(
+    root: &Schema,
+    definitions: &DefinitionMap,
+) -> bool {
+    // A way back to the root on one value passes only bodies the root reaches on that value.
+    let mut bodies = DefinitionMap::new();
+    let mut reaches_root = false;
+    let mut pending = Vec::new();
+    collect_in_place_references(root, &mut pending);
+    while let Some(uri) = pending.pop() {
+        if uri.as_ref() == ROOT_DEFINITION_KEY {
+            reaches_root = true;
+            continue;
+        }
+        let Some((uri, body)) = definitions.get_key_value(uri.as_ref()) else {
+            continue;
+        };
+        if bodies.insert(Arc::clone(uri), body.clone()).is_none() {
+            collect_in_place_references(body, &mut pending);
+        }
+    }
+    if !reaches_root {
+        return false;
+    }
+    let edges = reference_edges(root, &bodies);
+    let nodes: Vec<Arc<str>> = edges.keys().cloned().collect();
+    let in_place = restrict(&nodes, &edges, Edges::InPlaceOnly);
+    strongly_connected(&in_place)
+        .into_iter()
+        .find(|component| {
+            component
+                .iter()
+                .any(|key| key.as_ref() == ROOT_DEFINITION_KEY)
+        })
+        .is_some_and(|component| {
+            is_cyclic(&component, &in_place)
+                && component.iter().any(|key| {
+                    // The graph's nodes are the root and the bodies it was built over.
+                    let body = if key.as_ref() == ROOT_DEFINITION_KEY {
+                        root
+                    } else {
+                        &bodies[key]
+                    };
+                    inverts(body)
+                })
+        })
+}
+
+/// The pointers `schema` reads against the value it is itself read on.
+fn collect_in_place_references(schema: &Schema, out: &mut Vec<Arc<str>>) {
+    let mut found = Vec::new();
+    collect_classified_references(schema, Position::InPlace, &mut found);
+    out.extend(
+        found
+            .into_iter()
+            .filter(|(_, position)| *position == Position::InPlace)
+            .map(|(uri, _)| Arc::clone(uri)),
+    );
+}
+
 /// Which edges a restricted subgraph keeps.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Edges {

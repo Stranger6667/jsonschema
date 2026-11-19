@@ -60,7 +60,24 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
     if ref_cycles.through_scope {
         ctx.ref_results_key = RefResultsKey::InstanceAndScope { calls: 0 };
     }
-    let validation_expr = compile_schema(&mut ctx, &config.schema);
+    // The root is the code a `$ref` naming it by `#` runs: a reference back to the root's instance
+    // passes the cycle guard that code's own references take, and one the root holds itself
+    // applies nothing.
+    let root = root_reference_target(&mut ctx, &config.schema);
+    if ctx.closes_same_instance_cycle(&root.location) {
+        get_or_create_is_valid_fn(
+            &mut ctx,
+            &root.location,
+            root.resource_start,
+            root.schema,
+            root.base_uri,
+        );
+        ctx.root_target = Some(root.location);
+    }
+    let root_targets: Vec<String> = ctx.root_target.iter().cloned().collect();
+    let validation_expr = ctx.within_targets(&root_targets, |ctx| {
+        ctx.with_helper_root_scope(|ctx| compile_schema(ctx, &config.schema))
+    });
     let recursive_stack_needed = ctx.uses_recursive_ref;
     let dynamic_stack_needed = ctx.uses_dynamic_ref;
     let root_recursive_anchor = recursive_stack_needed
@@ -144,6 +161,19 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
         root_item_eval_ident.as_ref(),
         &root_dynamic_bindings,
     ))
+}
+
+/// The target of a `$ref` naming the root by `#` from within it.
+fn root_reference_target<'cfg, E: ValueEmitter>(
+    ctx: &mut CompileContext<'cfg, E>,
+    root: &Value,
+) -> refs::ResolvedRef<'cfg> {
+    let base = root.as_object().map_or_else(
+        || ctx.config.base_uri.clone(),
+        |root| resource_base_uri(ctx, root),
+    );
+    ctx.with_base_uri_scope(base, |ctx| refs::resolve_ref(ctx, "#"))
+        .expect("the root resolves")
 }
 
 // Draft 4 does not treat integer-valued floats like `-2.0` as integers.

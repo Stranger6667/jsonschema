@@ -2112,6 +2112,9 @@ pub mod generated {
         /// The code of each reference target a `$ref` enters.
         #[serde(default)]
         functions: Vec<Function>,
+        /// The code the root runs as, whose references to the root pass its cycle guard.
+        #[serde(default)]
+        root_function: Option<usize>,
     }
 
     /// A reference target's generated code.
@@ -2506,6 +2509,8 @@ pub mod generated {
         schemas: Box<[UnitLocation]>,
         /// Each entry of `Tables::functions`.
         functions: Box<[Function]>,
+        /// `Tables::root_function`.
+        root_function: Option<usize>,
         /// Whether each schema has leaf units only.
         leaves: Box<[bool]>,
         /// Whether each schema has leaf units only and nothing in it annotates, so its valid items
@@ -2581,7 +2586,7 @@ pub mod generated {
                 errors: flat,
                 arena: EvaluationArena::default(),
                 rebases: Vec::new(),
-                function: None,
+                function: built.root_function,
                 active: Vec::new(),
                 scope: Vec::new(),
                 rebased_paths: RefCell::default(),
@@ -2775,6 +2780,7 @@ pub mod generated {
                 sites,
                 schemas: schemas.into_boxed_slice(),
                 functions: tables.functions.into_boxed_slice(),
+                root_function: tables.root_function,
                 leaves,
                 item_runs,
                 rejects,

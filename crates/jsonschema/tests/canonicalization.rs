@@ -3513,6 +3513,166 @@ fn two_documents_binding_the_root_differently_decline() {
     ));
 }
 
+fn canonical_draft4(schema: &Value) -> CanonicalSchema {
+    options()
+        .with_draft(Draft::Draft4)
+        .canonicalize(schema)
+        .expect("canonicalizes")
+}
+
+// The document root is the target of its own `#`. Reading itself back through `not` on the same
+// value, it accepts other values than a copy of its body does, so it takes part in a combination as
+// that target.
+#[test_case(&json!({"not": {"$ref": "#"}}), CanonicalSchema::union, |root, other| root || other; "union")]
+#[test_case(&json!({"not": {"$ref": "#"}}), CanonicalSchema::intersect, |root, other| root && other; "intersection")]
+#[test_case(&json!({"not": {"$ref": "#"}}), CanonicalSchema::subtract, |root, other| root && !other; "difference")]
+#[test_case(&json!({"not": {"$ref": "#"}}), |root, other| other.subtract(root), |root, other| other && !root; "difference from the root")]
+#[test_case(
+    &json!({"not": {"$ref": "#/definitions/x"}, "definitions": {"x": {"anyOf": [{"$ref": "#"}, {"type": "null"}]}}}),
+    CanonicalSchema::union,
+    |root, other| root || other;
+    "union through a definition"
+)]
+#[test_case(
+    &json!({"not": {"$ref": "#/definitions/x"}, "definitions": {"x": {"anyOf": [{"$ref": "#"}, {"type": "null"}]}}}),
+    CanonicalSchema::intersect,
+    |root, other| root && other;
+    "intersection through a definition"
+)]
+fn a_root_reading_itself_through_a_negation_combines_as_its_own_target(
+    root: &Value,
+    combine: fn(
+        &CanonicalSchema,
+        &CanonicalSchema,
+    ) -> Result<CanonicalSchema, CanonicalizationError>,
+    admits: fn(bool, bool) -> bool,
+) {
+    let other = json!({"type": "integer"});
+    let build = |schema: &Value| {
+        jsonschema::options()
+            .with_draft(Draft::Draft4)
+            .build(schema)
+            .expect("builds")
+    };
+    let combined = combine(&canonical_draft4(root), &canonical_draft4(&other))
+        .expect("combines")
+        .to_json_schema();
+    let (root_validator, other_validator, combined_validator) =
+        (build(root), build(&other), build(&combined));
+    for instance in [json!(null), json!(1), json!("a")] {
+        assert_eq!(
+            combined_validator.is_valid(&instance),
+            admits(
+                root_validator.is_valid(&instance),
+                other_validator.is_valid(&instance)
+            ),
+            "disagrees on {instance}\n  combined = {combined}"
+        );
+    }
+}
+
+// The root takes part as a pointer at its own body, which still reads itself as the root did.
+#[test]
+fn a_root_reading_itself_through_a_negation_unites_as_a_pointer() {
+    let union = canonical_draft4(&json!({"not": {"$ref": "#"}}))
+        .union(&canonical_draft4(&json!({"type": "integer"})))
+        .expect("unites");
+    assert_eq!(
+        union.to_json_schema(),
+        json!({
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "anyOf": [{"type": "integer"}, {"$ref": "#/definitions/root"}],
+            "definitions": {"root": {"not": {"$ref": "#/definitions/root"}}}
+        })
+    );
+}
+
+// Without a cycle on one value through `not` or `oneOf`, a copy of the root's body accepts what
+// the root does, so a combination holds that copy.
+#[test_case(
+    &json!({"type": "object", "properties": {"a": {"not": {"$ref": "#"}}}}),
+    &json!({"type": "integer"}),
+    &json!({
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "anyOf": [
+            {"type": "integer"},
+            {"type": "object", "properties": {"a": {"not": {"$ref": "#/definitions/root"}}}}
+        ],
+        "definitions": {"root": {
+            "type": "object",
+            "properties": {"a": {"not": {"$ref": "#/definitions/root"}}}
+        }}
+    });
+    "negated under a property"
+)]
+#[test_case(
+    &json!({"allOf": [{"$ref": "#"}, {"type": "integer"}]}),
+    &json!({"type": "string"}),
+    &json!({
+        "$schema": "http://json-schema.org/draft-04/schema#",
+        "anyOf": [
+            {"type": "string"},
+            {"allOf": [{"type": "integer"}, {"$ref": "#/definitions/root"}]}
+        ],
+        "definitions": {"root": {"allOf": [{"type": "integer"}, {"$ref": "#/definitions/root"}]}}
+    });
+    "in place without a negation"
+)]
+fn a_root_reading_itself_without_an_inverting_cycle_unites_as_its_body(
+    root: &Value,
+    other: &Value,
+    expected: &Value,
+) {
+    let union = canonical_draft4(root)
+        .union(&canonical_draft4(other))
+        .expect("unites");
+    assert_eq!(&union.to_json_schema(), expected);
+}
+
+// The difference is written exactly as the root's own body, yet reads `#` as a copy of that body
+// does, and a copy accepts other values than the root. A handle holding the root's node is the
+// root, so the difference is declined rather than handed back as the root.
+#[test_case(
+    &json!({"allOf": [{"not": {"$ref": "#"}}, {"type": "integer"}]}),
+    &json!({"type": "integer"});
+    "under allOf"
+)]
+#[test_case(
+    &json!({"not": {"anyOf": [{"$ref": "#"}, {"type": "null"}]}}),
+    &json!({"not": {"type": "null"}});
+    "under not over anyOf"
+)]
+fn a_difference_written_as_a_root_reading_itself_through_a_negation_declines(
+    root: &Value,
+    other: &Value,
+) {
+    assert!(matches!(
+        canonical_draft4(other).subtract(&canonical_draft4(root)),
+        Err(CanonicalizationError::UnsupportedResult)
+    ));
+}
+
+// Taking part as its own target, the root still comes back whole from an operation that leaves it
+// as it was.
+#[test_case(&json!(true), CanonicalSchema::intersect; "intersection with everything")]
+#[test_case(&json!(false), CanonicalSchema::union; "union with nothing")]
+#[test_case(&json!(false), CanonicalSchema::subtract; "difference with nothing")]
+fn a_root_reading_itself_through_a_negation_comes_back_as_itself(
+    other: &Value,
+    combine: fn(
+        &CanonicalSchema,
+        &CanonicalSchema,
+    ) -> Result<CanonicalSchema, CanonicalizationError>,
+) {
+    let root = canonical_draft4(&json!({"not": {"$ref": "#"}}));
+    assert_eq!(
+        combine(&root, &canonical_draft4(other))
+            .expect("combines")
+            .to_json_schema(),
+        root.to_json_schema()
+    );
+}
+
 // A pointer stands for the schema it references, so a member that schema admits is admitted - comparing the
 // pointer itself against the member instead reads as a rejection that never happened.
 #[test]
