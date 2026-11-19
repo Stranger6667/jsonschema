@@ -15,7 +15,7 @@ use crate::{
     unfinished_matches::{self, assume_each_outcome, MatchAssumptions, MatchSite},
     Draft, Json, Node, NodeIdentity, SerdeJson, ValidationError, ValidationOptions,
 };
-use ahash::AHashMap;
+use ahash::{AHashMap, AHashSet};
 use referencing::Uri;
 use serde_json::Value;
 
@@ -76,6 +76,9 @@ pub struct ValidationContext {
     is_valid_cache: Option<AHashMap<(usize, NodeIdentity), bool>>,
     /// Visits to `$ref` targets so far; a visit's share of it decides whether its result is cached.
     ref_visits: u32,
+    /// The lowest guard entry whose walk depends on more than its target and instance, among the
+    /// entries above the innermost errors-path visit, which starts it at `usize::MAX`.
+    lowest_entangled: usize,
     evaluation_path_calls: u32,
     /// Instance location of the node being evaluated; only the `evaluate` path sets it.
     instance_location: Option<InstancePosition>,
@@ -88,7 +91,15 @@ pub struct ValidationContext {
 }
 
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
-const _: () = assert!(std::mem::size_of::<ValidationContext>() == 144);
+const _: () = assert!(std::mem::size_of::<ValidationContext>() == 152);
+
+/// An errors-path visit of a `$ref` target, from [`ValidationContext::start_errors_visit`] to
+/// [`ValidationContext::finish_errors_visit`].
+#[derive(Clone, Copy)]
+pub(crate) struct ErrorsVisit {
+    visit: u32,
+    outer_entangled: usize,
+}
 
 /// Checks for the state inline when dropped: the drop glue of a plain `Option<Box<_>>` is an
 /// out-of-line call even when there is nothing to free.
@@ -120,6 +131,9 @@ struct LazyState {
     /// path: from when the guard outgrows `SCANNED_GUARD_ENTRIES` until it shrinks to
     /// `COUNTED_GUARD_FLOOR`.
     guarded_instances: Option<AHashMap<NodeIdentity, u32>>,
+    /// `$ref` targets and containers for which `validate` and `iter_errors` report nothing,
+    /// wherever the target is entered from.
+    reports_nothing: Option<AHashSet<(usize, NodeIdentity)>>,
 }
 
 /// Runs `run` in a fresh context that assumes the outcomes in `matches`.
@@ -285,8 +299,21 @@ impl ValidationContext {
         };
         let key = (node_id, identity);
         if F::ACYCLIC {
-            if self.topmost_entries(key).is_none() {
-                return true;
+            // Validation only descends, so the entries for this instance are the topmost.
+            let mut entries = self.validating.iter().rev();
+            if let Some(&(entered, instance)) = entries.next() {
+                if instance == identity {
+                    if entered == node_id {
+                        return true;
+                    }
+                    let cycle = entries
+                        .take_while(|entry| entry.1 == identity)
+                        .any(|entry| entry.0 == node_id);
+                    self.entangle_top();
+                    if cycle {
+                        return true;
+                    }
+                }
             }
             self.validating.push(key);
             return false;
@@ -304,6 +331,13 @@ impl ValidationContext {
             self.count_guarded_instances();
         }
         false
+    }
+
+    /// The top entry's walk enters another target at its own instance.
+    #[inline]
+    fn entangle_top(&mut self) {
+        let top = self.validating.len() - 1;
+        self.lowest_entangled = self.lowest_entangled.min(top);
     }
 
     /// How many entries on top of the guard hold `key`'s instance, or `None` if one of them is
@@ -461,11 +495,62 @@ impl ValidationContext {
             return;
         };
         if self.ref_visits.wrapping_sub(visit) < MEMO_MIN_VISITS {
+            // Another context may cache this result later, and a repeated walk would read that
+            // one instead, so no errors-path visit around this one records.
+            self.lowest_entangled = 0;
             return;
         }
         self.is_valid_cache
             .get_or_insert_with(AHashMap::new)
             .insert((node_id, identity), result);
+    }
+
+    /// Whether an earlier errors-path visit of `node_id` showed it reports nothing for the
+    /// container, wherever it is entered from.
+    #[inline]
+    pub(crate) fn reports_nothing(&self, node_id: usize, identity: NodeIdentity) -> bool {
+        self.lazy
+            .0
+            .as_ref()
+            .and_then(|state| state.reports_nothing.as_ref())
+            .is_some_and(|targets| targets.contains(&(node_id, identity)))
+    }
+
+    /// Starts an errors-path visit of a `$ref` target whose guard entry is on top.
+    #[inline]
+    pub(crate) fn start_errors_visit(&mut self) -> ErrorsVisit {
+        ErrorsVisit {
+            visit: self.start_ref_visit(),
+            outer_entangled: std::mem::replace(&mut self.lowest_entangled, usize::MAX),
+        }
+    }
+
+    /// Ends `visit`, whose guard entry is back on top, recording a walk that reported nothing.
+    ///
+    /// Only for representations where no node is its own descendant: there a walk meets guard
+    /// entries only at its own instance, so one that entered no other target there neither
+    /// depended on the entries it was entered under nor meets any it is entered under later.
+    /// Every container result it took from `is_valid` stays cached, so walking it again reads
+    /// the same ones.
+    #[inline]
+    pub(crate) fn finish_errors_visit(
+        &mut self,
+        visit: ErrorsVisit,
+        node_id: usize,
+        identity: NodeIdentity,
+        reported_nothing: bool,
+    ) {
+        let isolated = self.lowest_entangled >= self.validating.len();
+        self.lowest_entangled = visit.outer_entangled;
+        if reported_nothing
+            && isolated
+            && self.ref_visits.wrapping_sub(visit.visit) >= MEMO_MIN_VISITS
+        {
+            self.lazy()
+                .reports_nothing
+                .get_or_insert_with(AHashSet::default)
+                .insert((node_id, identity));
+        }
     }
     /// Evaluation path for `location` under `tracker`, cached across instance nodes.
     ///
