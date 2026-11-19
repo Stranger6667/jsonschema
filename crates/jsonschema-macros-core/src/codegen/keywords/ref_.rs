@@ -75,37 +75,20 @@ fn shared_cycle_guarded_errors(mark_expr: &TokenStream, call: &TokenStream) -> T
     }
 }
 
-fn cycle_guarded_ref_errors(
-    node: &TokenStream,
-    node_address: &TokenStream,
-    func_ident: &proc_macro2::Ident,
-    errors_ident: &proc_macro2::Ident,
-    site: &TokenStream,
-) -> TokenStream {
-    let mark_expr = quote! {
-        (
-            (#func_ident as fn(#node) -> bool) as usize,
-            #node_address,
-        )
-    };
-    shared_cycle_guarded_errors(
-        &mark_expr,
-        &quote! { #errors_ident(instance, __path, __errors, #site) },
-    )
-}
-
-fn cycle_guarded_ref_is_valid(
+/// The cycle guard mark of a `$ref` target on the instance, by its `is_valid` function in both
+/// dispatches. The dynamic scope stays out of it: a re-entry stops in any scope, as the runtime's
+/// guard on the target does.
+fn ref_mark(
     node: &TokenStream,
     node_address: &TokenStream,
     func_ident: &proc_macro2::Ident,
 ) -> TokenStream {
-    let mark_expr = quote! {
+    quote! {
         (
             (#func_ident as fn(#node) -> bool) as usize,
             #node_address,
         )
-    };
-    shared_cycle_guarded_is_valid(&mark_expr, &quote! { #func_ident(instance) })
+    }
 }
 
 /// A `$ref` check: the target's error function runs `is_valid` first, so its caller needs no
@@ -165,6 +148,12 @@ fn compile_at<E: ValueEmitter>(
 
     let schema_path = ctx.schema_path_for_keyword(keyword);
     let site = quote! { #schema_path };
+    // A target still compiling closes a cycle, and gets its error function once it compiles.
+    let cycle = ctx.is_valid_fns.is_compiling(&resolved.location);
+    let same_instance_cycle = cycle && ctx.closes_same_instance_cycle(&resolved.location);
+    if same_instance_cycle {
+        ctx.uses_ref_cycle = true;
+    }
     if ctx.uses_dynamic_ref && !call_scope_bindings.is_empty() {
         let call_scope_pushes: Vec<_> = call_scope_bindings
             .iter()
@@ -191,44 +180,55 @@ fn compile_at<E: ValueEmitter>(
                 __result
             }
         };
-        // Use the error helper when available for accurate error paths.
-        if ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
+        if cycle || ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
             let errors_ident = format_ident!("{}_errors", func_name);
-            let call = quote! { #errors_ident(instance, __path, __errors, #site) };
-            ref_check(
-                is_valid,
-                quote! {
-                    {
-                        #(#call_scope_pushes)*
-                        #(#call_scope_errors_pushes)*
-                        let __stop = #call;
-                        #dynamic_errors_pop
-                        #dynamic_pop
-                        if __stop {
-                            return true;
+            let scoped_errors = quote! {
+                #(#call_scope_pushes)*
+                #(#call_scope_errors_pushes)*
+                let __stop = #errors_ident(instance, __path, __errors, #site);
+                #dynamic_errors_pop
+                #dynamic_pop
+            };
+            if same_instance_cycle {
+                let mark = ref_mark(&node, &node_address, &func_ident);
+                ref_check(
+                    shared_cycle_guarded_is_valid(&mark, &is_valid),
+                    shared_cycle_guarded_errors(&mark, &quote! { { #scoped_errors __stop } }),
+                )
+            } else {
+                ref_check(
+                    is_valid,
+                    quote! {
+                        {
+                            #scoped_errors
+                            if __stop {
+                                return true;
+                            }
                         }
-                    }
-                },
-            )
+                    },
+                )
+            }
         } else {
             CompiledExpr::from_bool_expr(is_valid, &schema_path, &err_instance)
         }
     } else {
-        let plain_cycle = ctx.is_valid_fns.is_compiling(&resolved.location)
-            && !ctx.uses_recursive_ref
-            && !ctx.uses_dynamic_ref;
-        if plain_cycle && ctx.closes_same_instance_cycle(&resolved.location) {
-            ctx.uses_ref_cycle = true;
-            let errors_ident = format_ident!("{}_errors", func_name);
+        let errors_ident = format_ident!("{}_errors", func_name);
+        if same_instance_cycle {
+            let mark = ref_mark(&node, &node_address, &func_ident);
             ref_check(
-                cycle_guarded_ref_is_valid(&node, &node_address, &func_ident),
-                cycle_guarded_ref_errors(&node, &node_address, &func_ident, &errors_ident, &site),
+                shared_cycle_guarded_is_valid(&mark, &quote! { #func_ident(instance) }),
+                shared_cycle_guarded_errors(
+                    &mark,
+                    &quote! { #errors_ident(instance, __path, __errors, #site) },
+                ),
             )
-        } else if plain_cycle || ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
-            let errors_ident = format_ident!("{}_errors", func_name);
+        } else if cycle || ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
             // Keywords reaching one instance through the cycle at every level would otherwise
-            // validate it once per path to it.
-            let is_valid = if plain_cycle && ctx.revisited_ref_targets.contains(&resolved.location)
+            // validate it once per path to it. Under a dynamic scope a result depends on the path.
+            let is_valid = if cycle
+                && !ctx.uses_recursive_ref
+                && !ctx.uses_dynamic_ref
+                && ctx.revisited_ref_targets.contains(&resolved.location)
             {
                 let json = E::json_representation();
                 quote! { __ref_memo::is_valid::<#json>(#func_ident, instance) }

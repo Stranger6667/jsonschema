@@ -3867,6 +3867,131 @@ fn test_pure_ref_cycles_match_runtime(instance: serde_json::Value) {
     );
 }
 
+// `$ref` cycles in schemas that also resolve `$recursiveRef` or `$dynamicRef` through the dynamic
+// scope: through nested instances, through the same instance, and to one target from two scopes.
+#[jsonschema::validator(
+    schema = r##"{"$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$ref": "#/$defs/node"}}}}"##,
+    draft = Draft201909,
+    methods = { evaluate = true }
+)]
+struct RefCycleBesideRecursiveRef;
+#[jsonschema::validator(
+    schema = r##"{"$dynamicAnchor": "meta", "properties": {"a": {"$dynamicRef": "#meta"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$ref": "#/$defs/node"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleBesideDynamicRef;
+#[jsonschema::validator(
+    schema = r##"{"$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##,
+    draft = Draft201909,
+    methods = { evaluate = true }
+)]
+struct SameInstanceRefCycleBesideRecursiveRef;
+#[jsonschema::validator(
+    schema = r##"{"$dynamicAnchor": "meta", "properties": {"a": {"$dynamicRef": "#meta"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct SameInstanceRefCycleBesideDynamicRef;
+#[jsonschema::validator(
+    schema = r##"{"$id": "https://example.com/root", "allOf": [{"$ref": "strict"}, {"$ref": "tree"}], "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "$ref": "#/$defs/cycle", "$defs": {"cycle": {"minProperties": 1, "allOf": [{"$ref": "#/$defs/cycle"}], "additionalProperties": {"$recursiveRef": "#"}}}}, "strict": {"$id": "strict", "$recursiveAnchor": true, "$ref": "tree", "maxProperties": 1}}}"##,
+    draft = Draft201909,
+    methods = { evaluate = true }
+)]
+struct RefCycleUnderTwoRecursiveScopes;
+#[jsonschema::validator(
+    schema = r##"{"$id": "https://example.com/root", "allOf": [{"$ref": "strict"}, {"$ref": "tree"}], "$defs": {"tree": {"$id": "tree", "$dynamicAnchor": "node", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"minProperties": 1, "allOf": [{"$ref": "#/$defs/cycle"}], "additionalProperties": {"$dynamicRef": "#node"}}}}, "strict": {"$id": "strict", "$dynamicAnchor": "node", "$ref": "tree", "maxProperties": 1}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleUnderTwoDynamicScopes;
+
+#[test_case(RefCycleBesideRecursiveRef::is_valid, RefCycleBesideRecursiveRef::validate, RefCycleBesideRecursiveRef::iter_errors, RefCycleBesideRecursiveRef::evaluate, serde_json::json!({"$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$ref": "#/$defs/node"}}}}), Draft::Draft201909 ; "nested_instances_recursive_ref")]
+#[test_case(RefCycleBesideDynamicRef::is_valid, RefCycleBesideDynamicRef::validate, RefCycleBesideDynamicRef::iter_errors, RefCycleBesideDynamicRef::evaluate, serde_json::json!({"$dynamicAnchor": "meta", "properties": {"a": {"$dynamicRef": "#meta"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$ref": "#/$defs/node"}}}}), Draft::Draft202012 ; "nested_instances_dynamic_ref")]
+#[test_case(SameInstanceRefCycleBesideRecursiveRef::is_valid, SameInstanceRefCycleBesideRecursiveRef::validate, SameInstanceRefCycleBesideRecursiveRef::iter_errors, SameInstanceRefCycleBesideRecursiveRef::evaluate, serde_json::json!({"$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}), Draft::Draft201909 ; "same_instance_recursive_ref")]
+#[test_case(SameInstanceRefCycleBesideDynamicRef::is_valid, SameInstanceRefCycleBesideDynamicRef::validate, SameInstanceRefCycleBesideDynamicRef::iter_errors, SameInstanceRefCycleBesideDynamicRef::evaluate, serde_json::json!({"$dynamicAnchor": "meta", "properties": {"a": {"$dynamicRef": "#meta"}, "b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}), Draft::Draft202012 ; "same_instance_dynamic_ref")]
+#[test_case(RefCycleUnderTwoRecursiveScopes::is_valid, RefCycleUnderTwoRecursiveScopes::validate, RefCycleUnderTwoRecursiveScopes::iter_errors, RefCycleUnderTwoRecursiveScopes::evaluate, serde_json::json!({"$id": "https://example.com/root", "allOf": [{"$ref": "strict"}, {"$ref": "tree"}], "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "$ref": "#/$defs/cycle", "$defs": {"cycle": {"minProperties": 1, "allOf": [{"$ref": "#/$defs/cycle"}], "additionalProperties": {"$recursiveRef": "#"}}}}, "strict": {"$id": "strict", "$recursiveAnchor": true, "$ref": "tree", "maxProperties": 1}}}), Draft::Draft201909 ; "two_recursive_scopes")]
+#[test_case(RefCycleUnderTwoDynamicScopes::is_valid, RefCycleUnderTwoDynamicScopes::validate, RefCycleUnderTwoDynamicScopes::iter_errors, RefCycleUnderTwoDynamicScopes::evaluate, serde_json::json!({"$id": "https://example.com/root", "allOf": [{"$ref": "strict"}, {"$ref": "tree"}], "$defs": {"tree": {"$id": "tree", "$dynamicAnchor": "node", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"minProperties": 1, "allOf": [{"$ref": "#/$defs/cycle"}], "additionalProperties": {"$dynamicRef": "#node"}}}}, "strict": {"$id": "strict", "$dynamicAnchor": "node", "$ref": "tree", "maxProperties": 1}}}), Draft::Draft202012 ; "two_dynamic_scopes")]
+fn test_ref_cycle_under_dynamic_scope_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    schema: serde_json::Value,
+    draft: Draft,
+) {
+    let runtime = jsonschema::options()
+        .with_draft(draft)
+        .build(&schema)
+        .expect("valid schema");
+    for instance in [
+        serde_json::json!({"b": {"x": {"y": 1}}}),
+        serde_json::json!({"b": {"q": 1, "r": 2, "s": 3, "t": 4, "x": {"y": 1}}}),
+        serde_json::json!({"b": 1}),
+        serde_json::json!({"b": 0}),
+        serde_json::json!({"a": {"b": {"x": 1}}}),
+        serde_json::json!({"a": {"b": 0}}),
+        serde_json::json!({"a": {"b": 1, "c": 2}}),
+        serde_json::json!({"a": {"b": 1}}),
+        serde_json::json!({"a": 1}),
+        serde_json::json!({"a": "x"}),
+        serde_json::json!({}),
+        serde_json::json!(1),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+        // The evaluation tree of a same-instance cycle stops one visit before the runtime's.
+        assert_eq!(
+            evaluate(&instance).flag().valid,
+            runtime.is_valid(&instance),
+            "evaluate outcome mismatch for {instance}"
+        );
+    }
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$id": "https://example.com/root", "$ref": "start", "$defs": {"start": {"$id": "start", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"properties": {"next": {"$ref": "wrap"}}, "additionalProperties": {"$dynamicRef": "leaf#node"}}}}, "leaf": {"$id": "leaf", "$dynamicAnchor": "node", "type": "integer"}, "wrap": {"$id": "wrap", "$dynamicAnchor": "node", "type": "object", "$ref": "start#/$defs/cycle"}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleReachedUnderAnotherDynamicAnchor;
+
+// `cycle` is reached from `start`, then again below `wrap`, where its `$dynamicRef` resolves to
+// `wrap`. The runtime checks the second visit in the scope of the first, so the expected results
+// come from the schema with the cycle unrolled once, which agrees with it on instances without a
+// nested `next`.
+#[test_case(serde_json::json!({"next": {"a": 1}}) ; "rejected_below_wrap")]
+#[test_case(serde_json::json!({"next": {"a": {}}}) ; "accepted_below_wrap")]
+#[test_case(serde_json::json!({"next": {"a": {"b": 1}}}) ; "rejected_two_levels_below_wrap")]
+#[test_case(serde_json::json!({"a": 1}) ; "accepted_outside_wrap")]
+#[test_case(serde_json::json!({"a": "x"}) ; "rejected_outside_wrap")]
+fn test_ref_cycle_reached_under_another_dynamic_anchor(instance: serde_json::Value) {
+    let unrolled = serde_json::json!({"$id": "https://example.com/root", "$ref": "start", "$defs": {"start": {"$id": "start", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"properties": {"next": {"$ref": "wrap"}}, "additionalProperties": {"$dynamicRef": "leaf#node"}}, "copy": {"additionalProperties": {"$dynamicRef": "leaf#node"}}}}, "leaf": {"$id": "leaf", "$dynamicAnchor": "node", "type": "integer"}, "wrap": {"$id": "wrap", "$dynamicAnchor": "node", "type": "object", "$ref": "start#/$defs/copy"}}});
+    let runtime = jsonschema::validator_for(&unrolled).expect("valid schema");
+    assert_validate_parity(
+        RefCycleReachedUnderAnotherDynamicAnchor::is_valid(&instance),
+        RefCycleReachedUnderAnotherDynamicAnchor::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(
+        RefCycleReachedUnderAnotherDynamicAnchor::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_eq!(
+        RefCycleReachedUnderAnotherDynamicAnchor::evaluate(&instance)
+            .flag()
+            .valid,
+        runtime.is_valid(&instance)
+    );
+}
+
 #[test]
 fn test_dynamic_ref_validate_emits_proper_schema_path() {
     let invalid = serde_json::json!({"value": 1, "child": {"value": "not-int"}});
