@@ -4237,9 +4237,16 @@ pub mod __private {
 
             /// The errors recorded since `start` come from the subschema at `pointer`, reached
             /// through the reference at `site`: their evaluation paths move from `pointer` to
-            /// `site`, and the ones of its own resource are located against `base`, when it is not
-            /// the default one.
-            pub fn reached(&mut self, start: usize, pointer: &str, base: Option<&str>, site: &str) {
+            /// `site`, and the ones of its own resource are located against `base`, which starts
+            /// `offset` bytes into their schema paths, when it is not the default one.
+            pub fn reached(
+                &mut self,
+                start: usize,
+                pointer: &str,
+                base: Option<&str>,
+                offset: usize,
+                site: &str,
+            ) {
                 let errors = self.since(start);
                 if errors.is_empty() {
                     return;
@@ -4253,7 +4260,7 @@ pub mod __private {
                     error.edit_all(&mut |error| {
                         if let Some(base) = &base {
                             if error.is_unlocated() {
-                                error.locate_in(Some(base), 0, &mut buffer);
+                                error.locate_in(Some(base), offset, &mut buffer);
                             }
                         }
                         if moves {

@@ -163,8 +163,13 @@ fn compile_at<E: ValueEmitter>(
         return CompiledExpr::always_true();
     }
 
-    let func_name =
-        get_or_create_is_valid_fn(ctx, &resolved.location, resolved.schema, resolved.base_uri);
+    let func_name = get_or_create_is_valid_fn(
+        ctx,
+        &resolved.location,
+        resolved.resource_start,
+        resolved.schema,
+        resolved.base_uri,
+    );
     let func_ident = format_ident!("{}", func_name);
     let call_scope_bindings = if ctx.uses_dynamic_ref {
         collect_dynamic_anchor_bindings(ctx, ctx.current_base_uri.clone())

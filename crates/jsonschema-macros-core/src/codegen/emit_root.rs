@@ -586,7 +586,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 ) -> bool {
                     let __start = __errors.mark();
                     let __stop = errors(instance, __path, __errors);
-                    __errors.reached(__start, "", None, __site);
+                    __errors.reached(__start, "", None, 0, __site);
                     __stop
                 }
             }

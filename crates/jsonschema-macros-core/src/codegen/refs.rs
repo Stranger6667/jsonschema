@@ -1,7 +1,7 @@
 use crate::codegen::emit::ValueEmitter;
 use std::{borrow::Cow, sync::Arc};
 
-use referencing::{Draft, Resolved, Uri};
+use referencing::{unescape_segment, Draft, Registry, Resolved, Uri};
 use serde_json::Value;
 
 use super::{draft::DraftExt, helpers::anchor_pointer, CompileContext};
@@ -9,6 +9,9 @@ use super::{draft::DraftExt, helpers::anchor_pointer, CompileContext};
 pub(crate) struct ResolvedRef<'cfg> {
     pub(crate) schema: &'cfg Value,
     pub(crate) location: String,
+    /// Length of the prefix of the location's JSON Pointer before the resource the schema sits in
+    /// starts, where the pointer enters a resource embedded in the document it counts from.
+    pub(crate) resource_start: usize,
     /// Base URI of the resolved schema (for resolving nested references)
     pub(crate) base_uri: Arc<Uri<String>>,
     /// The draft of the resource it sits in.
@@ -63,42 +66,84 @@ pub(crate) fn resolve_ref<'cfg, E: ValueEmitter>(
         .lookup_target(reference)
         .map_err(|e| format!("Failed to resolve {reference}: {e}"))?;
     let resolved = resolver.enter(&target);
-    let location_key = target_location(ctx, reference, target.document(), &resolved);
+    let fragment = reference
+        .split_once('#')
+        .map_or("", |(_, fragment)| fragment);
+    // An anchor names a schema of the resource it sits in, by its pointer from that resource's
+    // root.
+    let (pointer, resource_start) = if !fragment.starts_with('/') && !fragment.is_empty() {
+        let root = resolved
+            .resolver()
+            .lookup("")
+            .expect("an anchor lives in the document it is looked up in");
+        let pointer = anchor_pointer(ctx, root.contents(), resolved.contents());
+        (Cow::Owned(pointer), 0)
+    } else {
+        let pointer = if fragment.contains('%') {
+            percent_encoding::percent_decode_str(fragment).decode_utf8_lossy()
+        } else {
+            Cow::Borrowed(fragment)
+        };
+        let resource_start =
+            resource_start(&config.registry, target.document(), &pointer, &resolved);
+        (pointer, resource_start)
+    };
+    let location_key = target_location(target.document(), &pointer);
     let resolved_base_uri = resolved.resolver().base_uri().clone();
     let (contents, _, draft) = resolved.into_inner();
 
     Ok(ResolvedRef {
         schema: contents,
         location: location_key,
+        resource_start,
         base_uri: resolved_base_uri,
         draft,
     })
 }
 
+/// Length of the prefix of `pointer`, from the root of `document`, before the resource `resolved`
+/// sits in starts: the pointer may pass through resources embedded in `document`, and keywords
+/// are located from the root of the innermost one.
+fn resource_start(
+    registry: &Registry<'_>,
+    document: &Uri<String>,
+    pointer: &str,
+    resolved: &Resolved<'_>,
+) -> usize {
+    // A pointer staying in the document's own resource never comes back to its root.
+    if resolved.resolver().base_uri().as_str() == document.as_str() {
+        return 0;
+    }
+    let resource = resolved
+        .resolver()
+        .lookup("")
+        .expect("a resource's root resolves")
+        .contents();
+    let mut node = registry
+        .resolver(document.clone())
+        .lookup("")
+        .expect("the document a reference names resolves")
+        .contents();
+    let mut offset = 0;
+    let mut start = 0;
+    for segment in pointer.split('/').skip(1) {
+        offset += 1 + segment.len();
+        node = match node {
+            Value::Array(_) => &node[segment.parse::<usize>().expect("the pointer resolved")],
+            _ => &node[unescape_segment(segment).as_ref()],
+        };
+        if std::ptr::eq(node, resource) {
+            start = offset;
+        }
+    }
+    start
+}
+
 /// The location of the schema `reference` resolves to: the document it names and the JSON Pointer
 /// from that document's root, which every way of naming one schema in that document shares. The
-/// pointer counts from that document even when it enters a resource embedded in it, as the
-/// locations of errors below the target do.
-fn target_location<E: ValueEmitter>(
-    ctx: &mut CompileContext<'_, E>,
-    reference: &str,
-    document: &Uri<String>,
-    resolved: &Resolved<'_>,
-) -> String {
-    let fragment = reference
-        .split_once('#')
-        .map_or("", |(_, fragment)| fragment);
-    let pointer = if !fragment.starts_with('/') && !fragment.is_empty() {
-        let root = resolved
-            .resolver()
-            .lookup("")
-            .expect("an anchor lives in the document it is looked up in");
-        Cow::Owned(anchor_pointer(ctx, root.contents(), resolved.contents()))
-    } else if fragment.contains('%') {
-        percent_encoding::percent_decode_str(fragment).decode_utf8_lossy()
-    } else {
-        Cow::Borrowed(fragment)
-    };
+/// pointer counts from that document even when it enters a resource embedded in it, as the schema
+/// paths of errors below the target do.
+fn target_location(document: &Uri<String>, pointer: &str) -> String {
     let document = document.as_str();
     if pointer.is_empty() {
         return document.to_owned();
@@ -111,7 +156,7 @@ fn target_location<E: ValueEmitter>(
     if pointer.contains('%') || pointer.contains('#') {
         location.push_str(&pointer.replace('%', "%25").replace('#', "%23"));
     } else {
-        location.push_str(&pointer);
+        location.push_str(pointer);
     }
     location
 }
