@@ -49,8 +49,8 @@ pub(in super::super) fn compile<E: ValueEmitter>(
     let prefix_len = if applicator_vocab_enabled && ctx.draft.supports_prefix_items_keyword() {
         if let Some(prefix_items_value) = schema.get("prefixItems") {
             match prefix_items_value {
-                Value::Array(_) => {
-                    if let Some((compiled, len)) = prefix_items::compile(ctx, prefix_items_value) {
+                Value::Array(schemas) => {
+                    if let Some((compiled, len)) = prefix_items::compile(ctx, schemas) {
                         prefix_items_check = Some(compiled);
                         Some(len)
                     } else {

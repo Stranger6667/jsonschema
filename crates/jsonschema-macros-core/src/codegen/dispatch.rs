@@ -141,9 +141,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
         } else if has_type_constraint || !for_string.is_trivially_true() {
             typed_arms += 1;
             is_valid_arms.push(E::match_string_arm(for_string.is_valid_token_stream()));
-            if has_type_constraint || matches!(&for_string.errors, ErrorsBlock::Expr(_)) {
-                errors_arms.push(E::match_string_arm(for_string.errors.as_token_stream()));
-            }
+            errors_arms.push(E::match_string_arm(for_string.errors.as_token_stream()));
         }
     }
 
@@ -188,7 +186,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
                 typed_arms += 1;
                 is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
                 errors_arms.push(E::match_number_arm(for_number.errors.as_token_stream()));
-            } else if let Some(type_error) = excluded(&["number", "integer"]) {
+            } else {
                 typed_arms += 1;
                 let errors = for_number.errors.as_token_stream();
                 is_valid_arms.push(E::match_number_arm(quote! { false }));
@@ -197,9 +195,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
         } else if !for_number.is_trivially_true() {
             typed_arms += 1;
             is_valid_arms.push(E::match_number_arm(for_number.is_valid_token_stream()));
-            if matches!(&for_number.errors, ErrorsBlock::Expr(_)) {
-                errors_arms.push(E::match_number_arm(for_number.errors.as_token_stream()));
-            }
+            errors_arms.push(E::match_number_arm(for_number.errors.as_token_stream()));
         }
     }
 

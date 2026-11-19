@@ -785,10 +785,10 @@ impl Tree {
                     self.resources[index].anchors.push((name.clone(), target));
                 }
                 if recursive && self.resources[index].root.is_none() {
-                    let Ok(resolved) = resolver.lookup("#") else {
-                        continue;
-                    };
-                    let (contents, _, draft) = resolved.into_inner();
+                    let (contents, _, draft) = resolver
+                        .lookup("#")
+                        .expect("a resource's root resolves")
+                        .into_inner();
                     self.resources[index].recursive = draft.supports_recursive_ref_keyword()
                         && contents.get("$recursiveAnchor") == Some(&Value::Bool(true));
                     let root = self.add_in(ctx, &base, draft, contents, String::new())?;

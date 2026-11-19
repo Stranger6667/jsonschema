@@ -239,12 +239,7 @@ fn reduce_discriminator_property(
     {
         return None;
     }
-    let mut reduced = schema
-        .as_object()?
-        .get("properties")?
-        .as_object()?
-        .get(key)?
-        .clone();
+    let mut reduced = schema["properties"][key].clone();
     let property = reduced.as_object_mut()?;
     if !(allow_const && property.remove("const").is_some()) {
         property.remove("enum");

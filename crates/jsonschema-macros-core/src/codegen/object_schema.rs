@@ -146,7 +146,8 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         let validation_vocab_enabled = ctx.supports_validation_vocabulary();
         let applicator_vocab_enabled = ctx.supports_applicator_vocabulary();
 
-        let has_type_constraint = schema.contains_key("type") && validation_vocab_enabled;
+        let type_value = schema.get("type").filter(|_| validation_vocab_enabled);
+        let has_type_constraint = type_value.is_some();
         let has_const_or_enum = validation_vocab_enabled
             && ((ctx.draft.supports_const_keyword() && schema.contains_key("const"))
                 || schema.contains_key("enum"));
@@ -170,16 +171,14 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         // `is_valid` runs checks in push order; errors follow `Phase`.
         let mut untyped: Vec<(Phase, CompiledExpr)> = Vec::new();
         let mut errors_only: Vec<(Phase, CompiledExpr)> = Vec::new();
-        if has_type_constraint && (!has_typed_checks || has_const_or_enum) {
-            if let Some(value) = schema.get("type") {
-                let type_check = keywords::type_::compile(ctx, value);
-                // The typed dispatch checks the type already, and so do `const` or `enum` that
-                // accept only values of that type.
-                if has_typed_checks || type_check_is_redundant(schema, ctx.draft) {
-                    errors_only.push((Phase::Type, type_check.split_errors().1));
-                } else {
-                    untyped.push((Phase::Type, type_check));
-                }
+        if let Some(value) = type_value.filter(|_| !has_typed_checks || has_const_or_enum) {
+            let type_check = keywords::type_::compile(ctx, value);
+            // The typed dispatch checks the type already, and so do `const` or `enum` that
+            // accept only values of that type.
+            if has_typed_checks || type_check_is_redundant(schema, ctx.draft) {
+                errors_only.push((Phase::Type, type_check.split_errors().1));
+            } else {
+                untyped.push((Phase::Type, type_check));
             }
         }
         if ctx.draft.supports_const_keyword() && validation_vocab_enabled {

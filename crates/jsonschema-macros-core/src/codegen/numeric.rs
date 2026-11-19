@@ -26,12 +26,6 @@ fn parse_nonnegative_integer_number_literal(literal: &str) -> Option<u64> {
         Some((int_part, frac_part)) => (int_part, frac_part),
         None => (mantissa, ""),
     };
-    if int_part.is_empty() || !int_part.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
-    if !frac_part.chars().all(|c| c.is_ascii_digit()) {
-        return None;
-    }
     let mut digits = String::with_capacity(int_part.len() + frac_part.len());
     digits.push_str(int_part);
     digits.push_str(frac_part);

@@ -26,10 +26,9 @@ pub(crate) fn compile<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Valu
 
     #[cfg(feature = "arbitrary-precision")]
     let error_expr = {
-        let number = value.as_number().expect("multipleOf is a JSON number");
         // Preserve the divisor's JSON representation so the message matches the runtime:
         // an integer `multipleOf` renders as `2`, not `2.0`.
-        let limit_value = if requires_arbitrary_precision_path(number) {
+        let limit_value = if requires_arbitrary_precision_path(value) {
             let value_json = serde_json::to_string(value).unwrap();
             quote! {
                 {
@@ -59,16 +58,14 @@ fn generate_multiple_of_check(value: &Value) -> TokenStream {
     }
 
     #[cfg(feature = "arbitrary-precision")]
-    if let Value::Number(number) = value {
-        if requires_arbitrary_precision_path(number) {
-            let limit_literal = number.to_string();
-            return quote! {
-                __num::check_compiled_multiple_of(
-                    n,
-                    #limit_literal
-                )
-            };
-        }
+    if requires_arbitrary_precision_path(value) {
+        let limit_literal = value.to_string();
+        return quote! {
+            __num::check_compiled_multiple_of(
+                n,
+                #limit_literal
+            )
+        };
     }
 
     let divisor = value.as_f64().expect("multipleOf is a finite JSON number");
@@ -100,9 +97,9 @@ fn is_strictly_positive_number(value: &Value) -> bool {
 }
 
 #[cfg(feature = "arbitrary-precision")]
-fn requires_arbitrary_precision_path(number: &serde_json::Number) -> bool {
+fn requires_arbitrary_precision_path(value: &Value) -> bool {
     const MAX_SAFE_INTEGER: u64 = 1u64 << 53;
-    if let Some(value) = number.as_u64() {
+    if let Some(value) = value.as_u64() {
         return value > MAX_SAFE_INTEGER;
     }
     true

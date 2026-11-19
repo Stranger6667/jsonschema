@@ -65,61 +65,54 @@ pub(crate) fn compile_cluster_subschemas<'a, E: ValueEmitter>(
 
 /// Single-pass errors block for the object cluster: per key, the matching property, then matching
 /// patterns, then `additionalProperties` for keys covered by neither, with `additionalProperties:
-/// false` aggregating unexpected keys into one trailing error. Returns `None` when there is no
-/// `patternProperties` to merge or a pattern regex is invalid.
+/// false` aggregating unexpected keys into one trailing error, or an `additionalProperties`
+/// schema. Returns `None` when a pattern regex is invalid.
 pub(crate) fn compile_errors<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     cluster: &ClusterSubschemas<'_>,
-    additional_properties: Option<&Value>,
+    is_false: bool,
 ) -> Option<TokenStream> {
     let err_instance = E::err_instance(format_ident!("instance"));
-    if cluster.patterns.is_empty() {
-        return None;
-    }
     let additional_properties_path = ctx.schema_path_for_keyword("additionalProperties");
-    let is_false = matches!(additional_properties, Some(Value::Bool(false)));
     let owned_key = E::key_to_owned(format_ident!("key"));
 
-    let (additional_properties_fallback, track_covered): (TokenStream, bool) =
-        match additional_properties {
-            Some(Value::Bool(false)) => (
-                quote! {
-                    if !covered {
-                        // `validate` reports the first unexpected key at once, like the runtime.
-                        if __errors.first_only() {
-                            return __errors.push(__err::additional_properties(
-                                #additional_properties_path, __path.into(), #err_instance, vec![#owned_key],
-                            ));
-                        }
-                        __unexpected.push(#owned_key);
+    let (additional_properties_fallback, track_covered): (TokenStream, bool) = if is_false {
+        (
+            quote! {
+                if !covered {
+                    // `validate` reports the first unexpected key at once, like the runtime.
+                    if __errors.first_only() {
+                        return __errors.push(__err::additional_properties(
+                            #additional_properties_path, __path.into(), #err_instance, vec![#owned_key],
+                        ));
                     }
-                },
-                true,
-            ),
-            Some(Value::Object(_)) => {
-                let check = cluster
-                    .additional
-                    .as_ref()
-                    .expect("additionalProperties schema precompiled");
-                match &check.errors {
-                    ErrorsBlock::Expr(_) => {
-                        let child_errors = check.errors.as_token_stream();
-                        (
-                            quote! {
-                                if !covered {
-                                    let instance = value;
-                                    let __path = &__path.push(key_str);
-                                    #child_errors
-                                }
-                            },
-                            true,
-                        )
-                    }
-                    ErrorsBlock::AlwaysValid => (quote! {}, false),
+                    __unexpected.push(#owned_key);
                 }
+            },
+            true,
+        )
+    } else {
+        let check = cluster
+            .additional
+            .as_ref()
+            .expect("additionalProperties schema precompiled");
+        match &check.errors {
+            ErrorsBlock::Expr(_) => {
+                let child_errors = check.errors.as_token_stream();
+                (
+                    quote! {
+                        if !covered {
+                            let instance = value;
+                            let __path = &__path.push(key_str);
+                            #child_errors
+                        }
+                    },
+                    true,
+                )
             }
-            _ => return None,
-        };
+            ErrorsBlock::AlwaysValid => (quote! {}, false),
+        }
+    };
     let set_covered = if track_covered {
         quote! { covered = true; }
     } else {
