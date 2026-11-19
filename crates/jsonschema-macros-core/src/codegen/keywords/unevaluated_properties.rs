@@ -65,7 +65,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     let unevaluated_check = if unevaluated.as_bool() == Some(false) {
         quote! { false }
     } else {
-        let schema_check = ctx.with_instance_scope(|ctx| compile_schema(ctx, unevaluated));
+        let schema_check = compile_schema(ctx, unevaluated);
         quote! {
             (|instance: #node| #schema_check)(__value)
         }

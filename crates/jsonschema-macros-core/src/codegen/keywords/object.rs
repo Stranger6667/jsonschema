@@ -206,7 +206,7 @@ pub(in super::super) fn compile<E: ValueEmitter>(
             .map(|(property_name, reduced_property)| {
                 ctx.with_schema_path_segment("properties", |ctx| {
                     ctx.with_schema_path_segment(property_name, |ctx| {
-                        ctx.with_instance_scope(|ctx| compile_schema(ctx, reduced_property))
+                        compile_schema(ctx, reduced_property)
                     })
                 })
             });

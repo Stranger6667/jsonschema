@@ -788,42 +788,19 @@ mod __validator_impl {
                     }
                 } else {
                     {
-                        let __mark = (
-                            (validate_ref_0 as fn(&__Value) -> bool) as usize,
-                            std::ptr::from_ref(instance) as usize,
-                        );
-                        let __reentered = __JSONSCHEMA_VALIDATE_MARK
-                            .with(|__marks| {
-                                let mut __marks = __marks.borrow_mut();
-                                if __marks.contains(&__mark) {
-                                    true
-                                } else {
-                                    __marks.push(__mark);
-                                    false
+                        __JSONSCHEMA_DYNAMIC_STACK
+                            .with(|stack| {
+                                stack.borrow_mut().push(("node", validate_ref_0));
+                            });
+                        let __result = validate_ref_0(instance);
+                        __JSONSCHEMA_DYNAMIC_STACK
+                            .with(|stack| {
+                                let mut stack = stack.borrow_mut();
+                                for _ in 0..1usize {
+                                    stack.pop();
                                 }
                             });
-                        if __reentered {
-                            true
-                        } else {
-                            let __valid = {
-                                __JSONSCHEMA_DYNAMIC_STACK
-                                    .with(|stack| {
-                                        stack.borrow_mut().push(("node", validate_ref_0));
-                                    });
-                                let __result = validate_ref_0(instance);
-                                __JSONSCHEMA_DYNAMIC_STACK
-                                    .with(|stack| {
-                                        let mut stack = stack.borrow_mut();
-                                        for _ in 0..1usize {
-                                            stack.pop();
-                                        }
-                                    });
-                                __result
-                            };
-                            __JSONSCHEMA_VALIDATE_MARK
-                                .with(|__marks| __marks.borrow_mut().pop());
-                            __valid
-                        }
+                        __result
                     }
                 }
             }

@@ -26,7 +26,7 @@ pub(super) fn compile_wildcard_arm<E: ValueEmitter>(
                 check
             } else {
                 fallback = ctx.with_schema_path_segment("additionalProperties", |ctx| {
-                    ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
+                    compile_schema(ctx, schema)
                 });
                 &fallback
             };
@@ -85,7 +85,7 @@ pub(crate) fn compile<E: ValueEmitter>(
                 check
             } else {
                 fallback = ctx.with_schema_path_segment("additionalProperties", |ctx| {
-                    ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
+                    compile_schema(ctx, schema)
                 });
                 &fallback
             };

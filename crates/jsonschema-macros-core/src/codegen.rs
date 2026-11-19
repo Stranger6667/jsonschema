@@ -52,7 +52,9 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
     impl_mod_name: &Ident,
 ) -> syn::Result<TokenStream> {
     let mut ctx = CompileContext::<E>::new(config);
-    ctx.revisited_ref_targets = ref_revisits::revisited_targets(&mut ctx, &config.schema);
+    let ref_cycles = ref_revisits::ref_cycles(&mut ctx, &config.schema);
+    ctx.revisited_ref_targets = ref_cycles.revisited;
+    ctx.same_instance_ref_targets = ref_cycles.same_instance;
     let validation_expr = compile_schema(&mut ctx, &config.schema);
     let recursive_stack_needed = ctx.uses_recursive_ref;
     let dynamic_stack_needed = ctx.uses_dynamic_ref;

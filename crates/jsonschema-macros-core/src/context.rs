@@ -270,9 +270,7 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) regex_counter: usize,
     pub(crate) custom_keyword_counter: usize,
     pub(crate) compiling_stack: Vec<String>,
-    pub(crate) compiling_instance_depths: Vec<usize>,
     pub(crate) schema_depth: usize,
-    pub(crate) instance_depth: usize,
     pub(crate) helper_root_depths: Vec<usize>,
     pub(crate) uses_recursive_ref: bool,
     pub(crate) uses_dynamic_ref: bool,
@@ -286,6 +284,8 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) reentered_targets: HashSet<String>,
     /// The locations of the reference targets each schema is, by its address.
     pub(crate) target_locations: HashMap<usize, Vec<String>>,
+    /// `$ref` targets in cycles that come back to the instance they hold.
+    pub(crate) same_instance_ref_targets: HashSet<String>,
     pub(crate) uri_format_caches: BTreeSet<UriFormatCache>,
     /// JSON Pointer tracking the current position in the schema document, embedded into the
     /// generated error constructors.
@@ -334,9 +334,7 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             regex_counter: 0,
             custom_keyword_counter: 0,
             compiling_stack: Vec::new(),
-            compiling_instance_depths: Vec::new(),
             schema_depth: 0,
-            instance_depth: 0,
             helper_root_depths: Vec::new(),
             uses_recursive_ref: false,
             uses_dynamic_ref: false,
@@ -345,6 +343,7 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             compiled_within: HashMap::new(),
             reentered_targets: HashSet::new(),
             target_locations: HashMap::new(),
+            same_instance_ref_targets: HashSet::new(),
             uri_format_caches: BTreeSet::new(),
             schema_path: String::new(),
         }
@@ -483,7 +482,6 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
     ) -> T {
         self.is_valid_fns.begin_compiling(location);
         self.compiling_stack.push(location.to_string());
-        self.compiling_instance_depths.push(self.instance_depth);
         let mut scope = ValidateScopeGuard {
             ctx: self,
             location: location.to_string(),
@@ -506,21 +504,12 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
         }
     }
 
-    pub(crate) fn with_instance_scope<T>(
-        &mut self,
-        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
-    ) -> T {
-        self.instance_depth += 1;
-        let mut scope = InstanceDepthGuard { ctx: self };
-        f(&mut scope)
-    }
-
+    /// Whether a `$ref` to `location`, a target still compiling, stops when it re-enters an
+    /// instance the target holds already, as the runtime's guard on the target does. A target on
+    /// a cycle back to its own instance takes the guard at every `$ref` that closes a cycle, the
+    /// ones passing it a nested instance included: that instance comes back through the cycle too.
     pub(crate) fn closes_same_instance_cycle(&self, location: &str) -> bool {
-        self.compiling_stack
-            .iter()
-            .position(|loc| loc == location)
-            .map(|idx| self.compiling_instance_depths[idx])
-            .is_some_and(|entry_depth| entry_depth == self.instance_depth)
+        self.same_instance_ref_targets.contains(location)
     }
 
     pub(crate) fn with_key_eval_scope<T>(
@@ -694,20 +683,7 @@ impl<E: ValueEmitter> Drop for ValidateScopeGuard<'_, '_, E> {
     fn drop(&mut self) {
         self.ctx.is_valid_fns.finish_compiling(&self.location);
         let popped = self.ctx.compiling_stack.pop();
-        self.ctx.compiling_instance_depths.pop();
         debug_assert_eq!(popped.as_deref(), Some(self.location.as_str()));
-    }
-}
-
-pub(crate) struct InstanceDepthGuard<'a, 'cfg, E: ValueEmitter> {
-    ctx: &'a mut CompileContext<'cfg, E>,
-}
-
-impl_scope_guard!(InstanceDepthGuard);
-
-impl<E: ValueEmitter> Drop for InstanceDepthGuard<'_, '_, E> {
-    fn drop(&mut self) {
-        self.ctx.instance_depth = self.ctx.instance_depth.saturating_sub(1);
     }
 }
 

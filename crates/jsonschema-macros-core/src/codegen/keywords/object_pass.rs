@@ -26,7 +26,7 @@ pub(crate) fn compile_cluster_subschemas<'a, E: ValueEmitter>(
     let additional = match additional_properties {
         Some(schema @ Value::Object(_)) => {
             Some(ctx.with_schema_path_segment("additionalProperties", |ctx| {
-                ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
+                compile_schema(ctx, schema)
             }))
         }
         _ => None,
@@ -35,9 +35,7 @@ pub(crate) fn compile_cluster_subschemas<'a, E: ValueEmitter>(
     if let Some(properties) = properties {
         for (name, subschema) in properties {
             let check = ctx.with_schema_path_segment("properties", |ctx| {
-                ctx.with_schema_path_segment(name, |ctx| {
-                    ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
-                })
+                ctx.with_schema_path_segment(name, |ctx| compile_schema(ctx, subschema))
             });
             compiled_properties.push((name.as_str(), check));
         }
@@ -48,9 +46,7 @@ pub(crate) fn compile_cluster_subschemas<'a, E: ValueEmitter>(
             let key_match = key_match_expr(ctx, pattern);
             let check = key_match.is_ok().then(|| {
                 ctx.with_schema_path_segment("patternProperties", |ctx| {
-                    ctx.with_schema_path_segment(pattern, |ctx| {
-                        ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
-                    })
+                    ctx.with_schema_path_segment(pattern, |ctx| compile_schema(ctx, subschema))
                 })
             });
             patterns.push((pattern.as_str(), key_match, check));

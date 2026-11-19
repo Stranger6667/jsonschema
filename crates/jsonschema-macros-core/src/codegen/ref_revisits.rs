@@ -3,6 +3,9 @@
 //! A cycle reached from two keywords that apply to one instance validates that instance once per
 //! path to it, so the work doubles at every level of the cycle. Only those cycles keep the
 //! results of their calls for the run.
+//!
+//! A cycle that comes back to the instance it holds would never end; the runtime stops a target
+//! re-entered on one instance, wherever a `$ref` in a cycle passed that instance to it first.
 
 use std::{
     collections::{HashMap, HashSet, VecDeque},
@@ -21,13 +24,21 @@ use super::{
     CompileContext,
 };
 
-/// The `$ref` targets in cycles that one validation can take through the same instance more
-/// than once. Empty when the schema has `$recursiveRef` or `$dynamicRef`: a target's result
-/// there depends on the path that reaches it.
-pub(crate) fn revisited_targets<'cfg, E: ValueEmitter>(
+/// The `$ref` targets of the schema's cycles that one validation reaches more than once on one
+/// instance.
+pub(crate) struct RefCycles {
+    /// Targets in cycles that one validation can take through the same instance more than once.
+    /// Empty when the schema has `$recursiveRef` or `$dynamicRef`: a target's result there
+    /// depends on the path that reaches it.
+    pub(crate) revisited: HashSet<String>,
+    /// Targets in cycles that come back to the instance they hold.
+    pub(crate) same_instance: HashSet<String>,
+}
+
+pub(crate) fn ref_cycles<'cfg, E: ValueEmitter>(
     ctx: &mut CompileContext<'cfg, E>,
     schema: &'cfg Value,
-) -> HashSet<String> {
+) -> RefCycles {
     let base_uri = ctx.current_base_uri.clone();
     let draft = ctx.draft;
     let graph = Graph::build(ctx, schema);
@@ -38,7 +49,10 @@ pub(crate) fn revisited_targets<'cfg, E: ValueEmitter>(
     };
     ctx.current_base_uri = base_uri;
     ctx.draft = draft;
-    revisited
+    RefCycles {
+        revisited,
+        same_instance: graph.same_instance_cycles(),
+    }
 }
 
 /// Where a subschema applies, relative to the instance of the schema that holds it.
@@ -366,7 +380,11 @@ impl<'cfg> Graph<'cfg> {
         let mut children = Vec::new();
         for (keyword, value) in object {
             match keyword.as_str() {
-                "$recursiveRef" | "$dynamicRef" => self.dynamic = true,
+                "$recursiveRef" | "$dynamicRef" => {
+                    self.dynamic = true;
+                    // Without an anchor in its dynamic scope, it applies the schema it names.
+                    children.extend(self.reference(ctx, value, pending));
+                }
                 "$ref" => children.extend(self.reference(ctx, value, pending)),
                 "allOf" | "anyOf" | "oneOf" => {
                     let Value::Array(branches) = value else {
@@ -687,6 +705,37 @@ impl<'cfg> Graph<'cfg> {
                 Applied::Target(target) => Some(target),
                 Applied::Node(_) => None,
             })
+    }
+
+    /// The targets on cycles of subschemas that apply to the instance of the schema holding them.
+    fn same_instance_cycles(&self) -> HashSet<String> {
+        let edges: Vec<Vec<usize>> = (0..self.spans.len())
+            .map(|target| self.targets_applied_in_place(target))
+            .collect();
+        components(&edges)
+            .into_iter()
+            .filter(|members| members.len() > 1 || edges[members[0]].contains(&members[0]))
+            .flatten()
+            .map(|target| self.locations[target].clone())
+            .collect()
+    }
+
+    /// The targets a target's schema applies to its own instance.
+    fn targets_applied_in_place(&self, target: usize) -> Vec<usize> {
+        let mut applied = Vec::new();
+        let mut nodes = vec![self.spans[target].start];
+        while let Some(node) = nodes.pop() {
+            for child in &self.nodes[node].children {
+                if child.slot.step() != Step::Same {
+                    continue;
+                }
+                match child.applied {
+                    Applied::Node(nested) => nodes.push(nested),
+                    Applied::Target(target) => applied.push(target),
+                }
+            }
+        }
+        applied
     }
 }
 

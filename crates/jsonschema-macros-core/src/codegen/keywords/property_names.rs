@@ -55,9 +55,8 @@ pub(crate) fn compile<E: ValueEmitter>(
         }
     }
 
-    let schema_check = ctx.with_schema_path_segment("propertyNames", |ctx| {
-        ctx.with_instance_scope(|ctx| compile_schema(ctx, value))
-    });
+    let schema_check =
+        ctx.with_schema_path_segment("propertyNames", |ctx| compile_schema(ctx, value));
     let is_valid = schema_check.is_valid_token_stream();
     // Closure avoids temporary lifetime issues: the key becomes a temporary Value::String inside.
     match &schema_check.errors {

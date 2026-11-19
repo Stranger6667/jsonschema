@@ -18,9 +18,7 @@ pub(crate) fn compile<E: ValueEmitter>(
         .map(|(idx, schema)| {
             let idx_str = idx.to_string();
             let validation = ctx.with_schema_path_segment("prefixItems", |ctx| {
-                ctx.with_schema_path_segment(&idx_str, |ctx| {
-                    ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
-                })
+                ctx.with_schema_path_segment(&idx_str, |ctx| compile_schema(ctx, schema))
             });
             if validation.is_trivially_true() {
                 return CompiledExpr::always_true();

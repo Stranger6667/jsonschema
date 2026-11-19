@@ -2939,6 +2939,101 @@ fn test_ref_cycle_results_do_not_outlive_their_instance() {
     }
 }
 
+const NESTED_THEN_SAME_INSTANCE_CYCLE: &str = r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"minProperties":1,"allOf":[{"$ref":"#/$defs/cycle"}],"additionalProperties":{"$ref":"#/$defs/cycle"}}}}"##;
+const NESTED_THEN_SAME_INSTANCE_NOT_CYCLE: &str = r##"{"$ref":"#/$defs/c","$defs":{"c":{"not":{"$ref":"#/$defs/c"},"additionalProperties":{"$ref":"#/$defs/c"}}}}"##;
+const NESTED_THEN_SAME_INSTANCE_CYCLE_THROUGH_TARGET: &str = r##"{"$ref":"#/$defs/t","$defs":{"t":{"additionalProperties":{"$ref":"#/$defs/w"},"allOf":[{"$ref":"#/$defs/w"}]},"w":{"minProperties":1,"allOf":[{"$ref":"#/$defs/t"}]}}}"##;
+const NESTED_THEN_SAME_INSTANCE_UNANCHORED_RECURSIVE_REF: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","minProperties":1,"allOf":[{"$recursiveRef":"#"}],"additionalProperties":{"$recursiveRef":"#"}}"##;
+const NESTED_THEN_SAME_INSTANCE_UNANCHORED_DYNAMIC_REF: &str = r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"minProperties":1,"allOf":[{"$dynamicRef":"#/$defs/cycle"}],"additionalProperties":{"$dynamicRef":"#/$defs/cycle"}}}}"##;
+const NESTED_THEN_SAME_INSTANCE_TWO_PATHS: &str = r##"{"$ref":"#/$defs/t","$defs":{"t":{"allOf":[{"$ref":"#/$defs/t"}],"properties":{"c":{"$ref":"#/$defs/t"}},"patternProperties":{"^c":{"$ref":"#/$defs/t"}}}}}"##;
+
+// Each cycle reaches a nested instance first and comes back to that instance through `allOf` or
+// `not`.
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"minProperties":1,"allOf":[{"$ref":"#/$defs/cycle"}],"additionalProperties":{"$ref":"#/$defs/cycle"}}}}"##,
+    draft = Draft202012
+)]
+struct NestedThenSameInstanceCycle;
+
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/c","$defs":{"c":{"not":{"$ref":"#/$defs/c"},"additionalProperties":{"$ref":"#/$defs/c"}}}}"##,
+    draft = Draft202012
+)]
+struct NestedThenSameInstanceNotCycle;
+
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/t","$defs":{"t":{"additionalProperties":{"$ref":"#/$defs/w"},"allOf":[{"$ref":"#/$defs/w"}]},"w":{"minProperties":1,"allOf":[{"$ref":"#/$defs/t"}]}}}"##,
+    draft = Draft202012
+)]
+struct NestedThenSameInstanceCycleThroughTarget;
+
+// Without an anchor, `$recursiveRef` and `$dynamicRef` apply the schema they name.
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","minProperties":1,"allOf":[{"$recursiveRef":"#"}],"additionalProperties":{"$recursiveRef":"#"}}"##,
+    draft = Draft201909
+)]
+struct NestedThenSameInstanceUnanchoredRecursiveRef;
+
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"minProperties":1,"allOf":[{"$dynamicRef":"#/$defs/cycle"}],"additionalProperties":{"$dynamicRef":"#/$defs/cycle"}}}}"##,
+    draft = Draft202012
+)]
+struct NestedThenSameInstanceUnanchoredDynamicRef;
+
+// Two keywords reach each nested instance.
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/t","$defs":{"t":{"allOf":[{"$ref":"#/$defs/t"}],"properties":{"c":{"$ref":"#/$defs/t"}},"patternProperties":{"^c":{"$ref":"#/$defs/t"}}}}}"##,
+    draft = Draft202012
+)]
+struct NestedThenSameInstanceTwoPaths;
+
+// Each level holds the next one as `c`.
+fn chain_of_c(depth: usize) -> serde_json::Value {
+    (0..depth).fold(
+        serde_json::json!({}),
+        |child, _| serde_json::json!({"c": child}),
+    )
+}
+
+#[test_case(NestedThenSameInstanceCycle::is_valid, NestedThenSameInstanceCycle::validate, NestedThenSameInstanceCycle::iter_errors, NESTED_THEN_SAME_INSTANCE_CYCLE, serde_json::json!({}) ; "cycle_root")]
+#[test_case(NestedThenSameInstanceCycle::is_valid, NestedThenSameInstanceCycle::validate, NestedThenSameInstanceCycle::iter_errors, NESTED_THEN_SAME_INSTANCE_CYCLE, serde_json::json!({"a": {}}) ; "cycle_one_level")]
+#[test_case(NestedThenSameInstanceCycle::is_valid, NestedThenSameInstanceCycle::validate, NestedThenSameInstanceCycle::iter_errors, NESTED_THEN_SAME_INSTANCE_CYCLE, serde_json::json!({"a": {"b": {"c": {}}}, "d": {}}) ; "cycle_three_levels")]
+#[test_case(NestedThenSameInstanceNotCycle::is_valid, NestedThenSameInstanceNotCycle::validate, NestedThenSameInstanceNotCycle::iter_errors, NESTED_THEN_SAME_INSTANCE_NOT_CYCLE, serde_json::json!({"a": {}}) ; "not_cycle_one_level")]
+#[test_case(NestedThenSameInstanceNotCycle::is_valid, NestedThenSameInstanceNotCycle::validate, NestedThenSameInstanceNotCycle::iter_errors, NESTED_THEN_SAME_INSTANCE_NOT_CYCLE, serde_json::json!({"a": {"b": {}}}) ; "not_cycle_two_levels")]
+#[test_case(NestedThenSameInstanceCycleThroughTarget::is_valid, NestedThenSameInstanceCycleThroughTarget::validate, NestedThenSameInstanceCycleThroughTarget::iter_errors, NESTED_THEN_SAME_INSTANCE_CYCLE_THROUGH_TARGET, serde_json::json!({}) ; "through_target_root")]
+#[test_case(NestedThenSameInstanceCycleThroughTarget::is_valid, NestedThenSameInstanceCycleThroughTarget::validate, NestedThenSameInstanceCycleThroughTarget::iter_errors, NESTED_THEN_SAME_INSTANCE_CYCLE_THROUGH_TARGET, serde_json::json!({"a": {"b": {}}}) ; "through_target_two_levels")]
+#[test_case(NestedThenSameInstanceUnanchoredRecursiveRef::is_valid, NestedThenSameInstanceUnanchoredRecursiveRef::validate, NestedThenSameInstanceUnanchoredRecursiveRef::iter_errors, NESTED_THEN_SAME_INSTANCE_UNANCHORED_RECURSIVE_REF, serde_json::json!({"a": {"b": {"c": {}}}}) ; "unanchored_recursive_ref")]
+#[test_case(NestedThenSameInstanceUnanchoredDynamicRef::is_valid, NestedThenSameInstanceUnanchoredDynamicRef::validate, NestedThenSameInstanceUnanchoredDynamicRef::iter_errors, NESTED_THEN_SAME_INSTANCE_UNANCHORED_DYNAMIC_REF, serde_json::json!({"a": {"b": {"c": {}}}}) ; "unanchored_dynamic_ref")]
+#[test_case(NestedThenSameInstanceTwoPaths::is_valid, NestedThenSameInstanceTwoPaths::validate, NestedThenSameInstanceTwoPaths::iter_errors, NESTED_THEN_SAME_INSTANCE_TWO_PATHS, chain_of_c(4) ; "two_paths")]
+fn test_ref_cycle_into_nested_then_same_instance_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    schema: &str,
+    instance: serde_json::Value,
+) {
+    let schema = serde_json::from_str(schema).expect("valid JSON");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_validate_parity(
+        is_valid(&instance),
+        validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+}
+
+// Without the results kept for the run, the work doubles at every level.
+#[test]
+fn test_ref_cycle_into_nested_then_same_instance_keeps_results() {
+    let instance = chain_of_c(64);
+    assert!(NestedThenSameInstanceTwoPaths::is_valid(&instance));
+    assert!(NestedThenSameInstanceTwoPaths::validate(&instance).is_ok());
+    assert_eq!(
+        NestedThenSameInstanceTwoPaths::iter_errors(&instance).count(),
+        0
+    );
+}
+
 #[test_case(serde_json::json!(1), false ; "number_rejected")]
 #[test_case(serde_json::json!("x"), false ; "string_rejected")]
 fn test_ref_siblings_are_enforced_in_draft_201909(instance: serde_json::Value, expected: bool) {
