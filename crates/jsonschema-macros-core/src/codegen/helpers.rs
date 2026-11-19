@@ -256,7 +256,15 @@ fn named_target_pointer<E: ValueEmitter>(
         // Guard helpers key on the serialized subschema, not a URI
         return String::new();
     };
-    let root = resource.contents();
+    anchor_pointer(ctx, resource.contents(), target.contents())
+}
+
+/// JSON Pointer of `target`, a schema an anchor names, within the resource rooted at `root`.
+pub(crate) fn anchor_pointer<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    root: &Value,
+    target: &Value,
+) -> String {
     ctx.anchor_pointers
         .entry(std::ptr::from_ref(root) as usize)
         .or_insert_with(|| {
@@ -264,7 +272,7 @@ fn named_target_pointer<E: ValueEmitter>(
             index_anchors(root, &mut String::new(), &mut index);
             index
         })
-        .get(&(std::ptr::from_ref(target.contents()) as usize))
+        .get(&(std::ptr::from_ref(target) as usize))
         .cloned()
         .expect("An anchor lives in the resource it is looked up in")
 }

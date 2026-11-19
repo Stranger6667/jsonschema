@@ -15,6 +15,7 @@
 - `$dynamicRef` in a `$ref` cycle resolving as on the first pass through the cycle, ignoring a `$dynamicAnchor` that a later pass brings into the dynamic scope.
 - `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
 - `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
+- `Validator` results depending on how references name a schema that a `$ref` cycle passes through, such as `cycle` and `#` inside it.
 - `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.
 - `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
 - `evaluate` messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
@@ -23,6 +24,7 @@
 - `#[jsonschema::validator]` accepting instances of a type that `type` leaves out when keywords for that type are beside it.
 - `#[jsonschema::validator]` resolving a `$ref` reached through another `$ref` against the schema it started from instead of the resource the first one entered, so `propertyNames` accepted names and `oneOf` rejected instances that `Validator` does not.
 - `#[jsonschema::validator]` leaving out the `type` error when a `const` or `enum` beside it accepts only values of that type.
+- `#[jsonschema::validator]` going through a `$ref` cycle once more when its references name one schema in different ways, such as `cycle` and `#` inside it, and applying another schema in place of the one a JSON Pointer reaches through an embedded `$id` resource.
 - `#[jsonschema::validator]` reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
 - `#[jsonschema::validator]` leaving out the `maxLength` error when `minLength` is above `maxLength`.
 - `#[jsonschema::validator]` leaving out all errors but the first of a subschema with `$recursiveAnchor` below the root of a schema that uses `$recursiveRef`, such as an `anyOf` error beside a failing `minProperties`.

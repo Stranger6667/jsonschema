@@ -1,10 +1,10 @@
 use crate::codegen::emit::ValueEmitter;
-use std::sync::Arc;
+use std::{borrow::Cow, sync::Arc};
 
-use referencing::{Draft, Uri};
+use referencing::{Draft, Resolved, Uri};
 use serde_json::Value;
 
-use super::{draft::DraftExt, CompileContext};
+use super::{draft::DraftExt, helpers::anchor_pointer, CompileContext};
 
 pub(crate) struct ResolvedRef<'cfg> {
     pub(crate) schema: &'cfg Value,
@@ -59,23 +59,12 @@ pub(crate) fn resolve_ref<'cfg, E: ValueEmitter>(
     let config = ctx.config;
 
     let resolver = config.registry.resolver((*base_uri).clone());
-    let resolved = resolver
-        .lookup(reference)
+    let target = resolver
+        .lookup_target(reference)
         .map_err(|e| format!("Failed to resolve {reference}: {e}"))?;
-
+    let resolved = resolver.enter(&target);
+    let location_key = target_location(ctx, reference, target.document(), &resolved);
     let resolved_base_uri = resolved.resolver().base_uri().clone();
-
-    let location_key = if reference.starts_with('#') {
-        format!("{base_uri}{reference}")
-    } else if let Some((_, fragment)) = reference.rsplit_once('#') {
-        if fragment.is_empty() {
-            resolved_base_uri.to_string()
-        } else {
-            format!("{resolved_base_uri}#{fragment}")
-        }
-    } else {
-        resolved_base_uri.to_string()
-    };
     let (contents, _, draft) = resolved.into_inner();
 
     Ok(ResolvedRef {
@@ -84,4 +73,45 @@ pub(crate) fn resolve_ref<'cfg, E: ValueEmitter>(
         base_uri: resolved_base_uri,
         draft,
     })
+}
+
+/// The location of the schema `reference` resolves to: the document it names and the JSON Pointer
+/// from that document's root, which every way of naming one schema in that document shares. The
+/// pointer counts from that document even when it enters a resource embedded in it, as the
+/// locations of errors below the target do.
+fn target_location<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    reference: &str,
+    document: &Uri<String>,
+    resolved: &Resolved<'_>,
+) -> String {
+    let fragment = reference
+        .split_once('#')
+        .map_or("", |(_, fragment)| fragment);
+    let pointer = if !fragment.starts_with('/') && !fragment.is_empty() {
+        let root = resolved
+            .resolver()
+            .lookup("")
+            .expect("an anchor lives in the document it is looked up in");
+        Cow::Owned(anchor_pointer(ctx, root.contents(), resolved.contents()))
+    } else if fragment.contains('%') {
+        percent_encoding::percent_decode_str(fragment).decode_utf8_lossy()
+    } else {
+        Cow::Borrowed(fragment)
+    };
+    let document = document.as_str();
+    if pointer.is_empty() {
+        return document.to_owned();
+    }
+    let mut location = String::with_capacity(document.len() + 1 + pointer.len());
+    location.push_str(document);
+    location.push('#');
+    // `location_pointer` takes the fragment after the last `#` and percent-decodes it back into
+    // the pointer.
+    if pointer.contains('%') || pointer.contains('#') {
+        location.push_str(&pointer.replace('%', "%25").replace('#', "%23"));
+    } else {
+        location.push_str(&pointer);
+    }
+    location
 }

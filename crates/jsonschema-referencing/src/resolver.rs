@@ -386,6 +386,15 @@ pub struct Target<'r> {
     kind: TargetKind<'r>,
 }
 
+impl Target<'_> {
+    /// The document the reference names, before a JSON Pointer fragment enters any resource
+    /// embedded in it.
+    #[must_use]
+    pub fn document(&self) -> &Arc<Uri<String>> {
+        &self.document
+    }
+}
+
 #[derive(Debug, Clone)]
 enum TargetKind<'r> {
     Resolved {

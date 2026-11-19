@@ -2,7 +2,7 @@ use crate::{evaluation::InstancePosition, LazyInstance};
 use std::borrow::Cow;
 
 use crate::{
-    compiler::{self, CachedTarget, TargetNode},
+    compiler::{self, CachedTarget, TargetIdentity, TargetNode},
     keywords::{BoxedValidator, CompilationResult},
     node::{PendingSchemaNode, SchemaNode},
     paths::{LazyLocation, Location, RefTracker},
@@ -332,7 +332,7 @@ fn compile_reference_validator<'a, F: Json>(
         return None;
     }
     let dynamic = keyword == "$dynamicRef";
-    let ((mut alias, ref_target_base), resolved) =
+    let ((alias, ref_target_base), resolved) =
         match ctx.resolve_ref_target(reference, dynamic, extract_ref_target_base) {
             Ok(target) => target,
             Err(error) => return Some(Err(ValidationError::from(error))),
@@ -343,18 +343,7 @@ fn compile_reference_validator<'a, F: Json>(
     let (ref_target_base, target_location, resource_start) = if is_named(&alias) {
         match named_target_base(ctx, &resolved) {
             Ok(location) => {
-                let base_uri = resolved.resolver().base_uri();
-                // `$dynamicRef` to the same URI may land on another schema, so `$ref` to a
-                // dynamic anchor is cached under the pointer to it.
-                if !dynamic
-                    && resolved
-                        .contents()
-                        .as_object()
-                        .is_some_and(|target| target.contains_key("$dynamicAnchor"))
-                {
-                    alias = pointer_uri(&base_uri, &location);
-                }
-                let target = target_location(&base_uri, &location);
+                let target = target_location(&resolved.resolver().base_uri(), &location);
                 (location, target, 0)
             }
             Err(error) => return Some(Err(ValidationError::from(error))),
@@ -387,7 +376,10 @@ fn compile_reference_validator<'a, F: Json>(
         return None;
     }
 
-    if let Some(target) = ctx.lookup_cached_target(&alias, resolved.resolver()) {
+    // Every reference naming this schema shares its node; a `$dynamicRef` names the schema it
+    // lands on in this dynamic scope.
+    let identity = TargetIdentity::new(resolved.contents(), ref_target_base.clone());
+    if let Some(target) = ctx.lookup_cached_target(&identity, resolved.resolver()) {
         let target = match target {
             CachedTarget::Node(TargetNode::Owned(node)) => RefTarget::Node(node),
             CachedTarget::Node(TargetNode::Shared(node)) => {
@@ -402,10 +394,10 @@ fn compile_reference_validator<'a, F: Json>(
         )));
     }
 
-    ctx.mark_seen(&alias);
+    ctx.mark_seen(&identity);
 
-    if ctx.defers_ref_target(&resolved, &alias) {
-        let placeholder = ctx.defer_ref_target(resolved, ref_target_base.clone(), alias);
+    if ctx.defers_ref_target(&resolved, &identity) {
+        let placeholder = ctx.defer_ref_target(resolved, ref_target_base.clone(), identity);
         return Some(Ok(Box::new(DirectRefValidator {
             inner: placeholder,
             ref_suffix,
@@ -427,17 +419,19 @@ fn compile_reference_validator<'a, F: Json>(
         Err(error) => return Some(Err(error)),
     };
     Some(
-        ctx.compile_ref_target(|| compiler::compile_with_alias(&inner_ctx, resource_ref, alias))
-            .map(|target| {
-                let target = match target {
-                    TargetNode::Owned(node) => RefTarget::Node(node),
-                    TargetNode::Shared(node) => {
-                        RefTarget::Pending(PendingSchemaNode::pointing_at(&node))
-                    }
-                };
-                target.into_validator(ref_suffix, ref_target_base, target_location)
-            })
-            .map_err(ValidationError::to_owned),
+        ctx.compile_ref_target(|| {
+            compiler::compile_with_identity(&inner_ctx, resource_ref, &identity)
+        })
+        .map(|target| {
+            let target = match target {
+                TargetNode::Owned(node) => RefTarget::Node(node),
+                TargetNode::Shared(node) => {
+                    RefTarget::Pending(PendingSchemaNode::pointing_at(&node))
+                }
+            };
+            target.into_validator(ref_suffix, ref_target_base, target_location)
+        })
+        .map_err(ValidationError::to_owned),
     )
 }
 
@@ -446,15 +440,17 @@ fn compile_recursive_validator<'a, F: Json>(
     reference: &str,
 ) -> CompilationResult<'a, F> {
     let ref_suffix = ctx.suffix_with("$recursiveRef");
-    let (alias, ref_target_base) = ctx
+    let (_, ref_target_base) = ctx
         .ref_target(reference, extract_ref_target_base)
         .map_err(ValidationError::from)?;
     let resolved = ctx
         .lookup_recursive_reference()
         .map_err(ValidationError::from)?;
     let target_location = target_location(&resolved.resolver().base_uri(), &ref_target_base);
+    // Shares the node of every reference naming the resource it lands on in this dynamic scope.
+    let identity = TargetIdentity::new(resolved.contents(), ref_target_base.clone());
 
-    if let Some(validator) = ctx.lookup_maybe_recursive(&alias, resolved.resolver()) {
+    if let Some(validator) = ctx.lookup_maybe_recursive(&identity, resolved.resolver()) {
         return Ok(Box::new(RefValidator {
             inner: validator,
             ref_suffix,
@@ -463,7 +459,7 @@ fn compile_recursive_validator<'a, F: Json>(
         }));
     }
 
-    ctx.mark_seen(&alias);
+    ctx.mark_seen(&identity);
 
     let (contents, resolver, draft) = resolved.into_inner();
     let vocabularies = resolver.find_vocabularies(draft, contents);
@@ -471,7 +467,7 @@ fn compile_recursive_validator<'a, F: Json>(
     let target_base = ref_target_base.clone();
     let inner_ctx =
         ctx.with_resolver_and_draft(resolver, resource_ref.draft(), vocabularies, target_base)?;
-    compiler::compile_with_alias(&inner_ctx, resource_ref, alias)
+    compiler::compile_with_identity(&inner_ctx, resource_ref, &identity)
         .map(|target| {
             Box::new(RefValidator {
                 inner: target.into_validator(),
@@ -3073,6 +3069,228 @@ mod tests {
         } else {
             tests_util::is_not_valid(&schema, instance);
         }
+    }
+
+    fn reported_error(error: &ValidationError<'_>) -> Value {
+        json!({
+            "message": error.to_string(),
+            "instancePath": error.instance_path().as_str(),
+            "schemaPath": error.schema_path().as_str(),
+            "evaluationPath": error.evaluation_path().as_str(),
+            "absoluteKeywordLocation": error.absolute_keyword_location().map(Uri::as_str),
+        })
+    }
+
+    // What every validation mode reports for `instance`.
+    fn reported(validator: &crate::Validator, instance: &Value) -> Value {
+        json!({
+            "isValid": validator.is_valid(instance),
+            "validate": validator.validate(instance).err().as_ref().map(reported_error),
+            "iterErrors": validator
+                .iter_errors(instance)
+                .map(|error| reported_error(&error))
+                .collect::<Vec<_>>(),
+            "evaluate": validator.evaluate(instance).list(),
+        })
+    }
+
+    fn instances_for_ref_cycles() -> [Value; 7] {
+        [
+            json!({}),
+            json!({"a": {}}),
+            json!({"a": {"b": {}}}),
+            json!({"a": {"x": 1}}),
+            json!({"b": {}}),
+            json!({"b": {"x": 1}}),
+            json!(1),
+        ]
+    }
+
+    // Every way of naming one schema is one node, so a `$ref` cycle through it reports what it
+    // reports when every reference names it in one way.
+    #[test_case(
+        crate::Draft::Draft201909,
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "cycle"}], "additionalProperties": {"$ref": "cycle"}}}})
+        ; "resource and root fragment, draft 2019-09"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "$ref": "cycle#", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "cycle"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "cycle"}], "additionalProperties": {"$ref": "cycle"}}}})
+        ; "resource with empty fragment"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "$ref": "https://example.com/cycle", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "cycle"}], "additionalProperties": {"$ref": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "cycle"}], "additionalProperties": {"$ref": "cycle"}}}})
+        ; "absolute and relative uri"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "$anchor": "node", "minProperties": 1, "allOf": [{"$ref": "#node"}], "additionalProperties": {"$ref": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "$anchor": "node", "minProperties": 1, "allOf": [{"$ref": "cycle"}], "additionalProperties": {"$ref": "cycle"}}}})
+        ; "anchor and root fragment"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "$ref": "cycle#node", "$defs": {"cycle": {"$id": "cycle", "$anchor": "node", "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "#node"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "$anchor": "node", "minProperties": 1, "allOf": [{"$ref": "cycle"}], "additionalProperties": {"$ref": "cycle"}}}})
+        ; "anchor from another resource"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$ref": "#/$defs/cycle", "$defs": {"cycle": {"$anchor": "node", "minProperties": 1, "allOf": [{"$ref": "#node"}], "additionalProperties": {"$ref": "#/$defs/cycle"}}}}),
+        &json!({"$ref": "#/$defs/cycle", "$defs": {"cycle": {"$anchor": "node", "minProperties": 1, "allOf": [{"$ref": "#/$defs/cycle"}], "additionalProperties": {"$ref": "#/$defs/cycle"}}}})
+        ; "anchor and pointer"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$ref": "#/$defs/cycle", "$defs": {"cycle": {"minProperties": 1, "allOf": [{"$ref": "#/%24defs/cycle"}], "additionalProperties": {"$ref": "#/$defs/%63ycle"}}}}),
+        &json!({"$ref": "#/$defs/cycle", "$defs": {"cycle": {"minProperties": 1, "allOf": [{"$ref": "#/$defs/cycle"}], "additionalProperties": {"$ref": "#/$defs/cycle"}}}})
+        ; "percent-encoded pointer"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$ref": "#/$defs/a%23%25b", "$defs": {"a#%b": {"minProperties": 1, "allOf": [{"$ref": "#/$defs/a%23%25%62"}], "additionalProperties": {"$ref": "#/$defs/a%23%25b"}}}}),
+        &json!({"$ref": "#/$defs/a%23%25b", "$defs": {"a#%b": {"minProperties": 1, "allOf": [{"$ref": "#/$defs/a%23%25b"}], "additionalProperties": {"$ref": "#/$defs/a%23%25b"}}}})
+        ; "percent-encoded number sign and percent"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "https://example.com/root"}}),
+        &json!({"$id": "https://example.com/root", "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "#"}})
+        ; "root and its uri"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "not": {"$ref": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "not": {"$ref": "cycle"}}}})
+        ; "negation of the cycle"
+    )]
+    #[test_case(
+        crate::Draft::Draft7,
+        &json!({"$id": "https://example.com/root", "allOf": [{"$ref": "cycle"}], "definitions": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "allOf": [{"$ref": "cycle"}], "definitions": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "cycle"}], "additionalProperties": {"$ref": "cycle"}}}})
+        ; "resource and root fragment, draft 7"
+    )]
+    #[test_case(
+        crate::Draft::Draft7,
+        &json!({"$id": "https://example.com/root", "allOf": [{"$ref": "#node"}], "definitions": {"cycle": {"$id": "#node", "minProperties": 1, "allOf": [{"$ref": "#/definitions/cycle"}], "additionalProperties": {"$ref": "#node"}}}}),
+        &json!({"$id": "https://example.com/root", "allOf": [{"$ref": "#/definitions/cycle"}], "definitions": {"cycle": {"$id": "#node", "minProperties": 1, "allOf": [{"$ref": "#/definitions/cycle"}], "additionalProperties": {"$ref": "#/definitions/cycle"}}}})
+        ; "plain-name id and pointer, draft 7"
+    )]
+    #[test_case(
+        crate::Draft::Draft6,
+        &json!({"$id": "https://example.com/root", "allOf": [{"$ref": "cycle"}], "definitions": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "https://example.com/cycle#"}}}}),
+        &json!({"$id": "https://example.com/root", "allOf": [{"$ref": "cycle"}], "definitions": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "cycle"}], "additionalProperties": {"$ref": "cycle"}}}})
+        ; "resource and root fragment, draft 6"
+    )]
+    #[test_case(
+        crate::Draft::Draft4,
+        &json!({"id": "https://example.com/root", "allOf": [{"$ref": "cycle"}], "definitions": {"cycle": {"id": "cycle", "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "#"}}}}),
+        &json!({"id": "https://example.com/root", "allOf": [{"$ref": "cycle"}], "definitions": {"cycle": {"id": "cycle", "minProperties": 1, "allOf": [{"$ref": "cycle"}], "additionalProperties": {"$ref": "cycle"}}}})
+        ; "resource and root fragment, draft 4"
+    )]
+    #[test_case(
+        crate::Draft::Draft4,
+        &json!({"id": "https://example.com/root", "allOf": [{"$ref": "#node"}], "definitions": {"cycle": {"id": "#node", "minProperties": 1, "allOf": [{"$ref": "https://example.com/root#/definitions/cycle"}], "additionalProperties": {"$ref": "#node"}}}}),
+        &json!({"id": "https://example.com/root", "allOf": [{"$ref": "#/definitions/cycle"}], "definitions": {"cycle": {"id": "#node", "minProperties": 1, "allOf": [{"$ref": "#/definitions/cycle"}], "additionalProperties": {"$ref": "#/definitions/cycle"}}}})
+        ; "plain-name id and pointer, draft 4"
+    )]
+    #[test_case(
+        crate::Draft::Draft201909,
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$recursiveRef": "#"}], "additionalProperties": {"$ref": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "cycle#", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$recursiveRef": "#"}], "additionalProperties": {"$ref": "#"}}}})
+        ; "recursive reference without recursive anchor"
+    )]
+    #[test_case(
+        crate::Draft::Draft201909,
+        &json!({"$id": "https://example.com/root", "$ref": "tree", "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "minProperties": 1, "allOf": [{"$recursiveRef": "#"}], "additionalProperties": {"$recursiveRef": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "tree#", "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "minProperties": 1, "allOf": [{"$recursiveRef": "#"}], "additionalProperties": {"$recursiveRef": "#"}}}})
+        ; "recursive reference to its own recursive anchor"
+    )]
+    #[test_case(
+        crate::Draft::Draft201909,
+        &json!({"$id": "https://example.com/root", "$ref": "tree", "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "not": {"$recursiveRef": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "tree#", "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "not": {"$recursiveRef": "#"}}}})
+        ; "negation of a recursive reference to its own recursive anchor"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$dynamicRef": "#"}], "additionalProperties": {"$ref": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "cycle#", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$dynamicRef": "#"}], "additionalProperties": {"$ref": "#"}}}})
+        ; "dynamic reference without fragment"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "$ref": "cycle", "$defs": {"cycle": {"$id": "cycle", "$anchor": "node", "minProperties": 1, "allOf": [{"$dynamicRef": "#node"}], "additionalProperties": {"$ref": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$ref": "cycle#node", "$defs": {"cycle": {"$id": "cycle", "$anchor": "node", "minProperties": 1, "allOf": [{"$dynamicRef": "#node"}], "additionalProperties": {"$ref": "#node"}}}})
+        ; "dynamic reference to an anchor"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "$dynamicRef": "tree", "$defs": {"tree": {"$id": "tree", "$dynamicAnchor": "node", "minProperties": 1, "allOf": [{"$dynamicRef": "#node"}], "additionalProperties": {"$dynamicRef": "#"}}}}),
+        &json!({"$id": "https://example.com/root", "$dynamicRef": "tree#node", "$defs": {"tree": {"$id": "tree", "$dynamicAnchor": "node", "minProperties": 1, "allOf": [{"$dynamicRef": "#node"}], "additionalProperties": {"$dynamicRef": "#node"}}}})
+        ; "dynamic reference to its own dynamic anchor"
+    )]
+    #[test_case(
+        crate::Draft::Draft202012,
+        &json!({"$id": "https://example.com/root", "$dynamicRef": "tree", "$defs": {"tree": {"$id": "tree", "$dynamicAnchor": "node", "not": {"$dynamicRef": "#node"}}}}),
+        &json!({"$id": "https://example.com/root", "$dynamicRef": "tree#node", "$defs": {"tree": {"$id": "tree", "$dynamicAnchor": "node", "not": {"$dynamicRef": "#node"}}}})
+        ; "negation of a dynamic reference to its own dynamic anchor"
+    )]
+    fn ref_target_named_in_different_ways(
+        draft: crate::Draft,
+        schema: &Value,
+        named_one_way: &Value,
+    ) {
+        let options = crate::options().with_draft(draft);
+        let validator = options.build(schema).expect("Valid schema");
+        let expected = options.build(named_one_way).expect("Valid schema");
+        for instance in instances_for_ref_cycles() {
+            assert_eq!(
+                reported(&validator, &instance),
+                reported(&expected, &instance),
+                "{instance}"
+            );
+        }
+    }
+
+    // A pointer from the outer document into an embedded resource and `#` inside that resource name
+    // one schema at two locations, and `#/` names the member with an empty name: each is a node of
+    // its own.
+    #[test_case(
+        &json!({"$id": "https://example.com/root", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"$id": "cycle", "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "root#/$defs/cycle"}}}}),
+        &json!({}),
+        &json!([
+            {"message": "{} has less than 1 property", "instancePath": "", "schemaPath": "/$defs/cycle/minProperties", "evaluationPath": "/$ref/minProperties", "absoluteKeywordLocation": "https://example.com/cycle#/minProperties"},
+            {"message": "{} has less than 1 property", "instancePath": "", "schemaPath": "/minProperties", "evaluationPath": "/$ref/allOf/0/$ref/minProperties", "absoluteKeywordLocation": "https://example.com/cycle#/minProperties"},
+            {"message": "{} has less than 1 property", "instancePath": "", "schemaPath": "/minProperties", "evaluationPath": "/$ref/allOf/0/$ref/allOf/0/$ref/minProperties", "absoluteKeywordLocation": "https://example.com/cycle#/minProperties"}
+        ])
+        ; "pointer into an embedded resource and its root fragment"
+    )]
+    #[test_case(
+        &json!({"$id": "https://example.com/root", "": {"maxProperties": 0}, "minProperties": 1, "allOf": [{"$ref": "#"}], "additionalProperties": {"$ref": "#/"}}),
+        &json!({"a": {"b": 1}}),
+        &json!([
+            {"message": "{\"b\":1} has more than 0 properties", "instancePath": "/a", "schemaPath": "//maxProperties", "evaluationPath": "/additionalProperties/$ref/maxProperties", "absoluteKeywordLocation": "https://example.com/root#//maxProperties"},
+            {"message": "{\"b\":1} has more than 0 properties", "instancePath": "/a", "schemaPath": "//maxProperties", "evaluationPath": "/allOf/0/$ref/additionalProperties/$ref/maxProperties", "absoluteKeywordLocation": "https://example.com/root#//maxProperties"},
+            {"message": "{\"b\":1} has more than 0 properties", "instancePath": "/a", "schemaPath": "//maxProperties", "evaluationPath": "/allOf/0/$ref/allOf/0/$ref/additionalProperties/$ref/maxProperties", "absoluteKeywordLocation": "https://example.com/root#//maxProperties"}
+        ])
+        ; "root fragment and member with an empty name"
+    )]
+    fn ref_targets_at_different_locations_stay_apart(
+        schema: &Value,
+        instance: &Value,
+        expected: &Value,
+    ) {
+        let validator = crate::validator_for(schema).expect("Valid schema");
+        let errors: Vec<Value> = validator
+            .iter_errors(instance)
+            .map(|error| reported_error(&error))
+            .collect();
+        assert_eq!(json!(errors), *expected);
     }
 
     #[test_case("$ref"; "ref")]

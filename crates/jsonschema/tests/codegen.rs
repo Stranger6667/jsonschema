@@ -3034,6 +3034,165 @@ fn test_ref_cycle_into_nested_then_same_instance_keeps_results() {
     );
 }
 
+// Schemas naming one `$ref` target in different ways, and different targets in similar ways.
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$ref":"cycle","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##,
+    draft = Draft201909,
+    methods = { evaluate = true }
+)]
+struct RefCycleResourceAndRootFragment;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"cycle#","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleResourceWithEmptyFragment;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"https://example.com/cycle","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"cycle"}],"additionalProperties":{"$ref":"#"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleAbsoluteAndRelativeUri;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"cycle","$defs":{"cycle":{"$id":"cycle","$anchor":"node","minProperties":1,"allOf":[{"$ref":"#node"}],"additionalProperties":{"$ref":"#"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleAnchorAndRootFragment;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"cycle#node","$defs":{"cycle":{"$id":"cycle","$anchor":"node","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#node"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleAnchorFromAnotherResource;
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"$anchor":"node","minProperties":1,"allOf":[{"$ref":"#node"}],"additionalProperties":{"$ref":"#/$defs/cycle"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleAnchorAndPointer;
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"minProperties":1,"allOf":[{"$ref":"#/%24defs/cycle"}],"additionalProperties":{"$ref":"#/$defs/%63ycle"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCyclePercentEncodedPointer;
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/a%23%25b","$defs":{"a#%b":{"minProperties":1,"allOf":[{"$ref":"#/$defs/a%23%25%62"}],"additionalProperties":{"$ref":"#/$defs/a%23%25b"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCyclePercentEncodedNumberSignAndPercent;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/cycle","$defs":{"leaf":{"$id":"leaf","minProperties":1},"cycle":{"$id":"cycle","allOf":[{"$ref":"leaf"},{"$ref":"root#/$defs/cycle"}],"additionalProperties":{"$ref":"https://example.com/root#/$defs/cycle"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCyclePointerThroughResource;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/cycle","$defs":{"leaf":{"$id":"leaf","minProperties":1},"cycle":{"$id":"cycle","allOf":[{"$ref":"leaf"},{"$ref":"#"}],"additionalProperties":{"$ref":"root#/$defs/cycle"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCyclePointerThroughResourceAndRootFragment;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"https://example.com/root"}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleRootAndItsUri;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","":{"maxProperties":0},"minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#/"}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefCycleRootAndEmptyNameMember;
+#[jsonschema::validator(
+    schema = r#"{"$id":"https://example.com/root","properties":{"a":{"$ref":"root#/$defs/cycle"},"b":{"$ref":"cycle#/$defs/cycle"}},"$defs":{"cycle":{"$id":"cycle","$defs":{"cycle":{"maxProperties":0}}}}}"#,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RefPointerThroughResourceAndPointerInIt;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","allOf":[{"$ref":"cycle"}],"definitions":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##,
+    draft = Draft7,
+    methods = { evaluate = true }
+)]
+struct RefCycleResourceDraft7;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","allOf":[{"$ref":"#node"}],"definitions":{"cycle":{"$id":"#node","minProperties":1,"allOf":[{"$ref":"#/definitions/cycle"}],"additionalProperties":{"$ref":"#node"}}}}"##,
+    draft = Draft7,
+    methods = { evaluate = true }
+)]
+struct RefCyclePlainNameIdDraft7;
+#[jsonschema::validator(
+    schema = r##"{"id":"https://example.com/root","allOf":[{"$ref":"cycle"}],"definitions":{"cycle":{"id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##,
+    draft = Draft4,
+    methods = { evaluate = true }
+)]
+struct RefCycleResourceDraft4;
+#[jsonschema::validator(
+    schema = r##"{"id":"https://example.com/root","allOf":[{"$ref":"#node"}],"definitions":{"cycle":{"id":"#node","minProperties":1,"allOf":[{"$ref":"https://example.com/root#/definitions/cycle"}],"additionalProperties":{"$ref":"#node"}}}}"##,
+    draft = Draft4,
+    methods = { evaluate = true }
+)]
+struct RefCyclePlainNameIdDraft4;
+
+// Every way of naming a target within one document gives one function, as it gives one node in the
+// runtime.
+#[test_case(RefCycleResourceAndRootFragment::is_valid, RefCycleResourceAndRootFragment::validate, RefCycleResourceAndRootFragment::iter_errors, RefCycleResourceAndRootFragment::evaluate, r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$ref":"cycle","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##, Draft::Draft201909 ; "resource_and_root_fragment_draft2019_09")]
+#[test_case(RefCycleResourceWithEmptyFragment::is_valid, RefCycleResourceWithEmptyFragment::validate, RefCycleResourceWithEmptyFragment::iter_errors, RefCycleResourceWithEmptyFragment::evaluate, r##"{"$id":"https://example.com/root","$ref":"cycle#","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##, Draft::Draft202012 ; "resource_with_empty_fragment")]
+#[test_case(RefCycleAbsoluteAndRelativeUri::is_valid, RefCycleAbsoluteAndRelativeUri::validate, RefCycleAbsoluteAndRelativeUri::iter_errors, RefCycleAbsoluteAndRelativeUri::evaluate, r##"{"$id":"https://example.com/root","$ref":"https://example.com/cycle","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"cycle"}],"additionalProperties":{"$ref":"#"}}}}"##, Draft::Draft202012 ; "absolute_and_relative_uri")]
+#[test_case(RefCycleAnchorAndRootFragment::is_valid, RefCycleAnchorAndRootFragment::validate, RefCycleAnchorAndRootFragment::iter_errors, RefCycleAnchorAndRootFragment::evaluate, r##"{"$id":"https://example.com/root","$ref":"cycle","$defs":{"cycle":{"$id":"cycle","$anchor":"node","minProperties":1,"allOf":[{"$ref":"#node"}],"additionalProperties":{"$ref":"#"}}}}"##, Draft::Draft202012 ; "anchor_and_root_fragment")]
+#[test_case(RefCycleAnchorFromAnotherResource::is_valid, RefCycleAnchorFromAnotherResource::validate, RefCycleAnchorFromAnotherResource::iter_errors, RefCycleAnchorFromAnotherResource::evaluate, r##"{"$id":"https://example.com/root","$ref":"cycle#node","$defs":{"cycle":{"$id":"cycle","$anchor":"node","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#node"}}}}"##, Draft::Draft202012 ; "anchor_from_another_resource")]
+#[test_case(RefCycleAnchorAndPointer::is_valid, RefCycleAnchorAndPointer::validate, RefCycleAnchorAndPointer::iter_errors, RefCycleAnchorAndPointer::evaluate, r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"$anchor":"node","minProperties":1,"allOf":[{"$ref":"#node"}],"additionalProperties":{"$ref":"#/$defs/cycle"}}}}"##, Draft::Draft202012 ; "anchor_and_pointer")]
+#[test_case(RefCyclePercentEncodedPointer::is_valid, RefCyclePercentEncodedPointer::validate, RefCyclePercentEncodedPointer::iter_errors, RefCyclePercentEncodedPointer::evaluate, r##"{"$ref":"#/$defs/cycle","$defs":{"cycle":{"minProperties":1,"allOf":[{"$ref":"#/%24defs/cycle"}],"additionalProperties":{"$ref":"#/$defs/%63ycle"}}}}"##, Draft::Draft202012 ; "percent_encoded_pointer")]
+#[test_case(RefCyclePercentEncodedNumberSignAndPercent::is_valid, RefCyclePercentEncodedNumberSignAndPercent::validate, RefCyclePercentEncodedNumberSignAndPercent::iter_errors, RefCyclePercentEncodedNumberSignAndPercent::evaluate, r##"{"$ref":"#/$defs/a%23%25b","$defs":{"a#%b":{"minProperties":1,"allOf":[{"$ref":"#/$defs/a%23%25%62"}],"additionalProperties":{"$ref":"#/$defs/a%23%25b"}}}}"##, Draft::Draft202012 ; "percent_encoded_number_sign_and_percent")]
+#[test_case(RefCyclePointerThroughResource::is_valid, RefCyclePointerThroughResource::validate, RefCyclePointerThroughResource::iter_errors, RefCyclePointerThroughResource::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/cycle","$defs":{"leaf":{"$id":"leaf","minProperties":1},"cycle":{"$id":"cycle","allOf":[{"$ref":"leaf"},{"$ref":"root#/$defs/cycle"}],"additionalProperties":{"$ref":"https://example.com/root#/$defs/cycle"}}}}"##, Draft::Draft202012 ; "pointer_through_resource")]
+#[test_case(RefCyclePointerThroughResourceAndRootFragment::is_valid, RefCyclePointerThroughResourceAndRootFragment::validate, RefCyclePointerThroughResourceAndRootFragment::iter_errors, RefCyclePointerThroughResourceAndRootFragment::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/cycle","$defs":{"leaf":{"$id":"leaf","minProperties":1},"cycle":{"$id":"cycle","allOf":[{"$ref":"leaf"},{"$ref":"#"}],"additionalProperties":{"$ref":"root#/$defs/cycle"}}}}"##, Draft::Draft202012 ; "pointer_through_resource_and_root_fragment")]
+#[test_case(RefCycleRootAndItsUri::is_valid, RefCycleRootAndItsUri::validate, RefCycleRootAndItsUri::iter_errors, RefCycleRootAndItsUri::evaluate, r##"{"$id":"https://example.com/root","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"https://example.com/root"}}"##, Draft::Draft202012 ; "root_and_its_uri")]
+#[test_case(RefCycleRootAndEmptyNameMember::is_valid, RefCycleRootAndEmptyNameMember::validate, RefCycleRootAndEmptyNameMember::iter_errors, RefCycleRootAndEmptyNameMember::evaluate, r##"{"$id":"https://example.com/root","":{"maxProperties":0},"minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#/"}}"##, Draft::Draft202012 ; "root_and_empty_name_member")]
+#[test_case(RefPointerThroughResourceAndPointerInIt::is_valid, RefPointerThroughResourceAndPointerInIt::validate, RefPointerThroughResourceAndPointerInIt::iter_errors, RefPointerThroughResourceAndPointerInIt::evaluate, r#"{"$id":"https://example.com/root","properties":{"a":{"$ref":"root#/$defs/cycle"},"b":{"$ref":"cycle#/$defs/cycle"}},"$defs":{"cycle":{"$id":"cycle","$defs":{"cycle":{"maxProperties":0}}}}}"#, Draft::Draft202012 ; "pointer_through_resource_and_pointer_in_it")]
+#[test_case(RefCycleResourceDraft7::is_valid, RefCycleResourceDraft7::validate, RefCycleResourceDraft7::iter_errors, RefCycleResourceDraft7::evaluate, r##"{"$id":"https://example.com/root","allOf":[{"$ref":"cycle"}],"definitions":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##, Draft::Draft7 ; "resource_and_root_fragment_draft7")]
+#[test_case(RefCyclePlainNameIdDraft7::is_valid, RefCyclePlainNameIdDraft7::validate, RefCyclePlainNameIdDraft7::iter_errors, RefCyclePlainNameIdDraft7::evaluate, r##"{"$id":"https://example.com/root","allOf":[{"$ref":"#node"}],"definitions":{"cycle":{"$id":"#node","minProperties":1,"allOf":[{"$ref":"#/definitions/cycle"}],"additionalProperties":{"$ref":"#node"}}}}"##, Draft::Draft7 ; "plain_name_id_and_pointer_draft7")]
+#[test_case(RefCycleResourceDraft4::is_valid, RefCycleResourceDraft4::validate, RefCycleResourceDraft4::iter_errors, RefCycleResourceDraft4::evaluate, r##"{"id":"https://example.com/root","allOf":[{"$ref":"cycle"}],"definitions":{"cycle":{"id":"cycle","minProperties":1,"allOf":[{"$ref":"#"}],"additionalProperties":{"$ref":"#"}}}}"##, Draft::Draft4 ; "resource_and_root_fragment_draft4")]
+#[test_case(RefCyclePlainNameIdDraft4::is_valid, RefCyclePlainNameIdDraft4::validate, RefCyclePlainNameIdDraft4::iter_errors, RefCyclePlainNameIdDraft4::evaluate, r##"{"id":"https://example.com/root","allOf":[{"$ref":"#node"}],"definitions":{"cycle":{"id":"#node","minProperties":1,"allOf":[{"$ref":"https://example.com/root#/definitions/cycle"}],"additionalProperties":{"$ref":"#node"}}}}"##, Draft::Draft4 ; "plain_name_id_and_pointer_draft4")]
+fn test_ref_target_named_in_different_ways_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    schema: &str,
+    draft: Draft,
+) {
+    let schema = serde_json::from_str(schema).expect("valid JSON");
+    let runtime = jsonschema::options()
+        .with_draft(draft)
+        .build(&schema)
+        .expect("valid schema");
+    for instance in [
+        serde_json::json!({}),
+        serde_json::json!({"a": {}}),
+        serde_json::json!({"a": {"b": {}}}),
+        serde_json::json!({"a": {"x": 1}}),
+        serde_json::json!({"b": {}}),
+        serde_json::json!({"b": {"x": 1}}),
+        serde_json::json!(1),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+        assert_eq!(
+            evaluation_outputs(&evaluate(&instance)),
+            evaluation_outputs(&runtime.evaluate(&instance)),
+        );
+    }
+}
+
 #[test_case(serde_json::json!(1), false ; "number_rejected")]
 #[test_case(serde_json::json!("x"), false ; "string_rejected")]
 fn test_ref_siblings_are_enforced_in_draft_201909(instance: serde_json::Value, expected: bool) {
@@ -4109,17 +4268,15 @@ fn test_ref_cycle_under_dynamic_scope_matches_runtime(
 struct RefCycleReachedUnderAnotherDynamicAnchor;
 
 // `cycle` is reached from `start`, then again below `wrap`, where its `$dynamicRef` resolves to
-// `wrap`. The runtime checks the second visit in the scope of the first, so the expected results
-// come from the schema with the cycle unrolled once, which agrees with it on instances without a
-// nested `next`.
+// `wrap`.
 #[test_case(serde_json::json!({"next": {"a": 1}}) ; "rejected_below_wrap")]
 #[test_case(serde_json::json!({"next": {"a": {}}}) ; "accepted_below_wrap")]
 #[test_case(serde_json::json!({"next": {"a": {"b": 1}}}) ; "rejected_two_levels_below_wrap")]
 #[test_case(serde_json::json!({"a": 1}) ; "accepted_outside_wrap")]
 #[test_case(serde_json::json!({"a": "x"}) ; "rejected_outside_wrap")]
 fn test_ref_cycle_reached_under_another_dynamic_anchor(instance: serde_json::Value) {
-    let unrolled = serde_json::json!({"$id": "https://example.com/root", "$ref": "start", "$defs": {"start": {"$id": "start", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"properties": {"next": {"$ref": "wrap"}}, "additionalProperties": {"$dynamicRef": "leaf#node"}}, "copy": {"additionalProperties": {"$dynamicRef": "leaf#node"}}}}, "leaf": {"$id": "leaf", "$dynamicAnchor": "node", "type": "integer"}, "wrap": {"$id": "wrap", "$dynamicAnchor": "node", "type": "object", "$ref": "start#/$defs/copy"}}});
-    let runtime = jsonschema::validator_for(&unrolled).expect("valid schema");
+    let schema = serde_json::json!({"$id": "https://example.com/root", "$ref": "start", "$defs": {"start": {"$id": "start", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"properties": {"next": {"$ref": "wrap"}}, "additionalProperties": {"$dynamicRef": "leaf#node"}}}}, "leaf": {"$id": "leaf", "$dynamicAnchor": "node", "type": "integer"}, "wrap": {"$id": "wrap", "$dynamicAnchor": "node", "type": "object", "$ref": "start#/$defs/cycle"}}});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
     assert_validate_parity(
         RefCycleReachedUnderAnotherDynamicAnchor::is_valid(&instance),
         RefCycleReachedUnderAnotherDynamicAnchor::validate(&instance),
@@ -4132,10 +4289,10 @@ fn test_ref_cycle_reached_under_another_dynamic_anchor(instance: serde_json::Val
         &instance,
     );
     assert_eq!(
-        RefCycleReachedUnderAnotherDynamicAnchor::evaluate(&instance)
-            .flag()
-            .valid,
-        runtime.is_valid(&instance)
+        evaluation_outputs(&RefCycleReachedUnderAnotherDynamicAnchor::evaluate(
+            &instance
+        )),
+        evaluation_outputs(&runtime.evaluate(&instance)),
     );
 }
 

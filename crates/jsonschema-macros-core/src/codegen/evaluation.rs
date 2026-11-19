@@ -227,6 +227,16 @@ struct TreeSchema {
     rejects: bool,
 }
 
+/// Where a schema sits: the resource holding it, its pointer, which counts from the document a
+/// reference names and may enter a resource it embeds, and the length of the pointer's prefix
+/// before that resource starts.
+#[derive(PartialEq, Eq, Hash)]
+struct TreePlace {
+    base: String,
+    pointer: String,
+    resource_start: usize,
+}
+
 /// Every schema `evaluate` reports, the root first, with their units in the runtime's priority
 /// order.
 #[derive(Default)]
@@ -254,8 +264,8 @@ struct Tree {
     unevaluated: Vec<(TokenStream, TokenStream)>,
     /// The resource each `unevaluated` entry runs in.
     unevaluated_resources: Vec<usize>,
-    /// Each schema's index by its resource and pointer, so a `$ref` target is added once.
-    by_pointer: HashMap<(String, String), usize>,
+    /// Each schema's index by where it sits, so a `$ref` target is added once.
+    by_pointer: HashMap<TreePlace, usize>,
     /// Where the resource being added starts, as a prefix of the pointers below it.
     resource_root: String,
     /// The next schema added is a reference target, whose resolution already applied its `$id`.
@@ -333,11 +343,15 @@ impl Tree {
         pointer: String,
     ) -> syn::Result<usize> {
         let based = std::mem::take(&mut self.based);
-        let key = (ctx.current_base_uri.to_string(), pointer);
-        if let Some(&index) = self.by_pointer.get(&key) {
+        let place = TreePlace {
+            base: ctx.current_base_uri.to_string(),
+            pointer,
+            resource_start: self.resource_root.len(),
+        };
+        if let Some(&index) = self.by_pointer.get(&place) {
             return Ok(index);
         }
-        let (_, pointer) = key.clone();
+        let pointer = place.pointer.clone();
         let index = self.schemas.len();
         self.schemas.push(TreeSchema {
             pointer: String::new(),
@@ -350,7 +364,7 @@ impl Tree {
             count: 0,
             rejects: false,
         });
-        self.by_pointer.insert(key, index);
+        self.by_pointer.insert(place, index);
         self.inline.push(std::ptr::from_ref(schema).addr());
         let added = match resource_base(ctx, schema).filter(|_| index != 0 && !based) {
             Some(base) => {
