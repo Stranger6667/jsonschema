@@ -543,7 +543,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             quote! {
                 let __start = __errors.mark();
                 let __stop = (|| -> bool { #errors_body })();
-                __errors.within(__start, #base, 0);
+                __errors.within(__start, Some(#base), 0);
                 __stop
             }
         };

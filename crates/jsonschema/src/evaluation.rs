@@ -1644,6 +1644,10 @@ pub mod generated {
         /// The resource it sits in, where that is not the root's.
         #[serde(default)]
         base: Option<String>,
+        /// It sits in another resource than the root's, under the default base: its keywords
+        /// have no absolute location.
+        #[serde(default)]
+        default_base: bool,
         /// Its pointer within that resource, where that is not `pointer`.
         #[serde(default)]
         at: Option<String>,
@@ -2078,7 +2082,11 @@ pub mod generated {
                 let own = schema
                     .base
                     .map(|base| Uri::parse(base).expect("the generator writes a URI base"));
-                let base = own.as_ref().or(base.as_ref());
+                let base = if schema.default_base {
+                    None
+                } else {
+                    own.as_ref().or(base.as_ref())
+                };
                 for index in schema.first..schema.first + schema.count {
                     let unit = unit_tables[index]
                         .take()

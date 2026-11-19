@@ -35,6 +35,7 @@
 - Evaluation paths of `propertyNames` errors leaving out a `$ref` inside `propertyNames`.
 - `unevaluatedProperties` and `unevaluatedItems` errors and `evaluate` output counting members as evaluated by a subschema that fails, such as a `$ref` target.
 - `absolute_keyword_location` of errors for names missing under `dependentRequired` or `dependencies` pointing to a schema location that does not exist.
+- `absolute_keyword_location` of errors from a resource without a base URI, such as one registered under a `json-schema:///` URI, naming the `$ref` or other keyword that reached it from a resource with one, instead of being absent.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `Float`, such as `BigDecimal("1e-400")`.
 - `pattern` with a large bounded count the regex engine matches, such as `^x?.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
 - `evaluate` output locating a `$ref` target at the URI its document was registered under instead of the `$id` that document declares.

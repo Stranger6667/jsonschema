@@ -70,11 +70,37 @@ struct ValidationErrorRepr<'a> {
     schema_path: Location,
     /// Dynamic path including $ref traversals.
     tracker: LazyEvaluationPath,
-    /// Absolute keyword location: full URI including JSON Pointer fragment.
-    /// E.g. `https://example.com/schema.json#/properties/name/type`.
-    /// Set when the schema has a real base URI (via `$id` or `with_base_uri()`).
-    /// `None` for schemas using the internal `json-schema:///` default.
-    absolute_keyword_location: Option<Arc<Uri<String>>>,
+    absolute_keyword_location: AbsoluteKeywordLocation,
+}
+
+/// Where the schema node that ran the failing keyword located it.
+#[derive(Clone)]
+enum AbsoluteKeywordLocation {
+    /// No schema node did yet.
+    Unlocated,
+    /// In a resource under the internal `json-schema:///` default base, which has no absolute
+    /// location.
+    DefaultBase,
+    /// Full URI including JSON Pointer fragment, e.g.
+    /// `https://example.com/schema.json#/properties/name/type`, for a resource with a real base
+    /// URI (via `$id` or `with_base_uri()`).
+    Uri(Arc<Uri<String>>),
+}
+
+impl AbsoluteKeywordLocation {
+    fn uri(&self) -> Option<&Arc<Uri<String>>> {
+        match self {
+            AbsoluteKeywordLocation::Uri(uri) => Some(uri),
+            AbsoluteKeywordLocation::Unlocated | AbsoluteKeywordLocation::DefaultBase => None,
+        }
+    }
+
+    fn into_uri(self) -> Option<Arc<Uri<String>>> {
+        match self {
+            AbsoluteKeywordLocation::Uri(uri) => Some(uri),
+            AbsoluteKeywordLocation::Unlocated | AbsoluteKeywordLocation::DefaultBase => None,
+        }
+    }
 }
 
 impl fmt::Debug for ValidationErrorRepr<'_> {
@@ -84,7 +110,10 @@ impl fmt::Debug for ValidationErrorRepr<'_> {
             .field("kind", &self.kind)
             .field("instance_path", &self.instance_path)
             .field("schema_path", &self.schema_path)
-            .field("absolute_keyword_location", &self.absolute_keyword_location)
+            .field(
+                "absolute_keyword_location",
+                &self.absolute_keyword_location.uri(),
+            )
             .finish_non_exhaustive()
     }
 }
@@ -433,7 +462,7 @@ impl<'a> ValidationError<'a> {
                 instance_path,
                 schema_path,
                 tracker: tracker.into(),
-                absolute_keyword_location: None,
+                absolute_keyword_location: AbsoluteKeywordLocation::Unlocated,
             }),
         }
     }
@@ -485,21 +514,27 @@ impl<'a> ValidationError<'a> {
     /// This corresponds to JSON Schema's "absoluteKeywordLocation" (e.g.
     /// `https://example.com/schema.json#/properties/name/type`).
     ///
-    /// Present when the schema has a real base URI set via `$id` or [`crate::options::ValidationOptions::with_base_uri`].
-    /// `None` for schemas without an explicit base URI.
+    /// Present when the resource the keyword sits in has a real base URI set via `$id` or [`crate::options::ValidationOptions::with_base_uri`].
+    /// `None` for keywords of a resource without an explicit base URI, such as one registered
+    /// under a `json-schema:///` URI.
     #[inline]
     #[must_use]
     pub fn absolute_keyword_location(&self) -> Option<&Uri<String>> {
-        self.repr.absolute_keyword_location.as_deref()
+        self.repr.absolute_keyword_location.uri().map(Arc::as_ref)
     }
 
-    /// Attach an absolute keyword location if one is not already set.
-    ///
-    /// Uses "set if not already set" semantics so inner `SchemaNode` calls win over outer ones.
+    /// Locates the error at `uri`, or under the default base for `None`, unless a node closer to
+    /// the failing keyword located it already: an enclosing node's keyword is another one.
     #[inline]
     pub(crate) fn with_absolute_keyword_location(mut self, uri: Option<Arc<Uri<String>>>) -> Self {
-        if self.repr.absolute_keyword_location.is_none() {
-            self.repr.absolute_keyword_location = uri;
+        if matches!(
+            self.repr.absolute_keyword_location,
+            AbsoluteKeywordLocation::Unlocated
+        ) {
+            self.repr.absolute_keyword_location = uri.map_or(
+                AbsoluteKeywordLocation::DefaultBase,
+                AbsoluteKeywordLocation::Uri,
+            );
         }
         self
     }
@@ -545,22 +580,30 @@ impl<'a> ValidationError<'a> {
     #[cfg(feature = "macros")]
     pub(crate) fn is_unlocated(&self) -> bool {
         matches!(self.repr.tracker, LazyEvaluationPath::SameAsSchemaPath)
-            && self.repr.absolute_keyword_location.is_none()
+            && matches!(
+                self.repr.absolute_keyword_location,
+                AbsoluteKeywordLocation::Unlocated
+            )
     }
 
     /// Locates the keyword in the resource at `base`, which starts `start` bytes into its schema
-    /// path.
+    /// path, or under the default base for `None`.
     #[cfg(feature = "macros")]
     pub(crate) fn locate_in(
         &mut self,
-        base: &Uri<String>,
+        base: Option<&Uri<String>>,
         start: usize,
         buffer: &mut referencing::uri::EncodedBuffer,
     ) {
-        let pointer = &self.repr.schema_path.as_str()[start..];
-        self.repr.absolute_keyword_location = Some(Arc::new(
-            crate::compiler::resolve_absolute_location(base, pointer, buffer),
-        ));
+        self.repr.absolute_keyword_location = match base {
+            Some(base) => {
+                let pointer = &self.repr.schema_path.as_str()[start..];
+                AbsoluteKeywordLocation::Uri(Arc::new(crate::compiler::resolve_absolute_location(
+                    base, pointer, buffer,
+                )))
+            }
+            None => AbsoluteKeywordLocation::DefaultBase,
+        };
     }
 
     /// Place the instance location under `prefix`, for an error raised on a part of a document.
@@ -569,9 +612,16 @@ impl<'a> ValidationError<'a> {
         self
     }
 
-    pub(crate) fn set_absolute_keyword_location(&mut self, uri: &Arc<Uri<String>>) {
-        if self.repr.absolute_keyword_location.is_none() {
-            self.repr.absolute_keyword_location = Some(Arc::clone(uri));
+    /// [`Self::with_absolute_keyword_location`] in place.
+    pub(crate) fn set_absolute_keyword_location(&mut self, uri: Option<&Arc<Uri<String>>>) {
+        if matches!(
+            self.repr.absolute_keyword_location,
+            AbsoluteKeywordLocation::Unlocated
+        ) {
+            self.repr.absolute_keyword_location = uri
+                .map_or(AbsoluteKeywordLocation::DefaultBase, |uri| {
+                    AbsoluteKeywordLocation::Uri(Arc::clone(uri))
+                });
         }
     }
 
@@ -587,7 +637,7 @@ impl<'a> ValidationError<'a> {
             instance_path: repr.instance_path,
             schema_path: repr.schema_path,
             evaluation_path,
-            absolute_keyword_location: repr.absolute_keyword_location,
+            absolute_keyword_location: repr.absolute_keyword_location.into_uri(),
         }
     }
 
@@ -1129,7 +1179,7 @@ impl<'a> ValidationError<'a> {
         let schema_path = error.repr.schema_path.clone();
         let tracker = error.repr.tracker.clone();
         let absolute_keyword_location = error.repr.absolute_keyword_location.clone();
-        Self::borrowed(
+        let mut wrapper = Self::borrowed(
             instance,
             ValidationErrorKind::PropertyNames {
                 error: Box::new(error),
@@ -1137,8 +1187,9 @@ impl<'a> ValidationError<'a> {
             instance_path,
             schema_path,
             tracker,
-        )
-        .with_absolute_keyword_location(absolute_keyword_location)
+        );
+        wrapper.repr.absolute_keyword_location = absolute_keyword_location;
+        wrapper
     }
     pub(crate) fn required(
         schema_path: Location,

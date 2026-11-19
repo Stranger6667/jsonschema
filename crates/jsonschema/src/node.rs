@@ -959,7 +959,7 @@ fn stamp_absolute_location<'a>(
     if errors.is_empty() {
         return;
     }
-    let Some(uri) = uri() else { return };
+    let uri = uri();
     for error in errors {
         error.set_absolute_keyword_location(uri);
     }

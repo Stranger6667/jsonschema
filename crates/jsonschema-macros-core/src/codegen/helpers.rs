@@ -312,7 +312,7 @@ pub(crate) fn get_or_create_is_valid_fn<E: ValueEmitter>(
 }
 
 /// The base the runtime locates keywords against, or `None` for the internal default one.
-fn located_base(base: &Uri<String>) -> Option<String> {
+pub(crate) fn located_base(base: &Uri<String>) -> Option<String> {
     (base.scheme().as_str() != "json-schema").then(|| base.as_str().to_string())
 }
 

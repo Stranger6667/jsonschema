@@ -4174,7 +4174,7 @@ pub mod __private {
                     error.edit_all(&mut |error| {
                         if let Some(base) = &base {
                             if error.is_unlocated() {
-                                error.locate_in(base, 0, &mut buffer);
+                                error.locate_in(Some(base), 0, &mut buffer);
                             }
                         }
                         if moves {
@@ -4193,15 +4193,17 @@ pub mod __private {
             }
 
             /// The errors recorded since `start` that no reference or other resource located are
-            /// in the resource at `base`, which starts `offset` bytes into their schema paths.
-            pub fn within(&mut self, start: usize, base: &str, offset: usize) {
-                let base =
-                    referencing::uri::from_str(base).expect("the generator writes a URI base");
+            /// in the resource at `base`, which starts `offset` bytes into their schema paths, or
+            /// under the default base for `None`.
+            pub fn within(&mut self, start: usize, base: Option<&str>, offset: usize) {
+                let base = base.map(|base| {
+                    referencing::uri::from_str(base).expect("the generator writes a URI base")
+                });
                 let mut buffer = referencing::uri::EncodedBuffer::new();
                 for error in self.since(start) {
                     error.edit_all(&mut |error| {
                         if error.is_unlocated() {
-                            error.locate_in(&base, offset, &mut buffer);
+                            error.locate_in(base.as_ref(), offset, &mut buffer);
                         }
                     });
                 }
