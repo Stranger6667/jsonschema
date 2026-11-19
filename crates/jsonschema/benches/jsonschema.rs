@@ -4,7 +4,7 @@ mod bench {
 
     pub(crate) use benchmark::Benchmark;
     pub(crate) use codspeed_criterion_compat::{criterion_group, BenchmarkId, Criterion};
-    pub(crate) use serde_json::Value;
+    pub(crate) use serde_json::{json, Value};
 
     pub(crate) fn bench_build(c: &mut Criterion, name: &str, schema: &Value) {
         c.bench_with_input(BenchmarkId::new("build", name), schema, |b, schema| {
@@ -76,7 +76,24 @@ mod bench {
         }
     }
 
-    criterion_group!(jsonschema, run_benchmarks);
+    // Every nested `c` member is reached through both `properties` and `patternProperties`, and
+    // `allOf` re-enters the root at each level.
+    pub(crate) fn run_synthetic_benchmarks(c: &mut Criterion) {
+        let schema = json!({
+            "allOf": [{"$ref": "#"}],
+            "properties": {"c": {"$ref": "#"}},
+            "patternProperties": {"^c": {"$ref": "#"}}
+        });
+        let instance = (0..REF_CYCLE_DEPTH).fold(json!({}), |child, _| json!({"c": child}));
+        let name = format!("Ref cycle through several keywords/Depth {REF_CYCLE_DEPTH}");
+        bench_is_valid(c, &name, &schema, &instance);
+        bench_validate(c, &name, &schema, &instance);
+        bench_iter_errors(c, &name, &schema, &instance);
+    }
+
+    const REF_CYCLE_DEPTH: usize = 16;
+
+    criterion_group!(jsonschema, run_benchmarks, run_synthetic_benchmarks);
 }
 
 #[cfg(not(target_arch = "wasm32"))]
