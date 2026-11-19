@@ -252,6 +252,7 @@ mod __validator_impl {
             tables: "{\"properties\":[[\"d\",3],[\"a\",1],[\"b/c\",2]],\"schemas\":[{\"count\":2,\"first\":2,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/b~1c\"},{\"count\":0,\"first\":1,\"pointer\":\"/properties/b~1c/properties/d\",\"rejects\":true}],\"units\":[{\"keyword\":\"type\",\"not_of_type\":0},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]},{\"direct\":0,\"keyword\":\"required\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[1,2]}]}",
             matchers: &[],
             valid: &[],
+            guards: &[],
             discriminators: &[],
             not_of_type: &[__not_of_type_0],
             direct: &[__direct_1],

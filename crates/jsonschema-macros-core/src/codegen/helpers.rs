@@ -373,11 +373,20 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
     schema_base_uri: Arc<Uri<String>>,
     compile: impl Fn(&mut CompileContext<'_, E>, &Value) -> crate::codegen::CompiledExpr,
 ) -> String {
-    if let Some(name) = ctx.is_valid_fns.get_name(location) {
-        return name.clone();
+    if let Some(name) = ctx.is_valid_fns.get_name(location).cloned() {
+        if ctx.is_valid_fns.is_compiling(location) {
+            ctx.reentered_targets.insert(location.to_string());
+        }
+        return name;
     }
 
     let func_name = ctx.is_valid_fns.alloc_name(location);
+    ctx.compiled_within
+        .insert(location.to_string(), ctx.compiling_stack.last().cloned());
+    ctx.target_locations
+        .entry(std::ptr::from_ref(schema).addr())
+        .or_default()
+        .push(location.to_string());
 
     // Errors inside this helper carry the target's JSON Pointer within its resource.
     let ref_schema_path = location_pointer(ctx, location, &schema_base_uri);

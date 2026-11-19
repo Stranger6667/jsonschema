@@ -2074,6 +2074,7 @@ pub mod generated {
         convert::Infallible,
         ops::ControlFlow,
         sync::{Arc, OnceLock},
+        thread::LocalKey,
     };
 
     /// The tables a generated `evaluate` reports from, as the generator writes them in JSON: one
@@ -2108,6 +2109,21 @@ pub mod generated {
         /// The resource each `Tree::unevaluated` entry runs in, likewise.
         #[serde(default)]
         unevaluated_resources: Vec<usize>,
+        /// The code of each reference target a `$ref` enters.
+        #[serde(default)]
+        functions: Vec<Function>,
+    }
+
+    /// A reference target's generated code.
+    #[derive(Deserialize)]
+    struct Function {
+        /// The target in whose code it compiled first, unless that is the root's: it compiled
+        /// while that code did.
+        #[serde(default)]
+        parent: Option<usize>,
+        /// Its entry in `Tree::guards`, where a reference reaches it while it compiles.
+        #[serde(default)]
+        guard: Option<usize>,
     }
 
     /// How following a reference moves through the dynamic scope.
@@ -2229,6 +2245,9 @@ pub mod generated {
         /// A `$ref`, `$dynamicRef` or `$recursiveRef` unit's static target.
         #[serde(default)]
         target: Option<usize>,
+        /// That target's code, an index of `Tables::functions`.
+        #[serde(default)]
+        function: Option<usize>,
         /// How following it moves through the dynamic scope.
         #[serde(default)]
         scope: ScopeTable,
@@ -2287,6 +2306,7 @@ pub mod generated {
         },
         Ref {
             target: usize,
+            function: usize,
             leaves: bool,
             anchor: Option<Box<str>>,
             recursive: bool,
@@ -2323,6 +2343,31 @@ pub mod generated {
 
     /// Whether an instance is valid under one subschema.
     pub type Validity<F> = for<'a> fn(&<F as Json>::Node<'a>) -> bool;
+
+    /// With `enter`, enters the cycle guard of one reference target's code on an instance, unless
+    /// the instance is being validated against the target already, which it returns; without,
+    /// leaves the guard entered last. The generated code's own references to the target share it.
+    pub type Guard<F> = for<'a> fn(&<F as Json>::Node<'a>, bool) -> bool;
+
+    /// [`Guard`] over the generated code's guard entries, `marks`, entering `mark`.
+    #[must_use]
+    pub fn guard(
+        marks: &'static LocalKey<RefCell<Vec<(usize, usize)>>>,
+        mark: (usize, usize),
+        enter: bool,
+    ) -> bool {
+        marks.with_borrow_mut(|marks| {
+            if !enter {
+                marks.pop();
+                false
+            } else if marks.contains(&mark) {
+                true
+            } else {
+                marks.push(mark);
+                false
+            }
+        })
+    }
 
     /// The `minContains` and `maxContains` beside a `contains`.
     #[derive(Clone, Copy, Deserialize)]
@@ -2430,6 +2475,8 @@ pub mod generated {
         pub matchers: &'static [Matcher],
         /// One per subschema a unit checks.
         pub valid: &'static [Validity<F>],
+        /// One per entry of `Tables::functions` with a guard.
+        pub guards: &'static [Guard<F>],
         /// One per discriminated `anyOf` or `oneOf`.
         pub discriminators: &'static [Candidates<F>],
         /// One per single `type` reporting its error itself.
@@ -2457,8 +2504,8 @@ pub mod generated {
         /// Each unit and schema by the locations its errors are reported at.
         sites: AHashMap<Box<str>, Vec<usize>>,
         schemas: Box<[UnitLocation]>,
-        /// Whether a reference may land on each schema, which the cycle guard then tracks.
-        targets: Box<[bool]>,
+        /// Each entry of `Tables::functions`.
+        functions: Box<[Function]>,
         /// Whether each schema has leaf units only.
         leaves: Box<[bool]>,
         /// Whether each schema has leaf units only and nothing in it annotates, so its valid items
@@ -2521,6 +2568,7 @@ pub mod generated {
                 built,
                 matchers: self.matchers,
                 valid: self.valid,
+                guards: self.guards,
                 discriminators: self.discriminators,
                 not_of_type: self.not_of_type,
                 direct: self.direct,
@@ -2533,6 +2581,7 @@ pub mod generated {
                 errors: flat,
                 arena: EvaluationArena::default(),
                 rebases: Vec::new(),
+                function: None,
                 active: Vec::new(),
                 scope: Vec::new(),
                 rebased_paths: RefCell::default(),
@@ -2648,6 +2697,7 @@ pub mod generated {
                             },
                             "$ref" | "$dynamicRef" | "$recursiveRef" => Kind::Ref {
                                 target: unit.target.expect("the target's index"),
+                                function: unit.function.expect("the target's code"),
                                 leaves: unit.scope.leaves,
                                 anchor: unit.scope.anchor.map(Into::into),
                                 recursive: unit.scope.recursive,
@@ -2721,25 +2771,10 @@ pub mod generated {
                             .all(|unit| unit.annotations.is_none())
                 })
                 .collect();
-            let mut targets = vec![false; schemas.len()];
-            for unit in &units {
-                if let Kind::Ref { target, .. } = unit.kind {
-                    targets[target] = true;
-                }
-            }
-            for resource in &tables.resources {
-                for schema in resource
-                    .root
-                    .iter()
-                    .chain(resource.anchors.iter().map(|(_, schema)| schema))
-                {
-                    targets[*schema] = true;
-                }
-            }
             Built {
                 sites,
                 schemas: schemas.into_boxed_slice(),
-                targets: targets.into_boxed_slice(),
+                functions: tables.functions.into_boxed_slice(),
                 leaves,
                 item_runs,
                 rejects,
@@ -2813,6 +2848,7 @@ pub mod generated {
         built: &'static Built,
         matchers: &'t [Matcher],
         valid: &'t [Validity<F>],
+        guards: &'t [Guard<F>],
         discriminators: &'t [Candidates<F>],
         not_of_type: &'t [NotOfType<F>],
         direct: &'t [Direct<F>],
@@ -2831,7 +2867,11 @@ pub mod generated {
         arena: EvaluationArena,
         /// The rebases of the `$ref`s the walk is below, the outermost first.
         rebases: Vec<Rebase>,
-        /// Each schema being walked, with the address of its instance location.
+        /// The code the walk is in, an index of `Built::functions`: the innermost static `$ref`
+        /// target's, `None` at the root and below a reference through the dynamic scope.
+        function: Option<usize>,
+        /// Each schema a reference through the dynamic scope entered, with the address of its
+        /// instance location.
         active: Vec<(usize, usize)>,
         /// The dynamic scope: the resources references left, the outermost first.
         scope: Vec<usize>,
@@ -2871,6 +2911,25 @@ pub mod generated {
         site: usize,
         /// Its identity, set on first use; `0` before.
         id: Cell<usize>,
+    }
+
+    /// How a reference reaches its target.
+    #[derive(Clone, Copy)]
+    enum Through {
+        /// The dynamic scope, whose code guards every entry.
+        Scope,
+        /// Statically, into the code at that index of `Built::functions`.
+        Function(usize),
+    }
+
+    /// The cycle guard a reference entered its target under.
+    enum Entered {
+        /// None: the code the walk is in calls the target without one.
+        Unguarded,
+        /// An entry of `Walker::active`.
+        Scope,
+        /// That entry of `Tree::guards`.
+        Guard(usize),
     }
 
     /// The sites with errors at one of their schema locations, and each visit's errors by index
@@ -3007,12 +3066,6 @@ pub mod generated {
         ) -> EvaluationNode {
             let built = self.built;
             let (first, count) = built.schema_units[index];
-            // In-place applicators pass the same location on, so its address identifies it.
-            let here = std::ptr::from_ref(location).addr();
-            let target = built.targets[index];
-            if target {
-                self.active.push((index, here));
-            }
             let mut children = ChildList::default();
             // Whether the instance is valid under `if`, which picks `then` or `else`.
             let mut passed = false;
@@ -3092,6 +3145,7 @@ pub mod generated {
                     }
                     Kind::Ref {
                         target,
+                        function,
                         leaves,
                         ref anchor,
                         recursive,
@@ -3099,11 +3153,12 @@ pub mod generated {
                         let caller = built.schema_resources[index];
                         let (target, pushed) =
                             self.resolve(target, leaves, anchor.as_deref(), recursive, caller);
-                        // A target re-entered at the same instance location adds nothing.
-                        if self.active.contains(&(target, here)) {
-                            continue;
-                        }
-                        self.reference(site, target, pushed, instance, location, position)
+                        let through = if anchor.is_some() || recursive {
+                            Through::Scope
+                        } else {
+                            Through::Function(function)
+                        };
+                        self.reference(site, target, through, pushed, instance, location, position)
                     }
                     Kind::Branch { schema, then } => {
                         if passed != then {
@@ -3129,9 +3184,6 @@ pub mod generated {
                 };
                 children.push(&mut self.arena, node);
             }
-            if target {
-                self.active.pop();
-            }
             let site = &built.schemas[index];
             let errors = self.schema_errors(site, built.rejects[index], instance, location);
             let annotations = site.annotations(true);
@@ -3147,6 +3199,7 @@ pub mod generated {
             &mut self,
             site: &UnitLocation,
             target: usize,
+            through: Through,
             pushed: Option<usize>,
             instance: &F::Node<'_>,
             location: &LazyLocation,
@@ -3160,12 +3213,82 @@ pub mod generated {
             };
             self.rebases.push(rebase);
             self.scope.extend(pushed);
-            let node = self.schema(target, instance, location, position);
+            let node = match self.enter(target, through, instance, location) {
+                Some(entered) => {
+                    let function = match through {
+                        Through::Scope => None,
+                        Through::Function(function) => Some(function),
+                    };
+                    let outer = std::mem::replace(&mut self.function, function);
+                    let node = self.schema(target, instance, location, position);
+                    self.function = outer;
+                    match entered {
+                        Entered::Unguarded => {}
+                        Entered::Scope => {
+                            self.active.pop();
+                        }
+                        Entered::Guard(guard) => {
+                            (self.guards[guard])(instance, false);
+                        }
+                    }
+                    node
+                }
+                // The runtime's guard reports the reference valid, with nothing below it.
+                None => self.node(
+                    &self.built.schemas[target],
+                    Vec::new(),
+                    None,
+                    ChildList::default(),
+                    position,
+                ),
+            };
             if pushed.is_some() {
                 self.scope.pop();
             }
             self.rebases.pop();
             node
+        }
+
+        /// Enters the target of a reference through `through`, or `None` where the instance is
+        /// being walked through it already.
+        fn enter(
+            &mut self,
+            target: usize,
+            through: Through,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+        ) -> Option<Entered> {
+            match through {
+                Through::Scope => {
+                    // In-place applicators pass the same location on, so its address identifies it.
+                    let entry = (target, std::ptr::from_ref(location).addr());
+                    if self.active.contains(&entry) {
+                        return None;
+                    }
+                    self.active.push(entry);
+                    Some(Entered::Scope)
+                }
+                Through::Function(function) if self.compiling(function) => {
+                    let guard = self.built.functions[function]
+                        .guard
+                        .expect("a target reached while it compiles has a guard");
+                    (!(self.guards[guard])(instance, true)).then_some(Entered::Guard(guard))
+                }
+                Through::Function(_) => Some(Entered::Unguarded),
+            }
+        }
+
+        /// Whether `function` compiled while the code the walk is in did, so that code guards its
+        /// references to it.
+        fn compiling(&self, function: usize) -> bool {
+            let mut current = self.function;
+            while let Some(index) = current {
+                if index == function {
+                    return true;
+                }
+                current = self.built.functions[index].parent;
+            }
+            false
         }
 
         /// The identity of `rebases[index]`, from the rebase it sits in and its `$ref` unit.
@@ -3726,6 +3849,7 @@ pub mod generated {
                 built: self.built,
                 matchers: self.matchers,
                 valid: self.valid,
+                guards: self.guards,
                 discriminators: self.discriminators,
                 not_of_type: self.not_of_type,
                 direct: self.direct,
@@ -3738,6 +3862,7 @@ pub mod generated {
                 by_visit,
                 arena: std::mem::take(&mut self.arena),
                 rebases: self.rebases.clone(),
+                function: self.function,
                 active: self.active.clone(),
                 scope: self.scope.clone(),
                 rebased_paths: RefCell::new(self.rebased_paths.take()),

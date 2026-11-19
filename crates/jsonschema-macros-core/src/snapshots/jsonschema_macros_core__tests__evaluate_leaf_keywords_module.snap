@@ -172,6 +172,7 @@ mod __validator_impl {
             tables: "{\"schemas\":[{\"count\":3,\"first\":0,\"pointer\":\"\"}],\"units\":[{\"keyword\":\"type\",\"not_of_type\":0},{\"direct\":0,\"keyword\":\"minLength\"},{\"direct\":1,\"keyword\":\"maxLength\"}]}",
             matchers: &[],
             valid: &[],
+            guards: &[],
             discriminators: &[],
             not_of_type: &[__not_of_type_0],
             direct: &[__direct_1, __direct_2],

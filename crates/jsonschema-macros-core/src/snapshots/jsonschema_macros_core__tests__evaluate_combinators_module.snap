@@ -433,6 +433,7 @@ mod __validator_impl {
             tables: "{\"schemas\":[{\"count\":5,\"first\":5,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/allOf/0\"},{\"count\":1,\"first\":1,\"pointer\":\"/anyOf/0\"},{\"count\":1,\"first\":2,\"pointer\":\"/anyOf/1\"},{\"count\":1,\"first\":3,\"pointer\":\"/if\"},{\"count\":1,\"first\":4,\"pointer\":\"/then\"}],\"tuples\":[1,2,3],\"units\":[{\"direct\":0,\"keyword\":\"minimum\"},{\"keyword\":\"type\",\"not_of_type\":0},{\"direct\":1,\"keyword\":\"minimum\"},{\"keyword\":\"type\",\"not_of_type\":0},{\"direct\":2,\"keyword\":\"maximum\"},{\"branches\":[0,1],\"keyword\":\"allOf\",\"valid\":null},{\"branches\":[1,2],\"keyword\":\"anyOf\",\"valid\":0},{\"direct\":3,\"keyword\":\"not\"},{\"condition\":[4,2],\"keyword\":\"if\"},{\"branch\":5,\"keyword\":\"then\"}]}",
             matchers: &[],
             valid: &[__valid_0, __valid_1, __valid_2],
+            guards: &[],
             discriminators: &[],
             not_of_type: &[__not_of_type_1],
             direct: &[__direct_0, __direct_2, __direct_3, __direct_4],
