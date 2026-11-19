@@ -63,6 +63,7 @@
 ### Performance
 
 - Fewer allocations per subschema when building a validator.
+- Linear-time `validate` and `iter_errors` for recursive schemas that reach one member through several keywords, such as `properties` and a matching `patternProperties`.
 - Faster expansion of `#[jsonschema::validator]` for schemas with many `$ref`s, without copying each referenced schema.
 - Faster release builds and smaller binaries for `#[jsonschema::validator]`, with subschema checks no longer forced inline.
 - Faster compilation of `#[jsonschema::validator]` output, with `validate` and `iter_errors` sharing one generated error function per subschema.

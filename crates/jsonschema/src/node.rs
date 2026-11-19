@@ -437,14 +437,29 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
             PendingTarget::Strong(node) => return node.validate(instance, location, tracker, ctx),
             PendingTarget::Weak(target) => target,
         };
+        let node_id = target.node_id();
         let identity = instance.identity();
-        if ctx.enter::<F>(target.node_id(), identity) {
+        if ctx.enter::<F>(node_id, identity) {
             return Ok(());
         }
-        let result = target
-            .materialize()
-            .validate(instance, location, tracker, ctx);
-        ctx.exit::<F>(target.node_id(), identity);
+        let result = match instance.container_identity().filter(|_| F::ACYCLIC) {
+            Some(container) => {
+                if ctx.reports_nothing(node_id, container) {
+                    Ok(())
+                } else {
+                    let visit = ctx.start_errors_visit();
+                    let result = target
+                        .materialize()
+                        .validate(instance, location, tracker, ctx);
+                    ctx.finish_errors_visit(visit, node_id, container, result.is_ok());
+                    result
+                }
+            }
+            None => target
+                .materialize()
+                .validate(instance, location, tracker, ctx),
+        };
+        ctx.exit::<F>(node_id, identity);
         result
     }
 
@@ -462,14 +477,27 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
             }
             PendingTarget::Weak(target) => target,
         };
+        let node_id = target.node_id();
         let identity = instance.identity();
-        if ctx.enter::<F>(target.node_id(), identity) {
+        if ctx.enter::<F>(node_id, identity) {
             return;
         }
-        target
-            .materialize()
-            .collect_errors(instance, location, tracker, ctx, errors);
-        ctx.exit::<F>(target.node_id(), identity);
+        match instance.container_identity().filter(|_| F::ACYCLIC) {
+            Some(container) => {
+                if !ctx.reports_nothing(node_id, container) {
+                    let visit = ctx.start_errors_visit();
+                    let reported = errors.len();
+                    target
+                        .materialize()
+                        .collect_errors(instance, location, tracker, ctx, errors);
+                    ctx.finish_errors_visit(visit, node_id, container, errors.len() == reported);
+                }
+            }
+            None => target
+                .materialize()
+                .collect_errors(instance, location, tracker, ctx, errors),
+        }
+        ctx.exit::<F>(node_id, identity);
     }
 
     fn evaluate(
