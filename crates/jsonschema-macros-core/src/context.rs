@@ -233,6 +233,18 @@ pub(crate) struct CodegenConfig {
     pub(crate) methods: MethodGates,
 }
 
+/// What the results of `$ref` cycles are kept by.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum RefResultsKey {
+    /// The target and the instance.
+    Instance,
+    /// Also the dynamic scope, which `$recursiveRef` and `$dynamicRef` make a result depend on.
+    InstanceAndScope {
+        /// The calls keeping their results.
+        calls: usize,
+    },
+}
+
 /// Mutable compilation state threaded through all `compile_*` calls.
 pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     backend: std::marker::PhantomData<E>,
@@ -286,6 +298,10 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) target_locations: HashMap<usize, Vec<String>>,
     /// `$ref` targets in cycles that come back to the instance they hold.
     pub(crate) same_instance_ref_targets: HashSet<String>,
+    /// What the results of `$ref` cycles are kept by.
+    pub(crate) ref_results_key: RefResultsKey,
+    /// The dynamic-scope stacks references in validity code look up, by name.
+    pub(crate) looked_up_stacks: BTreeSet<String>,
     pub(crate) uri_format_caches: BTreeSet<UriFormatCache>,
     /// JSON Pointer tracking the current position in the schema document, embedded into the
     /// generated error constructors.
@@ -307,6 +323,14 @@ fn find_vocabularies(
 }
 
 impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
+    /// Whether the generated code keeps the results of `$ref` cycles for the run.
+    pub(crate) fn keeps_ref_results(&self) -> bool {
+        match self.ref_results_key {
+            RefResultsKey::Instance => !self.revisited_ref_targets.is_empty(),
+            RefResultsKey::InstanceAndScope { calls } => calls > 0,
+        }
+    }
+
     pub(crate) fn new(config: &'cfg CodegenConfig) -> Self {
         let (vocabularies, undeclared_vocabulary) =
             find_vocabularies(config, config.draft, &config.schema);
@@ -344,6 +368,8 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             reentered_targets: HashSet::new(),
             target_locations: HashMap::new(),
             same_instance_ref_targets: HashSet::new(),
+            ref_results_key: RefResultsKey::Instance,
+            looked_up_stacks: BTreeSet::new(),
             uri_format_caches: BTreeSet::new(),
             schema_path: String::new(),
         }

@@ -2916,7 +2916,8 @@ pub mod generated {
     /// How a reference reaches its target.
     #[derive(Clone, Copy)]
     enum Through {
-        /// The dynamic scope, whose code guards every entry.
+        /// The dynamic scope, to another schema than its static target, whose code guards every
+        /// entry.
         Scope,
         /// Statically, into the code at that index of `Built::functions`.
         Function(usize),
@@ -3151,14 +3152,15 @@ pub mod generated {
                         recursive,
                     } => {
                         let caller = built.schema_resources[index];
-                        let (target, pushed) =
+                        let (landed, pushed) =
                             self.resolve(target, leaves, anchor.as_deref(), recursive, caller);
-                        let through = if anchor.is_some() || recursive {
-                            Through::Scope
-                        } else {
+                        // Landing on its static target, it is the static reference.
+                        let through = if landed == target {
                             Through::Function(function)
+                        } else {
+                            Through::Scope
                         };
-                        self.reference(site, target, through, pushed, instance, location, position)
+                        self.reference(site, landed, through, pushed, instance, location, position)
                     }
                     Kind::Branch { schema, then } => {
                         if passed != then {

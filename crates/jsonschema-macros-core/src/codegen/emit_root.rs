@@ -1,13 +1,14 @@
 use crate::codegen::emit::ValueEmitter;
 use proc_macro2::{Ident, TokenStream};
 use quote::{format_ident, quote};
+use std::collections::BTreeSet;
 
-use crate::context::{CompileContext, PatternEngineConfig};
+use crate::context::{CompileContext, PatternEngineConfig, RefResultsKey};
 
 use super::{
     helpers::DynamicAnchorBinding,
     stack_emit::{
-        pop_dynamic_errors_n, pop_dynamic_is_valid_n, pop_dynamic_item_eval_n,
+        dynamic_scope_fn, pop_dynamic_errors_n, pop_dynamic_is_valid_n, pop_dynamic_item_eval_n,
         pop_dynamic_key_eval_n, pop_recursive_errors, pop_recursive_is_valid,
         pop_recursive_item_eval, pop_recursive_key_eval, push_dynamic_errors,
         push_dynamic_is_valid, push_dynamic_item_eval, push_dynamic_key_eval,
@@ -27,7 +28,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     evaluation_body: Option<&TokenStream>,
     recursive_stack_needed: bool,
     dynamic_stack_needed: bool,
-    root_recursive_anchor: bool,
+    root_recursive_target: Option<&Ident>,
     root_key_eval_ident: Option<&Ident>,
     root_item_eval_ident: Option<&Ident>,
     root_dynamic_bindings: &[DynamicAnchorBinding],
@@ -55,7 +56,8 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     let entry_bodies = E::entry_bodies(methods);
     let evaluation_import =
         evaluation_body.map(|_| quote! { use jsonschema::__private::evaluation as __eval; });
-    let ref_memo_import = (!ctx.revisited_ref_targets.is_empty())
+    let ref_memo_import = ctx
+        .keeps_ref_results()
         .then(|| quote! { use jsonschema::__private::ref_memo as __ref_memo; });
     let evaluate_fn = evaluation_body.map(|body| {
         quote! {
@@ -191,8 +193,11 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             #(#uri_cache_wrappers)*
         }
     };
-    if !ctx.revisited_ref_targets.is_empty() {
-        run_clears.push(quote! { __ref_memo::clear(); });
+    if ctx.keeps_ref_results() {
+        run_clears.push(match ctx.ref_results_key {
+            RefResultsKey::Instance => quote! { __ref_memo::clear(); },
+            RefResultsKey::InstanceAndScope { .. } => quote! { __ref_memo::clear_in_scope(); },
+        });
     }
     let run_clears = quote! { #(#run_clears)* };
 
@@ -394,6 +399,23 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     } else {
         quote! {}
     };
+    // The anchors any resource puts on the dynamic stacks, which are all a lookup can find there.
+    let dynamic_scope = matches!(
+        ctx.ref_results_key,
+        RefResultsKey::InstanceAndScope { calls } if calls > 0
+    )
+    .then(|| {
+        let names: BTreeSet<&str> = ctx
+            .dynamic_anchor_bindings_cache
+            .values()
+            .flatten()
+            .map(|binding| binding.anchor.as_str())
+            .collect();
+        dynamic_scope_fn(
+            &names.into_iter().collect::<Vec<_>>(),
+            &ctx.looked_up_stacks,
+        )
+    });
 
     let root_key_eval_ident = root_key_eval_ident
         .cloned()
@@ -401,9 +423,13 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     let root_item_eval_ident = root_item_eval_ident
         .cloned()
         .unwrap_or_else(|| format_ident!("__unused_root_item_eval"));
+    let root_recursive_anchor = root_recursive_target.is_some();
     let is_valid_ident = format_ident!("is_valid");
     let recursive_push = if recursive_stack_needed {
-        let push_is_valid = push_recursive_is_valid(&is_valid_ident, root_recursive_anchor);
+        let push_is_valid = push_recursive_is_valid(
+            root_recursive_target.unwrap_or(&is_valid_ident),
+            root_recursive_anchor,
+        );
         let push_key = push_recursive_key_eval(&root_key_eval_ident, root_recursive_anchor);
         let push_item = push_recursive_item_eval(&root_item_eval_ident, root_recursive_anchor);
         quote! {
@@ -493,7 +519,10 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
 
     let errors_fns = emit_errors.then(|| {
         // The recursive stack holds error functions reached through a reference at a site.
-        let errors_ident = format_ident!("errors_at");
+        let errors_ident = root_recursive_target.map_or_else(
+            || format_ident!("errors_at"),
+            |target| format_ident!("{target}_errors"),
+        );
         let errors_body = if recursive_stack_needed || dynamic_stack_needed {
             let recursive_errors_push = if recursive_stack_needed {
                 push_recursive_errors(&errors_ident, root_recursive_anchor)
@@ -547,7 +576,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
                 __stop
             }
         };
-        let errors_at = recursive_stack_needed.then(|| {
+        let errors_at = (recursive_stack_needed && !root_recursive_anchor).then(|| {
             quote! {
                 fn errors_at<'__i>(
                     instance: #borrowed_node,
@@ -681,6 +710,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
             #module_prelude
 
             #recursive_stack
+            #dynamic_scope
             #uri_cache_defs
             #(#regex_helpers)*
             #(#branch_helpers)*

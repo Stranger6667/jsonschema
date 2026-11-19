@@ -1195,17 +1195,13 @@ pub(super) fn compile<E: ValueEmitter>(
             entry
         })
         .collect();
-    // References through the dynamic scope enter their targets under guards of their own.
+    // A reference through the dynamic scope landing elsewhere enters there under a guard of its
+    // own; landing on its static target, it enters it as a `$ref` does.
     let entered_statically: HashSet<usize> = tree
         .units
         .iter()
         .filter_map(|unit| match unit {
-            TreeUnit::Ref {
-                function,
-                anchor: None,
-                recursive: false,
-                ..
-            } => Some(*function),
+            TreeUnit::Ref { function, .. } => Some(*function),
             _ => None,
         })
         .collect();

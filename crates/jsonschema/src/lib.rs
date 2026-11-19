@@ -3715,7 +3715,11 @@ pub mod __private {
     /// Results of `$ref` cycles that reach deeper instances, so the keywords that reach one
     /// instance through the same cycle validate it once per run.
     pub mod ref_memo {
-        use std::cell::{Cell, RefCell};
+        use std::{
+            cell::{Cell, RefCell},
+            hash::Hash,
+            thread::LocalKey,
+        };
 
         use ahash::AHashMap;
 
@@ -3724,17 +3728,40 @@ pub mod __private {
             validator::MEMO_MIN_VISITS,
         };
 
+        type Results<K> = RefCell<Option<AHashMap<K, bool>>>;
+
         std::thread_local! {
             /// Targets computed so far; a call's share of it decides whether its result is kept.
             static VISITS: Cell<u32> = const { Cell::new(0) };
-            static RESULTS: RefCell<Option<AHashMap<(usize, NodeIdentity), bool>>> =
+            static RESULTS: Results<(usize, NodeIdentity)> = const { RefCell::new(None) };
+            /// Results under a dynamic scope, by the scope's entry in `SCOPES`.
+            static SCOPED_RESULTS: Results<(usize, usize, NodeIdentity)> =
                 const { RefCell::new(None) };
+            /// The dynamic scopes seen on this thread. Code addresses stay fixed, so an identity
+            /// holds across runs.
+            static SCOPES: RefCell<Option<Scopes>> = const { RefCell::new(None) };
+        }
+
+        /// Each dynamic scope's identity, by the code it binds the looked-up names to.
+        #[derive(Default)]
+        struct Scopes {
+            identities: AHashMap<Box<[usize]>, usize>,
+            /// The bindings of each identity.
+            bindings: Vec<Box<[usize]>>,
+            /// The identity given last, which nested calls in one scope ask for again.
+            last: usize,
         }
 
         /// Drops the results of the previous run on this thread.
         #[inline]
         pub fn clear() {
             RESULTS.with_borrow_mut(Option::take);
+        }
+
+        /// Drops the results [`is_valid_in_scope`] kept in the previous run on this thread.
+        #[inline]
+        pub fn clear_in_scope() {
+            SCOPED_RESULTS.with_borrow_mut(Option::take);
         }
 
         /// `target(instance)`, computed once per container once it costs enough to keep.
@@ -3746,16 +3773,68 @@ pub mod __private {
             let Some(identity) = instance.container_identity() else {
                 return target(instance);
             };
-            let key = (target as usize, identity);
-            if let Some(valid) = RESULTS.with_borrow(|results| results.as_ref()?.get(&key).copied())
+            kept(&RESULTS, (target as usize, identity), || target(instance))
+        }
+
+        /// [`is_valid`] for a target whose result depends on the dynamic scope: `scope` gives the
+        /// scope's identity, so a result is kept for the scope it was computed in.
+        #[inline]
+        pub fn is_valid_in_scope<'a, F: Json>(
+            target: fn(F::Node<'a>) -> bool,
+            instance: F::Node<'a>,
+            scope: fn() -> usize,
+        ) -> bool {
+            let Some(identity) = instance.container_identity() else {
+                return target(instance);
+            };
+            kept(
+                &SCOPED_RESULTS,
+                (target as usize, scope(), identity),
+                || target(instance),
+            )
+        }
+
+        /// The identity of the dynamic scope binding the names references look up to `bindings`,
+        /// the addresses of the code bound to each, or `0` where none is.
+        #[must_use]
+        #[inline]
+        pub fn scope<const N: usize>(bindings: &[usize; N]) -> usize {
+            SCOPES.with_borrow_mut(|scopes| {
+                let scopes = scopes.get_or_insert_with(Scopes::default);
+                if scopes.bindings.get(scopes.last).is_some_and(|last| {
+                    last.len() == N && last.iter().zip(bindings).all(|(last, bound)| last == bound)
+                }) {
+                    return scopes.last;
+                }
+                let scope = if let Some(&scope) = scopes.identities.get(&bindings[..]) {
+                    scope
+                } else {
+                    let scope = scopes.bindings.len();
+                    scopes.identities.insert(bindings[..].into(), scope);
+                    scopes.bindings.push(bindings[..].into());
+                    scope
+                };
+                scopes.last = scope;
+                scope
+            })
+        }
+
+        /// The kept result under `key`, or `compute`'s, kept once it costs enough.
+        #[inline]
+        fn kept<K: Hash + Eq>(
+            results: &'static LocalKey<Results<K>>,
+            key: K,
+            compute: impl FnOnce() -> bool,
+        ) -> bool {
+            if let Some(valid) = results.with_borrow(|results| results.as_ref()?.get(&key).copied())
             {
                 return valid;
             }
             let visit = VISITS.get();
             VISITS.set(visit.wrapping_add(1));
-            let valid = target(instance);
+            let valid = compute();
             if VISITS.get().wrapping_sub(visit) >= MEMO_MIN_VISITS {
-                RESULTS.with_borrow_mut(|results| {
+                results.with_borrow_mut(|results| {
                     results.get_or_insert_with(AHashMap::new).insert(key, valid);
                 });
             }
