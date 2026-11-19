@@ -8,37 +8,98 @@ use serde::{
 use std::{
     borrow::Cow,
     fmt,
-    sync::{Arc, OnceLock},
+    sync::{Arc, LazyLock, OnceLock},
 };
 
 /// Annotations associated with an output unit.
-#[derive(Debug, Clone, PartialEq)]
-pub struct Annotations(Arc<serde_json::Value>);
+#[derive(Clone)]
+pub struct Annotations(Arc<AnnotationsValue>);
+
+enum AnnotationsValue {
+    Value(serde_json::Value),
+    /// An array of names the schema declares, built into a value when it is read.
+    #[cfg(feature = "macros")]
+    Names {
+        names: Box<[&'static str]>,
+        value: OnceLock<serde_json::Value>,
+    },
+}
+
+#[cfg(feature = "macros")]
+fn names_value(names: &[&'static str]) -> serde_json::Value {
+    serde_json::Value::Array(
+        names
+            .iter()
+            .map(|name| serde_json::Value::String((*name).to_owned()))
+            .collect(),
+    )
+}
 
 impl Annotations {
     /// Create a new `Annotations` instance.
     #[must_use]
     pub(crate) fn new(v: serde_json::Value) -> Self {
-        Annotations(Arc::new(v))
+        Annotations(Arc::new(AnnotationsValue::Value(v)))
     }
 
-    /// Create a new `Annotations` instance from an Arc.
+    /// `value`, shared by every annotation of it.
     #[must_use]
-    pub(crate) fn from_arc(v: Arc<serde_json::Value>) -> Self {
-        Annotations(v)
+    pub(crate) fn boolean(value: bool) -> Self {
+        static TRUE: LazyLock<Annotations> =
+            LazyLock::new(|| Annotations::new(serde_json::Value::Bool(true)));
+        static FALSE: LazyLock<Annotations> =
+            LazyLock::new(|| Annotations::new(serde_json::Value::Bool(false)));
+        if value {
+            TRUE.clone()
+        } else {
+            FALSE.clone()
+        }
+    }
+
+    /// An array of `names`.
+    #[cfg(feature = "macros")]
+    #[must_use]
+    pub(crate) fn names(names: Box<[&'static str]>) -> Self {
+        Annotations(Arc::new(AnnotationsValue::Names {
+            names,
+            value: OnceLock::new(),
+        }))
     }
 
     /// Returns the inner [`serde_json::Value`] of the annotation.
     #[inline]
     #[must_use]
     pub fn into_inner(self) -> serde_json::Value {
-        Arc::try_unwrap(self.0).unwrap_or_else(|arc| (*arc).clone())
+        match Arc::try_unwrap(self.0) {
+            Ok(AnnotationsValue::Value(value)) => value,
+            #[cfg(feature = "macros")]
+            Ok(AnnotationsValue::Names { names, value }) => {
+                value.into_inner().unwrap_or_else(|| names_value(&names))
+            }
+            Err(shared) => Annotations(shared).value().clone(),
+        }
     }
 
     /// The `serde_json::Value` of the annotation.
     #[must_use]
     pub fn value(&self) -> &serde_json::Value {
-        &self.0
+        match &*self.0 {
+            AnnotationsValue::Value(value) => value,
+            #[cfg(feature = "macros")]
+            AnnotationsValue::Names { names, value } => value.get_or_init(|| names_value(names)),
+        }
+    }
+}
+
+impl fmt::Debug for Annotations {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        f.debug_tuple("Annotations").field(self.value()).finish()
+    }
+}
+
+impl PartialEq for Annotations {
+    fn eq(&self, other: &Self) -> bool {
+        self.value() == other.value()
     }
 }
 
@@ -47,7 +108,14 @@ impl serde::Serialize for Annotations {
     where
         S: serde::Serializer,
     {
-        self.0.serialize(serializer)
+        match &*self.0 {
+            AnnotationsValue::Value(value) => value.serialize(serializer),
+            #[cfg(feature = "macros")]
+            AnnotationsValue::Names { names, value } => match value.get() {
+                Some(value) => value.serialize(serializer),
+                None => names.serialize(serializer),
+            },
+        }
     }
 }
 
@@ -1808,7 +1876,7 @@ pub mod generated {
         aliases: Vec<Location>,
         /// Its index among `Built::units`, then `Built::schemas`.
         site: usize,
-        annotations: Option<Arc<Value>>,
+        annotations: Option<Annotations>,
         /// The annotations apply to string instances only.
         strings_only: bool,
         kind: Kind,
@@ -1997,7 +2065,7 @@ pub mod generated {
         /// The evaluation of `instance`, which the schema reports `errors` for: each unit fails
         /// with the errors reported at its location, or with its own ones when `checks`.
         fn walk(
-            &self,
+            &'static self,
             instance: &F::Node<'_>,
             errors: &[ValidationError<'_>],
             checks: bool,
@@ -2060,7 +2128,7 @@ pub mod generated {
                     absolute,
                     aliases: Vec::new(),
                     site: 0,
-                    annotations: annotations.map(Arc::new),
+                    annotations: annotations.map(Annotations::new),
                     strings_only: false,
                     kind: Kind::Leaf,
                 }
@@ -2238,7 +2306,7 @@ pub mod generated {
     /// with a generated validator.
     pub trait Walk: Json {
         fn evaluate(
-            tree: &Tree<Self>,
+            tree: &'static Tree<Self>,
             instance: &Self::Node<'_>,
             errors: &[ValidationError<'_>],
         ) -> Evaluation;
@@ -2246,7 +2314,7 @@ pub mod generated {
         /// The evaluation of `instance` with every unit reporting its own errors, of which there
         /// are none when the instance is `valid`.
         fn evaluate_reporting(
-            tree: &Tree<Self>,
+            tree: &'static Tree<Self>,
             instance: &Self::Node<'_>,
             valid: bool,
         ) -> Evaluation {
@@ -2256,7 +2324,7 @@ pub mod generated {
 
     impl Walk for crate::SerdeJson {
         fn evaluate(
-            tree: &Tree<Self>,
+            tree: &'static Tree<Self>,
             instance: &Self::Node<'_>,
             errors: &[ValidationError<'_>],
         ) -> Evaluation {
@@ -2267,7 +2335,7 @@ pub mod generated {
     #[cfg(feature = "pyo3")]
     impl Walk for crate::json::Pyo3 {
         fn evaluate(
-            tree: &Tree<Self>,
+            tree: &'static Tree<Self>,
             instance: &Self::Node<'_>,
             errors: &[ValidationError<'_>],
         ) -> Evaluation {
@@ -2278,7 +2346,7 @@ pub mod generated {
     #[cfg(feature = "magnus")]
     impl Walk for crate::json::Magnus {
         fn evaluate(
-            tree: &Tree<Self>,
+            tree: &'static Tree<Self>,
             instance: &Self::Node<'_>,
             errors: &[ValidationError<'_>],
         ) -> Evaluation {
@@ -2287,7 +2355,7 @@ pub mod generated {
     }
 
     struct Walker<'t, 'e, 'i, F: Json> {
-        built: &'t Built,
+        built: &'static Built,
         matchers: &'t [Matcher],
         valid: &'t [Validity<F>],
         discriminators: &'t [Candidates<F>],
@@ -2831,13 +2899,13 @@ pub mod generated {
             for (index, value) in matched {
                 let (name, schema) = &declared[index];
                 let schema = *schema;
-                names.push(Value::String(name.clone()));
+                names.push(name.as_str());
                 let path = location.push(name);
                 let below = self.arena.position_below(position, path.segment());
                 let child = self.schema(schema, &value, &path, below);
                 children.push(&mut self.arena, child);
             }
-            let annotations = Some(Annotations::new(Value::Array(names)));
+            let annotations = Some(Annotations::names(names.into_boxed_slice()));
             self.node(site, Vec::new(), annotations, children, position)
         }
 
@@ -3090,7 +3158,7 @@ pub mod generated {
                 };
                 children.push(&mut self.arena, child);
             }
-            let annotation = Annotations::new(Value::Bool(array.len() > skip));
+            let annotation = Annotations::boolean(array.len() > skip);
             self.node(site, Vec::new(), Some(annotation), children, position)
         }
 
@@ -3490,7 +3558,6 @@ pub mod generated {
             self.annotations
                 .clone()
                 .filter(|_| string || !self.strings_only)
-                .map(Annotations::from_arc)
         }
     }
 }

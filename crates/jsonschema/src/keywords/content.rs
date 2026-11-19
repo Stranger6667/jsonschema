@@ -12,7 +12,7 @@ use crate::{
     Json, LazyInstance, Node,
 };
 use serde_json::{Map, Value};
-use std::{borrow::Cow, sync::Arc};
+use std::borrow::Cow;
 
 /// Validator for `contentMediaType` keyword.
 pub(crate) struct ContentMediaTypeValidator {
@@ -307,7 +307,7 @@ pub(crate) fn compile_content_encoding<'a, F: Json>(
 ///
 /// Per spec, annotations are only produced for string instances.
 pub(crate) struct ContentMediaTypeAnnotationValidator {
-    annotation: Arc<Value>,
+    annotation: Annotations,
 }
 
 impl ContentMediaTypeAnnotationValidator {
@@ -318,7 +318,7 @@ impl ContentMediaTypeAnnotationValidator {
     ) -> Option<CompilationResult<'a, F>> {
         if let Value::String(_) = subschema {
             Some(Ok(Box::new(ContentMediaTypeAnnotationValidator {
-                annotation: Arc::new(subschema.clone()),
+                annotation: Annotations::new(subschema.clone()),
             })))
         } else {
             None
@@ -350,7 +350,7 @@ impl<F: Json> Validate<F> for ContentMediaTypeAnnotationValidator {
     ) -> EvaluationResult {
         if instance.is_string() {
             let mut result = EvaluationResult::valid_empty();
-            result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+            result.annotate(self.annotation.clone());
             result
         } else {
             EvaluationResult::valid_empty()
@@ -370,7 +370,7 @@ pub(crate) fn compile_media_type_annotation<'a, F: Json>(
 ///
 /// Per spec, annotations are only produced for string instances.
 pub(crate) struct ContentEncodingAnnotationValidator {
-    annotation: Arc<Value>,
+    annotation: Annotations,
 }
 
 impl ContentEncodingAnnotationValidator {
@@ -381,7 +381,7 @@ impl ContentEncodingAnnotationValidator {
     ) -> Option<CompilationResult<'a, F>> {
         if let Value::String(_) = subschema {
             Some(Ok(Box::new(ContentEncodingAnnotationValidator {
-                annotation: Arc::new(subschema.clone()),
+                annotation: Annotations::new(subschema.clone()),
             })))
         } else {
             None
@@ -413,7 +413,7 @@ impl<F: Json> Validate<F> for ContentEncodingAnnotationValidator {
     ) -> EvaluationResult {
         if instance.is_string() {
             let mut result = EvaluationResult::valid_empty();
-            result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+            result.annotate(self.annotation.clone());
             result
         } else {
             EvaluationResult::valid_empty()
@@ -434,7 +434,7 @@ pub(crate) fn compile_content_encoding_annotation<'a, F: Json>(
 /// Per spec, the annotation is only produced when the instance is a string AND
 /// `contentMediaType` is also present in the same schema object.
 pub(crate) struct ContentSchemaAnnotationValidator {
-    annotation: Arc<Value>,
+    annotation: Annotations,
 }
 
 impl ContentSchemaAnnotationValidator {
@@ -446,7 +446,7 @@ impl ContentSchemaAnnotationValidator {
         // contentSchema only annotates when contentMediaType is also present
         if schema.contains_key("contentMediaType") {
             Some(Ok(Box::new(ContentSchemaAnnotationValidator {
-                annotation: Arc::new(subschema.clone()),
+                annotation: Annotations::new(subschema.clone()),
             })))
         } else {
             None
@@ -478,7 +478,7 @@ impl<F: Json> Validate<F> for ContentSchemaAnnotationValidator {
     ) -> EvaluationResult {
         if instance.is_string() {
             let mut result = EvaluationResult::valid_empty();
-            result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+            result.annotate(self.annotation.clone());
             result
         } else {
             EvaluationResult::valid_empty()

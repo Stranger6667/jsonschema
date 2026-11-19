@@ -1,6 +1,7 @@
 use crate::{
     content_encoding::{ContentEncodingCheckType, ContentEncodingConverterType},
     content_media_type::ContentMediaTypeCheckType,
+    evaluation::Annotations,
     keywords::{
         self,
         custom::{CustomKeyword, KeywordFactory},
@@ -1832,7 +1833,7 @@ fn compile_without_cache<'a, F: Json>(
             let annotations = if annotations.is_empty() {
                 None
             } else {
-                Some(Arc::new(Value::Object(annotations)))
+                Some(Annotations::new(Value::Object(annotations)))
             };
             Ok(SchemaNode::from_keywords(
                 ctx,

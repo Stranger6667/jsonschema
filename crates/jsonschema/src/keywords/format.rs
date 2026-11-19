@@ -1186,7 +1186,7 @@ pub fn is_valid_fancy_regex_engine_regex(
     )
 }
 
-/// Implements `evaluate()` for format validators that have an `annotation: Arc<Value>` field.
+/// Implements `evaluate()` for format validators that have an `annotation: Annotations` field.
 ///
 /// Per spec §7.2.1 and §7.2.2, the format value MUST be collected as an annotation
 /// regardless of whether the assertion passes or fails.
@@ -1221,7 +1221,7 @@ macro_rules! impl_format_evaluate {
             } else {
                 EvaluationResult::invalid_empty(errors)
             };
-            result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+            result.annotate(self.annotation.clone());
             result
         }
     };
@@ -1233,14 +1233,14 @@ macro_rules! format_validators {
             $(#[$meta])*
             struct $validator {
                 location: Location,
-                annotation: Arc<Value>,
+                annotation: Annotations,
             }
 
             $(#[$meta])*
             impl $validator {
                 pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
                     let location = ctx.location().join("format");
-                    let annotation = Arc::new(Value::String($format.to_owned()));
+                    let annotation = Annotations::new(Value::String($format.to_owned()));
                     Ok(Box::new($validator { location, annotation }))
                 }
             }
@@ -1321,14 +1321,14 @@ format_validators!(
 // Custom RegexValidator that caches ECMA regex transformation results in ValidationContext
 struct RegexValidator {
     location: Location,
-    annotation: Arc<Value>,
+    annotation: Annotations,
     pattern_options: PatternEngineOptions,
 }
 
 impl RegexValidator {
     pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
-        let annotation = Arc::new(Value::String("regex".to_owned()));
+        let annotation = Annotations::new(Value::String("regex".to_owned()));
         Ok(Box::new(RegexValidator {
             location,
             annotation,
@@ -1374,14 +1374,14 @@ impl<F: Json> Validate<F> for RegexValidator {
 // Custom EmailValidator that supports email options
 struct EmailValidator {
     location: Location,
-    annotation: Arc<Value>,
+    annotation: Annotations,
     email_options: Option<EmailAddressOptions>,
 }
 
 impl EmailValidator {
     pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
-        let annotation = Arc::new(Value::String("email".to_owned()));
+        let annotation = Annotations::new(Value::String("email".to_owned()));
         let email_options = ctx.config().email_options().copied();
         Ok(Box::new(EmailValidator {
             location,
@@ -1426,7 +1426,7 @@ impl<F: Json> Validate<F> for EmailValidator {
 #[cfg(feature = "idna")]
 struct IdnEmailValidator {
     location: Location,
-    annotation: Arc<Value>,
+    annotation: Annotations,
     email_options: Option<EmailAddressOptions>,
 }
 
@@ -1434,7 +1434,7 @@ struct IdnEmailValidator {
 impl IdnEmailValidator {
     pub(crate) fn compile<'a, F: Json>(ctx: &compiler::Context<F>) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
-        let annotation = Arc::new(Value::String("idn-email".to_owned()));
+        let annotation = Annotations::new(Value::String("idn-email".to_owned()));
         let email_options = ctx.config().email_options().copied();
         Ok(Box::new(IdnEmailValidator {
             location,
@@ -1478,7 +1478,7 @@ impl<F: Json> Validate<F> for IdnEmailValidator {
 
 struct CustomFormatValidator {
     location: Location,
-    annotation: Arc<Value>,
+    annotation: Annotations,
     format_name: String,
     check: Arc<dyn Format>,
 }
@@ -1489,7 +1489,7 @@ impl CustomFormatValidator {
         check: Arc<dyn Format>,
     ) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
-        let annotation = Arc::new(Value::String(format_name.clone()));
+        let annotation = Annotations::new(Value::String(format_name.clone()));
         Ok(Box::new(CustomFormatValidator {
             location,
             annotation,
@@ -1535,7 +1535,7 @@ impl<F: Json> Validate<F> for CustomFormatValidator {
 ///
 /// Always validates successfully but emits the required annotation per spec §7.2.1.
 struct AnnotationOnlyFormatValidator {
-    annotation: Arc<Value>,
+    annotation: Annotations,
 }
 
 impl<F: Json> Validate<F> for AnnotationOnlyFormatValidator {
@@ -1574,7 +1574,7 @@ impl<F: Json> Validate<F> for AnnotationOnlyFormatValidator {
             return EvaluationResult::valid_empty();
         }
         let mut result = EvaluationResult::valid_empty();
-        result.annotate(Annotations::from_arc(Arc::clone(&self.annotation)));
+        result.annotate(self.annotation.clone());
         result
     }
 }
@@ -1842,7 +1842,7 @@ pub(crate) fn compile<'a, F: Json>(
         } else {
             // Format validation disabled: annotation-only per spec §7.2.1
             Some(Ok(Box::new(AnnotationOnlyFormatValidator {
-                annotation: Arc::new(Value::String(format.clone())),
+                annotation: Annotations::new(Value::String(format.clone())),
             })))
         }
     } else {

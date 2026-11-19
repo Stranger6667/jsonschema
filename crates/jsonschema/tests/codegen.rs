@@ -7423,6 +7423,63 @@ fn test_evaluate_matches_runtime_with_many_errors_beside_dependencies() {
     );
 }
 
+#[jsonschema::validator(schema = r#"{"properties": {"a": true, "b": {"type": "integer"}}}"#, methods = { evaluate = true })]
+struct EvaluatePropertiesAnnotation;
+
+// The names `properties` annotates read the same however the annotation is first used.
+#[test]
+fn test_evaluate_properties_annotation_matches_runtime() {
+    let runtime = jsonschema::validator_for(
+        &serde_json::json!({"properties": {"a": true, "b": {"type": "integer"}}}),
+    )
+    .expect("valid schema");
+    let instance = serde_json::json!({"a": 1, "b": 2, "c": 3});
+    let names = serde_json::json!(["a", "b"]);
+    let runtime_evaluation = runtime.evaluate(&instance);
+    let expected: Vec<_> = runtime_evaluation
+        .iter_annotations()
+        .map(|entry| entry.annotations)
+        .collect();
+
+    let evaluation = EvaluatePropertiesAnnotation::evaluate(&instance);
+    let serialized: Vec<_> = evaluation
+        .iter_annotations()
+        .map(|entry| entry.annotations)
+        .collect();
+    assert_eq!(
+        serde_json::to_value(&serialized).expect("serializable"),
+        serde_json::to_value(&expected).expect("serializable")
+    );
+
+    let evaluation = EvaluatePropertiesAnnotation::evaluate(&instance);
+    let compared: Vec<_> = evaluation
+        .iter_annotations()
+        .map(|entry| entry.annotations.clone())
+        .collect();
+    assert_eq!(compared.iter().collect::<Vec<_>>(), expected);
+    assert_eq!(
+        format!("{:?}", compared.iter().collect::<Vec<_>>()),
+        format!("{expected:?}")
+    );
+    let shared = compared.clone();
+    let while_shared: Vec<_> = compared
+        .into_iter()
+        .map(jsonschema::output::Annotations::into_inner)
+        .collect();
+    assert_eq!(while_shared, std::slice::from_ref(&names));
+    let once_unique: Vec<_> = shared
+        .into_iter()
+        .map(jsonschema::output::Annotations::into_inner)
+        .collect();
+    assert_eq!(once_unique, std::slice::from_ref(&names));
+
+    let unread: Vec<_> = EvaluatePropertiesAnnotation::evaluate(&instance)
+        .iter_annotations()
+        .map(|entry| entry.annotations.clone().into_inner())
+        .collect();
+    assert_eq!(unread, [names]);
+}
+
 fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validator) {
     for instance in [
         serde_json::json!(null),

@@ -123,7 +123,7 @@ fn evaluate_each_item<F: Json>(
         children.push(ctx.arena(), child);
     }
     let mut result = EvaluationResult::from_children(children);
-    result.annotate(Annotations::new(serde_json::json!(array.len() != 0)));
+    result.annotate(Annotations::boolean(array.len() != 0));
     result
 }
 
@@ -289,7 +289,7 @@ impl<F: Json> Validate<F> for ItemsObjectSkipPrefixValidator<F> {
             }
             let schema_was_applied = array.len() > self.skip_prefix;
             let mut result = EvaluationResult::from_children(children);
-            result.annotate(Annotations::new(serde_json::json!(schema_was_applied)));
+            result.annotate(Annotations::boolean(schema_was_applied));
             result
         } else {
             EvaluationResult::valid_empty()
@@ -553,7 +553,7 @@ impl<T: ItemType, F: Json> Validate<F> for ItemsTypeValidator<T, F> {
             children.push(ctx.arena(), child);
         }
         let mut result = EvaluationResult::from_children(children);
-        result.annotate(Annotations::new(serde_json::json!(array.len() != 0)));
+        result.annotate(Annotations::boolean(array.len() != 0));
         result
     }
 }

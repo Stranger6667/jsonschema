@@ -97,9 +97,7 @@ impl<F: Json> Validate<F> for AdditionalItemsObjectValidator<F> {
             children.push(ctx.arena(), child);
         }
         let mut result = EvaluationResult::from_children(children);
-        result.annotate(Annotations::new(Value::Bool(
-            array.len() > self.items_count,
-        )));
+        result.annotate(Annotations::boolean(array.len() > self.items_count));
         result
     }
 }
@@ -168,9 +166,7 @@ impl<F: Json> Validate<F> for AdditionalItemsBooleanValidator {
             children.push(ctx.arena(), node);
         }
         let mut result = EvaluationResult::from_children(children);
-        result.annotate(Annotations::new(Value::Bool(
-            array.len() > self.items_count,
-        )));
+        result.annotate(Annotations::boolean(array.len() > self.items_count));
         result
     }
 }
