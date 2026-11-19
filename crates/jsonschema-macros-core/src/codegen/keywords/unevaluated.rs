@@ -58,6 +58,7 @@ fn compile_branch_guard<E: ValueEmitter>(
     let func_name = get_or_create_is_valid_fn_with(
         ctx,
         &location,
+        0,
         subschema,
         ctx.current_base_uri.clone(),
         compile_guard_validity,

@@ -93,6 +93,7 @@ pub(crate) fn collect_dynamic_anchor_bindings<E: ValueEmitter>(
                 let is_valid_name = get_or_create_is_valid_fn(
                     ctx,
                     &resolved.location,
+                    resolved.resource_start,
                     resolved.schema,
                     resolved.base_uri.clone(),
                 );
@@ -309,14 +310,23 @@ fn index_anchors(value: &Value, pointer: &mut String, index: &mut HashMap<usize,
     }
 }
 
-/// Get or create a function for a reference location.
+/// Get or create a function for a reference location. Its pointer enters the resource at
+/// `schema_base_uri` after `resource_start` bytes.
 pub(crate) fn get_or_create_is_valid_fn<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     location: &str,
+    resource_start: usize,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
 ) -> String {
-    get_or_create_is_valid_fn_with(ctx, location, schema, schema_base_uri, compile_schema)
+    get_or_create_is_valid_fn_with(
+        ctx,
+        location,
+        resource_start,
+        schema,
+        schema_base_uri,
+        compile_schema,
+    )
 }
 
 /// The base the runtime locates keywords against, or `None` for the internal default one.
@@ -325,8 +335,9 @@ pub(crate) fn located_base(base: &Uri<String>) -> Option<String> {
 }
 
 /// The errors function `{func_name}_errors` of the subschema at `pointer` in the resource at
-/// `base`: `body` reports its errors relative to it, between `enter` and `leave`, and the runtime
-/// places them below the reference that reaches it.
+/// `base`, which starts `resource_start` bytes into `pointer`: `body` reports its errors relative
+/// to it, between `enter` and `leave`, and the runtime places them below the reference that
+/// reaches it.
 fn errors_fn(
     func_name: &str,
     enter: &TokenStream,
@@ -334,6 +345,7 @@ fn errors_fn(
     body: TokenStream,
     pointer: &str,
     base: Option<&str>,
+    resource_start: usize,
 ) -> ErrorsFn {
     let body_ident = format_ident!("{}_errors_body", func_name);
     let base = base.map_or_else(|| quote! { None }, |base| quote! { Some(#base) });
@@ -343,7 +355,7 @@ fn errors_fn(
             #enter
             let __stop = #body_ident(instance, __path, __errors);
             #leave
-            __errors.reached(__start, #pointer, #base, __site);
+            __errors.reached(__start, #pointer, #base, #resource_start, __site);
             __stop
         },
         body,
@@ -368,6 +380,7 @@ fn recursive_anchor_name<E: ValueEmitter>(
     Some(get_or_create_is_valid_fn(
         ctx,
         &root.location,
+        root.resource_start,
         root.schema,
         root.base_uri,
     ))
@@ -377,6 +390,7 @@ fn recursive_anchor_name<E: ValueEmitter>(
 pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     location: &str,
+    resource_start: usize,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
     compile: impl Fn(&mut CompileContext<'_, E>, &Value) -> crate::codegen::CompiledExpr,
@@ -396,7 +410,8 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
         .or_default()
         .push(location.to_string());
 
-    // Errors inside this helper carry the target's JSON Pointer within its resource.
+    // Errors inside this helper carry the target's JSON Pointer from the document its location
+    // names.
     let ref_schema_path = location_pointer(ctx, location, &schema_base_uri);
 
     let pointer = ref_schema_path.clone();
@@ -528,6 +543,7 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                             quote! { #errors_stmts false },
                             &pointer,
                             base.as_deref(),
+                            resource_start,
                         ),
                     );
                 }
@@ -556,6 +572,7 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                         quote! { #errors_stmts false },
                         &pointer,
                         base.as_deref(),
+                        resource_start,
                     ),
                 );
                 compiled.into_token_stream()

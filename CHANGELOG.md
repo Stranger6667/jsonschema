@@ -32,6 +32,7 @@
 - `#[jsonschema::validator]` `is_valid` taking time exponential in the instance depth on a `$ref` cycle that reaches each nested instance more than once, in a schema with `$recursiveRef` or `$dynamicRef`.
 - `#[jsonschema::validator]` reporting `propertyNames` errors with another kind and in another order than `Validator`, and leaving them out where `additionalProperties: false` beside `patternProperties` rejects the same names.
 - `#[jsonschema::validator]` errors reporting other evaluation paths, absolute keyword locations and schema paths than `Validator`, such as an evaluation path without the `$ref` it went through.
+- `#[jsonschema::validator]` errors reporting absolute keyword locations with the JSON Pointer from the document root instead of from the embedded `$id` resource a `$ref` pointer enters, such as `inner#/$defs/inner/minProperties` instead of `inner#/minProperties`.
 - `#[jsonschema::validator]` reporting errors more than once, accepting other instances than `Validator`, or overflowing the stack on a `$ref` cycle that comes back to the instance it holds, such as a schema referencing itself from both `allOf` and `additionalProperties`.
 - `#[jsonschema::validator]` reading `resources` in the draft of the schema instead of the draft their own `$schema` names, such as the anchors a Draft 4 `id` sets.
 - `evaluate` output for `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.

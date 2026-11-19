@@ -59,7 +59,7 @@ mod __validator_impl {
         }
         let __start = __errors.mark();
         let __stop = validate_ref_1_errors_body(instance, __path, __errors);
-        __errors.reached(__start, "/$defs/value", None, __site);
+        __errors.reached(__start, "/$defs/value", None, 0usize, __site);
         __stop
     }
     fn validate_ref_1_errors_body<'__i>(
@@ -116,7 +116,7 @@ mod __validator_impl {
         }
         let __start = __errors.mark();
         let __stop = validate_ref_0_errors_body(instance, __path, __errors);
-        __errors.reached(__start, "", None, __site);
+        __errors.reached(__start, "", None, 0usize, __site);
         __stop
     }
     fn validate_ref_0_errors_body<'__i>(

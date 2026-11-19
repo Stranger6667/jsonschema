@@ -3431,6 +3431,187 @@ fn test_ref_target_named_in_different_ways_matches_runtime(
     }
 }
 
+// Keywords inside a resource embedded in another one, reached in different ways.
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/cycle","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"root#/$defs/cycle"}],"additionalProperties":{"$ref":"https://example.com/root#/$defs/cycle"}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct PointerIntoResourceCycle;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct PointerBelowResourceRoot;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner/allOf/0","$defs":{"inner":{"$id":"inner","allOf":[{"minProperties":1,"properties":{"p":{"type":"string"}}}]}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct PointerToArrayItemInResource;
+#[jsonschema::validator(
+    schema = r#"{"$id":"https://example.com/root","$ref":"first","$defs":{"first":{"$id":"first","$ref":"root#/$defs/inner/$defs/leaf"},"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"#,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RelativePointerFromAnotherResource;
+#[jsonschema::validator(
+    schema = r#"{"$id":"https://example.com/root","$ref":"first","$defs":{"first":{"$id":"first","$ref":"https://example.com/root#/$defs/inner/$defs/leaf"},"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"#,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct AbsolutePointerFromAnotherResource;
+#[jsonschema::validator(
+    schema = r#"{"$id":"https://example.com/root","$ref":"inner#leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"$anchor":"leaf","minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"#,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct AnchorInResource;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/outer/$defs/inner/$defs/leaf","$defs":{"outer":{"$id":"outer/","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct PointerThroughNestedResources;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/outer","$defs":{"outer":{"$id":"outer/","$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct PointerFromEmbeddedResource;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/a~1b%25/$defs/leaf","$defs":{"a/b%":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct EscapedPointerIntoResource;
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"https://example.com/inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct PointerIntoResourceUnderDefaultBase;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$dynamicRef":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct DynamicRefPointerIntoResource;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}},"unevaluatedProperties":false}}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct UnevaluatedInResourceReachedByPointer;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner","$defs":{"inner":{"$id":"inner","minProperties":1,"properties":{"p":{"$id":"deep","type":"string"}}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct InlineResourceInTargetReachedByPointer;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner/$defs/never","$defs":{"inner":{"$id":"inner","$defs":{"never":false}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct FalseSchemaInResourceReachedByPointer;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner","$defs":{"inner":{"$id":"inner","minProperties":1,"properties":{"a":{"$ref":"#"},"p":{"type":"string"}}}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct ResourceRootFragmentCycle;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","minProperties":1,"properties":{"a":{"$ref":"#/$defs/inner"},"p":{"type":"string"}},"$defs":{"inner":{"$id":"inner","$ref":"root"}}}"##,
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct RootReachedFromResource;
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##,
+    draft = Draft201909,
+    methods = { evaluate = true }
+)]
+struct PointerIntoResourceDraft201909;
+#[jsonschema::validator(
+    schema = r##"{"$id":"https://example.com/root","allOf":[{"$ref":"#/definitions/inner/definitions/leaf"}],"definitions":{"inner":{"$id":"inner","definitions":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##,
+    draft = Draft7,
+    methods = { evaluate = true }
+)]
+struct PointerIntoResourceDraft7;
+#[jsonschema::validator(
+    schema = r##"{"id":"https://example.com/root","allOf":[{"$ref":"#/definitions/inner/definitions/leaf"}],"definitions":{"inner":{"id":"inner","definitions":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##,
+    draft = Draft4,
+    methods = { evaluate = true }
+)]
+struct PointerIntoResourceDraft4;
+
+// Their absolute locations count from the root of that resource, wherever a reference enters it.
+#[test_case(PointerIntoResourceCycle::is_valid, PointerIntoResourceCycle::validate, PointerIntoResourceCycle::iter_errors, PointerIntoResourceCycle::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/cycle","$defs":{"cycle":{"$id":"cycle","minProperties":1,"allOf":[{"$ref":"root#/$defs/cycle"}],"additionalProperties":{"$ref":"https://example.com/root#/$defs/cycle"}}}}"##, Draft::Draft202012, "https://example.com/cycle#/minProperties" ; "pointer_into_resource_cycle")]
+#[test_case(PointerBelowResourceRoot::is_valid, PointerBelowResourceRoot::validate, PointerBelowResourceRoot::iter_errors, PointerBelowResourceRoot::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##, Draft::Draft202012, "https://example.com/inner#/$defs/leaf/minProperties" ; "pointer_below_resource_root")]
+#[test_case(PointerToArrayItemInResource::is_valid, PointerToArrayItemInResource::validate, PointerToArrayItemInResource::iter_errors, PointerToArrayItemInResource::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner/allOf/0","$defs":{"inner":{"$id":"inner","allOf":[{"minProperties":1,"properties":{"p":{"type":"string"}}}]}}}"##, Draft::Draft202012, "https://example.com/inner#/allOf/0/minProperties" ; "pointer_to_array_item_in_resource")]
+#[test_case(RelativePointerFromAnotherResource::is_valid, RelativePointerFromAnotherResource::validate, RelativePointerFromAnotherResource::iter_errors, RelativePointerFromAnotherResource::evaluate, r#"{"$id":"https://example.com/root","$ref":"first","$defs":{"first":{"$id":"first","$ref":"root#/$defs/inner/$defs/leaf"},"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"#, Draft::Draft202012, "https://example.com/inner#/$defs/leaf/minProperties" ; "relative_pointer_from_another_resource")]
+#[test_case(AbsolutePointerFromAnotherResource::is_valid, AbsolutePointerFromAnotherResource::validate, AbsolutePointerFromAnotherResource::iter_errors, AbsolutePointerFromAnotherResource::evaluate, r#"{"$id":"https://example.com/root","$ref":"first","$defs":{"first":{"$id":"first","$ref":"https://example.com/root#/$defs/inner/$defs/leaf"},"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"#, Draft::Draft202012, "https://example.com/inner#/$defs/leaf/minProperties" ; "absolute_pointer_from_another_resource")]
+#[test_case(AnchorInResource::is_valid, AnchorInResource::validate, AnchorInResource::iter_errors, AnchorInResource::evaluate, r#"{"$id":"https://example.com/root","$ref":"inner#leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"$anchor":"leaf","minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"#, Draft::Draft202012, "https://example.com/inner#/$defs/leaf/minProperties" ; "anchor_in_resource")]
+#[test_case(PointerThroughNestedResources::is_valid, PointerThroughNestedResources::validate, PointerThroughNestedResources::iter_errors, PointerThroughNestedResources::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/outer/$defs/inner/$defs/leaf","$defs":{"outer":{"$id":"outer/","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}}}"##, Draft::Draft202012, "https://example.com/outer/inner#/$defs/leaf/minProperties" ; "pointer_through_nested_resources")]
+#[test_case(PointerFromEmbeddedResource::is_valid, PointerFromEmbeddedResource::validate, PointerFromEmbeddedResource::iter_errors, PointerFromEmbeddedResource::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/outer","$defs":{"outer":{"$id":"outer/","$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}}}"##, Draft::Draft202012, "https://example.com/outer/inner#/$defs/leaf/minProperties" ; "pointer_from_embedded_resource")]
+#[test_case(EscapedPointerIntoResource::is_valid, EscapedPointerIntoResource::validate, EscapedPointerIntoResource::iter_errors, EscapedPointerIntoResource::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/a~1b%25/$defs/leaf","$defs":{"a/b%":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##, Draft::Draft202012, "https://example.com/inner#/$defs/leaf/minProperties" ; "escaped_pointer_into_resource")]
+#[test_case(PointerIntoResourceUnderDefaultBase::is_valid, PointerIntoResourceUnderDefaultBase::validate, PointerIntoResourceUnderDefaultBase::iter_errors, PointerIntoResourceUnderDefaultBase::evaluate, r##"{"$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"https://example.com/inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##, Draft::Draft202012, "https://example.com/inner#/$defs/leaf/minProperties" ; "pointer_into_resource_under_default_base")]
+#[test_case(DynamicRefPointerIntoResource::is_valid, DynamicRefPointerIntoResource::validate, DynamicRefPointerIntoResource::iter_errors, DynamicRefPointerIntoResource::evaluate, r##"{"$id":"https://example.com/root","$dynamicRef":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##, Draft::Draft202012, "https://example.com/inner#/$defs/leaf/minProperties" ; "dynamic_ref_pointer_into_resource")]
+#[test_case(UnevaluatedInResourceReachedByPointer::is_valid, UnevaluatedInResourceReachedByPointer::validate, UnevaluatedInResourceReachedByPointer::iter_errors, UnevaluatedInResourceReachedByPointer::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}},"unevaluatedProperties":false}}}}}"##, Draft::Draft202012, "https://example.com/inner#/$defs/leaf/minProperties" ; "unevaluated_in_resource_reached_by_pointer")]
+#[test_case(InlineResourceInTargetReachedByPointer::is_valid, InlineResourceInTargetReachedByPointer::validate, InlineResourceInTargetReachedByPointer::iter_errors, InlineResourceInTargetReachedByPointer::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner","$defs":{"inner":{"$id":"inner","minProperties":1,"properties":{"p":{"$id":"deep","type":"string"}}}}}"##, Draft::Draft202012, "https://example.com/inner#/minProperties" ; "inline_resource_in_target_reached_by_pointer")]
+#[test_case(FalseSchemaInResourceReachedByPointer::is_valid, FalseSchemaInResourceReachedByPointer::validate, FalseSchemaInResourceReachedByPointer::iter_errors, FalseSchemaInResourceReachedByPointer::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner/$defs/never","$defs":{"inner":{"$id":"inner","$defs":{"never":false}}}}"##, Draft::Draft202012, "https://example.com/inner#/$defs/never" ; "false_schema_in_resource_reached_by_pointer")]
+#[test_case(ResourceRootFragmentCycle::is_valid, ResourceRootFragmentCycle::validate, ResourceRootFragmentCycle::iter_errors, ResourceRootFragmentCycle::evaluate, r##"{"$id":"https://example.com/root","$ref":"#/$defs/inner","$defs":{"inner":{"$id":"inner","minProperties":1,"properties":{"a":{"$ref":"#"},"p":{"type":"string"}}}}}"##, Draft::Draft202012, "https://example.com/inner#/minProperties" ; "resource_root_fragment_cycle")]
+#[test_case(RootReachedFromResource::is_valid, RootReachedFromResource::validate, RootReachedFromResource::iter_errors, RootReachedFromResource::evaluate, r##"{"$id":"https://example.com/root","minProperties":1,"properties":{"a":{"$ref":"#/$defs/inner"},"p":{"type":"string"}},"$defs":{"inner":{"$id":"inner","$ref":"root"}}}"##, Draft::Draft202012, "https://example.com/root#/minProperties" ; "root_reached_from_resource")]
+#[test_case(PointerIntoResourceDraft201909::is_valid, PointerIntoResourceDraft201909::validate, PointerIntoResourceDraft201909::iter_errors, PointerIntoResourceDraft201909::evaluate, r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$ref":"#/$defs/inner/$defs/leaf","$defs":{"inner":{"$id":"inner","$defs":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##, Draft::Draft201909, "https://example.com/inner#/$defs/leaf/minProperties" ; "pointer_into_resource_draft2019_09")]
+#[test_case(PointerIntoResourceDraft7::is_valid, PointerIntoResourceDraft7::validate, PointerIntoResourceDraft7::iter_errors, PointerIntoResourceDraft7::evaluate, r##"{"$id":"https://example.com/root","allOf":[{"$ref":"#/definitions/inner/definitions/leaf"}],"definitions":{"inner":{"$id":"inner","definitions":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##, Draft::Draft7, "https://example.com/inner#/definitions/leaf/minProperties" ; "pointer_into_resource_draft7")]
+#[test_case(PointerIntoResourceDraft4::is_valid, PointerIntoResourceDraft4::validate, PointerIntoResourceDraft4::iter_errors, PointerIntoResourceDraft4::evaluate, r##"{"id":"https://example.com/root","allOf":[{"$ref":"#/definitions/inner/definitions/leaf"}],"definitions":{"inner":{"id":"inner","definitions":{"leaf":{"minProperties":1,"properties":{"p":{"type":"string"}}}}}}}"##, Draft::Draft4, "https://example.com/inner#/definitions/leaf/minProperties" ; "pointer_into_resource_draft4")]
+fn test_keywords_in_embedded_resource_are_located_in_it(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    schema: &str,
+    draft: Draft,
+    location: &str,
+) {
+    let schema = serde_json::from_str(schema).expect("valid JSON");
+    let runtime = jsonschema::options()
+        .with_draft(draft)
+        .build(&schema)
+        .expect("valid schema");
+    let rejected = serde_json::json!({});
+    assert_eq!(
+        validate(&rejected)
+            .expect_err("`{}` is rejected")
+            .absolute_keyword_location()
+            .map(jsonschema::Uri::as_str),
+        Some(location)
+    );
+    for instance in [
+        serde_json::json!({}),
+        serde_json::json!({"p": 1}),
+        serde_json::json!({"p": "x"}),
+        serde_json::json!({"q": 1}),
+        serde_json::json!({"a": {}}),
+        serde_json::json!({"a": {"p": 1}}),
+        serde_json::json!(1),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+        assert_eq!(
+            evaluation_outputs(&evaluate(&instance)),
+            evaluation_outputs(&runtime.evaluate(&instance)),
+        );
+    }
+}
+
 #[test_case(serde_json::json!(1), false ; "number_rejected")]
 #[test_case(serde_json::json!("x"), false ; "string_rejected")]
 fn test_ref_siblings_are_enforced_in_draft_201909(instance: serde_json::Value, expected: bool) {

@@ -148,6 +148,7 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
                     get_or_create_is_valid_fn(
                         ctx,
                         &location,
+                        0,
                         &Value::Object(schema.clone()),
                         ctx.current_base_uri.clone(),
                     )

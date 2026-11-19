@@ -470,7 +470,7 @@ mod __validator_impl {
                     stack.pop();
                 }
             });
-        __errors.reached(__start, "", None, __site);
+        __errors.reached(__start, "", None, 0usize, __site);
         __stop
     }
     fn validate_ref_0_errors_body<'__i>(

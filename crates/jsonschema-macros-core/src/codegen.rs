@@ -82,7 +82,13 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
             .expect("the root resolves");
         format_ident!(
             "{}",
-            get_or_create_is_valid_fn(&mut ctx, &root.location, root.schema, root.base_uri)
+            get_or_create_is_valid_fn(
+                &mut ctx,
+                &root.location,
+                root.resource_start,
+                root.schema,
+                root.base_uri,
+            )
         )
     });
     let root_key_eval_ident = if recursive_stack_needed {

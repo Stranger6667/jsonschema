@@ -918,19 +918,7 @@ impl Tree {
         let resolved =
             resolve_ref(ctx, reference).expect("`unsupported` resolves every `$ref` first");
         let pointer = location_pointer(ctx, &resolved.location, &resolved.base_uri);
-        // A pointer can reach into a resource embedded in the document it starts from.
-        let resource = ctx
-            .config
-            .registry
-            .resolver((*resolved.base_uri).clone())
-            .lookup("")
-            .map_err(|error| syn::Error::new(proc_macro2::Span::call_site(), error.to_string()))?;
-        let within = pointer_within(resource.contents(), &pointer, resolved.schema)
-            .unwrap_or_else(|| pointer.clone());
-        let root = pointer
-            .strip_suffix(within.as_str())
-            .unwrap_or_default()
-            .to_string();
+        let root = pointer[..resolved.resource_start].to_string();
         let outer = std::mem::replace(&mut self.resource_root, root);
         let added = in_resource(
             ctx,
@@ -945,50 +933,6 @@ impl Tree {
         self.resource_root = outer;
         added
     }
-}
-
-/// Where `target` sits below `root`: at `pointer` if that leads to it, otherwise wherever it is.
-fn pointer_within(root: &Value, pointer: &str, target: &Value) -> Option<String> {
-    let mut node = Some(root);
-    for segment in pointer.split('/').skip(1) {
-        let segment = segment.replace("~1", "/").replace("~0", "~");
-        node = node.and_then(|node| match node {
-            Value::Object(map) => map.get(&segment),
-            Value::Array(items) => segment.parse::<usize>().ok().and_then(|i| items.get(i)),
-            _ => None,
-        });
-    }
-    if node.is_some_and(|node| std::ptr::eq(node, target)) {
-        return Some(pointer.to_string());
-    }
-    let mut found = String::new();
-    find_pointer(root, target, &mut found).then_some(found)
-}
-
-fn find_pointer(node: &Value, target: &Value, pointer: &mut String) -> bool {
-    if std::ptr::eq(node, target) {
-        return true;
-    }
-    let len = pointer.len();
-    let found = match node {
-        Value::Object(map) => map.iter().any(|(key, child)| {
-            pointer.truncate(len);
-            pointer.push('/');
-            write_escaped_str(pointer, key);
-            find_pointer(child, target, pointer)
-        }),
-        Value::Array(items) => items.iter().enumerate().any(|(index, child)| {
-            pointer.truncate(len);
-            pointer.push('/');
-            pointer.push_str(&index.to_string());
-            find_pointer(child, target, pointer)
-        }),
-        _ => false,
-    };
-    if !found {
-        pointer.truncate(len);
-    }
-    found
 }
 
 /// `f` with `ctx` at a reference target `contents` in the resource at `base`: in that resource's
@@ -1622,7 +1566,13 @@ fn scope_stacks<E: ValueEmitter>(
             let (location, schema, base) = (resolved.location, resolved.schema, resolved.base_uri);
             let is_valid = format_ident!(
                 "{}",
-                get_or_create_is_valid_fn(ctx, &location, schema, base.clone())
+                get_or_create_is_valid_fn(
+                    ctx,
+                    &location,
+                    resolved.resource_start,
+                    schema,
+                    base.clone(),
+                )
             );
             let key_eval = format_ident!(
                 "{}",
