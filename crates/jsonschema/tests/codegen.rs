@@ -6578,6 +6578,12 @@ struct EvaluateRecursiveRefWithoutAnchor;
 struct EvaluateRecursiveRefOutermostAnchor;
 #[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/unanchored", "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "properties": {"child": {"$recursiveRef": "#"}, "marker": {"type": "integer"}}}}}"##, draft = Draft201909, methods = { evaluate = true })]
 struct EvaluateRecursiveRefUnanchoredOuter;
+#[jsonschema::validator(schema = r##"{"oneOf": [{"properties": {"kind": {"const": "a"}, "v": {"type": "integer"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "b"}, "v": {"type": "string"}}, "required": ["kind"]}, {"properties": {"kind": {"enum": ["c", "d"]}}, "required": ["kind"], "minProperties": 3}]}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDiscriminatedOneOf;
+#[jsonschema::validator(schema = r##"{"anyOf": [{"properties": {"kind": {"const": "a"}, "v": {"type": "integer"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "b"}, "v": {"type": "string"}}, "required": ["kind"]}, {"properties": {"kind": {"enum": ["c", "d"]}}, "required": ["kind"], "minProperties": 3}]}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateDiscriminatedAnyOf;
+#[jsonschema::validator(schema = r##"{"$id": "https://example.com/root", "properties": {"a": {"$ref": "inner"}}, "$defs": {"inner": {"$id": "inner", "not": {"$ref": "#/$defs/small"}, "$defs": {"small": {"maximum": 2}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateNotAroundRefInEmbeddedResource;
 #[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/branches", "$ref": "list", "$defs": {"foo": {"$dynamicAnchor": "items", "type": "string"}, "list": {"$id": "list", "type": "array", "items": {"anyOf": [{"$dynamicRef": "#items"}, {"type": "null"}]}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}"##, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateDynamicRefInAnyOf;
 #[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/condition", "$recursiveAnchor": true, "properties": {"marker": {"type": "boolean"}, "t": {"$ref": "tree"}}, "$defs": {"tree": {"$id": "tree", "$recursiveAnchor": true, "if": {"properties": {"child": {"$recursiveRef": "#"}}}, "then": {"required": ["ok"]}}}}"##, draft = Draft201909, methods = { evaluate = true })]
@@ -6850,7 +6856,10 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateRecursiveRefThroughBranchReference::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/hops", "properties": {"c": {"$ref": "c"}}, "$defs": {"c": {"$id": "c", "$recursiveAnchor": true, "type": "object", "properties": {"marker": {"type": "boolean"}}, "anyOf": [{"properties": {"d": {"$ref": "d"}}}, {"required": ["x"]}]}, "d": {"$id": "d", "$recursiveAnchor": true, "properties": {"next": {"$recursiveRef": "#"}}}}}), None, Draft::Draft201909 ; "recursive_ref_through_branch_reference")]
 #[test_case(EvaluateRecursiveRefInAnchoredBranch::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/nesting", "$defs": {"myobject": {"$id": "myobject.json", "$recursiveAnchor": true, "anyOf": [{"type": "string"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}, "anyOf": [{"type": "integer"}, {"$ref": "#/$defs/myobject"}]}), None, Draft::Draft201909 ; "recursive_ref_in_anchored_branch")]
 #[test_case(EvaluateRefToEmbeddedEarlierDraft::evaluate, serde_json::json!({"$ref": "http://example.com/a", "$defs": {"a": {"$id": "http://example.com/a", "$schema": "http://json-schema.org/draft-07/schema#", "definitions": {"s": {"type": "string"}}, "properties": {"a": {"$ref": "#/definitions/s", "minLength": 3}}}}}), None, Draft::Draft202012 ; "ref_to_embedded_earlier_draft")]
+#[test_case(EvaluateDiscriminatedOneOf::evaluate, serde_json::json!({"oneOf": [{"properties": {"kind": {"const": "a"}, "v": {"type": "integer"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "b"}, "v": {"type": "string"}}, "required": ["kind"]}, {"properties": {"kind": {"enum": ["c", "d"]}}, "required": ["kind"], "minProperties": 3}]}), None, Draft::Draft202012 ; "discriminated_one_of")]
+#[test_case(EvaluateDiscriminatedAnyOf::evaluate, serde_json::json!({"anyOf": [{"properties": {"kind": {"const": "a"}, "v": {"type": "integer"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "b"}, "v": {"type": "string"}}, "required": ["kind"]}, {"properties": {"kind": {"enum": ["c", "d"]}}, "required": ["kind"], "minProperties": 3}]}), None, Draft::Draft202012 ; "discriminated_any_of")]
 #[test_case(EvaluateRefCycleInBranches::evaluate, serde_json::json!({"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}), None, Draft::Draft7 ; "ref_cycle_in_branches")]
+#[test_case(EvaluateNotAroundRefInEmbeddedResource::evaluate, serde_json::json!({"$id": "https://example.com/root", "properties": {"a": {"$ref": "inner"}}, "$defs": {"inner": {"$id": "inner", "not": {"$ref": "#/$defs/small"}, "$defs": {"small": {"maximum": 2}}}}}), None, Draft::Draft202012 ; "not_around_ref_in_embedded_resource")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
@@ -6928,6 +6937,48 @@ fn test_evaluate_with_options_matches_runtime(
     assert_evaluations_match(evaluate, &runtime);
 }
 
+// Enough units below the same `$ref`s to cache their evaluation paths, each `$ref` below two others.
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"node": {"properties": {"v": {"$ref": "#/$defs/leaf"}, "w": {"$ref": "#/$defs/node/$defs/inner"}}, "$defs": {"inner": {"$ref": "#/$defs/leaf"}}}, "leaf": {"type": "integer", "minimum": 0}}, "items": {"allOf": [{"$ref": "#/$defs/node"}, {"$ref": "#/$defs/node"}]}}"##,
+    methods = { evaluate = true }
+)]
+struct EvaluateManyRefVisits;
+
+#[test]
+fn test_evaluate_matches_runtime_with_cached_evaluation_paths() {
+    let schema = serde_json::json!({"$defs": {"node": {"properties": {"v": {"$ref": "#/$defs/leaf"}, "w": {"$ref": "#/$defs/node/$defs/inner"}}, "$defs": {"inner": {"$ref": "#/$defs/leaf"}}}, "leaf": {"type": "integer", "minimum": 0}}, "items": {"allOf": [{"$ref": "#/$defs/node"}, {"$ref": "#/$defs/node"}]}});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    let instance = serde_json::Value::Array(
+        (0..3000_i64)
+            .map(|index| serde_json::json!({"v": index % 7 - 1, "w": index % 5 - 1}))
+            .collect(),
+    );
+    assert_eq!(
+        evaluation_outputs(&EvaluateManyRefVisits::evaluate(&instance)),
+        evaluation_outputs(&runtime.evaluate(&instance)),
+    );
+}
+
+// `dependencies` takes the errors of the generated `iter_errors`: more than a few, and items with
+// none.
+#[jsonschema::validator(
+    schema = r#"{"dependencies": {"a": ["b"]}, "items": {"minimum": 10}}"#,
+    draft = Draft7,
+    methods = { evaluate = true }
+)]
+struct EvaluateManyErrorsBesideDependencies;
+
+#[test]
+fn test_evaluate_matches_runtime_with_many_errors_beside_dependencies() {
+    let schema = serde_json::json!({"dependencies": {"a": ["b"]}, "items": {"minimum": 10}});
+    let runtime = jsonschema::draft7::new(&schema).expect("valid schema");
+    let instance = serde_json::Value::Array((0..20_i64).map(serde_json::Value::from).collect());
+    assert_eq!(
+        evaluation_outputs(&EvaluateManyErrorsBesideDependencies::evaluate(&instance)),
+        evaluation_outputs(&runtime.evaluate(&instance)),
+    );
+}
+
 fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validator) {
     for instance in [
         serde_json::json!(null),
@@ -7003,6 +7054,13 @@ fn assert_evaluations_match(evaluate: EvaluateFn, runtime: &jsonschema::Validato
         serde_json::json!({"a": "xyzw"}),
         serde_json::json!({"a": 1}),
         serde_json::json!({"a": {"b": 1}}),
+        serde_json::json!({"kind": "a", "v": 1}),
+        serde_json::json!({"kind": "a", "v": "x"}),
+        serde_json::json!({"kind": "b", "v": "x"}),
+        serde_json::json!({"kind": "c", "v": 1, "w": 2}),
+        serde_json::json!({"kind": "a", "v": 1, "w": 2}),
+        serde_json::json!({"kind": "z"}),
+        serde_json::json!({"kind": 1}),
         serde_json::json!(3),
         serde_json::json!(200),
         serde_json::json!("$12"),

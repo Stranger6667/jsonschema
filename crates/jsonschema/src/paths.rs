@@ -85,8 +85,6 @@ fn get_cached_index_paths() -> &'static [Location; 16] {
 
 impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
     fn from(value: &'a LazyLocation<'_, '_>) -> Self {
-        const STACK_CAPACITY: usize = 16;
-
         // Fast path: empty location
         if value.parent().is_none() {
             return Location::new();
@@ -128,67 +126,58 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
         }
 
         build_location(string_capacity, |buffer| {
-            if capacity <= STACK_CAPACITY {
-                // Stack-allocated storage with references - no cloning needed
-                let mut stack_segments: [Option<&JsonPointerSegment<'_>>; STACK_CAPACITY] =
-                    [None; STACK_CAPACITY];
-                let mut idx = 0;
-                head = value;
-
-                if head.parent().is_some() {
-                    stack_segments[idx] = Some(head.segment());
-                    idx += 1;
-                }
-
-                while let Some(next) = head.parent() {
-                    head = next;
-                    if head.parent().is_some() {
-                        stack_segments[idx] = Some(head.segment());
-                        idx += 1;
-                    }
-                }
-
-                // Format in reverse order
-                for segment in stack_segments[..idx].iter().rev().flatten() {
-                    buffer.push('/');
-                    match segment {
-                        JsonPointerSegment::Key(property) => {
-                            write_escaped_str(buffer, property);
-                        }
-                        JsonPointerSegment::Index(idx) => {
-                            write_index(buffer, *idx);
-                        }
-                    }
-                }
-            } else {
-                // Heap-allocated fallback for deep paths (>16 segments)
-                let mut segments: Vec<&JsonPointerSegment<'_>> = Vec::with_capacity(capacity);
-                head = value;
-
-                if head.parent().is_some() {
-                    segments.push(head.segment());
-                }
-
-                while let Some(next) = head.parent() {
-                    head = next;
-                    if head.parent().is_some() {
-                        segments.push(head.segment());
-                    }
-                }
-
-                for segment in segments.iter().rev() {
-                    buffer.push('/');
-                    match segment {
-                        JsonPointerSegment::Key(property) => {
-                            write_escaped_str(buffer, property);
-                        }
-                        JsonPointerSegment::Index(idx) => {
-                            write_index(buffer, *idx);
-                        }
-                    }
-                }
-            }
+            write_segments(value, capacity, buffer);
         })
+    }
+}
+
+/// Writes `location`'s JSON Pointer to `buffer`.
+#[cfg(feature = "macros")]
+pub(crate) fn write_location(location: &LazyLocation<'_, '_>, buffer: &mut String) {
+    let mut segments = 0;
+    let mut head = location;
+    while let Some(next) = head.parent() {
+        segments += 1;
+        head = next;
+    }
+    write_segments(location, segments, buffer);
+}
+
+/// Writes the `segments` segments of `value`, outermost first.
+fn write_segments(value: &LazyLocation<'_, '_>, segments: usize, buffer: &mut String) {
+    const STACK_CAPACITY: usize = 16;
+    let write = |buffer: &mut String, segment: &JsonPointerSegment<'_>| {
+        buffer.push('/');
+        match segment {
+            JsonPointerSegment::Key(property) => write_escaped_str(buffer, property),
+            JsonPointerSegment::Index(idx) => write_index(buffer, *idx),
+        }
+    };
+    if segments <= STACK_CAPACITY {
+        // Stack-allocated storage with references - no cloning needed
+        let mut stack_segments: [Option<&JsonPointerSegment<'_>>; STACK_CAPACITY] =
+            [None; STACK_CAPACITY];
+        let mut idx = 0;
+        let mut head = value;
+        while let Some(next) = head.parent() {
+            stack_segments[idx] = Some(head.segment());
+            idx += 1;
+            head = next;
+        }
+        for segment in stack_segments[..idx].iter().rev().flatten() {
+            write(buffer, segment);
+        }
+    } else {
+        // Heap-allocated fallback for deep paths
+        let mut stored: Vec<&JsonPointerSegment<'_>> = Vec::with_capacity(segments);
+        let mut head = value;
+        while let Some(next) = head.parent() {
+            stored.push(head.segment());
+            head = next;
+        }
+        for segment in stored.iter().rev() {
+            write(buffer, segment);
+        }
     }
 }
 
@@ -656,6 +645,15 @@ impl Location {
 
     pub(crate) fn from_escaped(escaped: &str) -> Self {
         Self(Arc::from(escaped))
+    }
+
+    /// `escaped` followed by the already escaped `suffix`.
+    #[cfg(feature = "macros")]
+    pub(crate) fn concat(escaped: &str, suffix: &str) -> Self {
+        build_location(escaped.len() + suffix.len(), |buffer| {
+            buffer.push_str(escaped);
+            buffer.push_str(suffix);
+        })
     }
 
     /// `escaped` followed by `property` as one more segment.

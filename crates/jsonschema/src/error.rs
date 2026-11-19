@@ -526,10 +526,7 @@ impl<'a> ValidationError<'a> {
     pub(crate) fn move_evaluation_path(&mut self, strip: &str, prefix: &str) {
         let path = self.evaluation_path().as_str();
         let rest = path.strip_prefix(strip).unwrap_or(path);
-        let mut moved = String::with_capacity(prefix.len() + rest.len());
-        moved.push_str(prefix);
-        moved.push_str(rest);
-        self.repr.tracker = LazyEvaluationPath::Computed(Location::from_escaped(&moved));
+        self.repr.tracker = LazyEvaluationPath::Computed(Location::concat(prefix, rest));
     }
 
     /// Places the error below `site`. Its schema path moves too unless a reference moved its
@@ -538,8 +535,7 @@ impl<'a> ValidationError<'a> {
     #[cfg(feature = "macros")]
     pub(crate) fn nest_under(&mut self, site: &str) {
         if matches!(self.repr.tracker, LazyEvaluationPath::SameAsSchemaPath) {
-            self.repr.schema_path =
-                Location::from_escaped(site).join_raw_suffix(self.repr.schema_path.as_str());
+            self.repr.schema_path = Location::concat(site, self.repr.schema_path.as_str());
         } else {
             self.move_evaluation_path("", site);
         }

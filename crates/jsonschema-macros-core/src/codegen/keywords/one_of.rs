@@ -31,7 +31,7 @@ impl DiscriminatorLiteral {
     }
 
     /// The token for the inner value, used when building nested or-patterns.
-    fn to_inner_token(&self) -> TokenStream {
+    pub(crate) fn to_inner_token(&self) -> TokenStream {
         match self {
             Self::Str(value) => quote! { #value },
             Self::Bool(value) => quote! { #value },
@@ -53,6 +53,17 @@ struct DiscriminatorPlan {
     kind: DiscriminatorKind,
     per_branch_values: Vec<Option<Vec<DiscriminatorLiteral>>>,
     vacuous_guarded: usize,
+}
+
+impl DiscriminatorPlan {
+    /// The discriminator property's value in `instance`, when it has the discriminator's type.
+    fn read<E: ValueEmitter>(&self) -> TokenStream {
+        match self.kind {
+            DiscriminatorKind::Str => E::instance_object_property_as_str(&self.key),
+            DiscriminatorKind::Bool => E::instance_object_property_as_bool(&self.key),
+            DiscriminatorKind::Int => E::instance_object_property_as_i64(&self.key),
+        }
+    }
 }
 
 /// Per-key stats accumulated while searching for the best discriminator.
@@ -138,11 +149,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     }
 
     let discriminator_init = if let Some(plan) = &discriminator_plan {
-        let init_expr = match plan.kind {
-            DiscriminatorKind::Str => E::instance_object_property_as_str(&plan.key),
-            DiscriminatorKind::Bool => E::instance_object_property_as_bool(&plan.key),
-            DiscriminatorKind::Int => E::instance_object_property_as_i64(&plan.key),
-        };
+        let init_expr = plan.read::<E>();
         quote! { let __one_of_discriminator = #init_expr; }
     } else {
         quote! {}
@@ -329,6 +336,25 @@ fn vacuous_branches_safely_guarded(
         .iter()
         .zip(&plan.per_branch_values)
         .all(|(class, values)| *class != BranchObjectApplicability::Vacuous || values.is_some())
+}
+
+/// A property whose value tells which branches may accept an object.
+pub(crate) struct BranchDiscriminator {
+    /// The property's value in `instance`, when it has the discriminator's type.
+    pub(crate) read: TokenStream,
+    /// For each branch, the values it accepts, or `None` when it accepts any.
+    pub(crate) values: Vec<Option<Vec<DiscriminatorLiteral>>>,
+}
+
+pub(crate) fn branch_discriminator<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    schemas: &[Value],
+) -> Option<BranchDiscriminator> {
+    let plan = build_discriminator_plan(ctx, schemas)?;
+    Some(BranchDiscriminator {
+        read: plan.read::<E>(),
+        values: plan.per_branch_values,
+    })
 }
 
 /// For each branch, the discriminator values it runs for, or `None` when it runs for every

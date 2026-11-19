@@ -253,21 +253,79 @@ mod __validator_impl {
         fn __matches_1(name: &str) -> bool {
             name.starts_with("x-")
         }
+        fn __direct_0<'__i>(
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __errors: &mut __eval::Descriptions,
+        ) -> bool {
+            if !(match instance {
+                __Value::Number(n) => __num::ge(n, 1u64),
+                _ => true,
+            }) {
+                match instance {
+                    __Value::Number(n) => {
+                        if !(__num::ge(n, 1u64)) {
+                            if __errors
+                                .push(
+                                    __err::minimum(
+                                        "/minimum",
+                                        __path.into(),
+                                        instance,
+                                        __sj::Value::Number(__sj::Number::from(1u64)),
+                                    ),
+                                )
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+        fn __direct_1<'__i>(
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __errors: &mut __eval::Descriptions,
+        ) -> bool {
+            if !(match instance {
+                __Value::String(s) => (s.chars().count() as u64) <= 3,
+                _ => true,
+            }) {
+                match instance {
+                    __Value::String(s) => {
+                        if !((s.chars().count() as u64) <= 3) {
+                            if __errors
+                                .push(
+                                    __err::max_length("/maxLength", __path.into(), instance, 3),
+                                )
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
         static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"patterns\":[2,3],\"properties\":[[\"a\",1]],\"schemas\":[{\"count\":4,\"first\":2,\"pointer\":\"\"},{\"count\":0,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":0,\"pointer\":\"/patternProperties/[0-9]$\"},{\"count\":0,\"first\":1,\"pointer\":\"/patternProperties/^x-\"},{\"count\":0,\"first\":1,\"pointer\":\"/additionalProperties\"},{\"count\":1,\"first\":1,\"pointer\":\"/propertyNames\"}],\"units\":[{\"keyword\":\"minimum\"},{\"keyword\":\"maxLength\"},{\"keyword\":\"properties\",\"members\":true,\"properties\":[0,1]},{\"keyword\":\"patternProperties\",\"patterns\":[0,2]},{\"additional\":4,\"closed\":true,\"keyword\":\"additionalProperties\",\"patterns\":[0,2],\"properties\":[0,1]},{\"closed\":false,\"keyword\":\"propertyNames\",\"names\":5}]}",
+            tables: "{\"patterns\":[2,3],\"properties\":[[\"a\",1]],\"schemas\":[{\"count\":4,\"first\":2,\"pointer\":\"\"},{\"count\":0,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":0,\"pointer\":\"/patternProperties/[0-9]$\"},{\"count\":0,\"first\":1,\"pointer\":\"/patternProperties/^x-\"},{\"count\":0,\"first\":1,\"pointer\":\"/additionalProperties\",\"rejects\":true},{\"count\":1,\"first\":1,\"pointer\":\"/propertyNames\"}],\"units\":[{\"direct\":0,\"keyword\":\"minimum\"},{\"direct\":1,\"keyword\":\"maxLength\"},{\"keyword\":\"properties\",\"members\":true,\"properties\":[0,1]},{\"keyword\":\"patternProperties\",\"patterns\":[0,2]},{\"additional\":4,\"closed\":true,\"keyword\":\"additionalProperties\",\"patterns\":[0,2],\"properties\":[0,1]},{\"closed\":false,\"keyword\":\"propertyNames\",\"names\":5}]}",
             matchers: &[__matches_0, __matches_1],
             valid: &[],
+            discriminators: &[],
+            not_of_type: &[],
+            direct: &[__direct_0, __direct_1],
             unevaluated: &[],
             unevaluated_errors: &[],
             scope: None,
             built: ::std::sync::OnceLock::new(),
         };
-        let mut __errors = __err::Errors::new(false);
-        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate(
+        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate_reporting(
             &__TREE,
             &instance,
-            &__errors.into_vec(),
+            is_valid(instance),
         )
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {

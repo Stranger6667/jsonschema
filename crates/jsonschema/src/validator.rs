@@ -146,7 +146,7 @@ pub(crate) const MEMO_MIN_VISITS: u32 = 16;
 /// Evaluation paths are only cached once this many have been built.
 ///
 /// Small evaluations show little path reuse, so below this threshold the map costs more than it saves.
-const EVALUATION_PATH_CACHE_THRESHOLD: u32 = 4096;
+pub(crate) const EVALUATION_PATH_CACHE_THRESHOLD: u32 = 4096;
 
 /// Cycle-guard entries scanned before per-instance counts replace the scan, where nodes can repeat
 /// on their own path.

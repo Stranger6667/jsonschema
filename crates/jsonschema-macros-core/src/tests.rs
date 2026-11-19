@@ -493,6 +493,19 @@ fn evaluate_scope_module(schema: Value, name: &str) {
 }
 
 #[test]
+fn evaluate_discriminator_module() {
+    let mut config = test_config(json!({"oneOf": [
+        {"properties": {"kind": {"const": "a"}}, "required": ["kind"]},
+        {"properties": {"kind": {"enum": ["b", "c"]}}, "required": ["kind"]}
+    ]}));
+    config.methods.evaluate = true;
+    insta::assert_snapshot!(
+        "evaluate_discriminator_module",
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
+    );
+}
+
+#[test]
 fn evaluate_contains_module() {
     let mut config = test_config(json!({"contains": {"type": "integer"}, "minContains": 2}));
     config.methods.evaluate = true;
