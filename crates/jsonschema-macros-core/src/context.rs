@@ -279,6 +279,13 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) uses_ref_cycle: bool,
     /// `$ref` targets in cycles one validation can take through the same instance more than once.
     pub(crate) revisited_ref_targets: HashSet<String>,
+    /// The reference target whose code each target's code is first compiled in, by location;
+    /// `None` for the root's.
+    pub(crate) compiled_within: HashMap<String, Option<String>>,
+    /// Reference targets a reference reaches while their own code compiles.
+    pub(crate) reentered_targets: HashSet<String>,
+    /// The locations of the reference targets each schema is, by its address.
+    pub(crate) target_locations: HashMap<usize, Vec<String>>,
     pub(crate) uri_format_caches: BTreeSet<UriFormatCache>,
     /// JSON Pointer tracking the current position in the schema document, embedded into the
     /// generated error constructors.
@@ -335,6 +342,9 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             uses_dynamic_ref: false,
             uses_ref_cycle: false,
             revisited_ref_targets: HashSet::new(),
+            compiled_within: HashMap::new(),
+            reentered_targets: HashSet::new(),
+            target_locations: HashMap::new(),
             uri_format_caches: BTreeSet::new(),
             schema_path: String::new(),
         }
@@ -479,6 +489,21 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             location: location.to_string(),
         };
         f(&mut scope)
+    }
+
+    /// `f` compiled as within the code of each reference target at `locations`, as at their
+    /// references that do not change the instance.
+    pub(crate) fn within_targets<T>(
+        &mut self,
+        locations: &[String],
+        f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
+    ) -> T {
+        match locations.split_first() {
+            Some((location, rest)) => {
+                self.with_is_valid_scope(location, |ctx| ctx.within_targets(rest, f))
+            }
+            None => f(self),
+        }
     }
 
     pub(crate) fn with_instance_scope<T>(

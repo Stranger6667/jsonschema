@@ -7077,6 +7077,28 @@ struct EvaluateTwoDynamicRefsToOneAnchor;
 struct EvaluateRefByPointerPastBooleanItems;
 #[jsonschema::validator(schema = r##"{"contentEncoding": "base64", "contentMediaType": "application/json"}"##, draft = Draft6, methods = { evaluate = true })]
 struct EvaluateContentDraft6;
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefCycleOnOneInstance;
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateFailingRefCycleOnOneInstance;
+#[jsonschema::validator(schema = r##"{"minimum": 1, "allOf": [{"$ref": "#"}]}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefCycleThroughRoot;
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"maximum": 1, "allOf": [{"$ref": "#/properties/b"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefCycleThroughInlineTarget;
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/a"}}, "$defs": {"a": {"minimum": 1, "allOf": [{"$ref": "#/$defs/b"}]}, "b": {"maximum": 1, "allOf": [{"$ref": "#/$defs/a"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateMutualRefCycleOnOneInstance;
+#[jsonschema::validator(schema = r##"{"$ref": "#/$defs/node", "$defs": {"node": {"required": ["a"], "properties": {"c": {"$ref": "#/$defs/node"}}, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefCycleOnOneInstanceAndBelow;
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "anyOf": [{"$ref": "#/$defs/node"}, {"type": "string"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefCycleThroughAnyOf;
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "oneOf": [{"$ref": "#/$defs/node"}, {"type": "string"}]}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefCycleThroughOneOf;
+#[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "if": {"$ref": "#/$defs/node"}, "then": {"title": "t"}, "else": {"title": "e"}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefCycleThroughIf;
+#[jsonschema::validator(schema = r##"{"maximum": 1, "anyOf": [{"$ref": "#"}, {"type": "string"}]}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefCycleThroughRootAndAnyOf;
+#[jsonschema::validator(schema = r##"{"$ref": "#/$defs/node", "$defs": {"node": {"properties": {"c": {"$ref": "#/$defs/node"}}, "anyOf": [{"$ref": "#/$defs/node"}, {"required": ["x"]}], "minProperties": 2}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefCycleThroughAnyOfBelow;
 
 #[jsonschema::validator(schema = r##"{"properties": {"a": {}}, "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateUnevaluatedPropertiesFalse;
@@ -7483,6 +7505,17 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateTwoDynamicRefsToOneAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/tree", "$dynamicAnchor": "node", "type": "object", "properties": {"a": {"$dynamicRef": "#node"}, "b": {"$dynamicRef": "#node"}}}), None, Draft::Draft202012 ; "two_dynamic_refs_to_one_anchor")]
 #[test_case(EvaluateRefByPointerPastBooleanItems::evaluate, serde_json::json!({"$id": "http://example.com/root", "items": {"$id": "x", "items": false, "prefixItems": [{"type": "integer"}]}, "properties": {"a": {"$ref": "#/items/prefixItems/0"}}}), None, Draft::Draft202012 ; "ref_by_pointer_past_boolean_items")]
 #[test_case(EvaluateContentDraft6::evaluate, serde_json::json!({"contentEncoding": "base64", "contentMediaType": "application/json"}), None, Draft::Draft6 ; "content_draft6")]
+#[test_case(EvaluateRefCycleOnOneInstance::evaluate, serde_json::json!({"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}), None, Draft::Draft202012 ; "ref_cycle_on_one_instance")]
+#[test_case(EvaluateFailingRefCycleOnOneInstance::evaluate, serde_json::json!({"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}), None, Draft::Draft202012 ; "failing_ref_cycle_on_one_instance")]
+#[test_case(EvaluateRefCycleThroughRoot::evaluate, serde_json::json!({"minimum": 1, "allOf": [{"$ref": "#"}]}), None, Draft::Draft202012 ; "ref_cycle_through_root")]
+#[test_case(EvaluateRefCycleThroughInlineTarget::evaluate, serde_json::json!({"properties": {"b": {"maximum": 1, "allOf": [{"$ref": "#/properties/b"}]}}}), None, Draft::Draft202012 ; "ref_cycle_through_inline_target")]
+#[test_case(EvaluateMutualRefCycleOnOneInstance::evaluate, serde_json::json!({"properties": {"b": {"$ref": "#/$defs/a"}}, "$defs": {"a": {"minimum": 1, "allOf": [{"$ref": "#/$defs/b"}]}, "b": {"maximum": 1, "allOf": [{"$ref": "#/$defs/a"}]}}}), None, Draft::Draft202012 ; "mutual_ref_cycle_on_one_instance")]
+#[test_case(EvaluateRefCycleOnOneInstanceAndBelow::evaluate, serde_json::json!({"$ref": "#/$defs/node", "$defs": {"node": {"required": ["a"], "properties": {"c": {"$ref": "#/$defs/node"}}, "allOf": [{"$ref": "#/$defs/node"}]}}}), None, Draft::Draft202012 ; "ref_cycle_on_one_instance_and_below")]
+#[test_case(EvaluateRefCycleThroughAnyOf::evaluate, serde_json::json!({"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "anyOf": [{"$ref": "#/$defs/node"}, {"type": "string"}]}}}), None, Draft::Draft202012 ; "ref_cycle_through_any_of")]
+#[test_case(EvaluateRefCycleThroughOneOf::evaluate, serde_json::json!({"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "oneOf": [{"$ref": "#/$defs/node"}, {"type": "string"}]}}}), None, Draft::Draft202012 ; "ref_cycle_through_one_of")]
+#[test_case(EvaluateRefCycleThroughIf::evaluate, serde_json::json!({"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "if": {"$ref": "#/$defs/node"}, "then": {"title": "t"}, "else": {"title": "e"}}}}), None, Draft::Draft202012 ; "ref_cycle_through_if")]
+#[test_case(EvaluateRefCycleThroughRootAndAnyOf::evaluate, serde_json::json!({"maximum": 1, "anyOf": [{"$ref": "#"}, {"type": "string"}]}), None, Draft::Draft202012 ; "ref_cycle_through_root_and_any_of")]
+#[test_case(EvaluateRefCycleThroughAnyOfBelow::evaluate, serde_json::json!({"$ref": "#/$defs/node", "$defs": {"node": {"properties": {"c": {"$ref": "#/$defs/node"}}, "anyOf": [{"$ref": "#/$defs/node"}, {"required": ["x"]}], "minProperties": 2}}}), None, Draft::Draft202012 ; "ref_cycle_through_any_of_below")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,

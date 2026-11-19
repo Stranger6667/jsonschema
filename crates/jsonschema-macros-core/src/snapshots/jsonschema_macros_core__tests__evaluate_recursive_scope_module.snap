@@ -913,7 +913,30 @@ mod __validator_impl {
                         }
                     }
                 } else {
-                    validate_ref_0(instance)
+                    {
+                        let __mark = (
+                            (validate_ref_0 as fn(&__Value) -> bool) as usize,
+                            std::ptr::from_ref(instance) as usize,
+                        );
+                        let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                            .with(|__marks| {
+                                let mut __marks = __marks.borrow_mut();
+                                if __marks.contains(&__mark) {
+                                    true
+                                } else {
+                                    __marks.push(__mark);
+                                    false
+                                }
+                            });
+                        if __reentered {
+                            true
+                        } else {
+                            let __valid = validate_ref_0(instance);
+                            __JSONSCHEMA_VALIDATE_MARK
+                                .with(|__marks| __marks.borrow_mut().pop());
+                            __valid
+                        }
+                    }
                 }
             }
         }
@@ -947,9 +970,10 @@ mod __validator_impl {
             false
         }
         static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"properties\":[[\"child\",1]],\"resources\":[{\"anchors\":[],\"recursive\":true,\"root\":0}],\"schemas\":[{\"count\":1,\"first\":4,\"pointer\":\"\"},{\"count\":2,\"first\":2,\"pointer\":\"/properties/child\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/child/if\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/child/then\"}],\"units\":[{\"keyword\":\"$recursiveRef\",\"scope\":{\"recursive\":true},\"target\":0},{\"direct\":0,\"keyword\":\"required\"},{\"condition\":[2,0],\"keyword\":\"if\"},{\"branch\":3,\"keyword\":\"then\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]}],\"valid_resources\":[0]}",
+            tables: "{\"functions\":[{}],\"properties\":[[\"child\",1]],\"resources\":[{\"anchors\":[],\"recursive\":true,\"root\":0}],\"schemas\":[{\"count\":1,\"first\":4,\"pointer\":\"\"},{\"count\":2,\"first\":2,\"pointer\":\"/properties/child\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/child/if\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/child/then\"}],\"units\":[{\"function\":0,\"keyword\":\"$recursiveRef\",\"scope\":{\"recursive\":true},\"target\":0},{\"direct\":0,\"keyword\":\"required\"},{\"condition\":[2,0],\"keyword\":\"if\"},{\"branch\":3,\"keyword\":\"then\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]}],\"valid_resources\":[0]}",
             matchers: &[],
             valid: &[__valid_0],
+            guards: &[],
             discriminators: &[],
             not_of_type: &[],
             direct: &[__direct_0],

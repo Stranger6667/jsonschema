@@ -83,6 +83,7 @@ mod __validator_impl {
             tables: "{\"schemas\":[{\"count\":0,\"first\":0,\"pointer\":\"\",\"rejects\":true}],\"units\":[]}",
             matchers: &[],
             valid: &[],
+            guards: &[],
             discriminators: &[],
             not_of_type: &[],
             direct: &[],

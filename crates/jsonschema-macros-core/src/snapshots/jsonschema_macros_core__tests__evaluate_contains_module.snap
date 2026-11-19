@@ -144,6 +144,7 @@ mod __validator_impl {
             tables: "{\"schemas\":[{\"count\":1,\"first\":1,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/contains\"}],\"units\":[{\"keyword\":\"type\",\"not_of_type\":0},{\"aliases\":[\"minContains\",\"maxContains\"],\"bounds\":{\"max\":null,\"min\":2},\"contains\":[1,0],\"keyword\":\"contains\"}]}",
             matchers: &[],
             valid: &[__valid_0],
+            guards: &[],
             discriminators: &[],
             not_of_type: &[__not_of_type_0],
             direct: &[],

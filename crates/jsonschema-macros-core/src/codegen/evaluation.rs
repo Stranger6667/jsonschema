@@ -171,6 +171,8 @@ enum TreeUnit {
     Ref {
         keyword: &'static str,
         target: usize,
+        /// Its static target's code, an index of `Tree::functions`.
+        function: usize,
         /// Its target is in another document than the schema holding it.
         leaves: bool,
         /// The `$dynamicAnchor` a `$dynamicRef` resolves through the dynamic scope.
@@ -261,6 +263,14 @@ struct Tree {
     /// Each resource a schema sits in, the root's first.
     resources: Vec<TreeResource>,
     resource_ids: HashMap<String, usize>,
+    /// The location of each reference target's code a `$ref` enters.
+    functions: Vec<String>,
+    function_ids: HashMap<String, usize>,
+    /// The code the schemas being added run in: the innermost reference target's, `None` for the
+    /// root's.
+    function: Option<usize>,
+    /// The addresses of the schemas being added from there on, the outermost first.
+    inline: Vec<usize>,
 }
 
 /// A resource the dynamic scope may hold.
@@ -277,15 +287,25 @@ struct TreeResource {
 }
 
 impl Tree {
-    /// The `is_valid` code of the subschema at `location`.
+    /// The `is_valid` code of the subschema at `location`. One applying to the instance of its
+    /// unit is compiled as in the code of the reference targets holding that unit, so its
+    /// references re-entering them on the instance pass their cycle guards as the runtime does.
     fn add_validity<E: ValueEmitter>(
         &mut self,
         ctx: &mut CompileContext<'_, E>,
         subschema: &Value,
         location: String,
+        same_instance: bool,
     ) {
+        let targets = if same_instance {
+            self.compiling(ctx)
+        } else {
+            Vec::new()
+        };
         let check = ctx.with_schema_path_swap(location, |ctx| {
-            ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
+            ctx.with_instance_scope(|ctx| {
+                ctx.within_targets(&targets, |ctx| compile_schema(ctx, subschema))
+            })
         });
         self.valid.push(check.is_valid_token_stream());
         let resource = self.resource(ctx);
@@ -333,7 +353,8 @@ impl Tree {
             rejects: false,
         });
         self.by_pointer.insert(key, index);
-        match resource_base(ctx, schema).filter(|_| index != 0 && !based) {
+        self.inline.push(std::ptr::from_ref(schema).addr());
+        let added = match resource_base(ctx, schema).filter(|_| index != 0 && !based) {
             Some(base) => {
                 let outer = std::mem::replace(&mut self.resource_root, pointer.clone());
                 let added = ctx.with_base_uri_scope(base, |ctx| {
@@ -343,7 +364,32 @@ impl Tree {
                 added
             }
             None => self.add_keywords(ctx, schema, index, pointer),
+        };
+        self.inline.pop();
+        added
+    }
+
+    /// The locations of the reference targets whose code holds the schema being added, while
+    /// it compiles: the targets whose code reached the innermost one's, and the targets the
+    /// schemas from there on are.
+    fn compiling<E: ValueEmitter>(&self, ctx: &CompileContext<'_, E>) -> Vec<String> {
+        let mut locations = Vec::new();
+        let mut current = self.function.map(|function| &self.functions[function]);
+        while let Some(location) = current {
+            locations.push(location.clone());
+            current = ctx.compiled_within.get(location).and_then(Option::as_ref);
         }
+        for location in self
+            .inline
+            .iter()
+            .filter_map(|schema| ctx.target_locations.get(schema))
+            .flatten()
+        {
+            if !locations.contains(location) {
+                locations.push(location.clone());
+            }
+        }
+        locations
     }
 
     fn add_keywords<E: ValueEmitter>(
@@ -362,8 +408,8 @@ impl Tree {
             if let Some(reference) = reference.filter(|_| !ctx.draft.supports_adjacent_validation())
             {
                 // The keywords beside `$ref` apply from Draft 2019-09 on.
-                let unit = self.reference(ctx, "$ref", reference)?;
-                self.finish(ctx, index, pointer, None, vec![unit]);
+                let units = self.reference(ctx, index, "$ref", reference)?;
+                self.finish(ctx, index, pointer, None, units.into_iter().collect());
                 return Ok(index);
             }
             let leaves: Vec<Unit> = LEAF_KEYWORDS
@@ -516,7 +562,7 @@ impl Tree {
                         max: bound("maxContains"),
                     },
                 });
-                self.add_validity(ctx, subschema, location);
+                self.add_validity(ctx, subschema, location, false);
             }
             for keyword in ["dependencies", "dependentSchemas"] {
                 let Some(Value::Object(dependencies)) = keywords
@@ -548,7 +594,12 @@ impl Tree {
                 let mut discriminator = None;
                 if valid.is_some() {
                     for (index, subschema) in schemas.iter().enumerate() {
-                        self.add_validity(ctx, subschema, format!("{pointer}/{keyword}/{index}"));
+                        self.add_validity(
+                            ctx,
+                            subschema,
+                            format!("{pointer}/{keyword}/{index}"),
+                            true,
+                        );
                     }
                     discriminator = branch_discriminator(ctx, schemas).map(|discriminator| {
                         self.discriminators.push(candidates(&discriminator));
@@ -588,7 +639,7 @@ impl Tree {
                     schema,
                     valid: self.valid.len(),
                 });
-                self.add_validity(ctx, condition, location);
+                self.add_validity(ctx, condition, location, true);
                 for keyword in ["then", "else"] {
                     if let Some(branch) = keywords.get(keyword) {
                         let schema = self.add(ctx, branch, format!("{pointer}/{keyword}"))?;
@@ -634,7 +685,7 @@ impl Tree {
                 });
             }
             if let Some(reference) = reference {
-                units.push(self.reference(ctx, "$ref", reference)?);
+                units.extend(self.reference(ctx, index, "$ref", reference)?);
             }
             for keyword in ["$recursiveRef", "$dynamicRef"] {
                 if let Some(reference) = keywords
@@ -642,7 +693,7 @@ impl Tree {
                     .and_then(Value::as_str)
                     .filter(|_| ctx.draft.is_known_keyword(keyword))
                 {
-                    units.push(self.reference(ctx, keyword, reference)?);
+                    units.extend(self.reference(ctx, index, keyword, reference)?);
                 }
             }
             // Custom keywords apply last, in the schema's order.
@@ -720,29 +771,52 @@ impl Tree {
         id
     }
 
-    /// The unit of a `$ref`, `$dynamicRef` or `$recursiveRef`.
+    /// The unit of a `$ref`, `$dynamicRef` or `$recursiveRef` in the schema at `index`. A
+    /// reference to that schema itself has none, as the runtime compiles none.
     fn reference<E: ValueEmitter>(
         &mut self,
         ctx: &mut CompileContext<'_, E>,
+        index: usize,
         keyword: &'static str,
         reference: &str,
-    ) -> syn::Result<TreeUnit> {
-        let resolved = resolve_ref(ctx, reference).ok();
-        let anchor = resolved
-            .as_ref()
-            .filter(|_| keyword == "$dynamicRef")
-            .and_then(|resolved| dynamic_ref_anchor_name(reference, resolved.schema));
+    ) -> syn::Result<Option<TreeUnit>> {
+        let resolved =
+            resolve_ref(ctx, reference).expect("`unsupported` resolves every `$ref` first");
+        let anchor = (keyword == "$dynamicRef")
+            .then(|| dynamic_ref_anchor_name(reference, resolved.schema))
+            .flatten();
         let recursive = keyword == "$recursiveRef"
-            && resolved.as_ref().is_some_and(|resolved| {
-                resolved.schema.get("$recursiveAnchor") == Some(&Value::Bool(true))
-            });
-        Ok(TreeUnit::Ref {
+            && resolved.schema.get("$recursiveAnchor") == Some(&Value::Bool(true));
+        let function = self.function_id(resolved.location);
+        // The target's schemas run in its own code.
+        let outer_function = self.function.replace(function);
+        let outer_inline = std::mem::take(&mut self.inline);
+        let target = self.add_reference(ctx, reference);
+        self.function = outer_function;
+        self.inline = outer_inline;
+        let target = target?;
+        if target == index {
+            return Ok(None);
+        }
+        Ok(Some(TreeUnit::Ref {
             keyword,
             leaves: leaves_document(ctx, reference),
-            target: self.add_reference(ctx, reference)?,
+            target,
+            function,
             anchor,
             recursive,
-        })
+        }))
+    }
+
+    /// The index in `functions` of the reference target code at `location`.
+    fn function_id(&mut self, location: String) -> usize {
+        if let Some(&id) = self.function_ids.get(&location) {
+            return id;
+        }
+        let id = self.functions.len();
+        self.functions.push(location.clone());
+        self.function_ids.insert(location, id);
+        id
     }
 
     /// Every schema a reference resolving through the dynamic scope may land on, in every
@@ -1012,8 +1086,17 @@ pub(super) fn compile<E: ValueEmitter>(
     ) {
         return Err(syn::Error::new(proc_macro2::Span::call_site(), message));
     }
+    let config = ctx.config;
+    // The registry's copy, which the code of reference targets compiles from: a schema has one
+    // address in both.
+    let root = config
+        .registry
+        .resolver((*config.base_uri).clone())
+        .lookup("")
+        .map_err(|error| syn::Error::new(proc_macro2::Span::call_site(), error.to_string()))?
+        .contents();
     let mut tree = Tree::default();
-    tree.add(ctx, schema, String::new())?;
+    tree.add(ctx, root, String::new())?;
     tree.add_scope_targets(ctx)?;
     // Every error comes from a unit reporting it itself.
     let without_errors_run = tree.units.iter().all(|unit| match unit {
@@ -1116,6 +1199,20 @@ pub(super) fn compile<E: ValueEmitter>(
             entry
         })
         .collect();
+    // References through the dynamic scope enter their targets under guards of their own.
+    let entered_statically: HashSet<usize> = tree
+        .units
+        .iter()
+        .filter_map(|unit| match unit {
+            TreeUnit::Ref {
+                function,
+                anchor: None,
+                recursive: false,
+                ..
+            } => Some(*function),
+            _ => None,
+        })
+        .collect();
     let units: Vec<Value> = tree
         .units
         .into_iter()
@@ -1182,11 +1279,12 @@ pub(super) fn compile<E: ValueEmitter>(
             TreeUnit::Ref {
                 keyword,
                 target,
+                function,
                 leaves,
                 anchor,
                 recursive,
             } => {
-                let mut entry = json!({"keyword": keyword, "target": target});
+                let mut entry = json!({"keyword": keyword, "target": target, "function": function});
                 let mut scope = Map::new();
                 if leaves {
                     scope.insert("leaves".to_string(), json!(true));
@@ -1250,6 +1348,46 @@ pub(super) fn compile<E: ValueEmitter>(
             })
             .collect();
     }
+    // A `$ref` re-entering a target while the target's code compiles enters it under the guard
+    // that code shares with its own references to the target.
+    let mut guarded = Vec::new();
+    let functions: Vec<Value> = tree
+        .functions
+        .iter()
+        .enumerate()
+        .map(|(id, location)| {
+            let mut entry = json!({});
+            let mut within = ctx.compiled_within.get(location).and_then(Option::as_ref);
+            while let Some(outer) = within {
+                if let Some(parent) = tree.function_ids.get(outer) {
+                    entry["parent"] = json!(parent);
+                    break;
+                }
+                within = ctx.compiled_within.get(outer).and_then(Option::as_ref);
+            }
+            if entered_statically.contains(&id) && ctx.reentered_targets.contains(location) {
+                entry["guard"] = json!(guarded.len());
+                guarded.push(format_ident!(
+                    "{}",
+                    ctx.is_valid_fns
+                        .get_name(location)
+                        .expect("a re-entered target has code")
+                ));
+            }
+            entry
+        })
+        .collect();
+    if !tree.functions.is_empty() {
+        tables["functions"] = json!(functions);
+    }
+    if !guarded.is_empty() {
+        ctx.uses_ref_cycle = true;
+    }
+    let guards: Vec<_> = (0..guarded.len())
+        .map(|index| format_ident!("__guard_{index}"))
+        .collect();
+    let node = E::node_param(None);
+    let node_address = E::node_address(format_ident!("instance"));
     let scope = scope_stacks(ctx, &tree.resources);
     if scope.is_some() {
         if !tree.valid_resources.is_empty() {
@@ -1377,6 +1515,17 @@ pub(super) fn compile<E: ValueEmitter>(
                 #checks
             }
         )*
+        #(
+            fn #guards(instance: &<#json as jsonschema::json::Json>::Node<'_>, enter: bool) -> bool {
+                let instance = ::core::clone::Clone::clone(instance);
+                #prelude
+                __eval::guard(
+                    &__JSONSCHEMA_VALIDATE_MARK,
+                    ((#guarded as fn(#node) -> bool) as usize, #node_address),
+                    enter,
+                )
+            }
+        )*
         #(#type_checks)*
         #(#reported_checks)*
         #(
@@ -1418,6 +1567,7 @@ pub(super) fn compile<E: ValueEmitter>(
             tables: #tables,
             matchers: &[#(#matchers),*],
             valid: &[#(#validities),*],
+            guards: &[#(#guards),*],
             discriminators: &[#(#discriminators),*],
             not_of_type: &[#(#type_names),*],
             direct: &[#(#reported_names),*],
