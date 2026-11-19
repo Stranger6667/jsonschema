@@ -214,9 +214,11 @@ pub(in super::super) fn compile<E: ValueEmitter>(
     if let Some(pattern_properties_value) =
         pattern_properties_value.filter(|_| additional_properties_fused)
     {
-        if let Some(errors) =
-            object_pass::compile_errors(ctx, &cluster, additional_properties_schema)
-        {
+        if let Some(errors) = object_pass::compile_errors(
+            ctx,
+            &cluster,
+            matches!(additional_properties_schema, Some(Value::Bool(false))),
+        ) {
             checks.push((CompiledExpr::with_errors(quote! { true }, errors), true));
         } else {
             // Invalid pattern regex: fall back to per-keyword checks so the diagnostic surfaces.
@@ -226,20 +228,22 @@ pub(in super::super) fn compile<E: ValueEmitter>(
                     true,
                 ));
             }
-            if let Some(compiled) =
+            checks.push((
                 pattern_properties::compile::<E>(pattern_properties_value, &cluster)
-            {
-                checks.push((compiled, true));
-            }
+                    .expect("an invalid pattern is reported"),
+                true,
+            ));
             if properties_map.is_none() {
-                if let Some(compiled) = additional_properties::compile(
-                    ctx,
-                    additional_properties_schema,
-                    pattern_properties_schema,
-                    cluster.additional.as_ref(),
-                ) {
-                    checks.push((compiled, true));
-                }
+                checks.push((
+                    additional_properties::compile(
+                        ctx,
+                        additional_properties_schema,
+                        pattern_properties_schema,
+                        cluster.additional.as_ref(),
+                    )
+                    .expect("an invalid pattern is reported"),
+                    true,
+                ));
             }
         }
     } else if let Some(props) = properties_map {

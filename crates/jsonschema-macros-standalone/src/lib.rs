@@ -40,12 +40,30 @@ pub struct Schema;
 )]
 pub struct Content;
 
+struct Even;
+
+impl<'i> jsonschema::Keyword<'i> for Even {
+    fn validate(&self, instance: &'i Value) -> Result<(), jsonschema::ValidationError<'i>> {
+        if self.is_valid(instance) {
+            Ok(())
+        } else {
+            Err(jsonschema::ValidationError::custom("number must be even"))
+        }
+    }
+
+    fn is_valid(&self, instance: &'i Value) -> bool {
+        instance.as_u64().is_none_or(|number| number % 2 == 0)
+    }
+}
+
+// The `Result` is required by the keyword factory signature.
+#[allow(clippy::unnecessary_wraps)]
 fn even<'a>(
     _parent: &'a Map<String, Value>,
     _value: &'a Value,
     _path: jsonschema::paths::Location,
 ) -> Result<Box<dyn for<'i> jsonschema::Keyword<'i>>, jsonschema::ValidationError<'a>> {
-    unimplemented!()
+    Ok(Box::new(Even))
 }
 
 #[jsonschema::validator(
@@ -56,7 +74,7 @@ pub struct Custom;
 
 #[cfg(test)]
 mod tests {
-    use super::Schema;
+    use super::{Custom, Schema};
     use jsonschema::__private::serde_json::json;
 
     #[test]
@@ -70,5 +88,13 @@ mod tests {
         assert!(!Schema::is_valid(&invalid));
         assert!(Schema::validate(&invalid).is_err());
         assert_eq!(Schema::iter_errors(&invalid).count(), 2);
+
+        assert!(Custom::is_valid(&json!(2)));
+        assert_eq!(
+            Custom::validate(&json!(3))
+                .expect_err("odd number")
+                .to_string(),
+            "number must be even"
+        );
     }
 }

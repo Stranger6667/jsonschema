@@ -1,5 +1,6 @@
 use std::{
     collections::{BTreeSet, HashMap},
+    fs::File,
     path::PathBuf,
     sync::Arc,
 };
@@ -259,6 +260,10 @@ const DRAFT7: &str = "http://json-schema.org/draft-07/schema#";
 #[test_case(json!({"$schema": DRAFT7, "properties": {"next": {"$ref": "#"}}}), &[] ; "single path")]
 #[test_case(json!({"$schema": DRAFT7, "allOf": [{"$ref": "#/definitions/list"}, {"$ref": "#/definitions/list"}], "definitions": {"list": {"properties": {"next": {"$ref": "#/definitions/list"}}}}}), &[] ; "repeat outside the cycle")]
 #[test_case(json!({"$dynamicAnchor": "node", "allOf": [{"properties": {"c": {"$ref": "#"}}}, {"properties": {"c": {"$ref": "#"}}}, {"properties": {"d": {"$dynamicRef": "#node"}}}]}), &[] ; "dynamic reference")]
+#[test_case(json!({"$schema": DRAFT7, "definitions": {"tree": {"anyOf": [{"type": ["array", "null"], "items": {"$ref": "#/definitions/tree"}}, {"type": ["object", "null"], "additionalProperties": {"$ref": "#/definitions/tree"}}]}}, "$ref": "#/definitions/tree"}), &[] ; "nullable containers")]
+#[test_case(json!({"$schema": DRAFT7, "oneOf": [{"type": "string", "properties": {"c": {"$ref": "#"}}}, {"type": ["object", "integer"], "properties": {"c": {"$ref": "#"}}}]}), &[] ; "branches of string and other types")]
+#[test_case(json!({"$schema": DRAFT7, "allOf": [{"properties": {"c": {"$ref": "#"}}}, {"properties": {"c": {"$ref": "#"}}}, {"properties": {"c": {"$ref": "#"}}}]}), &["validate_ref_0"] ; "three all of branches reaching one property")]
+#[test_case(json!({"$defs": {"base": {"properties": {"child": {"$ref": "#/$defs/node"}}}, "node": {"$ref": "#/$defs/base", "properties": {"child": {"$ref": "#/$defs/node"}}}}, "$ref": "#/$defs/node"}), &["validate_ref_0"] ; "ref beside properties reaching one property")]
 #[test_case(serde_json::from_str(include_str!("../../benchmark/data/recursive_schema.json")).expect("valid JSON"), &[] ; "recursive benchmark")]
 #[test_case(serde_json::from_str(include_str!("../../benchmark/data/openapi.json")).expect("valid JSON"), &[] ; "openapi benchmark")]
 fn ref_cycle_memo(schema: Value, expected: &[&str]) {
@@ -465,6 +470,9 @@ fn evaluate_object_applicators_module() {
 #[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "$ref": "#/$defs/b", "$defs": {"b": {"$schema": "http://json-schema.org/draft-07/schema#"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "unsupported keyword behind a ref within an embedded resource")]
 #[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
 #[test_case(json!({"patternProperties": {"(": {}}}), "`evaluate` does not support the `(` pattern" ; "invalid pattern")]
+#[test_case(json!({"$dynamicRef": "#/$defs/missing"}), "Pointer '/$defs/missing' does not exist" ; "unresolvable dynamic ref")]
+#[test_case(json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$recursiveRef": "#/$defs/missing"}), "Pointer '/$defs/missing' does not exist" ; "unresolvable recursive ref")]
+#[test_case(json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "b": {"$ref": "http://example.com/other#/$defs/x"}}, "$defs": {"other": {"$id": "http://example.com/other", "$defs": {"x": {}}, "properties": {"y": {"$schema": "http://json-schema.org/draft-07/schema#"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in a resource a ref enters below its root")]
 fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
     let mut config = test_config(schema);
     config
@@ -727,6 +735,12 @@ const UNKNOWN_VOCABULARY_ERROR: &str = "Unknown vocabulary: 'https://example.com
     ; "undeclared behind ref"
 )]
 #[test_case(
+    r##"{"$schema":"json-schema:///meta/custom","$ref":"#/$defs/a","$defs":{"a":{"type":"string"}}}"##,
+    &quote! {},
+    Some(UNKNOWN_VOCABULARY_ERROR)
+    ; "undeclared beside ref"
+)]
+#[test_case(
     r#"{"$schema":"json-schema:///meta/custom","type":"string"}"#,
     &quote! { vocabularies = ["https://example.com/vocab/made-up"], },
     None
@@ -762,6 +776,57 @@ fn required_unknown_vocabulary(schema: &str, declaration: &TokenStream, expected
         .map(|error| error.to_string());
 
     assert_eq!(error.as_deref(), expected);
+}
+
+fn expansion_error(attr: TokenStream) -> String {
+    let config: crate::Config = syn::parse2(attr).expect("Config should parse");
+    let item: syn::ItemStruct = syn::parse2(quote! {
+        struct FileValidator;
+    })
+    .expect("Item should parse");
+    crate::validator_impl(&config, &item)
+        .expect_err("expansion fails")
+        .to_string()
+}
+
+#[test]
+fn missing_schema_file_at_absolute_path() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("missing.json");
+    let literal = path.to_string_lossy().to_string();
+    let error = File::open(&path).expect_err("the file is missing");
+    assert_eq!(
+        expansion_error(quote! { path = #literal }),
+        format!("Failed to read `{}`: {error}", path.display())
+    );
+}
+
+#[test]
+fn missing_resource_file_at_absolute_path() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("missing.json");
+    let literal = path.to_string_lossy().to_string();
+    let error = File::open(&path).expect_err("the file is missing");
+    assert_eq!(
+        expansion_error(quote! {
+            schema = "{}",
+            resources = { "json-schema:///r" => { path = #literal } }
+        }),
+        format!("Cannot open '{}': {error}", path.display())
+    );
+}
+
+#[test]
+fn resource_file_with_invalid_json() {
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("src/lib.rs");
+    assert_eq!(
+        expansion_error(quote! {
+            schema = "{}",
+            resources = { "json-schema:///r" => { path = "src/lib.rs" } }
+        }),
+        format!(
+            "Invalid JSON in '{}': expected value at line 1 column 1",
+            path.display()
+        )
+    );
 }
 
 #[test]

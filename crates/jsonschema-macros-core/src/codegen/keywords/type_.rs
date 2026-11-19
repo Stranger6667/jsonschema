@@ -40,13 +40,7 @@ pub(crate) fn compile<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Valu
     let schema_path = ctx.schema_path_for_keyword("type");
 
     match value {
-        Value::String(ty) => {
-            if is_known_type_name(ty) {
-                generate_type_check(ctx, ty.as_str(), &schema_path)
-            } else {
-                invalid_schema_unexpected_type_expression()
-            }
-        }
+        Value::String(ty) => generate_type_check(ctx, ty.as_str(), &schema_path),
         Value::Array(types) => {
             let mut type_names = Vec::with_capacity(types.len());
             for item in types {

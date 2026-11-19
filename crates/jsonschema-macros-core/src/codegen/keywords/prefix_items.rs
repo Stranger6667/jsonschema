@@ -3,15 +3,11 @@ use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
 use serde_json::Value;
 
-/// Returns the compiled check and the prefix length, or `None` if the value is
-/// not a non-empty array.
+/// Returns the compiled check and the prefix length, or `None` for an empty prefix.
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
-    value: &Value,
+    schemas: &[Value],
 ) -> Option<(CompiledExpr, usize)> {
-    let Value::Array(schemas) = value else {
-        return None;
-    };
     let prefix_len = schemas.len();
     if prefix_len == 0 {
         return None;

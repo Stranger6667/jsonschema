@@ -51,9 +51,6 @@ pub fn evaluate_supports<'a>(
         .id()
         .unwrap_or("json-schema:///evaluate")
         .to_string();
-    let Ok(base_uri) = uri::from_str(&base) else {
-        return false;
-    };
     let mut documents = vec![(base.clone(), draft.create_resource(schema.clone()))];
     documents.extend(resources.into_iter().map(|(uri, contents)| {
         (
@@ -70,6 +67,7 @@ pub fn evaluate_supports<'a>(
         )
         .and_then(referencing::RegistryBuilder::prepare)
         .is_ok_and(|registry| {
+            let base_uri = uri::from_str(&base).expect("the registry parsed this URI");
             codegen::evaluation::unsupported(&registry, &base_uri, schema, draft).is_none()
         })
 }
@@ -120,6 +118,9 @@ pub mod bench {
         })
     }
 
+    /// # Panics
+    ///
+    /// When a benchmark schema generates no validator.
     #[must_use]
     pub fn generate(input: &Input) -> proc_macro2::TokenStream {
         crate::codegen::generate_from_config::<crate::codegen::emit_serde::SerdeEmitter>(
@@ -128,7 +129,7 @@ pub mod bench {
             &format_ident!("Validator"),
             &format_ident!("__validator_impl"),
         )
-        .unwrap_or_else(|error| error.to_compile_error())
+        .expect("benchmark schemas generate a validator")
     }
 }
 
@@ -1106,8 +1107,7 @@ fn resolve_schema_path(lit: &LitStr) -> syn::Result<PathBuf> {
     if path.is_absolute() {
         return Ok(path);
     }
-    let manifest_dir = env::var("CARGO_MANIFEST_DIR")
-        .map_err(|_| syn::Error::new_spanned(lit, "CARGO_MANIFEST_DIR is not set"))?;
+    let manifest_dir = env::var("CARGO_MANIFEST_DIR").expect("Cargo sets CARGO_MANIFEST_DIR");
     let full = PathBuf::from(manifest_dir).join(&path);
     if full.exists() {
         return Ok(full);

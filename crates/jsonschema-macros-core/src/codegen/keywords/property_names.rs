@@ -45,17 +45,12 @@ pub(crate) fn compile<E: ValueEmitter>(
                 let is_valid = string_check.is_valid_token_stream();
                 // Report each offending property name as the error instance (like the runtime),
                 // while keeping the fast `is_valid` scan and object-level instance path.
-                return match &string_check.errors {
-                    ErrorsBlock::Expr(_) => {
-                        let child_errors = string_check.errors.as_token_stream();
-                        let keys_iter = E::object_keys_iter(format_ident!("obj"));
-                        CompiledExpr::with_errors(
-                            E::object_keys_all_strings(keys_iter.clone(), is_valid.clone()),
-                            property_name_errors::<E>(&child_errors, true),
-                        )
-                    }
-                    ErrorsBlock::AlwaysValid => CompiledExpr::always_true(),
-                };
+                let child_errors = string_check.errors.as_token_stream();
+                let keys_iter = E::object_keys_iter(format_ident!("obj"));
+                return CompiledExpr::with_errors(
+                    E::object_keys_all_strings(keys_iter, is_valid),
+                    property_name_errors::<E>(&child_errors, true),
+                );
             }
         }
     }

@@ -1539,8 +1539,6 @@ struct EmailOptionsConfiguredValidator;
     validate_formats = true,
     email_options = {
         minimum_sub_domains = 2,
-        allow_domain_literal = true,
-        allow_display_text = true,
     }
 )]
 struct EmailOptionsMinimumSubDomainsValidator;
@@ -4683,6 +4681,131 @@ fn test_errors_follow_keyword_priority(
     }
 }
 
+#[jsonschema::validator(
+    schema = r##"{"anyOf": [{"required": ["a"], "allOf": [{"properties": {"a": true}}]}], "prefixItems": [true], "unevaluatedItems": false, "unevaluatedProperties": false}"##
+)]
+struct UnevaluatedBesideAnyOf;
+#[jsonschema::validator(
+    schema = r##"{"items": [{}], "additionalItems": {"patternProperties": {"^x-": {}}}}"##,
+    draft = referencing::Draft::Draft7
+)]
+struct AdditionalItemsAcceptingEverything;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"p": {"patternProperties": {"^a": {"patternProperties": {"^x-": {}}}}}, "q": {"prefixItems": [{"patternProperties": {"^x-": {}}}]}, "r": {"additionalProperties": {"patternProperties": {"^x-": {}}}}}, "additionalProperties": {"patternProperties": {"^x-": {}}}}"##
+)]
+struct SubschemasAcceptingEveryObject;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"a": {"minimum": 1, "maximum": 10, "exclusiveMaximum": true}, "b": {"minimum": 1, "exclusiveMinimum": true, "maximum": 10}}}"##,
+    draft = referencing::Draft::Draft4
+)]
+struct OneExclusiveBoundDraft4;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"a": {"$ref": "#/$defs/a", "properties": {"x": true}}}, "$ref": "#/$defs/a", "unevaluatedProperties": false}"##
+)]
+struct SelfReferenceBesideUnevaluatedProperties;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"a": true}, "dependentSchemas": {"b": false}, "unevaluatedProperties": false}"##
+)]
+struct BooleanDependentSchemaBesideUnevaluatedProperties;
+#[jsonschema::validator(
+    schema = r##"{"$recursiveAnchor": true, "properties": {"child": {"$ref": "#"}}, "$recursiveRef": "#"}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct RecursiveRefBesideSelfReference;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"number": {"type": "number", "const": 5}, "integer": {"type": "integer", "const": 1}, "boolean": {"type": "boolean", "const": true}, "array": {"type": "array", "const": [1, 2]}, "none": {"type": "string", "enum": []}, "booleans": {"type": "boolean", "enum": [true, false]}, "null": {"type": "null", "enum": [null]}, "arrays": {"type": "array", "enum": [[1], [2]]}, "objects": {"type": "object", "enum": [{"a": 1}]}, "string_const_true": {"type": "string", "const": true}, "string_const_array": {"type": "string", "const": [1, 2]}, "string_enum_null": {"type": "string", "enum": [null]}, "string_enum_array": {"type": "string", "enum": [[1]]}, "string_enum_object": {"type": "string", "enum": [{"a": 1}]}}}"##
+)]
+struct TypeBesideConstOrEnum;
+
+#[test_case(UnevaluatedBesideAnyOf::is_valid, UnevaluatedBesideAnyOf::validate, UnevaluatedBesideAnyOf::iter_errors, jsonschema::options(), serde_json::json!({"anyOf": [{"required": ["a"], "allOf": [{"properties": {"a": true}}]}], "prefixItems": [true], "unevaluatedItems": false, "unevaluatedProperties": false}), serde_json::json!([[1], [1, 2], {"a": 1}, {"a": 1, "b": 2}, {"b": 1}, "s"]) ; "unevaluated_items_and_properties_beside_any_of")]
+#[test_case(AdditionalItemsAcceptingEverything::is_valid, AdditionalItemsAcceptingEverything::validate, AdditionalItemsAcceptingEverything::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft7), serde_json::json!({"items": [{}], "additionalItems": {"patternProperties": {"^x-": {}}}}), serde_json::json!([[1, {"x-a": 1}], [1, 2]]) ; "additional_items_accepting_everything")]
+#[test_case(SubschemasAcceptingEveryObject::is_valid, SubschemasAcceptingEveryObject::validate, SubschemasAcceptingEveryObject::iter_errors, jsonschema::options(), serde_json::json!({"properties": {"p": {"patternProperties": {"^a": {"patternProperties": {"^x-": {}}}}}, "q": {"prefixItems": [{"patternProperties": {"^x-": {}}}]}, "r": {"additionalProperties": {"patternProperties": {"^x-": {}}}}}, "additionalProperties": {"patternProperties": {"^x-": {}}}}), serde_json::json!([{"p": {"ab": {"x-c": 1}}, "q": [{"x-a": 1}], "r": {"z": {}}, "s": {}}, 5]) ; "subschemas_accepting_every_object")]
+#[test_case(OneExclusiveBoundDraft4::is_valid, OneExclusiveBoundDraft4::validate, OneExclusiveBoundDraft4::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft4), serde_json::json!({"properties": {"a": {"minimum": 1, "maximum": 10, "exclusiveMaximum": true}, "b": {"minimum": 1, "exclusiveMinimum": true, "maximum": 10}}}), serde_json::json!([{"a": 0}, {"a": 10}, {"a": 1}, {"b": 1}, {"b": 10}, {"b": 11}]) ; "one_exclusive_bound_draft4")]
+#[test_case(SelfReferenceBesideUnevaluatedProperties::is_valid, SelfReferenceBesideUnevaluatedProperties::validate, SelfReferenceBesideUnevaluatedProperties::iter_errors, jsonschema::options(), serde_json::json!({"$defs": {"a": {"$ref": "#/$defs/a", "properties": {"x": true}}}, "$ref": "#/$defs/a", "unevaluatedProperties": false}), serde_json::json!([{"x": 1}, {"x": 1, "y": 2}, {}]) ; "self_reference_beside_unevaluated_properties")]
+#[test_case(BooleanDependentSchemaBesideUnevaluatedProperties::is_valid, BooleanDependentSchemaBesideUnevaluatedProperties::validate, BooleanDependentSchemaBesideUnevaluatedProperties::iter_errors, jsonschema::options(), serde_json::json!({"properties": {"a": true}, "dependentSchemas": {"b": false}, "unevaluatedProperties": false}), serde_json::json!([{"a": 1}, {"a": 1, "c": 1}, {"b": 1}]) ; "boolean_dependent_schema_beside_unevaluated_properties")]
+#[test_case(RecursiveRefBesideSelfReference::is_valid, RecursiveRefBesideSelfReference::validate, RecursiveRefBesideSelfReference::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"$recursiveAnchor": true, "properties": {"child": {"$ref": "#"}}, "$recursiveRef": "#"}), serde_json::json!([{}, {"child": {}}, 5]) ; "recursive_ref_beside_self_reference")]
+#[test_case(TypeBesideConstOrEnum::is_valid, TypeBesideConstOrEnum::validate, TypeBesideConstOrEnum::iter_errors, jsonschema::options(), serde_json::json!({"properties": {"number": {"type": "number", "const": 5}, "integer": {"type": "integer", "const": 1}, "boolean": {"type": "boolean", "const": true}, "array": {"type": "array", "const": [1, 2]}, "none": {"type": "string", "enum": []}, "booleans": {"type": "boolean", "enum": [true, false]}, "null": {"type": "null", "enum": [null]}, "arrays": {"type": "array", "enum": [[1], [2]]}, "objects": {"type": "object", "enum": [{"a": 1}]}, "string_const_true": {"type": "string", "const": true}, "string_const_array": {"type": "string", "const": [1, 2]}, "string_enum_null": {"type": "string", "enum": [null]}, "string_enum_array": {"type": "string", "enum": [[1]]}, "string_enum_object": {"type": "string", "enum": [{"a": 1}]}}}), serde_json::json!([{"number": 5}, {"number": "x"}, {"integer": 1}, {"integer": 2.5}, {"boolean": true}, {"boolean": 1}, {"array": [1, 2]}, {"array": "x"}, {"none": "a"}, {"none": 1}, {"booleans": false}, {"booleans": "x"}, {"null": null}, {"null": 0}, {"arrays": [1]}, {"arrays": {}}, {"objects": {"a": 1}}, {"objects": []}, {"string_const_true": true}, {"string_const_array": [1, 2]}, {"string_enum_null": null}, {"string_enum_array": [1]}, {"string_enum_object": {"a": 1}}]) ; "type_beside_const_or_enum")]
+fn test_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    options: jsonschema::ValidationOptions,
+    schema: serde_json::Value,
+    instances: serde_json::Value,
+) {
+    let runtime = options.build(&schema).expect("valid schema");
+    for instance in instances.as_array().expect("instance list") {
+        assert_validate_parity(is_valid(instance), validate(instance), &runtime, instance);
+        assert_iter_errors_parity(iter_errors(instance), &runtime, instance);
+    }
+}
+
+// Without the validation vocabulary `const` accepts every `kind`, so it cannot pick a branch.
+#[jsonschema::validator(
+    schema = r#"{"$schema": "json-schema:///meta/no-validation", "oneOf": [{"required": ["kind"], "properties": {"kind": {"const": "a"}}}, {"required": ["kind"], "properties": {"kind": {"const": "b"}}}]}"#,
+    draft = referencing::Draft::Draft202012,
+    resources = {
+        "json-schema:///meta/no-validation" => { schema = r#"{"$id": "json-schema:///meta/no-validation", "$schema": "https://json-schema.org/draft/2020-12/schema", "$vocabulary": {"https://json-schema.org/draft/2020-12/vocab/core": true, "https://json-schema.org/draft/2020-12/vocab/applicator": true, "https://json-schema.org/draft/2020-12/vocab/validation": false, "https://json-schema.org/draft/2020-12/vocab/unevaluated": true, "https://json-schema.org/draft/2020-12/vocab/format-annotation": true}}"# },
+    }
+)]
+struct NoValidationVocabularyOneOf;
+
+#[test_case(serde_json::json!({"kind": "a"}) ; "first_branch_value")]
+#[test_case(serde_json::json!({"kind": "c"}) ; "unknown_value")]
+#[test_case(serde_json::json!({}) ; "no_discriminator")]
+fn test_one_of_without_validation_vocabulary_matches_runtime(instance: serde_json::Value) {
+    let runtime = build_runtime_with_resources(
+        serde_json::json!({"$schema": "json-schema:///meta/no-validation", "oneOf": [{"required": ["kind"], "properties": {"kind": {"const": "a"}}}, {"required": ["kind"], "properties": {"kind": {"const": "b"}}}]}),
+        [(
+            "json-schema:///meta/no-validation",
+            serde_json::json!({"$id": "json-schema:///meta/no-validation", "$schema": "https://json-schema.org/draft/2020-12/schema", "$vocabulary": {"https://json-schema.org/draft/2020-12/vocab/core": true, "https://json-schema.org/draft/2020-12/vocab/applicator": true, "https://json-schema.org/draft/2020-12/vocab/validation": false, "https://json-schema.org/draft/2020-12/vocab/unevaluated": true, "https://json-schema.org/draft/2020-12/vocab/format-annotation": true}}),
+        )],
+    );
+    assert_eq!(
+        NoValidationVocabularyOneOf::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+}
+
+#[jsonschema::validator(
+    schema = r#"{"type": "string", "format": "empty"}"#,
+    validate_formats = true,
+    formats = {
+        "empty" => ::core::primitive::str::is_empty,
+    }
+)]
+struct CustomFormatAbsolutePath;
+
+#[test_case(serde_json::json!("") ; "empty")]
+#[test_case(serde_json::json!("a") ; "not_empty")]
+fn test_custom_format_by_absolute_path_matches_runtime(instance: serde_json::Value) {
+    let runtime = jsonschema::options()
+        .should_validate_formats(true)
+        .with_format("empty", str::is_empty)
+        .build(&serde_json::json!({"type": "string", "format": "empty"}))
+        .expect("valid schema");
+    assert_eq!(
+        CustomFormatAbsolutePath::is_valid(&instance),
+        runtime.is_valid(&instance)
+    );
+}
+
+#[jsonschema::validator(schema = r#"{"type": "string", "minLength": 2}"#, backend = SerdeJson)]
+struct ExplicitSerdeJsonBackend;
+
+#[test_case(serde_json::json!("ab") ; "valid")]
+#[test_case(serde_json::json!("a") ; "too_short")]
+fn test_explicit_serde_json_backend_matches_runtime(instance: serde_json::Value) {
+    let runtime = jsonschema::validator_for(&serde_json::json!({"type": "string", "minLength": 2}))
+        .expect("valid schema");
+    assert_validate_parity(
+        ExplicitSerdeJsonBackend::is_valid(&instance),
+        ExplicitSerdeJsonBackend::validate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
 #[jsonschema::validator(schema = r#"{"propertyNames": {"maxLength": 0}}"#)]
 struct PropertyNamesLeaf;
 #[jsonschema::validator(
@@ -6529,6 +6652,12 @@ struct EvaluateRefIgnoredSiblings;
 struct EvaluateRefBelowNames;
 #[jsonschema::validator(schema = r##"{"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}"##, draft = Draft7, methods = { evaluate = true })]
 struct EvaluateRefCycleInBranches;
+#[jsonschema::validator(schema = r##"{"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/tree", "$dynamicAnchor": "node", "type": "object", "properties": {"a": {"$dynamicRef": "#node"}, "b": {"$dynamicRef": "#node"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateTwoDynamicRefsToOneAnchor;
+#[jsonschema::validator(schema = r##"{"$id": "http://example.com/root", "items": {"$id": "x", "items": false, "prefixItems": [{"type": "integer"}]}, "properties": {"a": {"$ref": "#/items/prefixItems/0"}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateRefByPointerPastBooleanItems;
+#[jsonschema::validator(schema = r##"{"contentEncoding": "base64", "contentMediaType": "application/json"}"##, draft = Draft6, methods = { evaluate = true })]
+struct EvaluateContentDraft6;
 
 #[jsonschema::validator(schema = r##"{"properties": {"a": {}}, "unevaluatedProperties": false}"##, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateUnevaluatedPropertiesFalse;
@@ -6860,6 +6989,9 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateDiscriminatedAnyOf::evaluate, serde_json::json!({"anyOf": [{"properties": {"kind": {"const": "a"}, "v": {"type": "integer"}}, "required": ["kind"]}, {"properties": {"kind": {"const": "b"}, "v": {"type": "string"}}, "required": ["kind"]}, {"properties": {"kind": {"enum": ["c", "d"]}}, "required": ["kind"], "minProperties": 3}]}), None, Draft::Draft202012 ; "discriminated_any_of")]
 #[test_case(EvaluateRefCycleInBranches::evaluate, serde_json::json!({"definitions": {"node": {"oneOf": [{"required": ["a"], "properties": {"a": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"properties": {"b": {"const": 1}, "c": {"$ref": "#/definitions/node"}}}, {"type": "string"}]}}, "$ref": "#/definitions/node"}), None, Draft::Draft7 ; "ref_cycle_in_branches")]
 #[test_case(EvaluateNotAroundRefInEmbeddedResource::evaluate, serde_json::json!({"$id": "https://example.com/root", "properties": {"a": {"$ref": "inner"}}, "$defs": {"inner": {"$id": "inner", "not": {"$ref": "#/$defs/small"}, "$defs": {"small": {"maximum": 2}}}}}), None, Draft::Draft202012 ; "not_around_ref_in_embedded_resource")]
+#[test_case(EvaluateTwoDynamicRefsToOneAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/tree", "$dynamicAnchor": "node", "type": "object", "properties": {"a": {"$dynamicRef": "#node"}, "b": {"$dynamicRef": "#node"}}}), None, Draft::Draft202012 ; "two_dynamic_refs_to_one_anchor")]
+#[test_case(EvaluateRefByPointerPastBooleanItems::evaluate, serde_json::json!({"$id": "http://example.com/root", "items": {"$id": "x", "items": false, "prefixItems": [{"type": "integer"}]}, "properties": {"a": {"$ref": "#/items/prefixItems/0"}}}), None, Draft::Draft202012 ; "ref_by_pointer_past_boolean_items")]
+#[test_case(EvaluateContentDraft6::evaluate, serde_json::json!({"contentEncoding": "base64", "contentMediaType": "application/json"}), None, Draft::Draft6 ; "content_draft6")]
 fn test_evaluate_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,
