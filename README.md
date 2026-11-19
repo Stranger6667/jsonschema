@@ -52,7 +52,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     struct Short;
 
     assert!(Short::is_valid(&instance));
-    Short::validate(&instance)?;
+    assert!(Short::validate(&instance).is_ok());
+    assert!(Short::evaluate(&instance).is_valid());
 
     Ok(())
 }

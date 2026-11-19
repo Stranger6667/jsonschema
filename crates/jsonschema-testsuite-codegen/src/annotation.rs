@@ -10,7 +10,7 @@ use crate::{files, loader};
 const LATEST_DIALECT: u32 = 2020;
 
 /// `lookup`: a function returning the generated `evaluate` of the annotation suite case with a
-/// file name and description, for each case whose schema the generator supports.
+/// file name and description.
 pub(crate) fn generate(path: &str, lookup: &syn::Ident) -> Result<TokenStream, String> {
     let mut modules = Vec::new();
     let mut arms = Vec::new();
@@ -38,11 +38,7 @@ pub(crate) fn generate(path: &str, lookup: &syn::Ident) -> Result<TokenStream, S
                 .as_str()
                 .is_none_or(|compatibility| loader::is_compatible(compatibility, LATEST_DIALECT));
             let schema = &case["schema"];
-            let draft = referencing::Draft::default().detect(schema);
-            if !compatible
-                || !seen.insert((file_name.clone(), description.clone()))
-                || !jsonschema_macros_core::evaluate_supports(schema, draft, [])
-            {
+            if !compatible || !seen.insert((file_name.clone(), description.clone())) {
                 continue;
             }
             let module_ident = format_ident!("case_{}", modules.len());
@@ -50,7 +46,7 @@ pub(crate) fn generate(path: &str, lookup: &syn::Ident) -> Result<TokenStream, S
             modules.push(quote! {
                 #[cfg(feature = "macros")]
                 mod #module_ident {
-                    #[jsonschema::validator(schema = #schema, methods = { evaluate = true })]
+                    #[jsonschema::validator(schema = #schema)]
                     struct Validator;
 
                     pub(super) fn evaluate(instance: &serde_json::Value) -> testsuite::EvaluateOutputs {

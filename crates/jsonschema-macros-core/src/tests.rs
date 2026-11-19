@@ -118,6 +118,8 @@ fn schema_to_code_with_runtime_alias(
     runtime_crate_alias: Option<TokenStream>,
 ) -> String {
     let mut config = test_config(schema);
+    // The code of the validation methods; `evaluate` has snapshots of its own.
+    config.methods.evaluate = false;
     config.runtime_crate_alias = runtime_crate_alias;
     config.validate_formats = validate_formats;
     config.custom_formats = custom_formats;
@@ -321,12 +323,37 @@ fn config_methods_defaults() {
     assert!(config.methods.is_valid);
     assert!(config.methods.validate);
     assert!(config.methods.iter_errors);
-    assert!(!config.methods.evaluate);
+    assert!(config.methods.evaluate);
+}
+
+#[test]
+fn validator_without_methods_generates_evaluate() {
+    let config: crate::Config =
+        syn::parse2(quote! { schema = r#"{"maxLength": 5}"# }).expect("Config should parse");
+    let item: syn::ItemStruct =
+        syn::parse2(quote! { struct Validator; }).expect("Item should parse");
+    let generated: syn::File =
+        syn::parse2(crate::validator_impl(&config, &item).expect("valid schema"))
+            .expect("generated code parses");
+    let methods: Vec<String> = generated
+        .items
+        .iter()
+        .filter_map(|item| match item {
+            syn::Item::Impl(implementation) => Some(implementation),
+            _ => None,
+        })
+        .flat_map(|implementation| &implementation.items)
+        .filter_map(|item| match item {
+            syn::ImplItem::Fn(method) => Some(method.sig.ident.to_string()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(methods, ["is_valid", "validate", "iter_errors", "evaluate"]);
 }
 
 #[test_case(r#"schema = "{}", methods = { apply = false }"#, "Unknown methods key. Expected `is_valid`, `validate`, `iter_errors`, or `evaluate`" ; "unknown_key")]
 #[test_case(r#"schema = "{}", methods = { validate = false, validate = true }"#, "Duplicate methods key: `validate`" ; "duplicate_key")]
-#[test_case(r#"schema = "{}", methods = { is_valid = false, validate = false, iter_errors = false }"#, "At least one of `is_valid`, `validate`, `iter_errors`, or `evaluate` must be enabled" ; "all_disabled")]
+#[test_case(r#"schema = "{}", methods = { is_valid = false, validate = false, iter_errors = false, evaluate = false }"#, "At least one of `is_valid`, `validate`, `iter_errors`, or `evaluate` must be enabled" ; "all_disabled")]
 fn config_rejects_invalid_methods(input: &str, expected: &str) {
     let error = syn::parse_str::<crate::Config>(input)
         .err()
@@ -398,6 +425,7 @@ fn methods_validate_and_iter_errors_off_drop_error_functions() {
         crate::context::MethodGates {
             validate: false,
             iter_errors: false,
+            evaluate: false,
             ..Default::default()
         },
     );
@@ -408,8 +436,7 @@ fn methods_validate_and_iter_errors_off_drop_error_functions() {
 
 #[test]
 fn evaluate_leaf_keywords_module() {
-    let mut config = test_config(json!({"maxLength": 3, "minLength": 2, "type": "string"}));
-    config.methods.evaluate = true;
+    let config = test_config(json!({"maxLength": 3, "minLength": 2, "type": "string"}));
     insta::assert_snapshot!(
         "evaluate_leaf_keywords_module",
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
@@ -418,11 +445,10 @@ fn evaluate_leaf_keywords_module() {
 
 #[test]
 fn evaluate_properties_module() {
-    let mut config = test_config(json!({
+    let config = test_config(json!({
         "properties": {"a": {"type": "integer"}, "b/c": {"properties": {"d": false}}},
         "required": ["a"]
     }));
-    config.methods.evaluate = true;
     insta::assert_snapshot!(
         "evaluate_properties_module",
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
@@ -431,69 +457,22 @@ fn evaluate_properties_module() {
 
 #[test]
 fn evaluate_object_applicators_module() {
-    let mut config = test_config(json!({
+    let config = test_config(json!({
         "properties": {"a": {}},
         "patternProperties": {"^x-": {}, "[0-9]$": {"minimum": 1}},
         "additionalProperties": false,
         "propertyNames": {"maxLength": 3}
     }));
-    config.methods.evaluate = true;
     insta::assert_snapshot!(
         "evaluate_object_applicators_module",
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
     );
 }
 
-#[test_case(json!({"properties": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below properties")]
-#[test_case(json!({"patternProperties": {"^a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below patternProperties")]
-#[test_case(json!({"additionalProperties": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below additionalProperties")]
-#[test_case(json!({"propertyNames": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below propertyNames")]
-#[test_case(json!({"dependencies": {"a": ["b"], "c": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below dependencies")]
-#[test_case(json!({"dependentSchemas": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below dependentSchemas")]
-#[test_case(json!({"items": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below items")]
-#[test_case(json!({"items": [{"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below array items")]
-#[test_case(json!({"prefixItems": [{"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below prefixItems")]
-#[test_case(json!({"items": [{}], "additionalItems": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below additionalItems")]
-#[test_case(json!({"contains": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below contains")]
-#[test_case(json!({"allOf": [{}, {"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below allOf")]
-#[test_case(json!({"anyOf": [{"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below anyOf")]
-#[test_case(json!({"oneOf": [{"$schema": "http://json-schema.org/draft-07/schema#"}]}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below oneOf")]
-#[test_case(json!({"if": {"$schema": "http://json-schema.org/draft-07/schema#"}, "then": {}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below if")]
-#[test_case(json!({"if": {}, "then": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below then")]
-#[test_case(json!({"if": {}, "else": {"$schema": "http://json-schema.org/draft-07/schema#"}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword below else")]
-#[test_case(json!({"$ref": "#/$defs/a", "$defs": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in a ref target")]
-#[test_case(json!({"$ref": "#a", "$defs": {"a": {"$anchor": "a", "properties": {"b": {"$schema": "http://json-schema.org/draft-07/schema#"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in an anchor target")]
-#[test_case(json!({"$ref": "#/$defs/missing"}), "Pointer '/$defs/missing' does not exist" ; "unresolvable ref")]
-#[test_case(json!({"$id": "https://example.com/r", "$ref": "https://example.com/list", "$defs": {"override": {"$dynamicAnchor": "items", "properties": {"b": {"$schema": "http://json-schema.org/draft-07/schema#"}}}, "list": {"$id": "https://example.com/list", "items": {"$dynamicRef": "#items"}, "$defs": {"items": {"$dynamicAnchor": "items"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in a dynamic anchor target of another resource")]
-#[test_case(json!({"properties": {"x": {"$id": "http://example.com/a", "$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "embedded resource in another draft")]
-#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "$schema": "http://json-schema.org/draft-07/schema#"}}}), "`evaluate` does not support the `$schema` keyword yet" ; "unsupported keyword in an embedded resource")]
-#[test_case(json!({"properties": {"a": {"$id": "http://example.com/a", "$ref": "#/$defs/b", "$defs": {"b": {"$schema": "http://json-schema.org/draft-07/schema#"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "unsupported keyword behind a ref within an embedded resource")]
-#[test_case(json!({"properties": {"a": 1}}), "`evaluate` needs a schema that is a boolean or an object" ; "not a schema below properties")]
-#[test_case(json!({"patternProperties": {"(": {}}}), "`evaluate` does not support the `(` pattern" ; "invalid pattern")]
-#[test_case(json!({"$dynamicRef": "#/$defs/missing"}), "Pointer '/$defs/missing' does not exist" ; "unresolvable dynamic ref")]
-#[test_case(json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$recursiveRef": "#/$defs/missing"}), "Pointer '/$defs/missing' does not exist" ; "unresolvable recursive ref")]
-#[test_case(json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "b": {"$ref": "http://example.com/other#/$defs/x"}}, "$defs": {"other": {"$id": "http://example.com/other", "$defs": {"x": {}}, "properties": {"y": {"$schema": "http://json-schema.org/draft-07/schema#"}}}}}), "`evaluate` does not support the `$schema` keyword yet" ; "keyword in a resource a ref enters below its root")]
-fn evaluate_rejects_unsupported_schemas(schema: Value, message: &str) {
-    let mut config = test_config(schema);
-    config
-        .custom_keywords
-        .insert("even".to_string(), quote! { crate::even });
-    config.methods.evaluate = true;
-    let error = generate_from_config::<crate::codegen::emit_serde::SerdeEmitter>(
-        &config,
-        &quote! {},
-        &format_ident!("Validator"),
-        &format_ident!("__validator_impl"),
-    )
-    .expect_err("unsupported schema");
-    assert_eq!(error.to_string(), message);
-}
-
 #[test_case(json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$dynamicAnchor": "node", "items": {"anyOf": [{"$dynamicRef": "#node"}, {"type": "null"}]}}), "evaluate_dynamic_scope_module" ; "dynamic ref")]
 #[test_case(json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$recursiveAnchor": true, "properties": {"child": {"if": {"$recursiveRef": "#"}, "then": {"required": ["ok"]}}}}), "evaluate_recursive_scope_module" ; "recursive ref")]
 fn evaluate_scope_module(schema: Value, name: &str) {
-    let mut config = test_config(schema);
-    config.methods.evaluate = true;
+    let config = test_config(schema);
     insta::assert_snapshot!(
         name,
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
@@ -502,11 +481,10 @@ fn evaluate_scope_module(schema: Value, name: &str) {
 
 #[test]
 fn evaluate_discriminator_module() {
-    let mut config = test_config(json!({"oneOf": [
+    let config = test_config(json!({"oneOf": [
         {"properties": {"kind": {"const": "a"}}, "required": ["kind"]},
         {"properties": {"kind": {"enum": ["b", "c"]}}, "required": ["kind"]}
     ]}));
-    config.methods.evaluate = true;
     insta::assert_snapshot!(
         "evaluate_discriminator_module",
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
@@ -515,8 +493,7 @@ fn evaluate_discriminator_module() {
 
 #[test]
 fn evaluate_contains_module() {
-    let mut config = test_config(json!({"contains": {"type": "integer"}, "minContains": 2}));
-    config.methods.evaluate = true;
+    let config = test_config(json!({"contains": {"type": "integer"}, "minContains": 2}));
     insta::assert_snapshot!(
         "evaluate_contains_module",
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
@@ -525,14 +502,13 @@ fn evaluate_contains_module() {
 
 #[test]
 fn evaluate_combinators_module() {
-    let mut config = test_config(json!({
+    let config = test_config(json!({
         "allOf": [{"minimum": 0}],
         "anyOf": [{"type": "integer"}, {"minimum": 2}],
         "not": {"const": 1},
         "if": {"type": "integer"},
         "then": {"maximum": 9},
     }));
-    config.methods.evaluate = true;
     insta::assert_snapshot!(
         "evaluate_combinators_module",
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
@@ -540,29 +516,11 @@ fn evaluate_combinators_module() {
 }
 
 #[test]
-fn evaluate_rejects_an_unsupported_keyword_in_a_provided_resource() {
-    let config: crate::Config = syn::parse2(quote! {
-        schema = r#"{"$ref": "json-schema:///other"}"#,
-        resources = { "json-schema:///other" => { schema = r#"{"properties": {"a": {"$schema": "http://json-schema.org/draft-07/schema#"}}}"# } },
-        methods = { evaluate = true },
-    })
-    .expect("Config should parse");
-    let item: syn::ItemStruct =
-        syn::parse2(quote! { struct Validator; }).expect("Item should parse");
-    let error = crate::validator_impl(&config, &item).expect_err("unsupported schema");
-    assert_eq!(
-        error.to_string(),
-        "`evaluate` does not support the `$schema` keyword yet"
-    );
-}
-
-#[test]
 fn evaluate_ref_module() {
-    let mut config = test_config(json!({
+    let config = test_config(json!({
         "properties": {"next": {"$ref": "#"}, "value": {"$ref": "#/$defs/value"}},
         "$defs": {"value": {"type": "integer"}},
     }));
-    config.methods.evaluate = true;
     insta::assert_snapshot!(
         "evaluate_ref_module",
         render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
@@ -692,7 +650,7 @@ fn invalid_multiple_of_scientific_zero_matches_dynamic() {
 }
 
 #[test_case(
-    &quote! { schema = r#"{"format":"made-up"}"#, validate_formats = true, ignore_unknown_formats = false, },
+    &quote! { schema = r#"{"format":"made-up"}"#, validate_formats = true, ignore_unknown_formats = false, methods = { evaluate = false }, },
     "unknown_format_strict"
     ; "strict"
 )]
@@ -703,7 +661,8 @@ fn invalid_multiple_of_scientific_zero_matches_dynamic() {
         ignore_unknown_formats = true,
         resources = {
             "json-schema:///meta/format-assertion" => { schema = r#"{"$id":"json-schema:///meta/format-assertion","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/format-assertion":true}}"# },
-        }
+        },
+        methods = { evaluate = false },
     },
     "unknown_format_under_assertion_vocabulary"
     ; "under assertion vocabulary"
@@ -1213,12 +1172,12 @@ fn draft4_integer_schema() -> Value {
     json!({"$schema": "http://json-schema.org/draft-04/schema#", "type": ["integer", "string"]})
 }
 
-#[test_case("pyo3_emitter", &quote! { backend = Pyo3 }, &keyword_families_schema() ; "pyo3 keyword families")]
-#[test_case("pyo3_emitter_draft4", &quote! { backend = Pyo3 }, &draft4_integer_schema() ; "pyo3 draft4 integer")]
-#[test_case("pyo3_emitter_evaluate", &quote! { backend = Pyo3, methods = { evaluate = true } }, &json!(false) ; "pyo3 evaluate")]
-#[test_case("magnus_emitter", &quote! { backend = Magnus }, &keyword_families_schema() ; "magnus keyword families")]
-#[test_case("magnus_emitter_draft4", &quote! { backend = Magnus }, &draft4_integer_schema() ; "magnus draft4 integer")]
-#[test_case("magnus_emitter_evaluate", &quote! { backend = Magnus, methods = { evaluate = true } }, &json!(false) ; "magnus evaluate")]
+#[test_case("pyo3_emitter", &quote! { backend = Pyo3, methods = { evaluate = false } }, &keyword_families_schema() ; "pyo3 keyword families")]
+#[test_case("pyo3_emitter_draft4", &quote! { backend = Pyo3, methods = { evaluate = false } }, &draft4_integer_schema() ; "pyo3 draft4 integer")]
+#[test_case("pyo3_emitter_evaluate", &quote! { backend = Pyo3 }, &json!(false) ; "pyo3 evaluate")]
+#[test_case("magnus_emitter", &quote! { backend = Magnus, methods = { evaluate = false } }, &keyword_families_schema() ; "magnus keyword families")]
+#[test_case("magnus_emitter_draft4", &quote! { backend = Magnus, methods = { evaluate = false } }, &draft4_integer_schema() ; "magnus draft4 integer")]
+#[test_case("magnus_emitter_evaluate", &quote! { backend = Magnus }, &json!(false) ; "magnus evaluate")]
 fn backend_emitter(snapshot: &str, attributes: &TokenStream, schema: &Value) {
     let schema = serde_json::to_string(schema).expect("schema serializes");
     let config: crate::Config =

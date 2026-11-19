@@ -1,5 +1,6 @@
 //! Compile-time meta-schema validators for the bundled drafts, dispatched from
-//! `meta::validator_for_draft` under the `macros` feature.
+//! `meta::validator_for_draft` under the `macros` feature. Meta-schema `evaluate` runs on the
+//! runtime validators, so these generate none.
 
 use crate::{Draft, ErrorIterator, ValidationError};
 use serde_json::Value;
@@ -7,13 +8,13 @@ use serde_json::Value;
 pub(crate) type ValidateFn = for<'i> fn(&'i Value) -> Result<(), ValidationError<'i>>;
 pub(crate) type IterErrorsFn = for<'i> fn(&'i Value) -> ErrorIterator<'i>;
 
-#[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4)]
+#[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4, methods = { evaluate = false })]
 struct MetaDraft4;
 
-#[jsonschema_macros::validator(path = "metaschemas/draft6.json", draft = Draft6)]
+#[jsonschema_macros::validator(path = "metaschemas/draft6.json", draft = Draft6, methods = { evaluate = false })]
 struct MetaDraft6;
 
-#[jsonschema_macros::validator(path = "metaschemas/draft7.json", draft = Draft7)]
+#[jsonschema_macros::validator(path = "metaschemas/draft7.json", draft = Draft7, methods = { evaluate = false })]
 struct MetaDraft7;
 
 #[jsonschema_macros::validator(
@@ -26,7 +27,8 @@ struct MetaDraft7;
         "https://json-schema.org/draft/2019-09/meta/meta-data" => { path = "metaschemas/draft2019-09/meta/meta-data.json" },
         "https://json-schema.org/draft/2019-09/meta/format" => { path = "metaschemas/draft2019-09/meta/format.json" },
         "https://json-schema.org/draft/2019-09/meta/content" => { path = "metaschemas/draft2019-09/meta/content.json" },
-    }
+    },
+    methods = { evaluate = false }
 )]
 struct MetaDraft201909;
 
@@ -41,7 +43,8 @@ struct MetaDraft201909;
         "https://json-schema.org/draft/2020-12/meta/meta-data" => { path = "metaschemas/draft2020-12/meta/meta-data.json" },
         "https://json-schema.org/draft/2020-12/meta/format-annotation" => { path = "metaschemas/draft2020-12/meta/format-annotation.json" },
         "https://json-schema.org/draft/2020-12/meta/content" => { path = "metaschemas/draft2020-12/meta/content.json" },
-    }
+    },
+    methods = { evaluate = false }
 )]
 struct MetaDraft202012;
 
@@ -85,13 +88,13 @@ pub(crate) mod pyo3 {
     pub type ValidateFn =
         for<'i> fn(&'i Bound<'i, PyAny>) -> PyResult<Result<(), ValidationError<'i>>>;
 
-    #[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4, backend = Pyo3)]
+    #[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4, backend = Pyo3, methods = { evaluate = false })]
     struct MetaDraft4;
 
-    #[jsonschema_macros::validator(path = "metaschemas/draft6.json", draft = Draft6, backend = Pyo3)]
+    #[jsonschema_macros::validator(path = "metaschemas/draft6.json", draft = Draft6, backend = Pyo3, methods = { evaluate = false })]
     struct MetaDraft6;
 
-    #[jsonschema_macros::validator(path = "metaschemas/draft7.json", draft = Draft7, backend = Pyo3)]
+    #[jsonschema_macros::validator(path = "metaschemas/draft7.json", draft = Draft7, backend = Pyo3, methods = { evaluate = false })]
     struct MetaDraft7;
 
     #[jsonschema_macros::validator(
@@ -105,7 +108,8 @@ pub(crate) mod pyo3 {
             "https://json-schema.org/draft/2019-09/meta/meta-data" => { path = "metaschemas/draft2019-09/meta/meta-data.json" },
             "https://json-schema.org/draft/2019-09/meta/format" => { path = "metaschemas/draft2019-09/meta/format.json" },
             "https://json-schema.org/draft/2019-09/meta/content" => { path = "metaschemas/draft2019-09/meta/content.json" },
-        }
+        },
+        methods = { evaluate = false }
     )]
     struct MetaDraft201909;
 
@@ -121,7 +125,8 @@ pub(crate) mod pyo3 {
             "https://json-schema.org/draft/2020-12/meta/meta-data" => { path = "metaschemas/draft2020-12/meta/meta-data.json" },
             "https://json-schema.org/draft/2020-12/meta/format-annotation" => { path = "metaschemas/draft2020-12/meta/format-annotation.json" },
             "https://json-schema.org/draft/2020-12/meta/content" => { path = "metaschemas/draft2020-12/meta/content.json" },
-        }
+        },
+        methods = { evaluate = false }
     )]
     struct MetaDraft202012;
 
@@ -161,13 +166,13 @@ pub(crate) mod magnus {
     pub type IsValidFn = fn(&Value) -> Result<bool, Error>;
     pub type ValidateFn = for<'i> fn(&'i Value) -> Result<Result<(), ValidationError<'i>>, Error>;
 
-    #[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4, backend = Magnus)]
+    #[jsonschema_macros::validator(path = "metaschemas/draft4.json", draft = Draft4, backend = Magnus, methods = { evaluate = false })]
     struct MetaDraft4;
 
-    #[jsonschema_macros::validator(path = "metaschemas/draft6.json", draft = Draft6, backend = Magnus)]
+    #[jsonschema_macros::validator(path = "metaschemas/draft6.json", draft = Draft6, backend = Magnus, methods = { evaluate = false })]
     struct MetaDraft6;
 
-    #[jsonschema_macros::validator(path = "metaschemas/draft7.json", draft = Draft7, backend = Magnus)]
+    #[jsonschema_macros::validator(path = "metaschemas/draft7.json", draft = Draft7, backend = Magnus, methods = { evaluate = false })]
     struct MetaDraft7;
 
     #[jsonschema_macros::validator(
@@ -181,7 +186,8 @@ pub(crate) mod magnus {
             "https://json-schema.org/draft/2019-09/meta/meta-data" => { path = "metaschemas/draft2019-09/meta/meta-data.json" },
             "https://json-schema.org/draft/2019-09/meta/format" => { path = "metaschemas/draft2019-09/meta/format.json" },
             "https://json-schema.org/draft/2019-09/meta/content" => { path = "metaschemas/draft2019-09/meta/content.json" },
-        }
+        },
+        methods = { evaluate = false }
     )]
     struct MetaDraft201909;
 
@@ -197,7 +203,8 @@ pub(crate) mod magnus {
             "https://json-schema.org/draft/2020-12/meta/meta-data" => { path = "metaschemas/draft2020-12/meta/meta-data.json" },
             "https://json-schema.org/draft/2020-12/meta/format-annotation" => { path = "metaschemas/draft2020-12/meta/format-annotation.json" },
             "https://json-schema.org/draft/2020-12/meta/content" => { path = "metaschemas/draft2020-12/meta/content.json" },
-        }
+        },
+        methods = { evaluate = false }
     )]
     struct MetaDraft202012;
 

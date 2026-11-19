@@ -423,10 +423,8 @@ mod tests {
                 let _ = serde_json::to_value(evaluation.hierarchical())
                     .expect("Hierarchical output should serialize");
             }
-            if let Some(generated) = codegen_validator
-                .as_ref()
-                .and_then(|codegen_validator| codegen_validator.evaluate(&test.data))
-            {
+            if let Some(codegen_validator) = codegen_validator.as_ref() {
+                let generated = codegen_validator.evaluate(&test.data);
                 let evaluation = validator.evaluate(&test.data);
                 assert_eq!(
                     generated,

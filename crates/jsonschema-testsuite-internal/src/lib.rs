@@ -144,9 +144,6 @@ pub trait CodegenValidator {
     fn validate(&self, instance: &Value) -> Result<(), Box<dyn std::any::Any + Send + Sync>>;
     /// Every error, in iteration order.
     fn iter_errors(&self, instance: &Value) -> Vec<ErrorReport>;
-    /// The `list` and `hierarchical` outputs of `evaluate`; `None` while the generator does not
-    /// support the case's schema.
-    fn evaluate(&self, _instance: &Value) -> Option<(Value, Value)> {
-        None
-    }
+    /// The `list` and `hierarchical` outputs of `evaluate`.
+    fn evaluate(&self, instance: &Value) -> (Value, Value);
 }
