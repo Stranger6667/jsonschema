@@ -45,6 +45,7 @@
 - Evaluation paths of `propertyNames` errors leaving out a `$ref` inside `propertyNames`.
 - `unevaluatedProperties` and `unevaluatedItems` errors and `evaluate` output counting members as evaluated by a subschema that fails, such as a `$ref` target.
 - `absolute_keyword_location` of errors for names missing under `dependentRequired` or `dependencies` pointing to a schema location that does not exist.
+- `absolute_keyword_location` of errors from a resource without a base URI, such as one registered under a `json-schema:///` URI, naming the `$ref` or other keyword that reached it from a resource with one, instead of being absent.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `f64`, such as `1e-400`, with the `arbitrary-precision` feature.
 - `satisfiability` answering `Unknown` for an array where only some elements are valid under both `contains` and `items`.
 - `satisfiability` answering `Unknown` for an object that must break `additionalProperties`, `patternProperties` or `propertyNames`.

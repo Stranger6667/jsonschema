@@ -5304,6 +5304,46 @@ fn test_empty_fragment_ref_matches_runtime(instance: serde_json::Value) {
     );
 }
 
+// Keywords in resources under the default base have no absolute location, even when a resource
+// with one reaches them.
+#[jsonschema::validator(
+    schema = r##"{"$id": "http://example.com/root", "properties": {"a": {"$ref": "json-schema:///other"}, "b": {"$ref": "json-schema:///other#/$defs/s"}, "c": {"$ref": "json-schema:///never"}, "d": {"$id": "json-schema:///inner", "maxLength": 0}}}"##,
+    resources = {
+        "json-schema:///other" => { schema = r#"{"maxLength": 0, "$defs": {"s": {"minimum": 1}}}"# },
+        "json-schema:///never" => { schema = "false" },
+    }
+)]
+struct ResourcesUnderDefaultBase;
+
+#[test_case(serde_json::json!({"a": "x"}) ; "reference")]
+#[test_case(serde_json::json!({"b": 0}) ; "pointer below the resource root")]
+#[test_case(serde_json::json!({"c": 1}) ; "false resource")]
+#[test_case(serde_json::json!({"d": "x"}) ; "embedded resource")]
+#[test_case(serde_json::json!({"a": "x", "b": 0, "c": 1, "d": "x"}) ; "all")]
+fn test_resources_under_default_base_match_runtime(instance: serde_json::Value) {
+    let runtime = build_runtime_with_resources(
+        serde_json::json!({"$id": "http://example.com/root", "properties": {"a": {"$ref": "json-schema:///other"}, "b": {"$ref": "json-schema:///other#/$defs/s"}, "c": {"$ref": "json-schema:///never"}, "d": {"$id": "json-schema:///inner", "maxLength": 0}}}),
+        [
+            (
+                "json-schema:///other",
+                serde_json::json!({"maxLength": 0, "$defs": {"s": {"minimum": 1}}}),
+            ),
+            ("json-schema:///never", serde_json::json!(false)),
+        ],
+    );
+    assert_validate_parity(
+        ResourcesUnderDefaultBase::is_valid(&instance),
+        ResourcesUnderDefaultBase::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(
+        ResourcesUnderDefaultBase::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
 #[jsonschema::validator(
     schema = r##"{"$defs":{"b":true},"type":"object","allOf":[{"$ref":"#/$defs/b"}],"unevaluatedProperties":false}"##,
     draft = Draft202012
@@ -7150,6 +7190,17 @@ struct EvaluateRefByPointerIntoEmbeddedResource;
 struct EvaluateEmbeddedIdDraft4;
 #[jsonschema::validator(schema = r##"{"$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed", "properties": {"a": {"$ref": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed#/$defs/s"}}, "$defs": {"s": {"type": "string"}}}"##, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateUrnBase;
+#[jsonschema::validator(
+    schema = r##"{"$id": "http://example.com/root", "properties": {"a": {"$ref": "json-schema:///other"}, "b": {"$ref": "json-schema:///other#/$defs/s"}, "c": {"$ref": "json-schema:///never"}, "d": {"$id": "json-schema:///inner", "maxLength": 0}}, "propertyNames": {"$ref": "json-schema:///names"}}"##,
+    resources = {
+        "json-schema:///other" => { schema = r#"{"maxLength": 0, "$defs": {"s": {"minimum": 1}}}"# },
+        "json-schema:///never" => { schema = "false" },
+        "json-schema:///names" => { schema = r#"{"maxLength": 1}"# },
+    },
+    draft = Draft202012,
+    methods = { evaluate = true }
+)]
+struct EvaluateResourcesUnderDefaultBase;
 
 fn evaluation_outputs(evaluation: &jsonschema::Evaluation) -> [serde_json::Value; 2] {
     [
@@ -7336,6 +7387,7 @@ fn test_evaluate_matches_runtime(
 #[test_case(EvaluateRefToDraft7Siblings::evaluate, serde_json::json!({"$ref": "http://example.com/draft7.json"}), &[("http://example.com/draft7.json", r##"{"$schema":"http://json-schema.org/draft-07/schema#","$id":"http://example.com/draft7.json","definitions":{"s":{"type":"string"}},"properties":{"a":{"$ref":"#/definitions/s","minLength":3}}}"##)], Draft::Draft202012 ; "ref_to_draft7_siblings")]
 #[test_case(EvaluateNoValidationVocabularyThroughRef::evaluate, serde_json::json!({"$schema": "json-schema:///meta/no-validation", "properties": {"a": {"$ref": "#/$defs/x"}}, "$defs": {"x": {"minimum": 10, "properties": {"b": false}}}}), &[("json-schema:///meta/no-validation", r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true}}"#)], Draft::Draft202012 ; "no_validation_vocabulary_through_ref")]
 #[test_case(EvaluateUrnBase::evaluate, serde_json::json!({"$id": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed", "properties": {"a": {"$ref": "urn:uuid:deadbeef-1234-ffff-ffff-4321feebdaed#/$defs/s"}}, "$defs": {"s": {"type": "string"}}}), &[], Draft::Draft202012 ; "urn_base")]
+#[test_case(EvaluateResourcesUnderDefaultBase::evaluate, serde_json::json!({"$id": "http://example.com/root", "properties": {"a": {"$ref": "json-schema:///other"}, "b": {"$ref": "json-schema:///other#/$defs/s"}, "c": {"$ref": "json-schema:///never"}, "d": {"$id": "json-schema:///inner", "maxLength": 0}}, "propertyNames": {"$ref": "json-schema:///names"}}), &[("json-schema:///other", r#"{"maxLength": 0, "$defs": {"s": {"minimum": 1}}}"#), ("json-schema:///never", "false"), ("json-schema:///names", r#"{"maxLength": 1}"#)], Draft::Draft202012 ; "resources_under_default_base")]
 fn test_evaluate_with_resources_matches_runtime(
     evaluate: EvaluateFn,
     schema: serde_json::Value,

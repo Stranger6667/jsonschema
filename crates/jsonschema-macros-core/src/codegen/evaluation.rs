@@ -211,6 +211,9 @@ struct TreeSchema {
     resource: usize,
     /// The resource it sits in, where that is not the root's.
     base: Option<String>,
+    /// It sits in another resource than the root's, under the default base: its keywords have no
+    /// absolute location.
+    default_base: bool,
     /// Its pointer within that resource, where that is not `pointer`.
     at: Option<String>,
     /// The draft's unknown keywords.
@@ -322,6 +325,7 @@ impl Tree {
             pointer: String::new(),
             resource: 0,
             base: None,
+            default_base: false,
             at: None,
             annotations: None,
             first: 0,
@@ -675,10 +679,11 @@ impl Tree {
     ) {
         let resource = self.resource(ctx);
         let base = &ctx.current_base_uri;
-        // The output locates keywords of a resource without an absolute URI by pointer alone.
-        let base = (base.as_str() != ctx.config.base_uri.as_str()
-            && base.scheme().as_str() != "json-schema")
-            .then(|| base.as_str().trim_end_matches('#').to_string());
+        let other = base.as_str() != ctx.config.base_uri.as_str();
+        // The output locates keywords of a resource under the default base by pointer alone.
+        let default_base = other && base.scheme().as_str() == "json-schema";
+        let base =
+            (other && !default_base).then(|| base.as_str().trim_end_matches('#').to_string());
         let at = pointer
             .strip_prefix(self.resource_root.as_str())
             .filter(|at| at.len() != pointer.len())
@@ -687,6 +692,7 @@ impl Tree {
             pointer,
             resource,
             base,
+            default_base,
             at,
             annotations,
             first: self.units.len(),
@@ -1097,6 +1103,9 @@ pub(super) fn compile<E: ValueEmitter>(
             }
             if let Some(base) = schema.base {
                 entry["base"] = json!(base);
+            }
+            if schema.default_base {
+                entry["default_base"] = json!(true);
             }
             if let Some(at) = schema.at {
                 entry["at"] = json!(at);

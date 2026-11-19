@@ -546,7 +546,7 @@ pub(crate) fn compile_recursive_ref<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::tests_util;
+    use crate::{error::ValidationErrorKind, tests_util, ValidationError};
     use ahash::HashMap;
     use referencing::{Retrieve, Uri};
     use serde_json::{json, Value};
@@ -1360,6 +1360,102 @@ mod tests {
             })
             .collect();
         assert_eq!(locations, vec![expected]);
+    }
+
+    // A keyword in a resource under the default base has no absolute location, as in a schema
+    // without `$id`, even when a resource with one reaches it.
+    #[test_case(
+        &json!({"$id": "http://example.com/root", "properties": {"x": {"$ref": "json-schema:///other"}}}),
+        &json!({"x": "a"}),
+        None
+    ; "reference")]
+    #[test_case(
+        &json!({"$id": "http://example.com/root", "$ref": "json-schema:///other"}),
+        &json!("a"),
+        None
+    ; "reference at the root")]
+    #[test_case(
+        &json!({"$id": "http://example.com/root", "items": {"$ref": "json-schema:///other#/$defs/s"}}),
+        &json!([0]),
+        None
+    ; "pointer below the resource root")]
+    #[test_case(
+        &json!({"$id": "http://example.com/root", "properties": {"x": {"$ref": "json-schema:///never"}}}),
+        &json!({"x": 1}),
+        None
+    ; "false resource")]
+    #[test_case(
+        &json!({"$id": "http://example.com/root", "properties": {"x": {"$id": "json-schema:///inner", "maxLength": 0}}}),
+        &json!({"x": "a"}),
+        None
+    ; "embedded resource")]
+    #[test_case(
+        &json!({"$id": "http://example.com/root", "properties": {"x": {"$ref": "http://example.com/other"}}}),
+        &json!({"x": "a"}),
+        Some("http://example.com/other#/maxLength")
+    ; "resource with an absolute URI")]
+    fn resource_under_default_base(schema: &Value, instance: &Value, expected: Option<&str>) {
+        let other = json!({"maxLength": 0, "$defs": {"s": {"minimum": 1}}});
+        let registry = crate::Registry::new()
+            .add("json-schema:///other", &other)
+            .expect("Valid resource")
+            .add("http://example.com/other", &other)
+            .expect("Valid resource")
+            .add("json-schema:///never", json!(false))
+            .expect("Valid resource")
+            .prepare()
+            .expect("Registry should prepare");
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(schema)
+            .expect("Invalid schema");
+        let error = validator.validate(instance).expect_err("Invalid instance");
+        let errors: Vec<Option<String>> = validator
+            .iter_errors(instance)
+            .map(|error| error.absolute_keyword_location().map(ToString::to_string))
+            .collect();
+        let evaluation: Vec<Option<String>> = validator
+            .evaluate(instance)
+            .iter_errors()
+            .map(|entry| entry.absolute_keyword_location.map(ToString::to_string))
+            .collect();
+        let expected = expected.map(str::to_string);
+        assert_eq!(
+            (
+                error.absolute_keyword_location().map(ToString::to_string),
+                errors,
+                evaluation
+            ),
+            (expected.clone(), vec![expected.clone()], vec![expected])
+        );
+    }
+
+    // A rejected name's own error is located at the keyword that rejected it.
+    #[test]
+    fn property_name_in_resource_under_default_base() {
+        let other = json!({"maxLength": 0});
+        let registry = crate::Registry::new()
+            .add("json-schema:///other", &other)
+            .expect("Valid resource")
+            .prepare()
+            .expect("Registry should prepare");
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&json!({"$id": "http://example.com/root", "propertyNames": {"$ref": "json-schema:///other"}}))
+            .expect("Invalid schema");
+        let instance = json!({"x": 1});
+        let name_location = |error: &ValidationError<'_>| match error.kind() {
+            ValidationErrorKind::PropertyNames { error } => {
+                error.absolute_keyword_location().map(ToString::to_string)
+            }
+            kind => panic!("Unexpected error kind: {kind:?}"),
+        };
+        let error = validator.validate(&instance).expect_err("Invalid instance");
+        let errors: Vec<Option<String>> = validator
+            .iter_errors(&instance)
+            .map(|error| name_location(&error))
+            .collect();
+        assert_eq!((name_location(&error), errors), (None, vec![None]));
     }
 
     #[test]

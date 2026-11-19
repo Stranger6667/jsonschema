@@ -528,10 +528,9 @@ impl<T: ItemType, F: Json> Validate<F> for ItemsTypeValidator<T, F> {
                     ctx,
                     errors,
                 );
-                if let Some(uri) = self.type_.absolute_location() {
-                    for error in &mut errors[start..] {
-                        error.set_absolute_keyword_location(uri);
-                    }
+                let uri = self.type_.absolute_location();
+                for error in &mut errors[start..] {
+                    error.set_absolute_keyword_location(uri);
                 }
             }
         }

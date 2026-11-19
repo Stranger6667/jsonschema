@@ -99,10 +99,14 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         })
         .unwrap_or_else(|| ctx.current_base_uri.clone());
 
-    // A subschema with an `$id` of its own is a resource the runtime locates its keywords in.
-    let embedded = (schema_base_uri.as_str() != ctx.current_base_uri.as_str()
-        && schema_base_uri.scheme().as_str() != "json-schema")
-        .then(|| (schema_base_uri.to_string(), ctx.current_schema_path().len()));
+    // A subschema with an `$id` of its own is the resource its keywords are located in, with no
+    // absolute location under the default base.
+    let embedded = (schema_base_uri.as_str() != ctx.current_base_uri.as_str()).then(|| {
+        (
+            super::helpers::located_base(&schema_base_uri),
+            ctx.current_schema_path().len(),
+        )
+    });
     let mut compiled = ctx.with_base_uri_scope(schema_base_uri, |ctx| {
         if ctx.uses_recursive_ref
             && ctx.draft.supports_recursive_ref_keyword()
@@ -295,6 +299,7 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         }
     });
     if let (Some((base, offset)), ErrorsBlock::Expr(errors)) = (embedded, &compiled.errors) {
+        let base = base.map_or_else(|| quote! { None }, |base| quote! { Some(#base) });
         compiled.errors = ErrorsBlock::Expr(quote! {
             let __start = __errors.mark();
             let __stop = (|| -> bool { #errors false })();
