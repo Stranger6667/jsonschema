@@ -201,21 +201,69 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        fn __not_of_type_0(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+        ) -> Vec<__eval::ErrorDescription> {
+            if {
+                let instance = ::core::clone::Clone::clone(instance);
+                match instance {
+                    __Value::Number(n) => __types::is_integer(n),
+                    _ => false,
+                }
+            } {
+                return Vec::new();
+            }
+            vec![
+                __eval::ErrorDescription::described("type",
+                format!("{} is not of type \"integer\"", __eval::instance_value:: <
+                jsonschema::json::SerdeJson > (instance)),)
+            ]
+        }
+        fn __direct_1<'__i>(
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __errors: &mut __eval::Descriptions,
+        ) -> bool {
+            if !(match instance {
+                __Value::Object(obj) => obj.contains_key("a"),
+                _ => true,
+            }) {
+                match instance {
+                    __Value::Object(obj) => {
+                        if let Some(__e) = '__first_error: {
+                            if !(obj.contains_key("a")) {
+                                break '__first_error Some(
+                                    __err::required("/required", __path.into(), instance, "a"),
+                                );
+                            }
+                            None
+                        } {
+                            if __errors.push(__e) {
+                                return true;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
         static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"properties\":[[\"d\",3],[\"a\",1],[\"b/c\",2]],\"schemas\":[{\"count\":2,\"first\":2,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/b~1c\"},{\"count\":0,\"first\":1,\"pointer\":\"/properties/b~1c/properties/d\"}],\"units\":[{\"keyword\":\"type\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]},{\"keyword\":\"required\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[1,2]}]}",
+            tables: "{\"properties\":[[\"d\",3],[\"a\",1],[\"b/c\",2]],\"schemas\":[{\"count\":2,\"first\":2,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/b~1c\"},{\"count\":0,\"first\":1,\"pointer\":\"/properties/b~1c/properties/d\",\"rejects\":true}],\"units\":[{\"keyword\":\"type\",\"not_of_type\":0},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]},{\"direct\":0,\"keyword\":\"required\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[1,2]}]}",
             matchers: &[],
             valid: &[],
+            discriminators: &[],
+            not_of_type: &[__not_of_type_0],
+            direct: &[__direct_1],
             unevaluated: &[],
             unevaluated_errors: &[],
             scope: None,
             built: ::std::sync::OnceLock::new(),
         };
-        let mut __errors = __err::Errors::new(false);
-        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate(
+        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate_reporting(
             &__TREE,
             &instance,
-            &__errors.into_vec(),
+            is_valid(instance),
         )
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {

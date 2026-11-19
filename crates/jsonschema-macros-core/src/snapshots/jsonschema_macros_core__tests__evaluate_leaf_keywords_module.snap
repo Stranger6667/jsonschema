@@ -101,21 +101,89 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        fn __not_of_type_0(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+        ) -> Vec<__eval::ErrorDescription> {
+            if {
+                let instance = ::core::clone::Clone::clone(instance);
+                instance.is_string()
+            } {
+                return Vec::new();
+            }
+            vec![
+                __eval::ErrorDescription::described("type",
+                format!("{} is not of type \"string\"", __eval::instance_value:: <
+                jsonschema::json::SerdeJson > (instance)),)
+            ]
+        }
+        fn __direct_1<'__i>(
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __errors: &mut __eval::Descriptions,
+        ) -> bool {
+            if !(match instance {
+                __Value::String(s) => (s.chars().count() as u64) >= 2,
+                _ => true,
+            }) {
+                match instance {
+                    __Value::String(s) => {
+                        if !((s.chars().count() as u64) >= 2) {
+                            if __errors
+                                .push(
+                                    __err::min_length("/minLength", __path.into(), instance, 2),
+                                )
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
+        fn __direct_2<'__i>(
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __errors: &mut __eval::Descriptions,
+        ) -> bool {
+            if !(match instance {
+                __Value::String(s) => (s.chars().count() as u64) <= 3,
+                _ => true,
+            }) {
+                match instance {
+                    __Value::String(s) => {
+                        if !((s.chars().count() as u64) <= 3) {
+                            if __errors
+                                .push(
+                                    __err::max_length("/maxLength", __path.into(), instance, 3),
+                                )
+                            {
+                                return true;
+                            }
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            false
+        }
         static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"schemas\":[{\"count\":3,\"first\":0,\"pointer\":\"\"}],\"units\":[{\"keyword\":\"type\"},{\"keyword\":\"minLength\"},{\"keyword\":\"maxLength\"}]}",
+            tables: "{\"schemas\":[{\"count\":3,\"first\":0,\"pointer\":\"\"}],\"units\":[{\"keyword\":\"type\",\"not_of_type\":0},{\"direct\":0,\"keyword\":\"minLength\"},{\"direct\":1,\"keyword\":\"maxLength\"}]}",
             matchers: &[],
             valid: &[],
+            discriminators: &[],
+            not_of_type: &[__not_of_type_0],
+            direct: &[__direct_1, __direct_2],
             unevaluated: &[],
             unevaluated_errors: &[],
             scope: None,
             built: ::std::sync::OnceLock::new(),
         };
-        let mut __errors = __err::Errors::new(false);
-        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate(
+        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate_reporting(
             &__TREE,
             &instance,
-            &__errors.into_vec(),
+            is_valid(instance),
         )
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {

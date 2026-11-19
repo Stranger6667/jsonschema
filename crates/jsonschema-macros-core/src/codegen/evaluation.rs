@@ -1,10 +1,10 @@
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use referencing::{write_escaped_str, Draft, Registry, Resolved, Resolver, Uri};
+use referencing::{write_escaped_str, Draft, Registry, Resolved, Resolver, Uri, VocabularySet};
 use serde_json::{json, Map, Value};
 use std::{
     borrow::Cow,
-    collections::{HashMap, HashSet},
+    collections::{BTreeSet, HashMap, HashSet},
     sync::Arc,
 };
 
@@ -17,9 +17,13 @@ use super::{
         get_or_create_item_eval_fn, get_or_create_key_eval_fn, location_pointer,
     },
     keywords::{
-        format::format_emits_assertion, pattern_properties::name_match_expr,
-        unevaluated_items::unevaluated_items, unevaluated_properties::unevaluated_members,
+        format::format_emits_assertion,
+        one_of::{branch_discriminator, BranchDiscriminator, DiscriminatorLiteral},
+        pattern_properties::name_match_expr,
+        unevaluated_items::unevaluated_items,
+        unevaluated_properties::unevaluated_members,
     },
+    parse_nonnegative_integer_keyword,
     refs::resolve_ref,
     stack_emit::{
         pop_dynamic_errors_n, pop_recursive_errors, pop_recursive_is_valid,
@@ -63,6 +67,37 @@ struct Unit {
     alias: Option<&'static str>,
     /// Its annotation of a string instance.
     string_annotation: Option<Value>,
+    /// Its keyword alone, to check where the errors run is skipped.
+    check: Option<LeafCheck>,
+    /// Its generated check, which reports its errors without the errors run.
+    direct: Option<usize>,
+}
+
+/// How a leaf unit reporting its errors itself words them.
+enum DirectErrors {
+    /// The errors code of its keyword alone.
+    Reported(TokenStream),
+    /// The message of a single `type`, with a slot for the instance.
+    NotOfType(String),
+}
+
+/// A leaf unit's check among the generated ones of its shape.
+enum DirectSlot {
+    NotOfType(usize),
+    Reported(usize),
+}
+
+/// The `minContains` and `maxContains` beside a `contains`.
+struct ContainsBounds {
+    min: Option<u64>,
+    max: Option<u64>,
+}
+
+/// A leaf keyword alone, with the dialect it is read in.
+struct LeafCheck {
+    schema: Value,
+    draft: Draft,
+    vocabularies: VocabularySet,
 }
 
 impl Unit {
@@ -71,6 +106,8 @@ impl Unit {
             keyword: keyword.to_string(),
             alias: None,
             string_annotation: None,
+            check: None,
+            direct: None,
         }
     }
 
@@ -104,10 +141,12 @@ enum TreeUnit {
         schema: usize,
         closed: bool,
     },
-    /// `contains`, with its subschema's index in `Tree::valid`.
+    /// `contains`, with its subschema's index in `Tree::valid`, and its `minContains` and
+    /// `maxContains`.
     Contains {
         schema: usize,
         valid: usize,
+        bounds: ContainsBounds,
     },
     /// `allOf`, `anyOf` or `oneOf`, with a range of `Tree::tuples` and, unless every branch
     /// applies, where their checks start in `Tree::valid`.
@@ -115,6 +154,8 @@ enum TreeUnit {
         keyword: &'static str,
         schemas: (usize, usize),
         valid: Option<usize>,
+        /// Its entry in `Tree::discriminators`.
+        discriminator: Option<usize>,
     },
     /// `if`, with its subschema's index in `Tree::valid`.
     Condition {
@@ -177,6 +218,8 @@ struct TreeSchema {
     /// A range of `Tree::units`.
     first: usize,
     count: usize,
+    /// It is `false`.
+    rejects: bool,
 }
 
 /// Every schema `evaluate` reports, the root first, with their units in the runtime's priority
@@ -195,6 +238,9 @@ struct Tree {
     tuples: Vec<usize>,
     /// The `is_valid` code of each subschema a unit checks, run against `instance`.
     valid: Vec<TokenStream>,
+    /// For each discriminated `anyOf` or `oneOf`, code giving the branches that may accept
+    /// `instance`.
+    discriminators: Vec<TokenStream>,
     /// The resource each `valid` entry runs in.
     valid_resources: Vec<usize>,
     /// For each `unevaluated*` unit, code pushing to `__unevaluated` the positions of the members
@@ -280,6 +326,7 @@ impl Tree {
             annotations: None,
             first: 0,
             count: 0,
+            rejects: false,
         });
         self.by_pointer.insert(key, index);
         match resource_base(ctx, schema).filter(|_| index != 0 && !based) {
@@ -304,6 +351,7 @@ impl Tree {
     ) -> syn::Result<usize> {
         let mut units = Vec::new();
         let mut annotations = None;
+        self.schemas[index].rejects = *schema == Value::Bool(false);
         if let Value::Object(keywords) = schema {
             let keywords = &active_keywords(ctx, keywords);
             let reference = keywords.get("$ref").and_then(Value::as_str);
@@ -314,12 +362,26 @@ impl Tree {
                 self.finish(ctx, index, pointer, None, vec![unit]);
                 return Ok(index);
             }
-            units.extend(
-                LEAF_KEYWORDS
-                    .iter()
-                    .filter_map(|keyword| unit(ctx, keyword, keywords.get(*keyword)?, keywords))
-                    .map(TreeUnit::Leaf),
-            );
+            let leaves: Vec<Unit> = LEAF_KEYWORDS
+                .iter()
+                .filter_map(|keyword| unit(ctx, keyword, keywords.get(*keyword)?, keywords))
+                .collect();
+            for mut leaf in leaves {
+                if leaf.alias.is_none() {
+                    let value = keywords
+                        .get(&leaf.keyword)
+                        .expect("a leaf unit's keyword is in its schema");
+                    leaf.check = Some(LeafCheck {
+                        schema: Value::Object(Map::from_iter([(
+                            leaf.keyword.clone(),
+                            value.clone(),
+                        )])),
+                        draft: ctx.draft,
+                        vocabularies: ctx.vocabularies.clone(),
+                    });
+                }
+                units.push(TreeUnit::Leaf(leaf));
+            }
             let additional = keywords
                 .get("additionalProperties")
                 .filter(|value| **value != Value::Bool(true));
@@ -435,9 +497,20 @@ impl Tree {
             {
                 let location = format!("{pointer}/contains");
                 let schema = self.add(ctx, subschema, location.clone())?;
+                // A bound that is not a count fails the build in the validation code.
+                let bound = |keyword: &str| {
+                    keywords
+                        .get(keyword)
+                        .filter(|_| ctx.draft.supports_contains_bounds_keyword())
+                        .and_then(|value| parse_nonnegative_integer_keyword(ctx.draft, value).ok())
+                };
                 units.push(TreeUnit::Contains {
                     schema,
                     valid: self.valid.len(),
+                    bounds: ContainsBounds {
+                        min: bound("minContains"),
+                        max: bound("maxContains"),
+                    },
                 });
                 self.add_validity(ctx, subschema, location);
             }
@@ -468,21 +541,36 @@ impl Tree {
                 };
                 // Every `allOf` branch applies; the others apply the valid ones if any.
                 let valid = (keyword != "allOf").then_some(self.valid.len());
+                let mut discriminator = None;
                 if valid.is_some() {
                     for (index, subschema) in schemas.iter().enumerate() {
                         self.add_validity(ctx, subschema, format!("{pointer}/{keyword}/{index}"));
                     }
+                    discriminator = branch_discriminator(ctx, schemas).map(|discriminator| {
+                        self.discriminators.push(candidates(&discriminator));
+                        self.discriminators.len() - 1
+                    });
                 }
                 let schemas = self.add_tuple(ctx, schemas, &pointer, keyword)?;
                 units.push(TreeUnit::Branches {
                     keyword,
                     schemas,
                     valid,
+                    discriminator,
                 });
             }
             // `not` reports its error alone.
-            if keywords.contains_key("not") {
-                units.push(TreeUnit::Leaf(Unit::new("not")));
+            if let Some(negated) = keywords.get("not") {
+                let mut unit = Unit::new("not");
+                // Checked apart from the walk, its subschema has no scope to resolve references in.
+                if !references(negated) {
+                    unit.check = Some(LeafCheck {
+                        schema: json!({"not": negated}),
+                        draft: ctx.draft,
+                        vocabularies: ctx.vocabularies.clone(),
+                    });
+                }
+                units.push(TreeUnit::Leaf(unit));
             }
             // `if` without `then` or `else` checks nothing.
             if let Some(condition) = keywords
@@ -603,6 +691,7 @@ impl Tree {
             annotations,
             first: self.units.len(),
             count: units.len(),
+            rejects: self.schemas[index].rejects,
         };
         self.units.extend(units);
     }
@@ -902,9 +991,9 @@ fn id_keyword(draft: Draft) -> &'static str {
     }
 }
 
-/// The body of the generated `evaluate`. Keyword units take their errors from one run of the
-/// schema's errors function, by schema location and instance location, so no keyword's error code
-/// is emitted twice.
+/// The body of the generated `evaluate`. Where every unit can report its own errors, each leaf
+/// keyword gets one check shared by its equal copies; otherwise units take their errors from one
+/// run of the schema's errors function, by schema location and instance location.
 pub(super) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Value,
@@ -920,6 +1009,77 @@ pub(super) fn compile<E: ValueEmitter>(
     let mut tree = Tree::default();
     tree.add(ctx, schema, String::new())?;
     tree.add_scope_targets(ctx)?;
+    // Every error comes from a unit reporting it itself.
+    let without_errors_run = tree.units.iter().all(|unit| match unit {
+        TreeUnit::Leaf(unit) => unit.check.is_some(),
+        TreeUnit::Properties { .. }
+        | TreeUnit::Patterns(_)
+        | TreeUnit::Additional { .. }
+        | TreeUnit::Names { .. }
+        | TreeUnit::Branches { .. }
+        | TreeUnit::Condition { .. }
+        | TreeUnit::Branch { .. }
+        | TreeUnit::Ref { .. }
+        | TreeUnit::Rest { .. }
+        | TreeUnit::Tuple { .. }
+        | TreeUnit::Contains { .. } => true,
+        TreeUnit::Dependencies { .. } | TreeUnit::Unevaluated { .. } => false,
+    });
+    let mut direct = Vec::new();
+    if without_errors_run {
+        let mut by_code = HashMap::new();
+        for unit in &mut tree.units {
+            let TreeUnit::Leaf(unit) = unit else {
+                continue;
+            };
+            let LeafCheck {
+                schema,
+                draft,
+                vocabularies,
+            } = unit.check.take().expect("every leaf unit is checked alone");
+            let outer_draft = std::mem::replace(&mut ctx.draft, draft);
+            let outer_vocabularies = std::mem::replace(&mut ctx.vocabularies, vocabularies);
+            // Its errors do not depend on where it is, so equal leaves share a check.
+            let check = ctx.with_schema_path_swap(String::new(), |ctx| {
+                ctx.with_instance_scope(|ctx| compile_schema(ctx, &schema))
+            });
+            ctx.draft = outer_draft;
+            ctx.vocabularies = outer_vocabularies;
+            let is_valid = check.is_valid_token_stream();
+            let errors = match schema.get("type") {
+                // The runtime words a single type's error without building it.
+                Some(Value::String(type_)) if !check.is_compile_error() => {
+                    DirectErrors::NotOfType(format!(r#"{{}} is not of type "{type_}""#))
+                }
+                _ => DirectErrors::Reported(check.errors.as_token_stream()),
+            };
+            let key = match &errors {
+                DirectErrors::NotOfType(message) => format!("{is_valid}{message}"),
+                DirectErrors::Reported(errors) => format!("{is_valid}{errors}"),
+            };
+            let count = direct.len();
+            let index = *by_code.entry(key).or_insert(count);
+            if index == count {
+                direct.push((is_valid, errors));
+            }
+            unit.direct = Some(index);
+        }
+    }
+    // Each check's place among the generated checks of its shape.
+    let mut shapes = (0, 0);
+    let direct_slots: Vec<DirectSlot> = direct
+        .iter()
+        .map(|(_, errors)| match errors {
+            DirectErrors::NotOfType(_) => {
+                shapes.0 += 1;
+                DirectSlot::NotOfType(shapes.0 - 1)
+            }
+            DirectErrors::Reported(_) => {
+                shapes.1 += 1;
+                DirectSlot::Reported(shapes.1 - 1)
+            }
+        })
+        .collect();
     let schemas: Vec<Value> = tree
         .schemas
         .into_iter()
@@ -941,6 +1101,9 @@ pub(super) fn compile<E: ValueEmitter>(
             if let Some(at) = schema.at {
                 entry["at"] = json!(at);
             }
+            if schema.rejects {
+                entry["rejects"] = json!(true);
+            }
             entry
         })
         .collect();
@@ -950,6 +1113,11 @@ pub(super) fn compile<E: ValueEmitter>(
         .map(|unit| match unit {
             TreeUnit::Leaf(unit) => {
                 let mut entry = json!({"keyword": unit.keyword});
+                match unit.direct.map(|index| &direct_slots[index]) {
+                    Some(DirectSlot::NotOfType(slot)) => entry["not_of_type"] = json!(slot),
+                    Some(DirectSlot::Reported(slot)) => entry["direct"] = json!(slot),
+                    None => {}
+                }
                 if let Some(alias) = unit.alias {
                     entry["aliases"] = json!([alias]);
                 }
@@ -990,7 +1158,14 @@ pub(super) fn compile<E: ValueEmitter>(
                 keyword,
                 schemas,
                 valid,
-            } => json!({"keyword": keyword, "branches": schemas, "valid": valid}),
+                discriminator,
+            } => {
+                let mut entry = json!({"keyword": keyword, "branches": schemas, "valid": valid});
+                if let Some(discriminator) = discriminator {
+                    entry["discriminator"] = json!(discriminator);
+                }
+                entry
+            }
             TreeUnit::Condition { schema, valid } => {
                 json!({"keyword": "if", "condition": [schema, valid]})
             }
@@ -1018,11 +1193,17 @@ pub(super) fn compile<E: ValueEmitter>(
                 }
                 entry
             }
-            // The errors run reports the count errors at the bound keywords.
-            TreeUnit::Contains { schema, valid } => json!({
+            // The errors run reports the count errors at the bound keywords, unless the unit
+            // counts the matching items itself.
+            TreeUnit::Contains {
+                schema,
+                valid,
+                bounds: ContainsBounds { min, max },
+            } => json!({
                 "keyword": "contains",
                 "contains": [schema, valid],
                 "aliases": ["minContains", "maxContains"],
+                "bounds": {"min": min, "max": max},
             }),
             TreeUnit::Rest {
                 keyword,
@@ -1093,6 +1274,10 @@ pub(super) fn compile<E: ValueEmitter>(
         .map(|index| format_ident!("__valid_{index}"))
         .collect();
     let checks = &tree.valid;
+    let discriminators: Vec<_> = (0..tree.discriminators.len())
+        .map(|index| format_ident!("__candidates_{index}"))
+        .collect();
+    let candidate_bodies = &tree.discriminators;
     let unevaluated: Vec<_> = (0..tree.unevaluated.len())
         .map(|index| format_ident!("__unevaluated_{index}"))
         .collect();
@@ -1113,6 +1298,61 @@ pub(super) fn compile<E: ValueEmitter>(
     }
     let tables = tables.to_string();
     let json = E::json_representation();
+    let mut type_checks = Vec::new();
+    let mut type_names = Vec::new();
+    let mut reported_checks = Vec::new();
+    let mut reported_names = Vec::new();
+    for (index, (is_valid, errors)) in direct.iter().enumerate() {
+        match errors {
+            DirectErrors::NotOfType(message) => {
+                let name = format_ident!("__not_of_type_{index}");
+                type_checks.push(quote! {
+                    fn #name(
+                        instance: &<#json as jsonschema::json::Json>::Node<'_>,
+                    ) -> Vec<__eval::ErrorDescription> {
+                        if {
+                            let instance = ::core::clone::Clone::clone(instance);
+                            #prelude
+                            #is_valid
+                        } {
+                            return Vec::new();
+                        }
+                        vec![__eval::ErrorDescription::described(
+                            "type",
+                            format!(#message, __eval::instance_value::<#json>(instance)),
+                        )]
+                    }
+                });
+                type_names.push(name);
+            }
+            DirectErrors::Reported(errors) => {
+                let name = format_ident!("__direct_{index}");
+                reported_checks.push(quote! {
+                    fn #name<'__i>(
+                        instance: #borrowed_node,
+                        __path: &__paths::LazyLocation,
+                        __errors: &mut __eval::Descriptions,
+                    ) -> bool {
+                        #prelude
+                        if !(#is_valid) {
+                            #errors
+                        }
+                        false
+                    }
+                });
+                reported_names.push(name);
+            }
+        }
+    }
+    let run = if without_errors_run {
+        quote! { <#json as __eval::Walk>::evaluate_reporting(&__TREE, &instance, is_valid(instance)) }
+    } else {
+        quote! {
+            let mut __errors = __err::Errors::new(false);
+            let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+            <#json as __eval::Walk>::evaluate(&__TREE, &instance, &__errors.into_vec())
+        }
+    };
     let scope_field = if scope.is_some() {
         quote! { Some(__eval::ScopeStacks { enter: __enter_resource, leave: __leave_resource }) }
     } else {
@@ -1126,6 +1366,17 @@ pub(super) fn compile<E: ValueEmitter>(
                 let instance = ::core::clone::Clone::clone(instance);
                 #prelude
                 #checks
+            }
+        )*
+        #(#type_checks)*
+        #(#reported_checks)*
+        #(
+            fn #discriminators(
+                instance: &<#json as jsonschema::json::Json>::Node<'_>,
+            ) -> Option<&'static [usize]> {
+                let instance = ::core::clone::Clone::clone(instance);
+                #prelude
+                #candidate_bodies
             }
         )*
         #(
@@ -1158,14 +1409,15 @@ pub(super) fn compile<E: ValueEmitter>(
             tables: #tables,
             matchers: &[#(#matchers),*],
             valid: &[#(#validities),*],
+            discriminators: &[#(#discriminators),*],
+            not_of_type: &[#(#type_names),*],
+            direct: &[#(#reported_names),*],
             unevaluated: &[#(#unevaluated),*],
             unevaluated_errors: &[#(#unevaluated_errors),*],
             scope: #scope_field,
             built: ::std::sync::OnceLock::new(),
         };
-        let mut __errors = __err::Errors::new(false);
-        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        <#json as __eval::Walk>::evaluate(&__TREE, &instance, &__errors.into_vec())
+        #run
     })
 }
 
@@ -1253,6 +1505,54 @@ fn scope_stacks<E: ValueEmitter>(
             }
         }
     })
+}
+
+/// The branches that may accept `instance`, by its discriminator value: those accepting the value
+/// and those accepting any.
+fn candidates(discriminator: &BranchDiscriminator) -> TokenStream {
+    let any: Vec<usize> = discriminator
+        .values
+        .iter()
+        .enumerate()
+        .filter(|(_, values)| values.is_none())
+        .map(|(branch, _)| branch)
+        .collect();
+    let literals: BTreeSet<&DiscriminatorLiteral> =
+        discriminator.values.iter().flatten().flatten().collect();
+    let arms = literals.into_iter().map(|literal| {
+        let branches = discriminator
+            .values
+            .iter()
+            .enumerate()
+            .filter(|(_, values)| {
+                values
+                    .as_ref()
+                    .is_none_or(|values| values.contains(literal))
+            })
+            .map(|(branch, _)| branch);
+        let pattern = literal.to_inner_token();
+        quote! { Some(#pattern) => Some(&[#(#branches),*][..]), }
+    });
+    let read = &discriminator.read;
+    quote! {
+        match #read {
+            #(#arms)*
+            Some(_) => Some(&[#(#any),*][..]),
+            None => None,
+        }
+    }
+}
+
+/// Whether `schema` has a reference anywhere in it.
+fn references(schema: &Value) -> bool {
+    match schema {
+        Value::Object(keywords) => keywords.iter().any(|(keyword, value)| {
+            matches!(keyword.as_str(), "$ref" | "$dynamicRef" | "$recursiveRef")
+                || references(value)
+        }),
+        Value::Array(items) => items.iter().any(references),
+        _ => false,
+    }
 }
 
 /// A keyword's unit, or `None` when the runtime gives the keyword none.

@@ -86,17 +86,22 @@ mod __validator_impl {
     }
     pub(super) fn evaluate(instance: __Value<'_>) -> jsonschema::Evaluation {
         static __TREE: __eval::Tree<__Json> = __eval::Tree {
-            tables: "{\"schemas\":[{\"count\":0,\"first\":0,\"pointer\":\"\"}],\"units\":[]}",
+            tables: "{\"schemas\":[{\"count\":0,\"first\":0,\"pointer\":\"\",\"rejects\":true}],\"units\":[]}",
             matchers: &[],
             valid: &[],
+            discriminators: &[],
+            not_of_type: &[],
+            direct: &[],
             unevaluated: &[],
             unevaluated_errors: &[],
             scope: None,
             built: ::std::sync::OnceLock::new(),
         };
-        let mut __errors = __err::Errors::new(false);
-        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        <__Json as __eval::Walk>::evaluate(&__TREE, &instance, &__errors.into_vec())
+        <__Json as __eval::Walk>::evaluate_reporting(
+            &__TREE,
+            &instance,
+            is_valid(instance),
+        )
     }
     pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
         __json::inspect(

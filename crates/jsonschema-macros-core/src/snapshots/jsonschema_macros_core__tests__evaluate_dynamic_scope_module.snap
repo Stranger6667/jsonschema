@@ -811,10 +811,28 @@ mod __validator_impl {
             let instance = ::core::clone::Clone::clone(instance);
             instance.is_null()
         }
+        fn __not_of_type_0(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+        ) -> Vec<__eval::ErrorDescription> {
+            if {
+                let instance = ::core::clone::Clone::clone(instance);
+                instance.is_null()
+            } {
+                return Vec::new();
+            }
+            vec![
+                __eval::ErrorDescription::described("type",
+                format!("{} is not of type \"null\"", __eval::instance_value:: <
+                jsonschema::json::SerdeJson > (instance)),)
+            ]
+        }
         static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"resources\":[{\"anchors\":[[\"node\",0]],\"recursive\":false,\"root\":null}],\"schemas\":[{\"count\":1,\"first\":3,\"pointer\":\"\"},{\"count\":1,\"first\":2,\"pointer\":\"/items\"},{\"count\":1,\"first\":0,\"pointer\":\"/items/anyOf/0\"},{\"count\":1,\"first\":1,\"pointer\":\"/items/anyOf/1\"}],\"tuples\":[2,3],\"units\":[{\"keyword\":\"$dynamicRef\",\"scope\":{\"anchor\":\"node\"},\"target\":0},{\"keyword\":\"type\"},{\"branches\":[0,2],\"keyword\":\"anyOf\",\"valid\":0},{\"closed\":false,\"keyword\":\"items\",\"rest\":1,\"skip\":0}],\"valid_resources\":[0,0]}",
+            tables: "{\"resources\":[{\"anchors\":[[\"node\",0]],\"recursive\":false,\"root\":null}],\"schemas\":[{\"count\":1,\"first\":3,\"pointer\":\"\"},{\"count\":1,\"first\":2,\"pointer\":\"/items\"},{\"count\":1,\"first\":0,\"pointer\":\"/items/anyOf/0\"},{\"count\":1,\"first\":1,\"pointer\":\"/items/anyOf/1\"}],\"tuples\":[2,3],\"units\":[{\"keyword\":\"$dynamicRef\",\"scope\":{\"anchor\":\"node\"},\"target\":0},{\"keyword\":\"type\",\"not_of_type\":0},{\"branches\":[0,2],\"keyword\":\"anyOf\",\"valid\":0},{\"closed\":false,\"keyword\":\"items\",\"rest\":1,\"skip\":0}],\"valid_resources\":[0,0]}",
             matchers: &[],
             valid: &[__valid_0, __valid_1],
+            discriminators: &[],
+            not_of_type: &[__not_of_type_0],
+            direct: &[],
             unevaluated: &[],
             unevaluated_errors: &[],
             scope: Some(__eval::ScopeStacks {
@@ -823,12 +841,10 @@ mod __validator_impl {
             }),
             built: ::std::sync::OnceLock::new(),
         };
-        let mut __errors = __err::Errors::new(false);
-        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate(
+        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate_reporting(
             &__TREE,
             &instance,
-            &__errors.into_vec(),
+            is_valid(instance),
         )
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {

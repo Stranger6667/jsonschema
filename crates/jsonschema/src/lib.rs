@@ -4044,18 +4044,35 @@ pub mod __private {
     /// The schema path of an error a generated validator reports, shared by every error at that
     /// site on this thread instead of allocated per error.
     fn schema_location(path: &'static str) -> crate::paths::Location {
-        std::thread_local! {
-            static LOCATIONS: std::cell::RefCell<ahash::AHashMap<(usize, usize), crate::paths::Location>> =
-                std::cell::RefCell::new(ahash::AHashMap::new());
+        /// Every site's location, and the last one asked for, as errors at one site come in runs.
+        #[derive(Default)]
+        struct Locations {
+            last: Option<((usize, usize), crate::paths::Location)>,
+            all: ahash::AHashMap<(usize, usize), crate::paths::Location>,
         }
+        std::thread_local! {
+            static LOCATIONS: std::cell::RefCell<Locations> = std::cell::RefCell::default();
+        }
+        if path.is_empty() {
+            return crate::paths::Location::new();
+        }
+        let key = (path.as_ptr().addr(), path.len());
         // During thread teardown the cache is gone, and the path is built as it would be without it.
         LOCATIONS
             .try_with(|locations| {
-                locations
-                    .borrow_mut()
-                    .entry((path.as_ptr().addr(), path.len()))
+                let mut locations = locations.borrow_mut();
+                if let Some((last, location)) = &locations.last {
+                    if *last == key {
+                        return location.clone();
+                    }
+                }
+                let location = locations
+                    .all
+                    .entry(key)
                     .or_insert_with(|| crate::paths::Location::from_escaped(path))
-                    .clone()
+                    .clone();
+                locations.last = Some((key, location.clone()));
+                location
             })
             .unwrap_or_else(|_| crate::paths::Location::from_escaped(path))
     }
