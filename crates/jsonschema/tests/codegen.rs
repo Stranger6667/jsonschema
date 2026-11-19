@@ -2691,6 +2691,26 @@ fn test_one_of_discriminator_optimization_keeps_non_object_semantics(instance: s
     );
 }
 
+// The branch's second hop resolves inside `other`, whose `a` accepts another `kind`.
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"a": {"required": ["kind"], "properties": {"kind": {"const": "x"}}}, "other": {"$id": "http://example.com/other", "$defs": {"hop": {"$ref": "#/$defs/a"}, "a": {"required": ["kind"], "properties": {"kind": {"const": "y"}}}}}}, "oneOf": [{"$ref": "http://example.com/other#/$defs/hop"}, {"required": ["kind"], "properties": {"kind": {"const": "z"}}}]}"##
+)]
+struct OneOfDiscriminatorThroughReferenceChain;
+
+#[test_case(serde_json::json!({"kind": "x"}) ; "root_definition")]
+#[test_case(serde_json::json!({"kind": "y"}) ; "resource_definition")]
+#[test_case(serde_json::json!({"kind": "z"}) ; "inline_branch")]
+fn test_one_of_discriminator_through_reference_chain_into_another_resource(
+    instance: serde_json::Value,
+) {
+    let schema = serde_json::json!({"$defs": {"a": {"required": ["kind"], "properties": {"kind": {"const": "x"}}}, "other": {"$id": "http://example.com/other", "$defs": {"hop": {"$ref": "#/$defs/a"}, "a": {"required": ["kind"], "properties": {"kind": {"const": "y"}}}}}}, "oneOf": [{"$ref": "http://example.com/other#/$defs/hop"}, {"required": ["kind"], "properties": {"kind": {"const": "z"}}}]});
+    assert_is_valid_parity(
+        &schema,
+        OneOfDiscriminatorThroughReferenceChain::is_valid(&instance),
+        &instance,
+    );
+}
+
 // JSON Schema `const: 1` matches `1.0`, so a float-valued integer tag must select
 // the same `oneOf` branch as its integer form.
 #[test_case(serde_json::json!({"tag": 1, "a": "x"}) ; "integer_form")]
@@ -4920,6 +4940,11 @@ struct PropertyNamesLeaf;
     schema = r##"{"$defs": {"s": {"maxLength": 0}}, "propertyNames": {"$ref": "#/$defs/s"}}"##
 )]
 struct PropertyNamesRef;
+// The second hop resolves inside `other`, which defines its own `name`.
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"name": {"type": "string"}, "other": {"$id": "http://example.com/other", "$defs": {"hop": {"$ref": "#/$defs/name"}, "name": {"maxLength": 1}}}}, "propertyNames": {"$ref": "http://example.com/other#/$defs/hop"}}"##
+)]
+struct PropertyNamesRefChainIntoResource;
 #[jsonschema::validator(schema = r#"{"propertyNames": {"not": {"const": "a"}}}"#)]
 struct PropertyNamesSubschema;
 #[jsonschema::validator(
@@ -4959,6 +4984,7 @@ struct PropertyNamesInEmbeddedResource;
 // errors of `properties`, `patternProperties` and `additionalProperties`.
 #[test_case(PropertyNamesLeaf::is_valid, PropertyNamesLeaf::validate, PropertyNamesLeaf::iter_errors, serde_json::json!({"propertyNames": {"maxLength": 0}}), serde_json::json!([{"a": 1, "bb": 2}]) ; "leaf")]
 #[test_case(PropertyNamesRef::is_valid, PropertyNamesRef::validate, PropertyNamesRef::iter_errors, serde_json::json!({"$defs": {"s": {"maxLength": 0}}, "propertyNames": {"$ref": "#/$defs/s"}}), serde_json::json!([{"a": 1}]) ; "reference")]
+#[test_case(PropertyNamesRefChainIntoResource::is_valid, PropertyNamesRefChainIntoResource::validate, PropertyNamesRefChainIntoResource::iter_errors, serde_json::json!({"$defs": {"name": {"type": "string"}, "other": {"$id": "http://example.com/other", "$defs": {"hop": {"$ref": "#/$defs/name"}, "name": {"maxLength": 1}}}}, "propertyNames": {"$ref": "http://example.com/other#/$defs/hop"}}), serde_json::json!([{"ab": 1}, {"a": 1}]) ; "reference_chain_into_another_resource")]
 #[test_case(PropertyNamesSubschema::is_valid, PropertyNamesSubschema::validate, PropertyNamesSubschema::iter_errors, serde_json::json!({"propertyNames": {"not": {"const": "a"}}}), serde_json::json!([{"a": 1}]) ; "subschema")]
 #[test_case(PropertyNamesCovered::is_valid, PropertyNamesCovered::validate, PropertyNamesCovered::iter_errors, serde_json::json!({"patternProperties": {"^a": {}}, "additionalProperties": false, "propertyNames": {"pattern": "^a"}}), serde_json::json!([{"b": 1}, {"a": 1}]) ; "covered_by_pattern_properties")]
 #[test_case(PropertyNamesAfterApplicators::is_valid, PropertyNamesAfterApplicators::validate, PropertyNamesAfterApplicators::iter_errors, serde_json::json!({"properties": {"a": {"type": "string"}}, "patternProperties": {"^a": {"type": "boolean"}}, "additionalProperties": false, "propertyNames": {"maxLength": 0}}), serde_json::json!([{"a": 1, "bb": 2}]) ; "after_object_applicators")]
