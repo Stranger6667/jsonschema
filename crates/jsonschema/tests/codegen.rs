@@ -475,6 +475,38 @@ fn test_any_of_dynamic_ref_error_context_matches_runtime() {
     );
 }
 
+// `wrap` enters the dynamic scope on the way back to the `$ref` target `cycle` and binds `node`.
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"start","$defs":{"start":{"$id":"start","$ref":"#/$defs/cycle","$defs":{"cycle":{"properties":{"next":{"$ref":"wrap"}},"additionalProperties":{"$dynamicRef":"leaf#node"}}}},"leaf":{"$id":"leaf","$dynamicAnchor":"node","type":"integer"},"wrap":{"$id":"wrap","$dynamicAnchor":"node","type":"object","$ref":"start#/$defs/cycle"}}}"##,
+    methods = { evaluate = true }
+)]
+struct DynamicAnchorBoundInsideRefCycle;
+
+#[test_case(serde_json::json!({"a": 1}) ; "leaf binds before wrap")]
+#[test_case(serde_json::json!({"a": {}}) ; "leaf rejects before wrap")]
+#[test_case(serde_json::json!({"next": {"a": {}}}) ; "wrap binds")]
+#[test_case(serde_json::json!({"next": {"a": 1}}) ; "wrap rejects")]
+#[test_case(serde_json::json!({"next": {"next": {"a": 1}}}) ; "wrap rejects twice in")]
+fn test_dynamic_anchor_bound_inside_ref_cycle_matches_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "start", "$defs": {"start": {"$id": "start", "$ref": "#/$defs/cycle", "$defs": {"cycle": {"properties": {"next": {"$ref": "wrap"}}, "additionalProperties": {"$dynamicRef": "leaf#node"}}}}, "leaf": {"$id": "leaf", "$dynamicAnchor": "node", "type": "integer"}, "wrap": {"$id": "wrap", "$dynamicAnchor": "node", "type": "object", "$ref": "start#/$defs/cycle"}}});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_validate_parity(
+        DynamicAnchorBoundInsideRefCycle::is_valid(&instance),
+        DynamicAnchorBoundInsideRefCycle::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(
+        DynamicAnchorBoundInsideRefCycle::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_eq!(
+        evaluation_outputs(&DynamicAnchorBoundInsideRefCycle::evaluate(&instance)),
+        evaluation_outputs(&runtime.evaluate(&instance)),
+    );
+}
+
 // Asserts that the generated `is_valid` result agrees with the default runtime
 // validator built from `schema`.
 fn assert_is_valid_parity(

@@ -421,6 +421,41 @@ impl<'a> Registry<'a> {
         }
     }
 
+    /// Visit the name of every `$dynamicAnchor` that [`Registry::anchor`] finds at `uri`.
+    pub(crate) fn for_each_dynamic_anchor<'s>(
+        &'s self,
+        uri: &Uri<String>,
+        mut visit: impl FnMut(&'s str),
+    ) {
+        let mut visit_dynamic = |name: &'s str| {
+            if matches!(self.anchor(uri, name), Ok(Anchor::Dynamic { .. })) {
+                visit(name);
+            }
+        };
+        self.for_each_anchor_name(uri, &mut visit_dynamic);
+        if let Some(resource) = self.resource_by_uri(uri) {
+            // An `$id` equal to `uri` indexes no other anchors
+            if let Some(Ok(canonical)) = resource
+                .id()
+                .filter(|id| *id != uri.as_str())
+                .map(uri::from_str)
+            {
+                self.for_each_anchor_name(&canonical, &mut visit_dynamic);
+            }
+        }
+    }
+
+    fn for_each_anchor_name<'s>(&'s self, uri: &Uri<String>, visit: &mut impl FnMut(&'s str)) {
+        if let Some(entries) = self.index.anchors.get(uri) {
+            for name in entries.keys() {
+                visit(name);
+            }
+        }
+        if let Some(baseline) = self.baseline {
+            baseline.for_each_anchor_name(uri, visit);
+        }
+    }
+
     fn local_anchor_by_uri(&self, uri: &Uri<String>, name: &str) -> Option<Anchor<'_>> {
         self.index
             .anchors

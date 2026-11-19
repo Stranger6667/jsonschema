@@ -2912,6 +2912,73 @@ mod tests {
         tests_util::is_not_valid(&schema, invalid);
     }
 
+    // `cycle` is a `$ref` target first reached with only `leaf` binding `node`; `wrap` enters the
+    // dynamic scope on the way back to it and binds `node` from then on. `hop1` leads back through
+    // enough nested `$ref`s for `cycle` to compile in a later round.
+    fn dynamic_anchor_entering_scope_inside_ref_cycle(back_to_cycle: &str) -> Value {
+        json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/root",
+            "$ref": "start",
+            "$defs": {
+                "start": {
+                    "$id": "start",
+                    "$ref": "#/$defs/cycle",
+                    "$defs": {
+                        "cycle": {
+                            "properties": {"next": {"$ref": "wrap"}},
+                            "additionalProperties": {"$dynamicRef": "leaf#node"}
+                        },
+                        "copy": {
+                            "properties": {"next": {"$ref": "wrap"}},
+                            "additionalProperties": {"$dynamicRef": "leaf#node"}
+                        }
+                    }
+                },
+                "leaf": {"$id": "leaf", "$dynamicAnchor": "node", "type": "integer"},
+                "wrap": {
+                    "$id": "wrap",
+                    "$dynamicAnchor": "node",
+                    "type": "object",
+                    "$ref": back_to_cycle,
+                    "$defs": {
+                        "hop1": {"$ref": "#/$defs/hop2"},
+                        "hop2": {"$ref": "#/$defs/hop3"},
+                        "hop3": {"$ref": "#/$defs/hop4"},
+                        "hop4": {"$ref": "#/$defs/hop5"},
+                        "hop5": {"$ref": "#/$defs/hop6"},
+                        "hop6": {"$ref": "#/$defs/hop7"},
+                        "hop7": {"$ref": "#/$defs/hop8"},
+                        "hop8": {"$ref": "start#/$defs/cycle"}
+                    }
+                }
+            }
+        })
+    }
+
+    #[test_case("start#/$defs/cycle", &json!({"a": 1}), true; "cycle, leaf binds before wrap")]
+    #[test_case("start#/$defs/cycle", &json!({"a": {}}), false; "cycle, leaf rejects before wrap")]
+    #[test_case("start#/$defs/cycle", &json!({"next": {"a": {}}}), true; "cycle, wrap binds")]
+    #[test_case("start#/$defs/cycle", &json!({"next": {"a": 1}}), false; "cycle, wrap rejects")]
+    #[test_case("start#/$defs/cycle", &json!({"next": {"next": {"a": 1}}}), false; "cycle, wrap rejects twice in")]
+    #[test_case("#/$defs/hop1", &json!({"a": 1}), true; "later round, leaf binds before wrap")]
+    #[test_case("#/$defs/hop1", &json!({"next": {"a": {}}}), true; "later round, wrap binds")]
+    #[test_case("#/$defs/hop1", &json!({"next": {"a": 1}}), false; "later round, wrap rejects")]
+    #[test_case("#/$defs/hop1", &json!({"next": {"next": {"a": 1}}}), false; "later round, wrap rejects twice in")]
+    #[test_case("start#/$defs/copy", &json!({"a": 1}), true; "unrolled, leaf binds before wrap")]
+    #[test_case("start#/$defs/copy", &json!({"a": {}}), false; "unrolled, leaf rejects before wrap")]
+    #[test_case("start#/$defs/copy", &json!({"next": {"a": {}}}), true; "unrolled, wrap binds")]
+    #[test_case("start#/$defs/copy", &json!({"next": {"a": 1}}), false; "unrolled, wrap rejects")]
+    #[test_case("start#/$defs/copy", &json!({"next": {"next": {"a": 1}}}), false; "unrolled, wrap rejects twice in")]
+    fn dynamic_anchor_bound_inside_ref_cycle(back_to_cycle: &str, instance: &Value, valid: bool) {
+        let schema = dynamic_anchor_entering_scope_inside_ref_cycle(back_to_cycle);
+        if valid {
+            tests_util::is_valid(&schema, instance);
+        } else {
+            tests_util::is_not_valid(&schema, instance);
+        }
+    }
+
     #[test_case("$ref"; "ref")]
     #[test_case("$dynamicRef"; "dynamic ref")]
     fn malformed(keyword: &str) {
