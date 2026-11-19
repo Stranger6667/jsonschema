@@ -12,7 +12,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     if min_contains == Some(0) && max_contains.is_none() {
         return CompiledExpr::always_true();
     }
-    let schema_check = ctx.with_instance_scope(|ctx| compile_schema(ctx, value));
+    let schema_check = compile_schema(ctx, value);
     let schema_is_valid = schema_check.is_valid_token_stream();
     let predicate = item_predicate(&schema_is_valid);
     let min = proc_macro2::Literal::u64_unsuffixed(min_contains.unwrap_or(1));

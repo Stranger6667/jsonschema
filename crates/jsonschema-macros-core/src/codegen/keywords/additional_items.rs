@@ -41,9 +41,8 @@ pub(crate) fn compile<E: ValueEmitter>(
         }
         Value::Bool(true) => None,
         schema => {
-            let compiled = ctx.with_schema_path_segment("additionalItems", |ctx| {
-                ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
-            });
+            let compiled =
+                ctx.with_schema_path_segment("additionalItems", |ctx| compile_schema(ctx, schema));
             if compiled.is_trivially_true() {
                 return None;
             }

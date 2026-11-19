@@ -213,28 +213,30 @@ fn compile_at<E: ValueEmitter>(
         }
     } else {
         let errors_ident = format_ident!("{}_errors", func_name);
+        // Keywords reaching one instance through the cycle at every level would otherwise
+        // validate it once per path to it. Under a dynamic scope a result depends on the path.
+        let is_valid = if cycle
+            && !ctx.uses_recursive_ref
+            && !ctx.uses_dynamic_ref
+            && ctx.revisited_ref_targets.contains(&resolved.location)
+        {
+            let json = E::json_representation();
+            quote! { __ref_memo::is_valid::<#json>(#func_ident, instance) }
+        } else {
+            quote! { #func_ident(instance) }
+        };
         if same_instance_cycle {
             let mark = ref_mark(&node, &node_address, &func_ident);
+            // The guard comes before the memo, as in the runtime: a target re-entered on an
+            // instance is valid there whatever its memo holds.
             ref_check(
-                shared_cycle_guarded_is_valid(&mark, &quote! { #func_ident(instance) }),
+                shared_cycle_guarded_is_valid(&mark, &is_valid),
                 shared_cycle_guarded_errors(
                     &mark,
                     &quote! { #errors_ident(instance, __path, __errors, #site) },
                 ),
             )
         } else if cycle || ctx.is_valid_fns.get_errors_body(&func_name).is_some() {
-            // Keywords reaching one instance through the cycle at every level would otherwise
-            // validate it once per path to it. Under a dynamic scope a result depends on the path.
-            let is_valid = if cycle
-                && !ctx.uses_recursive_ref
-                && !ctx.uses_dynamic_ref
-                && ctx.revisited_ref_targets.contains(&resolved.location)
-            {
-                let json = E::json_representation();
-                quote! { __ref_memo::is_valid::<#json>(#func_ident, instance) }
-            } else {
-                quote! { #func_ident(instance) }
-            };
             ref_check(
                 is_valid,
                 call_errors(&quote! { #errors_ident(instance, __path, __errors, #site) }),

@@ -28,9 +28,7 @@ fn compile_plain<E: ValueEmitter>(ctx: &mut CompileContext<'_, E>, value: &Value
             .map(|(idx, schema)| {
                 let idx_str = idx.to_string();
                 let compiled = ctx.with_schema_path_segment("items", |ctx| {
-                    ctx.with_schema_path_segment(&idx_str, |ctx| {
-                        ctx.with_instance_scope(|ctx| compile_schema(ctx, schema))
-                    })
+                    ctx.with_schema_path_segment(&idx_str, |ctx| compile_schema(ctx, schema))
                 });
                 if compiled.is_trivially_true() {
                     return CompiledExpr::always_true();
@@ -55,9 +53,7 @@ fn compile_plain<E: ValueEmitter>(ctx: &mut CompileContext<'_, E>, value: &Value
             .collect();
         CompiledExpr::combine_and(compiled)
     } else {
-        let mut compiled = ctx.with_schema_path_segment("items", |ctx| {
-            ctx.with_instance_scope(|ctx| compile_schema(ctx, value))
-        });
+        let mut compiled = ctx.with_schema_path_segment("items", |ctx| compile_schema(ctx, value));
         if compiled.is_trivially_true() {
             return CompiledExpr::always_true();
         }
@@ -113,9 +109,7 @@ fn compile_with_prefix<E: ValueEmitter>(
             )
         }
         _ => {
-            let compiled = ctx.with_schema_path_segment("items", |ctx| {
-                ctx.with_instance_scope(|ctx| compile_schema(ctx, value))
-            });
+            let compiled = ctx.with_schema_path_segment("items", |ctx| compile_schema(ctx, value));
             if compiled.is_trivially_true() {
                 return CompiledExpr::always_true();
             }

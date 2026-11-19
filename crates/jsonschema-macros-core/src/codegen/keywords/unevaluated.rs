@@ -715,7 +715,7 @@ pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
                 return quote! { true };
             }
             if unevaluated.as_bool() != Some(false) {
-                let schema_check = ctx.with_instance_scope(|ctx| compile_schema(ctx, unevaluated));
+                let schema_check = compile_schema(ctx, unevaluated);
                 let get_by_key = E::object_get_dynamic(format_ident!("obj"), quote! { key_str });
                 return quote! {
                     (#evaluated_without_unevaluated) || {
@@ -797,7 +797,7 @@ pub(crate) fn compile_index_evaluated_expr<E: ValueEmitter>(
                 return quote! { true };
             }
             if unevaluated.as_bool() != Some(false) {
-                let schema_check = ctx.with_instance_scope(|ctx| compile_schema(ctx, unevaluated));
+                let schema_check = compile_schema(ctx, unevaluated);
                 let node = E::node_param(None);
                 return quote! {
                     (#evaluated_without_unevaluated)

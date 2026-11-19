@@ -303,9 +303,7 @@ impl Tree {
             Vec::new()
         };
         let check = ctx.with_schema_path_swap(location, |ctx| {
-            ctx.with_instance_scope(|ctx| {
-                ctx.within_targets(&targets, |ctx| compile_schema(ctx, subschema))
-            })
+            ctx.within_targets(&targets, |ctx| compile_schema(ctx, subschema))
         });
         self.valid.push(check.is_valid_token_stream());
         let resource = self.resource(ctx);
@@ -661,9 +659,8 @@ impl Tree {
                 let errors = if closed {
                     TokenStream::new()
                 } else {
-                    let compiled = ctx.with_schema_path_swap(location, |ctx| {
-                        ctx.with_instance_scope(|ctx| compile_schema(ctx, subschema))
-                    });
+                    let compiled =
+                        ctx.with_schema_path_swap(location, |ctx| compile_schema(ctx, subschema));
                     compiled.guard_errors(&compiled.errors.as_token_stream())
                 };
                 let evaluated = self.unevaluated.len();
@@ -1129,9 +1126,8 @@ pub(super) fn compile<E: ValueEmitter>(
             let outer_draft = std::mem::replace(&mut ctx.draft, draft);
             let outer_vocabularies = std::mem::replace(&mut ctx.vocabularies, vocabularies);
             // Its errors do not depend on where it is, so equal leaves share a check.
-            let check = ctx.with_schema_path_swap(String::new(), |ctx| {
-                ctx.with_instance_scope(|ctx| compile_schema(ctx, &schema))
-            });
+            let check =
+                ctx.with_schema_path_swap(String::new(), |ctx| compile_schema(ctx, &schema));
             ctx.draft = outer_draft;
             ctx.vocabularies = outer_vocabularies;
             let is_valid = check.is_valid_token_stream();
