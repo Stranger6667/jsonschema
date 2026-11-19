@@ -6617,6 +6617,13 @@ struct EvaluateTupleDraft201909;
 #[jsonschema::validator(schema = r#"{"items": {"type": "integer"}, "additionalItems": false}"#, draft = Draft7, methods = { evaluate = true })]
 struct EvaluateAdditionalItemsIgnored;
 
+// Without array-form `items`, the runtime compiles nothing below `additionalItems`, `$id` included.
+#[jsonschema::validator(schema = r##"{"additionalItems": {"$id": "http://example.com/tail", "$ref": "#/$defs/s", "$defs": {"s": {"type": "string"}}}}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateAdditionalItemsWithoutItems;
+
+#[jsonschema::validator(schema = r#"{"items": {"type": "integer"}, "additionalItems": {"$id": "http://a b"}}"#, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateAdditionalItemsBesideSchemaItems;
+
 #[jsonschema::validator(schema = r#"{"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}"#, draft = Draft201909, methods = { evaluate = true })]
 struct EvaluatePrefixItemsDraft201909;
 
@@ -6682,6 +6689,13 @@ struct EvaluateIfElse;
 
 #[jsonschema::validator(schema = r#"{"if": {"type": "integer"}, "minLength": 1}"#, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateIfAlone;
+
+// The runtime compiles `if`, `then` and `else` only together, leaving these references unresolved.
+#[jsonschema::validator(schema = r##"{"if": {"$ref": "#/$defs/missing"}, "minLength": 1}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateIfWithoutBranches;
+
+#[jsonschema::validator(schema = r##"{"then": {"$ref": "#/$defs/missing"}, "else": {"$ref": "#/$defs/missing"}, "minLength": 1}"##, draft = Draft202012, methods = { evaluate = true })]
+struct EvaluateBranchesWithoutIf;
 
 #[jsonschema::validator(schema = r#"{"anyOf": [{"allOf": [{"type": "array"}, {"items": {"not": {"type": "string"}}}]}, {"oneOf": [{"type": "object"}, {"type": "null"}]}]}"#, draft = Draft202012, methods = { evaluate = true })]
 struct EvaluateNestedCombinators;
@@ -6984,6 +6998,8 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateAdditionalItemsFalse::evaluate, serde_json::json!({"items": [{}], "additionalItems": false}), None, Draft::Draft7 ; "additional_items_false")]
 #[test_case(EvaluateTupleDraft201909::evaluate, serde_json::json!({"items": [{}, {}], "additionalItems": {"type": "string"}}), None, Draft::Draft201909 ; "tuple_draft2019")]
 #[test_case(EvaluateAdditionalItemsIgnored::evaluate, serde_json::json!({"items": {"type": "integer"}, "additionalItems": false}), None, Draft::Draft7 ; "additional_items_ignored")]
+#[test_case(EvaluateAdditionalItemsWithoutItems::evaluate, serde_json::json!({"additionalItems": {"$id": "http://example.com/tail", "$ref": "#/$defs/s", "$defs": {"s": {"type": "string"}}}}), None, Draft::Draft202012 ; "additional_items_without_items")]
+#[test_case(EvaluateAdditionalItemsBesideSchemaItems::evaluate, serde_json::json!({"items": {"type": "integer"}, "additionalItems": {"$id": "http://a b"}}), None, Draft::Draft202012 ; "additional_items_beside_schema_items")]
 #[test_case(EvaluatePrefixItemsDraft201909::evaluate, serde_json::json!({"prefixItems": [{"type": "integer"}], "items": {"type": "string"}}), None, Draft::Draft201909 ; "prefix_items_draft2019")]
 #[test_case(EvaluateContains::evaluate, serde_json::json!({"contains": {"type": "integer"}}), None, Draft::Draft202012 ; "contains")]
 #[test_case(EvaluateContainsBounds::evaluate, serde_json::json!({"contains": {"type": "integer"}, "minContains": 2, "maxContains": 3}), None, Draft::Draft202012 ; "contains_bounds")]
@@ -7006,6 +7022,8 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateIfThen::evaluate, serde_json::json!({"if": {"type": "integer"}, "then": {"minimum": 2}}), None, Draft::Draft7 ; "if_then")]
 #[test_case(EvaluateIfElse::evaluate, serde_json::json!({"if": {"type": "integer"}, "else": {"type": "string"}}), None, Draft::Draft202012 ; "if_else")]
 #[test_case(EvaluateIfAlone::evaluate, serde_json::json!({"if": {"type": "integer"}, "minLength": 1}), None, Draft::Draft202012 ; "if_alone")]
+#[test_case(EvaluateIfWithoutBranches::evaluate, serde_json::json!({"if": {"$ref": "#/$defs/missing"}, "minLength": 1}), None, Draft::Draft202012 ; "if_without_branches")]
+#[test_case(EvaluateBranchesWithoutIf::evaluate, serde_json::json!({"then": {"$ref": "#/$defs/missing"}, "else": {"$ref": "#/$defs/missing"}, "minLength": 1}), None, Draft::Draft202012 ; "branches_without_if")]
 #[test_case(EvaluateNestedCombinators::evaluate, serde_json::json!({"anyOf": [{"allOf": [{"type": "array"}, {"items": {"not": {"type": "string"}}}]}, {"oneOf": [{"type": "object"}, {"type": "null"}]}]}), None, Draft::Draft202012 ; "nested_combinators")]
 #[test_case(EvaluateRef::evaluate, serde_json::json!({"$defs": {"a": {"type": "integer", "minimum": 2}}, "$ref": "#/$defs/a"}), None, Draft::Draft202012 ; "ref")]
 #[test_case(EvaluateRefSiblings::evaluate, serde_json::json!({"$defs": {"a": {"type": "integer"}}, "$ref": "#/$defs/a", "minimum": 5, "title": "t"}), None, Draft::Draft202012 ; "ref_siblings")]

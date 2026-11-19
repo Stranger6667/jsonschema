@@ -1731,6 +1731,15 @@ impl<'r> Support<'r> {
                 }
                 // Only its validity is checked.
                 ("not", _) => return None,
+                // `additionalItems` applies past an array-form `items` only; `if` beside `then` or
+                // `else` only, and they beside `if` only.
+                ("additionalItems", _) if !keywords.get("items").is_some_and(Value::is_array) => {
+                    return None;
+                }
+                ("if", _) if !keywords.contains_key("then") && !keywords.contains_key("else") => {
+                    return None;
+                }
+                ("then" | "else", _) if !keywords.contains_key("if") => return None,
                 ("items" | "prefixItems" | "allOf" | "anyOf" | "oneOf", Value::Array(schemas)) => {
                     return schemas
                         .iter()
