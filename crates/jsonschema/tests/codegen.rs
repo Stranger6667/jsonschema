@@ -4776,6 +4776,78 @@ fn test_matches_runtime(
     }
 }
 
+#[jsonschema::validator(
+    schema = r##"{"properties": {"a": {"$id": "json-schema:///a.json", "$recursiveAnchor": true, "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct AnyOfBesideFailingKeywordUnderRecursiveRef;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"a": {"$id": "json-schema:///a.json", "$recursiveAnchor": true, "propertyNames": {"pattern": "^q"}, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct AnyOfBesideFailingPropertyNamesUnderRecursiveRef;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"a": {"$id": "json-schema:///a.json", "$recursiveAnchor": true, "minProperties": 5, "oneOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct OneOfBesideFailingKeywordUnderRecursiveRef;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"a": {"$id": "http://example.com/a.json", "$recursiveAnchor": true, "minProperties": 5, "required": ["q"], "additionalProperties": {"$recursiveRef": "#"}}}}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct RequiredBesideFailingKeywordUnderRecursiveRef;
+#[jsonschema::validator(
+    schema = r##"{"$recursiveAnchor": true, "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct AnyOfBesideFailingKeywordUnderRootRecursiveRef;
+#[jsonschema::validator(
+    schema = r##"{"$defs": {"a": {"$id": "json-schema:///a.json", "$recursiveAnchor": true, "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}, "properties": {"a": {"$ref": "json-schema:///a.json"}}}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct AnyOfBesideFailingKeywordUnderDefinitionRecursiveRef;
+#[jsonschema::validator(
+    schema = r##"{"$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "p": {"properties": {"b": {"$id": "json-schema:///b.json", "$recursiveAnchor": true, "minProperties": 5, "required": ["q"]}}}}}"##,
+    draft = referencing::Draft::Draft201909
+)]
+struct RequiredBesideFailingKeywordInNestedRecursiveAnchor;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"a": {"$id": "json-schema:///a.json", "$dynamicAnchor": "node", "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$dynamicRef": "#node"}}}}"##,
+    draft = referencing::Draft::Draft202012
+)]
+struct AnyOfBesideFailingKeywordUnderDynamicRef;
+#[jsonschema::validator(
+    schema = r##"{"properties": {"a": {"$id": "json-schema:///a.json", "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$ref": "#"}}}}"##,
+    draft = referencing::Draft::Draft202012
+)]
+struct AnyOfBesideFailingKeywordUnderRefCycle;
+
+// Subschemas reached in place or through a reference report every error, not only their first:
+// `anyOf` and `oneOf` too when a keyword beside them already failed.
+#[test_case(AnyOfBesideFailingKeywordUnderRecursiveRef::is_valid, AnyOfBesideFailingKeywordUnderRecursiveRef::validate, AnyOfBesideFailingKeywordUnderRecursiveRef::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"properties": {"a": {"$id": "json-schema:///a.json", "$recursiveAnchor": true, "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}}), serde_json::json!([{"a": {"x": {"y": 1}}}]) ; "any_of_under_recursive_ref")]
+#[test_case(AnyOfBesideFailingPropertyNamesUnderRecursiveRef::is_valid, AnyOfBesideFailingPropertyNamesUnderRecursiveRef::validate, AnyOfBesideFailingPropertyNamesUnderRecursiveRef::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"properties": {"a": {"$id": "json-schema:///a.json", "$recursiveAnchor": true, "propertyNames": {"pattern": "^q"}, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}}), serde_json::json!([{"a": {"x": {"y": 1}}}]) ; "any_of_beside_property_names_under_recursive_ref")]
+#[test_case(OneOfBesideFailingKeywordUnderRecursiveRef::is_valid, OneOfBesideFailingKeywordUnderRecursiveRef::validate, OneOfBesideFailingKeywordUnderRecursiveRef::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"properties": {"a": {"$id": "json-schema:///a.json", "$recursiveAnchor": true, "minProperties": 5, "oneOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}}), serde_json::json!([{"a": {"x": {"y": 1}}}]) ; "one_of_under_recursive_ref")]
+#[test_case(RequiredBesideFailingKeywordUnderRecursiveRef::is_valid, RequiredBesideFailingKeywordUnderRecursiveRef::validate, RequiredBesideFailingKeywordUnderRecursiveRef::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"properties": {"a": {"$id": "http://example.com/a.json", "$recursiveAnchor": true, "minProperties": 5, "required": ["q"], "additionalProperties": {"$recursiveRef": "#"}}}}), serde_json::json!([{"a": {"x": {"y": 1}}}]) ; "required_under_recursive_ref_in_resource")]
+#[test_case(AnyOfBesideFailingKeywordUnderRootRecursiveRef::is_valid, AnyOfBesideFailingKeywordUnderRootRecursiveRef::validate, AnyOfBesideFailingKeywordUnderRootRecursiveRef::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"$recursiveAnchor": true, "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}), serde_json::json!([{"x": {"y": 1}}]) ; "any_of_under_root_recursive_ref")]
+#[test_case(AnyOfBesideFailingKeywordUnderDefinitionRecursiveRef::is_valid, AnyOfBesideFailingKeywordUnderDefinitionRecursiveRef::validate, AnyOfBesideFailingKeywordUnderDefinitionRecursiveRef::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"$defs": {"a": {"$id": "json-schema:///a.json", "$recursiveAnchor": true, "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$recursiveRef": "#"}}}, "properties": {"a": {"$ref": "json-schema:///a.json"}}}), serde_json::json!([{"a": {"x": {"y": 1}}}]) ; "any_of_under_definition_recursive_ref")]
+#[test_case(RequiredBesideFailingKeywordInNestedRecursiveAnchor::is_valid, RequiredBesideFailingKeywordInNestedRecursiveAnchor::validate, RequiredBesideFailingKeywordInNestedRecursiveAnchor::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft201909), serde_json::json!({"$recursiveAnchor": true, "properties": {"a": {"$recursiveRef": "#"}, "p": {"properties": {"b": {"$id": "json-schema:///b.json", "$recursiveAnchor": true, "minProperties": 5, "required": ["q"]}}}}}), serde_json::json!([{"p": {"b": {}}}, {"a": {"p": {"b": {}}}}]) ; "required_in_nested_recursive_anchor")]
+#[test_case(AnyOfBesideFailingKeywordUnderDynamicRef::is_valid, AnyOfBesideFailingKeywordUnderDynamicRef::validate, AnyOfBesideFailingKeywordUnderDynamicRef::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft202012), serde_json::json!({"properties": {"a": {"$id": "json-schema:///a.json", "$dynamicAnchor": "node", "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$dynamicRef": "#node"}}}}), serde_json::json!([{"a": {"x": {"y": 1}}}]) ; "any_of_under_dynamic_ref")]
+#[test_case(AnyOfBesideFailingKeywordUnderRefCycle::is_valid, AnyOfBesideFailingKeywordUnderRefCycle::validate, AnyOfBesideFailingKeywordUnderRefCycle::iter_errors, jsonschema::options().with_draft(referencing::Draft::Draft202012), serde_json::json!({"properties": {"a": {"$id": "json-schema:///a.json", "minProperties": 5, "anyOf": [{"maxProperties": 0}, {"required": ["q"]}], "additionalProperties": {"$ref": "#"}}}}), serde_json::json!([{"a": {"x": {"y": 1}}}]) ; "any_of_under_ref_cycle")]
+fn test_errors_beside_failing_keyword_match_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    options: jsonschema::ValidationOptions,
+    schema: serde_json::Value,
+    instances: serde_json::Value,
+) {
+    let runtime = options.build(&schema).expect("valid schema");
+    for instance in instances.as_array().expect("instance list") {
+        assert_validate_parity(is_valid(instance), validate(instance), &runtime, instance);
+        assert_iter_errors_parity(iter_errors(instance), &runtime, instance);
+    }
+}
+
 // Without the validation vocabulary `const` accepts every `kind`, so it cannot pick a branch.
 #[jsonschema::validator(
     schema = r#"{"$schema": "json-schema:///meta/no-validation", "oneOf": [{"required": ["kind"], "properties": {"kind": {"const": "a"}}}, {"required": ["kind"], "properties": {"kind": {"const": "b"}}}]}"#,

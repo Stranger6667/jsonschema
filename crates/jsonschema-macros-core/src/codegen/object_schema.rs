@@ -9,7 +9,7 @@ use crate::context::CompileContext;
 use super::{
     dispatch::compile_typed,
     draft::DraftExt,
-    expr::{call_errors, first_error_of, ErrorsBlock, IsValidExpr},
+    expr::{call_errors, ErrorsBlock, IsValidExpr},
     helpers::get_or_create_is_valid_fn,
     keywords, CompiledExpr,
 };
@@ -129,17 +129,20 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
                 let func_ident = format_ident!("{}", func_name);
                 let errors_ident = format_ident!("{}_errors", func_name);
                 let site = ctx.current_schema_path();
-                return CompiledExpr::from_first_error(
+                // The error function runs `is_valid` first and reports every error of the
+                // subschema.
+                return CompiledExpr::with_errors(
                     quote! { #func_ident(instance) },
-                    first_error_of(&call_errors(&quote! {
+                    call_errors(&quote! {
                         {
                             let __start = __errors.mark();
                             let __stop = #errors_ident(instance, __path, __errors, "");
                             __errors.inside(__start, #site);
                             __stop
                         }
-                    })),
-                );
+                    }),
+                )
+                .with_skips_valid(true);
             }
         }
 
