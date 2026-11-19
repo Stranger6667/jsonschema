@@ -301,11 +301,17 @@ mod __validator_impl {
                             "child" => {
                                 let __dynamic_target = __JSONSCHEMA_DYNAMIC_STACK
                                     .with(|stack| {
-                                        stack
-                                            .borrow()
-                                            .iter()
-                                            .find(|(dynamic_anchor, _)| *dynamic_anchor == "node")
-                                            .map(|(_, is_valid)| *is_valid)
+                                        let stack = stack.borrow();
+                                        let mut selected = None;
+                                        for (dynamic_anchor, target) in stack.iter() {
+                                            if *dynamic_anchor == "node" {
+                                                if *target as usize != validate_ref_0 as usize {
+                                                    selected = Some(*target);
+                                                }
+                                                break;
+                                            }
+                                        }
+                                        selected
                                     });
                                 if let Some(target) = __dynamic_target {
                                     {
@@ -416,11 +422,17 @@ mod __validator_impl {
                                 if !({
                                     let __dynamic_target = __JSONSCHEMA_DYNAMIC_STACK
                                         .with(|stack| {
-                                            stack
-                                                .borrow()
-                                                .iter()
-                                                .find(|(dynamic_anchor, _)| *dynamic_anchor == "node")
-                                                .map(|(_, is_valid)| *is_valid)
+                                            let stack = stack.borrow();
+                                            let mut selected = None;
+                                            for (dynamic_anchor, target) in stack.iter() {
+                                                if *dynamic_anchor == "node" {
+                                                    if *target as usize != validate_ref_0 as usize {
+                                                        selected = Some(*target);
+                                                    }
+                                                    break;
+                                                }
+                                            }
+                                            selected
                                         });
                                     if let Some(target) = __dynamic_target {
                                         {
@@ -455,11 +467,17 @@ mod __validator_impl {
                                     {
                                         let __dynamic_target_errors = __JSONSCHEMA_DYNAMIC_ERRORS_STACK
                                             .with(|stack| {
-                                                stack
-                                                    .borrow()
-                                                    .iter()
-                                                    .find(|(dynamic_anchor, _)| *dynamic_anchor == "node")
-                                                    .map(|(_, errors)| *errors)
+                                                let stack = stack.borrow();
+                                                let mut selected = None;
+                                                for (dynamic_anchor, target) in stack.iter() {
+                                                    if *dynamic_anchor == "node" {
+                                                        if *target as usize != validate_ref_0_errors as usize {
+                                                            selected = Some(*target);
+                                                        }
+                                                        break;
+                                                    }
+                                                }
+                                                selected
                                             });
                                         if let Some(target_errors) = __dynamic_target_errors {
                                             {

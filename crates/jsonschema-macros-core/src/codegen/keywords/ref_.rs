@@ -9,7 +9,7 @@ use super::super::{
     },
     CompileContext, CompiledExpr,
 };
-use crate::codegen::emit::ValueEmitter;
+use crate::{codegen::emit::ValueEmitter, context::RefResultsKey};
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
 use serde_json::Value;
@@ -104,6 +104,32 @@ pub(crate) fn compile<E: ValueEmitter>(
     compile_at(ctx, value, "$ref")
 }
 
+/// The call validating `instance` against the target `func_ident` names, at `location`.
+///
+/// Keywords reaching one instance through a cycle at every level would otherwise validate it once
+/// per path to it, so a cycle's results are kept for the run. Under a dynamic scope a result
+/// depends on what the scope binds, so each is kept for the scope it was computed in.
+fn ref_call<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    func_ident: &proc_macro2::Ident,
+    cycle: bool,
+    location: &str,
+) -> TokenStream {
+    if !cycle || !ctx.revisited_ref_targets.contains(location) {
+        return quote! { #func_ident(instance) };
+    }
+    let json = E::json_representation();
+    match &mut ctx.ref_results_key {
+        RefResultsKey::Instance => quote! { __ref_memo::is_valid::<#json>(#func_ident, instance) },
+        RefResultsKey::InstanceAndScope { calls } => {
+            *calls += 1;
+            quote! {
+                __ref_memo::is_valid_in_scope::<#json>(#func_ident, instance, __dynamic_scope)
+            }
+        }
+    }
+}
+
 /// A static reference, through the `keyword` that holds it.
 fn compile_at<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -154,6 +180,7 @@ fn compile_at<E: ValueEmitter>(
     if same_instance_cycle {
         ctx.uses_ref_cycle = true;
     }
+    let call = ref_call(ctx, &func_ident, cycle, &resolved.location);
     if ctx.uses_dynamic_ref && !call_scope_bindings.is_empty() {
         let call_scope_pushes: Vec<_> = call_scope_bindings
             .iter()
@@ -175,7 +202,7 @@ fn compile_at<E: ValueEmitter>(
         let is_valid = quote! {
             {
                 #(#call_scope_pushes)*
-                let __result = #func_ident(instance);
+                let __result = #call;
                 #dynamic_pop
                 __result
             }
@@ -213,18 +240,7 @@ fn compile_at<E: ValueEmitter>(
         }
     } else {
         let errors_ident = format_ident!("{}_errors", func_name);
-        // Keywords reaching one instance through the cycle at every level would otherwise
-        // validate it once per path to it. Under a dynamic scope a result depends on the path.
-        let is_valid = if cycle
-            && !ctx.uses_recursive_ref
-            && !ctx.uses_dynamic_ref
-            && ctx.revisited_ref_targets.contains(&resolved.location)
-        {
-            let json = E::json_representation();
-            quote! { __ref_memo::is_valid::<#json>(#func_ident, instance) }
-        } else {
-            quote! { #func_ident(instance) }
-        };
+        let is_valid = call;
         if same_instance_cycle {
             let mark = ref_mark(&node, &node_address, &func_ident);
             // The guard comes before the memo, as in the runtime: a target re-entered on an
@@ -256,7 +272,6 @@ pub(crate) fn compile_dynamic<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     value: &Value,
 ) -> CompiledExpr {
-    let node_address = E::node_address(format_ident!("instance"));
     let Some(reference) = value.as_str() else {
         return super::super::errors::invalid_schema_expected_string_keyword_expression(
             "$dynamicRef",
@@ -273,22 +288,119 @@ pub(crate) fn compile_dynamic<E: ValueEmitter>(
     };
 
     ctx.uses_dynamic_ref = true;
-    let fallback_is_valid = fallback.is_valid_token_stream();
+    through_dynamic_scope(
+        ctx,
+        &resolved.location,
+        &fallback,
+        &BoundEntry {
+            is_valid_stack: format_ident!("__JSONSCHEMA_DYNAMIC_STACK"),
+            errors_stack: format_ident!("__JSONSCHEMA_DYNAMIC_ERRORS_STACK"),
+            pattern: quote! { (dynamic_anchor, target) },
+            selects: quote! { *dynamic_anchor == #anchor_name },
+        },
+        "$dynamicRef",
+    )
+}
 
-    let dynamic_lookup = quote! {
-        __JSONSCHEMA_DYNAMIC_STACK.with(|stack| {
-            stack
-                .borrow()
-                .iter()
-                .find(|(dynamic_anchor, _)| *dynamic_anchor == #anchor_name)
-                .map(|(_, is_valid)| *is_valid)
-        })
+pub(crate) fn compile_recursive<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    value: &Value,
+) -> CompiledExpr {
+    let anchored_target = value
+        .as_str()
+        .and_then(|reference| resolve_ref(ctx, reference).ok())
+        .filter(|resolved| {
+            resolved
+                .schema
+                .as_object()
+                .and_then(|obj| obj.get("$recursiveAnchor"))
+                .and_then(Value::as_bool)
+                == Some(true)
+        });
+
+    let Some(resolved) = anchored_target else {
+        return compile_at(ctx, value, "$recursiveRef");
     };
 
+    ctx.uses_recursive_ref = true;
+    let fallback = compile_at(ctx, value, "$recursiveRef");
+    through_dynamic_scope(
+        ctx,
+        &resolved.location,
+        &fallback,
+        &BoundEntry {
+            is_valid_stack: format_ident!("__JSONSCHEMA_RECURSIVE_STACK"),
+            errors_stack: format_ident!("__JSONSCHEMA_RECURSIVE_ERRORS_STACK"),
+            pattern: quote! { (target, is_anchor) },
+            selects: quote! { *is_anchor },
+        },
+        "$recursiveRef",
+    )
+}
+
+/// The entry of the dynamic-scope stacks a reference resolves to: the first one `pattern`
+/// destructures into `target` and its key, and `selects` picks.
+struct BoundEntry {
+    is_valid_stack: proc_macro2::Ident,
+    errors_stack: proc_macro2::Ident,
+    pattern: TokenStream,
+    selects: TokenStream,
+}
+
+impl BoundEntry {
+    /// The code the scope binds on `stack`, or `None` where it binds none or `static_target`.
+    fn lookup(
+        &self,
+        stack: &proc_macro2::Ident,
+        static_target: &proc_macro2::Ident,
+    ) -> TokenStream {
+        let pattern = &self.pattern;
+        let selects = &self.selects;
+        quote! {
+            #stack.with(|stack| {
+                let stack = stack.borrow();
+                let mut selected = None;
+                for #pattern in stack.iter() {
+                    if #selects {
+                        if *target as usize != #static_target as usize {
+                            selected = Some(*target);
+                        }
+                        break;
+                    }
+                }
+                selected
+            })
+        }
+    }
+}
+
+/// A reference resolving through the dynamic scope to the code `bound` finds there.
+///
+/// Bound to its static target, at `location`, it is the static reference `fallback`: the runtime
+/// compiles both under one name, so they share a cycle guard and the first entry stays unguarded.
+/// Bound elsewhere, it enters that code under a guard of its own.
+fn through_dynamic_scope<E: ValueEmitter>(
+    ctx: &mut CompileContext<'_, E>,
+    location: &str,
+    fallback: &CompiledExpr,
+    bound: &BoundEntry,
+    keyword: &'static str,
+) -> CompiledExpr {
+    let node_address = E::node_address(format_ident!("instance"));
+    let static_target = format_ident!(
+        "{}",
+        ctx.is_valid_fns
+            .get_name(location)
+            .expect("the static target compiles before its dynamic references")
+    );
+    ctx.looked_up_stacks
+        .insert(bound.is_valid_stack.to_string());
+    let lookup = bound.lookup(&bound.is_valid_stack, &static_target);
+    let fallback_is_valid = fallback.is_valid_token_stream();
     let guarded_is_valid = cycle_guarded_is_valid(&node_address, &quote! { target(instance) });
     let is_valid = quote! {
         {
-            let __dynamic_target = #dynamic_lookup;
+            let __dynamic_target = #lookup;
             if let Some(target) = __dynamic_target {
                 #guarded_is_valid
             } else {
@@ -297,20 +409,15 @@ pub(crate) fn compile_dynamic<E: ValueEmitter>(
         }
     };
 
+    let lookup_errors = bound.lookup(
+        &bound.errors_stack,
+        &format_ident!("{}_errors", static_target),
+    );
     let fallback_errors = match &fallback.errors {
         ErrorsBlock::Expr(expr) => expr.clone(),
         ErrorsBlock::AlwaysValid => quote! {},
     };
-    let dynamic_lookup_errors = quote! {
-        __JSONSCHEMA_DYNAMIC_ERRORS_STACK.with(|stack| {
-            stack
-                .borrow()
-                .iter()
-                .find(|(dynamic_anchor, _)| *dynamic_anchor == #anchor_name)
-                .map(|(_, errors)| *errors)
-        })
-    };
-    let site = ctx.schema_path_for_keyword("$dynamicRef");
+    let site = ctx.schema_path_for_keyword(keyword);
     let guarded_errors = cycle_guarded_errors(
         &node_address,
         &quote! { target_errors(instance, __path, __errors, #site) },
@@ -319,96 +426,8 @@ pub(crate) fn compile_dynamic<E: ValueEmitter>(
         is_valid,
         quote! {
             {
-                let __dynamic_target_errors = #dynamic_lookup_errors;
+                let __dynamic_target_errors = #lookup_errors;
                 if let Some(target_errors) = __dynamic_target_errors {
-                    #guarded_errors
-                } else {
-                    #fallback_errors
-                }
-            }
-        },
-    )
-}
-
-pub(crate) fn compile_recursive<E: ValueEmitter>(
-    ctx: &mut CompileContext<'_, E>,
-    value: &Value,
-) -> CompiledExpr {
-    let node_address = E::node_address(format_ident!("instance"));
-    let target_has_recursive_anchor = value
-        .as_str()
-        .and_then(|reference| resolve_ref(ctx, reference).ok())
-        .and_then(|resolved| {
-            resolved
-                .schema
-                .as_object()
-                .and_then(|obj| obj.get("$recursiveAnchor"))
-                .and_then(Value::as_bool)
-        })
-        == Some(true);
-
-    if !target_has_recursive_anchor {
-        return compile_at(ctx, value, "$recursiveRef");
-    }
-
-    ctx.uses_recursive_ref = true;
-    let fallback = compile_at(ctx, value, "$recursiveRef");
-    let fallback_is_valid = fallback.is_valid_token_stream();
-
-    let recursive_lookup = quote! {
-        __JSONSCHEMA_RECURSIVE_STACK.with(|stack| {
-            let stack = stack.borrow();
-            let mut selected = None;
-            for (is_valid, is_anchor) in stack.iter() {
-                if *is_anchor {
-                    selected = Some(*is_valid);
-                    break;
-                }
-            }
-            selected
-        })
-    };
-
-    let guarded_is_valid = cycle_guarded_is_valid(&node_address, &quote! { target(instance) });
-    let is_valid = quote! {
-        {
-            let __recursive_target = #recursive_lookup;
-            if let Some(target) = __recursive_target {
-                #guarded_is_valid
-            } else {
-                #fallback_is_valid
-            }
-        }
-    };
-
-    let fallback_errors = match &fallback.errors {
-        ErrorsBlock::Expr(expr) => expr.clone(),
-        ErrorsBlock::AlwaysValid => quote! {},
-    };
-    let recursive_lookup_errors = quote! {
-        __JSONSCHEMA_RECURSIVE_ERRORS_STACK.with(|stack| {
-            let stack = stack.borrow();
-            let mut selected = None;
-            for (errors, is_anchor) in stack.iter() {
-                if *is_anchor {
-                    selected = Some(*errors);
-                    break;
-                }
-            }
-            selected
-        })
-    };
-    let site = ctx.schema_path_for_keyword("$recursiveRef");
-    let guarded_errors = cycle_guarded_errors(
-        &node_address,
-        &quote! { target_errors(instance, __path, __errors, #site) },
-    );
-    CompiledExpr::with_errors(
-        is_valid,
-        quote! {
-            {
-                let __recursive_target_errors = #recursive_lookup_errors;
-                if let Some(target_errors) = __recursive_target_errors {
                     #guarded_errors
                 } else {
                     #fallback_errors

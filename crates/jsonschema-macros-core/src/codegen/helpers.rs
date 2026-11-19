@@ -350,9 +350,9 @@ fn errors_fn(
     }
 }
 
-/// The function whose errors a `$recursiveRef` landing on `schema` reports, when `schema` is a
-/// resource root reached through another `location`: the runtime reports them from that root.
-fn recursive_errors_name<E: ValueEmitter>(
+/// The code a `$recursiveRef` landing on `schema` runs, when `schema` is a resource root reached
+/// through another `location`: the code of the root as a `$recursiveRef` in it names it.
+fn recursive_anchor_name<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     location: &str,
     schema: &Value,
@@ -415,7 +415,13 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                 Vec::new()
             };
             if ctx.uses_recursive_ref || ctx.uses_dynamic_ref {
-                let func_ident = format_ident!("{}", func_name);
+                let recursive_name = if ctx.uses_recursive_ref {
+                    recursive_anchor_name(ctx, location, schema, is_recursive_anchor)
+                        .unwrap_or_else(|| func_name.clone())
+                } else {
+                    func_name.clone()
+                };
+                let recursive_ident = format_ident!("{}", recursive_name);
                 let key_eval_name =
                     get_or_create_key_eval_fn(ctx, location, schema, ctx.current_base_uri.clone());
                 let key_eval_ident = format_ident!("{}", key_eval_name);
@@ -424,7 +430,7 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                 let item_eval_ident = format_ident!("{}", item_eval_name);
                 // Pops mirror pushes in reverse family order on every path.
                 let families = [
-                    (&IS_VALID_FAMILY, &func_ident),
+                    (&IS_VALID_FAMILY, &recursive_ident),
                     (&KEY_EVAL_FAMILY, &key_eval_ident),
                     (&ITEM_EVAL_FAMILY, &item_eval_ident),
                 ];
@@ -469,11 +475,7 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                     let (enter, leave) = if recursive_push.is_empty() && dynamic_push.is_empty() {
                         (quote! {}, quote! {})
                     } else {
-                        let errors_ident = format_ident!(
-                            "{}_errors",
-                            recursive_errors_name(ctx, location, schema, is_recursive_anchor)
-                                .unwrap_or_else(|| func_name.clone())
-                        );
+                        let errors_ident = format_ident!("{}_errors", recursive_name);
                         let recursive_errors_push = if ctx.uses_recursive_ref {
                             push_recursive_errors(&errors_ident, is_recursive_anchor)
                         } else {

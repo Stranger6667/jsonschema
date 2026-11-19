@@ -74,19 +74,21 @@ mod __validator_impl {
                             if !(match key_str {
                                 "child" => {
                                     if {
-                                        let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                        let __dynamic_target = __JSONSCHEMA_RECURSIVE_STACK
                                             .with(|stack| {
                                                 let stack = stack.borrow();
                                                 let mut selected = None;
-                                                for (is_valid, is_anchor) in stack.iter() {
+                                                for (target, is_anchor) in stack.iter() {
                                                     if *is_anchor {
-                                                        selected = Some(*is_valid);
+                                                        if *target as usize != validate_ref_0 as usize {
+                                                            selected = Some(*target);
+                                                        }
                                                         break;
                                                     }
                                                 }
                                                 selected
                                             });
-                                        if let Some(target) = __recursive_target {
+                                        if let Some(target) = __dynamic_target {
                                             {
                                                 let __mark = (
                                                     target as usize,
@@ -208,19 +210,21 @@ mod __validator_impl {
                         "child" => {
                             let instance = value;
                             if !(if {
-                                let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                let __dynamic_target = __JSONSCHEMA_RECURSIVE_STACK
                                     .with(|stack| {
                                         let stack = stack.borrow();
                                         let mut selected = None;
-                                        for (is_valid, is_anchor) in stack.iter() {
+                                        for (target, is_anchor) in stack.iter() {
                                             if *is_anchor {
-                                                selected = Some(*is_valid);
+                                                if *target as usize != validate_ref_0 as usize {
+                                                    selected = Some(*target);
+                                                }
                                                 break;
                                             }
                                         }
                                         selected
                                     });
-                                if let Some(target) = __recursive_target {
+                                if let Some(target) = __dynamic_target {
                                     {
                                         let __mark = (
                                             target as usize,
@@ -258,19 +262,21 @@ mod __validator_impl {
                             }) {
                                 let __path = &__path.push("child");
                                 if {
-                                    let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                    let __dynamic_target = __JSONSCHEMA_RECURSIVE_STACK
                                         .with(|stack| {
                                             let stack = stack.borrow();
                                             let mut selected = None;
-                                            for (is_valid, is_anchor) in stack.iter() {
+                                            for (target, is_anchor) in stack.iter() {
                                                 if *is_anchor {
-                                                    selected = Some(*is_valid);
+                                                    if *target as usize != validate_ref_0 as usize {
+                                                        selected = Some(*target);
+                                                    }
                                                     break;
                                                 }
                                             }
                                             selected
                                         });
-                                    if let Some(target) = __recursive_target {
+                                    if let Some(target) = __dynamic_target {
                                         {
                                             let __mark = (
                                                 target as usize,
@@ -405,7 +411,7 @@ mod __validator_impl {
     pub(super) fn is_valid(instance: &__Value) -> bool {
         __JSONSCHEMA_RECURSIVE_STACK
             .with(|stack| {
-                stack.borrow_mut().push((is_valid, true));
+                stack.borrow_mut().push((validate_ref_0, true));
             });
         __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
             .with(|stack| {
@@ -423,19 +429,21 @@ mod __validator_impl {
                         if !(match key_str {
                             "child" => {
                                 if {
-                                    let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                    let __dynamic_target = __JSONSCHEMA_RECURSIVE_STACK
                                         .with(|stack| {
                                             let stack = stack.borrow();
                                             let mut selected = None;
-                                            for (is_valid, is_anchor) in stack.iter() {
+                                            for (target, is_anchor) in stack.iter() {
                                                 if *is_anchor {
-                                                    selected = Some(*is_valid);
+                                                    if *target as usize != validate_ref_0 as usize {
+                                                        selected = Some(*target);
+                                                    }
                                                     break;
                                                 }
                                             }
                                             selected
                                         });
-                                    if let Some(target) = __recursive_target {
+                                    if let Some(target) = __dynamic_target {
                                         {
                                             let __mark = (
                                                 target as usize,
@@ -503,7 +511,7 @@ mod __validator_impl {
     ) -> bool {
         __JSONSCHEMA_RECURSIVE_STACK
             .with(|stack| {
-                stack.borrow_mut().push((is_valid, true));
+                stack.borrow_mut().push((validate_ref_0, true));
             });
         __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
             .with(|stack| {
@@ -515,7 +523,7 @@ mod __validator_impl {
             });
         __JSONSCHEMA_RECURSIVE_ERRORS_STACK
             .with(|stack| {
-                stack.borrow_mut().push((errors_at, true));
+                stack.borrow_mut().push((validate_ref_0_errors, true));
             });
         let __stop = (|| -> bool {
             match instance {
@@ -526,19 +534,21 @@ mod __validator_impl {
                             "child" => {
                                 let instance = value;
                                 if !(if {
-                                    let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                    let __dynamic_target = __JSONSCHEMA_RECURSIVE_STACK
                                         .with(|stack| {
                                             let stack = stack.borrow();
                                             let mut selected = None;
-                                            for (is_valid, is_anchor) in stack.iter() {
+                                            for (target, is_anchor) in stack.iter() {
                                                 if *is_anchor {
-                                                    selected = Some(*is_valid);
+                                                    if *target as usize != validate_ref_0 as usize {
+                                                        selected = Some(*target);
+                                                    }
                                                     break;
                                                 }
                                             }
                                             selected
                                         });
-                                    if let Some(target) = __recursive_target {
+                                    if let Some(target) = __dynamic_target {
                                         {
                                             let __mark = (
                                                 target as usize,
@@ -576,19 +586,21 @@ mod __validator_impl {
                                 }) {
                                     let __path = &__path.push("child");
                                     if {
-                                        let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                                        let __dynamic_target = __JSONSCHEMA_RECURSIVE_STACK
                                             .with(|stack| {
                                                 let stack = stack.borrow();
                                                 let mut selected = None;
-                                                for (is_valid, is_anchor) in stack.iter() {
+                                                for (target, is_anchor) in stack.iter() {
                                                     if *is_anchor {
-                                                        selected = Some(*is_valid);
+                                                        if *target as usize != validate_ref_0 as usize {
+                                                            selected = Some(*target);
+                                                        }
                                                         break;
                                                     }
                                                 }
                                                 selected
                                             });
-                                        if let Some(target) = __recursive_target {
+                                        if let Some(target) = __dynamic_target {
                                             {
                                                 let __mark = (
                                                     target as usize,
@@ -668,17 +680,6 @@ mod __validator_impl {
             });
         __stop
     }
-    fn errors_at<'__i>(
-        instance: &'__i __Value,
-        __path: &__paths::LazyLocation,
-        __errors: &mut __err::Errors<'__i>,
-        __site: &str,
-    ) -> bool {
-        let __start = __errors.mark();
-        let __stop = errors(instance, __path, __errors);
-        __errors.reached(__start, "", None, __site);
-        __stop
-    }
     pub(super) fn run_is_valid(instance: &__Value) -> bool {
         is_valid(instance)
     }
@@ -748,19 +749,21 @@ mod __validator_impl {
         ) -> bool {
             let instance = ::core::clone::Clone::clone(instance);
             {
-                let __recursive_target = __JSONSCHEMA_RECURSIVE_STACK
+                let __dynamic_target = __JSONSCHEMA_RECURSIVE_STACK
                     .with(|stack| {
                         let stack = stack.borrow();
                         let mut selected = None;
-                        for (is_valid, is_anchor) in stack.iter() {
+                        for (target, is_anchor) in stack.iter() {
                             if *is_anchor {
-                                selected = Some(*is_valid);
+                                if *target as usize != validate_ref_0 as usize {
+                                    selected = Some(*target);
+                                }
                                 break;
                             }
                         }
                         selected
                     });
-                if let Some(target) = __recursive_target {
+                if let Some(target) = __dynamic_target {
                     {
                         let __mark = (
                             target as usize,
@@ -789,6 +792,20 @@ mod __validator_impl {
                     validate_ref_0(instance)
                 }
             }
+        }
+        fn __guard_0(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+            enter: bool,
+        ) -> bool {
+            let instance = ::core::clone::Clone::clone(instance);
+            __eval::guard(
+                &__JSONSCHEMA_VALIDATE_MARK,
+                (
+                    (validate_ref_0 as fn(&__Value) -> bool) as usize,
+                    std::ptr::from_ref(instance) as usize,
+                ),
+                enter,
+            )
         }
         fn __direct_0<'__i>(
             instance: &'__i __Value,
@@ -820,10 +837,10 @@ mod __validator_impl {
             false
         }
         static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"functions\":[{}],\"properties\":[[\"child\",1]],\"resources\":[{\"anchors\":[],\"recursive\":true,\"root\":0}],\"schemas\":[{\"count\":1,\"first\":4,\"pointer\":\"\"},{\"count\":2,\"first\":2,\"pointer\":\"/properties/child\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/child/if\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/child/then\"}],\"units\":[{\"function\":0,\"keyword\":\"$recursiveRef\",\"scope\":{\"recursive\":true},\"target\":0},{\"direct\":0,\"keyword\":\"required\"},{\"condition\":[2,0],\"keyword\":\"if\"},{\"branch\":3,\"keyword\":\"then\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]}],\"valid_resources\":[0]}",
+            tables: "{\"functions\":[{\"guard\":0}],\"properties\":[[\"child\",1]],\"resources\":[{\"anchors\":[],\"recursive\":true,\"root\":0}],\"schemas\":[{\"count\":1,\"first\":4,\"pointer\":\"\"},{\"count\":2,\"first\":2,\"pointer\":\"/properties/child\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/child/if\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/child/then\"}],\"units\":[{\"function\":0,\"keyword\":\"$recursiveRef\",\"scope\":{\"recursive\":true},\"target\":0},{\"direct\":0,\"keyword\":\"required\"},{\"condition\":[2,0],\"keyword\":\"if\"},{\"branch\":3,\"keyword\":\"then\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]}],\"valid_resources\":[0]}",
             matchers: &[],
             valid: &[__valid_0],
-            guards: &[],
+            guards: &[__guard_0],
             discriminators: &[],
             not_of_type: &[],
             direct: &[__direct_0],

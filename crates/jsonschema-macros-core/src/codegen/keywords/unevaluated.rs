@@ -550,6 +550,7 @@ fn push_ref_dispatch<E: ValueEmitter>(
                     // `$recursiveRef` in the same schema hasn't been compiled yet.
                     ctx.uses_recursive_ref = true;
                     let stack = kind.recursive_stack();
+                    ctx.looked_up_stacks.insert(stack.to_string());
                     let guarded = cycle_guarded_dispatch(
                         &E::node_address(format_ident!("instance")),
                         &quote! { target(#call_args) },
@@ -597,6 +598,7 @@ fn push_ref_dispatch<E: ValueEmitter>(
                 if let Some(anchor_name) = dynamic_ref_anchor_name(reference, resolved.schema) {
                     ctx.uses_dynamic_ref = true;
                     let stack = kind.dynamic_stack();
+                    ctx.looked_up_stacks.insert(stack.to_string());
                     let guarded = cycle_guarded_dispatch(
                         &E::node_address(format_ident!("instance")),
                         &quote! { target(#call_args) },

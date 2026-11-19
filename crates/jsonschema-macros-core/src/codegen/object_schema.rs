@@ -1,8 +1,9 @@
 use crate::codegen::emit::ValueEmitter;
 use proc_macro2::TokenStream;
 use quote::{format_ident, quote};
-use referencing::Draft;
+use referencing::{Draft, Uri};
 use serde_json::{Map, Value};
+use std::sync::Arc;
 
 use crate::context::CompileContext;
 
@@ -70,6 +71,31 @@ enum Phase {
     Custom,
 }
 
+/// The base URI the keywords of `schema` resolve against: its `$id`'s, or the current one.
+pub(super) fn resource_base_uri<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    schema: &Map<String, Value>,
+) -> Arc<Uri<String>> {
+    let id_key = match ctx.draft {
+        Draft::Draft4 => "id",
+        _ => "$id",
+    };
+    schema
+        .get(id_key)
+        .and_then(Value::as_str)
+        .and_then(|id_str| {
+            let resolver = ctx
+                .config
+                .registry
+                .resolver((*ctx.current_base_uri).clone());
+            resolver
+                .lookup(id_str)
+                .ok()
+                .map(|resolved_id| resolved_id.resolver().base_uri().clone())
+        })
+        .unwrap_or_else(|| ctx.current_base_uri.clone())
+}
+
 /// Compile an object schema.
 pub(super) fn compile_object_schema<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -82,22 +108,7 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
         }
     }
 
-    let id_key = match ctx.draft {
-        Draft::Draft4 => "id",
-        _ => "$id",
-    };
-    let schema_base_uri = schema
-        .get(id_key)
-        .and_then(Value::as_str)
-        .and_then(|id_str| {
-            let current_base = ctx.current_base_uri.clone();
-            let resolver = ctx.config.registry.resolver((*current_base).clone());
-            resolver
-                .lookup(id_str)
-                .ok()
-                .map(|resolved_id| resolved_id.resolver().base_uri().clone())
-        })
-        .unwrap_or_else(|| ctx.current_base_uri.clone());
+    let schema_base_uri = resource_base_uri(ctx, schema);
 
     // A subschema with an `$id` of its own is the resource its keywords are located in, with no
     // absolute location under the default base.
@@ -118,7 +129,18 @@ pub(super) fn compile_object_schema<E: ValueEmitter>(
                 .compiling_stack
                 .last()
                 .is_some_and(|current| current == &location);
-            if !in_progress_here {
+            // A target the cycle comes back to on its instance keeps code of its own: the runtime
+            // guards it by the name its references use, and code shared with another name would
+            // close the cycle one visit early.
+            let own_cycle_target = ctx
+                .helper_root_depths
+                .last()
+                .is_some_and(|depth| ctx.schema_depth == depth + 1)
+                && ctx
+                    .compiling_stack
+                    .last()
+                    .is_some_and(|current| ctx.same_instance_ref_targets.contains(current));
+            if !in_progress_here && !own_cycle_target {
                 // Clone the schema only on a cache miss.
                 let func_name = if let Some(name) = ctx.is_valid_fns.get_name(&location) {
                     name.clone()

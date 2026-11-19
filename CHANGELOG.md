@@ -28,6 +28,8 @@
 - `#[jsonschema::validator]` reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
 - `#[jsonschema::validator]` leaving out the `maxLength` error when `minLength` is above `maxLength`.
 - `#[jsonschema::validator]` leaving out all errors but the first of a subschema with `$recursiveAnchor` below the root of a schema that uses `$recursiveRef`, such as an `anyOf` error beside a failing `minProperties`.
+- `#[jsonschema::validator]` reporting fewer errors than `Validator` from `iter_errors` and `evaluate`, or the same error more than once beside a `$ref` to the same schema, where a `$recursiveRef` or `$dynamicRef` comes back to the instance it holds, such as a schema with `$recursiveAnchor` that references itself from `allOf`.
+- `#[jsonschema::validator]` `is_valid` taking time exponential in the instance depth on a `$ref` cycle that reaches each nested instance more than once, in a schema with `$recursiveRef` or `$dynamicRef`.
 - `#[jsonschema::validator]` reporting `propertyNames` errors with another kind and in another order than `Validator`, and leaving them out where `additionalProperties: false` beside `patternProperties` rejects the same names.
 - `#[jsonschema::validator]` errors reporting other evaluation paths, absolute keyword locations and schema paths than `Validator`, such as an evaluation path without the `$ref` it went through.
 - `#[jsonschema::validator]` reporting errors more than once, accepting other instances than `Validator`, or overflowing the stack on a `$ref` cycle that comes back to the instance it holds, such as a schema referencing itself from both `allOf` and `additionalProperties`.

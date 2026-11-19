@@ -9,12 +9,14 @@ use self::{
     draft::DraftExt,
     emit_root::emit_root_module,
     helpers::{
-        collect_dynamic_anchor_bindings, get_or_create_item_eval_fn, get_or_create_key_eval_fn,
+        collect_dynamic_anchor_bindings, get_or_create_is_valid_fn, get_or_create_item_eval_fn,
+        get_or_create_key_eval_fn,
     },
     numeric::value_as_u64,
+    object_schema::resource_base_uri,
     regex::{analyze_pattern, compile_regex_match, translate_and_validate_regex, RegexSite},
 };
-use crate::context::{CodegenConfig, CompileContext};
+use crate::context::{CodegenConfig, CompileContext, RefResultsKey};
 use errors::{invalid_schema_minimum_expression, invalid_schema_type_expression};
 
 mod dispatch;
@@ -55,6 +57,9 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
     let ref_cycles = ref_revisits::ref_cycles(&mut ctx, &config.schema);
     ctx.revisited_ref_targets = ref_cycles.revisited;
     ctx.same_instance_ref_targets = ref_cycles.same_instance;
+    if ref_cycles.through_scope {
+        ctx.ref_results_key = RefResultsKey::InstanceAndScope { calls: 0 };
+    }
     let validation_expr = compile_schema(&mut ctx, &config.schema);
     let recursive_stack_needed = ctx.uses_recursive_ref;
     let dynamic_stack_needed = ctx.uses_dynamic_ref;
@@ -66,6 +71,20 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
             .and_then(|obj| obj.get("$recursiveAnchor"))
             .and_then(Value::as_bool)
             == Some(true);
+    // An anchored root enters the dynamic scope as the code a `$recursiveRef` in it names.
+    let root_recursive_target = root_recursive_anchor.then(|| {
+        let root_base = config.schema.as_object().map_or_else(
+            || config.base_uri.clone(),
+            |root| resource_base_uri(&ctx, root),
+        );
+        let root = ctx
+            .with_base_uri_scope(root_base, |ctx| refs::resolve_ref(ctx, "#"))
+            .expect("the root resolves");
+        format_ident!(
+            "{}",
+            get_or_create_is_valid_fn(&mut ctx, &root.location, root.schema, root.base_uri)
+        )
+    });
     let root_key_eval_ident = if recursive_stack_needed {
         let name = get_or_create_key_eval_fn(
             &mut ctx,
@@ -114,7 +133,7 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
         evaluation_body.as_ref(),
         recursive_stack_needed,
         dynamic_stack_needed,
-        root_recursive_anchor,
+        root_recursive_target.as_ref(),
         root_key_eval_ident.as_ref(),
         root_item_eval_ident.as_ref(),
         &root_dynamic_bindings,

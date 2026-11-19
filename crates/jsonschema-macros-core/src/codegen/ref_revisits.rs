@@ -28,11 +28,12 @@ use super::{
 /// instance.
 pub(crate) struct RefCycles {
     /// Targets in cycles that one validation can take through the same instance more than once.
-    /// Empty when the schema has `$recursiveRef` or `$dynamicRef`: a target's result there
-    /// depends on the path that reaches it.
     pub(crate) revisited: HashSet<String>,
     /// Targets in cycles that come back to the instance they hold.
     pub(crate) same_instance: HashSet<String>,
+    /// The schema has `$recursiveRef` or `$dynamicRef`, so a target's result can depend on the
+    /// dynamic scope it runs in.
+    pub(crate) through_scope: bool,
 }
 
 pub(crate) fn ref_cycles<'cfg, E: ValueEmitter>(
@@ -42,16 +43,13 @@ pub(crate) fn ref_cycles<'cfg, E: ValueEmitter>(
     let base_uri = ctx.current_base_uri.clone();
     let draft = ctx.draft;
     let graph = Graph::build(ctx, schema);
-    let revisited = if graph.dynamic {
-        HashSet::new()
-    } else {
-        graph.revisited(ctx)
-    };
+    let revisited = graph.revisited(ctx);
     ctx.current_base_uri = base_uri;
     ctx.draft = draft;
     RefCycles {
         revisited,
         same_instance: graph.same_instance_cycles(),
+        through_scope: graph.dynamic,
     }
 }
 
