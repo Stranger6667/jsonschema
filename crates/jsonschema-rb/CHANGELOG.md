@@ -38,6 +38,7 @@
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `Float`, such as `BigDecimal("1e-400")`.
 - `pattern` with a large bounded count the regex engine matches, such as `^x?.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
 - `evaluate` output locating a `$ref` target at the URI its document was registered under instead of the `$id` that document declares.
+- `propertyNames` errors reporting `propertyNames` as their absolute keyword location instead of the keyword that rejected the name.
 
 ### Performance
 
