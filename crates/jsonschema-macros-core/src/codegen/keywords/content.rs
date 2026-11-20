@@ -55,8 +55,7 @@ fn resolve_media_type<E: ValueEmitter>(
     (name == "application/json").then(|| quote! { __content::is_json })
 }
 
-/// Whether the runtime checks `contentMediaType` written as `value`, together with the
-/// `contentEncoding` beside it.
+/// Whether the runtime knows `contentMediaType` written as `value`.
 pub(crate) fn checks_media_type<E: ValueEmitter>(
     ctx: &CompileContext<'_, E>,
     value: &Value,
@@ -64,6 +63,13 @@ pub(crate) fn checks_media_type<E: ValueEmitter>(
     value
         .as_str()
         .is_some_and(|media_name| resolve_media_type(ctx, media_name).is_some())
+}
+
+/// Whether the runtime knows `contentEncoding` written as `value`.
+pub(crate) fn checks_encoding<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|encoding_name| resolve_encoding(ctx, encoding_name).is_some())
 }
 
 pub(crate) fn compile<E: ValueEmitter>(

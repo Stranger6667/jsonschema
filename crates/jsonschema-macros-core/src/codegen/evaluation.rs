@@ -17,7 +17,7 @@ use super::{
         get_or_create_item_eval_fn, get_or_create_key_eval_fn, location_pointer,
     },
     keywords::{
-        content::checks_media_type,
+        content::{checks_encoding, checks_media_type},
         format::format_emits_assertion,
         one_of::{branch_discriminator, BranchDiscriminator, DiscriminatorLiteral},
         pattern_properties::name_match_expr,
@@ -2789,15 +2789,21 @@ fn unit<E: ValueEmitter>(
         // The runtime skips a format it validates formats with but does not know.
         (_, "format") if ctx.validates_formats() && !format_emits_assertion(ctx, value) => None,
         (_, "format") => Some(unit.annotating(value)),
-        // Draft 6 and 7 assert content: the runtime skips an unsupported media type and reports
-        // both keywords in the unit of a supported one.
-        (Draft::Draft6 | Draft::Draft7, "contentMediaType") if !checks_media_type(ctx, value) => {
+        // Draft 6 and 7 assert content: the runtime skips an unsupported media type or encoding,
+        // and reports both keywords in the unit of a supported media type.
+        (Draft::Draft6 | Draft::Draft7, "contentMediaType")
+            if !checks_media_type(ctx, value)
+                || keywords
+                    .get("contentEncoding")
+                    .is_some_and(|encoding| !checks_encoding(ctx, encoding)) =>
+        {
             None
         }
         (Draft::Draft6 | Draft::Draft7, "contentEncoding")
-            if keywords
-                .get("contentMediaType")
-                .is_some_and(|media_type| checks_media_type(ctx, media_type)) =>
+            if !checks_encoding(ctx, value)
+                || keywords
+                    .get("contentMediaType")
+                    .is_some_and(|media_type| checks_media_type(ctx, media_type)) =>
         {
             None
         }

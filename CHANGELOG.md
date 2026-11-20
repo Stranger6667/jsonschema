@@ -27,6 +27,7 @@
 - `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
 - `contentEncoding` going unchecked in Draft 6 and 7 beside an unsupported `contentMediaType`.
 - `evaluate` messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
+- `#[jsonschema::validator]` `evaluate` output reporting a passing unit for an unknown `contentEncoding` in Draft 6 and 7.
 - `#[jsonschema::validator]` reporting content that decodes to invalid UTF-8 beside `contentMediaType` at the schema root instead of at `contentEncoding`.
 - `#[jsonschema::validator]` errors for `unevaluatedProperties` and `unevaluatedItems` counting members as evaluated by a subschema that fails, such as an `allOf` branch.
 - `#[jsonschema::validator]` accepting instances of a type that `type` leaves out when keywords for that type are beside it.
