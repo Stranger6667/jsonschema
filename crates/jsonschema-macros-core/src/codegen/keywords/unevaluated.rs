@@ -10,10 +10,12 @@ use super::super::{
     compile_schema,
     draft::DraftExt,
     helpers::{
-        dynamic_ref_anchor_name, get_or_create_is_valid_fn_with, get_or_create_item_eval_fn,
-        get_or_create_key_eval_fn,
+        collect_dynamic_anchor_bindings, dynamic_ref_anchor_name, get_or_create_is_valid_fn_with,
+        get_or_create_item_eval_fn, get_or_create_key_eval_fn,
     },
+    object_schema::resource_base_uri,
     refs::{resolve_ref, ResolvedRef},
+    stack_emit::{StackFamily, ITEM_EVAL_FAMILY, KEY_EVAL_FAMILY},
     CompiledExpr,
 };
 
@@ -49,9 +51,10 @@ fn compile_branch_guard<E: ValueEmitter>(
     if obj.len() <= 1 && !has_composable_applicators(ctx, obj) {
         return compile_schema(ctx, subschema);
     }
+    let base_uri = resource_base_uri(ctx, obj);
     let location = format!(
         "json-schema-guard:{}|{:?}|{}",
-        ctx.current_base_uri,
+        base_uri,
         ctx.draft,
         serde_json::to_string(subschema).expect("schema is valid JSON"),
     );
@@ -60,7 +63,7 @@ fn compile_branch_guard<E: ValueEmitter>(
         &location,
         0,
         subschema,
-        ctx.current_base_uri.clone(),
+        base_uri,
         ctx.dialect_of(subschema),
         compile_guard_validity,
     );
@@ -397,6 +400,13 @@ impl EvalKind {
         }
     }
 
+    fn family(self) -> &'static StackFamily {
+        match self {
+            EvalKind::Key => &KEY_EVAL_FAMILY,
+            EvalKind::Item => &ITEM_EVAL_FAMILY,
+        }
+    }
+
     fn is_compiling<E: ValueEmitter>(self, ctx: &CompileContext<'_, E>, location: &str) -> bool {
         match self {
             EvalKind::Key => ctx.key_eval_fns.is_compiling(location),
@@ -429,6 +439,34 @@ impl EvalKind {
     }
 }
 
+/// The code `f` gives in the resource `schema` is in. A subschema with an `$id` is a resource of
+/// its own, which that code enters into the dynamic scope of the `kind` stacks.
+fn in_resource_of<'cfg, E: ValueEmitter>(
+    ctx: &mut CompileContext<'cfg, E>,
+    schema: &Map<String, Value>,
+    kind: EvalKind,
+    f: impl FnOnce(&mut CompileContext<'cfg, E>) -> TokenStream,
+) -> TokenStream {
+    let base_uri = resource_base_uri(ctx, schema);
+    let enters = base_uri.as_str() != ctx.current_base_uri.as_str();
+    let evaluated = ctx.with_base_uri_scope(base_uri.clone(), f);
+    if !enters || !ctx.uses_dynamic_ref {
+        return evaluated;
+    }
+    let bindings = collect_dynamic_anchor_bindings(ctx, base_uri);
+    let family = kind.family();
+    let pushes = family.dynamic_pushes(&bindings);
+    let pop = (family.pop_dynamic_n)(bindings.len());
+    quote! {
+        {
+            #(#pushes)*
+            let __evaluated = #evaluated;
+            #pop
+            __evaluated
+        }
+    }
+}
+
 /// Recurse into a subschema for the same evaluation dimension.
 fn recurse_eval<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -436,10 +474,10 @@ fn recurse_eval<E: ValueEmitter>(
     kind: EvalKind,
     hoist: &mut GuardHoist,
 ) -> TokenStream {
-    match kind {
+    in_resource_of(ctx, schema, kind, |ctx| match kind {
         EvalKind::Key => compile_key_evaluated_expr(ctx, schema, true, false, None),
         EvalKind::Item => compile_index_evaluated_expr(ctx, schema, hoist, None),
-    }
+    })
 }
 
 /// Push the eval expressions contributed by the `allOf`/`anyOf`/`oneOf`/
@@ -686,8 +724,9 @@ pub(crate) fn compile_key_evaluated_expr<E: ValueEmitter>(
         if let Some(dependent_schemas) = schema.get("dependentSchemas").and_then(Value::as_object) {
             for (property, subschema) in dependent_schemas {
                 if let Value::Object(subschema_obj) = subschema {
-                    let sub_eval =
-                        compile_key_evaluated_expr(ctx, subschema_obj, true, located, None);
+                    let sub_eval = in_resource_of(ctx, subschema_obj, EvalKind::Key, |ctx| {
+                        compile_key_evaluated_expr(ctx, subschema_obj, true, located, None)
+                    });
                     let sub_eval = report_guarded(ctx, &mut report, sub_eval, |ctx| {
                         compile_branch_guard(ctx, subschema)
                     });

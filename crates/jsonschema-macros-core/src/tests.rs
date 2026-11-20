@@ -217,6 +217,7 @@ fn render_config_for<E: crate::codegen::emit::ValueEmitter>(config: &CodegenConf
 #[test_case(json!({"type": ["string", "integer"], "minLength": 2}), "typed_fallback_mixed_types" ; "typed_fallback_mixed_types")]
 #[test_case(json!({"$ref": "#"}), "self_ref_cycle" ; "self_ref_cycle")]
 #[test_case(json!({"type":"object","additionalProperties":false}), "additional_false_no_siblings" ; "additional_false_no_siblings")]
+#[test_case(json!({"$id":"https://example.com/root","unevaluatedProperties":false,"$defs":{"a":{"$dynamicAnchor":"a","properties":{"p":true}}},"allOf":[{"$dynamicRef":"#a"},{"$id":"x","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","properties":{"q":true}}}}]}), "unevaluated_dynamic_ref_in_own_resource" ; "unevaluated_dynamic_ref_in_own_resource")]
 fn test_codegen_snapshot(schema: Value, snap_name: &str) {
     let description = serde_json::to_string(&schema).expect("schema serialization");
     insta::with_settings!({ description => &description }, {
