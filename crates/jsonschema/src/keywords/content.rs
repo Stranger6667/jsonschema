@@ -36,7 +36,6 @@ impl ContentMediaTypeValidator {
     }
 }
 
-/// Validator delegates validation to the stored function.
 impl<F: Json> Validate<F> for ContentMediaTypeValidator {
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
         if let Some(item) = instance.as_string() {
@@ -279,9 +278,9 @@ pub(crate) fn compile_content_encoding<'a, F: Json>(
     schema: &'a Map<String, Value>,
     subschema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
-    // Performed during media type validation
+    // `compile_media_type` checks the encoding together with the media type; an unsupported
+    // `contentMediaType` leaves `contentEncoding` unchecked too.
     if schema.get("contentMediaType").is_some() {
-        // TODO. what if media type is not supported?
         return None;
     }
     if let Value::String(content_encoding) = subschema {

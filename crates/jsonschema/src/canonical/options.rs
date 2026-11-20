@@ -31,24 +31,25 @@ pub fn options() -> CanonicalizeOptions<'static> {
     CanonicalizeOptions::default()
 }
 
-/// Why a subschema admits no value.
+/// Why a subschema accepts no value.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum UnsatisfiableReason {
     /// Written as `false`.
     Literal,
-    /// One part every value must satisfy admits nothing by itself. A subschema part has a
-    /// reason of its own under its pointer.
+    /// One part accepts no value by itself. A part that is a subschema has its own entry under its
+    /// pointer.
     Empty(Cause),
-    /// Each part admits values; no value satisfies all of them together.
+    /// Each part accepts some value; no value satisfies all of them together.
     Conflict(Vec<Cause>),
 }
 
-/// A part of a schema object.
+/// One keyword group of a schema object, or one of its subschemas.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Cause {
     /// JSON Pointer of the schema object holding `keywords`, or of the subschema itself.
     pub pointer: String,
-    /// Keywords of one family present at `pointer`; empty for a whole subschema.
+    /// The group's keywords present at `pointer`, such as `minimum` and `maximum`; empty for a
+    /// whole subschema.
     pub keywords: Vec<String>,
 }
 
@@ -227,7 +228,7 @@ impl PreparedDocument<'_> {
         }
     }
 
-    /// The subschemas that admit no value, by pointer, each with why.
+    /// The subschemas that accept no value, by pointer, each with why.
     ///
     /// A pointer left out is not proven satisfiable: an unmodeled document reports nothing, like
     /// [`Satisfiability::Unknown`](crate::canonical::Satisfiability).
@@ -496,7 +497,6 @@ fn names_unsatisfiable_body(parsed: &parse::ParseOutput, key: &str) -> bool {
     }
 }
 
-/// Walk `value` alongside what the parse made of each node, naming the unsatisfiable ones by pointer.
 /// What stopped the run, read off the context the parse left behind. An exhausted allowance also
 /// records an approximation, so it is asked about first.
 fn raw_reason(context: &CanonicalizationContext) -> RawReason {
@@ -512,7 +512,7 @@ fn raw_reason(context: &CanonicalizationContext) -> RawReason {
 }
 
 /// The pointer naming the node at `address`, or `None` where the parse declined on a schema it
-/// rewrote, which the document no longer holds.
+/// rewrote, which the document does not hold.
 fn pointer_to(value: &Value, pointer: &mut String, address: usize) -> Option<Arc<str>> {
     if std::ptr::from_ref(value) as usize == address {
         return Some(Arc::from(pointer.as_str()));
@@ -553,7 +553,7 @@ enum Emptiness<'p> {
 }
 
 /// Walk `value`, settling every node the parse left holding a reference and naming why the ones
-/// that fold to nothing admit no value.
+/// that fold to nothing accept no value.
 fn settle_nodes(
     value: &Value,
     unsettled: &AHashMap<usize, &Schema>,
@@ -791,7 +791,7 @@ mod tests {
             .collect::<Vec<_>>()}})
     }
 
-    // Each branch admits the empty object, so every branch overlaps every other.
+    // Each branch accepts the empty object, so every branch overlaps every other.
     #[test]
     fn overlapping_open_object_branches_are_minimized_in_quadratic_work() {
         let (modeled, spent) = parse_cost(&overlapping_open_objects(64));

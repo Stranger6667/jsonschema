@@ -81,7 +81,7 @@ mod bench {
             true,
             123,
             {"special": true},
-            "unexpected"  // This should trigger unevaluatedItems: false
+            "unexpected"  // `unevaluatedItems: false` rejects this item
         ])
     }
 

@@ -33,7 +33,6 @@ pub struct ValidationOptions<'i, R = Arc<dyn Retrieve>, F: Json = SerdeJson> {
     content_encoding_checks_and_converters:
         AHashMap<&'static str, Option<(ContentEncodingCheckType, ContentEncodingConverterType)>>,
     pub(crate) base_uri: Option<String>,
-    /// Retriever for external resources
     pub(crate) retriever: R,
     pub(crate) registry: Option<&'i referencing::Registry<'i>>,
     formats: AHashMap<String, Arc<dyn Format>>,
@@ -139,7 +138,6 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
         registry: &referencing::Registry<'_>,
     ) -> Result<Draft, referencing::Error> {
         let uri = uri.trim_end_matches('#');
-        // Walk the meta-schema chain to find the underlying draft.
         crate::meta::walk_meta_schema_chain(uri, |current_uri| {
             let uri = referencing::uri::from_str(current_uri)?;
             let resolver = registry.resolver(uri);
@@ -258,7 +256,8 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     /// * `encoding`: Name of the content encoding (e.g., "base64")
     /// * `check`: Validates the input string (return `true` if valid)
     /// * `converter`: Converts the input string, returning:
-    ///   - `Err(ValidationError)`: For supported errors
+    ///   - `Err(ValidationError)`: If the input decodes to unreadable content, such as non-UTF-8
+    ///     bytes; validation reports this error as is
     ///   - `Ok(None)`: If input is invalid
     ///   - `Ok(Some(content))`: If valid, with decoded content
     ///
@@ -307,10 +306,8 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
             .insert(content_encoding, None);
         self
     }
-    /// Establish an anchor for resolving relative schema references during validation.
-    ///
-    /// Relative URIs found within the schema will be interpreted against this base.
-    /// This is especially useful when validating schemas loaded from sources without an inherent base URL.
+    /// Set the base URI that relative references in the schema resolve against, for schemas loaded
+    /// without one.
     ///
     /// # Example
     ///
@@ -319,7 +316,6 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     /// # fn main() -> Result<(), Box<dyn std::error::Error>> {
     ///
     /// let validator = jsonschema::options()
-    /// // Define a base URI for resolving relative references.
     ///     .with_base_uri("https://example.com/schemas/")
     ///     .build(&json!({
     ///         "$id": "relative-schema.json",
@@ -348,19 +344,17 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     /// ```rust
     /// # use serde_json::json;
     /// fn my_format(s: &str) -> bool {
-    ///    // Your awesome format check!
     ///    s.ends_with("42!")
     /// }
-    /// # fn foo() {
     /// let schema = json!({"type": "string", "format": "custom"});
     /// let validator = jsonschema::options()
     ///     .with_format("custom", my_format)
+    ///     .should_validate_formats(true)
     ///     .build(&schema)
     ///     .expect("Valid schema");
     ///
     /// assert!(!validator.is_valid(&json!("foo")));
     /// assert!(validator.is_valid(&json!("foo42!")));
-    /// # }
     /// ```
     #[must_use]
     pub fn with_format<N, Check>(mut self, name: N, format: Check) -> Self
@@ -375,11 +369,10 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
         self.formats.get_key_value(format)
     }
 
-    /// Whether a `format` of this name is checked under `draft`, by a check registered here or by
-    /// a built-in one.
+    /// Whether `name` has a check under `draft`, registered here or built in.
     ///
-    /// A name this answers `false` for is an annotation: it constrains no value and reports no
-    /// error. Whether a known one asserts is separate, and the dialect can decide it.
+    /// Whether a `format` asserts depends on the draft, the meta-schema and
+    /// [`ValidationOptions::should_validate_formats`].
     #[must_use]
     pub fn is_known_format(&self, draft: Draft, name: &str) -> bool {
         self.get_format(name).is_some() || builtin_format(draft, name).is_some()
@@ -387,7 +380,7 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     /// Disable schema validation during compilation.
     ///
     /// Used internally to prevent infinite recursion when validating meta-schemas.
-    /// **Note**: Manually-crafted `ValidationError`s may still occur during compilation.
+    /// The build still fails on errors it finds itself, such as an invalid `pattern`.
     #[inline]
     #[must_use]
     pub(crate) fn without_schema_validation(mut self) -> Self {
@@ -409,8 +402,8 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     }
     /// Set whether to ignore unknown formats.
     ///
-    /// By default, unknown formats are silently ignored. Set to `false` to report
-    /// unrecognized formats as validation errors.
+    /// By default, unknown formats are ignored. With format validation on, `false` makes `build`
+    /// fail on a `format` it has no check for.
     ///
     /// A meta-schema that asserts formats rejects unrecognized ones regardless of this setting.
     #[must_use]
@@ -572,14 +565,12 @@ impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
     /// Draft 2019-09/2020-12). Original `$ref` values are preserved, and the bundled
     /// document validates identically.
     ///
-    /// For mixed-draft bundles, embedded resources may include both `id` and `$id`
-    /// to maximize interoperability with downstream validators that differ in draft
-    /// handling.
+    /// An embedded resource of another draft carries both `id` and `$id`, so its own draft and
+    /// the root's both find it.
     ///
     /// # Errors
     ///
-    /// Returns an error if draft detection fails, registry construction fails,
-    /// subresource scope resolution fails, or any `$ref` cannot be resolved.
+    /// Returns an error if the meta-schema, a referenced resource or a `$ref` cannot be resolved.
     ///
     /// # Panics
     ///
@@ -598,8 +589,7 @@ impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
     ///
     /// # Errors
     ///
-    /// Returns an error if draft detection fails, registry construction fails,
-    /// subresource scope resolution fails, or any `$ref` cannot be resolved.
+    /// Returns an error if the meta-schema, a referenced resource or a `$ref` cannot be resolved.
     ///
     /// # Panics
     ///
@@ -716,7 +706,6 @@ impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
     ///
     /// let schema = json!({"type": "string"});
     ///
-    /// // Set backtracking limit to 20000.
     /// let validator = jsonschema::options()
     ///     .with_pattern_options(
     ///         PatternOptions::fancy_regex()
@@ -757,7 +746,7 @@ impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
         self
     }
 
-    /// Set email validation options to customize email format validation behavior.
+    /// Configure how `format: email` checks addresses.
     ///
     /// # Example
     ///
@@ -819,8 +808,7 @@ impl<'i, F: Json> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> 
     ///
     /// # Errors
     ///
-    /// Returns an error if any `$ref` cannot be resolved, or if the schema draft is older
-    /// than 2019-09.
+    /// Returns an error if the meta-schema, a referenced resource or a `$ref` cannot be resolved.
     pub async fn bundle(&self, schema: &Value) -> Result<Value, referencing::Error> {
         crate::bundler::bundle_with_options_async(self, schema).await
     }
@@ -940,8 +928,8 @@ pub enum PatternSyntax {
 /// [`ValidationOptions::with_pattern_cache`].
 ///
 /// Clones share one cache. It also remembers patterns that failed to compile, so they fail without
-/// compiling again. Entries are keyed by the pattern and, when a regex engine compiled it, the
-/// [`PatternOptions`] it was compiled with, and live as long as any clone does.
+/// compiling again. Entries are keyed by pattern and [`PatternOptions`], and live as long as any
+/// clone does.
 #[derive(Debug, Clone, Default)]
 pub struct PatternCache {
     inner: Arc<Mutex<CompiledPatterns>>,
@@ -1102,11 +1090,10 @@ impl PatternOptions<FancyRegex> {
             _marker: PhantomData,
         }
     }
-    /// Limit for how many times backtracking should be attempted for fancy regexes (where
-    /// backtracking is used). If this limit is exceeded, execution returns an error.
-    /// This is for preventing a regex with catastrophic backtracking to run for too long.
+    /// Limit backtracking steps per match. A match past it is undecided, and validation fails
+    /// with an error only when the result depends on it.
     ///
-    /// Default is `1_000_000` (1 million).
+    /// Default is `1_000_000`.
     #[must_use]
     pub fn backtrack_limit(mut self, limit: usize) -> Self {
         if let PatternEngineOptions::FancyRegex {
@@ -1192,12 +1179,8 @@ impl Default for PatternEngineOptions {
     }
 }
 
-/// Configuration for email validation options.
-///
-/// This allows customization of email format validation behavior beyond the default
-/// JSON Schema spec requirements. For example, you can configure stricter validation
-/// that rejects addresses like "missing@domain" which are technically valid per the
-/// spec but may not be desirable in real-world usage.
+/// Options for `format: email`, such as rejecting addresses without a top-level domain like
+/// `missing@domain`.
 ///
 /// # Example
 ///
@@ -1229,7 +1212,7 @@ pub struct EmailOptions {
 }
 
 impl EmailOptions {
-    /// Set the minimum number of domain segments that must exist to parse successfully.
+    /// Set the minimum number of domain segments an accepted address has.
     ///
     /// # Example
     ///
@@ -1281,8 +1264,8 @@ impl EmailOptions {
 
     /// Require a domain name with a top-level domain (TLD).
     ///
-    /// This sets the minimum number of domain segments to two, effectively requiring
-    /// addresses like "user@example.com" instead of "user@localhost".
+    /// This sets the minimum number of domain segments to two: `user@example.com` passes,
+    /// `user@localhost` does not.
     ///
     /// # Example
     ///
@@ -1740,7 +1723,6 @@ mod tests {
 
     #[test]
     fn test_validate_against_definition() {
-        // Root schema with multiple definitions
         let root_schema = json!({
             "$id": "https://example.com/root",
             "definitions": {
@@ -1763,7 +1745,6 @@ mod tests {
             }
         });
 
-        // Create a schema that references the specific definition
         let user_schema = json!({"$ref": "https://example.com/root#/definitions/User"});
 
         let registry = Registry::new()
@@ -1779,7 +1760,6 @@ mod tests {
             .build(&user_schema)
             .expect("Valid schema");
 
-        // Valid user
         assert!(validator.is_valid(&json!({"name": "Alice", "age": 30})));
         assert!(validator.is_valid(&json!({"name": "Bob"})));
 

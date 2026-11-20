@@ -7,8 +7,8 @@ use crate::options::{PatternEngineOptions, PatternSyntax};
 
 pub(crate) trait RegexEngine: Sized + Send + Sync {
     type Error: RegexError;
-    /// Whether callers keep the match out of line. An inlined sequence match costs the callers'
-    /// non-string exits their prologue-free path.
+    /// Whether callers call the match out of line: inlined, a sequence match makes callers set up
+    /// a stack frame even when they return early on a non-string.
     const MATCH_OUT_OF_LINE: bool = false;
     fn is_match(&self, text: &str) -> Result<bool, Self::Error>;
     /// The compiled pattern its errors name, for engines that can fail.
@@ -199,7 +199,7 @@ impl RegexEngine for AllMatch {
     }
 }
 
-/// [`RegexEngine`] for literal patterns — either `starts_with` (prefix) or `==` (exact).
+/// [`RegexEngine`] for the patterns [`PatternOptimization`] covers.
 #[derive(Clone)]
 pub(crate) enum LiteralMatcher {
     Prefix {

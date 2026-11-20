@@ -13,8 +13,8 @@ use jsonschema::{
 use jsonschema_value::LazyInstance;
 use serde_json::{json, Number, Value};
 
-// A node holding pre-serialized bytes rather than a live tree. The only representation here that
-// opts into `Deferred`, so it is what exercises that branch.
+// One value of a `DeferredDoc`, kept as serialized bytes. The only representation here that opts
+// into `Deferred`, so it is what exercises that branch.
 struct DeferredSlot {
     bytes: Vec<u8>,
     make: fn(&[u8], u32) -> Value,

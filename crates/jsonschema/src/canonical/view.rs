@@ -50,21 +50,21 @@ pub enum CanonicalView {
     MultiType(JsonTypeSet),
     /// A value matches iff its JSON type is `ty` *and* it satisfies `body`; other types do not match.
     TypedGroup(TypedGroupView),
-    /// A string value within a length window.
+    /// A string value within the constraints of [`StringView`].
     String(StringView),
-    /// An integer value within a range.
+    /// An integer value within the constraints of [`IntegerView`].
     Integer(IntegerView),
-    /// A number value within a real interval.
+    /// A number value within the constraints of [`NumberView`].
     Number(NumberView),
-    /// An array value whose length is within a window.
+    /// An array value within the constraints of [`ArrayView`].
     Array(ArrayView),
     /// An object value within its constraints.
     Object(ObjectView),
     Const(Value),
     Enum(Vec<Value>),
-    /// The exact negation of an opaque schema, keeping the references it names symbolic.
+    /// Accepts the values the inner schema rejects, keeping the references it names symbolic.
     Not(Box<CanonicalSchema>),
-    /// A value matches iff every opaque branch matches.
+    /// A value matches iff every branch matches.
     AllOf(Vec<CanonicalSchema>),
     /// A value matches iff at least one branch matches.
     AnyOf(Vec<CanonicalSchema>),
@@ -111,8 +111,8 @@ pub struct StringView {
     pub excluded: Vec<String>,
 }
 
-/// Payload of [`CanonicalView::Number`]: the interval bounds on a number value, each with whether
-/// the bound itself is admitted, and the divisor every admitted value is a multiple of.
+/// Payload of [`CanonicalView::Number`]: the interval bounds on a number value, whether each bound
+/// is exclusive, and the divisors every accepted value is a multiple of.
 #[derive(Debug, Clone, PartialEq)]
 pub struct NumberView {
     pub minimum: Option<Number>,
@@ -120,10 +120,10 @@ pub struct NumberView {
     pub maximum: Option<Number>,
     pub exclusive_maximum: bool,
     pub multiple_of: Vec<Number>,
-    /// Divisors no admitted value is a multiple of.
+    /// Divisors no accepted value is a multiple of.
     pub not_multiple_of: Vec<Number>,
-    /// No admitted value is one of the draft's integers (Draft 4 only; later drafts write this
-    /// as a barred divisor of one).
+    /// Rejects the draft's integers (Draft 4 only; later drafts write this as
+    /// `not_multiple_of: [1]`).
     pub excludes_integers: bool,
 }
 
@@ -164,7 +164,8 @@ pub struct ObjectView {
     pub properties: BTreeMap<String, CanonicalSchema>,
     /// The schema every key matching the pattern satisfies when the object carries it.
     pub pattern_properties: BTreeMap<String, CanonicalSchema>,
-    /// The schema every key `properties` does not name satisfies.
+    /// The schema every key satisfies that `properties` does not name and no `pattern_properties`
+    /// pattern matches.
     pub additional_properties: Option<CanonicalSchema>,
     /// The object must break each of these rules: negation stores the rule itself, so emitting
     /// wraps it in `not` verbatim.
@@ -196,7 +197,7 @@ pub struct IntegerView {
     pub minimum: Option<Number>,
     pub maximum: Option<Number>,
     pub multiple_of: Vec<Number>,
-    /// Divisors no admitted value is a multiple of.
+    /// Divisors no accepted value is a multiple of.
     pub not_multiple_of: Vec<Number>,
 }
 

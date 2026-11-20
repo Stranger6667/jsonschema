@@ -44,10 +44,8 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         );
     }
 
-    // Generated validators are significantly faster than runtime ones,
-    // so prefer them when the schema is known at build time.
-    // Requires the `macros` feature.
-    // Inline schema, or `path = "schema.json"` to load from a file
+    // Compile-time validators (`macros` feature) are faster than runtime ones; prefer them when the
+    // schema is known at build time. `path = "schema.json"` reads the schema from a file
     #[jsonschema::validator(schema = r#"{"maxLength": 5}"#)]
     struct Short;
 
@@ -71,7 +69,7 @@ See more usage examples in the [documentation](https://docs.rs/jsonschema).
 
 ## Playground
 
-If you'd like to try `jsonschema`, you can check the WebAssembly-powered [playground](https://jsonschema.dygalo.dev/) to see the results instantly.
+Try `jsonschema` in the browser in the WebAssembly [playground](https://jsonschema.dygalo.dev/).
 
 ## Highlights
 
@@ -150,11 +148,7 @@ You can opt into using `ring` as the TLS provider:
 
 ```toml
 [dependencies]
-jsonschema = {
-    version = "0.60",
-    default-features = false,
-    features = ["resolve-http", "resolve-file", "tls-ring"]
-}
+jsonschema = { version = "0.60", default-features = false, features = ["resolve-http", "resolve-file", "tls-ring", "idna"] }
 ```
 
 **NOTE:** If both `tls-aws-lc-rs` and `tls-ring` features are enabled, `aws-lc-rs` takes precedence.
@@ -173,13 +167,7 @@ If you find `jsonschema` useful, please consider [sponsoring its development](ht
 
 ## Contributing
 
-We welcome contributions! Here's how you can help:
-
-- Share your use cases
-- Implement missing keywords
-- Fix failing test cases from the [JSON Schema test suite](https://bowtie.report/#/implementations/rust-jsonschema)
-
-See [CONTRIBUTING.md](https://github.com/Stranger6667/jsonschema/blob/master/CONTRIBUTING.md) for more details.
+Contributions are welcome: share your use cases, or see [CONTRIBUTING.md](https://github.com/Stranger6667/jsonschema/blob/master/CONTRIBUTING.md) to send a change.
 
 ## License
 

@@ -11,7 +11,7 @@ use serde_json::{Map, Value};
 
 use crate::ValidationError;
 
-/// A compiled pattern that can be a literal optimized match or a full regex.
+/// A pattern compiled to the cheapest matcher that decides it.
 #[derive(Debug, Clone)]
 pub(crate) enum CompiledPattern<R> {
     /// Simple prefix match using `starts_with()`.
@@ -90,7 +90,7 @@ pub(crate) trait PropertiesValidatorsMap<F: Json = SerdeJson>: Send + Sync {
     fn get_indexed_validator(&self, property: &str) -> Option<(usize, &SchemaNode<F>)>;
 }
 
-/// Threshold for switching from linear scan to `HashMap`.
+/// Name count from which lookups use `NameBuckets` instead of a linear scan.
 pub(crate) const HASHMAP_THRESHOLD: usize = 15;
 
 /// Whether one pass over an object's members beats a lookup per declared property: the
@@ -426,8 +426,7 @@ where
     true
 }
 
-/// Create a vector of pattern-validators pairs.
-/// Uses prefix optimization when patterns are simple `^prefix` patterns.
+/// Compile `patternProperties`, using `fancy-regex` only for patterns no cheaper matcher decides.
 #[inline]
 pub(crate) fn compile_fancy_regex_patterns<'a, F: Json>(
     ctx: &compiler::Context<F>,
@@ -461,8 +460,7 @@ pub(crate) fn compile_fancy_regex_patterns<'a, F: Json>(
     Ok(compiled_patterns)
 }
 
-/// Create a vector of pattern-validators pairs using standard regex.
-/// Uses literal optimizations when patterns are simple prefix or exact-match patterns.
+/// Compile `patternProperties`, using `regex` only for patterns no cheaper matcher decides.
 #[inline]
 pub(crate) fn compile_regex_patterns<'a, F: Json>(
     ctx: &compiler::Context<F>,

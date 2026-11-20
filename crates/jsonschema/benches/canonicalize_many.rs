@@ -28,7 +28,7 @@ mod bench {
             .clone()
     }
 
-    /// One document: prepare it, then canonicalize it. The pair a generator runs per schema.
+    /// The prepare-then-canonicalize pair a generator runs per schema.
     fn prepare_and_canonicalize(schema: &Value) -> Option<CanonicalSchema> {
         options().prepare(schema).ok()?.canonicalize().ok()
     }
@@ -45,9 +45,7 @@ mod bench {
         }
     }
 
-    /// A negative target reads the whole document and then each root branch on its own, so the
-    /// branch reads share one prepared document with the whole-document read.
-    /// The pointers a document's branches sit at, which the fixture fixes.
+    /// The pointers of `schema`'s root `oneOf` and `anyOf` branches.
     fn branch_pointers(schema: &Value) -> Vec<String> {
         let mut pointers = Vec::new();
         for key in ["oneOf", "anyOf"] {
@@ -61,9 +59,11 @@ mod bench {
         pointers
     }
 
+    /// A generator of invalid values reads the whole document, then each root branch on its own,
+    /// all from one prepared document.
     pub(crate) fn bench_canonicalize_branches(c: &mut Criterion) {
         let schemas = bucket(&read_json(SMALL_SCHEMAS), "branches");
-        // Built once: writing the pointers is the fixture's shape, not work a caller repeats.
+        // Built outside the timed loop: a caller derives these pointers once per document.
         let cases: Vec<(Value, Vec<String>)> = schemas
             .into_iter()
             .map(|schema| {
@@ -92,8 +92,8 @@ mod bench {
         });
     }
 
-    /// Every positive target intersects the parameter's form with a small constraint restating one
-    /// keyword, so the operands are one large-ish form and one tiny one.
+    /// Each schema intersected with a small constraint, as a generator of valid values does: one
+    /// large operand and one tiny one.
     pub(crate) fn bench_constraint_intersect(c: &mut Criterion) {
         let schemas = bucket(&read_json(SMALL_SCHEMAS), "properties");
         let canonical: Vec<CanonicalSchema> = schemas

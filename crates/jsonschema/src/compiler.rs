@@ -70,9 +70,7 @@ pub(crate) const fn formats_are_assertions_by_default(draft: Draft) -> bool {
     matches!(draft, Draft::Draft4 | Draft::Draft6 | Draft::Draft7)
 }
 
-/// Type alias for shared cache maps in compiler state.
 type SharedCache<K, V> = RefCell<AHashMap<K, V>>;
-/// Type alias for shared sets in compiler state.
 type SharedSet<T> = RefCell<AHashSet<T>>;
 
 pub(crate) trait CompilationOptions<F: Json> {
@@ -190,11 +188,10 @@ impl ItemsValidatorsPendingKey {
     }
 }
 
-/// The schema a `$ref` target is, however the reference names it: the target's address and its
-/// JSON Pointer from the root of the document the reference names, or of the resource holding the
-/// anchor it names. A pointer from an outer document into an embedded resource is another identity
-/// than the resource's own URI, as the locations of errors below them differ. Like
-/// [`NodeCacheKey`], the address is never dereferenced.
+/// Identifies a `$ref` target: its address and its JSON Pointer from the root of the document the
+/// reference names, or of the resource holding the anchor it names. A pointer from an outer
+/// document into an embedded resource is another identity than the resource's own URI, as the
+/// locations of errors below them differ. Like [`NodeCacheKey`], the address is never dereferenced.
 #[derive(PartialEq, Eq, Clone, Debug)]
 pub(crate) struct TargetIdentity {
     schema_ptr: usize,
@@ -277,8 +274,8 @@ struct DeferredTarget<'a, F: Json> {
     in_progress: AHashMap<TargetIdentity, InProgressTarget<F>>,
 }
 
-/// The placeholder of a `$ref` target being compiled, and of the same target compiling further
-/// out under a dynamic scope that binds `$dynamicRef` otherwise.
+/// The placeholder of a `$ref` target being compiled; `shadowed` holds the same target compiling
+/// further out, where `$dynamicRef` binds differently.
 struct InProgressTarget<F: Json> {
     /// The dynamic scope the target compiles in.
     dynamic_scope: List<Uri<String>>,
@@ -318,7 +315,6 @@ impl<F: Json> Clone for CachedNode<F> {
     }
 }
 
-/// A node found for a `$ref` target and whether its referrer may own it.
 /// A reference target found by `lookup_cached_target`.
 pub(crate) enum CachedTarget<F: Json> {
     Node(TargetNode<F>),
@@ -326,6 +322,7 @@ pub(crate) enum CachedTarget<F: Json> {
     Placeholder(PendingSchemaNode<F>),
 }
 
+/// A node found for a `$ref` target and whether its referrer may own it.
 pub(crate) enum TargetNode<F: Json> {
     /// Compiled in the current round, or settled.
     Owned(SchemaNode<F>),
@@ -379,7 +376,6 @@ struct SharedContextState<'a, F: Json = SerdeJson> {
     nested_ref_compilations: Cell<usize>,
     /// Deferred targets, in the order found.
     deferred_targets: RefCell<VecDeque<DeferredTarget<'a, F>>>,
-    /// The current round.
     round: Cell<usize>,
     /// The node compiling now reaches a node not yet compiled or a deferred target.
     reaches_unsettled: Cell<bool>,
@@ -433,17 +429,6 @@ pub(crate) struct Context<'a, F: Json = SerdeJson> {
     ///
     /// When compiling a schema reached via `$ref`, this is set to the `$ref` target location.
     /// Used to compute the "suffix" (path relative to resource root) for evaluation paths.
-    ///
-    /// # Example
-    ///
-    /// ```text
-    /// Schema: { "$ref": "#/$defs/Item", "$defs": { "Item": { "type": "string" } } }
-    ///
-    /// When compiling the "type" keyword inside "Item":
-    ///   location             = /$defs/Item
-    ///   resource_base        = /$defs/Item
-    ///   suffix_with("type")  = /type
-    /// ```
     resource_base: Location,
     /// Length of the `location` prefix outside the resource the base URI names.
     ///
@@ -499,7 +484,7 @@ impl<'a, F: Json> Context<'a, F> {
         self.config
     }
 
-    /// Create a context for this schema, which evaluation descends into.
+    /// Create a context for `resource`, a subschema evaluation descends into.
     pub(crate) fn in_subresource(
         &self,
         resource: ResourceRef<'_>,
@@ -545,8 +530,7 @@ impl<'a, F: Json> Context<'a, F> {
             shared: Rc::clone(&self.shared),
         })
     }
-    /// This context as a `$ref` to its own resource enters it: the resource joins the dynamic
-    /// scope.
+    /// This context as entered by a `$ref` to its own resource, which joins the dynamic scope.
     fn in_dynamic_scope(mut self) -> Context<'a, F> {
         self.resolver = self.resolver.in_dynamic_scope();
         self
@@ -671,7 +655,8 @@ impl<'a, F: Json> Context<'a, F> {
     ///
     /// # Errors
     ///
-    /// That meta-schema requires a vocabulary this crate does not implement.
+    /// Returns an error if that meta-schema requires a vocabulary neither built in nor declared
+    /// with `with_vocabulary`.
     pub(crate) fn with_resolver_and_draft(
         &self,
         resolver: Resolver<'a>,
@@ -996,7 +981,7 @@ impl<'a, F: Json> Context<'a, F> {
     /// The placeholder of `identity` compiling under a dynamic scope where `$dynamicRef` resolves as
     /// under `target`'s.
     ///
-    /// A target compiled under a scope that binds `$dynamicRef` otherwise is another node, so
+    /// A target compiled under a scope that binds `$dynamicRef` differently is another node, so
     /// such a `$ref` cycle closes only once the bindings repeat.
     fn in_progress_placeholder(
         &self,
@@ -1089,7 +1074,7 @@ impl<'a, F: Json> Context<'a, F> {
         (self.config.pattern_options().syntax() == PatternSyntax::Ecma262).then_some(())
     }
 
-    /// The literal form of `pattern`, if it has one.
+    /// The [`PatternOptimization`] that decides `pattern` without a regex, if any.
     pub(crate) fn analyze_pattern(&self, pattern: &str) -> Option<PatternOptimization> {
         self.ecma_262()?;
         crate::regex::analyze_pattern(pattern)
@@ -1481,7 +1466,7 @@ pub(crate) async fn build_validator_async<F: Json>(
     schema: &Value,
 ) -> Result<Validator<F>, ValidationError<'static>> {
     let draft = config.draft_for(schema).await?;
-    let resource_ref = draft.create_resource_ref(schema); // single computation
+    let resource_ref = draft.create_resource_ref(schema);
 
     if config.validate_schema {
         validate_schema(draft, schema)?;
@@ -1507,7 +1492,7 @@ pub(crate) async fn build_validator_async<F: Json>(
 /// Upper-bound object-node count in `schema`, used to pre-size the per-location node cache.
 ///
 /// Over-counts (data objects in `enum`/`const` are not subschemas), but it only sizes a transient
-/// build cache, so over-provisioning is cheap and under-provisioning would reintroduce rehashing.
+/// build cache, so over-provisioning is cheap and under-provisioning rehashes.
 fn estimate_subschema_count(schema: &Value) -> usize {
     match schema {
         Value::Object(map) => 1 + map.values().map(estimate_subschema_count).sum::<usize>(),
@@ -1516,8 +1501,8 @@ fn estimate_subschema_count(schema: &Value) -> usize {
     }
 }
 
-/// A meta-schema that requires a vocabulary this crate does not implement cannot be honored,
-/// so the schemas written against it are refused.
+/// Refuses a meta-schema that requires a vocabulary neither built in nor declared with
+/// `with_vocabulary`.
 fn ensure_vocabularies_supported<F: Json>(
     config: &dyn CompilationOptions<F>,
     vocabularies: &VocabularySet,
@@ -1562,7 +1547,7 @@ fn build_validator_with_registry<R, F: Json>(
 
 /// Compile `resource`, then the `$ref` targets it deferred.
 ///
-/// Deferred targets compile from the top of the stack, so long `$ref` chains keep the stack flat.
+/// Deferred targets compile in a loop at this frame, so long `$ref` chains do not deepen the stack.
 fn compile_validator<F: Json>(
     ctx: &Context<'_, F>,
     resource: ResourceRef<'_>,
@@ -1652,12 +1637,11 @@ pub(crate) fn validate_schema(
     draft: Draft,
     schema: &Value,
 ) -> Result<(), ValidationError<'static>> {
-    // Boolean schemas are always valid per the spec, skip validation
+    // Boolean schemas skip meta-validation, though the Draft 4 meta-schema rejects them
     if schema.is_boolean() {
         return Ok(());
     }
 
-    // For objects, we can skip validation if they're empty (always valid)
     if let Some(obj) = schema.as_object() {
         if obj.is_empty() {
             return Ok(());
@@ -1818,7 +1802,7 @@ fn index_anchors<'v>(
     }
 }
 
-/// Compile a JSON Schema instance to a tree of nodes.
+/// Compile `resource` into a tree of nodes.
 pub(crate) fn compile<'a, F: Json>(
     ctx: &Context<F>,
     resource: ResourceRef<'a>,
@@ -1830,8 +1814,8 @@ pub(crate) fn compile<'a, F: Json>(
 /// Compile the root as the target of a `$ref` naming it by `#`, so such a reference in it closes a
 /// cycle on the root itself.
 ///
-/// The root compiles in the dynamic scope it starts in, and is the target in the scope such a
-/// reference enters, which holds the root's resource too.
+/// The root compiles in its starting dynamic scope and is cached as the target under the scope a
+/// `$ref` to it enters.
 fn compile_root<'a, F: Json>(
     ctx: &Context<F>,
     resource: ResourceRef<'a>,
@@ -1951,7 +1935,8 @@ fn compile_without_cache<'a, F: Json>(
                         let validators = [(BuiltinKeyword::Ref.into(), validator?)];
                         Ok(SchemaNode::from_keywords(ctx, validators, None, None))
                     } else {
-                        // Infinite reference to the same location
+                        // `$ref: ""` names the enclosing resource and compiles to `true` to stop
+                        // the recursion
                         Ok(SchemaNode::from_boolean(ctx, None))
                     };
                 }
@@ -1977,7 +1962,6 @@ fn compile_without_cache<'a, F: Json>(
                         _ => {}
                     }
                 }
-                // Check if this keyword is overridden, then check the standard definitions
                 if let Some(factory) = ctx.get_keyword_factory(keyword) {
                     let path = ctx.location().join(keyword);
                     let validator = CustomKeyword::new(
@@ -1992,7 +1976,7 @@ fn compile_without_cache<'a, F: Json>(
                 {
                     validators.push((keyword, validator.map_err(ValidationError::to_owned)?));
                 } else if !ctx.is_known_keyword(keyword) {
-                    // Treat all non-validation keywords as annotations
+                    // Keywords the draft does not define are kept as annotations
                     annotations.insert(keyword.clone(), value.clone());
                 }
             }

@@ -98,10 +98,8 @@ fn walk(
                 let resolved = resolver.lookup(ref_str)?;
                 let (contents, inner_resolver, inner_draft) = resolved.into_inner();
 
-                // Build a cycle-detection key that uniquely identifies the resolved
-                // location. We extract the fragment from ref_str itself so that refs
-                // like "./other.json#/$defs/Foo" and "./other.json#/$defs/Bar" — both
-                // resolving to the same document URI — are treated as distinct nodes.
+                // Key cycles by resolved document URI plus the reference's fragment, so
+                // `./other.json#/$defs/Foo` and `./other.json#/$defs/Bar` stay distinct
                 let visited_key = match ref_str.split_once('#') {
                     Some((_, fragment)) => {
                         format!("{}#{}", inner_resolver.base_uri().as_str(), fragment)

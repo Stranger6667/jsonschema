@@ -115,7 +115,7 @@ mod bench {
         }
     }
 
-    // An instance that sends every level below it through both `oneOf` branches.
+    // An instance that sends every level below it through the first two `oneOf` branches.
     fn ref_cycle_in_branches(depth: usize) -> Value {
         (0..depth).fold(json!({}), |child, _| json!({"a": 1, "c": child}))
     }

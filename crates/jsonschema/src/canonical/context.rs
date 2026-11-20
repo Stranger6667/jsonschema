@@ -1,4 +1,4 @@
-//! Shared state for one canonicalization run: draft, pattern engine, and a compiled-regex cache.
+//! Shared state for one canonicalization run.
 use std::{
     borrow::Cow,
     cell::{Cell, OnceCell, RefCell},
@@ -66,7 +66,7 @@ pub(crate) struct CanonicalizationContext {
     /// document translates and compiles the same texts under the same engine.
     shared_regexes: Option<SharedRegexes>,
     /// An `allOf` over unions takes the product of their branches, which reaches the same pair
-    /// of nodes over and over - on a schema of five such `allOf`s, 431 times per distinct pair.
+    /// of nodes many times.
     intersections: RefCell<AHashMap<(Schema, Schema), Remembered>>,
     /// Every containment query reads the facets of the node it asks about, and the object walks ask
     /// about the same handful of nodes once per piece they cut out.
@@ -105,13 +105,11 @@ pub(crate) struct CanonicalizationContext {
     declined_at: Cell<Option<usize>>,
 }
 
-/// Intersections one run may take before giving up and leaving the document `Raw`. Above what the
-/// most demanding document written in earnest needs; a row of `allOf`s over unions passes it in
-/// a fraction of a second.
+/// Intersections one run may take before giving up and leaving the document `Raw`; a row of
+/// `allOf`s over unions exceeds it.
 const INTERSECTION_BUDGET: u64 = 1_000_000;
 
-/// Variants the conditional splits of one run may produce before the document stays `Raw`. Two
-/// nested nodes at the per-node cap fit; a third would spend 4096 more.
+/// Variants the conditional splits of one run may produce before the document stays `Raw`.
 const VARIANT_BUDGET: u64 = 4096;
 
 impl CanonicalizationContext {
@@ -202,7 +200,7 @@ impl CanonicalizationContext {
         self.pattern_options
     }
 
-    /// Whether `text` meets `format`, or `None` when the format is not one of the built-ins.
+    /// Whether `text` satisfies `format`, or `None` when the format is not one of the built-ins.
     pub(crate) fn format_admits(&self, format: &StringFormat, text: &str) -> Option<bool> {
         if self.pattern_options.syntax() == PatternSyntax::Engine
             && matches!(format, StringFormat::Builtin(BuiltinFormat::Regex))
@@ -215,13 +213,13 @@ impl CanonicalizationContext {
         format.is_valid(text)
     }
 
-    /// The body `uri` names, or `None` where this run reads no targets and where reading through
-    /// this one would not terminate.
     /// The targets a set operation reads through; absent while a document is being canonicalized.
     pub(crate) fn definitions(&self) -> Option<&DefinitionMap> {
         self.definitions.as_deref()
     }
 
+    /// The body `uri` names, or `None` where this run reads no targets and where reading through
+    /// this one would not terminate.
     pub(crate) fn definition(&self, uri: &str) -> Option<&Schema> {
         if self.cyclic.contains(uri) {
             return None;
@@ -238,7 +236,7 @@ impl CanonicalizationContext {
         self.definitions.as_ref()?.get(uri)
     }
 
-    /// Runs `proof` with `inner ⊆ outer` assumed for the named targets; the assumption is gone when
+    /// Runs `proof` with target `inner` assumed inside `outer`; the assumption is gone when
     /// it returns. `None` where either target is not guarded, where an assumption in force already
     /// holds `inner` inside or `outer` around something, or past [`ASSUMED_PAIRS`].
     ///
@@ -283,8 +281,8 @@ impl CanonicalizationContext {
         Some(proof())
     }
 
-    /// Whether a proof of `inner ⊆ outer` started with nothing assumed held, where this run has
-    /// one. Asked with assumptions in force there is none: an outcome under them is theirs.
+    /// Whether a proof of `inner` inside `outer` started with nothing assumed held, where this run
+    /// has one. Asked with assumptions in force there is none: an outcome under them is theirs.
     pub(crate) fn settled_containment(&self, inner: &Arc<str>, outer: &Arc<str>) -> Option<bool> {
         if self.assumes_any() {
             return None;
@@ -298,7 +296,7 @@ impl CanonicalizationContext {
             .map(|(_, held)| *held)
     }
 
-    /// Record how a proof of `inner ⊆ outer` ended, kept only where it started with nothing
+    /// Record how a proof of `inner` inside `outer` ended, kept only where it started with nothing
     /// assumed.
     pub(crate) fn settle_containment(&self, inner: &Arc<str>, outer: &Arc<str>, held: bool) {
         if self.assumes_any() {
@@ -313,7 +311,7 @@ impl CanonicalizationContext {
             .push(((Arc::clone(inner), Arc::clone(outer)), held));
     }
 
-    /// Note that a nested proof of `inner ⊆ outer` starts under the assumptions now in force.
+    /// Note that a nested proof of `inner` inside `outer` starts under the assumptions in force.
     pub(crate) fn note_attempt(&self, inner: &Arc<str>, outer: &Arc<str>) {
         debug_assert!(self.assumes_any(), "nested proofs start inside a proof");
         if !self.attempted(inner, outer) {
@@ -323,7 +321,7 @@ impl CanonicalizationContext {
         }
     }
 
-    /// Whether a nested proof of `inner ⊆ outer` already ran under the assumptions now in force.
+    /// Whether a nested proof of `inner` inside `outer` already ran under the assumptions in force.
     pub(crate) fn attempted(&self, inner: &Arc<str>, outer: &Arc<str>) -> bool {
         self.assumes_any()
             && self
@@ -335,7 +333,7 @@ impl CanonicalizationContext {
                 })
     }
 
-    /// Whether a containment proof in progress assumes `inner ⊆ outer`.
+    /// Whether a containment proof in progress assumes `inner` inside `outer`.
     pub(crate) fn assumes_contained(&self, inner: &str, outer: &str) -> bool {
         self.assumed
             .borrow()
@@ -547,9 +545,9 @@ impl CanonicalizationContext {
         found
     }
 
-    /// The intersection of these two, from an earlier run of the same pair. One the form could only
-    /// approximate is recorded again here: a walk reading it is as approximate as the one that
-    /// first took it.
+    /// The intersection of these two, from an earlier computation of the same pair. One the form
+    /// could only approximate is recorded again here: a walk reading it is as approximate as the
+    /// one that first took it.
     pub(crate) fn recall_intersection(&self, left: &Schema, right: &Schema) -> Option<Schema> {
         let key = intersection_key(left.clone(), right.clone());
         let remembered = self.intersections.borrow().get(&key).cloned()?;

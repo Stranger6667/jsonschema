@@ -124,7 +124,8 @@ pub(crate) struct MatchAssumptions {
     /// The match the error reports, and where this run met it with its instance location.
     reported: Option<UnfinishedMatch>,
     reported_site: Option<MatchSite>,
-    /// Patterns the engine could not finish, by subject, kept across runs so later runs skip it.
+    /// Patterns the engine could not finish, by subject, kept so later runs do not run the engine
+    /// on them again.
     known_unfinished: AHashMap<Box<str>, Vec<Box<str>>>,
 }
 
@@ -630,7 +631,7 @@ mod tests {
             .expect("schema compiles")
     }
 
-    // Comparing every error of one run with every error of another takes minutes at this size.
+    // Comparing every error of one run with every error of another is quadratic in the error count.
     #[test]
     fn errors_beside_an_unfinished_match_are_matched_across_runs_in_linear_time() {
         const FAILING: usize = 100_000;

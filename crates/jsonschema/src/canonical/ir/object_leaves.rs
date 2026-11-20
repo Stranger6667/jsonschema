@@ -4,8 +4,9 @@ use crate::canonical::ir::{
     BoundCardinality, Bounds, LengthBounds, ObjectLeaf, ObjectViolation, PropertyMap, Schema,
 };
 
-/// Object leaves merged per required-key set. Inserts are batched; the form is restored before any
-/// read, so the order in which leaves arrive cannot change the result.
+/// Object branches of one `anyOf`, merged where only their size windows differ. Inserts are
+/// batched; the form is restored before any read, so the order in which leaves arrive cannot
+/// change the result.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct ObjectLeaves {
     leaves: Vec<ObjectLeaf>,
@@ -77,7 +78,7 @@ struct Facets {
     violations: Vec<ObjectViolation>,
 }
 
-/// Fold the size windows of leaves demanding the same keys under the same key constraint.
+/// Fold the size windows of leaves that agree on every other facet.
 /// ```text
 /// e.g.  anyOf [
 ///         {"type": "object", "required": ["a"], "maxProperties": 2},
@@ -85,7 +86,7 @@ struct Facets {
 ///       ]  =>  {"type": "object", "required": ["a"]}
 /// ```
 ///
-/// Different keys admit different objects, so those leaves stay apart.
+/// Leaves demanding different keys accept different objects, so they stay apart.
 /// ```text
 /// e.g.  anyOf [
 ///         {"type": "object", "required": ["a"]},
@@ -124,8 +125,6 @@ fn merge(mut leaves: Vec<ObjectLeaf>) -> Vec<ObjectLeaf> {
                 || group.properties != leaf.properties
                 || group.pattern_properties != leaf.pattern_properties
                 || group.additional != leaf.additional
-                // Unequal violations are unequal demands; folding their windows together would
-                // silently keep only one side's constraint.
                 || group.violations != leaf.violations
         }) {
             flush_group(&mut merged, facets.take(), &mut windows);
@@ -186,7 +185,7 @@ fn flush_group(
 }
 
 /// Widen a facet-carrying window over a bare sibling window it touches: the sizes gained lie
-/// inside the bare window, which admits those objects with any content, so the union is unchanged.
+/// inside the bare window, which accepts those objects with any content, so the union is unchanged.
 /// The boundary between the two then has one form, whatever the facet leaf's window said.
 /// ```text
 /// e.g.  anyOf [
@@ -198,7 +197,7 @@ fn flush_group(
 ///       ]
 /// ```
 fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
-    // A violation demands a key that breaks a rule, so its window admits only some objects of
+    // A violation demands a key that breaks a rule, so its leaf accepts only some objects of
     // that size, not every one of them - it is a facet, not a bare window.
     let bare: Vec<LengthBounds> = leaves
         .iter()
@@ -244,7 +243,7 @@ fn extend_over_bare_windows(leaves: &mut [ObjectLeaf]) {
     }
 }
 
-/// Drop a `minProperties: 1` when another branch admits the empty object: the drop adds only `{}`,
+/// Drop a `minProperties: 1` when another branch accepts the empty object: the drop adds only `{}`,
 /// which that branch accepts and whose keys satisfy any constraint vacuously. A leaf demanding a
 /// key never carries that minimum, since it folds into the required count.
 /// ```text

@@ -13,7 +13,7 @@ const DIVISOR_MULTIPLES: u32 = 3;
 
 /// Instances worth trying against an integer leaf.
 pub(super) fn integer(leaf: &IntegerLeaf, visit: &mut Visit<'_>) -> ControlFlow<()> {
-    // An integer bound is stored as the first integer it admits.
+    // An integer bound is stored as the first integer it includes.
     let bounds = &leaf.bounds;
     let end = |bound: &BoundInteger| WindowEnd {
         limit: bound.to_number(),
@@ -116,7 +116,7 @@ fn off_number_grid(leaf: &NumberLeaf) -> Vec<Number> {
     found
 }
 
-/// The divisor itself, and the first multiples `from` admits.
+/// The divisor itself, and the first multiples within the bound `from`.
 fn multiples(step: &BoundRational, from: Option<BoundNumber>) -> Vec<Number> {
     let mut found = vec![step.to_number()];
     let mut last = from;
@@ -130,14 +130,14 @@ fn multiples(step: &BoundRational, from: Option<BoundNumber>) -> Vec<Number> {
     found
 }
 
-/// Zero, which every divisor takes, and the ends of the window.
+/// The window's included ends, a point inside it, then zero, which every divisor takes.
 fn whole_number_candidates(minimum: Option<WindowEnd>, maximum: Option<WindowEnd>) -> Vec<Value> {
     // A point between the two ends, or one step in from the only end there is.
     let interior = interior_point(
         minimum.as_ref().map(|end| &end.limit),
         maximum.as_ref().map(|end| &end.limit),
     );
-    // Admitted ends first: a caller taking one candidate needs one the window holds, and an
+    // Included ends first: a caller taking one candidate needs one the window holds, and an
     // excluded end is no value of it.
     let mut candidates: Vec<Value> = [minimum, maximum]
         .into_iter()
@@ -146,12 +146,11 @@ fn whole_number_candidates(minimum: Option<WindowEnd>, maximum: Option<WindowEnd
         .map(|end| Value::Number(end.limit))
         .collect();
     candidates.extend(interior);
-    // Zero, which every divisor takes.
     candidates.push(Value::Number(0.into()));
     candidates
 }
 
-/// One end of a numeric window, and whether the window admits it.
+/// One end of a numeric window, and whether the window includes it.
 struct WindowEnd {
     limit: Number,
     admitted: bool,

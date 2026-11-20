@@ -63,7 +63,7 @@ fn is_integer_past_u64(schema: &Value) -> bool {
 #[cfg(not(feature = "arbitrary-precision"))]
 fn is_integer_past_u64(schema: &Value) -> bool {
     // Without the raw text such a value is an `f64`, and every `f64` at or past `2^64` is an exact
-    // integer - no float in that range carries a fractional part - so the draft gate is moot.
+    // integer; Draft 4's integer-literal rule cannot be checked here.
     schema
         .as_f64()
         .is_some_and(|value| value >= crate::canonical::json::U64_UPPER_EXCLUSIVE_F64)
@@ -71,7 +71,7 @@ fn is_integer_past_u64(schema: &Value) -> bool {
 
 /// Extract a u64 value from a schema map, returning a compilation error if invalid.
 ///
-/// This is a defensive check - normally caught by metaschema validation.
+/// Reached when meta-validation is off or the schema is a registry resource.
 #[inline]
 pub(crate) fn map_get_u64<'a, F: Json>(
     m: &'a Map<String, Value>,
@@ -90,7 +90,7 @@ pub(crate) fn map_get_u64<'a, F: Json>(
 
 /// Create a compilation error for schema values that must be non-negative integers.
 ///
-/// This is a defensive check - normally caught by metaschema validation.
+/// Reached when meta-validation is off or the schema is a registry resource.
 pub(crate) fn fail_on_non_positive_integer(
     schema_value: &Value,
     schema_path: Location,

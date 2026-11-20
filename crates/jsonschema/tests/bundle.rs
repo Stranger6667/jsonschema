@@ -208,8 +208,7 @@ fn test_bundle_circular_ref() {
     assert!(!defs["https://example.com/node.json"].is_null());
 }
 
-/// A `$ref` like `https://example.com/schema.json#/$defs/Name` should embed
-/// the entire schema.json document (not just the fragment).
+// A fragment-qualified `$ref` embeds the whole referenced document.
 #[test]
 fn test_bundle_fragment_qualified_external_ref() {
     let schemas = json!({
@@ -238,8 +237,7 @@ fn test_bundle_fragment_qualified_external_ref() {
     assert!(!defs["https://example.com/schema.json"].is_null());
 }
 
-/// An external schema that internally uses a relative $ref should have its
-/// transitive dependency collected correctly.
+// A relative `$ref` inside an embedded document pulls in its target.
 #[test]
 fn test_bundle_relative_ref_inside_external_schema() {
     // address.json uses a relative $ref to country.json
@@ -282,7 +280,7 @@ fn test_bundle_relative_ref_inside_external_schema() {
 
 #[test]
 fn test_bundle_inner_ref_not_rewritten() {
-    // $ref values inside embedded schemas must not be rewritten — this is a core spec invariant
+    // `$ref` values inside embedded schemas stay as written; the spec requires it.
     let leaf = json!({ "$id": "https://example.com/leaf", "type": "number", "minimum": 0 });
     let middle = json!({ "$id": "https://example.com/middle", "$ref": "https://example.com/leaf", "maximum": 100 });
     let root = json!({ "$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "https://example.com/middle" });
@@ -593,7 +591,7 @@ fn assert_bundle_parity(
     }
 }
 
-/// From: <https://json-schema.org/blog/posts/bundling-json-schema-compound-documents>
+// The example from <https://json-schema.org/blog/posts/bundling-json-schema-compound-documents>.
 #[test]
 fn test_parity_blog_post_integer_non_negative() {
     let integer = json!({
@@ -666,7 +664,7 @@ fn test_parity_nested_object_refs() {
     );
 }
 
-/// Root schema already has $defs — bundler must merge, not overwrite.
+// Bundling into a root that has `$defs` keeps its own entries.
 #[test]
 fn test_parity_merge_with_existing_defs() {
     let external = json!({
@@ -693,11 +691,10 @@ fn test_parity_merge_with_existing_defs() {
     );
 }
 
-/// Missing refs reachable from the shared registry fail during registry preparation.
+// Missing refs reachable from the shared registry fail during registry preparation.
 #[test]
 fn test_registry_prepare_error_propagates_for_missing_transitive_ref() {
     // `middle` is registered, but it references `leaf` which is not registered.
-    // Preparation should fail before bundling starts.
     let middle = json!({
         "$id": "https://example.com/middle.json",
         "$schema": "https://json-schema.org/draft/2020-12/schema",

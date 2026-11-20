@@ -194,8 +194,9 @@ fn number_tag(number: &Number) -> u8 {
     }
 }
 
-// The f64-bits tie-break on exact text keeps `Ord` consistent with `Eq` under `arbitrary-precision`,
-// where distinct numerals ("1.0" / "1.00") share one f64 approximation but compare unequal.
+// Comparing f64 bits, then the exact text, keeps `Ord` consistent with `Eq` under
+// `arbitrary-precision`, where distinct numerals ("1.0" / "1.00") share one f64 approximation but
+// compare unequal.
 fn compare_numbers(left: &Number, right: &Number) -> Ordering {
     match (number_tag(left), number_tag(right)) {
         (0, 0) => left.as_u64().cmp(&right.as_u64()),

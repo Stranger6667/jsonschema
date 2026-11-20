@@ -77,7 +77,7 @@ pub(crate) fn check(text: &str, absolute: bool) -> Option<bool> {
         }
         at = end;
     } else if scheme.is_none() && first_segment_has_colon(&bytes[at..]) {
-        // `a:b` with an invalid scheme would read as one.
+        // A relative reference's first segment holds no `:`, or it would read as a scheme.
         return Some(false);
     }
     let Some(end) = scan(bytes, at, PATH) else {

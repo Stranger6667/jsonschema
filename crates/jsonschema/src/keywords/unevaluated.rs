@@ -11,13 +11,13 @@ use crate::{
 
 use super::{ref_, BuiltinKeyword};
 
-/// What marking evaluated members serves. A subschema that fails evaluates nothing, but it also
-/// fails the schema, so the true/false answer never depends on it.
+/// Which answer the marks feed. A failing `allOf` branch, `$ref` or taken `then`/`else` evaluates
+/// nothing but fails the schema, so the true/false answer may count it.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum Marking {
     /// The true/false answer: every subschema counts.
     Verdict,
-    /// The members errors and `evaluate()` report: a subschema counts only where it validates.
+    /// Members as errors and `evaluate()` report them: a subschema counts only where it validates.
     Report,
 }
 

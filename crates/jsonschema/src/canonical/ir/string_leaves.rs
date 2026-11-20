@@ -84,7 +84,7 @@ struct Facets {
     excluded: Vec<Arc<str>>,
 }
 
-/// Fold the length windows of leaves carrying the same patterns and formats.
+/// Fold the length windows of leaves that agree on every other facet.
 /// e.g.  anyOf [
 ///         {"type": "string", "minLength": 3, "maxLength": 5},
 ///         {"type": "string", "minLength": 6, "maxLength": 9}
@@ -93,7 +93,7 @@ struct Facets {
 /// Different patterns constrain different string sets, so those leaves stay apart.
 /// e.g.  anyOf [
 ///         {"type": "string", "maxLength": 2, "pattern": "^a"},
-///         {"type": "string", "minLength": 8}
+///         {"type": "string", "minLength": 3}
 ///       ]  =>  unchanged
 fn merge(mut leaves: Vec<StringLeaf>) -> Vec<StringLeaf> {
     if leaves.len() < 2 {
@@ -198,8 +198,9 @@ fn flush_group(
     });
 }
 
-/// Drop a leaf whose strings another leaf already admits: a window that contains it, under patterns
-/// that constrain no more. Extra patterns only narrow, so the pattern-free leaf swallows the other.
+/// Drop a leaf whose strings another leaf already accepts: a window that contains it, under
+/// patterns that constrain no more. Extra patterns only narrow, so the pattern-free leaf swallows
+/// the other.
 /// e.g.  anyOf [
 ///         {"type": "string", "minLength": 2},
 ///         {"type": "string", "minLength": 2, "pattern": "^a"}

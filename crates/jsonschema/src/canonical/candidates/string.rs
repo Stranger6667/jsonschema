@@ -4,8 +4,8 @@ use serde_json::Value;
 use super::{demanded_length, CANDIDATE_LENGTH};
 use crate::canonical::ir::{BoundCardinality, LengthBounds, StringFormat, StringLeaf};
 
-/// Strings to try against a string leaf: one per pattern, one per format, and their concatenation,
-/// which is the only one that can match a pattern anchored at the start and one anchored at the end.
+/// Strings to try against a string leaf: the per-pattern strings joined, which alone can match a
+/// start-anchored and an end-anchored pattern, then one per pattern and one per format.
 pub(super) fn string(leaf: &StringLeaf) -> Vec<Value> {
     let mut proposals: Vec<String> = Vec::new();
     let per_pattern: Vec<String> = leaf

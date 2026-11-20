@@ -44,7 +44,7 @@ mod bench {
             });
         }
 
-        // Meta-validating a meta-schema exercises `$vocabulary` and the dynamic-scope machinery.
+        // Meta-validating a meta-schema exercises `$vocabulary` and `$dynamicRef`.
         let meta: &Value = &referencing::meta::DRAFT202012;
         let runtime = jsonschema::options()
             .build(meta)

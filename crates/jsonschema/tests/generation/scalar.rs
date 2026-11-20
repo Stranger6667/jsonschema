@@ -58,8 +58,8 @@ pub(crate) fn draw_integer(tc: &TestCase, view: &IntegerView) -> Option<Value> {
             return None;
         }
     }
-    // Integer multiples of a reduced `p/q` grid are exactly the multiples of `p`, and several
-    // divisors admit the multiples of their least common multiple.
+    // Integer multiples of a reduced `p/q` grid are exactly the multiples of `p`, and the multiples
+    // of several divisors are the multiples of their least common multiple.
     let mut stride = Fraction::ONE;
     for divisor in multiple_of {
         let each = Fraction::divisor(divisor)?;
@@ -133,7 +133,7 @@ pub(crate) fn draw_number(tc: &TestCase, view: &NumberView) -> Option<Value> {
         }
     }
     let barred = excluded_divisors(not_multiple_of)?;
-    // Several divisors admit exactly the multiples of their least common multiple.
+    // The multiples of several divisors are exactly the multiples of their least common multiple.
     let mut combined: Option<Fraction> = None;
     for divisor in multiple_of {
         let each = Fraction::divisor(divisor)?;
@@ -296,7 +296,7 @@ pub(crate) fn draw_string(tc: &TestCase, view: &StringView) -> Option<Value> {
         return admitted(value);
     }
     // A format with a generator behind it drives the draw; one without a checker constrains
-    // nothing and falls through. Remaining facets are the wrapper's net.
+    // nothing and falls through. `draw_valid_instance` checks the remaining keywords.
     for format in formats {
         match format.as_str() {
             "email" | "idn-email" => return admitted(tc.draw(gs::emails())),
@@ -368,8 +368,8 @@ pub(crate) fn draw_string(tc: &TestCase, view: &StringView) -> Option<Value> {
         }
     }
     if !patterns.is_empty() {
-        // One pattern drives the draw; the length window and the remaining patterns are the
-        // wrapper's net. The validator's ECMA engine accepts patterns the draw engine cannot
+        // One pattern drives the draw; `draw_valid_instance` checks `minLength`, `maxLength` and
+        // the other patterns. The validator's ECMA engine accepts patterns the draw engine cannot
         // parse, and those decline.
         let index = tc.draw(
             gs::integers::<usize>()

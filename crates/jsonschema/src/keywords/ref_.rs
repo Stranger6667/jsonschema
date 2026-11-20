@@ -100,8 +100,8 @@ impl<F: Json> Validate<F> for RefValidator<F> {
 
     /// Returns `ref_target_base` for `schema_path` output.
     ///
-    /// Per JSON Schema 2020-12 Core Section 12.4.2, `schema_path` "MUST NOT include
-    /// by-reference applicators such as `$ref` or `$dynamicRef`".
+    /// Per 2020-12 Core 12.3.2, a keyword's absolute location holds no `$ref` or `$dynamicRef`
+    /// as a non-terminal component.
     fn canonical_location(&self) -> Option<(&Location, Option<&Arc<Uri<String>>>)> {
         Some((&self.ref_target_base, self.target_location.as_ref()))
     }
@@ -1690,8 +1690,7 @@ mod tests {
 
     #[test]
     fn test_indirect_local_refs_to_external_resource() {
-        // GH-892: Chained local $refs where the final ref points to an external resource
-        // should properly discover and retrieve the external resource.
+        // Chained local `$ref`s ending in an external resource retrieve that resource.
         //
         // The chain is:
         //   root $ref -> #/components/schemas/c1
@@ -1723,8 +1722,8 @@ mod tests {
 
     #[test]
     fn test_local_ref_with_nested_external_ref_in_properties() {
-        // GH-892 follow-up: Local $ref points to a schema that has an external $ref
-        // nested within properties (not a direct $ref chain).
+        // A local `$ref` to a schema with an external `$ref` under `properties`, not a direct
+        // chain.
         //
         // The structure is:
         //   root $ref -> #/components/schemas/c1
@@ -1818,8 +1817,7 @@ mod tests {
 
     #[test]
     fn test_cross_file_local_ref_resolution() {
-        // GH-892: External ref with fragment pointing to a schema that has local refs.
-        // The local refs within the external file need to resolve against that file's
+        // An external `$ref` whose target holds local `$ref`s resolves them against that file's
         // document root, not the original schema's root.
         //
         // Structure:
@@ -2561,9 +2559,6 @@ mod tests {
     /// A fragment-only JSON Pointer `$ref` written inside an `$id`-bearing subresource must
     /// resolve within that subresource, even when its pointer coincides with the pointer that
     /// reached the subresource from the enclosing document.
-    ///
-    /// Cross-checked against `jsonschema` (Python) and `@hyperjump/json-schema`: both resolve
-    /// these to the inner `integer` definition on every draft where the shape is expressible.
     #[test_case("https://json-schema.org/draft/2020-12/schema", "$defs" ; "draft 2020-12")]
     #[test_case("https://json-schema.org/draft/2019-09/schema", "$defs" ; "draft 2019-09")]
     #[test_case("http://json-schema.org/draft-07/schema#", "definitions" ; "draft 7")]
@@ -2592,9 +2587,7 @@ mod tests {
         assert!(!validator.is_valid(&json!({"value": "text"})));
     }
 
-    /// The same shape with the `$ref` sitting directly on the subresource, where the composed
-    /// "current location" URI used to collide with the reference's own target URI and the `$ref`
-    /// was silently dropped as a self-reference.
+    /// The same shape with the `$ref` directly on the subresource: it is not a self-reference.
     #[test_case("https://json-schema.org/draft/2020-12/schema" ; "draft 2020-12")]
     #[test_case("https://json-schema.org/draft/2019-09/schema" ; "draft 2019-09")]
     fn shadowed_pointer_ref_on_nested_id_root_is_not_a_self_reference(meta: &str) {

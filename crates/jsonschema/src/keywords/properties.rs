@@ -34,8 +34,7 @@ pub(crate) struct BigPropertiesValidator<F: Json = SerdeJson> {
     pub(crate) properties: BigValidatorsMap<F>,
 }
 
-/// Fused validator for `properties` + `required: [2 items]` (no `additionalProperties: false`).
-/// Eliminates separate required validation pass and duplicate `BTreeMap` lookups.
+/// `properties` fused with a two-name `required`, checked in one pass over the object.
 pub(crate) struct SmallPropertiesWithRequired2Validator<F: Json = SerdeJson> {
     pub(crate) properties: Vec<(PropertyName, F::PreparedKey, SchemaNode<F>)>,
     first: PropertyName,
@@ -93,7 +92,8 @@ impl<F: Json> SmallPropertiesValidator<F> {
 
 /// The `properties` that a sibling `unevaluatedProperties` checks in its own walk: a few names
 /// compiled the plain way, next to an `unevaluatedProperties` that compiles to a validator. Both
-/// keywords compile from this, so one never skips what the other does not check.
+/// keywords compile from this, so `properties` skips a name only where `unevaluatedProperties`
+/// checks it.
 pub(crate) fn checked_by_unevaluated<'a, F: Json>(
     ctx: &compiler::Context<F>,
     parent: &'a Map<String, Value>,
@@ -614,7 +614,6 @@ impl<F: Json> Validate<F> for BigPropertiesValidator<F> {
 
     fn is_valid(&self, instance: &F::Node<'_>, ctx: &mut ValidationContext) -> bool {
         if let Some(object) = instance.as_object() {
-            // Iterate over instance properties and look up in schema's HashMap
             for (name, prop) in object.members() {
                 if let Some(node) = self.properties.get_validator(name.as_ref()) {
                     if !node.is_valid_child(&prop, ctx) {
@@ -707,8 +706,7 @@ pub(crate) fn has_keyword_between_required_and_properties(parent: &Map<String, V
     .any(|keyword| parent.contains_key(*keyword))
 }
 
-/// Check if we can use fused properties+required validator.
-/// Conditions: properties < threshold, required: [2 strings], no patternProperties.
+/// The two `required` names, when `properties` can fuse with them.
 fn extract_required2<F: Json>(
     ctx: &compiler::Context<F>,
     parent: &Map<String, Value>,
@@ -753,7 +751,7 @@ pub(crate) fn compile<'a, F: Json>(
     schema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
     match parent.get("additionalProperties") {
-        // This type of `additionalProperties` validator handles `properties` logic
+        // `additionalProperties: false` or a schema checks `properties` itself
         Some(Value::Bool(false) | Value::Object(_))
             if !ctx.is_keyword_overridden("additionalProperties") =>
         {
@@ -767,7 +765,6 @@ pub(crate) fn compile<'a, F: Json>(
                     }));
                 }
                 if map.len() < HASHMAP_THRESHOLD {
-                    // Try fused validator for properties + required: [2 items]
                     if let Some((first, second)) = extract_required2(ctx, parent) {
                         Some(SmallPropertiesWithRequired2Validator::compile(
                             ctx, map, first, second,
@@ -1106,7 +1103,7 @@ mod tests {
         assert_eq!(crate::is_valid(&additional, &json!({key: 1})), matches);
     }
 
-    // Names agreeing on length, first and last eight bytes share a head
+    // Names with equal length and equal first and last eight bytes share a `KeyHead`
     fn colliding_name(middle: usize) -> String {
         format!("prefix00{middle:02}suffix00")
     }
@@ -1271,7 +1268,7 @@ mod tests {
         Value::Object(map)
     }
 
-    // len(instance) <= declared props -> single-pass iterate branch
+    // Up to four members per declared property take the members pass
     #[test_case(&json!({"a": 1, "b": "x"}), true)]
     #[test_case(&json!({"a": 1}), true)] // subset of declared props
     #[test_case(&json!({"a": "not-int", "b": "x"}), false)]
@@ -1281,7 +1278,7 @@ mod tests {
         assert_eq!(validator.is_valid(instance), expected);
     }
 
-    // len(instance) > declared props -> targeted-lookup get branch
+    // More than four members per declared property take lookups
     #[test_case(json!({"a": 1, "b": "x"}), true)]
     #[test_case(json!({"a": "not-int", "b": "x"}), false)]
     fn small_properties_get_branch_wide_instance(base: Value, expected: bool) {

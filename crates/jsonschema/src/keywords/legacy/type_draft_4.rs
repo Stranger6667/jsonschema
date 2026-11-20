@@ -269,8 +269,7 @@ mod tests {
             serde_json::from_str(s).unwrap()
         }
 
-        // Tests for huge integers beyond i64/u64 range - these must be parsed from JSON string
-        // to avoid Python/Rust int conversion issues
+        // Integers past `i64`/`u64`, parsed from text so the literal survives
         #[test_case(r#"{"type": "integer"}"#, "18446744073709551616", true; "u64_max_plus_1_plain")]
         #[test_case(r#"{"type": "integer"}"#, "-9223372036854775809", true; "i64_min_minus_1")]
         #[test_case(r#"{"type": "integer"}"#, "99999999999999999999", true; "huge_plain_integer")]
@@ -295,7 +294,7 @@ mod tests {
             false;
             "very huge float"
         )]
-        // Only decidable while the literal survives; otherwise these come back in exponent form.
+        // Decided by the written form, which `arbitrary-precision` keeps.
         #[test_case(r#"{"type": "integer"}"#, "1e300", false; "large exponent is not an integer in draft4")]
         #[test_case(r#"{"type": "integer"}"#, "100000000000000000000.0", false; "large float with a fraction part is not an integer in draft4")]
         #[test_case(r#"{"type": "integer"}"#, "1e1000", false; "huge scientific notation is not an integer in draft4")]

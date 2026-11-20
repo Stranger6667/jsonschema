@@ -3,8 +3,7 @@
 //! Parsing cannot do this: it runs before the `$defs` bodies are known. The set operations can, so
 //! without this pass `canonicalize(doc)` and `intersect` over the same parts give different forms.
 //!
-//! Unions are left alone (they keep their references), as is any document holding a reference
-//! cycle.
+//! Unions keep their references; a document holding a reference cycle is left as parsed.
 
 use std::{collections::BTreeSet, sync::Arc};
 
@@ -22,9 +21,8 @@ use crate::canonical::{
 /// not match what the set operations produce for the same schema.
 const FOLD_BUDGET: u64 = 40_000;
 
-/// Folding rounds one schema may take to settle. A fold can rebuild a leaf through passes that
-/// read no targets, leaving `allOf`s a resolving read folds again on the next round; a form
-/// still moving past the cap is kept as it stands.
+/// Folding rounds one schema may take to settle. A round can rebuild a leaf without reading
+/// targets, leaving `allOf`s the next round folds; past the cap the last round's form stands.
 const SETTLE_ROUNDS: usize = 8;
 
 /// `parsed` with every `allOf` folded through the schemas its branches reference.
@@ -49,7 +47,7 @@ pub(crate) fn through_targets(
 /// against them the same way.
 pub(crate) struct Settled {
     /// One context for the whole pass, so the intersection cache and the budget are shared. It
-    /// holds the map alone, so a settled body lands in place and later bodies read it.
+    /// owns its copy of the map, so a settled body lands in place and later bodies read it.
     resolving: CanonicalizationContext,
     /// Normalization must not read targets, or it would produce forms the parse cannot.
     plain: CanonicalizationContext,
@@ -151,7 +149,7 @@ fn reading(definitions: &DefinitionMap, ctx: &CanonicalizationContext) -> Canoni
 
 /// Whether this document can be folded at all.
 ///
-/// Two shapes are refused: a `propertyNames`/violation constraint written as a `$ref`, since
+/// Two shapes are refused: a `propertyNames` or violation schema holding a `$ref`, since
 /// resolving it can yield something an object leaf cannot hold, and a reference to the document
 /// root, which the definition map does not contain.
 fn foldable(parsed: &ParseOutput) -> bool {
@@ -213,9 +211,9 @@ fn settled(schema: &Schema) -> bool {
 
 /// `schema` with every `allOf` below it folded.
 ///
-/// `ctx` resolves references - that is what lets an `allOf` settle. `plain` does not, and only
-/// the union fold uses it: resolving there would replace a branch with the schema it references,
-/// which the parse never does.
+/// `ctx` resolves references - that is what lets an `allOf` settle. `plain` does not; the union
+/// and negation folds run against it, since a resolving union would replace a branch with the
+/// schema it references, which the parse never does.
 fn folded(
     schema: &Schema,
     definitions: &DefinitionMap,
@@ -329,12 +327,12 @@ fn folded(
             }
             algebra::object_leaf(keys, ctx)
         }
-        // A reference to an empty schema matches nothing; anything else keeps the reference.
+        // A reference to `false` matches nothing; anything else keeps the reference.
         SchemaKind::Reference(uri) => match ctx.definition(uri) {
             Some(target) if matches!(target.kind(), SchemaKind::False) => Schema::falsy(),
             Some(_) | None => schema.clone(),
         },
-        // A typed group holds values, not schemas; neither do the rest.
+        // A typed group's body is a value set; the rest hold no subschemas.
         SchemaKind::TypedGroup { .. }
         | SchemaKind::MultiType(_)
         | SchemaKind::String(_)
@@ -360,7 +358,7 @@ fn each(
         .collect()
 }
 
-/// Whether this branch is a reference the run can resolve, or a choice over one.
+/// Whether this branch is a reference the run can resolve, or a `oneOf` over one.
 fn names_a_body(schema: &Schema, ctx: &CanonicalizationContext) -> bool {
     if let SchemaKind::OneOf(branches) = schema.kind() {
         return branches.iter().any(|branch| names_a_body(branch, ctx));

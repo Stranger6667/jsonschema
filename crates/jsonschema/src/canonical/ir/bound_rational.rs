@@ -10,14 +10,15 @@ use super::{normalized_number, BoundInteger};
 
 /// A divisor kept in the text the validator will read, so membership matches it exactly. The
 /// exact rational alongside it is what that text denotes, and is absent when no rational this
-/// build can hold writes back to it - membership stands either way, only arithmetic needs it.
+/// build can hold round-trips to that text - membership stands either way, only arithmetic needs
+/// it.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub(crate) struct BoundRational {
     limit: Number,
     value: Option<BigFraction>,
 }
 
-/// What a divisor becomes over the integers it admits.
+/// What a divisor becomes over the integers.
 enum IntegerFold {
     /// Every integer is a multiple, so the divisor leaves no trace.
     Vacuous,
@@ -28,8 +29,8 @@ enum IntegerFold {
 
 impl BoundRational {
     /// `None` only when the divisor has no `f64` at all, which is where the validator drops the
-    /// keyword. The rational is kept when it writes back to the divisor, which is what lets the
-    /// exact arithmetic below stand in for the text.
+    /// keyword. The rational is kept when it round-trips to the divisor's text, which is what lets
+    /// the exact arithmetic below stand in for the text.
     pub(crate) fn new(limit: &Number) -> Option<Self> {
         let limit = normalized_number(limit);
         limit.as_f64()?;
@@ -46,7 +47,7 @@ impl BoundRational {
         self.limit.clone()
     }
 
-    /// Whether every value the divisor admits is whole, however the validator reads it.
+    /// Whether every multiple of the divisor is whole, however the validator reads it.
     pub(crate) fn admits_only_whole(&self) -> bool {
         matches!(self.kind(), DivisorKind::Whole | DivisorKind::WholeLossy)
     }
@@ -63,8 +64,8 @@ impl BoundRational {
     /// Whether every multiple of `other` is also a multiple of this divisor. Only meaningful for
     /// divisors taking the same arithmetic, which callers check.
     pub(crate) fn divides_divisor(&self, other: &Self) -> bool {
-        // A divisor divides itself however the validator reads it, so the same text needs no
-        // rational - which one no f64 writes back to does not have.
+        // A divisor divides itself however the validator reads it, so equal texts need no
+        // rational, which a divisor no `f64` round-trips to lacks.
         if self == other {
             return true;
         }
@@ -90,8 +91,8 @@ impl BoundRational {
         }
     }
 
-    /// The smallest value both divisors admit, or `None` when no divisor the validator reads the
-    /// same way writes it.
+    /// The least common multiple of both divisors, or `None` when no divisor the validator reads
+    /// the same way writes it.
     pub(crate) fn checked_lcm(&self, other: &Self) -> Option<Self> {
         // For reduced fractions `lcm(p/q, r/s)` is `lcm(p, r) / gcd(q, s)`.
         let (mine, theirs) = (self.exact_value()?, other.exact_value()?);
@@ -106,7 +107,7 @@ impl BoundRational {
         .then_some(combined)
     }
 
-    /// Whether any multiple lies within the interval. An open end always leaves room for one.
+    /// Whether any multiple lies within the interval. An absent end always leaves room for one.
     pub(crate) fn admits_between(
         &self,
         minimum: Option<&super::BoundNumber>,
@@ -115,7 +116,7 @@ impl BoundRational {
         let Some(step) = self.exact_value() else {
             return true;
         };
-        // An end no rational this build writes back to is not the end the validator compares
+        // An end no rational this build round-trips to is not the end the validator compares
         // against, so the interval is left holding a multiple rather than called empty.
         let (Some(low), Some((maximum, high))) = (
             minimum.and_then(|bound| denoted(&bound.to_number())),
@@ -138,7 +139,7 @@ impl BoundRational {
     }
 
     /// This divisor with the factors `other` already supplies removed, or `None` when nothing can
-    /// go. Only factors `other` carries at the same power may, or the pair would admit more.
+    /// go. Only factors `other` carries at least as often may go, or the pair would constrain less.
     /// e.g.  6 beside 2^52  =>  3      (the twos are already there)
     ///       4 beside 6     =>  None   (6 has one two, 4 needs both)
     pub(crate) fn without_factors_of(&self, other: &Self) -> Option<Self> {
@@ -166,8 +167,8 @@ impl BoundRational {
         value.denom()?.is_one().then(|| value.numer()).flatten()
     }
 
-    /// The first multiple at or past `bound` in `direction`, as a bound admitting it. `None` when no
-    /// decimal writes that multiple.
+    /// The first multiple at or past `bound` in `direction`, as a bound including it. `None` when
+    /// no decimal writes that multiple.
     pub(crate) fn multiple_beyond(
         &self,
         bound: &super::BoundNumber,
@@ -192,7 +193,7 @@ impl BoundRational {
             .then(|| super::BoundNumber::new(&snapped, true))
     }
 
-    /// Whether every value is a multiple, which any other divisor already implies.
+    /// Whether the divisor is `1`, which accepts exactly the integers.
     pub(crate) fn is_identity(&self) -> bool {
         self.exact_value().is_some_and(One::is_one)
     }
@@ -295,9 +296,9 @@ fn grid_point(divisor: &BigFraction, index: &BigInt) -> Option<BigFraction> {
     Some(BigFraction::new_raw_signed(sign, numerator, denominator))
 }
 
-/// The rational a JSON number denotes, when this build reads one that writes back to it. Exact
-/// arithmetic may only stand in for a text it reproduces: past `f64` precision `exact` rounds,
-/// and the rounded value is not what the validator compares against.
+/// The rational a JSON number denotes, when this build reads one that round-trips to its text.
+/// Exact arithmetic may only stand in for a text it reproduces: past `f64` precision `exact`
+/// rounds, and the rounded value is not what the validator compares against.
 fn denoted(number: &Number) -> Option<BigFraction> {
     exact(number).filter(|value| decimal(value).as_ref() == Some(number))
 }

@@ -1,11 +1,5 @@
-//! # Description
-//! This module contains various validators for the `additionalProperties` keyword.
-//!
-//! The goal here is to compute intersections with another keywords affecting properties validation:
-//!   - `properties`
-//!   - `patternProperties`
-//!
-//! Each valid combination of these keywords has a validator here.
+//! `additionalProperties` fused with `properties` and `patternProperties`: one validator per
+//! combination.
 use super::required;
 use crate::{
     compiler,
@@ -206,21 +200,7 @@ impl ObjectUnits {
     }
 }
 
-/// # Schema example
-///
-/// ```json
-/// {
-///     "additionalProperties": {"type": "integer"},
-/// }
-/// ```
-///
-/// # Valid value
-///
-/// ```json
-/// {
-///     "bar": 6
-/// }
-/// ```
+/// `additionalProperties` as a schema, without `properties` or `patternProperties`.
 pub(crate) struct AdditionalPropertiesValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
 }
@@ -316,19 +296,7 @@ impl<F: Json> Validate<F> for AdditionalPropertiesValidator<F> {
     }
 }
 
-/// # Schema example
-///
-/// ```json
-/// {
-///     "additionalProperties": false
-/// }
-/// ```
-///
-/// # Valid value
-///
-/// ```json
-/// {}
-/// ```
+/// `additionalProperties: false` without `properties` or `patternProperties`.
 pub(crate) struct AdditionalPropertiesFalseValidator {
     site: SchemaSite,
 }
@@ -392,24 +360,7 @@ impl<F: Json> Validate<F> for AdditionalPropertiesFalseValidator {
     }
 }
 
-/// # Schema example
-///
-/// ```json
-/// {
-///     "additionalProperties": false,
-///     "properties": {
-///         "foo": {"type": "string"}
-///     },
-/// }
-/// ```
-///
-/// # Valid value
-///
-/// ```json
-/// {
-///     "foo": "bar",
-/// }
-/// ```
+/// `additionalProperties: false` beside `properties`.
 pub(crate) struct AdditionalPropertiesNotEmptyFalseValidator<M> {
     properties: M,
     location: Location,
@@ -689,8 +640,8 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
     }
 }
 
-/// Fused validator for properties + additionalProperties: false + required
-/// Eliminates separate required validation pass by tracking the required property during iteration.
+/// `properties` with `additionalProperties: false` and one `required` name, which `is_valid`
+/// checks in its walk.
 pub(crate) struct AdditionalPropertiesNotEmptyFalseWithRequired1Validator<M> {
     properties: M,
     /// Checked by `is_valid` only; the `required` validator beside this one reports it.
@@ -864,25 +815,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
     }
 }
 
-/// # Schema example
-///
-/// ```json
-/// {
-///     "additionalProperties": {"type": "integer"},
-///     "properties": {
-///         "foo": {"type": "string"}
-///     }
-/// }
-/// ```
-///
-/// # Valid value
-///
-/// ```json
-/// {
-///     "foo": "bar",
-///     "bar": 6
-/// }
-/// ```
+/// `additionalProperties` as a schema beside `properties`.
 pub(crate) struct AdditionalPropertiesNotEmptyValidator<M, F: Json = SerdeJson> {
     node: SchemaNode<F>,
     properties: M,
@@ -1035,27 +968,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>> Validate<F>
     }
 }
 
-/// # Schema example
-///
-/// ```json
-/// {
-///     "additionalProperties": {"type": "integer"},
-///     "patternProperties": {
-///         "^x-": {"type": "integer", "minimum": 5},
-///         "-x$": {"type": "integer", "maximum": 10}
-///     }
-/// }
-/// ```
-///
-/// # Valid value
-///
-/// ```json
-/// {
-///     "x-foo": 6,
-///     "foo-x": 7,
-///     "bar": 8
-/// }
-/// ```
+/// `additionalProperties` as a schema beside `patternProperties`.
 pub(crate) struct AdditionalPropertiesWithPatternsValidator<R, F: Json = SerdeJson> {
     node: SchemaNode<F>,
     patterns: Vec<(R, SchemaNode<F>)>,
@@ -1202,27 +1115,7 @@ impl<F: Json, R: PropertyPattern> Validate<F> for AdditionalPropertiesWithPatter
     }
 }
 
-/// # Schema example
-///
-/// ```json
-/// {
-///     "additionalProperties": false,
-///     "patternProperties": {
-///         "^x-": {"type": "integer", "minimum": 5},
-///         "-x$": {"type": "integer", "maximum": 10}
-///     }
-/// }
-/// ```
-///
-/// # Valid value
-///
-/// ```json
-/// {
-///     "x-bar": 6,
-///     "spam-x": 7,
-///     "x-baz-x": 8,
-/// }
-/// ```
+/// `additionalProperties: false` beside `patternProperties`.
 pub(crate) struct AdditionalPropertiesWithPatternsFalseValidator<R, F: Json = SerdeJson> {
     patterns: Vec<(R, SchemaNode<F>)>,
     location: Location,
@@ -1370,39 +1263,14 @@ impl<F: Json, R: PropertyPattern> Validate<F>
     }
 }
 
-/// # Schema example
-///
-/// ```json
-/// {
-///     "additionalProperties": {"type": "integer"},
-///     "properties": {
-///         "foo": {"type": "string"}
-///     },
-///     "patternProperties": {
-///         "^x-": {"type": "integer", "minimum": 5},
-///         "-x$": {"type": "integer", "maximum": 10}
-///     }
-/// }
-/// ```
-///
-/// # Valid value
-///
-/// ```json
-/// {
-///     "foo": "a",
-///     "x-spam": 6,
-///     "spam-x": 7,
-///     "x-spam-x": 8,
-///     "bar": 42
-/// }
-/// ```
+/// `additionalProperties` as a schema beside `properties` and `patternProperties`.
 pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyValidator<M, R, F: Json = SerdeJson> {
     node: SchemaNode<F>,
     properties: M,
     patterns: Vec<(R, SchemaNode<F>)>,
     /// Pre-computed pattern indices for properties defined in `properties`.
     /// Maps property name -> indices into `patterns` Vec for patterns that match.
-    /// Eliminates regex matching at validation time for known properties.
+    /// Matches that did not finish at compile time run again at validation.
     property_pattern_indices: AHashMap<String, Box<[PatternIndex]>>,
     sites: ObjectSites,
 }
@@ -1417,7 +1285,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                     if !node.is_valid_child(&value, ctx) {
                         return false;
                     }
-                    // Use pre-computed pattern indices - no regex at runtime
+                    // Patterns known to match this declared name; unfinished ones match again
                     if let Some(pattern_indices) =
                         self.property_pattern_indices.get(property.as_ref())
                     {
@@ -1476,7 +1344,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                 if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
                     let name_location = location.push(name);
                     node.validate(&value, &name_location, tracker, ctx)?;
-                    // Use pre-computed pattern indices - no regex at runtime
+                    // Patterns known to match this declared name; unfinished ones match again
                     if let Some(pattern_indices) =
                         self.property_pattern_indices.get(property.as_ref())
                     {
@@ -1540,7 +1408,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
             if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
                 let name_location = location.push(name);
                 node.collect_errors(&value, &name_location, tracker, ctx, errors);
-                // Use pre-computed pattern indices - no regex at runtime
+                // Patterns known to match this declared name; unfinished ones match again
                 if let Some(pattern_indices) = self.property_pattern_indices.get(property.as_ref())
                 {
                     for &PatternIndex {
@@ -1672,38 +1540,14 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
     }
 }
 
-/// # Schema example
-///
-/// ```json
-/// {
-///     "additionalProperties": false,
-///     "properties": {
-///         "foo": {"type": "string"}
-///     },
-///     "patternProperties": {
-///         "^x-": {"type": "integer", "minimum": 5},
-///         "-x$": {"type": "integer", "maximum": 10}
-///     }
-/// }
-/// ```
-///
-/// # Valid value
-///
-/// ```json
-/// {
-///     "foo": "bar",
-///     "x-bar": 6,
-///     "spam-x": 7,
-///     "x-baz-x": 8,
-/// }
-/// ```
+/// `additionalProperties: false` beside `properties` and `patternProperties`.
 pub(crate) struct AdditionalPropertiesWithPatternsNotEmptyFalseValidator<M, R, F: Json = SerdeJson>
 {
     properties: M,
     patterns: Vec<(R, SchemaNode<F>)>,
     /// Pre-computed pattern indices for properties defined in `properties`.
     /// Maps property name -> indices into `patterns` Vec for patterns that match.
-    /// Eliminates regex matching at validation time for known properties.
+    /// Matches that did not finish at compile time run again at validation.
     property_pattern_indices: AHashMap<String, Box<[PatternIndex]>>,
     location: Location,
     sites: ObjectSites,
@@ -1719,7 +1563,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                     if !node.is_valid_child(&value, ctx) {
                         return false;
                     }
-                    // Use pre-computed pattern indices - no regex at runtime for known properties
+                    // Patterns known to match this declared name; unfinished ones match again
                     if let Some(pattern_indices) =
                         self.property_pattern_indices.get(property.as_ref())
                     {
@@ -1776,7 +1620,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
                 if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
                     let name_location = location.push(name);
                     node.validate(&value, &name_location, tracker, ctx)?;
-                    // Use pre-computed pattern indices - no regex at runtime
+                    // Patterns known to match this declared name; unfinished ones match again
                     if let Some(pattern_indices) =
                         self.property_pattern_indices.get(property.as_ref())
                     {
@@ -1846,7 +1690,7 @@ impl<F: Json, M: PropertiesValidatorsMap<F>, R: PropertyPattern> Validate<F>
             if let Some((name, node)) = self.properties.get_key_validator(property.as_ref()) {
                 let name_location = location.push(name);
                 node.collect_errors(&value, &name_location, tracker, ctx, errors);
-                // Use pre-computed pattern indices - no regex at runtime
+                // Patterns known to match this declared name; unfinished ones match again
                 if let Some(pattern_indices) = self.property_pattern_indices.get(property.as_ref())
                 {
                     for &PatternIndex {
@@ -1989,7 +1833,7 @@ struct PatternIndex {
 }
 
 /// Pre-compute which `patternProperties` patterns match each property name from `properties`.
-/// This eliminates regex matching at validation time for known properties.
+/// A match the engine cannot finish is kept with `finished: false`.
 fn precompute_property_pattern_indices<R: RegexEngine, F: Json>(
     property_names: impl Iterator<Item = impl AsRef<str> + Clone + Into<String>>,
     patterns: &[(R, SchemaNode<F>)],
@@ -2096,7 +1940,7 @@ pub(crate) fn compile<'a, F: Json>(
     let properties = parent.get("properties");
     if let Some(patterns) = parent.get("patternProperties") {
         if let Value::Object(obj) = patterns {
-            // Compile all patterns & their validators to avoid doing work in the `patternProperties` validator
+            // `patternProperties` steps aside here, so this validator compiles its patterns
             match ctx.config().pattern_options() {
                 PatternEngineOptions::FancyRegex { .. } => {
                     let patterns = match compile_fancy_regex_patterns(ctx, obj) {
@@ -2401,9 +2245,7 @@ mod tests {
         })
     }
 
-    // Another type
     #[test_case(&json!([1]))]
-    // The right type
     #[test_case(&json!({}))]
     // Match `properties.foo`
     #[test_case(&json!({"foo": "a"}))]
@@ -2417,7 +2259,6 @@ mod tests {
     #[test_case(&json!({"bar": 6, "spam": 7}))]
     // All `patternProperties` rules match on the same value
     #[test_case(&json!({"barspam": 7}))]
-    // All combined
     #[test_case(&json!({"barspam": 7, "bar": 6, "spam": 7, "foo": "a", "barbaz": 6}))]
     fn schema_1_valid(instance: &Value) {
         let schema = schema_1();
@@ -2447,7 +2288,6 @@ mod tests {
     #[test_case(&json!({"barspam": 4}), &["4 is less than the minimum of 5"], &["/patternProperties/^bar/minimum"])]
     // `patternProperties.spam$` - (should be <=10), but valid for `patternProperties.^bar`
     #[test_case(&json!({"barspam": 11}), &["11 is greater than the maximum of 10"], &["/patternProperties/spam$/maximum"])]
-    // All combined
     #[test_case(
       &json!({"bar": 4, "spam": 11, "foo": 3, "faz": 1}),
       &[
@@ -2481,9 +2321,7 @@ mod tests {
         })
     }
 
-    // Another type
     #[test_case(&json!([1]))]
-    // The right type
     #[test_case(&json!({}))]
     // Match `patternProperties.^bar`
     #[test_case(&json!({"bar": 6}))]
@@ -2493,7 +2331,6 @@ mod tests {
     #[test_case(&json!({"bar": 6, "spam": 7}))]
     // All `patternProperties` rules match on the same value
     #[test_case(&json!({"barspam": 7}))]
-    // All combined
     #[test_case(&json!({"barspam": 7, "bar": 6, "spam": 7}))]
     fn schema_2_valid(instance: &Value) {
         let schema = schema_2();
@@ -2516,7 +2353,6 @@ mod tests {
     #[test_case(&json!({"barspam": 4}), &["4 is less than the minimum of 5"], &["/patternProperties/^bar/minimum"])]
     // `patternProperties.spam$` - (should be <=10), but valid for `patternProperties.^bar`
     #[test_case(&json!({"barspam": 11}), &["11 is greater than the maximum of 10"], &["/patternProperties/spam$/maximum"])]
-    // All combined
     #[test_case(
       &json!({"bar": 4, "spam": 11, "faz": 1}),
       &[
@@ -2547,9 +2383,7 @@ mod tests {
         })
     }
 
-    // Another type
     #[test_case(&json!([1]))]
-    // The right type
     #[test_case(&json!({}))]
     // Match `properties`
     #[test_case(&json!({"foo": "a"}))]
@@ -2562,7 +2396,6 @@ mod tests {
     #[test_case(&json!({"foo": 3}), &["3 is not of type \"string\""], &["/properties/foo/type"])]
     // `additionalProperties` - extra keyword & not in `properties`
     #[test_case(&json!({"faz": "a"}), &["Additional properties are not allowed (\'faz\' was unexpected)"], &["/additionalProperties"])]
-    // All combined
     #[test_case(
       &json!(
         {"foo": 3, "faz": "a"}),
@@ -2592,15 +2425,12 @@ mod tests {
         })
     }
 
-    // Another type
     #[test_case(&json!([1]))]
-    // The right type
     #[test_case(&json!({}))]
     // Match `properties`
     #[test_case(&json!({"foo": "a"}))]
     // Match `additionalProperties`
     #[test_case(&json!({"bar": 4}))]
-    // All combined
     #[test_case(&json!({"foo": "a", "bar": 4}))]
     fn schema_4_valid(instance: &Value) {
         let schema = schema_4();
@@ -2611,7 +2441,6 @@ mod tests {
     #[test_case(&json!({"foo": 3}), &["3 is not of type \"string\""], &["/properties/foo/type"])]
     // `additionalProperties` - should be an integer
     #[test_case(&json!({"bar": "a"}), &["\"a\" is not of type \"integer\""], &["/additionalProperties/type"])]
-    // All combined
     #[test_case(
       &json!(
         {"foo": 3, "bar": "a"}),
@@ -2646,9 +2475,7 @@ mod tests {
         })
     }
 
-    // Another type
     #[test_case(&json!([1]))]
-    // The right type
     #[test_case(&json!({}))]
     // Match `properties.foo`
     #[test_case(&json!({"foo": "a"}))]
@@ -2664,7 +2491,6 @@ mod tests {
     #[test_case(&json!({"bar": 6, "spam": 7}))]
     // All `patternProperties` rules match on the same value
     #[test_case(&json!({"barspam": 7}))]
-    // All combined
     #[test_case(&json!({"barspam": 7, "bar": 6, "spam": 7, "foo": "a", "barbaz": 6, "faz": 42}))]
     fn schema_5_valid(instance: &Value) {
         let schema = schema_5();
@@ -2728,9 +2554,7 @@ mod tests {
         })
     }
 
-    // Another type
     #[test_case(&json!([1]))]
-    // The right type
     #[test_case(&json!({}))]
     // Match `additionalProperties`
     #[test_case(&json!({"faz": 42}))]
@@ -2742,7 +2566,6 @@ mod tests {
     #[test_case(&json!({"bar": 6, "spam": 7}))]
     // All `patternProperties` rules match on the same value
     #[test_case(&json!({"barspam": 7}))]
-    // All combined
     #[test_case(&json!({"barspam": 7, "bar": 6, "spam": 7, "faz": 42}))]
     fn schema_6_valid(instance: &Value) {
         let schema = schema_6();
@@ -3049,7 +2872,6 @@ mod tests {
     const NOT_INTEGER: &str = "\"x\" is not of type \"integer\"";
     const EXTRA: &str = "Additional properties are not allowed ('extra' was unexpected)";
 
-    /// Adds enough integer `properties` for them to be looked up in a hash map.
     // `required` names checked in the closed object's own pass, below and past the bucket threshold.
     #[test_case(&json!({"properties": {"a": {}, "b": {}, "c": {}}, "additionalProperties": false, "required": ["a", "b"]}), &json!({"a": 1, "b": 2}), true; "small, required present")]
     #[test_case(&json!({"properties": {"a": {}, "b": {}, "c": {}}, "additionalProperties": false, "required": ["a", "b"]}), &json!({"a": 1, "c": 2}), false; "small, required missing")]
@@ -3115,6 +2937,7 @@ mod tests {
         }
     }
 
+    /// Adds enough integer `properties` for them to be looked up in buckets.
     fn with_many_properties(mut schema: Value) -> Value {
         let properties: Map<String, Value> = (0..HASHMAP_THRESHOLD)
             .map(|idx| (format!("p{idx}"), json!({"type": "integer"})))

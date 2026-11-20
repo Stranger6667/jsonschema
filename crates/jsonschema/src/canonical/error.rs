@@ -17,8 +17,8 @@ pub enum OperandMismatch {
     FormatAssertions,
     /// The operands were canonicalized with different pattern engines.
     PatternEngine,
-    /// The operands resolve one external resource to different schemas. A `$defs` entry is a name
-    /// private to its document and is renamed apart instead; a resource is named by its URI, so
+    /// The operands resolve one external resource to different schemas. A `$defs` key is private
+    /// to its document and is renamed on a clash instead; a resource is named by its URI, so
     /// two documents disagreeing about one disagree about the resource itself.
     Definitions,
     /// Both operands read `#`, which names a different document on each side.
@@ -55,7 +55,7 @@ pub enum CanonicalizationError {
     ReferenceResolution(referencing::Error),
     /// Meta-schema validation failed.
     ValidationError(ValidationError<'static>),
-    /// A `pattern` value is not a valid regular expression.
+    /// A `pattern` value or `patternProperties` key is not a valid regular expression.
     InvalidPattern {
         /// The offending pattern.
         pattern: String,

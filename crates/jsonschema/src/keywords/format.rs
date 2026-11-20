@@ -26,9 +26,6 @@ use crate::{
 };
 
 /// RFC 6570 Level 4 URI Template validator.
-///
-/// Single-pass parser with no allocations, early exit on invalid input.
-/// Supports all operators (+, #, ., /, ;, ?, &, =, ,, !, @, |) and modifiers (:prefix, *explode).
 #[must_use]
 pub fn is_valid_uri_template(template: &str) -> bool {
     let bytes = template.as_bytes();
@@ -37,13 +34,11 @@ pub fn is_valid_uri_template(template: &str) -> bool {
 
     while i < len {
         if bytes[i] == b'{' {
-            // Parse expression
             i += 1;
             if i >= len {
                 return false; // Unclosed brace
             }
 
-            // Optional operator
             if is_operator(bytes[i]) {
                 i += 1;
                 if i >= len {
@@ -51,12 +46,10 @@ pub fn is_valid_uri_template(template: &str) -> bool {
                 }
             }
 
-            // Parse variable list (at least one varspec required)
             if !parse_varspec(bytes, &mut i) {
                 return false;
             }
 
-            // Parse additional varspecs separated by commas
             while i < len && bytes[i] == b',' {
                 i += 1;
                 if !parse_varspec(bytes, &mut i) {
@@ -64,13 +57,11 @@ pub fn is_valid_uri_template(template: &str) -> bool {
                 }
             }
 
-            // Expect closing brace
             if i >= len || bytes[i] != b'}' {
                 return false;
             }
             i += 1;
         } else if bytes[i] == b'}' {
-            // Unmatched closing brace
             return false;
         } else {
             // Parse literal
@@ -197,7 +188,6 @@ fn is_varchar_start(b: u8) -> bool {
     b.is_ascii_alphanumeric() || b == b'_'
 }
 
-/// Check if byte is a hexadecimal digit.
 #[inline]
 fn is_hex_digit(b: u8) -> bool {
     b.is_ascii_hexdigit()
@@ -229,7 +219,7 @@ fn parse_literal(bytes: &[u8], i: &mut usize) -> bool {
 }
 
 /// Check if byte is a valid literal character per RFC 6570 (with errata 6937, which
-/// admits the apostrophe).
+/// allows the apostrophe).
 /// Excludes: CTL (0x00-0x1F, 0x7F), space (0x20), and: `" < > % \ ^ { | }`
 #[inline]
 fn is_literal_char(b: u8) -> bool {
@@ -319,12 +309,10 @@ pub fn is_valid_date(date: &str) -> bool {
         return false;
     }
 
-    // Parse year (YYYY)
     let Some(year) = parse_four_digits(&bytes[0..4]) else {
         return false;
     };
 
-    // Parse month (MM)
     let Some(month) = parse_two_digits(&bytes[5..7]) else {
         return false;
     };
@@ -332,7 +320,6 @@ pub fn is_valid_date(date: &str) -> bool {
         return false;
     }
 
-    // Parse day (DD)
     let Some(day) = parse_two_digits(&bytes[8..10]) else {
         return false;
     };
@@ -340,7 +327,6 @@ pub fn is_valid_date(date: &str) -> bool {
         return false;
     }
 
-    // Check day validity
     match month {
         1 | 3 | 5 | 7 | 8 | 10 | 12 => day <= 31,
         4 | 6 | 9 | 11 => day <= 30,
@@ -449,15 +435,12 @@ pub fn is_valid_time(time: &str) -> bool {
         return false;
     }
 
-    // Parse hour (HH)
     let Some(hour) = parse_two_digits(&bytes[..2]) else {
         return false;
     };
-    // Parse minute (MM)
     let Some(minute) = parse_two_digits(&bytes[3..5]) else {
         return false;
     };
-    // Parse second (SS)
     let Some(second) = parse_two_digits(&bytes[6..8]) else {
         return false;
     };
@@ -496,12 +479,10 @@ pub fn is_valid_time(time: &str) -> bool {
 
 #[must_use]
 pub fn is_valid_datetime(datetime: &str) -> bool {
-    // Find the position of 'T' or 't' separator
     let Some(t_pos) = datetime.bytes().position(|b| b == b'T' || b == b't') else {
         return false;
     };
 
-    // Split the string into date and time parts
     let (date_part, time_part) = datetime.split_at(t_pos);
 
     is_valid_date(date_part) && is_valid_time(&time_part[1..])
@@ -1318,7 +1299,7 @@ format_validators!(
     (UuidValidator, "uuid", is_valid_uuid),
 );
 
-// Custom RegexValidator that caches ECMA regex transformation results in ValidationContext
+// `format: regex`, with each string's verdict cached in `ValidationContext`
 struct RegexValidator {
     location: Location,
     annotation: Annotations,
@@ -1371,7 +1352,6 @@ impl<F: Json> Validate<F> for RegexValidator {
     impl_format_evaluate!();
 }
 
-// Custom EmailValidator that supports email options
 struct EmailValidator {
     location: Location,
     annotation: Annotations,
@@ -1422,7 +1402,6 @@ impl<F: Json> Validate<F> for EmailValidator {
     impl_format_evaluate!();
 }
 
-// Custom IdnEmailValidator that supports email options
 #[cfg(feature = "idna")]
 struct IdnEmailValidator {
     location: Location,
@@ -1679,12 +1658,12 @@ impl BuiltinFormat {
         }
     }
 
-    /// The lengths this format admits, or `None` where it takes any length.
+    /// The lengths this format accepts, or `None` where it takes any length.
     ///
-    /// A window narrower than the strings `is_valid` accepts folds a satisfiable schema to `false`,
-    /// so every bound below comes from a length check in the matching `is_valid_*`. Those count
-    /// bytes, which equals the character length a window is read against only for an ASCII-only
-    /// format - so a format taking non-ASCII has no window.
+    /// A range narrower than the strings `is_valid` accepts would make the canonicalizer reject
+    /// strings the format accepts, so every bound below comes from a length check in the matching
+    /// `is_valid_*`. Those count bytes, which equal characters only for ASCII, so a format taking
+    /// non-ASCII has no range.
     #[must_use]
     pub(crate) const fn length_window(self) -> Option<(u64, u64)> {
         match self {
@@ -2036,7 +2015,7 @@ mod tests {
 
     #[test]
     fn ecma_regex() {
-        // See GH-230
+        // `\c` control escapes are ECMA 262 syntax
         let schema = json!({"format": "regex", "type": "string"});
         let instance = json!("^\\cc$");
         let validator = crate::validator_for(&schema).unwrap();
@@ -2514,7 +2493,7 @@ mod tests {
 
     #[test]
     fn email_options_backward_compatibility() {
-        // Test that default behavior is unchanged (backward compatibility)
+        // Default options
         let schema = json!({"format": "email", "type": "string"});
         let validator = crate::options()
             .should_validate_formats(true)
@@ -2538,7 +2517,7 @@ mod tests {
             .build(&schema)
             .expect("Schema should compile");
 
-        // Should still work with custom options (same as default for now)
+        // `EmailOptions::default()` agrees with the default
         assert!(validator.is_valid(&json!("user@example.com")));
         assert!(!validator.is_valid(&json!("not-an-email")));
     }
@@ -2601,7 +2580,6 @@ mod tests {
     fn email_options_minimum_sub_domains() {
         let schema = json!({"format": "email", "type": "string"});
 
-        // Test with no minimum sub domains - localhost should be valid
         let validator = crate::options()
             .with_email_options(EmailOptions::default().with_no_minimum_sub_domains())
             .should_validate_formats(true)
@@ -2611,7 +2589,6 @@ mod tests {
         assert!(validator.is_valid(&json!("simon@localhost")));
         assert!(validator.is_valid(&json!("user@example.com")));
 
-        // Test with required TLD - localhost should be invalid
         let validator = crate::options()
             .with_email_options(EmailOptions::default().with_required_tld())
             .should_validate_formats(true)
@@ -2621,7 +2598,6 @@ mod tests {
         assert!(!validator.is_valid(&json!("simon@localhost")));
         assert!(validator.is_valid(&json!("user@example.com")));
 
-        // Test with custom minimum sub domains
         let validator = crate::options()
             .with_email_options(EmailOptions::default().with_minimum_sub_domains(3))
             .should_validate_formats(true)
@@ -2636,18 +2612,15 @@ mod tests {
     fn email_options_domain_literal() {
         let schema = json!({"format": "email", "type": "string"});
 
-        // Test with domain literal allowed (default)
         let validator = crate::options()
             .with_email_options(EmailOptions::default().with_domain_literal())
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
 
-        // Domain literal format is allowed (even if IPv4 is invalid)
         assert!(validator.is_valid(&json!("email@[127.0.0.1]")));
         assert!(validator.is_valid(&json!("email@[IPv6:2001:db8::1]")));
 
-        // Test without domain literal - should reject domain literals
         let validator = crate::options()
             .with_email_options(EmailOptions::default().without_domain_literal())
             .should_validate_formats(true)
@@ -2663,19 +2636,15 @@ mod tests {
     fn email_options_display_text() {
         let schema = json!({"format": "email", "type": "string"});
 
-        // Test with display text allowed (default)
         let validator = crate::options()
             .with_email_options(EmailOptions::default().with_display_text())
             .should_validate_formats(true)
             .build(&schema)
             .expect("Schema should compile");
 
-        // Display text format with actual display name should be allowed
         assert!(validator.is_valid(&json!("Simon <simon@example.com>")));
-        // Plain email should always be valid
         assert!(validator.is_valid(&json!("simon@example.com")));
 
-        // Test without display text - should reject display text formats
         let validator = crate::options()
             .with_email_options(EmailOptions::default().without_display_text())
             .should_validate_formats(true)
@@ -2691,7 +2660,6 @@ mod tests {
     fn email_options_combined() {
         let schema = json!({"format": "email", "type": "string"});
 
-        // Test combining multiple options - strict validation
         let validator = crate::options()
             .with_email_options(
                 EmailOptions::default()
@@ -2703,13 +2671,9 @@ mod tests {
             .build(&schema)
             .expect("Schema should compile");
 
-        // Should reject addresses without TLD
         assert!(!validator.is_valid(&json!("user@localhost")));
-        // Should reject domain literals
         assert!(!validator.is_valid(&json!("user@[127.0.0.1]")));
-        // Should reject display text
         assert!(!validator.is_valid(&json!("Name <user@example.com>")));
-        // Should accept valid email with TLD
         assert!(validator.is_valid(&json!("user@example.com")));
     }
 

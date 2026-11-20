@@ -46,7 +46,7 @@ struct Demand<'a> {
     need: u64,
 }
 
-// A demanded element also answers to `items`.
+// An element added for `contains` must also pass `items`.
 fn demanded_element(demand: &CanonicalSchema, items: Option<&CanonicalSchema>) -> CanonicalSchema {
     match items {
         Some(tail) => match demand.intersect(tail) {
@@ -76,8 +76,8 @@ fn plan_demands(contains: &[ContainsView]) -> Option<Vec<Demand<'_>>> {
     Some(demands)
 }
 
-/// Intersect each demand into the prefix where a position covers or can be narrowed toward it;
-/// what remains comes back as element schemas to append.
+/// Narrow prefix positions toward each `contains` demand where the demand covers them or their
+/// intersection is satisfiable; what remains comes back as element schemas to append.
 fn carry_demands(
     demands: &[Demand<'_>],
     prefix: &mut [CanonicalSchema],
@@ -132,8 +132,7 @@ pub(crate) fn draw_array(sampler: &Sampler<'_>, view: ArrayView) -> Option<Value
         return None;
     }
     let capped_ceiling = usize::try_from(ceiling.min(MAX_SIZE + 4)).expect("capped ceiling fits");
-    // An array shorter than the prefix is still an instance, so the prefix stops at the
-    // length ceiling.
+    // `prefixItems` accepts arrays shorter than the prefix, so the prefix stops at `maxItems`.
     let mut prefix: Vec<CanonicalSchema> = prefix_items.into_iter().take(capped_ceiling).collect();
     let demands = plan_demands(&contains)?;
     let mut appends = carry_demands(&demands, &mut prefix, items.as_ref());
@@ -164,7 +163,8 @@ pub(crate) fn draw_array(sampler: &Sampler<'_>, view: ArrayView) -> Option<Value
     for element in &appends {
         drawn.push(sampler.descend(element)?);
     }
-    // Filler that provably cannot match a bounded demand holds its ceiling on its own.
+    // Filler drawn from `items` and the negation of each `contains` with `maxContains`, where
+    // satisfiable, cannot raise those counts.
     let steered = items.as_ref().and_then(|tail| {
         let mut narrowed = tail.clone();
         for demand in contains
@@ -261,7 +261,7 @@ impl ObjectDraw<'_> {
         }
     }
 
-    /// A fresh key name honoring the name constraint, or `None` when this attempt has none.
+    /// A fresh key name satisfying `propertyNames`, or `None` when this attempt has none.
     fn drawn_name(&self) -> Option<String> {
         match &self.view.property_names {
             Some(names) => match self.sampler.descend(names) {
@@ -406,7 +406,7 @@ pub(crate) fn draw_object(sampler: &Sampler<'_>, draft: Draft, view: &ObjectView
             break;
         }
         if !object.contains_key(key) && sampler.tc.draw(gs::booleans()) {
-            // An optional entry whose value cannot be drawn is simply left out.
+            // An optional entry whose value cannot be drawn is left out.
             if let Some(value) = draw.value_for(key) {
                 object.insert(key.clone(), value);
             }
@@ -428,7 +428,7 @@ pub(crate) fn draw_object(sampler: &Sampler<'_>, draft: Draft, view: &ObjectView
             }
         }
     }
-    // Keys past the named ones, drawn from the name constraint where one stands.
+    // Keys past the named ones, drawn from `propertyNames` where present.
     for _ in 0..2 {
         if object.len() as u64 >= budget {
             break;
@@ -446,8 +446,8 @@ pub(crate) fn draw_object(sampler: &Sampler<'_>, draft: Draft, view: &ObjectView
             object.insert(name, value);
         }
     }
-    // Keys filling the floor come from the name constraint where one stands; a closed
-    // name set can run out, and the attempts cap turns that into a decline.
+    // Keys filling `minProperties` come from `propertyNames` where present; a closed name set can
+    // run out, and the attempts cap turns that into a decline.
     let fill_target = floor.saturating_sub(injected).min(budget);
     for _ in 0..MAX_ATTEMPTS {
         if object.len() as u64 >= fill_target {

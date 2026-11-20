@@ -391,8 +391,7 @@ pub(crate) fn compile<'a, F: Json>(
                 }
             }
         } else {
-            // Extreme numbers beyond f64 range (e.g., 1e309) - not supported
-            // Skip this keyword - all instances will be considered valid
+            // A number with no `f64` form that no exact validator took: the keyword is dropped.
             None
         }
     } else {
@@ -584,7 +583,6 @@ mod tests {
             tests_util::is_valid(&schema, &instance);
         }
 
-        // Test cases for dynamically generated huge numbers
         #[test_case("2", 100, 2, true; "2 followed by 100 zeros is multiple of 2")]
         #[test_case("2", 200, 3, false; "2 followed by 200 zeros not multiple of 3")]
         #[test_case("1", 100, 3, false; "1 followed by 100 zeros not multiple of 3")]
@@ -644,9 +642,9 @@ mod tests {
 
         #[test]
         fn huge_bigfraction_beyond_f64() {
-            // Test BigFraction parsing for numbers way beyond f64::MAX
+            // An integer instance past `f64::MAX`
             let schema = parse_json(r#"{"multipleOf": 7}"#);
-            // Number not divisible by 7 (sum of digits = 3, not divisible by 7)
+            // 3 * 10^400 is not divisible by 7: 7 divides neither 3 nor 10
             let huge = "3".to_string() + &"0".repeat(400);
             let instance = parse_json(&huge);
             tests_util::is_not_valid(&schema, &instance);
@@ -654,9 +652,7 @@ mod tests {
 
         #[test]
         fn large_u64_divisor_beyond_i64_max() {
-            // Test for the bug where u64 divisors beyond i64::MAX were incorrectly handled
-            // 10^19 = 10000000000000000000 is beyond i64::MAX but within u64::MAX
-            // This should now use BigIntValidator to preserve exact value
+            // 10^19 is past `i64::MAX` but fits `u64`; `MultipleOfBigIntValidator` keeps it exact
             let schema = parse_json(r#"{"multipleOf": 10000000000000000000}"#);
 
             // 10^320 is a valid multiple of 10^19 (it's 10^19 * 10^301)
@@ -684,8 +680,7 @@ mod tests {
 
         #[test]
         fn huge_decimal_beyond_f64_but_parseable() {
-            // This number is so large it overflows f64 to infinity (as_f64() returns None)
-            // but can still be parsed as BigFraction - hits MultipleOfBigIntValidator else branch
+            // Instances past `f64` written with `.0` divide exactly as integers
             let divisor = "18446744073709551616"; // 2^64
             let schema_json = format!(r#"{{"multipleOf": {divisor}}}"#);
             let schema = parse_json(&schema_json);

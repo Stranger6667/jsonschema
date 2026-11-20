@@ -309,7 +309,6 @@ mod tests {
         tests_util::assert_schema_location(schema, instance, expected);
     }
 
-    // Tests for arbitrary-precision const validation
     #[cfg(feature = "arbitrary-precision")]
     mod arbitrary_precision {
         use crate::tests_util;

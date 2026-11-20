@@ -1,11 +1,5 @@
-//! Implementation of the `unevaluatedProperties` keyword.
-//!
-//! This keyword validates properties that were not evaluated by other keywords like
-//! `properties`, `additionalProperties`, `patternProperties`, or nested schemas in
-//! combinators (`allOf`, `anyOf`, `oneOf`), conditionals, and references.
-//!
-//! The implementation eagerly compiles a recursive `PropertyValidators` structure during
-//! schema compilation, using `Arc<OnceLock>` for circular reference handling.
+//! `unevaluatedProperties`. Compilation builds a `PropertyValidators` tree; reference cycles share
+//! one `Arc<OnceLock>` cell.
 use ahash::AHashSet;
 use referencing::Vocabulary;
 use serde_json::{Map, Value};
@@ -33,8 +27,7 @@ use super::{
     CompilationResult,
 };
 
-/// Lazy property validators that are compiled on first access.
-/// Used for $recursiveRef and circular references to handle cycles during compilation.
+/// The cell reference cycles share while their target compiles.
 pub(crate) type PendingPropertyValidators<F = SerdeJson> = Arc<OnceLock<PropertyValidators<F>>>;
 
 /// Evaluated properties for a schema whose set cannot depend on the instance.
@@ -298,8 +291,6 @@ impl Patterns {
     }
 }
 
-/// Holds compiled validators for property evaluation in unevaluatedProperties.
-/// This structure is built during schema compilation and used during validation.
 /// Members of one object already evaluated, by their position in it.
 struct Evaluated {
     first: u64,
@@ -352,28 +343,15 @@ impl Evaluated {
 pub(crate) struct PropertyValidators<F: Json = SerdeJson> {
     /// Property names from "properties" keyword for O(1) lookup
     properties: AHashSet<String>,
-    /// Validator from "additionalProperties" keyword
     additional: Option<SchemaNode<F>>,
-    /// Patterns from "patternProperties" keyword
     pattern_properties: Patterns,
-    /// Validator from "unevaluatedProperties" keyword itself
     unevaluated: Option<SchemaNode<F>>,
-    /// Validators from "allOf" keyword - both the schema and its property validators
     all_of: Vec<(SchemaNode<F>, PropertyValidators<F>)>,
-    /// Validators from "anyOf" keyword
     any_of: Vec<(SchemaNode<F>, PropertyValidators<F>)>,
-    /// Validators from "oneOf" keyword
     one_of: Vec<(SchemaNode<F>, PropertyValidators<F>)>,
-    /// Conditional validators from "if/then/else" keywords
     conditional: Option<Box<ConditionalValidators<F>>>,
-    /// Reference validators from "$ref" keyword
-    /// Uses pending pattern to handle circular references
     ref_: Option<Checked<F, PendingPropertyValidators<F>>>,
-    /// Reference validators from "$dynamicRef" keyword
-    /// Uses pending pattern to handle circular references
     dynamic_ref: Option<Checked<F, PendingPropertyValidators<F>>>,
-    /// Validators from "$recursiveRef" keyword (Draft 2019-09 only)
-    /// Uses pending pattern to handle circular references
     recursive_ref: Option<Checked<F, PendingPropertyValidators<F>>>,
     /// Dependent schema validators from "dependentSchemas" keyword.
     /// `Arc` keeps this struct `Clone` for the pending cell: `F::PreparedKey` itself has no `Clone` bound.
@@ -747,16 +725,13 @@ impl<F: Json> PropertyValidators<F> {
             }
         }
 
-        // Process properties on the instance
         if let Some(obj) = instance.as_object() {
-            // Mark properties from "properties" keyword (O(1) lookup)
             for (index, (property, _)) in obj.members().enumerate() {
                 if self.properties.contains(property.as_ref()) {
                     properties.insert(index);
                 }
             }
 
-            // Check "patternProperties" keyword - mark if property name matches
             if !self.pattern_properties.is_empty() {
                 for (index, (property, _)) in obj.members().enumerate() {
                     if properties.contains(index) {
@@ -771,20 +746,18 @@ impl<F: Json> PropertyValidators<F> {
                 }
             }
 
-            // Check "additionalProperties" keyword - applies to properties NOT in properties/patternProperties
-            // This must be done after marking all properties/patternProperties to avoid order dependency
+            // `additionalProperties` evaluates what `properties` and `patternProperties` leave, so
+            // every member counts.
             if self.additional.is_some() {
                 properties.insert_all(obj.len());
             }
 
-            // Check "unevaluatedProperties" keyword - marks properties that validate successfully.
-            // This is crucial for nested unevaluatedProperties: a child schema's unevaluatedProperties
-            // can mark properties as evaluated for parent schemas.
-            // Skipped when called from evaluate() so evaluate_instance() can collect annotations.
+            // A nested `unevaluatedProperties` marks the members it accepts for the schemas above
+            // it. Skipped when called from evaluate() so evaluate_instance() can collect
+            // annotations.
             if include_unevaluated {
                 if let Some(unevaluated) = &self.unevaluated {
                     for (index, (_, value)) in obj.members().enumerate() {
-                        // Skip if already marked - avoid redundant validation
                         if properties.contains(index) {
                             continue;
                         }
@@ -795,7 +768,6 @@ impl<F: Json> PropertyValidators<F> {
                 }
             }
 
-            // Check "dependentSchemas" keyword
             for (dep_property, dependent) in &self.dependent {
                 if obj.get(&**dep_property).is_some() && dependent.counts(instance, ctx, marking) {
                     dependent.validators.mark_evaluated_properties(
@@ -808,19 +780,16 @@ impl<F: Json> PropertyValidators<F> {
             }
         }
 
-        // Handle "if/then/else" keywords
         if let Some(conditional) = &self.conditional {
             conditional.mark_evaluated_properties(instance, properties, ctx, marking);
         }
 
-        // Handle "allOf" keyword
         for (node, validators) in &self.all_of {
             if node.is_valid(instance, ctx) {
                 validators.mark_evaluated_properties(instance, properties, ctx, Marking::Verdict);
             }
         }
 
-        // Handle "anyOf" keyword
         for (node, validators) in &self.any_of {
             if node.is_valid(instance, ctx) {
                 validators.mark_evaluated_properties(instance, properties, ctx, Marking::Verdict);
@@ -982,7 +951,6 @@ fn compile_pending_property_validators<'a, F: Json>(
         },
     };
 
-    // Initialize the pending node. This should always succeed since we just created it.
     pending
         .set(validators)
         .expect("pending node should not be initialized yet");
@@ -1533,7 +1501,6 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                         unevaluated.push(property.as_ref().to_owned());
                     }
                 } else {
-                    // No unevaluatedProperties schema means false (reject all)
                     unevaluated.push(property.as_ref().to_owned());
                 }
             }

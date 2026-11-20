@@ -111,8 +111,8 @@ fn digit_at_weight(digit: i16, weight: i16) -> String {
     format!("{digit}{}", "0".repeat(4 * weight))
 }
 
-// Every number embedded in `node`, depth-first: pins the fixture's own encoded magnitude to the
-// digits its constructor named, so a change to the encoders or to `as_str` cannot go unnoticed.
+// Every number embedded in `node`, depth-first; tests compare it against the digits the fixture
+// was built from.
 fn embedded_numbers(node: &JsonbNode<'_>) -> Vec<String> {
     if let Some(number) = node.as_number() {
         return vec![number.as_str().into_owned()];
@@ -243,8 +243,7 @@ fn instance_matches_across_representations(schema: Value, instance: Value, jsonb
     assert_eq!(jsonb_error.schema_path(), serde_error.schema_path());
 }
 
-// `instance()` builds the value once and returns the same storage on every later call: the
-// `OnceLock` inside `LazyInstance` memoizes rather than rebuilding.
+// `instance()` builds the value once and returns the same storage on every later call.
 #[test]
 fn jsonb_instance_memoizes_rather_than_rebuilding() {
     let schema = json!({"required": ["name"]});
@@ -261,8 +260,8 @@ fn jsonb_instance_memoizes_rather_than_rebuilding() {
     assert!(std::ptr::eq(first, second));
 }
 
-// Errors are routinely collected before anything inspects them, so the deferred instance has to
-// survive that move.
+// Callers collect errors before inspecting them, so the deferred instance has to survive that
+// move.
 #[test]
 fn jsonb_errors_resolve_their_instance_after_being_collected() {
     let schema = json!({
@@ -307,8 +306,7 @@ fn required_miss_never_materializes_a_poisoned_sibling() {
     );
 }
 
-// Sanity check for the fixture above: `poison` really does panic once something reads it, so the
-// test above is proof the instance was never touched, not a coincidence.
+// `poison` panics once something reads it, so the test above proves the instance is never built.
 #[test]
 #[should_panic = "out of range"]
 fn poisoned_sibling_panics_once_actually_read() {
@@ -319,8 +317,8 @@ fn poisoned_sibling_panics_once_actually_read() {
     let _ = Jsonb::root(&jsonb).to_value();
 }
 
-// `type: integer` alone and `type: [integer, ...]` reach different checks, so a `numeric` whose
-// fraction is lost in an `f64` must not be an integer to one and not the other.
+// `type: integer` alone and `type: [integer, ...]` reach different checks; both must reject a
+// `numeric` whose fraction an `f64` loses.
 #[test_case(&json!({"type": "integer"}); "integer alone")]
 #[test_case(&json!({"type": ["integer", "string"]}); "integer among several")]
 fn a_lost_fraction_is_not_an_integer(schema: &Value) {
@@ -331,8 +329,8 @@ fn a_lost_fraction_is_not_an_integer(schema: &Value) {
     assert!(!validator.is_valid(Jsonb::root(&instance)));
 }
 
-// Draft 4 excludes anything written with a decimal point from `type: integer`, however zero the
-// fraction is; `jsonb` keeps that in the numeric's scale.
+// Draft 4 `type: integer` rejects any number written with a decimal point, even `1.0`; `jsonb`
+// keeps that in the numeric's scale.
 #[test_case("1.0", false; "zero fraction is not a draft 4 integer")]
 #[test_case("1", true; "no point is a draft 4 integer")]
 fn draft4_integer_follows_how_the_number_was_written(text: &str, expected: bool) {
@@ -405,7 +403,7 @@ fn multiple_of_reads_the_digits_not_the_rounded_value(text: &str, schema: &Value
     assert_eq!(validator.is_valid(Jsonb::root(&instance)), expected);
 }
 
-// `validate` reports the failing instance, which stops at `serde_json`'s parser depth.
+// Building the reported instance past `serde_json`'s nesting limit records a pending error.
 #[test]
 fn reporting_a_deep_instance_records_an_error() {
     let validator = jsonschema::options_for::<Jsonb>()
@@ -423,7 +421,8 @@ fn reporting_a_deep_instance_records_an_error() {
     );
 }
 
-// The error resolves its instance from a root that a jsonb instance builds rather than borrows.
+// A regex past its backtrack limit reports `/x` and the string it ran on, resolved from a root the
+// jsonb instance builds rather than borrows.
 #[test]
 fn unfinished_regex_match_error_points_at_the_match() {
     let validator = jsonschema::options_for::<Jsonb>()

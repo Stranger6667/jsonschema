@@ -145,17 +145,14 @@ pub(crate) mod bigint_validators {
                         } else if let Some(v) = item.as_f64() {
                             $f64_cmp(v, &self.limit)
                         } else {
-                            // Number doesn't fit in f64 (e.g., 1e1000)
-                            // Since limit is BigInt, we need to compare with BigFraction
+                            // A non-integer past `f64`: compare it as a `BigFraction`.
                             if let Some(instance_bigfrac) = numeric::bignum::try_parse_bigfraction(&item.to_number()) {
                                 // Convert BigInt limit to BigFraction for comparison
                                 // Use clone to avoid truncation through i128
                                 let limit_frac = numeric::bignum::whole(self.limit.clone());
                                 instance_bigfrac $bigint_op limit_frac
                             } else {
-                                // Can't parse as BigFraction - extremely large scientific notation
-                                // (e.g., "1e10000" which exceeds BigFraction's parsing capability)
-                                // These behave like positive/negative infinity for comparison purposes
+                                // Unparsable: order it as the infinity of its sign.
                                 let is_negative = item.as_str().starts_with('-');
                                 $infinity_fn(is_negative)
                             }
@@ -267,9 +264,7 @@ pub(crate) mod bigint_validators {
                             // Scientific notation or other f64-representable numbers
                             $f64_cmp(v, &self.limit)
                         } else {
-                            // Extreme scientific notation beyond f64 range (e.g., 1e2000000)
-                            // These are not supported for comparison - treat as always valid
-                            // since we can't reliably compare them
+                            // No exact form and no `f64`: accepted.
                             true
                         }
                     } else {
@@ -411,8 +406,6 @@ macro_rules! create_numeric_validator {
                     return Some(result);
                 }
             }
-            // Handle numbers that don't fit in f64 (e.g., 1e10000)
-            // These are extremely large scientific notation numbers
             if let Some(limit_f64) = $limit.as_f64() {
                 Some(create_validator::<_, $validator_type<f64>, _>(
                     $ctx, $keyword, limit_f64, $schema,
@@ -691,11 +684,11 @@ mod tests {
         tests_util::is_not_valid(&schema, &instance);
     }
 
-    // Regression test for BigInt limits exceeding i128 range with fractional instances
+    // A `BigInt` limit past `i128` against integer instances
     #[cfg(feature = "arbitrary-precision")]
     #[test]
     fn bigint_limit_exceeds_i128_with_fraction() {
-        // 10^50 is way beyond i128::MAX (~1.7e38)
+        // 10^50 is past `i128::MAX` (~1.7e38)
         let limit = "1".to_string() + &"0".repeat(50);
         let schema_min = parse_json(&format!(r#"{{"minimum": {limit}}}"#));
 
@@ -711,14 +704,13 @@ mod tests {
         // Test maximum as well
         let schema_max = parse_json(&format!(r#"{{"maximum": {limit}}}"#));
 
-        // Instance slightly above limit (10^50 + 1), should be INVALID
+        // Instance above the limit (10^51 + 1) is rejected
         let instance_above = "1".to_string() + &"0".repeat(50) + "1";
         let instance = parse_json(&instance_above);
         tests_util::is_not_valid(&schema_max, &instance);
     }
 
-    // Test that schema compilation doesn't panic with extremely large scientific notation limits
-    // These numbers (e.g., 1e10000) exceed f64 range and are treated as infinity for comparison
+    // Limits past `f64` build without a panic.
     #[cfg(feature = "arbitrary-precision")]
     #[test_case(r#"{"minimum": 1e10000}"#, "999999999999"; "huge positive scientific notation minimum")]
     #[test_case(r#"{"maximum": 1e10000}"#, "999999999999"; "huge positive scientific notation maximum")]
@@ -732,7 +724,6 @@ mod tests {
         // This test ensures compilation doesn't panic when schema limits exceed f64 range
         let schema = parse_json(schema_json);
         let instance = parse_json(instance_json);
-        // The actual validation result doesn't matter - we're just ensuring no panic
         let compiled = crate::validator_for(&schema);
         assert!(compiled.is_ok(), "Schema compilation should not panic");
 

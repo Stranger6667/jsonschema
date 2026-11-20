@@ -845,9 +845,9 @@ struct RootWithDynamicAnchorNotReferencingItself;
 )]
 struct RootBesideReferenceToItself;
 
-// The root is the code a `$ref` naming it by `#` runs, so such a reference on a cycle back to the
-// root's instance stops where it stops below a root that only references the schema, and one the
-// root holds itself applies nothing.
+// A `$ref: "#"` runs the root's own code, so on a cycle back to the root's instance it stops where
+// it would below a root that only references the schema, and one the root holds itself applies
+// nothing.
 #[test_case(RootNotReferencingItself::is_valid, RootNotReferencingItself::validate, RootNotReferencingItself::iter_errors, RootNotReferencingItself::evaluate, jsonschema::options(), serde_json::json!({"not": {"$ref": "#"}}) ; "not")]
 #[test_case(RootAllOfReferencingItself::is_valid, RootAllOfReferencingItself::validate, RootAllOfReferencingItself::iter_errors, RootAllOfReferencingItself::evaluate, jsonschema::options(), serde_json::json!({"minProperties": 2, "allOf": [{"$ref": "#"}]}) ; "all_of")]
 #[test_case(RootAllOfReferencingItselfDraft4::is_valid, RootAllOfReferencingItselfDraft4::validate, RootAllOfReferencingItselfDraft4::iter_errors, RootAllOfReferencingItselfDraft4::evaluate, jsonschema::options().with_draft(referencing::Draft::Draft4), serde_json::json!({"minProperties": 2, "allOf": [{"$ref": "#"}]}) ; "all_of_draft4")]
@@ -1428,7 +1428,6 @@ fn test_pattern_validate_parity() {
         &instance,
     );
 
-    // Prefix-optimized check must still report the original pattern `^abc`.
     let schema = serde_json::json!({"type":"string","pattern":"^abc"});
     let instance = serde_json::json!("xyz");
     assert_validate_parity_for(
@@ -1563,7 +1562,7 @@ fn test_unevaluated_properties_validate_parity() {
         &instance,
     );
 
-    // Self-referential `$dynamicRef` cycle (regression for the cycle fix).
+    // A `$dynamicRef` back to its own resource beside `unevaluatedProperties`.
     let schema = serde_json::json!({"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"node","type":"object","$dynamicRef":"#node","unevaluatedProperties":false});
     let instance = serde_json::json!({"a":1});
     assert_validate_parity_for(
@@ -1585,7 +1584,7 @@ fn test_unevaluated_items_validate_parity() {
         &instance,
     );
 
-    // Self-referential `$dynamicRef` cycle (regression for the cycle fix).
+    // A `$dynamicRef` back to its own resource beside `unevaluatedItems`.
     let schema = serde_json::json!({"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"node","type":"array","$dynamicRef":"#node","unevaluatedItems":false});
     let instance = serde_json::json!([1]);
     assert_validate_parity_for(
@@ -3586,8 +3585,8 @@ struct RefCycleInBranchesValidator;
 )]
 struct TwoRefCyclesValidator;
 
-// Each level of `levels` wraps the one below as `c`: `a` sends it through both `oneOf` branches
-// of `REF_CYCLE_IN_BRANCHES`, `b` through one.
+// Each level of `levels` wraps the one below as `c`: `a` sends it through the first two `oneOf`
+// branches of `REF_CYCLE_IN_BRANCHES`, `b` through one.
 fn nested(levels: &str, leaf: serde_json::Value) -> serde_json::Value {
     levels.chars().rev().fold(leaf, |child, level| match level {
         'a' => serde_json::json!({"a": 1, "c": child}),

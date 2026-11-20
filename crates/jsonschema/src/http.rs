@@ -3,9 +3,6 @@ use std::{path::PathBuf, time::Duration};
 
 /// Configuration options for HTTP client used in schema retrieval.
 ///
-/// This struct provides builder-style methods to configure the HTTP client
-/// used when fetching external schemas via HTTP/HTTPS.
-///
 /// # Example
 ///
 /// ```rust
@@ -33,9 +30,6 @@ impl HttpOptions {
     }
 
     /// Set the timeout for the connect phase of a connection.
-    ///
-    /// This controls how long the client will wait to establish a connection
-    /// to the remote server.
     ///
     /// # Example
     ///
@@ -95,10 +89,7 @@ impl HttpOptions {
         self
     }
 
-    /// Add a custom root certificate for TLS verification.
-    ///
-    /// This allows you to trust a custom CA certificate in addition to
-    /// the system's root certificates.
+    /// Trust the CA certificate at `path` besides the system roots; a later call replaces it.
     ///
     /// # Example
     ///

@@ -120,7 +120,7 @@ mod bench {
             .expect("valid schema")
     }
 
-    /// The difference both ways, as a schema comparison reads it.
+    /// Satisfiability of `old` minus `new` and of `new` minus `old`.
     fn differences(old: &CanonicalSchema, new: &CanonicalSchema) -> [Satisfiability; 2] {
         [
             old.subtract(new).expect("subtracts").satisfiability(),
@@ -128,8 +128,7 @@ mod bench {
         ]
     }
 
-    /// What each `new` response returns that its `old` one does not, as a breaking-change check for
-    /// responses reads it.
+    /// Whether each `new` response accepts a value its `old` one rejects.
     #[inline(never)]
     fn response_differences(
         new: &[CanonicalSchema],

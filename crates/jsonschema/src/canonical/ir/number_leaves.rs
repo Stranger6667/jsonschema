@@ -1,6 +1,6 @@
 use crate::canonical::ir::{drop_subsumed, BoundNumber, Divisors, NumberLeaf, Round, Side};
 
-/// Number leaves kept sorted, pairwise unmergeable, and free of leaves another already admits.
+/// Number leaves kept sorted, pairwise unmergeable, and free of leaves another already accepts.
 /// Inserts are batched; the form is restored before any read, so the order in which leaves arrive
 /// cannot change the result.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,7 +30,7 @@ impl NumberLeaves {
         }
         let was_empty = self.leaves.is_empty();
         self.leaves = merge(std::mem::take(&mut self.leaves));
-        // A coarser progression over a wider interval admits every value of a finer one.
+        // A leaf over a wider interval whose divisors divide the other's accepts every value of it.
         // e.g.  anyOf [
         //         {"type": "number", "multipleOf": 0.5},
         //         {"type": "number", "multipleOf": 1.5}
@@ -84,25 +84,26 @@ impl IntoIterator for NumberLeaves {
     }
 }
 
-/// Fold intervals that overlap or touch on an admitted point.
+/// Fold intervals that overlap or touch on an accepted point.
 /// e.g.  anyOf [
 ///         {"type": "number", "minimum": 0, "maximum": 2},
 ///         {"type": "number", "minimum": 2, "maximum": 4}
 ///       ]  =>  {"type": "number", "minimum": 0, "maximum": 4}
 ///
-/// A gap the progression steps across holds no admitted value either, so those intervals fold too.
+/// A gap the progression steps across holds no accepted value either, so those intervals fold too.
 /// e.g.  anyOf [
 ///         {"type": "number", "multipleOf": 1.5, "maximum": 3},
 ///         {"type": "number", "multipleOf": 1.5, "minimum": 4}
 ///       ]  =>  {"type": "number", "multipleOf": 1.5}
 ///
-/// Two intervals touching on a point neither admits leave a hole, so they stay apart.
+/// Two intervals touching on a point neither includes leave a hole, so they stay apart.
 /// e.g.  anyOf [
-///         {"type": "number", "maximum": 2, "exclusiveMaximum": 2},
+///         {"type": "number", "exclusiveMaximum": 2},
 ///         {"type": "number", "exclusiveMinimum": 2}
 ///       ]  =>  unchanged
 ///
-/// Different divisors admit different values within one interval, so those leaves stay apart too.
+/// Leaves with different divisors accept different values within one interval, so they stay apart
+/// too.
 /// e.g.  anyOf [
 ///         {"type": "number", "multipleOf": 0.5},
 ///         {"type": "number", "multipleOf": 0.75}
@@ -143,7 +144,7 @@ fn merge(mut leaves: Vec<NumberLeaf>) -> Vec<NumberLeaf> {
     merged
 }
 
-/// Whether `outer` admits every real value `inner` does, divisors aside.
+/// Whether `outer` accepts every real value `inner` does, divisors aside.
 fn covers(outer: &NumberLeaf, inner: &NumberLeaf) -> bool {
     // Equal ends are tighter than each other, so only a strictly tighter outer end fails to cover.
     let wider = |outer: &BoundNumber, inner: &BoundNumber, side| {
@@ -162,7 +163,8 @@ fn covers(outer: &NumberLeaf, inner: &NumberLeaf) -> bool {
     minimum && maximum
 }
 
-/// Whether the two leave no value the leaf admits between them. `next` starts no lower than `last`.
+/// Whether the two leave no value the leaf accepts between them. `next` starts no lower than
+/// `last`.
 fn reaches(last: &NumberLeaf, next: &NumberLeaf) -> bool {
     // The gap is read off `last` alone, which only a shared progression lets it speak for.
     debug_assert_eq!(
@@ -173,7 +175,7 @@ fn reaches(last: &NumberLeaf, next: &NumberLeaf) -> bool {
         return true;
     };
     let touches = if end.to_number() == start.to_number() {
-        // They touch on one point, which closes the gap only if either side admits it.
+        // They touch on one point, which closes the gap only if either side includes it.
         end.is_inclusive() || start.is_inclusive()
     } else {
         end.admits(&start.to_number(), Side::Upper)
@@ -188,7 +190,7 @@ fn steps_over(divisor: &Divisors, end: &BoundNumber, start: &BoundNumber) -> boo
     let Some(step) = divisor.sole() else {
         return false;
     };
-    // The gap opens where the interval below it closes, so each end is admitted by the gap exactly
+    // The gap opens where the interval below it closes, so each end is included in the gap exactly
     // when the interval leaves it out.
     let opens = flipped(end);
     let closes = flipped(start);
@@ -196,7 +198,7 @@ fn steps_over(divisor: &Divisors, end: &BoundNumber, start: &BoundNumber) -> boo
         .is_some_and(|multiple| !closes.admits(&multiple.to_number(), Side::Upper))
 }
 
-/// The same limit with the value on it admitted the other way round.
+/// The same limit with its inclusivity flipped.
 fn flipped(bound: &BoundNumber) -> BoundNumber {
     BoundNumber::new(&bound.to_number(), !bound.is_inclusive())
 }

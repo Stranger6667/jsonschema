@@ -35,9 +35,8 @@ pub(super) fn array<'a>(
 /// The array as long as the leaf demands, or `None` where an element cannot be built.
 fn build<'a>(leaf: &'a ArrayLeaf, walk: &Walk<'a, '_>) -> Option<Value> {
     let length = demanded_length(leaf.lengths.minimum.as_ref())?;
-    // A `contains` demand needs an element meeting it, which the floor alone never asks
-    // for; each demand contributes one, and the check below turns down what does not hold.
-    // Demanded elements sit past the prefix, where `items` governs them too.
+    // A `contains` demand needs an element valid under it, which `minItems` alone never asks
+    // for; each demand contributes one, and the caller's check turns down what does not hold.
     let demanded: Vec<Value> = leaf
         .contains
         .iter()
@@ -54,15 +53,15 @@ fn build<'a>(leaf: &'a ArrayLeaf, walk: &Walk<'a, '_>) -> Option<Value> {
         items.push(element(index)?);
     }
     items.extend(demanded);
-    // One candidate per index promises no distinctness; the check below turns that down.
+    // One candidate per index promises no distinctness; the caller's check turns that down.
     for index in items.len()..length {
         items.push(element(index)?);
     }
     Some(Value::Array(items))
 }
 
-/// An element valid under `facet` that `position`, the schema of the index it sits at, admits too.
-/// Where none is found, the demand's first value, which the check below turns down.
+/// An element valid under `facet` that `position`, the schema of the index it sits at, accepts
+/// too. Where none is found, the demand's first value, which the caller's check turns down.
 fn demanded_element<'a>(
     facet: &'a ContainsFacet,
     position: Option<&'a Schema>,
