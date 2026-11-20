@@ -854,19 +854,14 @@ fn draft4_key_clauses(names: &Schema) -> Option<Vec<KeyClause>> {
         // A key matches every pattern the leaf carries, so each pattern closes the map on its own.
         SchemaKind::String(leaf) => {
             let leaf = leaf.get();
-            // Any facet beyond the patterns narrows the constraint below what they express.
-            // The barred facets are defensive: no synthesis path reaches here carrying one.
-            if leaf.lengths.minimum.is_some()
-                || leaf.lengths.maximum.is_some()
-                || !leaf.formats.is_empty()
-                || !leaf.excluded_formats.is_empty()
-                || !leaf.content_media_types.is_empty()
-                || !leaf.content_encodings.is_empty()
-                || !leaf.excluded_patterns.is_empty()
-                || !leaf.excluded.is_empty()
-            {
-                return None;
-            }
+            debug_assert!(
+                *leaf
+                    == StringLeaf {
+                        patterns: leaf.patterns.clone(),
+                        ..StringLeaf::default()
+                    },
+                "a Draft 4 key constraint's string leaf carries only patterns"
+            );
             debug_assert!(
                 !leaf.patterns.is_empty(),
                 "a string leaf carrying no other facet carries a pattern"

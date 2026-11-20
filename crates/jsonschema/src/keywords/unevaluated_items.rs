@@ -794,8 +794,6 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
                         if !validator.is_valid(&item, ctx) {
                             return false;
                         }
-                    } else {
-                        return false;
                     }
                 }
             }
@@ -818,14 +816,10 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
 
             for (item, is_evaluated) in array.elements().zip(indexes) {
                 if !is_evaluated {
-                    let is_valid = if let Some(validator) = &self.validators.unevaluated {
-                        validator.is_valid(&item, ctx)
-                    } else {
-                        false
-                    };
-
-                    if !is_valid {
-                        unevaluated.push(item.to_value().to_string());
+                    if let Some(validator) = &self.validators.unevaluated {
+                        if !validator.is_valid(&item, ctx) {
+                            unevaluated.push(item.to_value().to_string());
+                        }
                     }
                 }
             }
@@ -870,9 +864,6 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
                         unevaluated.push(item.to_value().to_string());
                     }
                     children.push(ctx.arena(), child);
-                } else {
-                    invalid = true;
-                    unevaluated.push(item.to_value().to_string());
                 }
             }
 
