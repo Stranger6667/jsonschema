@@ -4530,6 +4530,24 @@ mod tests {
         );
     }
 
+    // Draft 4 and 6 do not define the content keywords
+    #[test_case("http://json-schema.org/draft-04/schema#"; "draft 4")]
+    #[test_case("http://json-schema.org/draft-06/schema#"; "draft 6")]
+    fn undefined_content_keywords_are_annotations(dialect: &str) {
+        let schema = json!({
+            "$schema": dialect,
+            "contentEncoding": "base64",
+            "contentMediaType": "application/json"
+        });
+        let mut root = node("", "");
+        root["annotations"] =
+            json!({"contentEncoding": "base64", "contentMediaType": "application/json"});
+        assert_eq!(
+            outputs(&schema),
+            (json!({"valid": true, "details": [root]}), root, 1)
+        );
+    }
+
     #[test]
     fn draft2020_ref_siblings_apply() {
         let schema = json!({

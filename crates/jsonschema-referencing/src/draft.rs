@@ -229,11 +229,7 @@ impl Draft {
                 true
             }
 
-            "contentEncoding" | "contentMediaType"
-                if matches!(self, Draft::Draft6 | Draft::Draft7) =>
-            {
-                true
-            }
+            "contentEncoding" | "contentMediaType" if *self == Draft::Draft7 => true,
 
             "contentEncoding" | "contentMediaType" | "contentSchema"
                 if matches!(
@@ -319,6 +315,22 @@ mod tests {
     #[test_case(Draft::Draft202012, true; "draft2020-12 known")]
     fn prefix_items_known_only_in_2020_12(draft: Draft, expected: bool) {
         assert_eq!(draft.is_known_keyword("prefixItems"), expected);
+    }
+
+    // `contentEncoding` and `contentMediaType` are Draft 7 keywords.
+    #[test_case(Draft::Draft4, false; "draft4 unknown")]
+    #[test_case(Draft::Draft6, false; "draft6 unknown")]
+    #[test_case(Draft::Draft7, true; "draft7 known")]
+    #[test_case(Draft::Draft201909, true; "draft2019-09 known")]
+    #[test_case(Draft::Draft202012, true; "draft2020-12 known")]
+    fn content_keywords_known_from_draft_7(draft: Draft, expected: bool) {
+        assert_eq!(
+            [
+                draft.is_known_keyword("contentEncoding"),
+                draft.is_known_keyword("contentMediaType")
+            ],
+            [expected, expected]
+        );
     }
 
     #[test_case(Draft::Draft4; "Draft 4 stays Draft 4")]

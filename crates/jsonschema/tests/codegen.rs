@@ -5468,6 +5468,28 @@ fn draft4_content_ignored_matches_runtime(instance: serde_json::Value) {
     );
 }
 
+// Draft 6 does not define the content keywords either.
+#[jsonschema::validator(
+    schema = r#"{"$schema":"http://json-schema.org/draft-06/schema#","contentEncoding":"base64"}"#
+)]
+struct Draft6ContentEncodingIgnored;
+
+#[jsonschema::validator(
+    schema = r#"{"$schema":"http://json-schema.org/draft-06/schema#","contentMediaType":"application/json"}"#
+)]
+struct Draft6ContentMediaTypeIgnored;
+
+#[test_case(Draft6ContentEncodingIgnored::is_valid, serde_json::json!({"$schema":"http://json-schema.org/draft-06/schema#","contentEncoding":"base64"}), serde_json::json!("not base64!") ; "encoding")]
+#[test_case(Draft6ContentMediaTypeIgnored::is_valid, serde_json::json!({"$schema":"http://json-schema.org/draft-06/schema#","contentMediaType":"application/json"}), serde_json::json!("{") ; "media_type")]
+fn draft6_content_ignored_matches_runtime(
+    is_valid: fn(&serde_json::Value) -> bool,
+    schema: serde_json::Value,
+    instance: serde_json::Value,
+) {
+    assert!(is_valid(&instance));
+    assert_is_valid_parity(&schema, is_valid(&instance), &instance);
+}
+
 // properties alongside an empty (always-valid) additionalProperties schema.
 #[jsonschema::validator(
     schema = r#"{"type":"object","properties":{"a":{"type":"string"}},"additionalProperties":{}}"#
@@ -8299,6 +8321,10 @@ struct EvaluateTwoDynamicRefsToOneAnchor;
 struct EvaluateRefByPointerPastBooleanItems;
 #[jsonschema::validator(schema = r##"{"contentEncoding": "base64", "contentMediaType": "application/json"}"##, draft = Draft6)]
 struct EvaluateContentDraft6;
+#[jsonschema::validator(schema = r#"{"contentEncoding": "base64"}"#, draft = Draft6)]
+struct EvaluateContentEncodingDraft6;
+#[jsonschema::validator(schema = r#"{"contentMediaType": "application/json"}"#, draft = Draft6)]
+struct EvaluateContentMediaTypeDraft6;
 #[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012)]
 struct EvaluateRefCycleOnOneInstance;
 #[jsonschema::validator(schema = r##"{"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}"##, draft = Draft202012)]
@@ -8719,6 +8745,8 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateTwoDynamicRefsToOneAnchor::evaluate, serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/tree", "$dynamicAnchor": "node", "type": "object", "properties": {"a": {"$dynamicRef": "#node"}, "b": {"$dynamicRef": "#node"}}}), None, Draft::Draft202012 ; "two_dynamic_refs_to_one_anchor")]
 #[test_case(EvaluateRefByPointerPastBooleanItems::evaluate, serde_json::json!({"$id": "http://example.com/root", "items": {"$id": "x", "items": false, "prefixItems": [{"type": "integer"}]}, "properties": {"a": {"$ref": "#/items/prefixItems/0"}}}), None, Draft::Draft202012 ; "ref_by_pointer_past_boolean_items")]
 #[test_case(EvaluateContentDraft6::evaluate, serde_json::json!({"contentEncoding": "base64", "contentMediaType": "application/json"}), None, Draft::Draft6 ; "content_draft6")]
+#[test_case(EvaluateContentEncodingDraft6::evaluate, serde_json::json!({"contentEncoding": "base64"}), None, Draft::Draft6 ; "content_encoding_draft6")]
+#[test_case(EvaluateContentMediaTypeDraft6::evaluate, serde_json::json!({"contentMediaType": "application/json"}), None, Draft::Draft6 ; "content_media_type_draft6")]
 #[test_case(EvaluateRefCycleOnOneInstance::evaluate, serde_json::json!({"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"minimum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}), None, Draft::Draft202012 ; "ref_cycle_on_one_instance")]
 #[test_case(EvaluateFailingRefCycleOnOneInstance::evaluate, serde_json::json!({"properties": {"b": {"$ref": "#/$defs/node"}}, "$defs": {"node": {"maximum": 1, "allOf": [{"$ref": "#/$defs/node"}]}}}), None, Draft::Draft202012 ; "failing_ref_cycle_on_one_instance")]
 #[test_case(EvaluateRefCycleThroughRoot::evaluate, serde_json::json!({"minimum": 1, "allOf": [{"$ref": "#"}]}), None, Draft::Draft202012 ; "ref_cycle_through_root")]

@@ -33,7 +33,7 @@ use jsonschema::__private::serde_json::{Map, Value};
 )]
 pub struct Schema;
 
-// `contentEncoding` and `contentMediaType` assert only on drafts 6 and 7.
+// `contentEncoding` and `contentMediaType` assert only on Draft 7.
 #[jsonschema::validator(
     schema = r#"{"type": "string", "contentEncoding": "base64", "contentMediaType": "application/json"}"#,
     draft = Draft7

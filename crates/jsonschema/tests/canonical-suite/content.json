@@ -102,20 +102,23 @@
     ]
   },
   {
-    "description": "draft 6 models a known contentEncoding the same way draft 7 does",
-    "schema": {
-      "type": "string",
-      "contentEncoding": "base64"
-    },
+    "description": "draft 6 does not define contentEncoding or contentMediaType",
+    "schemas": [
+      { "type": "string", "contentEncoding": "base64" },
+      { "type": "string", "contentMediaType": "application/json" },
+      { "type": "string", "contentEncoding": "base64", "contentMediaType": "application/json" },
+      { "type": "string", "contentEncoding": 5 }
+    ],
     "draft": "draft6",
     "expected": {
       "$schema": "http://json-schema.org/draft-06/schema#",
-      "type": "string",
-      "contentEncoding": "base64"
+      "type": "string"
     },
     "tests": [
       { "data": "Zm9v", "valid": true },
-      { "data": "not base64!!!", "valid": false }
+      { "data": "not base64!!!", "valid": true },
+      { "data": "{", "valid": true },
+      { "data": 1, "valid": false }
     ]
   },
   {
