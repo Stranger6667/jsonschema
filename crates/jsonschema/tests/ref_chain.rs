@@ -153,7 +153,7 @@ fn repeated_ref_to_the_same_target_stays_linear(innermost: &Value, expected: boo
 }
 
 // Counts walks of the schema it sits in and panics past `budget`, so a walk that doubles per
-// instance level fails at once instead of running for ages.
+// instance level fails fast.
 struct CountedWalks {
     walks: Arc<AtomicUsize>,
     budget: usize,
@@ -376,8 +376,8 @@ fn mixed_tree() -> Value {
     })
 }
 
-// `T` is first walked under `X`, whose guard entry stands in for `X` there, so that walk says
-// nothing about `T` entered without `X`, where `X` reports its error once more.
+// `T` is first walked under `X`, where the cycle guard answers for `X`, so that walk says nothing
+// about `T` entered without `X`, where `X` reports its error once more.
 #[test]
 fn ref_cycle_walked_under_another_target_keeps_every_error() {
     let validator = jsonschema::validator_for(&json!({

@@ -46,7 +46,7 @@ pub(crate) fn canonicalize_value_set(members: Vec<CanonicalJson>) -> Schema {
     }
 }
 
-/// Type-guard a body, collapsing an empty one: a group with a `False` body admits nothing.
+/// Type-guard a body, collapsing an empty one: a group with a `False` body accepts nothing.
 pub(crate) fn typed_group(ty: JsonType, body: Schema) -> Schema {
     if matches!(body.kind(), SchemaKind::False) {
         Schema::falsy()

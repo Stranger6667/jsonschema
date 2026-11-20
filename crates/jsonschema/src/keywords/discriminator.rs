@@ -163,7 +163,8 @@ impl<F: Json> Discriminator<F> {
         let branches = if let Some(string) = value.as_string() {
             self.strings.get(string.as_ref())
         } else if let Some(number) = value.as_number() {
-            // `3.0` equals the pinned `3`, and only `as_i64` maps both to one key.
+            // `3.0` equals a pinned `3`; without an `as_i64` for it, every branch accepting
+            // objects stays a candidate.
             let Some(integer) = number.as_i64() else {
                 return Candidates::Only(&self.objects);
             };

@@ -22,13 +22,13 @@ use crate::{
 };
 
 /// Resolutions one walk may spend before declining: a negation growing past this many inlined
-/// targets costs more to express than the caller can put to use, and the recursion it would take
-/// runs ahead of the stack.
+/// targets costs more to express than the caller can put to use, and its recursion risks
+/// overflowing the stack.
 const RESOLUTION_BUDGET: usize = 1024;
 
-/// Shared regions one choice's negation may produce: their number grows with the square of the
-/// branch count, and a negation past this many costs more to assemble than the caller can put to
-/// use.
+/// Pairwise branch overlaps one `oneOf` negation may hold: their number grows with the square of
+/// the branch count, and a negation past this many costs more to assemble than the caller can put
+/// to use.
 const OVERLAP_BUDGET: usize = 64;
 
 /// Branches the intersection of a union's branch negations may produce. Intersecting negations
@@ -70,8 +70,8 @@ enum Inexpressible {
 }
 
 /// The negation of a node, taking that node's place inside the document being canonicalized, or
-/// `None` when the IR cannot express it and the caller keeps the document `Raw`. Negation has no safe
-/// default direction, so every arm is exact or declines.
+/// `None` when the IR cannot express it. Negation has no safe default direction, so every arm is
+/// exact or declines.
 ///
 /// A walk reaching every target it needs through `definitions` inlines their negations; one that
 /// cannot keeps the node symbolic, resolving each target only whole, so the form follows the
@@ -113,7 +113,7 @@ fn negate_resolving(
     // `probe` leaves the flag as it found it, so what an abandoned walk approximated does not
     // travel into the symbolic re-walk.
     let (negation, inexact) = ctx.probe(|| negate_within(schema, &mut walk, ctx));
-    // This walk produced a result, so what it reached counts again.
+    // The result is used, so record what the walk approximated.
     if negation.is_some() && inexact {
         ctx.record_inexact_intersection();
     }
@@ -145,8 +145,9 @@ pub(crate) fn negate_with_definitions(
     Some(negation)
 }
 
-/// The node's own negation, left symbolic. An `allOf` too wide to express as a union is not a
-/// gap in what the IR can express, so it holds whether or not the walk resolves references.
+/// The node's own negation, left symbolic where its union form outgrows [`UNION_WIDTH_BUDGET`].
+/// Width is no gap in what the IR can express, so this holds whether or not the walk resolves
+/// references.
 fn keep_symbolic(schema: &Schema) -> Option<Schema> {
     Some(Schema::new(SchemaKind::Not(schema.clone())))
 }
@@ -208,7 +209,7 @@ fn negate_within(
         }
         // The negation of a union is the intersection of the branch negations, so
         // one inexpressible branch declines the whole node. A union reading a target that reads
-        // itself back stays symbolic instead, as a choice does.
+        // itself back stays symbolic instead, as a `oneOf` does.
         SchemaKind::AnyOf(_) if reads_an_in_place_cycle(schema, walk) => {
             keep_under_not(schema, walk)
         }
@@ -222,8 +223,8 @@ fn negate_within(
             }
             Some(result)
         }
-        // In the other direction, the negation of an intersection is the union of the branch
-        // negations, which is restored when every branch has an exact structural negation. Otherwise the whole `allOf` stays opaque.
+        // The negation of an `allOf` is the union of the branch negations; a branch without one
+        // keeps the whole node under `not`, or declines.
         SchemaKind::AllOf(branches) => {
             let mut negations = Vec::with_capacity(branches.as_slice().len());
             for branch in branches.as_slice() {
@@ -241,9 +242,9 @@ fn negate_within(
     }
 }
 
-/// A choice holds where exactly one branch does, so its negation holds where no branch does and
+/// A `oneOf` holds where exactly one branch does, so its negation holds where no branch does and
 /// where two branches share the value. Intersection is total, so every shared region is expressible
-/// and only the half no branch matches rests on branch negations.
+/// and only the part no branch matches rests on branch negations.
 /// ```text
 /// e.g.  {"not": {"oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}]}}
 ///       =>  anyOf: [{"allOf": [{"type": "integer"}, {"$ref": "#/$defs/a"}]},
@@ -259,7 +260,7 @@ fn negate_one_of(
     ctx: &CanonicalizationContext,
 ) -> Option<Schema> {
     // A branch naming a target already being negated is the node itself, read again. What such a
-    // cycle accepts is left to the validator, so the choice is barred whole rather than taken
+    // cycle accepts is left to the validator, so the `oneOf` is barred whole rather than taken
     // apart, the way an unresolvable pointer is.
     // e.g.  {"$defs": {"x": {"oneOf": [{"$ref": "#/$defs/x"},
     //                                  {"type": "object", "required": ["a"]}]}}, "$ref": "#/$defs/x"}
@@ -319,8 +320,8 @@ fn negate_one_of(
 
 /// The negation of the reference's target. A target already being negated on the current path
 /// would resolve forever, and a target this map does not name leaves the reference opaque; both
-/// keep the negation symbolic. A negation that merely re-wraps the target hands the caller back
-/// the problem it asked about, so it declines instead.
+/// keep the negation symbolic. A negation that re-wraps the target is written against the pointer
+/// instead, or declines in a walk that may not keep one.
 fn negate_reference(
     schema: &Schema,
     uri: &Arc<str>,
@@ -348,16 +349,15 @@ fn negate_reference(
     debug_assert_eq!(finished.as_ref(), Some(uri), "unbalanced negation path");
     let negation = negation?;
     // A negation that is the target barred whole is written against the pointer, which names the
-    // same body. A walk that may not bar declines as before.
+    // same body. A `Decline` walk returns `None` here.
     if matches!(negation.kind(), SchemaKind::Not(inner) if inner == target) {
         return keep_under_not(schema, walk);
     }
     Some(negation)
 }
 
-/// The type and the body are demanded together, so the negation takes either apart: the values off
-/// the type, and the values of
-/// the type that the body rejects.
+/// The type and the body are demanded together, so the negation is the values off the type plus
+/// the values of the type that the body rejects.
 /// ```text
 /// e.g.  draft 4: {"not": {"type": "integer", "enum": [1, 2]}}
 ///       =>  anyOf: [<non-integer types>, {"type": "integer", "maximum": 0},
@@ -375,9 +375,8 @@ fn negate_typed_group(
     Some(algebra::union(vec![off_type, within], ctx))
 }
 
-/// Negation of a finite value set: the untouched types stay whole, an unpaired boolean leaves the
-/// other one, the numeric members carve rays and gaps out of the number line, the string members
-/// become exclusions on the strings, and an empty container leaves the sizes above it.
+/// Negation of a finite value set, built per JSON type. `None` where a member is a non-empty array
+/// or object, which no facet can tell apart, or a numeric gap is inexpressible.
 /// ```text
 /// e.g.  {"not": {"const": null}}  =>  {"type": ["boolean", "number", "string", "array", "object"]}
 /// e.g.  {"not": {"const": []}}
@@ -489,9 +488,9 @@ fn number_gaps(numbers: &[Number], ctx: &CanonicalizationContext) -> Option<Vec<
     Some(branches)
 }
 
-/// A window over the reals, or `None` when the integers it admits fall outside this build's range.
-/// Such a window can still meet `type: integer`, where an integer window is the only form left to
-/// carry it; clamping its ends into range would drop integers the window keeps.
+/// A window over the reals, or `None` when the integers it accepts fall outside this build's range.
+/// Such a window can still be intersected with `type: integer`, where an integer window is the only
+/// form left to carry it; clamping its ends into range would drop integers the window keeps.
 fn number_window(
     minimum: Option<BoundNumber>,
     maximum: Option<BoundNumber>,
@@ -510,8 +509,9 @@ fn number_window(
 
 /// Negation of a number window: the values of every other type plus the outer rays, each
 /// endpoint's inclusivity flipped. A value escapes a run of divisors as soon as it misses one, and
-/// a run of exclusions as soon as it lands on one, so each divisor flips into its dual on its own
-/// branch. `None` where a flipped end leaves a ray the canonical form cannot express.
+/// a run of exclusions as soon as it lands on one, so each `multipleOf` becomes its own
+/// `not: {multipleOf}` branch and each barred divisor its own `multipleOf` branch. `None` where a
+/// flipped end leaves a ray the canonical form cannot express.
 /// ```text
 /// e.g.  {"not": {"type": "number", "minimum": 5}}
 ///       =>  anyOf: [<non-number types>, {"type": "number", "exclusiveMaximum": 5}]
@@ -646,7 +646,7 @@ fn finite_strings(values: &[Arc<str>]) -> Schema {
     }
 }
 
-/// The same limit admitting exactly the values the original end rejects.
+/// The same limit with its inclusivity flipped.
 fn flipped(bound: &BoundNumber) -> BoundNumber {
     BoundNumber::new(&bound.to_number(), !bound.is_inclusive())
 }
@@ -686,7 +686,7 @@ pub(crate) fn length_windows(lengths: &LengthBounds) -> Option<Vec<LengthBounds>
 /// ```
 fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Option<Schema> {
     if !leaf.excluded.is_empty() {
-        // The dual of the arm above: a leaf that only excludes values negates to those values.
+        // A leaf with excluded values negates to those values plus the negation of the rest of it.
         let mut branches = vec![type_set_schema(JsonTypeSet::all().remove(JsonType::String))];
         branches.push(finite_strings(&leaf.excluded));
         let positive = StringLeaf {
@@ -753,11 +753,11 @@ fn negate_string_leaf(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> Optio
     Some(algebra::union(branches, ctx))
 }
 
-/// An element schema fails on an array exactly when one element violates it, which is a `contains`
-/// demand for its negation. A demand for one match fails exactly when every element violates it,
-/// which is the same trade the other way round. A positional schema constrains only the arrays long
-/// enough to reach its index, so its violation carries that length as a floor. Distinctness is its
-/// own dual: a demand that every element differ fails exactly when two of them are equal.
+/// `items` fails on an array exactly when some element violates it, which is a `contains` of its
+/// negation. A `contains` fails exactly when every element violates it, which is `items` of its
+/// negation. A positional schema constrains only the arrays long enough to reach its index, so its
+/// violation carries that length as `minItems`. `uniqueItems: true` fails exactly when two elements
+/// are equal, and a demand for a repeat fails exactly when all of them differ.
 /// ```text
 /// e.g.  {"not": {"type": "array", "maxItems": 2}}
 ///       =>  anyOf: [<non-array types>, {"type": "array", "minItems": 3}]
@@ -843,8 +843,8 @@ fn negate_array_leaf(
         ));
     }
     for facet in &leaf.contains {
-        // Missing a window on the count means landing anywhere else in it, and an element schema
-        // holding for every element can only say "nowhere".
+        // Only a `contains` with the default count negates, to `items` of its negation; a count
+        // window needs counts outside it, which `items` cannot say.
         if facet.maximum.is_some() || facet.effective_minimum() != BoundCardinality::from(1) {
             return None;
         }
@@ -875,9 +875,7 @@ fn negate_array_leaf(
 }
 
 /// The leaf demands every one of its facets over objects, so its negation is the union of the
-/// per-facet negations beside the non-object types: a size window flips into its outer rays, a
-/// required key into its absence, a property schema into the key held with a violating value, and a
-/// key constraint or pattern entry into a demand for a key that breaks it.
+/// per-facet negations beside the non-object types.
 /// ```text
 /// e.g.  {"not": {"type": "object", "required": ["a"], "minProperties": 2}}
 ///       =>  anyOf: [<non-object types>,
@@ -923,8 +921,8 @@ fn negate_object_leaf(
             ctx,
         ));
     }
-    // A key constraint fails on an object exactly when some key breaks it: that is exactly the
-    // demand recorded below.
+    // `propertyNames` fails on an object exactly when some key breaks it: the demand recorded
+    // below.
     if let Some(names) = &leaf.property_names {
         branches.push(algebra::object_leaf(
             ObjectLeaf {
@@ -999,7 +997,7 @@ fn negate_object_leaf(
     // A pattern entry fails on an object exactly when some key it matches holds a value it
     // rejects, and one pattern breaking is enough, so each records its own demand.
     for (pattern, schema) in &leaf.pattern_properties {
-        // An entry admitting every value constrains nothing, so no key can break it. It stays on
+        // An entry accepting every value constrains nothing, so no key can break it. It stays on
         // the leaf to say which keys `additionalProperties` skips.
         if matches!(schema.kind(), SchemaKind::True) {
             continue;
@@ -1038,7 +1036,7 @@ fn object_branch(
     )
 }
 
-/// Negation of a type set over the value space. A set admitting `integer` but not `number`
+/// Negation of a type set over the value space. A set accepting `integer` but not `number`
 /// leaves the non-integer numbers to a numeric facet no type set can name.
 /// ```text
 /// e.g.  {"not": {"type": "string"}}  =>  {"type": ["null", "boolean", "number", "array", "object"]}
@@ -1065,8 +1063,8 @@ fn negate_type_set(set: JsonTypeSet, ctx: &CanonicalizationContext) -> Option<Sc
         }
         return Some(algebra::union(branches, ctx));
     }
-    // A set carrying `number` admits every number, so its negation admits none; a set carrying
-    // neither numeric type admits no number, so its negation admits all of them.
+    // A set carrying `number` accepts every number, so its negation accepts none; a set carrying
+    // neither numeric type accepts no number, so its negation accepts all of them.
     if !set.contains(JsonType::Number) {
         negation = negation.insert(JsonType::Number);
     }
@@ -1175,8 +1173,8 @@ mod tests {
         }
     }
 
-    // The scaffold's domain is finite, so the negation-membership law is proven exhaustively: for
-    // every one of the 128 type sets, the negation admits a value exactly when the original does
+    // Type sets form a finite domain, so the negation-membership law is proven exhaustively: for
+    // every one of the 128 type sets, the negation accepts a value exactly when the original does
     // not.
     #[test]
     fn type_set_negation_partitions_the_value_space() {

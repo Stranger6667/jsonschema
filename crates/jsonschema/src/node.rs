@@ -43,7 +43,7 @@ impl SchemaLocation {
 
 /// The absolute location of `location`, built on first use: most are never read.
 ///
-/// Only errors reach it, so it stays out of the validation loops it is called from.
+/// Only errors and `evaluate` reach it, so it stays out of the loops it is called from.
 #[cold]
 #[inline(never)]
 fn absolute_location<'a>(
@@ -96,7 +96,8 @@ impl<F: Json> fmt::Debug for SchemaNode<F> {
     }
 }
 
-// Separate type used only during compilation for handling recursive references
+/// A `$ref` target filled in once compiled, so recursive references can point at a node still
+/// being built.
 pub(crate) struct PendingSchemaNode<F: Json = SerdeJson> {
     cell: Arc<OnceLock<PendingTarget<F>>>,
 }
@@ -128,16 +129,7 @@ struct WeakTarget<F: Json> {
 }
 
 enum NodeValidators<F: Json> {
-    /// The result of compiling a boolean valued schema, e.g
-    ///
-    /// ```json
-    /// {
-    ///     "additionalProperties": false
-    /// }
-    /// ```
-    ///
-    /// Here the result of `compiler::compile` called with the `false` value will return a
-    /// `SchemaNode` with a single `BooleanValidator` as it's `validators`.
+    /// A `true` schema (no validator) or a `false` one (its `FalseValidator`).
     Boolean {
         validator: Option<BoxedValidator<F>>,
     },
@@ -189,11 +181,8 @@ impl<F: Json> fmt::Debug for NodeValidators<F> {
 }
 
 struct KeywordValidators<F: Json> {
-    /// The keywords on this node which were not recognized by any vocabularies. These are
-    /// stored so we can later produce them as annotations
+    /// Keywords no vocabulary recognizes, reported as the node's annotation.
     unmatched_keywords: Option<Annotations>,
-    // We should probably use AHashMap here but it breaks a bunch of tests which assume
-    // validators are in a particular order
     validators: KeywordList<F>,
     /// Per-validator data only error and evaluation paths read, kept apart so `is_valid` walks
     /// densely packed validators.
@@ -627,7 +616,6 @@ impl<F: Json> SchemaNode<F> {
                 reports_units,
             }
         });
-        // A lone validator is stored inline, so it never needs a heap slice.
         let validators = if count == 1 {
             KeywordList::One(entries.next().expect("one validator"))
         } else {
@@ -774,7 +762,7 @@ impl<F: Json> SchemaNode<F> {
         }
     }
 
-    /// Helper function to evaluate subschemas which already know their locations.
+    /// Evaluates `subschemas`, each carrying its own location.
     fn evaluate_subschemas<'a, 'i, I>(
         instance: &F::Node<'i>,
         location: &LazyLocation,
@@ -911,11 +899,6 @@ impl<F: Json> SchemaNode<F> {
                 ctx,
             );
 
-            // schemaLocation: The canonical location WITHOUT $ref traversals.
-            // Per JSON Schema spec: "MUST NOT include by-reference applicators such as $ref"
-            // For by-reference validators like $ref, use the target's canonical location,
-            // which lives in the target's resource.
-            // For regular validators, use the keyword's location.
             let schema_location = parts.schema_location();
             let absolute_location = schema_location.absolute.clone();
             let formatted_schema_location = Arc::clone(&schema_location.formatted);

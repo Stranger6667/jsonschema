@@ -14,7 +14,7 @@ use crate::{
     JsonTypeSet,
 };
 
-/// The key a filler entry is given, where an object needs more of them than it requires.
+/// The seed filler keys are built from, where an object needs more keys than it requires.
 const FILLER_KEY: &str = "a";
 
 /// Names tried per seed before the next one. A leaf wanting more is answered by later seeds, or
@@ -41,7 +41,7 @@ pub(super) fn object<'a>(
     };
     let ctx = walk.ctx();
     let keys = candidate_keys(leaf, size, ctx);
-    // Each violating entry is a key of its own, so it counts toward the size floor: the violating
+    // Each violating entry is a key of its own, so it counts toward `minProperties`: the violating
     // object holds fewer demanded keys, which head the same sequence.
     let head: Vec<String> = if leaf.violations.is_empty() {
         Vec::new()
@@ -54,7 +54,7 @@ pub(super) fn object<'a>(
     };
     let mut demanded = Map::new();
     for key in keys {
-        // Where several entries apply to one key, the check below turns down a value that
+        // Where several entries apply to one key, the caller's check turns down a value that
         // satisfies only the one taken here.
         let Some(value) =
             governing(leaf, &key, ctx).map_or(Some(Value::Null), |schema| walk.first(schema))
@@ -116,7 +116,7 @@ fn governing<'a>(
         .or(leaf.additional.as_ref())
 }
 
-/// Whether the leaf's key constraint admits `key`.
+/// Whether the leaf's `propertyNames` accepts `key`.
 fn admits_name(leaf: &ObjectLeaf, key: &str, ctx: &CanonicalizationContext) -> bool {
     leaf.property_names.as_ref().is_none_or(|names| {
         holds(ctx, || {
@@ -131,9 +131,9 @@ fn admits_name(leaf: &ObjectLeaf, key: &str, ctx: &CanonicalizationContext) -> b
 }
 
 /// Keys to build a candidate object out of: the ones the leaf demands, then names its constraints
-/// admit, up to the size floor.
+/// accept, up to `minProperties`.
 ///
-/// A key constraint can turn down every name of the plain filler sequence, so each pattern seeds
+/// `propertyNames` can turn down every name of the plain filler sequence, so each pattern seeds
 /// names of its own. A name already demanded is never offered twice.
 fn candidate_keys(leaf: &ObjectLeaf, size: usize, ctx: &CanonicalizationContext) -> Vec<String> {
     let mut keys: Vec<String> = leaf.required.iter().map(ToString::to_string).collect();
@@ -166,7 +166,7 @@ fn candidate_keys(leaf: &ObjectLeaf, size: usize, ctx: &CanonicalizationContext)
 }
 
 /// An entry outside `taken` that breaks the rule `violation` names, and that the rest of the leaf
-/// admits.
+/// accepts.
 fn violating_entry<'a>(
     leaf: &'a ObjectLeaf,
     violation: &'a ObjectViolation,
@@ -194,8 +194,8 @@ fn violating_entry<'a>(
         })
     };
     // A string the violated pattern matches and names built on its literal head, then the filler
-    // sequence, then names the key constraint admits - built only once every name before them is
-    // turned down. A finite key constraint admits its members alone, so no name is built for it.
+    // sequence, then names `propertyNames` accepts - built only once every name before them is
+    // turned down. A finite `propertyNames` accepts its members alone, so no name is built for it.
     let builds_names = leaf
         .property_names
         .as_ref()

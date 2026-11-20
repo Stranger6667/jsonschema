@@ -1,4 +1,4 @@
-/// Three-valued verdict for "does this schema admit this value?". `Unknown` marks a constraint no
+/// Three-valued verdict for "does this schema accept this value?". `Unknown` marks a constraint no
 /// checker can decide; resolving it belongs to the caller alone, because the safe reading differs
 /// by direction: an unresolved verdict must never narrow the schema.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -8,7 +8,7 @@ pub(crate) enum Verdict {
     Unknown,
 }
 
-/// How a facet no checker covers reads. A validator without a checker skips the keyword, so a
+/// How to read a facet no checker covers. A validator without a checker skips the keyword, so a
 /// demanded facet passes the value and a barred one rejects it; a value set carries no facet of its
 /// own, so intersection can express only that reading. Union keeps such a facet undecided instead,
 /// because absorbing a branch on a guess drops values a checker would have kept.

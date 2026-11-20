@@ -89,10 +89,8 @@ fn merge_defs(mut root: Value, defs: Map<String, Value>, root_draft: Draft) -> V
                 return root;
             }
 
-            // In 2019-09/2020-12, both `definitions` and `$defs` are traversed as
-            // schema containers. If the opposite one already exists, merge into it.
-            // For draft-06/07 we intentionally do not merge into `$defs` because it is
-            // not a subresource location there.
+            // Draft 2019-09 and later treat `definitions` and `$defs` as schema containers, so an
+            // existing one of either takes the entries; in Drafts 4-7 `$defs` holds no subschemas.
             if matches!(
                 root_draft,
                 Draft::Draft201909 | Draft::Draft202012 | Draft::Unknown
@@ -160,8 +158,8 @@ fn walk(
                         ensure_embedded_ids(obj, &uri, root_draft, inner_draft);
                     }
 
-                    // Recurse into the embedded schema BEFORE inserting so
-                    // transitive deps are collected in the same defs map
+                    // Walk before inserting: `walk` reads `embedded` while adding its dependencies
+                    // to `defs`
                     walk(
                         &embedded,
                         root_draft,

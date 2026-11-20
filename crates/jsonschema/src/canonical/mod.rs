@@ -2,15 +2,14 @@
 //!
 //! <div class="warning">
 //!
-//! Experimental: the API may change in minor releases. Schemas that cannot be represented exactly
-//! are preserved verbatim as [`CanonicalKind::Raw`].
+//! Experimental: the API may change in minor releases.
 //!
 //! </div>
 //!
-//! Canonicalization rewrites a schema to a normal form that accepts the same values. Two schemas
-//! accepting the same values reduce to the same form, and a schema proven to accept nothing
-//! reduces to `false`. A schema the canonical form cannot model comes back unchanged as
-//! [`CanonicalKind::Raw`]; see [Unsupported schemas](#unsupported-schemas).
+//! Canonicalization rewrites a schema to a normal form that accepts the same values. Many
+//! equivalent schemas reduce to the same form (patterns compare by their text), and a schema proven
+//! to accept nothing reduces to `false`. A schema the canonical form cannot model comes back
+//! unchanged as [`CanonicalKind::Raw`]; see [Unsupported schemas](#unsupported-schemas).
 //!
 //! # Examples
 //!
@@ -98,13 +97,15 @@
 //! A `$defs` key is private to the document that declares it, so two versions of a schema may give
 //! one key different bodies, as they do whenever you edit a shared component. The operations merge
 //! both maps into one and rename the clashing keys of one side, so a changed `$defs` body never
-//! causes an error. The generated names show up in the result:
+//! causes an error:
 //!
 //! ```text
 //! old: {"$defs": {"User": {"type": "object"}}, "$ref": "#/$defs/User"}
 //! new: {"$defs": {"User": {"type": "object", "minProperties": 1}}, "$ref": "#/$defs/User"}
 //!      old.subtract(&new)  =>  {"const": {}}   (the empty object, which `new` no longer takes)
 //! ```
+//!
+//! A result that still reads a renamed key shows its generated name.
 //!
 //! Operands that differ in draft, `format` assertion or regular-expression engine return
 //! [`CanonicalizationError::IncompatibleOperands`], and so do two conflicts between documents:
@@ -123,7 +124,7 @@
 //!      => Err(IncompatibleOperands(DocumentRoots))
 //! ```
 //!
-//! A result keeps the root its operands had, so chained calls such as `a.union(&b)?.covers(&a)`
+//! A result reads `#` as its operands did, so chained calls such as `a.union(&b)?.covers(&a)`
 //! work.
 //!
 //! # Unsupported schemas
@@ -155,15 +156,15 @@
 //!   results as sets of values. `a.covers(&b)` asks whether `a` accepts every value `b` accepts,
 //!   and [`satisfiability`](CanonicalSchema::satisfiability) asks whether a schema accepts any.
 //!
-//! # Reading the two questions
+//! # Reading `Unknown`
 //!
 //! `Unknown` means the canonicalizer could not decide. Read it as the answer that keeps you safe:
 //!
 //! - [`satisfiability`](CanonicalSchema::satisfiability) - test for `No`, treat `Unknown` like `Yes`.
 //! - [`covers`](CanonicalSchema::covers) - test for `Yes`, treat `Unknown` like `No`.
 //!
-//! Neither method raises on `Unknown`, so a caller that reads it the other way acts on a conclusion
-//! nobody proved.
+//! Neither method returns an error on `Unknown`, so a caller that reads it the other way acts on a
+//! conclusion nobody proved.
 
 #![deny(clippy::wildcard_enum_match_arm)]
 

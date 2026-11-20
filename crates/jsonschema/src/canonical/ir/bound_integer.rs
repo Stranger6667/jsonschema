@@ -72,7 +72,7 @@ impl BoundInteger {
     }
 
     /// The nearest integer to `number` in `direction`, or `None` when it leaves the representable
-    /// range. Used to pull a fractional real bound onto the integers it admits.
+    /// range. Used to pull a fractional real bound onto the integers it includes.
     pub(crate) fn round_from_number(number: &serde_json::Number, direction: Round) -> Option<Self> {
         // An integer is already at rest; only a fractional value moves.
         if let Some(whole) = Self::from_number(number) {
@@ -170,7 +170,7 @@ impl super::Discrete for BoundInteger {
     }
 }
 
-/// Round `value` to a multiple of the positive `step`, away from zero in `direction`.
+/// Round `value` to a multiple of the positive `step`, up or down as `direction` says.
 fn snap(step: &InnerInteger, value: &InnerInteger, direction: Round) -> Option<InnerInteger> {
     #[cfg(not(feature = "arbitrary-precision"))]
     {

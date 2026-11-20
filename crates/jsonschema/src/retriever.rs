@@ -128,8 +128,8 @@ pub(crate) struct DefaultRetriever;
 
 /// HTTP-based schema retriever with configurable client options.
 ///
-/// This retriever fetches external schemas over HTTP/HTTPS using a
-/// configured [`reqwest`](https://docs.rs/reqwest) client.
+/// Fetches `http`/`https` URIs with a configured [`reqwest`](https://docs.rs/reqwest) client, and
+/// `file` URIs with the `resolve-file` feature.
 ///
 /// # Example
 ///
@@ -206,8 +206,8 @@ impl Retrieve for HttpRetriever {
 
 /// Async HTTP-based schema retriever with configurable client options.
 ///
-/// This retriever fetches external schemas over HTTP/HTTPS using a
-/// configured async [`reqwest`](https://docs.rs/reqwest) client.
+/// Fetches `http`/`https` URIs with a configured async [`reqwest`](https://docs.rs/reqwest)
+/// client, and `file` URIs with the `resolve-file` feature.
 #[cfg(all(
     feature = "resolve-http",
     feature = "resolve-async",
@@ -323,7 +323,6 @@ impl Retrieve for DefaultRetriever {
                     let path = {
                         #[cfg(windows)]
                         {
-                            // Remove the leading slash and replace forward slashes with backslashes
                             let path = path.trim_start_matches('/').replace('/', "\\");
                             std::path::PathBuf::from(path)
                         }
@@ -960,7 +959,6 @@ mod async_tests {
         let mut temp_files = vec![];
         let mut uris = vec![];
 
-        // Create multiple temp files with different schemas
         for i in 0..3 {
             let mut temp_file = tempfile::NamedTempFile::new().expect("Failed to create temp file");
             let schema = json!({
@@ -974,7 +972,6 @@ mod async_tests {
             temp_files.push(temp_file);
         }
 
-        // Create a schema that references all temp files
         let schema = json!({
             "type": "object",
             "properties": {
@@ -998,7 +995,6 @@ mod async_tests {
         });
         assert!(validator.is_valid(&valid));
 
-        // Test invalid data
         let invalid = json!({
             "obj1": { "field": "" },
             "obj2": { "field": "" },      // should be at least 1 char

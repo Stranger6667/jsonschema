@@ -16,8 +16,6 @@
 //!
 //! ## Supported drafts
 //!
-//! Compliance levels vary across drafts, with newer versions having some unimplemented keywords.
-//!
 //! - ![Draft 2020-12](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2020-12.json)
 //! - ![Draft 2019-09](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2019-09.json)
 //! - ![Draft 7](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft7.json)
@@ -42,8 +40,8 @@
 //! assert!(jsonschema::validate(&schema, &instance).is_ok());
 //! ```
 //!
-//! For better performance, especially when validating multiple instances against the same schema, build a validator once and reuse it:
-//! If your schema contains external references, you can choose between blocking and non-blocking construction:
+//! Build a validator once to validate many instances; with external references, build it
+//! blocking or non-blocking:
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -77,7 +75,8 @@
 //!
 //! ### Note on `format` keyword
 //!
-//! By default, format validation is draft‑dependent. To opt in for format checks, you can configure your validator like this:
+//! Drafts 4, 6 and 7 check `format` by default; 2019-09 and 2020-12 only annotate. To check it in
+//! any draft:
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -91,7 +90,7 @@
 //! # }
 //! ```
 //!
-//! Once built, any `format` keywords in your schema will be actively validated according to the chosen draft.
+//! The validator then checks every known `format`, using the chosen draft's definitions.
 //!
 //! `idn-hostname` and `idn-email` need the `idna` feature, which is on by default. Without it they
 //! are treated as unknown formats.
@@ -148,8 +147,8 @@
 //!
 //! # Compile-Time Validator Macro
 //!
-//! The `validator` attribute macro (enabled by the `macros` feature) compiles schemas at build time:
-//! Generated validators are significantly faster than runtime validators, so prefer them when the schema is known at
+//! The `validator` attribute macro (`macros` feature) compiles a schema at build time into a
+//! validator that runs faster than a runtime `Validator`; prefer it when the schema is known at
 //! build time.
 //!
 //! ```ignore
@@ -186,8 +185,8 @@
 //! - `content_encodings = { "name" => { check = ..., convert = ... } }` -> [`ValidationOptions::with_content_encoding`]
 //! - `pattern_options = { ... }` -> [`PatternOptions`]
 //! - `email_options = { ... }` -> [`EmailOptions`]
-//! - `methods = { validate = false, iter_errors = false, evaluate = false }`, which methods to
-//!   generate (all default to `true`; at least one must stay enabled)
+//! - `methods = { is_valid = true|false, validate = ..., iter_errors = ..., evaluate = ... }`,
+//!   which methods to generate (all default to `true`; at least one must stay enabled)
 //!
 //! ## Python Extension Modules
 //!
@@ -246,14 +245,13 @@
 //!
 //! ## Limitations
 //!
-//! - Custom keywords cannot override built-in ones: a `keywords` entry named like a built-in keyword runs in
-//!   addition to the built-in check, not instead of it.
+//! - A `keywords` entry cannot take a built-in keyword's name: the macro rejects it, while
+//!   [`ValidationOptions::with_keyword`] replaces the built-in.
 //!
 //! # Structured Output
 //!
 //! The `evaluate()` method provides access to structured validation output formats defined by
 //! [JSON Schema Output v1](https://github.com/json-schema-org/json-schema-spec/blob/main/specs/output/jsonschema-validation-output-machines.md).
-//! This is useful when you need detailed information about the validation process beyond simple pass/fail results.
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -305,44 +303,7 @@
 //! # }
 //! ```
 //!
-//! The structured output formats are particularly useful for:
-//! - **Debugging**: Understanding exactly which schema keywords matched or failed
-//! - **User feedback**: Providing detailed, actionable error messages
-//! - **Annotations**: Collecting metadata produced by successful validation
-//! - **Tooling**: Building development tools that work with JSON Schema
-//!
-//! For example, validating `["hello", "oops"]` against a schema with both `prefixItems` and
-//! `items` produces list output similar to:
-//!
-//! ```json
-//! {
-//!   "valid": false,
-//!   "details": [
-//!     {"valid": false, "evaluationPath": "", "schemaLocation": "", "instanceLocation": ""},
-//!     {
-//!       "valid": false,
-//!       "evaluationPath": "/items",
-//!       "schemaLocation": "/items",
-//!       "instanceLocation": "",
-//!       "droppedAnnotations": true
-//!     },
-//!     {
-//!       "valid": false,
-//!       "evaluationPath": "/items",
-//!       "schemaLocation": "/items",
-//!       "instanceLocation": "/1"
-//!     },
-//!     {
-//!       "valid": false,
-//!       "evaluationPath": "/items/type",
-//!       "schemaLocation": "/items/type",
-//!       "instanceLocation": "/1",
-//!       "errors": {"type": "\"oops\" is not of type \"integer\""}
-//!     },
-//!     {"valid": true, "evaluationPath": "/prefixItems", "schemaLocation": "/prefixItems", "instanceLocation": "", "annotations": 0}
-//!   ]
-//! }
-//! ```
+//! [`Evaluation::list`] shows the full list output for an example schema.
 //!
 //! ## Output Formats
 //!
@@ -412,8 +373,7 @@
 //!
 //! # Meta-Schema Validation
 //!
-//! The crate provides functionality to validate JSON Schema documents themselves against their meta-schemas.
-//! This ensures your schema documents are valid according to the JSON Schema specification.
+//! [`meta`] checks a schema document against its meta-schema:
 //!
 //! ```rust
 //! use serde_json::json;
@@ -441,8 +401,6 @@
 //!
 //! # Configuration
 //!
-//! `jsonschema` provides several ways to configure and use JSON Schema validation.
-//!
 //! ## Draft-specific Modules
 //!
 //! The library offers modules for specific JSON Schema draft versions:
@@ -460,8 +418,6 @@
 //! - An `options` function to create a draft-specific configuration builder
 //! - A `meta` module for draft-specific meta-schema validation
 //!
-//! Here's how you can explicitly use a specific draft version:
-//!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! use serde_json::json;
@@ -478,7 +434,7 @@
 //! # }
 //! ```
 //!
-//! You can also use the convenience [`is_valid`] and [`validate`] functions:
+//! Each draft module also has one-off `is_valid` and `validate`:
 //!
 //! ```rust
 //! use serde_json::json;
@@ -510,9 +466,7 @@
 //!
 //! ## General Configuration
 //!
-//! For configuration options that are not draft-specific, `jsonschema` provides a builder via `jsonschema::options()`.
-//!
-//! Here's an example:
+//! [`options()`] returns the same builder with the draft detected from `$schema`:
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -528,7 +482,7 @@
 //! # }
 //! ```
 //!
-//! For a complete list of configuration options and their usage, please refer to the [`ValidationOptions`] struct.
+//! [`ValidationOptions`] lists every option.
 //!
 //! ## Automatic Draft Detection
 //!
@@ -550,8 +504,7 @@
 //! # External References
 //!
 //! By default, `jsonschema` resolves HTTP references using `reqwest` and file references from the local file system.
-//! Both blocking and non-blocking retrieval is supported during validator construction. Note that the validation
-//! itself is always synchronous as it operates on in-memory data only.
+//! Both blocking and non-blocking retrieval is supported during validator construction.
 //!
 //! ```rust
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -572,24 +525,18 @@
 //! # }
 //! ```
 //!
-//! To enable HTTPS support, add the `rustls-tls` feature to `reqwest` in your `Cargo.toml`:
-//!
-//! ```toml
-//! reqwest = { version = "*", features = ["rustls-tls"] }
-//! ```
-//!
 //! You can disable the default behavior using crate features:
 //!
-//! - Disable HTTP resolving: `default-features = false, features = ["resolve-file"]`
-//! - Disable file resolving: `default-features = false, features = ["resolve-http", "tls-aws-lc-rs"]`
+//! - Disable HTTP resolving: `default-features = false, features = ["resolve-file", "idna"]`
+//! - Disable file resolving:
+//!   `default-features = false, features = ["resolve-http", "tls-aws-lc-rs", "idna"]`
 //! - Enable async resolution: `features = ["resolve-async"]`
-//! - Disable all resolving: `default-features = false`
+//! - Disable all resolving: `default-features = false, features = ["idna"]`
 //!
 //! ## Custom retrievers
 //!
-//! A retriever is for documents fetched on demand — from a database, an embedded asset, a cache.
-//! When the set of documents is known up front, put them in a [`Registry`] instead; the example
-//! below is a retriever only because it has to be one to demonstrate the trait.
+//! A retriever fetches documents on demand, from a database or a cache. When the set of documents
+//! is known up front, put them in a [`Registry`] instead.
 //!
 //! You can implement custom retrievers for both blocking and non-blocking retrieval:
 //!
@@ -662,7 +609,7 @@
 //! #     ),
 //! # ))]
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
-//! use jsonschema::{AsyncRetrieve, Registry, Resource, Uri};
+//! use jsonschema::{AsyncRetrieve, Uri};
 //! use serde_json::{Value, json};
 //!
 //! struct HttpRetriever;
@@ -695,10 +642,8 @@
 //!
 //! ## Validating against schema definitions
 //!
-//! When working with large schemas containing multiple definitions (e.g., Open API schemas, DAP schemas),
-//! you may want to validate data against a specific definition rather than the entire schema. This can be
-//! achieved by registering the root schema as a resource and creating a wrapper schema that references
-//! the target definition:
+//! To validate against one definition of a larger schema, take it from [`validator_map_for`] by
+//! pointer, or register the root schema and reference the definition from a wrapper schema:
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -747,11 +692,6 @@
 //! # }
 //! ```
 //!
-//! This pattern is particularly useful when:
-//! - Working with API schemas that define multiple request/response types
-//! - Validating configuration snippets against specific sections of a larger schema
-//! - Testing individual schema components in isolation
-//!
 //! ## Offline validation
 //!
 //! [`ValidationOptions::offline`] disables retrieval, so a reference that is not already in the
@@ -778,17 +718,13 @@
 //!
 //! # Regular Expression Configuration
 //!
-//! The `jsonschema` crate allows configuring the regular expression engine used for validating
-//! keywords like `pattern` or `patternProperties`.
+//! [`PatternOptions`] picks the engine for `pattern` and `patternProperties`.
 //!
 //! By default, the crate uses [`fancy-regex`](https://docs.rs/fancy-regex), which supports advanced
 //! regular expression features such as lookaround and backreferences.
 //!
-//! The primary motivation for switching to the `regex` engine is security and performance:
-//! it guarantees linear-time matching, preventing potential Denial of Service attacks from malicious patterns
-//! in user-provided schemas while offering better performance with a smaller feature set.
-//!
-//! You can configure the engine at **runtime** using the [`PatternOptions`] API:
+//! The `regex` engine matches in linear time, so a hostile pattern in a user-provided schema
+//! cannot stall validation; it lacks lookaround and backreferences.
 //!
 //! ### Example: Configure `fancy-regex` with Backtracking Limit
 //!
@@ -849,22 +785,18 @@
 //!
 //! ### Notes
 //!
-//! - If neither engine is explicitly set, `fancy-regex` is used by default.
 //! - If no syntax is set, patterns are ECMA 262.
 //! - Regular expressions that rely on advanced features like `(?<=...)` (lookbehind) or backreferences (`\1`) will fail with the `regex` engine.
 //!
 //! # Custom Keywords
 //!
-//! `jsonschema` allows you to extend its functionality by implementing custom validation logic through custom keywords.
-//! This feature is particularly useful when you need to validate against domain-specific rules that aren't covered by the standard JSON Schema keywords.
+//! A custom keyword adds a check the standard keywords lack.
 //! Keywords are generic over the instance representation ([`json`] module).
 //!
 //! To implement a custom keyword, you need to:
 //! 1. Create a struct that implements the [`Keyword`] trait
 //! 2. Create a factory function or closure that produces instances of your custom keyword
-//! 3. Register the custom keyword with the [`Validator`] instance using the [`ValidationOptions::with_keyword`] method
-//!
-//! Here's a complete example:
+//! 3. Register the factory with [`ValidationOptions::with_keyword`]
 //!
 //! ```rust
 //! use jsonschema::{paths::Location, Keyword, ValidationError};
@@ -874,7 +806,7 @@
 //!
 //! impl<'i> Keyword<'i> for EvenNumberValidator {
 //!     fn validate(&self, instance: &'i Value) -> Result<(), ValidationError<'i>> {
-//!         if let Some(n) = instance.as_u64() {
+//!         if let Some(n) = instance.as_i64() {
 //!             if n % 2 == 0 {
 //!                 return Ok(());
 //!             }
@@ -883,7 +815,7 @@
 //!     }
 //!
 //!     fn is_valid(&self, instance: &'i Value) -> bool {
-//!         instance.as_u64().map_or(false, |n| n % 2 == 0)
+//!         instance.as_i64().map_or(false, |n| n % 2 == 0)
 //!     }
 //! }
 //!
@@ -909,10 +841,6 @@
 //! assert!(!validator.is_valid(&json!(3)));
 //! assert!(!validator.is_valid(&json!("not a number")));
 //! ```
-//!
-//! In this example, we've created a custom `even-number` keyword that validates whether a number is even.
-//! The `EvenNumberValidator` implements the actual validation logic, while the `even_number_factory`
-//! creates instances of the validator and allows for additional configuration based on the keyword's value in the schema.
 //!
 //! You can also use a closure instead of a factory function for simpler cases:
 //!
@@ -942,21 +870,16 @@
 //!
 //! # Custom Formats
 //!
-//! JSON Schema allows for format validation through the `format` keyword. While `jsonschema`
-//! provides built-in validators for standard formats, you can also define custom format validators
-//! for domain-specific string formats.
-//!
-//! To implement a custom format validator:
-//!
-//! 1. Define a function or a closure that takes a `&str` and returns a `bool`.
-//! 2. Register the function with `jsonschema::options().with_format()`.
+//! [`ValidationOptions::with_format`] adds a check for a `format` name the built-ins do not cover.
+//! Register a `fn(&str) -> bool` or a closure; on Draft 2019-09 and 2020-12 also call
+//! `should_validate_formats(true)`:
 //!
 //! ```rust
 //! use serde_json::json;
 //!
 //! // Step 1: Define the custom format validator function
 //! fn ends_with_42(s: &str) -> bool {
-//!     s.ends_with("42!")
+//!     s.ends_with("42")
 //! }
 //!
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -969,13 +892,13 @@
 //! // Step 3: Build the validator with the custom format
 //! let validator = jsonschema::options()
 //!     .with_format("ends-with-42", ends_with_42)
-//!     .with_format("ends-with-43", |s| s.ends_with("43!"))
+//!     .with_format("ends-with-43", |s| s.ends_with("43"))
 //!     .should_validate_formats(true)
 //!     .build(&schema)?;
 //!
 //! // Step 4: Validate instances
-//! assert!(validator.is_valid(&json!("Hello42!")));
-//! assert!(!validator.is_valid(&json!("Hello43!")));
+//! assert!(validator.is_valid(&json!("Hello42")));
+//! assert!(!validator.is_valid(&json!("Hello43")));
 //! assert!(!validator.is_valid(&json!(42))); // Not a string
 //! #    Ok(())
 //! # }
@@ -984,9 +907,8 @@
 //! ### Notes on Custom Format Validators
 //!
 //! - Custom format validators are only called for string instances.
-//! - In newer drafts, `format` is purely an annotation and won’t do any checking unless you
-//!   opt in by calling `.should_validate_formats(true)` on your options builder. If you omit
-//!   it, all `format` keywords are ignored at validation time.
+//! - In Draft 2019-09 and 2020-12, `format` checks nothing unless you call
+//!   `.should_validate_formats(true)`.
 //!
 //! # Arbitrary Precision Numbers
 //!
@@ -1000,8 +922,8 @@
 //! - Arbitrarily large integers (e.g., `18446744073709551616`)
 //! - Exact decimal precision without `f64` rounding (e.g., `0.1`, `0.3`)
 //!
-//! **Important**: Precision is only preserved when parsing JSON from strings. Using Rust literals
-//! or the `json!()` macro converts numbers to `f64`, losing precision.
+//! **Important**: precision survives only when `serde_json` parses JSON text; a float literal in
+//! `json!()` is an `f64` first.
 //!
 //! ```rust
 //! # use jsonschema::Validator;
@@ -1039,19 +961,12 @@
 //!
 //! ## Browser/JavaScript (`wasm32-unknown-unknown`)
 //!
-//! When targeting browser or JavaScript environments, external reference resolution is not
-//! supported by default due to platform limitations:
-//!    - No filesystem access (`resolve-file` feature is not available)
-//!    - No synchronous HTTP requests (`resolve-http` feature is not available)
-//!
-//! To use `jsonschema` in these environments, disable default features:
+//! On this target `resolve-file` and `resolve-http` do not compile: there is no filesystem and
+//! no blocking HTTP. Disable default features:
 //!
 //! ```toml
 //! jsonschema = { version = "x.y.z", default-features = false }
 //! ```
-//!
-//! Note: Attempting to compile with `resolve-http` or `resolve-file` features on
-//! `wasm32-unknown-unknown` will result in a compile error.
 //!
 //! For external references in browser environments, implement a custom retriever that uses
 //! browser APIs (like `fetch`). See the [External References](#external-references) section.
@@ -1075,9 +990,8 @@
 //! jsonschema = { version = "x.y.z", default-features = false, features = ["resolve-file"] }
 //! ```
 //!
-//! **Workaround for HTTP:** Implement a custom blocking or async [`Retrieve`] that uses your preferred
-//! HTTP client, and enable `resolve-async` if you want to build validators through `async_options()`
-//! on WASI.
+//! **HTTP:** implement [`Retrieve`], or `AsyncRetrieve` with `resolve-async`, over your own HTTP
+//! client.
 
 #[cfg(all(
     target_arch = "wasm32",
@@ -1126,12 +1040,12 @@ pub(crate) use jsonschema_value::{
 ///
 /// The slice lives until the memory context resets. The bytes are in the server's native byte
 /// order, and keys and strings are read as UTF-8. An error's instance is built on first access;
-/// past 128 levels of nesting it holds `null` there and
-/// `json::jsonb::take_pending_error` returns the error.
+/// past 128 levels of nesting it holds `null`, and `json::jsonb::take_pending_error` returns
+/// the message.
 ///
-/// The accessors are infallible, so the representation must be total over JSON: reject nodes
-/// with no JSON meaning (tags, foreign objects) before validation, or track them on a side
-/// channel of the representation.
+/// The accessors are infallible, so every node must map to a JSON value: reject nodes with no
+/// JSON meaning (tags, foreign objects) before validation, or track them on a side channel of
+/// the representation.
 ///
 /// # Example
 ///
@@ -1411,8 +1325,7 @@ pub use retriever::AsyncHttpRetriever;
 
 use serde_json::Value;
 
-/// Validate `instance` against `schema` and get a `true` if the instance is valid and `false`
-/// otherwise. Draft is detected automatically.
+/// Whether `schema` accepts `instance`. The draft is detected from `$schema`.
 ///
 /// # Examples
 ///
@@ -1426,7 +1339,7 @@ use serde_json::Value;
 ///
 /// # Panics
 ///
-/// This function panics if an invalid schema is passed.
+/// Panics if the schema is invalid or a reference cannot be resolved.
 ///
 /// This function **must not** be called from within an async runtime if the schema contains
 /// external references that require network requests, or it will panic when attempting to block.
@@ -1458,7 +1371,7 @@ pub fn is_valid(schema: &Value, instance: &Value) -> bool {
 ///
 /// # Panics
 ///
-/// This function panics if an invalid schema is passed.
+/// Panics if the schema is invalid or a reference cannot be resolved.
 ///
 /// This function **must not** be called from within an async runtime if the schema contains
 /// external references that require network requests, or it will panic when attempting to block.
@@ -1489,7 +1402,7 @@ pub fn validate<'i>(schema: &Value, instance: &'i Value) -> Result<(), Validatio
 ///
 /// # Panics
 ///
-/// This function panics if an invalid schema is passed.
+/// Panics if the schema is invalid or a reference cannot be resolved.
 ///
 /// This function **must not** be called from within an async runtime if the schema contains
 /// external references that require network requests, or it will panic when attempting to block.
@@ -1580,18 +1493,18 @@ pub fn validator_map_for(schema: &Value) -> Result<ValidatorMap, ValidationError
 /// producing a Compound Schema Document that validates identically to the original.
 /// Draft 4/6/7 use `definitions`; Draft 2019-09/2020-12 use `$defs`.
 /// `$ref` values are preserved unchanged.
-/// For mixed-draft bundles, embedded resources may include both `id` and `$id`
-/// to maximize interoperability with downstream validators that differ in draft
-/// handling.
+/// An embedded resource of another draft gets both `id` and `$id`, so the root's draft finds
+/// it too.
 ///
-/// **Limitation:** `$dynamicRef` is not followed during bundling.
+/// **Limitation:** only `$ref` is followed; `$dynamicRef` and `$recursiveRef` targets are not
+/// embedded.
 ///
 /// For custom resources or retrievers, use [`options()`] and call `.bundle()`.
 ///
 /// # Errors
 ///
-/// Returns an error if draft detection fails, registry construction fails,
-/// subresource scope resolution fails, or any `$ref` cannot be resolved.
+/// Returns an error if the meta-schema named in `$schema`, an `$id` against its base URI, or
+/// a `$ref` cannot be resolved.
 ///
 /// # Panics
 ///
@@ -1649,8 +1562,8 @@ pub fn dereference(schema: &Value) -> Result<Value, ReferencingError> {
 ///
 /// # Errors
 ///
-/// Returns an error if draft detection fails, registry construction fails,
-/// subresource scope resolution fails, or any `$ref` cannot be resolved.
+/// Returns an error if the meta-schema named in `$schema`, an `$id` against its base URI, or
+/// a `$ref` cannot be resolved.
 #[cfg(feature = "resolve-async")]
 pub async fn async_bundle(schema: &Value) -> Result<Value, ReferencingError> {
     async_options().bundle(schema).await
@@ -1672,8 +1585,8 @@ pub async fn async_dereference(schema: &Value) -> Result<Value, ReferencingError
 /// Create a validator for the input schema with automatic draft detection and default options,
 /// using non-blocking retrieval for external references.
 ///
-/// This is the async counterpart to [`validator_for`]. Note that only the construction is
-/// asynchronous - validation itself is always synchronous.
+/// This is the async counterpart to [`validator_for`]. Only construction is asynchronous;
+/// validation is synchronous.
 ///
 /// # Examples
 ///
@@ -1748,16 +1661,11 @@ pub fn canonicalize(value: &Value) -> Result<canonical::CanonicalSchema, Canonic
 
 /// Create a builder for configuring JSON Schema validation options.
 ///
-/// This function returns a [`ValidationOptions`] struct, which allows you to set various
-/// options for JSON Schema validation. You can use this builder to specify
-/// the draft version, set custom formats, and more.
-///
 /// If [`with_draft`](ValidationOptions::with_draft) is not called, the draft is
-/// auto-detected from the schema's `$schema` field — the same behaviour as [`validator_for`].
+/// auto-detected from the schema's `$schema` field, as in [`validator_for`].
 ///
-/// **Note:** When calling [`ValidationOptions::build`], it **must not** be called from within
-/// an async runtime if the schema contains external references that require network requests,
-/// or it will panic. Use `async_options` for async contexts.
+/// **Note:** [`ValidationOptions::build`] panics inside an async runtime when the schema has
+/// references that need network requests; use `async_options` there.
 ///
 /// # Examples
 ///
@@ -1821,10 +1729,7 @@ pub fn async_options_for<'i, F: Json>(
     ValidationOptions::default()
 }
 
-/// Create a builder for configuring JSON Schema validation options.
-///
-/// This function returns a [`ValidationOptions`] struct which allows you to set various options for JSON Schema validation.
-/// External references will be retrieved using non-blocking I/O.
+/// Create a builder whose validators retrieve external references with non-blocking I/O.
 ///
 /// # Examples
 ///
@@ -1878,7 +1783,8 @@ pub fn async_options_for<'i, F: Json>(
 /// # }
 /// ```
 ///
-/// On `wasm32` targets, annotate your implementation with `async_trait::async_trait(?Send)` to drop the `Send + Sync` requirement.
+/// On `wasm` targets the trait is declared with `async_trait(?Send)`, and your implementation
+/// must use it too.
 ///
 /// See [`ValidationOptions`] for all available configuration options.
 #[cfg(feature = "resolve-async")]
@@ -1887,7 +1793,7 @@ pub fn async_options<'i>() -> ValidationOptions<'i, std::sync::Arc<dyn AsyncRetr
     Validator::async_options()
 }
 
-/// Functionality for validating JSON Schema documents against their meta-schemas.
+/// Validating schema documents against their meta-schemas.
 pub mod meta {
     use crate::{error::ValidationError, Draft, Json, Node, Object, Registry, Validator};
     use ahash::AHashSet;
@@ -1918,8 +1824,8 @@ pub mod meta {
 
         /// The draft whose meta-schema `schema` names in `$schema`.
         ///
-        /// `Draft::Unknown` means a URI outside the bundled drafts, which the functions above
-        /// cannot answer for.
+        /// `Draft::Unknown` means a URI outside the bundled drafts, which [`is_valid_fn`] and
+        /// [`validate_fn`] cannot check; no `$schema` gives Draft 2020-12.
         #[must_use]
         pub fn draft_of(schema: Borrowed<'_, '_, PyAny>) -> Draft {
             super::meta_cache::<crate::json::Pyo3>().draft_of(&schema)
@@ -1942,8 +1848,8 @@ pub mod meta {
 
         /// The draft whose meta-schema `schema` names in `$schema`.
         ///
-        /// `Draft::Unknown` means a URI outside the bundled drafts, which the functions above
-        /// cannot answer for.
+        /// `Draft::Unknown` means a URI outside the bundled drafts, which [`is_valid_fn`] and
+        /// [`validate_fn`] cannot check; no `$schema` gives Draft 2020-12.
         #[must_use]
         pub fn draft_of(schema: RbNode<'_>) -> Draft {
             super::meta_cache::<crate::json::Magnus>().draft_of(&schema)
@@ -2050,12 +1956,11 @@ pub mod meta {
         use serde_json::Value;
         use std::{marker::PhantomData, ops::Deref};
 
-        /// Handle to a draft-specific meta-schema [`Validator`]. Borrows cached validators on native
-        /// targets and owns validators on `wasm32`.
+        /// Handle to a meta-schema [`Validator`].
         pub struct MetaValidator<'a>(MetaValidatorInner<'a>);
 
-        // Native builds can hand out references to cached validators or own dynamic ones,
-        // while wasm targets need owned instances because the validator type does not implement `Sync` there.
+        // Native builds borrow cached validators or own one built for a custom meta-schema; wasm
+        // targets always own them because `Validator` does not implement `Sync` there.
         // Under `macros`, native builds dispatch to compile-time generated validators; the cached
         // runtime validator is resolved lazily by draft only for the `evaluate` path (`AsRef`).
         enum MetaValidatorInner<'a> {
@@ -2206,7 +2111,7 @@ pub mod meta {
             build_validator(&referencing::meta::DRAFT202012)
         }
 
-        // Backs the `evaluate`/`iter_errors` fallback for generated meta validators.
+        // Backs `evaluate` and the other `Deref` methods of a generated meta validator.
         #[cfg(all(feature = "macros", not(target_family = "wasm")))]
         pub(crate) fn runtime_validator_for_draft(draft: crate::Draft) -> &'static Validator {
             use crate::Draft;
@@ -2252,8 +2157,7 @@ pub mod meta {
         }
     }
 
-    /// Validate a JSON Schema document against its meta-schema and get a `true` if the schema is valid
-    /// and `false` otherwise. Draft version is detected automatically.
+    /// Whether its meta-schema accepts `schema`. The draft is detected from `$schema`.
     ///
     /// # Examples
     ///
@@ -2269,13 +2173,12 @@ pub mod meta {
     ///
     /// # Panics
     ///
-    /// This function panics if the meta-schema can't be detected.
+    /// Panics if the meta-schema cannot be resolved.
     ///
     /// # Note
     ///
-    /// This helper only works with the built-in JSON Schema drafts. For schemas that declare a
-    /// custom `$schema`, construct a registry that contains your meta-schema and use
-    /// [`meta::options().with_registry(...)`](crate::meta::options) to validate it.
+    /// A custom `$schema` is fetched with the default retriever; to supply the meta-schema
+    /// yourself, use [`meta::options().with_registry(...)`](crate::meta::options).
     #[must_use]
     pub fn is_valid(schema: &Value) -> bool {
         match try_meta_validator_for(schema, None) {
@@ -2306,17 +2209,13 @@ pub mod meta {
     ///
     /// # Errors
     ///
-    /// Returns the first [`ValidationError`] describing why the schema violates the detected meta-schema.
-    ///
-    /// # Panics
-    ///
-    /// This function panics if the meta-schema can't be detected.
+    /// Returns the first [`ValidationError`] describing why the schema violates the detected
+    /// meta-schema, or an error if the meta-schema cannot be resolved.
     ///
     /// # Note
     ///
-    /// Like [`is_valid`], this helper only handles the bundled JSON
-    /// Schema drafts. For custom meta-schemas, use [`meta::options().with_registry(...)`](crate::meta::options)
-    /// so the registry can supply the meta-schema.
+    /// A custom `$schema` is fetched with the default retriever; to supply the meta-schema
+    /// yourself, use [`meta::options().with_registry(...)`](crate::meta::options).
     pub fn validate(schema: &Value) -> Result<(), ValidationError<'_>> {
         let validator = try_meta_validator_for(schema, None)?;
         validator.validate(schema)
@@ -2350,21 +2249,18 @@ pub mod meta {
     ///
     /// Returns [`ValidationError`] if the meta-schema cannot be resolved or built.
     ///
-    /// # Panics
-    ///
-    /// This function panics if the meta-schema can't be detected.
-    ///
     /// # Note
     ///
-    /// This helper only handles the bundled JSON Schema drafts. For custom meta-schemas,
-    /// use [`meta::options().with_registry(...)`](crate::meta::options).
+    /// A custom `$schema` is fetched with the default retriever; to supply the meta-schema
+    /// yourself, use [`meta::options().with_registry(...)`](crate::meta::options).
     pub fn validator_for(
         schema: &Value,
     ) -> Result<MetaValidator<'static>, ValidationError<'static>> {
         try_meta_validator_for(schema, None)
     }
 
-    /// Validate a schema document held in a foreign representation against its meta-schema.
+    /// Validate a schema document held in a custom JSON representation ([`json`](crate::json))
+    /// against its meta-schema.
     /// Draft version is detected automatically.
     ///
     /// # Errors
@@ -2383,7 +2279,7 @@ pub mod meta {
         }
     }
 
-    /// Check a schema document held in a foreign representation against its meta-schema.
+    /// Check a schema document held in a custom JSON representation against its meta-schema.
     /// Draft version is detected automatically.
     ///
     /// # Errors
@@ -2496,7 +2392,7 @@ pub mod meta {
                 .and_then(|obj| obj.get("$schema"))
                 .and_then(|s| s.as_str())
             {
-                // Try registry first if available
+                // A registry, when given, is the only source of the meta-schema
                 if let Some(registry) = registry {
                     let (custom_meta_schema, resolved_draft) =
                         resolve_meta_schema_with_registry(meta_schema_uri, registry)?;
@@ -2585,12 +2481,9 @@ pub mod meta {
     }
 }
 
-/// Functionality specific to JSON Schema Draft 4.
+/// Validators for JSON Schema Draft 4.
 ///
 /// [![Draft 4](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft4.json)](https://bowtie.report/#/implementations/rust-jsonschema)
-///
-/// This module provides functions for creating validators and performing validation
-/// according to the JSON Schema Draft 4 specification.
 ///
 /// # Examples
 ///
@@ -2629,7 +2522,7 @@ pub mod draft4 {
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
-    /// Validate an instance against a schema using Draft 4 specifications without creating a validator.
+    /// Whether `schema` accepts `instance` under Draft 4, building a validator per call.
     ///
     /// # Examples
     ///
@@ -2651,7 +2544,8 @@ pub mod draft4 {
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
     }
-    /// Validate an instance against a schema using Draft 4 specifications without creating a validator.
+    /// Validate `instance` against `schema` under Draft 4 and return the first error,
+    /// building a validator per call.
     ///
     /// # Examples
     ///
@@ -2704,20 +2598,18 @@ pub mod draft4 {
         crate::options().with_draft(Draft::Draft4)
     }
 
-    /// Functionality for validating JSON Schema Draft 4 documents.
+    /// Checking schemas against the Draft 4 meta-schema.
     pub mod meta {
         use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        /// Returns a handle to the Draft 4 meta-schema validator. Native targets borrow cached
-        /// statics while `wasm32` builds an owned validator.
+        /// Returns a handle to the Draft 4 meta-schema validator.
         #[must_use]
         pub fn validator() -> MetaValidator<'static> {
             crate::meta::validator_for_draft(super::Draft::Draft4)
         }
 
-        /// Validate a JSON Schema document against Draft 4 meta-schema and get a `true` if the schema is valid
-        /// and `false` otherwise.
+        /// Whether the Draft 4 meta-schema accepts `schema`.
         ///
         /// # Examples
         ///
@@ -2766,12 +2658,9 @@ pub mod draft4 {
     }
 }
 
-/// Functionality specific to JSON Schema Draft 6.
+/// Validators for JSON Schema Draft 6.
 ///
 /// [![Draft 6](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft6.json)](https://bowtie.report/#/implementations/rust-jsonschema)
-///
-/// This module provides functions for creating validators and performing validation
-/// according to the JSON Schema Draft 6 specification.
 ///
 /// # Examples
 ///
@@ -2810,7 +2699,7 @@ pub mod draft6 {
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
-    /// Validate an instance against a schema using Draft 6 specifications without creating a validator.
+    /// Whether `schema` accepts `instance` under Draft 6, building a validator per call.
     ///
     /// # Examples
     ///
@@ -2832,7 +2721,8 @@ pub mod draft6 {
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
     }
-    /// Validate an instance against a schema using Draft 6 specifications without creating a validator.
+    /// Validate `instance` against `schema` under Draft 6 and return the first error,
+    /// building a validator per call.
     ///
     /// # Examples
     ///
@@ -2885,20 +2775,18 @@ pub mod draft6 {
         crate::options().with_draft(Draft::Draft6)
     }
 
-    /// Functionality for validating JSON Schema Draft 6 documents.
+    /// Checking schemas against the Draft 6 meta-schema.
     pub mod meta {
         use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        /// Returns a handle to the Draft 6 meta-schema validator. Native targets borrow cached
-        /// statics while `wasm32` builds an owned validator.
+        /// Returns a handle to the Draft 6 meta-schema validator.
         #[must_use]
         pub fn validator() -> MetaValidator<'static> {
             crate::meta::validator_for_draft(super::Draft::Draft6)
         }
 
-        /// Validate a JSON Schema document against Draft 6 meta-schema and get a `true` if the schema is valid
-        /// and `false` otherwise.
+        /// Whether the Draft 6 meta-schema accepts `schema`.
         ///
         /// # Examples
         ///
@@ -2947,12 +2835,9 @@ pub mod draft6 {
     }
 }
 
-/// Functionality specific to JSON Schema Draft 7.
+/// Validators for JSON Schema Draft 7.
 ///
 /// [![Draft 7](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft7.json)](https://bowtie.report/#/implementations/rust-jsonschema)
-///
-/// This module provides functions for creating validators and performing validation
-/// according to the JSON Schema Draft 7 specification.
 ///
 /// # Examples
 ///
@@ -2991,7 +2876,7 @@ pub mod draft7 {
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
-    /// Validate an instance against a schema using Draft 7 specifications without creating a validator.
+    /// Whether `schema` accepts `instance` under Draft 7, building a validator per call.
     ///
     /// # Examples
     ///
@@ -3013,7 +2898,8 @@ pub mod draft7 {
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
     }
-    /// Validate an instance against a schema using Draft 7 specifications without creating a validator.
+    /// Validate `instance` against `schema` under Draft 7 and return the first error,
+    /// building a validator per call.
     ///
     /// # Examples
     ///
@@ -3066,20 +2952,18 @@ pub mod draft7 {
         crate::options().with_draft(Draft::Draft7)
     }
 
-    /// Functionality for validating JSON Schema Draft 7 documents.
+    /// Checking schemas against the Draft 7 meta-schema.
     pub mod meta {
         use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        /// Returns a handle to the Draft 7 meta-schema validator. Native targets borrow cached
-        /// statics while `wasm32` builds an owned validator.
+        /// Returns a handle to the Draft 7 meta-schema validator.
         #[must_use]
         pub fn validator() -> MetaValidator<'static> {
             crate::meta::validator_for_draft(super::Draft::Draft7)
         }
 
-        /// Validate a JSON Schema document against Draft 7 meta-schema and get a `true` if the schema is valid
-        /// and `false` otherwise.
+        /// Whether the Draft 7 meta-schema accepts `schema`.
         ///
         /// # Examples
         ///
@@ -3128,12 +3012,9 @@ pub mod draft7 {
     }
 }
 
-/// Functionality specific to JSON Schema Draft 2019-09.
+/// Validators for JSON Schema Draft 2019-09.
 ///
 /// [![Draft 2019-09](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2019-09.json)](https://bowtie.report/#/implementations/rust-jsonschema)
-///
-/// This module provides functions for creating validators and performing validation
-/// according to the JSON Schema Draft 2019-09 specification.
 ///
 /// # Examples
 ///
@@ -3172,7 +3053,7 @@ pub mod draft201909 {
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
-    /// Validate an instance against a schema using Draft 2019-09 specifications without creating a validator.
+    /// Whether `schema` accepts `instance` under Draft 2019-09, building a validator per call.
     ///
     /// # Examples
     ///
@@ -3194,7 +3075,8 @@ pub mod draft201909 {
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
     }
-    /// Validate an instance against a schema using Draft 2019-09 specifications without creating a validator.
+    /// Validate `instance` against `schema` under Draft 2019-09 and return the first error,
+    /// building a validator per call.
     ///
     /// # Examples
     ///
@@ -3247,19 +3129,17 @@ pub mod draft201909 {
         crate::options().with_draft(Draft::Draft201909)
     }
 
-    /// Functionality for validating JSON Schema Draft 2019-09 documents.
+    /// Checking schemas against the Draft 2019-09 meta-schema.
     pub mod meta {
         use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        /// Returns a handle to the Draft 2019-09 meta-schema validator. Native targets borrow cached
-        /// statics while `wasm32` builds an owned validator.
+        /// Returns a handle to the Draft 2019-09 meta-schema validator.
         #[must_use]
         pub fn validator() -> MetaValidator<'static> {
             crate::meta::validator_for_draft(super::Draft::Draft201909)
         }
-        /// Validate a JSON Schema document against Draft 2019-09 meta-schema and get a `true` if the schema is valid
-        /// and `false` otherwise.
+        /// Whether the Draft 2019-09 meta-schema accepts `schema`.
         ///
         /// # Examples
         ///
@@ -3308,12 +3188,9 @@ pub mod draft201909 {
     }
 }
 
-/// Functionality specific to JSON Schema Draft 2020-12.
+/// Validators for JSON Schema Draft 2020-12.
 ///
 /// [![Draft 2020-12](https://img.shields.io/endpoint?url=https%3A%2F%2Fbowtie.report%2Fbadges%2Frust-jsonschema%2Fcompliance%2Fdraft2020-12.json)](https://bowtie.report/#/implementations/rust-jsonschema)
-///
-/// This module provides functions for creating validators and performing validation
-/// according to the JSON Schema Draft 2020-12 specification.
 ///
 /// # Examples
 ///
@@ -3355,7 +3232,7 @@ pub mod draft202012 {
     pub fn new(schema: &Value) -> Result<Validator, ValidationError<'static>> {
         options().build(schema)
     }
-    /// Validate an instance against a schema using Draft 2020-12 specifications without creating a validator.
+    /// Whether `schema` accepts `instance` under Draft 2020-12, building a validator per call.
     ///
     /// # Examples
     ///
@@ -3377,7 +3254,8 @@ pub mod draft202012 {
     pub fn is_valid(schema: &Value, instance: &Value) -> bool {
         new(schema).expect("Invalid schema").is_valid(instance)
     }
-    /// Validate an instance against a schema using Draft 2020-12 specifications without creating a validator.
+    /// Validate `instance` against `schema` under Draft 2020-12 and return the first error,
+    /// building a validator per call.
     ///
     /// # Examples
     ///
@@ -3430,20 +3308,18 @@ pub mod draft202012 {
         crate::options().with_draft(Draft::Draft202012)
     }
 
-    /// Functionality for validating JSON Schema Draft 2020-12 documents.
+    /// Checking schemas against the Draft 2020-12 meta-schema.
     pub mod meta {
         use crate::{meta::MetaValidator, ValidationError};
         use serde_json::Value;
 
-        /// Returns a handle to the Draft 2020-12 meta-schema validator. Native targets borrow
-        /// cached statics while `wasm32` builds an owned validator.
+        /// Returns a handle to the Draft 2020-12 meta-schema validator.
         #[must_use]
         pub fn validator() -> MetaValidator<'static> {
             crate::meta::validator_for_draft(super::Draft::Draft202012)
         }
 
-        /// Validate a JSON Schema document against Draft 2020-12 meta-schema and get a `true` if the schema is valid
-        /// and `false` otherwise.
+        /// Whether the Draft 2020-12 meta-schema accepts `schema`.
         ///
         /// # Examples
         ///
@@ -3500,7 +3376,8 @@ pub mod __private {
         pub use pyo3::{intern, types::PyString, Borrowed, Bound, PyAny, PyResult};
     }
 
-    // Wraps a `backend = Pyo3` validator, so a build without the feature reports that alone.
+    // Expands to the generated `backend = Pyo3` code, or without the `pyo3` feature to one
+    // `compile_error!` naming it.
     #[cfg(feature = "pyo3")]
     #[doc(hidden)]
     #[macro_export]
@@ -3524,7 +3401,8 @@ pub mod __private {
         pub use ::magnus::{rb_sys::AsRawValue, Error, Value};
     }
 
-    // Wraps a `backend = Magnus` validator, so a build without the feature reports that alone.
+    // Expands to the generated `backend = Magnus` code, or without the `magnus` feature to one
+    // `compile_error!` naming it.
     #[cfg(feature = "magnus")]
     #[doc(hidden)]
     #[macro_export]
@@ -3568,7 +3446,7 @@ pub mod __private {
 
         std::thread_local! {
             static MATCHES: RefCell<Option<Box<MatchAssumptions>>> = const { RefCell::new(None) };
-            /// Whether `MATCHES` holds a record, for the one check an entry makes after its run.
+            /// Whether `MATCHES` holds a record, readable without borrowing it.
             static MET: Cell<bool> = const { Cell::new(false) };
         }
 
@@ -3792,8 +3670,8 @@ pub mod __private {
             )
         }
 
-        /// The identity of the dynamic scope binding the names references look up to `bindings`,
-        /// the addresses of the code bound to each, or `0` where none is.
+        /// The identity of the dynamic scope given by `bindings`: for each name a dynamic
+        /// reference looks up, the address of the code bound to it, or `0` when unbound.
         #[must_use]
         #[inline]
         pub fn scope<const N: usize>(bindings: &[usize; N]) -> usize {
@@ -3929,7 +3807,7 @@ pub mod __private {
             is_valid_uri, is_valid_uri_reference, is_valid_uri_template, is_valid_uuid,
         };
 
-        // Without `idna` the format is unknown, and an unknown format admits every instance.
+        // Without `idna` the format is unknown, and an unknown format accepts every instance.
         #[cfg(not(feature = "idna"))]
         #[must_use]
         pub fn is_valid_idn_hostname(_: &str) -> bool {
@@ -3958,7 +3836,7 @@ pub mod __private {
             crate::keywords::format::is_valid_idn_email(value, options.map(|opts| &opts.inner))
         }
 
-        // Without `idna` the format is unknown, and an unknown format admits every instance.
+        // Without `idna` the format is unknown, and an unknown format accepts every instance.
         #[cfg(not(feature = "idna"))]
         #[must_use]
         pub fn is_valid_idn_email_with_options(_: &str, _: Option<&crate::EmailOptions>) -> bool {
@@ -4117,7 +3995,6 @@ pub mod __private {
 
     pub use crate::evaluation::generated as evaluation;
 
-    /// Per-keyword error constructors for generated code; evaluation path always equals schema path.
     /// The schema path of an error a generated validator reports, shared by every error at that
     /// site on this thread instead of allocated per error.
     fn schema_location(path: &'static str) -> crate::paths::Location {
@@ -4235,8 +4112,8 @@ pub mod __private {
 
             /// The errors recorded since `start` come from the subschema at `pointer`, reached
             /// through the reference at `site`: their evaluation paths move from `pointer` to
-            /// `site`, and the ones of its own resource are located against `base`, which starts
-            /// `offset` bytes into their schema paths, when it is not the default one.
+            /// `site`. With `base`, errors not yet located are placed in that resource, which
+            /// starts `offset` bytes into their schema paths.
             pub fn reached(
                 &mut self,
                 start: usize,
@@ -4276,9 +4153,9 @@ pub mod __private {
                 }
             }
 
-            /// The errors recorded since `start` that no reference or other resource located are
-            /// in the resource at `base`, which starts `offset` bytes into their schema paths, or
-            /// under the default base for `None`.
+            /// Places the errors recorded since `start` and not yet located in the resource at
+            /// `base` (the default base for `None`), which starts `offset` bytes into their schema
+            /// paths.
             pub fn within(&mut self, start: usize, base: Option<&str>, offset: usize) {
                 let base = base.map(|base| {
                     referencing::uri::from_str(base).expect("the generator writes a URI base")
@@ -4432,9 +4309,7 @@ pub mod __private {
             )
         }
 
-        /// `type` keyword violation: instance is not one of the expected JSON types.
-        ///
-        /// Use [`single_type`] when only one type is expected, [`multiple_types`] for union types.
+        /// `type` keyword violation for one expected type; [`multiple_types`] takes several.
         #[inline]
         pub fn single_type<'i>(
             schema_path: &'static str,
@@ -4606,7 +4481,7 @@ pub mod __private {
             )
         }
 
-        /// `additionalItems` keyword violation (Draft 4 / 2019-09 tuple form).
+        /// `additionalItems` keyword violation (drafts 4 to 2019-09, array form of `items`).
         #[inline]
         pub fn additional_items<'i>(
             schema_path: &'static str,
@@ -4721,7 +4596,8 @@ pub mod __private {
             )
         }
 
-        /// `propertyNames` keyword violation: `error` rejects one of the object's property names.
+        /// `propertyNames` keyword violation: `error` is why the subschema rejects one property
+        /// name.
         #[inline]
         pub fn property_names<'i>(
             instance_path: Location,
@@ -6396,7 +6272,7 @@ mod tests {
     #[test_case(Draft::Draft6)]
     #[test_case(Draft::Draft7)]
     fn meta_schemas(draft: Draft) {
-        // See GH-258
+        // The bundled meta-schemas accept an empty `enum` and one with equal members.
         for schema in [json!({"enum": [0, 0.0]}), json!({"enum": []})] {
             assert!(crate::options().with_draft(draft).build(&schema).is_ok());
         }
@@ -6404,7 +6280,7 @@ mod tests {
 
     #[test]
     fn incomplete_escape_in_pattern() {
-        // See GH-253
+        // An incomplete `\u` escape in `pattern` fails to build.
         let schema = json!({"pattern": "\\u"});
         assert!(crate::validator_for(&schema).is_err());
     }
@@ -6427,7 +6303,7 @@ mod tests {
             "type": "string"
         });
 
-        // Meta-validation now errors when the meta-schema is unknown/unregistered
+        // Meta-validation errors when the meta-schema cannot be retrieved
         assert!(crate::meta::validate(&schema).is_err());
 
         // Building a validator also fails without registration
@@ -6557,7 +6433,6 @@ mod tests {
 
     #[test]
     fn simple_schema_with_unknown_draft() {
-        // Define a custom meta-schema
         let meta_schema = json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$id": "http://custom.example.com/schema",
@@ -6568,7 +6443,6 @@ mod tests {
             }
         });
 
-        // Schema using the custom meta-schema
         let schema = json!({
             "$schema": "http://custom.example.com/schema",
             "type": "object",
@@ -6588,13 +6462,8 @@ mod tests {
             .build(&schema)
             .expect("Should build validator");
 
-        // Valid instance
         assert!(validator.is_valid(&json!({"name": "test"})));
-
-        // Invalid instance - name should be string, not number
         assert!(!validator.is_valid(&json!({"name": 123})));
-
-        // Also verify type validation works
         assert!(!validator.is_valid(&json!("not an object")));
     }
 
@@ -7015,8 +6884,8 @@ mod tests {
 
     #[test]
     fn strict_meta_schema_catches_typos() {
-        // Issue #764: Use strict meta-schema with unevaluatedProperties: false
-        // to catch typos in schema keywords
+        // A meta-schema with `unevaluatedProperties: false` rejects unknown keywords, top-level
+        // and nested.
 
         let strict_meta = json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -7071,9 +6940,8 @@ mod tests {
 
     #[test]
     fn custom_meta_schema_preserves_underlying_draft_behavior() {
-        // Regression test: Custom meta-schemas should preserve the draft-specific
-        // behavior of their underlying draft, not default to Draft 2020-12
-        // Draft 7 specific behavior: $ref siblings are ignored
+        // A custom meta-schema written against Draft 7 keeps Draft 7 rules: `$ref` siblings are
+        // ignored.
 
         let custom_meta_draft7 = json!({
             "$id": "http://example.com/meta/draft7-custom",
@@ -7790,7 +7658,6 @@ mod async_tests {
 
     use crate::{AsyncRetrieve, Draft, Uri};
 
-    /// Mock async retriever for testing
     #[derive(Clone)]
     struct TestRetriever {
         schemas: HashMap<String, serde_json::Value>,

@@ -6,7 +6,7 @@ use std::cmp::Ordering;
 
 use super::normalized_number;
 
-/// One end of a number interval: a limit and whether the limit itself is admitted. Membership goes
+/// One end of a number interval: a limit and whether the limit itself is included. Membership goes
 /// through the runtime's own numeric checks, so the canonical form and the validator agree on every
 /// value by construction. The limit is stored in canonical text, so equality is value equality.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -16,8 +16,6 @@ pub(crate) struct BoundNumber {
 }
 
 impl BoundNumber {
-    /// The limit is stored in the one text its value has, so two bounds are equal exactly when
-    /// they admit the same values.
     pub(crate) fn new(limit: &Number, inclusive: bool) -> Self {
         Self {
             limit: normalized_number(limit),
@@ -25,7 +23,7 @@ impl BoundNumber {
         }
     }
 
-    /// The same limit with the limit itself no longer admitted.
+    /// The same limit with the limit itself excluded.
     pub(crate) fn excluded(self) -> Self {
         Self {
             inclusive: false,
@@ -41,18 +39,18 @@ impl BoundNumber {
         self.inclusive
     }
 
-    /// Whether `value` lies on the admitted side of this bound.
+    /// Whether `value` lies on the included side of this bound.
     pub(crate) fn admits(&self, value: &Number, side: Side) -> bool {
         check_bound(&compile_bound(self.op(side), &self.limit), value)
     }
 
-    /// Whether `other` admits every value this bound does, i.e. this one is at least as tight.
+    /// Whether `other` includes every value this bound does, i.e. this one is at least as tight.
     pub(crate) fn is_tighter_than(&self, other: &Self, side: Side) -> bool {
         if self.limit == other.limit {
             // An excluded limit is tighter than the same limit included.
             return self.inclusive <= other.inclusive;
         }
-        // With different limits, the tighter bound is the one the other still admits.
+        // With different limits, the tighter bound is the one the other still includes.
         other.admits(&self.limit, side) && !self.admits(&other.limit, side)
     }
 

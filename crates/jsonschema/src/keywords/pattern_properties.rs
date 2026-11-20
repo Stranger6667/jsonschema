@@ -17,7 +17,7 @@ use crate::{
 };
 use serde_json::{Map, Value};
 
-/// Validator for multiple patterns using compiled regex.
+/// `patternProperties` with two or more patterns.
 pub(crate) struct PatternPropertiesValidator<R, F: Json = SerdeJson> {
     patterns: Vec<(Arc<R>, SchemaNode<F>)>,
 }
@@ -230,7 +230,7 @@ pub(crate) fn compile<'a, F: Json>(
         Some(Value::Bool(false) | Value::Object(_))
     ) && !ctx.is_keyword_overridden("additionalProperties")
     {
-        // This type of `additionalProperties` validator handles `patternProperties` logic
+        // `additionalProperties: false` or a schema checks `patternProperties` itself
         return None;
     }
 
@@ -246,7 +246,6 @@ pub(crate) fn compile<'a, F: Json>(
     };
     let ctx = ctx.new_at_location("patternProperties");
 
-    // Try to compile all patterns as literal matches first (optimized path)
     if let Some(validator) = try_compile_as_literals(&ctx, map) {
         return Some(validator);
     }
@@ -255,7 +254,6 @@ pub(crate) fn compile<'a, F: Json>(
         return Some(validator);
     }
 
-    // Fall back to regex compilation
     let result = match ctx.config().pattern_options() {
         PatternEngineOptions::FancyRegex { .. } => {
             compile_pattern_entries(&ctx, map, |pctx, pattern| {
@@ -285,8 +283,7 @@ pub(crate) fn compile<'a, F: Json>(
     Some(result)
 }
 
-/// Try to compile all patterns as literal matches (prefix or exact).
-/// Returns `Some` if ALL patterns are optimizable, `None` if any requires a full regex.
+/// Compile the patterns as `LiteralMatcher`s when every one of them is.
 fn try_compile_as_literals<'a, F: Json>(
     ctx: &compiler::Context<F>,
     map: &'a Map<String, Value>,
@@ -364,7 +361,7 @@ where
     Ok(patterns)
 }
 
-/// Pick the optimal validator representation for the compiled pattern entries.
+/// One entry gets `single_factory`'s validator; more get `PatternPropertiesValidator`.
 fn build_validator_from_entries<R, F: Json>(
     mut entries: Vec<(Arc<R>, SchemaNode<F>)>,
     single_factory: impl FnOnce(Arc<R>, SchemaNode<F>) -> Box<dyn Validate<F>>,
@@ -525,7 +522,6 @@ mod tests {
         assert_eq!(analyze_pattern("^foo\\d"), None);
     }
 
-    // Test that prefix optimization works correctly for validation
     #[test_case("^x-", "x-custom", true)]
     #[test_case("^x-", "custom", false)]
     #[test_case("^eo_", "eo_bands", true)]
@@ -541,7 +537,6 @@ mod tests {
         });
         let validator = crate::validator_for(&schema).unwrap();
 
-        // If key matches pattern, value must be string
         let valid_instance = json!({ key: "value" });
         assert!(validator.is_valid(&valid_instance));
 
@@ -549,7 +544,6 @@ mod tests {
         assert_eq!(validator.is_valid(&invalid_instance), !should_match);
     }
 
-    // Test multiple prefix patterns
     #[test]
     fn test_multiple_prefix_patterns() {
         let schema = json!({
@@ -565,7 +559,6 @@ mod tests {
         assert!(!validator.is_valid(&json!({"y-baz": "str"}))); // y- must be number
     }
 
-    // iter_errors tests for prefix patterns
     #[test]
     fn test_prefix_iter_errors_valid() {
         let schema = json!({
@@ -575,12 +568,10 @@ mod tests {
         });
         let validator = crate::validator_for(&schema).unwrap();
 
-        // Valid: no errors
         let instance = json!({"x-foo": "bar"});
         let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert!(errors.is_empty());
 
-        // Valid: non-matching key is ignored
         let instance = json!({"other": 42});
         let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert!(errors.is_empty());
@@ -595,7 +586,6 @@ mod tests {
         });
         let validator = crate::validator_for(&schema).unwrap();
 
-        // Invalid: wrong type
         let instance = json!({"x-foo": 42});
         let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert_eq!(errors.len(), 1);
@@ -612,13 +602,11 @@ mod tests {
         });
         let validator = crate::validator_for(&schema).unwrap();
 
-        // Multiple errors
         let instance = json!({"x-a": 1, "y-b": "str"});
         let errors: Vec<_> = validator.iter_errors(&instance).collect();
         assert_eq!(errors.len(), 2);
     }
 
-    // evaluate tests for prefix patterns
     #[test]
     fn test_prefix_evaluate_valid() {
         let schema = json!({
@@ -656,12 +644,10 @@ mod tests {
         });
         let validator = crate::validator_for(&schema).unwrap();
 
-        // Valid case should have annotations for matched properties
         let instance = json!({"x-foo": "bar", "x-baz": "qux", "other": 123});
         let result = validator.evaluate(&instance);
         assert!(result.flag().valid);
 
-        // Check annotations exist
         let annotations: Vec<_> = result.iter_annotations().collect();
         assert!(!annotations.is_empty());
     }
@@ -677,12 +663,10 @@ mod tests {
         });
         let validator = crate::validator_for(&schema).unwrap();
 
-        // All valid
         let instance = json!({"x-a": "s", "y-b": 1, "z": true});
         let result = validator.evaluate(&instance);
         assert!(result.flag().valid);
 
-        // One invalid
         let instance = json!({"x-a": 123});
         let result = validator.evaluate(&instance);
         assert!(!result.flag().valid);

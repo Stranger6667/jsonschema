@@ -1,5 +1,5 @@
-//! Schema pairs whose difference `satisfiability` must decide, one file of
-//! `tests/canonical-difference` per test.
+// Schema pairs whose difference `satisfiability` must decide, one file of
+// `tests/canonical-difference` per test.
 use std::fmt;
 
 use jsonschema::{
@@ -94,7 +94,8 @@ impl Case {
             })
     }
 
-    /// One message per direction answering other than this case states.
+    /// One message per direction whose answer differs from `relation`, or that `pending` lists
+    /// but is decided.
     fn failures(&self) -> Vec<String> {
         let old = self.canonicalize(&self.old);
         let new = self.canonicalize(&self.new);

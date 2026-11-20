@@ -101,8 +101,8 @@ fn run_case(case: CanonicalCase) {
     let form = form.expect("at least one input");
     let canonical = canonical.expect("at least one input");
 
-    // `satisfiable` asks only whether the schema was proven empty; `satisfiability` pins the whole
-    // answer, witness included.
+    // `satisfiable` asks only whether the schema was proven empty; `satisfiability` pins the exact
+    // answer.
     let satisfiable = canonical.satisfiability() != Satisfiability::No;
     if let Some(expected) = &case.satisfiability {
         assert_eq!(
@@ -199,7 +199,7 @@ struct CanonicalCase {
     /// Pins the exact three-valued answer, where `satisfiable` only asks whether it is `no`.
     #[serde(default)]
     satisfiability: Option<String>,
-    /// Pins the public structural kind label.
+    /// Pins `CanonicalSchema::kind()`.
     #[serde(default)]
     kind: Option<String>,
     /// Force `should_validate_formats`; `None` keeps the draft default.

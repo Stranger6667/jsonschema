@@ -7,13 +7,11 @@ use crate::canonical::{
     ir::{Schema, SchemaKind, Verdict},
 };
 
-/// Intersections one proof under assumption may take, nested proofs included. A nested proof's
-/// outcome goes with its assumption, so targets naming many others prove the same pairs again in
-/// every scope; past this the proof settles nothing rather than cost a comparison many times what
-/// it costs without one.
+/// Intersections one proof under assumption may spend, nested proofs included. A nested result
+/// holds only under its assumption and is recomputed in every scope; past this the proof gives up.
 const PROOF_BUDGET: u64 = 500;
 
-/// Whether `outer` admits every value `inner` admits.
+/// Whether `outer` accepts every value `inner` accepts.
 ///
 /// Intersecting the two and getting `inner` back proves it; two pointers to recursive targets are
 /// compared through their bodies, with the containment assumed where the bodies reach the pair
@@ -32,7 +30,7 @@ pub(crate) fn covers(outer: &Schema, inner: &Schema, ctx: &CanonicalizationConte
     let outer = algebra::resolved(outer.clone(), ctx);
     let inner = algebra::resolved(inner.clone(), ctx);
     match (outer.kind(), inner.kind()) {
-        // Inside another proof the intersection above has already run this one.
+        // Skip a pair the intersection above already tried inside an enclosing proof.
         (SchemaKind::Reference(outer), SchemaKind::Reference(inner))
             if !ctx.attempted(inner, outer) && contained_by_assumption(outer, inner, ctx) =>
         {
@@ -97,7 +95,7 @@ fn contained_by_assumption(
 }
 
 /// The narrower of two pointers a containment proof in progress reaches, where it holds one inside
-/// the other. Outside a proof neither is, at the cost of one emptiness check.
+/// the other. Outside a proof it returns `None` after one check.
 pub(crate) fn narrower<'a>(
     first: &'a Arc<str>,
     second: &'a Arc<str>,

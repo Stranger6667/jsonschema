@@ -19,7 +19,8 @@ struct SuiteCase {
     tests: Vec<TestCase>,
 }
 
-// Cases run under the newest dialect this crate implements; `9999` marks a future release.
+// Cases run under the newest dialect this crate implements; a `compatibility` of `9999` marks a
+// future release.
 const LATEST_DIALECT: u32 = 2020;
 
 fn runs_under_latest_dialect(compatibility: &str) -> bool {

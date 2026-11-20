@@ -39,8 +39,8 @@ mod bench {
         json!({"$ref": format!("#/$defs/d{}", n - 1), "$defs": defs})
     }
 
-    // The fixture is a Swagger document, not a schema; root it at real API objects so its
-    // `definitions` closure is actually canonicalized instead of collapsing to `true`.
+    // The fixture is a Swagger document, not a schema; rooted at three API objects, canonicalize
+    // reads its `definitions` instead of returning `true`.
     fn kubernetes_api_schema() -> Value {
         let mut document = read_json(KUBERNETES);
         json!({
@@ -83,8 +83,8 @@ mod bench {
             json!({"type": "object", "properties": props})
         };
 
-        // Bounds far from zero on a fractional grid: each end is snapped onto a multiple, which is
-        // where the exact rational behind a spelling earns its keep.
+        // Bounds far from zero with `multipleOf: 0.5`: each end snaps onto a multiple, which needs
+        // the exact rational the literal names.
         let wide_numeric_grid = json!({
             "type": "number",
             "multipleOf": 0.5,
@@ -106,8 +106,8 @@ mod bench {
 
         let chained_refs = chained_ref_defs(160);
 
-        // Each `if` complements into a union, and the conjunction takes their product, so the same
-        // pair of branches is intersected over and over.
+        // Each `if`/`then` becomes an `anyOf` over the negated condition, and `allOf` multiplies
+        // their branches, so the same pair of branches is intersected over and over.
         let negated_branches_in_allof = json!({"allOf": (0..3_usize)
             .map(|i| json!({
                 "if": {"type": "object", "properties": {"kind": {
@@ -151,7 +151,7 @@ mod bench {
         };
 
         // A closed map whose entries are unions, the shape a linter configuration takes: `not`
-        // over it crosses two wide unions before the pool is minimized.
+        // over it crosses two wide unions before their branches are minimized.
         let negated_closed_object_of_unions = {
             let mut rules = Map::with_capacity(50);
             for i in 0..50_usize {
@@ -176,7 +176,7 @@ mod bench {
             }})
         };
 
-        // Every branch admits the empty object, so each one overlaps all the others.
+        // Every branch accepts the empty object, so each one overlaps all the others.
         let overlapping_open_objects = json!({"type": "array", "items": {"anyOf": (0..64_usize)
             .map(|i| json!({"type": "object", "properties": {format!("p{i}"): {"type": "integer"}}}))
             .collect::<Vec<_>>()}});
@@ -190,7 +190,7 @@ mod bench {
             json!({"type": "object", "dependentRequired": dependencies})
         };
 
-        // Every union doubles the branches, so the run gives up on the product it cannot carry.
+        // Every `anyOf` doubles the branches, so the product of all 24 exceeds the budget.
         let all_of_two_way_unions = json!({"allOf": (0..24_usize)
             .map(|i| json!({"anyOf": [
                 {"required": [format!("a{i}")]},

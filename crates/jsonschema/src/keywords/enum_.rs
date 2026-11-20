@@ -66,9 +66,7 @@ impl<F: Json> Validate<F> for EnumValidator {
     }
 
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
-        // If the input value type is not in the types present among the enum options, then there
-        // is no reason to compare it against all items - we know that
-        // there are no items with such type at all
+        // An instance of a type no option has matches none.
         if self.types.contains_value_type::<F>(instance) {
             self.items.iter().any(|item| instance.equals_value(item))
         } else {
@@ -375,7 +373,7 @@ mod tests {
         tests_util::assert_schema_location(schema, instance, expected);
     }
 
-    // 10 entries — exercises BigStringEnumValidator
+    // 11 entries, one past `STRING_ENUM_THRESHOLD`: exercises `BigStringEnumValidator`
     const BIG_STRING_ENUM: &str = r#"{
         "enum": ["a","b","c","d","e","f","g","h","i","j","k"]
     }"#;
@@ -453,7 +451,7 @@ mod tests {
         tests_util::is_not_valid(schema, instance);
     }
 
-    // Options agreeing on length, first and last eight bytes share a head
+    // Options with equal length and equal first and last eight bytes share a `KeyHead`
     #[test_case("prefix0002suffix00", true)]
     #[test_case("prefix0003suffix00", false)]
     #[test_case("prefix0002suffix0", false)]

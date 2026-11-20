@@ -80,16 +80,16 @@ impl IntoIterator for ArrayLeaves {
     }
 }
 
-/// Fold the length windows of leaves that agree on distinctness and the item schema.
+/// Fold the length windows of leaves that agree on every other facet.
 /// e.g.  anyOf [
 ///         {"type": "array", "uniqueItems": true, "maxItems": 2},
 ///         {"type": "array", "uniqueItems": true, "minItems": 3}
 ///       ]  =>  {"type": "array", "uniqueItems": true}
 ///
-/// One demanding distinct items admits fewer arrays, so those leaves stay apart.
+/// One demanding distinct items accepts fewer arrays, so those leaves stay apart.
 /// e.g.  anyOf [
-///         {"type": "array", "uniqueItems": true, "minItems": 5},
-///         {"type": "array", "maxItems": 2}
+///         {"type": "array", "uniqueItems": true, "items": {"type": "integer"}, "maxItems": 2},
+///         {"type": "array", "items": {"type": "integer"}, "minItems": 3}
 ///       ]  =>  unchanged
 fn merge(mut leaves: Vec<ArrayLeaf>) -> Vec<ArrayLeaf> {
     if leaves.len() < 2 {
@@ -170,7 +170,7 @@ fn flush_group(
     });
 }
 
-/// Whether the leaf admits every array whose length sits in its window.
+/// Whether the leaf accepts every array whose length sits in its window.
 fn constrains_only_length(leaf: &ArrayLeaf) -> bool {
     matches!(leaf.distinctness, Distinctness::Unconstrained)
         && leaf.prefix.is_empty()
@@ -179,7 +179,7 @@ fn constrains_only_length(leaf: &ArrayLeaf) -> bool {
 }
 
 /// Widen a facet-carrying window over a bare sibling window it touches: the lengths gained lie
-/// inside the bare window, which admits those arrays with any content, so the union is unchanged.
+/// inside the bare window, which accepts those arrays with any content, so the union is unchanged.
 /// The boundary between the two then has one form, whatever the facet leaf's window said.
 /// ```text
 /// e.g.  anyOf [
@@ -222,7 +222,7 @@ fn extend_over_bare_windows(leaves: &mut [ArrayLeaf]) {
     }
 }
 
-/// Drop a `minItems: 1` when another branch admits the empty array: the drop adds only `[]`, which
+/// Drop a `minItems: 1` when another branch accepts the empty array: the drop adds only `[]`, which
 /// that branch accepts and which satisfies any item schema and distinctness vacuously.
 /// ```text
 /// e.g.  anyOf [
@@ -263,7 +263,7 @@ fn hand_off_empty(leaves: &mut [ArrayLeaf]) {
 ///         {"type": "array", "uniqueItems": true, "minItems": 2}
 ///       ]  =>  {"type": "array", "uniqueItems": true}
 ///
-/// A gap between the two leaves keeps them apart, since the lengths between them admit repeats.
+/// A gap between the two leaves keeps them apart, since the lengths between them allow repeats.
 /// e.g.  anyOf [
 ///         {"type": "array", "maxItems": 1},
 ///         {"type": "array", "uniqueItems": true, "minItems": 4}
@@ -314,7 +314,7 @@ fn absorb_trivially_distinct(leaves: &mut Vec<ArrayLeaf>) {
 ///       ]  =>  {"type": "array", "items": {"type": "integer"}}
 /// ```
 ///
-/// A gap between the two windows keeps them apart: widening would admit the lengths between them.
+/// A gap between the two windows keeps them apart: widening would accept the lengths between them.
 /// ```text
 /// e.g.  anyOf [
 ///         {"const": []},
@@ -334,7 +334,7 @@ fn absorb_trivially_conforming(leaves: &mut Vec<ArrayLeaf>) {
     };
     let window = leaves[trivial].lengths.clone();
     // Merging the pair yields one window exactly when they overlap or touch. A `contains` leaf
-    // stays apart: the empty array fails its demand, so widening over it would admit too much.
+    // stays apart: the empty array fails its demand, so widening over it would accept too much.
     let Some((target, widened)) = leaves
         .iter()
         .enumerate()
@@ -355,7 +355,7 @@ fn absorb_trivially_conforming(leaves: &mut Vec<ArrayLeaf>) {
     leaves.remove(trivial);
 }
 
-/// Drop a leaf whose arrays another leaf already admits: a window that contains it, saying nothing
+/// Drop a leaf whose arrays another leaf already accepts: a window that contains it, saying nothing
 /// about distinctness the leaf does not say too.
 /// e.g.  anyOf [
 ///         {"type": "array"},
@@ -371,11 +371,10 @@ fn drop_subsumed(leaves: &mut Vec<ArrayLeaf>) {
             if index == other_index || !keep[other_index] || !keep[index] {
                 continue;
             }
-            // Element constraints are compared only for equality: deciding that one schema admits
-            // every element another does needs a subsumption test the algebra does not have. So
-            // `other` is looser exactly when its per-index schemas are an equal prefix of `leaf`'s,
-            // it places nothing beyond them, and every count demand it makes is one `leaf` repeats
-            // verbatim, while `leaf` constrains further.
+            // Element constraints are compared only for equality: this pass has no context to run
+            // `containment::covers` with. So `other` is looser exactly when its per-index schemas
+            // are an equal prefix of `leaf`'s, it places nothing beyond them, and every count
+            // demand it makes is one `leaf` repeats verbatim, while `leaf` constrains further.
             let repeats_demands = other
                 .contains
                 .iter()

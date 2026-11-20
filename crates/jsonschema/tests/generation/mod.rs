@@ -1,5 +1,6 @@
-// Draw arithmetic is deliberately approximate - the wrapper's validator net judges every value,
-// so a saturating or lossy cast only moves the aim, and bound equality means the written bounds.
+// Draw arithmetic is approximate: `draw_valid_instance` checks every value against the validator,
+// so a saturating or lossy cast only shifts which values get drawn, and float equality compares
+// the written bounds.
 #![allow(
     clippy::cast_possible_truncation,
     clippy::cast_precision_loss,
@@ -20,17 +21,17 @@ use jsonschema::{
 };
 use serde_json::{Number, Value};
 
-// Each mounting test target uses its own slice of the pool.
+// Each test target including this module uses its own subset of these.
 #[allow(unused_imports)]
 pub(crate) use pool::{
     aliased_number, arbitrary_instance, arbitrary_scalar, draw_keys, finite_float, small_int,
     wide_number,
 };
 
-// Floors past this are not built out; the node declines instead.
+// A node whose minimum size exceeds this draws nothing.
 pub(crate) const MAX_SIZE: u64 = 8;
 
-// Aimed draws the sound wrapper spends before declaring the node out of reach.
+// Draws `draw_valid_instance` tries before giving up on the node.
 pub(crate) const MAX_ATTEMPTS: usize = 8;
 
 // A size floor no draw can reach reads as `u64::MAX`, which `MAX_SIZE` then declines.
@@ -74,17 +75,16 @@ impl Sampler<'_> {
         .draw(schema)
     }
 
-    // A value aimed inside the node's value set, or `None` where the aim has no exact
-    // construction. Facets the aim cannot honor exactly - engine-divergent patterns, `not`,
-    // `oneOf` exclusivity - are left to the wrapper's validator net; nothing is emitted off the
-    // set on purpose.
+    // A value aimed at what the node accepts, or `None` where no exact construction exists.
+    // Engine-divergent patterns, `not` and `oneOf` exclusivity are left to the validator check in
+    // `draw_valid_instance`; no draw aims outside the node.
     pub(crate) fn draw(&self, schema: &CanonicalSchema) -> Option<Value> {
         if self.depth == 0 {
             return None;
         }
         match schema.view() {
             CanonicalView::False => None,
-            // For an unmodeled document or a bar, the net decides what the candidate is worth.
+            // For `Raw` or `not`, the validator check decides what the candidate is worth.
             CanonicalView::True | CanonicalView::Raw(_) | CanonicalView::Not(_) => {
                 Some(self.tc.draw(arbitrary_instance()))
             }
@@ -168,8 +168,8 @@ impl Sampler<'_> {
     }
 }
 
-// Only values the canonical schema's own validator admits leave this function: the aim is exact
-// where it can be, and the net rejects the rest of a draw's attempts.
+// Returns only values `validator` accepts: draws aim at the schema where they can, and the
+// validator rejects the rest of a draw's attempts.
 pub(crate) fn draw_valid_instance(
     tc: &TestCase,
     canonical: &CanonicalSchema,

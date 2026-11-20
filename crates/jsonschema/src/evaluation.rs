@@ -36,13 +36,12 @@ fn names_value(names: &[&'static str]) -> serde_json::Value {
 }
 
 impl Annotations {
-    /// Create a new `Annotations` instance.
     #[must_use]
     pub(crate) fn new(v: serde_json::Value) -> Self {
         Annotations(Arc::new(AnnotationsValue::Value(v)))
     }
 
-    /// `value`, shared by every annotation of it.
+    /// A shared annotation of `value`; boolean annotations allocate nothing.
     #[must_use]
     pub(crate) fn boolean(value: bool) -> Self {
         static TRUE: LazyLock<Annotations> =
@@ -144,7 +143,6 @@ impl ErrorDescription {
         }
     }
 
-    /// Create an `ErrorDescription` from a `ValidationError`.
     #[inline]
     #[must_use]
     pub(crate) fn from_validation_error(e: &ValidationError<'_>) -> Self {
@@ -179,8 +177,8 @@ impl ErrorDescription {
     }
 }
 
-/// Formats `error` into a stack buffer first, so the message is allocated once at its final length
-/// instead of growing through every power of two below it.
+/// Formats `error` into a stack buffer first, so a message that fits `MESSAGE_BUFFER` is allocated
+/// once at its final length instead of growing through every power of two below it.
 fn render_message(error: &ValidationError<'_>) -> String {
     let mut writer = MessageWriter {
         buffer: [0; MESSAGE_BUFFER],
@@ -268,7 +266,8 @@ struct InstancePositions {
     /// forward pass renders every position. Chunks are never resized, so growth copies nothing.
     entries: Vec<Vec<Position>>,
     len: usize,
-    /// Every property name below a recorded position, so recording one allocates nothing per node.
+    /// The names of every `Key` segment, concatenated, so recording a position allocates nothing
+    /// of its own.
     keys: String,
     prerendered: Vec<Location>,
     /// Every position's pointer, rendered together on the first read.
@@ -349,7 +348,7 @@ pub struct EvaluationNode {
     pub(crate) next_sibling: u32,
 }
 
-// Kept under 128 bytes so moves stay inline copies rather than `memcpy` calls.
+// Pinned at 96 bytes; under 128, moves stay inline copies rather than `memcpy` calls.
 #[cfg(all(target_arch = "x86_64", target_pointer_width = "64"))]
 const _: () = assert!(std::mem::size_of::<EvaluationNode>() == 96);
 
@@ -390,8 +389,8 @@ pub struct RunUnits {
     len: u32,
 }
 
-/// The units the latest runs share, by what fixes them: the code that recorded them, and the
-/// subschema's evaluation path.
+/// The units of the latest runs, with what identifies them: the code that recorded them
+/// (`owner`) and the subschema's evaluation path.
 #[derive(Debug)]
 struct LatestRunUnits {
     owner: usize,
@@ -399,7 +398,7 @@ struct LatestRunUnits {
     units: RunUnits,
 }
 
-/// The items collected for one run until an item breaks it.
+/// Consecutive items gathered into one run, until an item that needs its own node ends it.
 #[derive(Debug, Default, Clone, Copy)]
 pub struct PendingRun {
     start: usize,
@@ -434,7 +433,7 @@ pub(crate) struct EvaluationArena {
     positions: InstancePositions,
     /// Every run, by the index its child link carries.
     runs: Vec<ItemRun>,
-    /// The items of every run.
+    /// How many items all runs hold: the next run's offset into `run_locations`.
     run_items: u32,
     /// Every run item's pointer, rendered together on the first read.
     run_locations: OnceLock<Box<[Location]>>,
@@ -549,7 +548,8 @@ impl EvaluationArena {
             .map(|latest| latest.units)
     }
 
-    /// Records `units`, the subschema's first, for the runs `owner` makes of that subschema's items.
+    /// Records `units`, the subschema's unit first, for the runs `owner` makes of that subschema's
+    /// items.
     pub(crate) fn add_run_units(
         &mut self,
         owner: usize,
@@ -743,7 +743,7 @@ impl ChildList {
         self.valid
     }
 
-    /// A list of nodes that were collected before the arena was reachable.
+    /// A list of `nodes`, for tests that build the nodes first.
     #[cfg(test)]
     pub(crate) fn from_nodes(
         arena: &mut EvaluationArena,
@@ -816,7 +816,7 @@ impl EvaluationNode {
 
 /// Result of evaluating a JSON instance against a schema.
 ///
-/// This type provides access to structured output formats as defined in the
+/// Structured output formats of the
 /// [JSON Schema specification](https://json-schema.org/draft/2020-12/json-schema-core#name-output-structure).
 ///
 /// # Output Formats
@@ -838,19 +838,15 @@ impl EvaluationNode {
 /// let schema = json!({"type": "string", "minLength": 3});
 /// let validator = jsonschema::validator_for(&schema)?;
 ///
-/// // Evaluate an instance
 /// let instance = json!("ab");
 /// let evaluation = validator.evaluate(&instance);
 ///
-/// // Check validity with flag format
 /// let flag = evaluation.flag();
 /// assert!(!flag.valid);
 ///
-/// // Get structured output as JSON
 /// let list_output = serde_json::to_value(evaluation.list())?;
 /// println!("{}", serde_json::to_string_pretty(&list_output)?);
 ///
-/// // Iterate over errors
 /// for error in evaluation.iter_errors() {
 ///     println!("Error at {}: {}", error.instance_location, error.error);
 /// }
@@ -906,9 +902,6 @@ impl Evaluation {
     }
     /// Returns the flag output format.
     ///
-    /// This is the simplest output format, containing only a boolean indicating
-    /// whether the instance is valid according to the schema.
-    ///
     /// # Examples
     ///
     /// ```rust
@@ -955,9 +948,7 @@ impl Evaluation {
     }
     /// Returns the list output format.
     ///
-    /// This format provides a flat list of all evaluation units, where each unit
-    /// contains information about a specific validation step including its location,
-    /// validity, annotations, and errors.
+    /// Every output unit, flattened in pre-order.
     ///
     /// # Examples
     ///
@@ -1039,9 +1030,8 @@ impl Evaluation {
     }
     /// Returns the hierarchical output format.
     ///
-    /// This format represents the evaluation as a tree structure that mirrors the
-    /// schema's logical structure. Each node contains its validation result along
-    /// with nested child nodes representing sub-schema evaluations.
+    /// Output units nested by evaluation: each unit holds those of the subschemas evaluated
+    /// below it.
     ///
     /// # Examples
     ///
@@ -1133,10 +1123,9 @@ impl Evaluation {
     }
     /// Returns an iterator over all annotations produced during evaluation.
     ///
-    /// Annotations are metadata emitted by keywords during successful validation.
-    /// They can be used to collect information about which parts of a schema
-    /// matched the instance. A failing schema produces no annotations, including those of
-    /// its subschemas, so an invalid instance yields none.
+    /// Annotations are metadata emitted by keywords during successful validation. A failing
+    /// schema produces no annotations, including those of its subschemas, so an invalid instance
+    /// yields none.
     ///
     /// # Examples
     ///
@@ -1211,9 +1200,6 @@ impl Evaluation {
 
 /// Flag output format containing only a validity indicator.
 ///
-/// This is the simplest output format defined in the JSON Schema specification.
-/// It contains only a single boolean field indicating whether validation succeeded.
-///
 /// # JSON Structure
 ///
 /// ```json
@@ -1248,10 +1234,6 @@ pub struct FlagOutput {
 
 /// List output format providing a flat list of evaluation units.
 ///
-/// This format represents the evaluation result as a flat sequence where each
-/// entry corresponds to a validation step. Each unit includes its evaluation path,
-/// schema location, instance location, validity, and any annotations or errors.
-///
 /// See [`Evaluation::list`] for an example JSON payload produced by this type.
 #[derive(Debug)]
 pub struct ListOutput<'a> {
@@ -1260,10 +1242,6 @@ pub struct ListOutput<'a> {
 }
 
 /// Hierarchical output format providing a tree structure of evaluation results.
-///
-/// This format represents the evaluation as a nested tree that mirrors the logical
-/// structure of the schema. Each node contains validation results and child nodes
-/// representing nested sub-schema evaluations.
 ///
 /// See [`Evaluation::hierarchical`] for an example JSON payload produced by this type.
 #[derive(Debug)]
@@ -1314,9 +1292,8 @@ where
 }
 
 fn collect_list_entries(arena: &EvaluationArena, index: u32, out: &mut Vec<Unit>) {
-    // Note: The spec says "Output units which do not contain errors or annotations SHOULD be
-    // excluded" but the official test suite includes all nodes. We include all nodes to match
-    // the reference implementation and test suite expectations.
+    // Keeps units without errors or annotations, which the spec says SHOULD be excluded: the
+    // official test suite expects them.
     out.push(Unit::Node(index));
     let mut link = arena.node(index).first_child;
     while link != NO_NODE {
@@ -1733,10 +1710,6 @@ impl Serialize for RunUnitEntry<'_> {
 
 /// Entry describing annotations emitted by a keyword during evaluation.
 ///
-/// Annotations are metadata produced by keywords during successful validation.
-/// They provide additional information about which schema keywords matched
-/// and what values they produced.
-///
 /// # Examples
 ///
 /// ```rust
@@ -1772,7 +1745,7 @@ impl Serialize for RunUnitEntry<'_> {
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub struct AnnotationEntry<'a> {
-    /// The JSON Pointer to the schema keyword that produced the annotation.
+    /// The keyword's absolute URI when it has one, otherwise its JSON Pointer.
     pub schema_location: &'a str,
     /// The absolute URI of the keyword location, if available.
     pub absolute_keyword_location: Option<&'a Uri<String>>,
@@ -1783,9 +1756,6 @@ pub struct AnnotationEntry<'a> {
 }
 
 /// Entry describing errors emitted by a keyword during evaluation.
-///
-/// Error entries contain information about validation failures, including
-/// the locations in both the schema and instance where the error occurred.
 ///
 /// # Examples
 ///
@@ -1812,7 +1782,7 @@ pub struct AnnotationEntry<'a> {
 /// ```
 #[derive(Clone, Copy, Debug)]
 pub struct ErrorEntry<'a> {
-    /// The JSON Pointer to the schema keyword that produced the error.
+    /// The keyword's absolute URI when it has one, otherwise its JSON Pointer.
     pub schema_location: &'a str,
     /// The absolute URI of the keyword location, if available.
     pub absolute_keyword_location: Option<&'a Uri<String>>,
@@ -1883,8 +1853,7 @@ impl<'a> Iterator for NodeIter<'a> {
 
 /// Iterator over annotations produced during evaluation.
 ///
-/// This iterator traverses the evaluation tree and yields [`AnnotationEntry`]
-/// for each node that produced annotations during validation.
+/// Yields an [`AnnotationEntry`] for each unit that produced annotations.
 ///
 /// A failing schema produces no annotations, including those of its subschemas.
 ///
@@ -1953,11 +1922,7 @@ impl<'a> Iterator for AnnotationIter<'a> {
 
 /// Iterator over errors produced during evaluation.
 ///
-/// This iterator traverses the evaluation tree and yields [`ErrorEntry`]
-/// for each error encountered during validation.
-///
-/// Nodes can have multiple errors, and this iterator will yield all of them
-/// in depth-first order.
+/// Yields an [`ErrorEntry`] per error, depth-first.
 ///
 /// # Examples
 ///
@@ -2102,17 +2067,18 @@ pub mod generated {
         /// The absolute URI the pointers resolve against, if the schema has one.
         #[serde(default)]
         base: Option<String>,
-        /// Each resource a schema sits in, where references resolving through the dynamic scope
-        /// use them.
+        /// Each resource a schema sits in, for references that resolve through the dynamic scope.
         #[serde(default)]
         resources: Vec<ResourceTable>,
         /// The code of each reference target a `$ref` enters.
         #[serde(default)]
         functions: Vec<Function>,
-        /// The code the root runs as, whose references to the root pass its cycle guard.
+        /// The root's entry in `functions` when a `$ref` targets it; references back to the root
+        /// enter its cycle guard.
         #[serde(default)]
         root_function: Option<usize>,
-        /// References keep the dynamic scope, which something reads.
+        /// References track the dynamic scope, since a `$dynamicRef`, a `$recursiveRef` or
+        /// generated code reads it.
         #[serde(default)]
         keeps_scope: bool,
     }
@@ -2120,8 +2086,8 @@ pub mod generated {
     /// A reference target's generated code.
     #[derive(Deserialize)]
     struct Function {
-        /// The target in whose code it compiled first, unless that is the root's: it compiled
-        /// while that code did.
+        /// The function whose code the generator was emitting when it first emitted this one;
+        /// `None` when that is the root's code.
         #[serde(default)]
         parent: Option<usize>,
     }
@@ -2156,13 +2122,12 @@ pub mod generated {
         /// Its units, a range of `Tables::units` in the runtime's priority order.
         first: usize,
         count: usize,
-        /// The draft's unknown keywords.
+        /// The schema's annotation: its keywords the draft does not know.
         #[serde(default)]
         annotations: Option<Value>,
     }
 
-    /// A unit: its keyword alone, or with the other keywords whose errors it reports, its
-    /// annotation of a string instance, or the static target of its reference.
+    /// One output unit: a keyword, or a keyword with what `evaluate` needs to report it.
     #[derive(Deserialize)]
     #[serde(untagged)]
     enum UnitTable {
@@ -2205,16 +2170,15 @@ pub mod generated {
         absolute: Option<Arc<Uri<String>>>,
         /// Where else its errors are reported.
         aliases: Vec<Location>,
-        /// Its index among `Built::units`, then `Built::schemas`.
+        /// Its index in `Built::units` followed by `Built::schemas`.
         site: usize,
         annotations: Option<Annotations>,
         reference: Reference,
     }
 
-    /// With `enter`, enters the cycle guard of one reference target's code on an instance, unless
-    /// the instance is being validated against the target already, which it returns; without,
-    /// leaves the guard entered last, over the generated code's guard entries, `marks`, entering
-    /// `mark`. The generated code's own references to the target share it.
+    /// With `enter`, pushes `mark` onto `marks`, or returns `true` without pushing when it is there
+    /// already: the instance is being validated against the target. Without, pops the last mark.
+    /// The generated code's own references to the target share its mark.
     #[must_use]
     pub fn guard(
         marks: &'static LocalKey<RefCell<Vec<(usize, usize)>>>,
@@ -2331,7 +2295,8 @@ pub mod generated {
         /// `Tables::root_function`.
         root_function: Option<usize>,
         resources: Box<[ResourceTable]>,
-        /// References keep the dynamic scope, which something reads.
+        /// References track the dynamic scope, since a `$dynamicRef`, a `$recursiveRef` or
+        /// generated code reads it.
         keeps_scope: bool,
         /// Each schema's units, a range of `units`.
         schema_units: Box<[(usize, usize)]>,
@@ -2455,7 +2420,8 @@ pub mod generated {
     }
 
     /// A rebase, by the rebase it sits in (`0` for none) and the address of its `$ref` unit's
-    /// keyword location in `Built`. The two fix the dynamic scope, so the target too.
+    /// keyword location in `Built`. Together they determine the dynamic scope, and with it the
+    /// target.
     #[derive(PartialEq, Eq, Hash)]
     struct RebaseIdentity {
         outer: usize,
@@ -2519,7 +2485,7 @@ pub mod generated {
         (reported, Visits::Keyed(by_visit))
     }
 
-    /// Errors at most this many are looked up by a scan rather than by key.
+    /// Up to this many errors are scanned; more go into a map keyed by visit.
     const VISIT_SCAN: usize = 8;
 
     /// The visit of each error.
@@ -2530,8 +2496,9 @@ pub mod generated {
         Keyed(AHashMap<Visit<'e>, Reported>),
     }
 
-    /// `errors`, with the branch errors of a failing `anyOf`, or of a `oneOf` with no valid branch,
-    /// in place of the error holding them: the runtime reports those in the branches only.
+    /// `errors`, with the errors nested in a failing `anyOf`, a `oneOf` with no valid branch, or a
+    /// `propertyNames` in place of the error holding them: the runtime reports the nested ones
+    /// only.
     fn flatten<'e, 'i>(errors: &'e [ValidationError<'i>], into: &mut Vec<&'e ValidationError<'i>>) {
         for error in errors {
             match error.kind() {
@@ -2598,7 +2565,8 @@ pub mod generated {
             Evaluator::new(self.built(), self.scope, !valid, false, Vec::new())
         }
 
-        /// An evaluation whose units report the `errors` of the schema's errors run.
+        /// An evaluation whose units report `errors`, which a run of the generated `errors`
+        /// function (the errors run) collected.
         pub fn reporting<'e, 'i>(
             &'static self,
             errors: &'e [ValidationError<'i>],
@@ -2637,11 +2605,11 @@ pub mod generated {
         /// Each schema a reference through the dynamic scope entered, with the address of its
         /// instance location.
         active: Vec<(usize, usize)>,
-        /// The dynamic scope: the resources references left and those holding a resource the
-        /// evaluation descended into, the outermost first.
+        /// The dynamic scope, outermost first: each resource a reference left, and each resource
+        /// enclosing an embedded one the evaluation entered.
         scope: Vec<usize>,
         /// Evaluation paths below a `$ref`, built once per rebase and unit after the first
-        /// `EVALUATION_PATH_CACHE_THRESHOLD`, which small instances do not repay.
+        /// `EVALUATION_PATH_CACHE_THRESHOLD` builds, which small instances do not repay.
         rebased_paths: RefCell<AHashMap<RebasedPath, Location>>,
         rebased_calls: Cell<u32>,
         rebase_ids: RefCell<AHashMap<RebaseIdentity, usize>>,
@@ -3032,8 +3000,8 @@ pub mod generated {
         }
 
         /// The node of the reference unit at `unit` entering its static target, `pushed` joining
-        /// the dynamic scope. Code reaching the target while it compiles enters it under its
-        /// `guard`.
+        /// the dynamic scope. Code the generator emitted inside the target's own code enters it
+        /// under `guard`.
         #[inline]
         pub fn reference_node<'a, F: Json>(
             &mut self,
@@ -3202,7 +3170,7 @@ pub mod generated {
             }
         }
 
-        /// Whether the target code at `function` compiled while the code the evaluation is in did,
+        /// Whether the evaluation is in code the generator emitted inside the code at `function`,
         /// so that code guards its references to it.
         fn compiling(&self, function: usize) -> bool {
             let mut current = self.function;
@@ -3331,8 +3299,8 @@ pub mod generated {
             (self.scope.len() + 1 - anchored, anchored > 0)
         }
 
-        /// The errors run's errors of an `unevaluated*` subschema, which the errors of the run
-        /// below it come from, located below the current `$ref`s.
+        /// The errors run's errors of an `unevaluated*` subschema, rebased below the current
+        /// `$ref`s, for the evaluation nested under that subschema.
         #[must_use]
         pub fn nested_errors<'n, 'm>(
             &self,
@@ -3453,8 +3421,8 @@ pub mod generated {
             }
         }
 
-        /// The errors reported at `site` or its alias for the instance at `location`, in the order
-        /// they were reported.
+        /// The errors reported at `site` or one of its aliases for the instance at `location`, in
+        /// the order they were reported.
         #[inline]
         fn errors_at<F: Json>(
             &self,
@@ -3475,7 +3443,7 @@ pub mod generated {
             instance: &F::Node<'_>,
             location: &LazyLocation,
         ) -> Vec<ErrorDescription> {
-            // Written once a schema location of the unit turns out to have errors.
+            // Built on the first path and reused for the aliases.
             let mut instance_location = None;
             let mut string = None;
             // A visit's errors all come from one of the unit's schema locations.
@@ -4026,9 +3994,7 @@ mod tests {
         );
         let evaluation = Evaluation::with_root(arena, root);
 
-        // No annotations
         assert_eq!(evaluation.iter_annotations().count(), 0);
-        // No errors
         assert_eq!(evaluation.iter_errors().count(), 0);
 
         let flag = evaluation.flag();
@@ -4079,7 +4045,6 @@ mod tests {
     #[test]
     fn wide_tree() {
         let mut arena = EvaluationArena::default();
-        // Create a wide tree with many siblings
         let children = ChildList::from_nodes(
             &mut arena,
             (0..10).map(|i| leaf_with_annotation(&format!("/child{i}"), json!({"index": i}))),
@@ -4400,7 +4365,6 @@ mod tests {
         let expected = json!({"key": "value"});
         let annotations = Annotations::new(expected.clone());
 
-        // value() should return a reference to the inner value
         assert_eq!(annotations.value(), &expected);
     }
 
@@ -4409,7 +4373,6 @@ mod tests {
         let expected = json!({"key": "value", "nested": {"array": [1, 2, 3]}});
         let annotations = Annotations::new(expected.clone());
 
-        // into_inner() should consume self and return the owned value
         let inner = annotations.into_inner();
         assert_eq!(inner, expected);
     }
@@ -4419,7 +4382,6 @@ mod tests {
         let expected_message = "test error message";
         let error = ErrorDescription::from_string(expected_message);
 
-        // into_inner() should consume self and return the owned message
         let message = error.into_inner();
         assert_eq!(message, expected_message);
     }

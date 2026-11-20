@@ -19,7 +19,8 @@ impl<'i> Keyword<'i> for ProbeKeyword {
     }
 }
 
-/// Definitions in a `$ref` cycle long enough that part of it compiles after its referrers.
+/// Definitions in a `$ref` cycle longer than the nested `$ref` compilation limit, so the compiler
+/// cuts the chain and compiles the rest after its referrers.
 const CYCLE_LENGTH: usize = 64;
 
 fn tree_schema() -> Value {
@@ -120,7 +121,6 @@ fn run_validator(probe: Arc<DropProbe>, schema: &Value, instance: &Value) {
 
 #[test]
 fn recursive_validator_releases_tree_on_drop() {
-    // See GH-1125
     let probe = Arc::new(DropProbe);
     let weak: Weak<DropProbe> = Arc::downgrade(&probe);
 

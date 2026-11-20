@@ -1,9 +1,9 @@
 //! Renaming one operand's definition keys so two documents can resolve through one map.
 //!
 //! A `$defs` key is a name private to the document that declares it. Two versions of one schema
-//! routinely give the same key different bodies - editing a shared component is the commonest
-//! change there is - and one map cannot bind a name twice. Renaming the keys of one side apart
-//! leaves both meanings intact and lets the operation answer.
+//! give a key different bodies whenever a shared component is edited, and one map cannot bind a
+//! name twice. Renaming the keys of one side apart leaves both meanings intact and lets the
+//! operation answer.
 
 use std::{collections::BTreeSet, sync::Arc};
 

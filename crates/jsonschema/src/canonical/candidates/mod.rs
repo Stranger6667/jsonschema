@@ -19,13 +19,13 @@ mod string;
 /// How far a candidate walks into a node before giving up.
 pub(crate) const DEPTH: u32 = 6;
 
-/// The longest instance worth building. A bound past this is a bound no instance is built for: the
-/// answer is left undecided rather than spending the memory a schema keyword asked for.
+/// The longest instance worth building; past it the answer is left undecided instead of
+/// allocating what a keyword asks for.
 const CANDIDATE_LENGTH: u64 = 64;
 
-/// How many instances one walk may build. Depth and width bound a candidate on their own, but a
-/// node wide at every level multiplies them - 64 keys six levels down is a number of values no
-/// machine holds - so the walk also spends from one count and gives up where it runs out.
+/// Nodes one walk may visit. Depth and width bound a candidate on their own, but a node wide at
+/// every level multiplies them, so the walk also spends from one count and gives up where it runs
+/// out.
 pub(crate) const NODES: u32 = 4_096;
 
 /// The length a leaf demands, or `None` where no instance that long is worth building.
@@ -42,9 +42,8 @@ fn demanded_length(minimum: Option<&BoundCardinality>) -> Option<usize> {
 /// candidate is built.
 pub(crate) type Visit<'v> = dyn FnMut(Value) -> ControlFlow<()> + 'v;
 
-/// Offer each instance worth trying against `node` to `visit`, shortest first, until it breaks. A
-/// candidate proves nothing on its own - `algebra::admits_value` decides - so the sequence only has
-/// to be short.
+/// Offer each instance worth trying against `node` to `visit` until it breaks. A candidate proves
+/// nothing on its own - `algebra::admits_value` decides - so the sequence only has to be short.
 pub(crate) fn search<'a>(
     node: &'a Schema,
     target: &dyn Fn(&str) -> Option<&'a Schema>,

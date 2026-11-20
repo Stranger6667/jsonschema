@@ -17,7 +17,7 @@ use crate::keywords::Keyword;
 pub enum LocationSegment<'a> {
     /// Property name within a JSON object.
     Property(Cow<'a, str>),
-    /// JSON Schema keyword.
+    /// Index within a JSON array.
     Index(usize),
 }
 
@@ -85,7 +85,6 @@ fn get_cached_index_paths() -> &'static [Location; 16] {
 
 impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
     fn from(value: &'a LazyLocation<'_, '_>) -> Self {
-        // Fast path: empty location
         if value.parent().is_none() {
             return Location::new();
         }
@@ -98,7 +97,6 @@ impl<'a> From<&'a LazyLocation<'_, '_>> for Location {
                     if *idx < 16 {
                         return get_cached_index_paths()[*idx].clone();
                     }
-                    // Single index > 15: compute directly
                     let mut idx_buffer = itoa::Buffer::new();
                     let idx = idx_buffer.format(*idx);
                     return build_location(1 + idx.len(), |buffer| {
@@ -184,8 +182,8 @@ fn write_segments(value: &LazyLocation<'_, '_>, segments: usize, buffer: &mut St
 /// Tracks `$ref` traversals during validation for evaluation path computation.
 ///
 /// This is a stack-allocated linked list that gets pushed when crossing `$ref` boundaries.
-/// Each entry stores the **suffix** of the `$ref` location (path relative to its resource base),
-/// which is precomputed at compile time.
+/// Each entry stores the **suffix** of the `$ref` keyword: its location relative to the `$ref`
+/// target it sits in (the root at the top), precomputed at compile time.
 ///
 /// Use `Option<&RefTracker>` throughout the validation code:
 /// - `None` means no `$ref` has been traversed yet
@@ -208,8 +206,8 @@ fn write_segments(value: &LazyLocation<'_, '_>, segments: usize, buffer: &mut St
 ///
 /// At the "type" validator:
 ///   tracker.prefix() = /properties/user/$ref
-///   validator.suffix = /type
-///   tracker  = /properties/user/$ref/type
+///   keyword suffix   = /type
+///   evaluation path  = /properties/user/$ref/type
 /// ```
 ///
 /// # Example: Nested $refs
@@ -234,11 +232,11 @@ fn write_segments(value: &LazyLocation<'_, '_>, segments: usize, buffer: &mut St
 ///
 /// At the "type" validator:
 ///   tracker has two entries:
-///     1. suffix = /properties/order/$ref (from root resource)
-///     2. suffix = /properties/item/$ref  (from $defs/Order resource)
+///     1. suffix = /properties/order/$ref (relative to the root)
+///     2. suffix = /properties/item/$ref  (relative to /$defs/Order)
 ///   tracker.prefix() = /properties/order/$ref/properties/item/$ref
-///   validator.suffix = /type
-///   tracker  = /properties/order/$ref/properties/item/$ref/type
+///   keyword suffix   = /type
+///   evaluation path  = /properties/order/$ref/properties/item/$ref/type
 /// ```
 #[derive(Debug)]
 pub(crate) struct RefTracker<'a> {
@@ -259,13 +257,6 @@ pub(crate) struct RefTracker<'a> {
 
 impl<'a> RefTracker<'a> {
     /// Create a new tracker for a `$ref` traversal.
-    ///
-    /// # Arguments
-    /// - `suffix`: The `$ref` keyword's path relative to its resource base
-    ///   (precomputed at compile time via `ctx.suffix_with(keyword)`)
-    /// - `target_base`: The resource base of the `$ref` target
-    ///   (e.g., `/$defs/Person` when `$ref` points to `#/$defs/Person`)
-    /// - `parent`: The parent tracker, or `None` if this is the first `$ref`
     #[inline]
     #[must_use]
     pub(crate) fn new(
@@ -409,82 +400,11 @@ pub(crate) fn capture_evaluation_path(
 
 /// Lazily-computed evaluation path stored in validation errors.
 ///
-/// # Why lazy?
-///
-/// Validators like `anyOf` collect errors from all branches but discard them
-/// if any branch succeeds. Eagerly computing evaluation paths for discarded
-/// errors wastes CPU cycles. We defer the string join until the error is
-/// actually displayed.
-///
-/// # Example 1: No $ref traversal
-///
-/// ```text
-/// Schema: { "properties": { "name": { "type": "string" } } }
-/// Instance: { "name": 123 }
-///
-/// schema_path = tracker = /properties/name/type
-///
-/// We store: SameAsSchemaPath (zero extra allocation)
-/// ```
-///
-/// # Example 2: Single $ref
-///
-/// ```text
-/// Schema:
-/// {
-///   "properties": {
-///     "user": { "$ref": "#/$defs/Person" }
-///   },
-///   "$defs": {
-///     "Person": { "type": "object" }
-///   }
-/// }
-/// Instance: { "user": "not-an-object" }
-///
-/// schema_path     = /$defs/Person/type  (canonical location, no $ref)
-/// tracker = /properties/user/$ref/type (actual traversal path)
-///
-/// We store:
-///   - prefix: /properties/user/$ref  (from RefTracker)
-///   - suffix: /type                  (precomputed at compile time)
-///
-/// On access: tracker = prefix + suffix
-/// ```
-///
-/// # Example 3: Nested $refs
-///
-/// ```text
-/// Schema:
-/// {
-///   "properties": {
-///     "order": { "$ref": "#/$defs/Order" }
-///   },
-///   "$defs": {
-///     "Order": {
-///       "properties": {
-///         "item": { "$ref": "#/$defs/Item" }
-///       }
-///     },
-///     "Item": {
-///       "properties": {
-///         "price": { "type": "number" }
-///       }
-///     }
-///   }
-/// }
-/// Instance: { "order": { "item": { "price": "free" } } }
-///
-/// schema_path     = /$defs/Item/properties/price/type
-/// tracker = /properties/order/$ref/properties/item/$ref/properties/price/type
-///
-/// We store:
-///   - prefix: /properties/order/$ref/properties/item/$ref  (from RefTracker chain)
-///   - suffix: /properties/price/type                       (computed at error creation)
-/// ```
+/// Validators like `anyOf` discard the branch errors they collect once a branch succeeds, so the
+/// string join waits until `ValidationError::evaluation_path` or `into_parts` reads the path.
 #[derive(Debug)]
 pub(crate) enum LazyEvaluationPath {
-    /// No `$ref` traversal - `tracker` equals `schema_path`.
-    /// Zero extra storage; we reference `ValidationError::schema_path` directly.
+    /// No `$ref` traversal: the evaluation path is `schema_path`, so nothing extra is stored.
     SameAsSchemaPath,
 
     /// Already computed evaluation path (e.g., from `into_owned`).
@@ -733,7 +653,6 @@ impl Location {
         Arc::as_ptr(&self.0).cast::<u8>() as usize
     }
 
-    /// Get a clone of the inner `Arc<str>` representing the location.
     #[must_use]
     pub(crate) fn as_arc(&self) -> Arc<str> {
         Arc::clone(&self.0)

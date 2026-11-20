@@ -83,10 +83,8 @@ pub fn from_base16(instance_string: &str) -> Result<Option<String>, ValidationEr
 }
 
 // Supported in JSON Schema Draft 6, 7, 2019-09, and 2020-12
-// Per JSON Schema Validation spec §8.3, encoding values are defined in:
-// - RFC 4648 (base16, base32, base32hex, base64, base64url)
-// - RFC 2045 §6.7-6.8 (quoted-printable, 7bit, 8bit, binary)
-// We implement the RFC 4648 encodings as they are transformation encodings.
+// The RFC 4648 encodings; other `contentEncoding` values, RFC 2045 quoted-printable included,
+// are not checked.
 pub(crate) static DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS: LazyLock<
     AHashMap<&'static str, (ContentEncodingCheckType, ContentEncodingConverterType)>,
 > = LazyLock::new(|| {
@@ -105,7 +103,6 @@ mod tests {
     use super::*;
     use test_case::test_case;
 
-    // Test string: "foobar"
     const TEST_STRING: &str = "foobar";
     const TEST_BASE64: &str = "Zm9vYmFy";
     const TEST_BASE64URL: &str = "Zm9vYmFy"; // same as base64 for "foobar" (no +/)

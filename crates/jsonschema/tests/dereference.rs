@@ -357,7 +357,7 @@ fn registry_with_address() -> jsonschema::Registry<'static> {
     });
     "boolean_target_without_siblings_inlined"
 )]
-// Draft 7 ignores `$ref` siblings
+// Drafts 4 and 7 ignore `$ref` siblings
 #[test_case(
     json!({
         "$schema": "http://json-schema.org/draft-07/schema#",
@@ -496,7 +496,7 @@ fn test_dereference_keeps_target_apart_from_validating_siblings(target: Value, s
 
 #[test]
 fn test_dereference_with_registry() {
-    // Exercises the registry fast-path in dereference_with_options
+    // Dereferences through a caller-supplied registry.
     let schema = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$ref": ADDR_URI
@@ -533,7 +533,7 @@ fn test_unknown_ref_returns_error() {
 
 #[test]
 fn test_mutual_recursion_left_in_place() {
-    // A references B, B references A — indirect cycle
+    // `a` and `b` refer to each other.
     let schema = json!({
         "$defs": {
             "a": {
@@ -556,7 +556,7 @@ fn test_mutual_recursion_left_in_place() {
     assert_eq!(result["type"], "object");
     // b is inlined inside a
     assert_eq!(result["properties"]["b"]["type"], "object");
-    // a inside b is circular — left as $ref
+    // `a` inside `b` closes the cycle and stays a `$ref`.
     assert_eq!(
         result["properties"]["b"]["properties"]["a"]["$ref"],
         "#/$defs/a"
@@ -578,7 +578,7 @@ mod async_tests {
 
     #[tokio::test]
     async fn test_async_dereference_with_registry() {
-        // Exercises the registry fast-path in dereference_with_options_async
+        // Dereferences through a caller-supplied registry.
         let schema = json!({
             "$schema": "https://json-schema.org/draft/2020-12/schema",
             "$ref": ADDR_URI

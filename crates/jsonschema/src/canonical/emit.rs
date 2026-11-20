@@ -322,10 +322,9 @@ fn emit_string(leaf: &StringLeaf) -> Value {
         inner.insert("pattern".into(), Value::String(pattern.as_ref().to_owned()));
         keyed("not", Value::Object(inner))
     }));
-    // A media type and an encoding sharing one schema object decode-then-check under the runtime
-    // dispatch (`compile_media_type` reads its sibling `contentEncoding`), which would silently
-    // recompose two facets this leaf keeps independent - so whenever both are present, every value
-    // of either goes into its own `allOf` branch instead of beside `type` on the main object.
+    // Beside `contentEncoding`, `contentMediaType` checks the decoded string (`compile_media_type`
+    // reads its sibling), which the leaf's independent facets do not mean, so when both are
+    // present each value goes into its own `allOf` branch instead of beside `type`.
     let both_content_facets_present =
         !leaf.content_media_types.is_empty() && !leaf.content_encodings.is_empty();
     match leaf.content_media_types.as_slice() {
@@ -377,7 +376,7 @@ fn emit_string(leaf: &StringLeaf) -> Value {
 }
 
 /// Emit a number leaf as `{"type":"number"}` plus its interval bounds, using the exclusive keyword
-/// for an endpoint the interval does not admit.
+/// for an endpoint the interval excludes.
 fn emit_number(leaf: &NumberLeaf, draft: Draft) -> Value {
     debug_assert!(
         !leaf.excludes_integers || matches!(draft, Draft::Draft4),
@@ -439,7 +438,7 @@ fn emit_array(leaf: &ArrayLeaf, draft: Draft) -> Value {
         map.insert(key.into(), emit(items.kind(), draft));
     }
     // What cannot share a key with the leaf's own map takes a clause of its own. The clauses
-    // conjoin under one `allOf` beside it, so the leaf's `type` reaches every one of them.
+    // become `allOf` branches beside it, so the leaf's `type` reaches every one of them.
     let mut surplus: Vec<Value> = Vec::new();
     debug_assert!(
         leaf.contains
@@ -531,7 +530,7 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
     let mut map = Map::new();
     map.insert("type".into(), Value::String("object".into()));
     // Draft 4 has no `propertyNames`, so a key constraint is written as the closed maps it takes to
-    // name exactly the keys it admits.
+    // name exactly the keys it accepts.
     let draft4_keys = if matches!(draft, Draft::Draft4) {
         draft4_keys(leaf)
     } else {
@@ -549,7 +548,7 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
         }
     }
     match &draft4_keys {
-        // One closed map names every admitted key, so the entries sit inside it.
+        // One closed map names every accepted key, so the entries sit inside it.
         Some(Draft4Keys::Fused(clause)) => insert_fused_map(&mut map, clause, leaf, draft),
         // No single closed map names them, so the constraint gets maps of its own and the entries
         // stay beside them, saying what values the keys carry without closing anything.
@@ -644,7 +643,8 @@ fn emit_object(leaf: &ObjectLeaf, draft: Draft) -> Value {
         map.extend(wrapper);
     } else if !violated.is_empty() {
         // A demand can ride beside the split form of a Draft 4 key constraint, which carries an
-        // `allOf` of its own. Both are `allOf` branches of one leaf, so they join rather than replace.
+        // `allOf` of its own. Both are `allOf` branches of one leaf, so the lists merge rather than
+        // one replacing the other.
         let all_of = match map.remove("allOf") {
             Some(Value::Array(existing)) => existing.into_iter().chain(violated).collect(),
             Some(_) => unreachable!("every `allOf` this module writes is an array"),
@@ -741,7 +741,7 @@ fn emit_closed_clause(clause: &KeyClause) -> Value {
     Value::Object(map)
 }
 
-/// The schema an object meets exactly when every key it carries holds `names`.
+/// The schema accepting an object exactly when every key it carries satisfies `names`.
 ///
 /// ```text
 /// e.g.  {"const": "a"}  under Draft 4
@@ -749,7 +749,7 @@ fn emit_closed_clause(clause: &KeyClause) -> Value {
 /// ```
 fn emit_every_key_holds(names: &Schema, draft: Draft) -> Value {
     // Draft 4 has no `propertyNames`, so the constraint is written as the closed maps it takes to
-    // name exactly the keys it admits.
+    // name exactly the keys it accepts.
     let clauses = matches!(draft, Draft::Draft4)
         .then(|| draft4_key_clauses(names))
         .flatten();
@@ -775,7 +775,7 @@ fn emit_every_key_holds(names: &Schema, draft: Draft) -> Value {
     }
 }
 
-/// The keys and patterns one closed map names: a key is admitted when it is named or matched.
+/// The keys and patterns one closed map names: a key is accepted when it is named or matched.
 #[derive(Clone, Default, PartialEq, Eq, PartialOrd, Ord)]
 struct KeyClause {
     keys: Vec<String>,
@@ -783,7 +783,7 @@ struct KeyClause {
 }
 
 impl KeyClause {
-    /// The clause admitting every key either one admits.
+    /// The clause accepting every key either one accepts.
     fn merged(&self, other: &Self) -> Self {
         let mut keys = self.keys.clone();
         keys.extend_from_slice(&other.keys);
@@ -799,7 +799,7 @@ impl KeyClause {
 
 /// How Draft 4 writes an object leaf's key constraint.
 enum Draft4Keys {
-    /// One closed map names every admitted key, so the leaf's entries fit inside it.
+    /// One closed map names every accepted key, so the leaf's entries fit inside it.
     Fused(KeyClause),
     /// Several closed maps are needed, so the leaf's entries stay outside them.
     Split(Vec<KeyClause>),
@@ -814,7 +814,7 @@ fn draft4_keys(leaf: &ObjectLeaf) -> Option<Draft4Keys> {
         "a key constraint has at least one closed map"
     );
     // A lone clause takes the entries in only when it already names every pattern among them: one
-    // it leaves out would admit the keys that pattern matches, and an `additionalProperties`
+    // it leaves out would accept the keys that pattern matches, and an `additionalProperties`
     // beside it would take the place of the `additionalProperties: false` closing the map.
     if let [clause] = clauses.as_slice() {
         if leaf.additional.is_none()
@@ -831,7 +831,7 @@ fn draft4_keys(leaf: &ObjectLeaf) -> Option<Draft4Keys> {
     Some(Draft4Keys::Split(clauses))
 }
 
-/// The closed maps every admitted key is named by and no other key is, or `None` for a constraint
+/// The closed maps every accepted key is named by and no other key is, or `None` for a constraint
 /// closed maps cannot name.
 fn draft4_key_clauses(names: &Schema) -> Option<Vec<KeyClause>> {
     match names.kind() {
@@ -882,7 +882,7 @@ fn draft4_key_clauses(names: &Schema) -> Option<Vec<KeyClause>> {
             )
         }
         // A key holds the union by holding one branch, so taking one clause from each branch and
-        // merging them gives a map every admitted key is named by - one such map per combination.
+        // merging them gives a map every accepted key is named by - one such map per combination.
         // e.g.  anyOf [{"type": "string", "pattern": "^a"}, {"enum": ["x"]}]
         //       intersected with
         //       anyOf [{"type": "string", "pattern": "^b"}, {"enum": ["x"]}]

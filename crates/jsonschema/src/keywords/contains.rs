@@ -172,9 +172,6 @@ impl<F: Json> Validate<F> for ContainsValidator<F> {
     }
 }
 
-/// `minContains` validation. Used only if there is no `maxContains` present.
-///
-/// Docs: <https://json-schema.org/draft/2019-09/json-schema-validation.html#rfc.section.6.4.5>
 /// The matching items' units and their indices, as plain `contains` reports them, failing with
 /// `validator`'s error when the count of matches is out of its bounds.
 fn evaluate_bounded<F: Json, V: Validate<F>>(
@@ -211,6 +208,9 @@ fn evaluate_bounded<F: Json, V: Validate<F>>(
     }
 }
 
+/// `minContains` validation. Used only if there is no `maxContains` present.
+///
+/// Docs: <https://json-schema.org/draft/2019-09/json-schema-validation.html#rfc.section.6.4.5>
 pub(crate) struct MinContainsValidator<F: Json = SerdeJson> {
     node: SchemaNode<F>,
     min_contains: u64,

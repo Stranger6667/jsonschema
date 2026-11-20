@@ -1,7 +1,7 @@
-//! The divisors a numeric leaf admits values of.
+//! The `multipleOf` divisors a numeric leaf demands or bars.
 use super::BoundRational;
 
-/// Divisors every admitted value is a multiple of.
+/// Divisors every accepted value is a multiple of.
 ///
 /// `members` is every divisor the leaf was built from; `folded` is the same set with each pair one
 /// divisor can stand for folded together. Both are kept: folding on the way in would leave a later
@@ -71,20 +71,20 @@ impl Divisors {
         }
     }
 
-    /// The divisors admitting exactly the values both sets do.
+    /// The divisors demanding exactly what both sets demand.
     pub(crate) fn intersect(mut self, other: Self) -> Self {
         self.members.extend(other.members);
         Self::from_members(self.members)
     }
 
-    /// The divisors still constraining a whole value; the rest every integer already meets.
+    /// The divisors still constraining a whole value; the rest every integer already satisfies.
     pub(crate) fn over_integers(mut self) -> Self {
         self.members.retain(|step| !step.is_vacuous_over_integers());
         Self::from_members(self.members)
     }
 
-    /// Whether the interval holds a value every divisor admits. A folded divisor constrains more
-    /// than the ones it came from, so the answer is taken on the folded set.
+    /// Whether the interval holds a multiple of every divisor. A folded divisor constrains more
+    /// than each of the ones it came from, so the answer is taken on the folded set.
     pub(crate) fn admit_between(
         &self,
         minimum: Option<&super::BoundNumber>,
@@ -100,8 +100,9 @@ impl Divisors {
         self.members.iter().all(|step| step.divides(value))
     }
 
-    /// Whether every value the `other` divisors admit is also a multiple of all of these. Divisors
-    /// taking different arithmetic are left incomparable, since neither stands for the other.
+    /// Whether every multiple of all the `other` divisors is also a multiple of all of these.
+    /// Divisors taking different arithmetic are left incomparable, since neither stands for the
+    /// other.
     pub(crate) fn divide_all(&self, other: &Self) -> bool {
         self.folded.iter().all(|step| {
             other
@@ -112,11 +113,11 @@ impl Divisors {
     }
 }
 
-/// Divisors no admitted value is a multiple of.
+/// Divisors no accepted value is a multiple of.
 ///
 /// The dual of [`Divisors`]: each member bars its multiples, so the set demands every one of its
-/// exclusions at once and folds the other way — a member whose multiples another member's already cover is
-/// dropped, where [`Divisors`] folds a pair up to their least common multiple.
+/// exclusions at once and folds the other way: a member whose multiples another member's already
+/// cover is dropped, where [`Divisors`] folds a pair up to their least common multiple.
 #[derive(Debug, Clone, Default, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct ExcludedDivisors {
     members: Vec<BoundRational>,
@@ -166,7 +167,7 @@ impl ExcludedDivisors {
         self.members.iter().any(|step| step.divides(value))
     }
 
-    /// Whether every value the demanded divisors admit is barred, which leaves the leaf empty.
+    /// Whether every multiple of the demanded divisors is barred, which leaves the leaf empty.
     pub(crate) fn conflicts(&self, demanded: &Divisors) -> bool {
         self.members.iter().any(|barred| {
             demanded

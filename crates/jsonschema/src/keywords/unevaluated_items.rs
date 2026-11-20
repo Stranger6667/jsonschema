@@ -1,11 +1,5 @@
-//! Implementation of the `unevaluatedItems` keyword.
-//!
-//! This keyword validates array items that were not evaluated by other keywords like
-//! `items`, `prefixItems`, `contains`, or nested schemas in combinators (`allOf`, `anyOf`, `oneOf`),
-//! conditionals, and references.
-//!
-//! The implementation eagerly compiles a recursive `ItemsValidators` structure during
-//! schema compilation, using `Arc<OnceLock>` for circular reference handling.
+//! `unevaluatedItems`. Compilation builds an `ItemsValidators` tree; reference cycles share one
+//! `Arc<OnceLock>` cell.
 use referencing::{Draft, Vocabulary};
 use serde_json::{Map, Value};
 use std::{
@@ -27,40 +21,25 @@ use super::{
     CompilationResult,
 };
 
-/// Lazy items validators that are compiled on first access.
-/// Used for $recursiveRef and circular references to handle cycles during compilation.
+/// The cell reference cycles share while their target compiles.
 pub(crate) type PendingItemsValidators<F = SerdeJson> = Arc<OnceLock<ItemsValidators<F>>>;
 
 /// Holds compiled validators for items evaluation in unevaluatedItems.
-/// This structure is built during schema compilation and used during validation.
 pub(crate) struct ItemsValidators<F: Json = SerdeJson> {
-    /// Validator from "unevaluatedItems" keyword itself
     unevaluated: Option<SchemaNode<F>>,
-    /// Validator from "contains" keyword
     contains: Option<SchemaNode<F>>,
-    /// Reference validators from "$ref" keyword
-    /// Uses pending pattern to handle circular references
     ref_: Option<Checked<F, PendingItemsValidators<F>>>,
-    /// Reference validators from "$dynamicRef" keyword (Draft 2020-12+)
-    /// Uses pending pattern to handle circular references
     dynamic_ref: Option<Checked<F, PendingItemsValidators<F>>>,
-    /// Validators from "$recursiveRef" keyword (Draft 2019-09 only)
     recursive_ref: Option<Checked<F, PendingItemsValidators<F>>>,
-    /// Items limit - for Draft 2019-09 "items" keyword behavior
-    /// If present, marks first N items as evaluated
+    /// Drafts up to 2019-09: `items` marks this many leading items.
     items_limit: Option<usize>,
     /// Items schema present - for Draft 2020-12+ "items" keyword
     /// If true, marks ALL items as evaluated
     items_all: bool,
-    /// Prefix items count - from "prefixItems" keyword
     prefix_items: Option<usize>,
-    /// Conditional validators from "if/then/else" keywords
     conditional: Option<Box<ConditionalValidators<F>>>,
-    /// Validators from "allOf" keyword
     all_of: Option<Vec<(SchemaNode<F>, ItemsValidators<F>)>>,
-    /// Validators from "anyOf" keyword
     any_of: Option<Vec<(SchemaNode<F>, ItemsValidators<F>)>>,
-    /// Validators from "oneOf" keyword
     one_of: Option<Vec<(SchemaNode<F>, ItemsValidators<F>)>>,
 }
 
@@ -176,33 +155,27 @@ impl<F: Json> ItemsValidators<F> {
             }
         }
 
-        // Mark items based on items/prefixItems keywords
         if let Some(limit) = self.items_limit {
-            // Draft 2019-09: items (as array) marks first N items
             for idx in indexes.iter_mut().take(limit) {
                 *idx = true;
             }
         }
 
         if let Some(limit) = self.prefix_items {
-            // prefixItems marks first N items
             for idx in indexes.iter_mut().take(limit) {
                 *idx = true;
             }
         }
 
-        // Early exit if all items are already evaluated
         if indexes.iter().all(|&evaluated| evaluated) {
             return;
         }
 
-        // Process contains and (optionally) unevaluatedItems
         if let Some(array) = instance.as_array() {
             for (item, is_evaluated) in array.elements().zip(indexes.iter_mut()) {
                 if *is_evaluated {
                     continue;
                 }
-                // contains marks items that match
                 if let Some(validator) = &self.contains {
                     if validator.is_valid(&item, ctx) {
                         *is_evaluated = true;
@@ -221,7 +194,6 @@ impl<F: Json> ItemsValidators<F> {
             }
         }
 
-        // Handle conditional
         if let Some(conditional) = &self.conditional {
             conditional.mark_evaluated_indexes(instance, indexes, ctx, marking);
         }
@@ -823,7 +795,6 @@ impl<F: Json> Validate<F> for UnevaluatedItemsValidator<F> {
                             return false;
                         }
                     } else {
-                        // unevaluatedItems: false and item not evaluated
                         return false;
                     }
                 }

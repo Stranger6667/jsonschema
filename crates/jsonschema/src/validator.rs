@@ -1,6 +1,5 @@
-//! Building a JSON Schema validator.
-//! The main idea is to create a tree from the input JSON Schema. This tree will contain
-//! everything needed to perform such validation in runtime.
+//! The compiled `Validator`, the `Validate` trait its keywords implement, and the per-call
+//! `ValidationContext`.
 use std::{collections::hash_map::Entry, mem::ManuallyDrop, sync::Arc};
 
 use crate::{
@@ -19,7 +18,6 @@ use ahash::{AHashMap, AHashSet};
 use referencing::Uri;
 use serde_json::Value;
 
-// Re-export LazyEvaluationPath from paths module
 pub(crate) use crate::paths::LazyEvaluationPath;
 
 #[derive(Default)]
@@ -555,8 +553,7 @@ impl ValidationContext {
     /// Evaluation path for `location` under `tracker`, cached across instance nodes.
     ///
     /// Keying on addresses is sound because none of them can be freed and reused mid-run:
-    /// keyword locations and `$ref` suffixes live in the compiled schema, and cached prefixes
-    /// are owned by `eval_prefix_cache`.
+    /// keyword locations and `$ref` suffixes live in the compiled schema.
     pub(crate) fn evaluation_path(
         &mut self,
         tracker: &RefTracker<'_>,
@@ -598,25 +595,13 @@ impl ValidationContext {
     }
 }
 
-/// The Validate trait represents a predicate over some JSON value. Some validators are very simple
-/// predicates such as "a value which is a string", whereas others may be much more complex,
-/// consisting of several other validators composed together in various ways.
+/// A compiled validator: a predicate over an instance that also reports errors and output units.
 ///
-/// Much of the time all an application cares about is whether the predicate returns true or false,
-/// in that case the `is_valid` function is sufficient. Sometimes applications will want more
-/// detail about why a schema has failed, in which case the `validate` method can be used to
-/// iterate over the errors produced by this validator. Finally, applications may be interested in
-/// annotations produced by schemas over valid results, in this case the `evaluate` method can be used
-/// to obtain this information.
+/// `is_valid` answers whether the instance is valid, `validate` returns the first error,
+/// `collect_errors` every error, and `evaluate` the output units with their annotations.
 ///
 /// If you are implementing `Validate` it is often sufficient to implement `validate` and
-/// `is_valid`. `evaluate` is only necessary for validators which compose other validators. See the
-/// documentation for `evaluate` for more information.
-///
-/// # Context Types
-///
-/// - `is_valid` takes `LightweightContext`: Only cycle detection, zero path tracking overhead.
-/// - `validate`, `collect_errors`, `evaluate` take `ValidationContext`: Cycle detection + evaluation path tracking.
+/// `is_valid`. `evaluate` is only necessary for validators which compose other validators.
 pub(crate) trait Validate<F: Json = SerdeJson>: Send + Sync {
     fn collect_errors<'i>(
         &self,
@@ -764,20 +749,17 @@ pub(crate) fn evaluate_assertion<F: Json, V: Validate<F>>(
     }
 }
 
-/// The result of evaluating a validator against an instance. This is a "partial" result because it does not include information about
-/// where the error or annotation occurred.
+/// The result of evaluating a validator, without the locations its node adds.
 #[derive(PartialEq)]
 pub(crate) enum EvaluationResult {
     Valid {
         /// Annotations produced by this validator
         annotations: Option<Annotations>,
-        /// Children evaluation nodes
         children: ChildList,
     },
     Invalid {
         /// Errors which caused this schema to be invalid
         errors: Vec<ErrorDescription>,
-        /// Children evaluation nodes
         children: ChildList,
         /// Potential annotations that should be reported as dropped on failure
         annotations: Option<Annotations>,
@@ -785,7 +767,6 @@ pub(crate) enum EvaluationResult {
 }
 
 impl EvaluationResult {
-    /// Create an empty `EvaluationResult` which is valid
     pub(crate) fn valid_empty() -> EvaluationResult {
         EvaluationResult::Valid {
             annotations: None,
@@ -793,7 +774,6 @@ impl EvaluationResult {
         }
     }
 
-    /// Create an empty `EvaluationResult` which is invalid
     pub(crate) fn invalid_empty(errors: Vec<ErrorDescription>) -> EvaluationResult {
         EvaluationResult::Invalid {
             errors,
@@ -802,8 +782,7 @@ impl EvaluationResult {
         }
     }
 
-    /// Set the annotation that will be returned for the current validator. If this
-    /// `EvaluationResult` is invalid then this method does nothing
+    /// Sets the annotation; an invalid result reports it as dropped.
     pub(crate) fn annotate(&mut self, new_annotations: Annotations) {
         match self {
             Self::Valid { annotations, .. } | Self::Invalid { annotations, .. } => {
@@ -848,10 +827,6 @@ impl EvaluationResult {
 }
 
 /// A compiled JSON Schema validator.
-///
-/// This structure represents a JSON Schema that has been parsed and compiled into
-/// an efficient internal representation for validation. It contains the root node
-/// of the schema tree and the configuration options used during compilation.
 pub struct Validator<F: Json = SerdeJson> {
     pub(crate) root: SchemaNode<F>,
     /// `$ref` targets compiled off the call stack. Owning them here drops a long `$ref` chain
@@ -950,7 +925,7 @@ impl Validator<SerdeJson> {
 // call ergonomics (`&Value`, not `&&Value`) across every representation.
 #[allow(clippy::needless_pass_by_value)]
 impl<F: Json> Validator<F> {
-    /// Validate `instance` against `schema` and return the first error if any.
+    /// Validate `instance` and return the first error, if any.
     ///
     /// # Errors
     ///
@@ -990,9 +965,8 @@ impl<F: Json> Validator<F> {
         }
         ErrorIterator::from_iterator(errors.into_iter())
     }
-    /// Run validation against `instance` but return a boolean result instead of an iterator.
-    /// It is useful for cases, where it is important to only know the fact if the data is valid or not.
-    /// This approach is much faster, than [`Validator::validate`].
+    /// Whether `instance` is valid; builds no errors, so it is cheaper than
+    /// [`Validator::validate`].
     #[must_use]
     #[inline]
     pub fn is_valid(&self, instance: F::Node<'_>) -> bool {
@@ -1203,9 +1177,9 @@ mod tests {
     use std::sync::LazyLock;
     use test_case::test_case;
 
-    /// Large enough that early paths are built directly and later ones come from the cache.
     #[test]
     fn evaluation_paths_match_across_cache_threshold() {
+        // Large enough that early paths are built directly and later ones come from the cache.
         const ELEMENTS: usize = 5000;
 
         let schema = json!({
@@ -1374,12 +1348,10 @@ mod tests {
 
     #[test]
     fn only_keyword() {
-        // When only one keyword is specified
         let schema = json!({"type": "string"});
         let validator = crate::validator_for(&schema).unwrap();
         let value1 = json!("AB");
         let value2 = json!(1);
-        // And only this validator
         assert_eq!(validator.root.validators().len(), 1);
         assert!(validator.validate(&value1).is_ok());
         assert!(validator.validate(&value2).is_err());
@@ -1468,17 +1440,14 @@ mod tests {
             .build(&schema)
             .unwrap();
 
-        // Verify schema validation detects object with too few properties
         let instance = json!({});
         assert!(validator.validate(&instance).is_err());
         assert!(!validator.is_valid(&instance));
 
-        // Verify validator succeeds on a valid custom-object-type
         let instance = json!({ "a" : 1 });
         assert!(validator.validate(&instance).is_ok());
         assert!(validator.is_valid(&instance));
 
-        // Verify validator detects invalid custom-object-type
         let instance = json!({ "å" : 1 });
         let error = validator.validate(&instance).expect_err("Should fail");
         assert_eq!(error.to_string(), "Key is not ASCII");
@@ -1618,7 +1587,7 @@ mod tests {
 
             fn is_valid(&self, instance: &'i Value) -> bool {
                 match instance {
-                    // Numeric comparison should happen just like original behavior
+                    // Numbers compare as the built-in `minimum` does
                     Value::Number(instance) => {
                         if let Some(item) = instance.as_u64() {
                             !NumCmp::num_lt(item, self.limit)
@@ -1675,27 +1644,23 @@ mod tests {
             .build(&schema)
             .expect("Invalid schema");
 
-        // Control: verify schema validation rejects non-string types
         let instance = json!(15);
         assert!(validator.validate(&instance).is_err());
         assert!(!validator.is_valid(&instance));
 
-        // Control: verify validator rejects ill-formatted strings
         let instance = json!("not a currency");
         assert!(validator.validate(&instance).is_err());
         assert!(!validator.is_valid(&instance));
 
-        // Verify validator allows properly formatted strings that conform to custom keyword
         let instance = json!("3.00");
         assert!(validator.validate(&instance).is_ok());
         assert!(validator.is_valid(&instance));
 
-        // Verify validator rejects properly formatted strings that do not conform to custom keyword
         let instance = json!("1.99");
         assert!(validator.validate(&instance).is_err());
         assert!(!validator.is_valid(&instance));
 
-        // Define another schema that applies "minimum" to an integer to ensure original behavior
+        // Applied to an integer, `minimum` behaves as the built-in keyword does
         let schema = json!({ "minimum": 2, "type": "integer" });
         let validator = crate::options()
             .with_format("currency", currency_format_checker)
@@ -1703,12 +1668,10 @@ mod tests {
             .build(&schema)
             .expect("Invalid schema");
 
-        // Verify schema allows integers greater than 2
         let instance = json!(3);
         assert!(validator.validate(&instance).is_ok());
         assert!(validator.is_valid(&instance));
 
-        // Verify schema rejects integers less than 2
         let instance = json!(1);
         assert!(validator.validate(&instance).is_err());
         assert!(!validator.is_valid(&instance));
@@ -1719,7 +1682,6 @@ mod tests {
             .with_keyword("minimum", custom_minimum_factory)
             .build(&schema)
             .expect_err("Should fail");
-        // The meta-schema validates before our factory runs, so we get a type error
         assert_eq!(error.to_string(), "\"foo\" is not of type \"number\"");
     }
 
@@ -1947,7 +1909,6 @@ mod tests {
         let schema = json!({"type": "string", "minLength": 3});
         let validator = crate::validator_for(&schema).expect("Valid schema");
 
-        // Clone the validator
         let cloned = validator.clone();
 
         // Both validators should work independently

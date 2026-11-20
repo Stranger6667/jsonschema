@@ -42,7 +42,7 @@ pub(crate) struct ParseOutput {
     pub(crate) parsed_nodes: AHashMap<*const Value, ParsedNode>,
     /// The same for each definition body, kept whether or not the final IR still reads it.
     pub(crate) parsed_definitions: AHashMap<Arc<str>, ParsedBody>,
-    /// The sides of the nodes drill may look into, `base` first. Filled only when recording.
+    /// The sides of the nodes `drill` may look into, `base` first. Filled only when recording.
     pub(crate) kept_parts: AHashMap<usize, Vec<(PartKind, Schema)>>,
     /// The target each definition key was generated for. Filled only when recording.
     pub(crate) sources: AHashMap<Arc<str>, usize>,
@@ -232,7 +232,7 @@ pub(crate) fn parse<'a>(
 
 /// [`parse`] also noting what each document node parsed to, which only
 /// [`PreparedDocument::unsatisfiable`](crate::canonical::PreparedDocument::unsatisfiable)
-/// reads. Recording allocates two maps per parse, so every other caller skips it.
+/// reads. Recording allocates per-node maps, so every other caller skips it.
 pub(crate) fn parse_tracking_nodes<'a>(
     value: &'a Value,
     ctx: &CanonicalizationContext,
@@ -435,7 +435,8 @@ pub(crate) struct Assumptions {
 
 /// [`parse`] under `assumptions`.
 ///
-/// One parse applies a whole round's hypothesis, so every body comes back canonicalized under it.
+/// One parse applies a whole fixpoint round's `assumptions`, so every body comes back canonicalized
+/// under them.
 pub(crate) fn parse_with<'a>(
     value: &'a Value,
     ctx: &CanonicalizationContext,
@@ -453,7 +454,7 @@ pub(crate) fn parse_with<'a>(
     )
 }
 
-/// [`parse_with`] keeping every body, including those the hypothesis made unreachable.
+/// [`parse_with`] keeping every body, including those the `assumptions` made unreachable.
 ///
 /// Folding every reference to a key is what makes it unreachable, and the fixpoint reads that body
 /// to decide whether the assumption held - so pruning here would delete the evidence.
@@ -481,7 +482,7 @@ enum Recording {
     Skip,
 }
 
-/// Whether to drop the definitions the emitted IR no longer references.
+/// Whether to drop the definitions the emitted IR does not reference.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Pruning {
     Prune,
@@ -514,7 +515,7 @@ fn parse_capturing<'a>(
     recording: Recording,
     seed: Option<&Seed>,
 ) -> Result<CapturedParse, CanonicalizationError> {
-    // A body that came out `false` denotes the empty set, so every reference to it folds as well -
+    // A body that came out `false` accepts nothing, so every reference to it folds as well -
     // but `resolve_reference` can only fold a target whose body already finished parsing, which
     // makes that dependent on the order definitions were registered in. Re-parsing with the folded
     // keys added, until none are new, settles it: the result no longer depends on the order.
@@ -548,7 +549,8 @@ fn parse_capturing<'a>(
             // A choice between pointers reads the bodies they name, and one still being parsed has
             // none to read - which would make the form depend on the order the targets registered
             // in. One re-parse with this round's bodies known settles every such choice: what the
-            // choice reads off a body is which types it admits, and folding one cannot change that.
+            // choice reads off a body is which types it accepts, and folding one cannot change
+            // that.
             let settles = !reparsed_for_bodies
                 && parsed
                     .pending_choices
@@ -595,9 +597,9 @@ fn parse_once<'a>(
         };
     }
     let parsed = parse_schema_in_scope(value, ctx, true, resolver, &mut state)?;
-    // An in-between object intersection the IR cannot express may have produced nodes already, so discard
-    // the whole document rather than just that pairing site. An `allOf` outgrowing what the run
-    // may write out leaves the same partial nodes behind.
+    // An intermediate intersection the IR cannot express exactly may have produced nodes, so
+    // discard the whole document rather than just that pairing site. An `allOf` outgrowing what the
+    // run may write out leaves the same partial nodes behind.
     if ctx.saw_inexact_intersection() || ctx.outgrew_distribution() {
         return Ok(DocumentParse {
             output: None,
@@ -662,9 +664,9 @@ struct ParseState<'a, 'b> {
     recording: Recording,
     /// The reason the node being parsed came out empty, taken by `note_parsed_node`.
     pending_reason: Option<RecordedReason>,
-    /// Set by a caller about to parse a node drill may look into; taken on entry.
+    /// Set by a caller about to parse a node `drill` may look into; taken on entry.
     keep_next_parts: bool,
-    /// The parts of the nodes drill may look into, `base` first.
+    /// The parts of the nodes `drill` may look into, `base` first.
     kept_parts: AHashMap<usize, Vec<(PartKind, Schema)>>,
     /// Nodes whose form holds a reference, with that form.
     unsettled: Vec<(usize, Schema)>,
@@ -673,10 +675,7 @@ struct ParseState<'a, 'b> {
     rewriting: Vec<Option<Map<String, Value>>>,
 }
 
-/// Flags set anywhere in the document and read after the whole parse.
-///
-/// Independent observations rather than a state machine, so the usual "replace bools with an enum"
-/// advice does not apply - any combination of them is reachable.
+/// Facts set anywhere in the document and read after the whole parse.
 #[derive(Default)]
 #[allow(clippy::struct_excessive_bools)]
 struct DocumentFacts {
@@ -889,7 +888,7 @@ impl<'a, 'b> ParseState<'a, 'b> {
     }
 }
 
-/// What drill reads: the parts kept for the nodes it may look into, and the target each
+/// What `drill` reads: the parts kept for the nodes it may look into, and the target each
 /// definition key names.
 pub(crate) struct Kept<'k> {
     pub(crate) parts: &'k AHashMap<usize, Vec<(PartKind, Schema)>>,
@@ -1251,7 +1250,7 @@ fn parse_schema_in_scope<'a>(
                     return Ok(None);
                 }
             }
-            // A dynamic anchor names a resource for a later `$dynamicRef`; it admits every value.
+            // A dynamic anchor names a resource for a later `$dynamicRef`; it accepts every value.
             // Matched against its declared value shape, so a mistyped one still keeps the doc raw.
             // A string `$recursiveRef` only reaches this loop under a draft whose validator never
             // compiles it (2019-09 consumes it as a reference above), so it asserts nothing.
@@ -1450,8 +1449,8 @@ fn parse_schema_in_scope<'a>(
                     None => return Ok(None),
                 }
             }
-            // A schema admitting everything says nothing about a key, so `true`/`{}` leaves no
-            // trace; one admitting nothing forbids the unmatched keys, which the key constraint
+            // A schema accepting everything says nothing about a key, so `true`/`{}` leaves no
+            // trace; one accepting nothing forbids the unmatched keys, which the key constraint
             // carries; anything in between exempts the named keys and constrains the rest.
             ("additionalProperties", value @ (Value::Object(_) | Value::Bool(_)))
                 if ctx.draft().is_known_keyword("additionalProperties") =>
@@ -1521,8 +1520,7 @@ fn parse_schema_in_scope<'a>(
             {
                 content_encodings.push(Arc::from(name.as_str()));
             }
-            // Only a positive divisor written as an exact rational is modeled; without
-            // one the validator's own division is what decides membership.
+            // A divisor with no `f64` form, which the validator drops, keeps the document raw.
             ("multipleOf", Value::Number(number)) if ctx.draft().is_known_keyword("multipleOf") => {
                 match BoundRational::new(number) {
                     Some(step) => multiple_of = Divisors::one(step),
@@ -1797,8 +1795,8 @@ fn parse_schema_in_scope<'a>(
         min_properties = None;
     }
     // A pattern matching finitely many keys names them outright, so its schema moves onto them and
-    // the pattern goes. What is left decides whether this document meets the `additionalProperties`
-    // pairing at all - `additionalProperties` already knows to skip a named key.
+    // the pattern goes. Only the patterns left pair with `additionalProperties`, which already
+    // skips a named key.
     fold_finite_key_patterns(&mut pattern_properties, &mut properties, ctx);
     // `additionalProperties: false` forbids every key the property map does not name and no
     // pattern matches, which a key constraint states: the named keys and the patterns' keys,
@@ -1878,7 +1876,7 @@ fn parse_schema_in_scope<'a>(
             not_multiple_of: ExcludedDivisors::default(),
             excludes_integers: false,
         };
-        // The integers the interval admits must be representable: the interval may still be
+        // The integers in the interval must be representable: the interval may still be
         // intersected with `integer` through an `allOf`, and there it is the only form left to
         // express.
         let Some(bounds) = algebra::integer_bounds_within(&leaf) else {
@@ -1904,7 +1902,7 @@ fn parse_schema_in_scope<'a>(
     // `then`/`else` apply only beside a sibling `if`; either alone is an annotation with no effect.
     match (if_schema, then_schema, else_schema) {
         (None, _, _) | (Some(_), None, None) => {}
-        // ¬if ∨ then: a value the condition rejects needs nothing further.
+        // `not: if` or `then`: a value the condition rejects needs nothing further.
         (Some(condition), Some(then), None) => {
             match negate::negate_in_place(&condition, &state.definitions, ctx) {
                 Some(negation) => parts.push((
@@ -1914,7 +1912,7 @@ fn parse_schema_in_scope<'a>(
                 None => return Ok(None),
             }
         }
-        // if ∨ else: a value the condition admits needs nothing further, so the negation is
+        // `if` or `else`: a value the condition accepts needs nothing further, so the negation is
         // never needed - unlike every other arm here, this one cannot force the document raw.
         (Some(condition), None, Some(else_branch)) => {
             parts.push((
@@ -1922,7 +1920,7 @@ fn parse_schema_in_scope<'a>(
                 algebra::union(vec![condition, else_branch], ctx),
             ));
         }
-        // (if ∧ then) ∨ (¬if ∧ else)
+        // `if` and `then`, or `not: if` and `else`
         (Some(condition), Some(then), Some(else_branch)) => {
             match negate::negate_in_place(&condition, &state.definitions, ctx) {
                 Some(negation) => {
@@ -1991,7 +1989,7 @@ fn fold_recorded(
 }
 
 /// Why no value satisfies every one of `sides` together, on the node `map` at `node`: the first
-/// side admitting nothing by itself, else the first pair with nothing in common, else all of them.
+/// side accepting nothing by itself, else the first pair with nothing in common, else all of them.
 pub(crate) fn attribute(
     node: usize,
     map: &Map<String, Value>,
@@ -2053,8 +2051,8 @@ fn collides(left: &Schema, right: &Schema, ctx: &CanonicalizationContext) -> boo
     })
 }
 
-/// One side of a colliding pair: what it admits, how it is named, and the parts inside it when
-/// drill may look.
+/// One side of a colliding pair: what it accepts, how it is named, and the parts inside it when
+/// `drill` may look.
 struct Operand<'p> {
     schema: &'p Schema,
     cause: RecordedCause,
@@ -2062,8 +2060,8 @@ struct Operand<'p> {
 }
 
 impl Operand<'_> {
-    /// The parts drill probes, each named by its family inside the side; a branch inside a side
-    /// stays the side, since drill goes one level down.
+    /// The parts `drill` probes, each named by its family inside the side; a branch inside a side
+    /// stays the side, since `drill` goes one level down.
     fn expanded(&self) -> Vec<(&Schema, RecordedCause)> {
         let Some((node, parts)) = self.parts else {
             return vec![(self.schema, self.cause.clone())];
@@ -2105,7 +2103,7 @@ fn drill(
     None
 }
 
-/// The parts inside a side drill may look into: a whole branch's own, or the target's where the
+/// The parts inside a side `drill` may look into: a whole branch's own, or the target's where the
 /// branch or the side is a bare reference.
 fn kept_parts_for<'k>(
     cause: &RecordedCause,
@@ -3901,7 +3899,7 @@ fn required_dependency(key: &str, names: &[Value], ctx: &CanonicalizationContext
     dependency_schema(key, object_with_required(required, ctx), ctx)
 }
 
-/// The schema-form dependency on `key`: holding it demands the whole value meet `schema`.
+/// The schema-form dependency on `key`: holding it demands the whole value satisfy `schema`.
 fn schema_dependency(key: &str, schema: Schema, ctx: &CanonicalizationContext) -> Schema {
     dependency_schema(key, schema, ctx)
 }
@@ -3925,7 +3923,7 @@ fn dependency_schema(key: &str, consequent: Schema, ctx: &CanonicalizationContex
     algebra::union(vec![vacuous, absent, consequent], ctx)
 }
 
-/// An object leaf demanding exactly the sorted `required` keys and nothing else.
+/// An object leaf whose only constraint is the sorted `required` keys.
 fn object_with_required(required: Vec<Arc<str>>, ctx: &CanonicalizationContext) -> Schema {
     algebra::object_leaf(
         ObjectLeaf {
@@ -3941,7 +3939,7 @@ fn object_with_required(required: Vec<Arc<str>>, ctx: &CanonicalizationContext) 
     )
 }
 
-/// The finite value set admitted by `const` and `enum` together: the values both admit.
+/// The finite value set `const` and `enum` accept together: the values both accept.
 fn admitted_values(
     enum_values: Option<&Vec<Value>>,
     const_value: Option<&Value>,
@@ -3961,7 +3959,7 @@ fn admitted_values(
     values
 }
 
-/// Intersect admitted values with a `type` set: drop values outside it, then pack the rest.
+/// Intersect accepted values with a `type` set: drop values outside it, then pack the rest.
 pub(crate) fn restrict_values_to_types(
     values: Vec<CanonicalJson>,
     set: JsonTypeSet,
@@ -3976,7 +3974,7 @@ pub(crate) fn restrict_values_to_types(
         return canonicalize_value_set(filtered);
     }
     // Draft 4 cannot tell `1` from `1.0` by value equality, so integer members keep the integer type
-    // guard; members of other types (which the set also admits) do not.
+    // guard; members of other types (which the set also accepts) do not.
     let (integers, others): (Vec<_>, Vec<_>) = filtered
         .into_iter()
         .partition(|value| value.json_type() == JsonType::Integer);
@@ -4026,7 +4024,7 @@ fn parse_type_set(value: &Value) -> Option<JsonTypeSet> {
     }
 }
 
-/// Keep whichever end admits fewer values.
+/// Keep whichever end includes fewer values.
 fn tighter_real(
     current: Option<BoundNumber>,
     limit: &Number,

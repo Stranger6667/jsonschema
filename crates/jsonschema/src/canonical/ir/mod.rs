@@ -193,7 +193,7 @@ pub(crate) fn normalized_number(number: &Number) -> Number {
 /// Rewrite an integer-valued float (`1.0`, `-0.0`) to its integer form so `Number` equality is value equality.
 #[cfg(feature = "arbitrary-precision")]
 pub(crate) fn normalized_number(number: &Number) -> Number {
-    // The modeling gate admits only plain decimals, whose canonical texts are plain too.
+    // The modeling gate lets through only plain decimals, whose canonical texts are plain too.
     match crate::canonical::json::canonical_number(number.as_str()) {
         Some(text) => text.parse().expect("canonical number text parses"),
         None => number.clone(),
@@ -216,8 +216,8 @@ impl Schema {
         Self(Arc::new(SchemaData { kind, hash }))
     }
 
-    /// Matches every value. Handed out from one node per thread: over half the tree is this, and no
-    /// two mentions of it differ.
+    /// Matches every value. Handed out from one node per thread: it recurs throughout the tree, and
+    /// no two mentions of it differ.
     #[must_use]
     pub(crate) fn truthy() -> Self {
         TRUE.with(Clone::clone)
@@ -264,25 +264,28 @@ pub(crate) enum SchemaKind {
     MultiType(JsonTypeSet),
     /// A value matches iff its JSON type is `ty` *and* it satisfies `body` (Draft 4 `integer`, where `1.0` is not an integer).
     TypedGroup { ty: JsonType, body: Schema },
-    /// A string value within a length window; non-string values are matched by a surrounding union.
+    /// A string value within the leaf's constraints; non-string values are matched by a surrounding
+    /// union.
     String(NonEmpty<StringLeaf>),
-    /// An integer value within a range; non-integer values are matched by a surrounding union.
+    /// An integer value within the leaf's constraints; non-integer values are matched by a
+    /// surrounding union.
     Integer(NonEmpty<IntegerLeaf>),
-    /// A number value within a real interval; other types are matched by a surrounding union.
+    /// A number value within the leaf's constraints; other types are matched by a surrounding
+    /// union.
     Number(NonEmpty<NumberLeaf>),
     /// An array value within the leaf's constraints; other types are matched by a surrounding
     /// union.
     Array(NonEmpty<ArrayLeaf>),
-    /// An object value whose property count is within a window and which carries every required key;
-    /// other types are matched by a surrounding union.
+    /// An object value within the leaf's constraints; other types are matched by a surrounding
+    /// union.
     Object(NonEmpty<ObjectLeaf>),
-    /// Exactly one admitted value.
+    /// Accepts exactly one value.
     Const(CanonicalJson),
-    /// A sorted, deduplicated finite set of admitted values.
+    /// Accepts a sorted, deduplicated finite set of values.
     Enum(AtLeastTwo<CanonicalJson>),
-    /// The exact negation of an opaque schema, keeping the references it names symbolic.
+    /// Accepts the values the inner schema rejects, keeping the references it names symbolic.
     Not(Schema),
-    /// A value matches iff every opaque branch matches.
+    /// A value matches iff every branch matches.
     AllOf(AtLeastTwo<Schema>),
     /// A value matches iff at least one of the sorted, mutually unmergeable branches matches.
     AnyOf(AtLeastTwo<Schema>),
@@ -304,23 +307,24 @@ pub(crate) enum SchemaKind {
 pub(crate) struct NumberLeaf {
     pub(crate) minimum: Option<BoundNumber>,
     pub(crate) maximum: Option<BoundNumber>,
-    /// Divisors every admitted value is a multiple of.
+    /// Divisors every accepted value is a multiple of.
     pub(crate) multiple_of: Divisors,
-    /// Divisors no admitted value is a multiple of.
+    /// Divisors no accepted value is a multiple of.
     pub(crate) not_multiple_of: ExcludedDivisors,
-    /// No admitted value is one of the draft's integers. Survives only under Draft 4, whose
-    /// token integers no divisor can name; later drafts rewrite it as a barred divisor of one.
+    /// Rejects the draft's integers. Survives only under Draft 4, where `1.0` is not an integer,
+    /// so no divisor names them; later drafts write it as `not_multiple_of: [1]`.
     pub(crate) excludes_integers: bool,
 }
 
 impl NumberLeaf {
-    /// Whether no real value fits between the two ends.
+    /// Whether the leaf accepts no number: its divisors conflict or leave no multiple between the
+    /// ends, or the ends leave no room.
     pub(crate) fn is_vacant(&self) -> bool {
         // A demanded divisor whose multiples are all barred leaves nothing.
         if self.not_multiple_of.conflicts(&self.multiple_of) {
             return true;
         }
-        // An interval holding no multiple of the divisor admits nothing either.
+        // An interval holding no multiple of the divisor leaves nothing either.
         if !self
             .multiple_of
             .admit_between(self.minimum.as_ref(), self.maximum.as_ref())
@@ -345,9 +349,9 @@ impl MaybeEmpty for NumberLeaf {
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub(crate) struct IntegerLeaf {
     pub(crate) bounds: IntegerBounds,
-    /// Divisors every admitted value is a multiple of.
+    /// Divisors every accepted value is a multiple of.
     pub(crate) multiple_of: Divisors,
-    /// Divisors no admitted value is a multiple of.
+    /// Divisors no accepted value is a multiple of.
     pub(crate) not_multiple_of: ExcludedDivisors,
 }
 
@@ -380,7 +384,7 @@ pub enum Distinctness {
 }
 
 /// The constraints a [`SchemaKind::Array`] places on an array value. An array of at most one item
-/// is distinct on its own, so distinctness is demanded only when the window admits a second item.
+/// is distinct on its own, so distinctness is demanded only when `maxItems` allows a second item.
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash, Default)]
 pub(crate) struct ArrayLeaf {
     pub(crate) lengths: LengthBounds,
@@ -415,7 +419,7 @@ pub(crate) struct ContainsFacet {
 }
 
 impl ContainsFacet {
-    /// The smallest matching count the facet admits.
+    /// The smallest matching count the facet allows.
     pub(crate) fn effective_minimum(&self) -> BoundCardinality {
         self.minimum
             .clone()
@@ -468,15 +472,14 @@ pub(crate) struct ObjectLeaf {
 }
 
 impl ObjectLeaf {
-    /// The number of keys that can actually be present, when the property-name schema admits a
-    /// finite set: a key whose property schema admits no value can never appear, so it does not
-    /// count.
+    /// The number of keys that can be present, when the property-name schema accepts a finite
+    /// set: a key whose property schema accepts no value can never appear, so it does not count.
     #[must_use]
     pub(crate) fn admitted_key_count(&self) -> Option<BoundCardinality> {
         let values = self.property_names.as_ref()?.kind().finite_values()?;
-        // Only a key whose own schema admits nothing drops out of the count. Those keys are the ones
-        // looked up in the name set, not the other way round: the property map hands them over in
-        // ascending order, so the set answers all of them in one pass.
+        // Only a key whose own schema accepts nothing drops out of the count. Those keys are the
+        // ones looked up in the name set, not the other way round: the property map hands them over
+        // in ascending order, so the set answers all of them in one pass.
         let mut admitted = AscendingMembership::new(values);
         let barred = self
             .properties
@@ -486,7 +489,7 @@ impl ObjectLeaf {
         Some(BoundCardinality::from((values.len() - barred) as u64))
     }
 
-    /// The size window with a finite set of admitted keys folded in as a ceiling: those keys are
+    /// The size window with a finite set of accepted keys folded in as a ceiling: those keys are
     /// distinct, so they cap the property count just as `maxProperties` does.
     #[must_use]
     pub(crate) fn effective_sizes(&self) -> LengthBounds {
@@ -548,18 +551,18 @@ pub(crate) struct StringLeaf {
     /// Sorted, deduplicated. A string must match every pattern.
     pub(crate) patterns: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must match none of these patterns. Only syntactic equality
-    /// against `patterns` is decided, so a leaf can be built and still admit nothing.
+    /// against `patterns` is decided, so a leaf can be built and still accept nothing.
     pub(crate) excluded_patterns: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must satisfy every format. Empty unless formats assert.
     pub(crate) formats: Vec<StringFormat>,
     /// Sorted, deduplicated. A string must satisfy none of these formats. Empty unless formats
     /// assert.
     pub(crate) excluded_formats: Vec<StringFormat>,
-    /// Sorted, deduplicated. A string must satisfy every media type. Empty outside Draft 6/7, where
-    /// `contentMediaType` is an annotation.
+    /// Sorted, deduplicated. A string must satisfy every media type. Empty outside Draft 6/7, since
+    /// other drafts treat `contentMediaType` as an annotation.
     pub(crate) content_media_types: Vec<Arc<str>>,
-    /// Sorted, deduplicated. A string must satisfy every encoding. Empty outside Draft 6/7, where
-    /// `contentEncoding` is an annotation.
+    /// Sorted, deduplicated. A string must satisfy every encoding. Empty outside Draft 6/7, since
+    /// other drafts treat `contentEncoding` as an annotation.
     pub(crate) content_encodings: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must differ from every member. Members the rest of the leaf
     /// already rejects are dropped, so one value set has one form.
@@ -693,7 +696,7 @@ impl<T> IntoIterator for AtLeastTwo<T> {
     }
 }
 
-/// A facet set admitting at least one value; the only way to build one is [`NonEmpty::new`].
+/// A facet set accepting at least one value; the only way to build one is [`NonEmpty::new`].
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub(crate) struct NonEmpty<T>(T);
 
@@ -757,7 +760,7 @@ impl<T: Ord> Bounds<T> {
         matches!((&self.minimum, &self.maximum), (Some(min), Some(max)) if min > max)
     }
 
-    /// Whether every value `other` admits also fits here.
+    /// Whether every value `other` holds also fits here.
     pub(crate) fn covers(&self, other: &Self) -> bool {
         self.minimum
             .as_ref()
@@ -792,8 +795,8 @@ impl<T: Discrete> Bounds<T> {
     }
 
     /// [`Bounds::merge_all`], folding a pair as well when `gap_is_vacant` reports that the values
-    /// strictly between the two ends it is handed are all rejected anyway. Their hull then admits
-    /// nothing the pair did not, so the windows are as good as touching.
+    /// strictly between the two ends it is handed are all rejected anyway. Their hull then holds
+    /// no accepted value the pair did not, so the windows are as good as touching.
     pub(crate) fn merge_all_across_vacant_gaps(
         mut windows: Vec<Self>,
         gap_is_vacant: impl Fn(&T, &T) -> bool,
@@ -873,7 +876,7 @@ pub(crate) fn tighter<T>(
     }
 }
 
-/// Drop every leaf whose values another already admits, where `subsumes(outer, inner)` says the
+/// Drop every leaf whose values another already accepts, where `subsumes(outer, inner)` says the
 /// values of `inner` all lie in `outer`. A leaf already dropped neither drops nor saves another.
 pub(crate) fn drop_subsumed<T>(leaves: &mut Vec<T>, subsumes: impl Fn(&T, &T) -> bool) {
     if leaves.len() < 2 {
@@ -902,7 +905,7 @@ pub(crate) type LengthBounds = Bounds<BoundCardinality>;
 pub(crate) type IntegerBounds = Bounds<BoundInteger>;
 
 impl SchemaKind {
-    /// The admitted values when this node is a finite value set (`Const`/`Enum`), else `None`.
+    /// The accepted values when this node is a finite value set (`Const`/`Enum`), else `None`.
     #[must_use]
     pub(crate) fn finite_values(&self) -> Option<&[CanonicalJson]> {
         match self {
@@ -926,7 +929,7 @@ impl SchemaKind {
         }
     }
 
-    /// The number of distinct values this node admits, when finite: `Const`/`Enum`, an integer
+    /// The number of distinct values this node accepts, when finite: `Const`/`Enum`, an integer
     /// window closed on both sides, or a type set drawn only from `null`/`boolean` - the only JSON
     /// types with a finite universe. A window whose count outgrows a `u64` counts as unbounded; a
     /// divisor is ignored, so the count is an upper bound rather than the exact size.
@@ -1017,7 +1020,6 @@ struct SchemaData {
 
 impl PartialEq for SchemaData {
     fn eq(&self, other: &Self) -> bool {
-        // Cheap hash first, so a mismatch skips the deep `kind` compare.
         self.hash == other.hash && self.kind == other.kind
     }
 }

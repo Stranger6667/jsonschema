@@ -1,3 +1,3 @@
-//! Backwards-compatible re-exports for structured output helpers.
+//! Annotation and error values read from an [`Evaluation`](crate::Evaluation).
 
 pub use crate::evaluation::{Annotations, ErrorDescription};

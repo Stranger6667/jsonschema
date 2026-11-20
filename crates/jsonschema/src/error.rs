@@ -2,8 +2,8 @@
 //!
 //! ## Masking Sensitive Data
 //!
-//! When working with sensitive data, you might want to hide actual values from error messages.
-//! The `ValidationError` type provides methods to mask instance values while preserving the error context:
+//! [`ValidationError::masked`] and [`ValidationError::masked_with`] hide instance values in error
+//! messages:
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -23,8 +23,9 @@
 //! # }
 //! ```
 //!
-//! The masked error messages will replace instance values with placeholders while maintaining
-//! schema-related information like property names, limits, and types.
+//! Masked messages replace instance values with the placeholder and keep limits, types and
+//! property names, including the instance's own names in `additionalProperties` and
+//! `unevaluatedProperties` errors.
 //!
 //! Original error:
 //! ```text
@@ -53,7 +54,7 @@ use std::{
     vec,
 };
 
-/// An error that can occur during validation.
+/// An error from validating an instance or from building a validator.
 #[derive(Debug)]
 pub struct ValidationError<'a> {
     repr: Box<ValidationErrorRepr<'a>>,
@@ -66,9 +67,9 @@ struct ValidationErrorRepr<'a> {
     instance: LazyInstance<'a>,
     kind: ValidationErrorKind,
     instance_path: Location,
-    /// Canonical schema location without $ref traversals (JSON Schema "keywordLocation")
+    /// Canonical schema location without `$ref` traversals (`schemaLocation` in evaluation output)
     schema_path: Location,
-    /// Dynamic path including $ref traversals.
+    /// Evaluation path, including `$ref` traversals.
     tracker: LazyEvaluationPath,
     absolute_keyword_location: AbsoluteKeywordLocation,
 }
@@ -118,23 +119,6 @@ impl fmt::Debug for ValidationErrorRepr<'_> {
     }
 }
 
-/// An iterator over instances of [`ValidationError`] that represent validation error for the
-/// input instance.
-///
-/// # Examples
-///
-/// ```rust
-/// use serde_json::json;
-///
-/// let schema = json!({"maxLength": 5});
-/// let instance = json!("foo");
-/// if let Ok(validator) = jsonschema::validator_for(&schema) {
-///     let errors = validator.iter_errors(&instance);
-///     for error in errors {
-///         println!("Validation error: {}", error)
-///     }
-/// }
-/// ```
 #[doc(hidden)]
 pub trait ValidationErrorIterator<'a>: Iterator<Item = ValidationError<'a>> + Send + Sync {}
 
@@ -291,7 +275,8 @@ pub enum ValidationErrorKind {
     AnyOf {
         context: Vec<Vec<ValidationError<'static>>>,
     },
-    /// Results from a [`fancy_regex::RuntimeError::BacktrackLimitExceeded`] variant when matching
+    /// A regex match exceeded the backtrack limit
+    /// ([`fancy_regex::RuntimeError::BacktrackLimitExceeded`]).
     BacktrackLimitExceeded { error: fancy_regex::Error },
     /// The input value doesn't match expected constant.
     Constant { expected_value: Arc<Value> },
@@ -313,7 +298,7 @@ pub enum ValidationErrorKind {
     FalseSchema,
     /// When the input doesn't match to the specified format.
     Format { format: String },
-    /// May happen in `contentEncoding` validation if `base64` encoded data is invalid.
+    /// `contentEncoding` decoded the string to bytes that are not UTF-8.
     FromUtf8 { error: FromUtf8Error },
     /// More items than `maxContains` are valid under the `contains` subschema.
     MaxContains { limit: u64 },
@@ -342,13 +327,13 @@ pub enum ValidationErrorKind {
         #[cfg(not(feature = "arbitrary-precision"))]
         multiple_of: f64,
     },
-    /// Negated schema failed validation.
+    /// The instance is valid under the `not` subschema.
     Not { schema: Value },
-    /// The given schema is valid under more than one of the schemas listed in the 'oneOf' keyword.
+    /// The instance is valid under more than one `oneOf` branch.
     OneOfMultipleValid {
         context: Vec<Vec<ValidationError<'static>>>,
     },
-    /// The given schema is not valid under any of the schemas listed in the 'oneOf' keyword.
+    /// The instance is valid under no `oneOf` branch.
     OneOfNotValid {
         context: Vec<Vec<ValidationError<'static>>>,
     },
@@ -443,7 +428,6 @@ pub struct ValidationErrorParts<'a> {
     pub absolute_keyword_location: Option<Arc<Uri<String>>>,
 }
 
-/// Shortcuts for creation of specific error kinds.
 impl<'a> ValidationError<'a> {
     /// Creates a new validation error from parts.
     #[inline]
@@ -490,8 +474,7 @@ impl<'a> ValidationError<'a> {
 
     /// Returns the canonical schema location without `$ref` traversals.
     ///
-    /// This corresponds to JSON Schema's "keywordLocation" in output formats.
-    /// See JSON Schema 2020-12 Core, Section 12.4.2.
+    /// Evaluation output reports it as `schemaLocation` when the keyword has no absolute URI.
     #[inline]
     #[must_use]
     pub fn schema_path(&self) -> &Location {
@@ -500,9 +483,8 @@ impl<'a> ValidationError<'a> {
 
     /// Returns the dynamic evaluation path including `$ref` traversals.
     ///
-    /// This corresponds to JSON Schema's "evaluationPath" - the actual path taken
-    /// through the schema including by-reference applicators (`$ref`, `$dynamicRef`).
-    /// See JSON Schema 2020-12 Core, Section 12.4.2.
+    /// Evaluation output reports it as `evaluationPath`; JSON Schema 2020-12 Core calls it
+    /// `keywordLocation`.
     #[inline]
     #[must_use]
     pub fn evaluation_path(&self) -> &Location {
@@ -679,7 +661,8 @@ impl<'a> ValidationError<'a> {
                 kind: repr.kind,
                 instance_path: repr.instance_path,
                 schema_path: repr.schema_path,
-                // Generated validators locate only errors whose evaluation path no `$ref` moved.
+                // Copied as is: `is_unlocated` reads it, since generated validators locate only
+                // errors whose evaluation path no `$ref` moved.
                 tracker: repr.tracker,
                 absolute_keyword_location: repr.absolute_keyword_location,
             }),
@@ -1948,9 +1931,8 @@ mod tests {
 
     use test_case::test_case;
 
-    // `ValidationErrorIterator` requires `Send + Sync` (see its definition above); `LazyInstance`
-    // uses `OnceLock` rather than `OnceCell` specifically to keep this holding once the repr can
-    // carry a `Deferred` closure.
+    // `ValidationErrorIterator` requires `Send + Sync` (see its definition above);
+    // `LazyInstance::Deferred` caches in a `OnceLock`, not a `OnceCell`, to keep this holding.
     const _: fn() = || {
         fn assert_send_sync<T: Send + Sync>() {}
         assert_send_sync::<ValidationError<'static>>();

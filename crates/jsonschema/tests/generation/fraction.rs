@@ -66,7 +66,8 @@ impl Fraction {
         Self::from_number(number).filter(|fraction| fraction.numerator > 0)
     }
 
-    // Overflow reads as "not a multiple"; the wrapper's validator net decides then.
+    // Overflow reads as "not a multiple"; the validator check in `draw_valid_instance` decides
+    // then.
     pub(crate) fn is_multiple_of(self, divisor: Fraction) -> bool {
         let Some(left) = self.numerator.checked_mul(divisor.denominator) else {
             return false;

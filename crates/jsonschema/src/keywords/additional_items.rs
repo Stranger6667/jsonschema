@@ -205,11 +205,8 @@ pub(crate) fn compile<'a, F: Json>(
                     }
                 }
             }
-            // `additionalItems` describes the elements past an array-form `items` tuple. Any other
-            // `items` value leaves no tail, so the keyword is ignored: a schema (object or boolean)
-            // covers every element — including `items: false`, where the tail is empty rather than
-            // forbidden — and an invalid `items` value is itself ignored. Non-arrays are not this
-            // keyword's business at all.
+            // Without an array-form `items` there is no tail, so the keyword is inert;
+            // `items: false` itself rejects every element.
             _ => None,
         }
     } else {
@@ -284,7 +281,7 @@ mod tests {
 
     // A boolean `items` leaves no tuple tail, so `additionalItems` is ignored and only `items`
     // can reject. The keyword constrains array elements, so it must never touch a non-array.
-    // Dispatch is draft-agnostic: 2020-12 goes through the same `Bool` arm as older drafts.
+    // Every draft takes the same catch-all arm for a non-array `items`.
     #[test_case(Draft::Draft4, &json!({"additionalItems": false, "items": false}), &json!(null); "draft4 null")]
     #[test_case(Draft::Draft4, &json!({"additionalItems": false, "items": false}), &json!([]); "draft4 empty array")]
     #[test_case(Draft::Draft4, &json!({"additionalItems": false, "items": false}), &json!("a"); "draft4 string")]

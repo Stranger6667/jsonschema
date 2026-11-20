@@ -32,7 +32,7 @@ impl IntegerLeaves {
         }
         let was_empty = self.leaves.is_empty();
         self.leaves = merge(std::mem::take(&mut self.leaves));
-        // A coarser progression over a wider interval admits every value of a finer one.
+        // A leaf over a wider interval whose divisors divide the other's accepts every value of it.
         // e.g.  anyOf [
         //         {"type": "integer", "multipleOf": 2},
         //         {"type": "integer", "multipleOf": 4}
@@ -97,7 +97,7 @@ struct Group {
 ///         {"type": "integer", "multipleOf": 2, "minimum": 10}
 ///       ]  =>  {"type": "integer", "multipleOf": 2}
 ///
-/// Different divisors admit different values, so those leaves stay apart.
+/// Leaves with different divisors accept different values, so they stay apart.
 /// e.g.  anyOf [
 ///         {"type": "integer", "multipleOf": 2},
 ///         {"type": "integer", "multipleOf": 3}
@@ -131,7 +131,7 @@ fn merge(mut leaves: Vec<IntegerLeaf>) -> Vec<IntegerLeaf> {
 }
 
 /// Emit one leaf per merged interval, all carrying the group's divisor. A gap holding a value the
-/// group admits keeps the intervals on either side as separate branches.
+/// group accepts keeps the intervals on either side as separate branches.
 ///
 /// A gap the progression steps over holds no such value, so those intervals fold.
 /// e.g.  anyOf [

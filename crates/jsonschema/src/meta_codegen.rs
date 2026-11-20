@@ -130,7 +130,8 @@ pub(crate) mod pyo3 {
     )]
     struct MetaDraft202012;
 
-    /// The meta-schema `draft` is checked against, reading the schema as a Python object.
+    /// An `is_valid` check against the meta-schema of `draft`, reading the schema as a Python
+    /// object.
     ///
     /// `Draft::Unknown` and future drafts fall through to Draft 2020-12, matching the
     /// serde-backed dispatch above.
@@ -208,7 +209,7 @@ pub(crate) mod magnus {
     )]
     struct MetaDraft202012;
 
-    /// The meta-schema `draft` is checked against, reading the schema as a Ruby object.
+    /// An `is_valid` check against the meta-schema of `draft`, reading the schema as a Ruby object.
     ///
     /// `Draft::Unknown` and future drafts fall through to Draft 2020-12, matching the
     /// serde-backed dispatch above.

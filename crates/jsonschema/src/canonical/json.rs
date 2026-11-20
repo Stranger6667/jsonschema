@@ -75,8 +75,8 @@ impl From<serde_json::Error> for Error {
 ///
 /// - Object keys are emitted in lexicographic order.
 /// - Integer-valued floats are emitted as integers (`1.0` becomes `1`).
-/// - With `arbitrary-precision`, one normal form per value: plain integer/decimal while the expansion fits the digit
-///   cap, normalized scientific (`d[.rest]e{E}`) past it. The IR relies on this for value text equality and type scanning.
+/// - With `arbitrary-precision`, one normal form per value: plain integer/decimal up to 2^20
+///   expanded digits, normalized scientific (`d[.rest]e{E}`) past that.
 /// - Output is always compact (no extra whitespace).
 ///
 /// # Examples
@@ -308,7 +308,7 @@ pub fn canonical_number(raw: &str) -> Option<Cow<'_, str>> {
     let fraction_within_cap = fraction_end - fraction_start <= MAX_EXPANDED_INTEGER_DIGITS;
 
     if !has_fraction && !has_exponent && integer_within_cap {
-        // `-0` is the one integer text with a second spelling.
+        // `-0` is the one integer with a second text.
         return Some(Cow::Borrowed(if raw == "-0" { "0" } else { raw }));
     }
 
@@ -458,7 +458,8 @@ fn canonical_scientific_number(digits: &[u8], parts: &NumberParts<'_>) -> Option
 }
 
 // `Number::from_f64` formats to shortest-roundtrip text before this runs, so the double nearest
-// `1e300` and exactly `1e300` collide here. The bindings convert native floats exactly and do not.
+// `1e300` and exactly `1e300` collide here. The bindings convert native floats exactly,
+// so there the two stay distinct.
 fn serialize_number<S>(number: &Number, serializer: S) -> Result<S::Ok, S::Error>
 where
     S: Serializer,
@@ -595,7 +596,6 @@ mod tests {
 
     #[test]
     fn oversized_object_scratch_is_not_pooled() {
-        // A scratch buffer whose capacity exceeds MAX_SCRATCH_CAPACITY is dropped instead of pooled.
         let mut map = Map::new();
         for index in 0..20_000 {
             map.insert(format!("k{index:05}"), json!(index));

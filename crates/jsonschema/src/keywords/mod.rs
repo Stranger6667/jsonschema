@@ -202,16 +202,11 @@ impl fmt::Display for Keyword {
 /// Returns the execution priority for a keyword (lower = execute first).
 /// This enables "fail fast" by running cheap validators before expensive ones.
 ///
-/// Priority groups:
-/// - 1-9: Type checks and simple assertions (very cheap)
-/// - 10-19: Value constraints and simple validators
-/// - 20-29: String/array/object size constraints
-/// - 30-39: Property/item validators
-/// - 40-49: Composition validators (allOf, anyOf, oneOf)
-/// - 50+: Reference validators (most expensive due to indirection)
+/// `keyword_is_leaf` treats built-ins below 40 as leaves, so a keyword that applies subschemas
+/// sorts at 40 or above.
 pub(crate) fn keyword_priority(keyword: &Keyword) -> u8 {
     match keyword {
-        // Type checks are extremely cheap (single discriminant comparison)
+        // `type` compares one discriminant
         Keyword::Builtin(BuiltinKeyword::Type) => 1,
 
         // Const/enum are cheap (direct value comparison)
@@ -233,7 +228,7 @@ pub(crate) fn keyword_priority(keyword: &Keyword) -> u8 {
         Keyword::Builtin(BuiltinKeyword::MinProperties) => 24,
         Keyword::Builtin(BuiltinKeyword::MaxProperties) => 25,
 
-        // Required is relatively cheap (just checks key existence)
+        // `required` only looks up keys
         Keyword::Builtin(BuiltinKeyword::Required) => 26,
         Keyword::Builtin(BuiltinKeyword::DependentRequired) => 27,
 
@@ -275,7 +270,6 @@ pub(crate) fn keyword_priority(keyword: &Keyword) -> u8 {
         Keyword::Builtin(BuiltinKeyword::RecursiveRef) => 71,
         Keyword::Builtin(BuiltinKeyword::DynamicRef) => 72,
 
-        // Custom keywords get default priority
         Keyword::Custom(_) => 80,
     }
 }
@@ -508,7 +502,7 @@ pub(crate) fn get_for_draft<'a, F: Json>(
         {
             Some((BuiltinKeyword::If.into(), if_::compile))
         }
-        // Draft 2019-09 specific
+        // Draft 2019-09 and later
         (Draft::Draft201909, "$recursiveRef") => Some((
             BuiltinKeyword::RecursiveRef.into(),
             ref_::compile_recursive_ref,
@@ -568,7 +562,7 @@ pub(crate) fn get_for_draft<'a, F: Json>(
         (Draft::Draft202012 | Draft::Unknown, "$dynamicRef") => {
             Some((BuiltinKeyword::DynamicRef.into(), ref_::compile_dynamic_ref))
         }
-        // Unknown or not-yet-implemented keyword
+        // Unknown keyword, or one this draft does not define
         _ => None,
     }
 }
@@ -624,7 +618,7 @@ mod tests {
         assert_eq!(errors[0].to_string(), expected);
     }
 
-    // Extra cases not covered by JSON test suite
+    // Each keyword accepts an instance of a type it does not apply to
     #[test_case(&json!({"additionalProperties": {"type": "string"}}))]
     #[test_case(&json!({"additionalProperties": {"type": "string"}, "properties": {"foo": {}}}))]
     #[test_case(&json!({"additionalProperties": {"type": "string"}, "patternProperties": {"f.*o": {"type": "integer"}}}))]
@@ -670,31 +664,19 @@ mod tests {
     #[test_case(&json!({"type": "number"}), &json!(42))]
     #[test_case(&json!({"type": ["number", "null"]}), &json!(42))]
     fn integer_is_valid_number_multi_type(schema: &Value, instance: &Value) {
-        // See: GH-147
         assert!(crate::is_valid(schema, instance));
     }
-    // enum: Number
     #[test_case(&json!({"enum": [0.0]}), &json!(0))]
-    // enum: Array
     #[test_case(&json!({"enum": [[1.0]]}), &json!([1]))]
-    // enum: Object
     #[test_case(&json!({"enum": [{"a": 1.0}]}), &json!({"a": 1}))]
-    // enum:: Object in Array
     #[test_case(&json!({"enum": [[{"b": 1.0}]]}), &json!([{"b": 1}]))]
-    // enum:: Array in Object
     #[test_case(&json!({"enum": [{"c": [1.0]}]}), &json!({"c": [1]}))]
-    // const: Number
     #[test_case(&json!({"const": 0.0}), &json!(0))]
-    // const: Array
     #[test_case(&json!({"const": [1.0]}), &json!([1]))]
-    // const: Object
     #[test_case(&json!({"const": {"a": 1.0}}), &json!({"a": 1}))]
-    // const:: Object in Array
     #[test_case(&json!({"const": [{"b": 1.0}]}), &json!([{"b": 1}]))]
-    // const:: Array in Object
     #[test_case(&json!({"const": {"c": [1.0]}}), &json!({"c": [1]}))]
     fn numeric_equivalence(schema: &Value, instance: &Value) {
-        // See: GH-149
         assert!(crate::is_valid(schema, instance));
     }
 
@@ -769,7 +751,6 @@ mod tests {
 
     #[test]
     fn required_all_properties() {
-        // See: GH-190
         let schema = json!({"required": ["foo", "bar"]});
         let instance = json!({});
         let validator = crate::validator_for(&schema).unwrap();
