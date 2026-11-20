@@ -1705,8 +1705,41 @@ mod tests {
         assert_eq!(messages, vec![expected.as_str()]);
     }
 
-    #[test]
-    fn custom_keyword_validation_error_paths() {
+    // Expected paths are those a built-in keyword such as `minimum` reports in the same place.
+    #[test_case(
+        &json!({"properties": {"name": {"alwaysFail": true}}}),
+        &json!({"name": "test"}),
+        "/name",
+        "/properties/name/alwaysFail",
+        "/properties/name/alwaysFail";
+        "in place"
+    )]
+    #[test_case(
+        &json!({"$ref": "#/$defs/x", "$defs": {"x": {"alwaysFail": true}}}),
+        &json!("test"),
+        "",
+        "/$defs/x/alwaysFail",
+        "/$ref/alwaysFail";
+        "through a reference"
+    )]
+    #[test_case(
+        &json!({
+            "properties": {"name": {"$ref": "#/$defs/x"}},
+            "$defs": {"x": {"$ref": "#/$defs/y"}, "y": {"alwaysFail": true}}
+        }),
+        &json!({"name": "test"}),
+        "/name",
+        "/$defs/y/alwaysFail",
+        "/properties/name/$ref/$ref/alwaysFail";
+        "through two references"
+    )]
+    fn custom_keyword_validation_error_paths(
+        schema: &Value,
+        instance: &Value,
+        instance_path: &str,
+        schema_path: &str,
+        evaluation_path: &str,
+    ) {
         struct AlwaysFailValidator;
         impl<'i> Keyword<'i> for AlwaysFailValidator {
             fn validate(&self, _instance: &'i Value) -> Result<(), ValidationError<'i>> {
@@ -1725,27 +1758,27 @@ mod tests {
             Ok(Box::new(AlwaysFailValidator))
         }
 
-        let schema = json!({
-            "properties": {
-                "name": { "alwaysFail": true }
-            }
-        });
+        fn paths<'e>(error: &'e ValidationError<'_>) -> (&'e str, &'e str, &'e str, &'e str) {
+            (
+                error.kind().keyword(),
+                error.instance_path().as_str(),
+                error.schema_path().as_str(),
+                error.evaluation_path().as_str(),
+            )
+        }
+
         let validator = crate::options()
             .with_keyword("alwaysFail", always_fail_factory)
-            .build(&schema)
+            .build(schema)
             .expect("Valid schema");
 
-        let instance = json!({"name": "test"});
-        let error = validator.validate(&instance).expect_err("Should fail");
-        assert_eq!(error.instance_path().as_str(), "/name");
-        assert_eq!(error.schema_path().as_str(), "/properties/name/alwaysFail");
-        assert_eq!(
-            error.evaluation_path().as_str(),
-            "/properties/name/alwaysFail"
-        );
-        assert_eq!(error.kind().keyword(), "alwaysFail");
+        let expected = ("alwaysFail", instance_path, schema_path, evaluation_path);
+        let error = validator.validate(instance).expect_err("Should fail");
+        assert_eq!(paths(&error), expected);
+        let errors: Vec<_> = validator.iter_errors(instance).collect();
+        assert_eq!(errors.iter().map(paths).collect::<Vec<_>>(), vec![expected]);
 
-        let evaluation = validator.evaluate(&instance);
+        let evaluation = validator.evaluate(instance);
         let descriptions: Vec<_> = evaluation
             .iter_errors()
             .map(|entry| (entry.error.keyword(), entry.error.message()))

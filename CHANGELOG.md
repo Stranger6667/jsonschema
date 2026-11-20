@@ -18,6 +18,7 @@
 - `async_options().with_retriever` discarding the base URI set by `with_base_uri`.
 - `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
 - `Validator` results depending on how references name a schema that a `$ref` cycle passes through, such as `cycle` and `#` inside it.
+- Evaluation paths of custom keyword errors leaving out the `$ref` the keyword was reached through.
 - `Validator` results for a schema that references itself with `#` differing from the same schema reached through a `$ref`, such as `{"not": {"$ref": "#"}}` rejecting every instance.
 - `validator_map_for` entries below the root differing from the same subschema reached through a `$ref`.
 - `$recursiveRef` and `$dynamicRef` inside a subschema with its own `$id` leaving the resource that holds it out of the dynamic scope when that subschema is reached inline or through a JSON Pointer `$ref`.
