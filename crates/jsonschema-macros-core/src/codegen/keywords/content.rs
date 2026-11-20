@@ -55,18 +55,34 @@ fn resolve_media_type<E: ValueEmitter>(
     (name == "application/json").then(|| quote! { __content::is_json })
 }
 
+/// Whether the runtime checks `contentMediaType` written as `value`, together with the
+/// `contentEncoding` beside it.
+pub(crate) fn checks_media_type<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    value: &Value,
+) -> bool {
+    value
+        .as_str()
+        .is_some_and(|media_name| resolve_media_type(ctx, media_name).is_some())
+}
+
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> Option<CompiledExpr> {
     let err_instance = E::err_instance(format_ident!("instance"));
-    // Mirrors the runtime dispatch: `contentMediaType` owns the combined case,
-    // and `contentEncoding` is skipped whenever `contentMediaType` is present.
-    if let Some(media_value) = schema.get("contentMediaType") {
-        let Some(media_name) = media_value.as_str() else {
-            return Some(invalid_schema_type_expression(media_value, &["string"]));
-        };
-        let media_check = resolve_media_type(ctx, media_name)?;
+    let media_type = match schema.get("contentMediaType") {
+        Some(media_value) => {
+            let Some(media_name) = media_value.as_str() else {
+                return Some(invalid_schema_type_expression(media_value, &["string"]));
+            };
+            resolve_media_type(ctx, media_name).map(|media_check| (media_name, media_check))
+        }
+        None => None,
+    };
+    // Mirrors the runtime dispatch: a supported `contentMediaType` owns the combined case, and
+    // `contentEncoding` beside any other media type is checked alone.
+    if let Some((media_name, media_check)) = media_type {
         let media_path = ctx.schema_path_for_keyword("contentMediaType");
         if let Some(encoding_value) = schema.get("contentEncoding") {
             let Some(encoding_name) = encoding_value.as_str() else {
