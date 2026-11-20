@@ -256,7 +256,7 @@ pub(crate) fn draw_string(tc: &TestCase, view: &StringView) -> Option<Value> {
     if ceiling < floor {
         return None;
     }
-    let admitted = |value: String| -> Option<Value> {
+    let accepted = |value: String| -> Option<Value> {
         if excluded.contains(&value) {
             return None;
         }
@@ -293,15 +293,15 @@ pub(crate) fn draw_string(tc: &TestCase, view: &StringView) -> Option<Value> {
         if length < floor || length > ceiling {
             return None;
         }
-        return admitted(value);
+        return accepted(value);
     }
     // A format with a generator behind it drives the draw; one without a checker constrains
     // nothing and falls through. `draw_valid_instance` checks the remaining keywords.
     for format in formats {
         match format.as_str() {
-            "email" | "idn-email" => return admitted(tc.draw(gs::emails())),
+            "email" | "idn-email" => return accepted(tc.draw(gs::emails())),
             "date" => {
-                return admitted(
+                return accepted(
                     tc.draw(gs::sampled_from(vec![
                         "2024-01-15",
                         "1999-12-31",
@@ -311,7 +311,7 @@ pub(crate) fn draw_string(tc: &TestCase, view: &StringView) -> Option<Value> {
                 );
             }
             "date-time" => {
-                return admitted(
+                return accepted(
                     tc.draw(gs::sampled_from(vec![
                         "2024-01-15T10:30:00Z",
                         "1999-12-31T23:59:59.999Z",
@@ -320,13 +320,13 @@ pub(crate) fn draw_string(tc: &TestCase, view: &StringView) -> Option<Value> {
                 );
             }
             "time" => {
-                return admitted(
+                return accepted(
                     tc.draw(gs::sampled_from(vec!["10:30:00Z", "23:59:59+01:00"]))
                         .to_owned(),
                 );
             }
             "uuid" => {
-                return admitted(
+                return accepted(
                     tc.draw(gs::sampled_from(vec![
                         "550e8400-e29b-41d4-a716-446655440000",
                         "00000000-0000-0000-0000-000000000000",
@@ -335,34 +335,34 @@ pub(crate) fn draw_string(tc: &TestCase, view: &StringView) -> Option<Value> {
                 );
             }
             "ipv4" => {
-                return admitted(
+                return accepted(
                     tc.draw(gs::sampled_from(vec!["127.0.0.1", "255.255.255.255"]))
                         .to_owned(),
                 );
             }
             "ipv6" => {
-                return admitted(
+                return accepted(
                     tc.draw(gs::sampled_from(vec!["::1", "2001:db8::8a2e:370:7334"]))
                         .to_owned(),
                 );
             }
             "hostname" | "idn-hostname" => {
-                return admitted(
+                return accepted(
                     tc.draw(gs::sampled_from(vec!["example.com", "localhost"]))
                         .to_owned(),
                 );
             }
             "uri" | "iri" => {
-                return admitted(
+                return accepted(
                     tc.draw(gs::sampled_from(vec!["https://example.com/a", "urn:x:y"]))
                         .to_owned(),
                 );
             }
             "json-pointer" => {
-                return admitted(tc.draw(gs::sampled_from(vec!["", "/a/0"])).to_owned());
+                return accepted(tc.draw(gs::sampled_from(vec!["", "/a/0"])).to_owned());
             }
             "regex" => {
-                return admitted(tc.draw(gs::sampled_from(vec!["^a", "[0-9]+"])).to_owned());
+                return accepted(tc.draw(gs::sampled_from(vec!["^a", "[0-9]+"])).to_owned());
             }
             _ => {}
         }
@@ -380,14 +380,14 @@ pub(crate) fn draw_string(tc: &TestCase, view: &StringView) -> Option<Value> {
         if regex::Regex::new(pattern).is_err() {
             return None;
         }
-        return admitted(tc.draw(gs::from_regex(pattern)));
+        return accepted(tc.draw(gs::from_regex(pattern)));
     }
     let length = tc.draw(
         gs::integers::<u64>()
             .min_value(floor)
             .max_value(ceiling.min(floor + 3)),
     );
-    admitted(
+    accepted(
         tc.draw(
             gs::text()
                 .min_size(length as usize)

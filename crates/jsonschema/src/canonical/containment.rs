@@ -19,7 +19,7 @@ const PROOF_BUDGET: u64 = 500;
 /// forms.
 pub(crate) fn covers(outer: &Schema, inner: &Schema, ctx: &CanonicalizationContext) -> Verdict {
     let verdict = covers_as_written(outer, inner, ctx);
-    if verdict == Verdict::Admits {
+    if verdict == Verdict::Accepts {
         return verdict;
     }
     // Pointers to two recursive targets never compare as equal: whether one holds the other rests
@@ -34,7 +34,7 @@ pub(crate) fn covers(outer: &Schema, inner: &Schema, ctx: &CanonicalizationConte
         (SchemaKind::Reference(outer), SchemaKind::Reference(inner))
             if !ctx.attempted(inner, outer) && contained_by_assumption(outer, inner, ctx) =>
         {
-            Verdict::Admits
+            Verdict::Accepts
         }
         _ => verdict,
     }
@@ -62,7 +62,7 @@ fn covers_as_written(outer: &Schema, inner: &Schema, ctx: &CanonicalizationConte
     let intersection = algebra::resolved(intersection, ctx);
     let inner = algebra::resolved(inner.clone(), ctx);
     if intersection == inner {
-        Verdict::Admits
+        Verdict::Accepts
     } else {
         Verdict::Unknown
     }
@@ -89,7 +89,7 @@ fn contained_by_assumption(
     let (proven, outgrew) = ctx.capped(PROOF_BUDGET, || {
         ctx.assuming_contained(inner, outer, || covers(outer_body, inner_body, ctx))
     });
-    let held = !outgrew && proven == Some(Verdict::Admits);
+    let held = !outgrew && proven == Some(Verdict::Accepts);
     ctx.settle_containment(inner, outer, held);
     held
 }

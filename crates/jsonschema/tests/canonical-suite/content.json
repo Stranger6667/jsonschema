@@ -180,7 +180,7 @@
     ]
   },
   {
-    "description": "a known content encoding absorbs a constant string it admits",
+    "description": "a known content encoding absorbs a constant string it accepts",
     "schema": {
       "anyOf": [
         {
@@ -206,7 +206,7 @@
     ]
   },
   {
-    "description": "a known content media type absorbs a constant string it admits",
+    "description": "a known content media type absorbs a constant string it accepts",
     "schema": {
       "anyOf": [
         {

@@ -325,15 +325,15 @@ Canonical schemas combine like sets of values. Every emitted schema carries `$sc
 positive = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 0 })
 bounded  = JSONSchema.canonicalize({ "type" => "integer", "maximum" => 100 })
 
-# Every value both admit
+# Every value both accept
 positive.intersect(bounded).to_json_schema
 # => {"type"=>"integer", "minimum"=>0, "maximum"=>100}
 
-# Every value either admits
+# Every value either accepts
 positive.union(bounded).to_json_schema
 # => {"type"=>"integer"}
 
-# Every value `positive` admits and `bounded` rejects
+# Every value `positive` accepts and `bounded` rejects
 positive.subtract(bounded).to_json_schema
 # => {"type"=>"integer", "minimum"=>101}
 
@@ -404,7 +404,7 @@ reasons.key?("/properties/name")
 # => false
 ```
 
-A reason is a `LiteralReason` (written as `false`), an `EmptyReason` (one part admits nothing by itself) or a `ConflictReason` (each part admits values, together they admit none). A missing pointer does not prove that subschema satisfiable. For a document the canonical form cannot model, `find_unsatisfiable` reports nothing, the same way `satisfiability` answers `:unknown`.
+A reason is a `LiteralReason` (written as `false`), an `EmptyReason` (one part accepts nothing by itself) or a `ConflictReason` (each part accepts values, together they accept none). A missing pointer does not prove that subschema satisfiable. For a document the canonical form cannot model, `find_unsatisfiable` reports nothing, the same way `satisfiability` answers `:unknown`.
 
 ## Schema Bundling and Dereferencing
 

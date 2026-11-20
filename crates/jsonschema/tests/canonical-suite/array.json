@@ -176,7 +176,7 @@
     ]
   },
   {
-    "description": "ir: an array window absorbs a constant array it admits",
+    "description": "ir: an array window absorbs a constant array it accepts",
     "schema": {
       "anyOf": [
         {"type": "array", "minItems": 1},
@@ -226,7 +226,7 @@
     ]
   },
   {
-    "description": "ir: the empty array joins an array window it touches",
+    "description": "ir: the empty array merges into an array window it touches",
     "schema": {
       "anyOf": [
         {"type": "array", "minItems": 1},

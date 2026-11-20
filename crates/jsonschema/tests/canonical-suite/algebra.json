@@ -306,7 +306,7 @@
     }
   },
   {
-    "description": "intersect_false_meets_false_is_false",
+    "description": "intersect_false_with_false_is_false",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "not": {}
@@ -319,7 +319,7 @@
     }
   },
   {
-    "description": "intersect_false_meets_true_is_false",
+    "description": "intersect_false_with_true_is_false",
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "not": {}
@@ -1071,7 +1071,7 @@
     ]
   },
   {
-    "description": "intersect_type_meets_true_leaves_type",
+    "description": "intersect_type_with_true_leaves_type",
     "schema": {
       "allOf": [
         {
@@ -1096,7 +1096,7 @@
     ]
   },
   {
-    "description": "intersect_draft4_integer_group_meets_integer_type_keeps_group",
+    "description": "intersect_draft4_integer_group_with_integer_type_keeps_group",
     "draft": "draft4",
     "schema": {
       "allOf": [
@@ -1144,7 +1144,7 @@
     ]
   },
   {
-    "description": "intersect_draft4_string_type_meets_integer_group_is_false",
+    "description": "intersect_draft4_string_type_with_integer_group_is_false",
     "draft": "draft4",
     "schema": {
       "allOf": [
@@ -1209,7 +1209,7 @@
     ]
   },
   {
-    "description": "intersect_draft4_enum_meets_integer_group_keeps_guarded_values",
+    "description": "intersect_draft4_enum_with_integer_group_keeps_guarded_values",
     "draft": "draft4",
     "schema": {
       "allOf": [

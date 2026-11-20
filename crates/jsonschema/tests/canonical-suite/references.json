@@ -1551,7 +1551,7 @@
     "tests": [{"data": 1, "valid": false}]
   },
   {
-    "description": "negating a reference to an empty definition admits everything",
+    "description": "negating a reference to an empty definition accepts everything",
     "schema": {"not": {"$ref": "#/$defs/x"}, "$defs": {"x": false}},
     "kind": "true",
     "satisfiable": true,
@@ -1642,7 +1642,7 @@
     ]
   },
   {
-    "description": "a recursive object requiring a property of its own type admits nothing",
+    "description": "a recursive object requiring a property of its own type accepts nothing",
     "schema": {"type": "object", "required": ["a"], "properties": {"a": {"$ref": "#"}}},
     "kind": "false",
     "satisfiable": false,
@@ -1654,7 +1654,7 @@
     ]
   },
   {
-    "description": "a recursive array demanding an element of its own type admits nothing",
+    "description": "a recursive array demanding an element of its own type accepts nothing",
     "schema": {"type": "array", "minItems": 1, "items": {"$ref": "#"}},
     "kind": "false",
     "satisfiable": false,
@@ -1665,7 +1665,7 @@
     ]
   },
   {
-    "description": "a mutually recursive pair with no base case admits nothing",
+    "description": "a mutually recursive pair with no base case accepts nothing",
     "schema": {
       "$ref": "#/$defs/a",
       "$defs": {
@@ -1759,7 +1759,7 @@
     ]
   },
   {
-    "description": "a cycle with the document root as a member admits nothing",
+    "description": "a cycle with the document root as a member accepts nothing",
     "schema": {
       "type": "object",
       "required": ["p"],
@@ -1835,7 +1835,7 @@
     ]
   },
   {
-    "description": "a Draft 4 recursive definition with no finite satisfying instance admits nothing",
+    "description": "a Draft 4 recursive definition with no finite satisfying instance accepts nothing",
     "draft": "draft4",
     "schema": {
       "$ref": "#/definitions/a",
@@ -1890,7 +1890,7 @@
     ]
   },
   {
-    "description": "a Draft 4 recursive closed pattern map with no finite candidate admits nothing",
+    "description": "a Draft 4 recursive closed pattern map with no finite candidate accepts nothing",
     "draft": "draft4",
     "schema": {
       "$ref": "#/definitions/a",
@@ -2069,7 +2069,7 @@
     ]
   },
   {
-    "description": "an unsatisfiable subresource definition beside a proven cycle admits nothing",
+    "description": "an unsatisfiable subresource definition beside a proven cycle accepts nothing",
     "schema": {
       "type": "object",
       "required": ["a"],
@@ -2129,7 +2129,7 @@
     ]
   },
   {
-    "description": "an unguarded self-reference under a required key admits nothing",
+    "description": "an unguarded self-reference under a required key accepts nothing",
     "schema": {
       "type": "object",
       "required": ["a"],
@@ -2147,7 +2147,7 @@
     ]
   },
   {
-    "description": "a bare self-reference admits every value",
+    "description": "a bare self-reference accepts every value",
     "schema": {"$ref": "#"},
     "satisfiable": true,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
@@ -2160,7 +2160,7 @@
     ]
   },
   {
-    "description": "a self-reference wrapped in allOf admits every value",
+    "description": "a self-reference wrapped in allOf accepts every value",
     "schema": {"allOf": [{"$ref": "#"}]},
     "satisfiable": true,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
@@ -2171,7 +2171,7 @@
     ]
   },
   {
-    "description": "a definition pointing back at the root admits every value",
+    "description": "a definition pointing back at the root accepts every value",
     "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"$ref": "#"}}},
     "satisfiable": true,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
@@ -2182,7 +2182,7 @@
     ]
   },
   {
-    "description": "two definitions pointing at each other admit every value",
+    "description": "two definitions pointing at each other accept every value",
     "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}}},
     "satisfiable": true,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
@@ -2193,7 +2193,7 @@
     ]
   },
   {
-    "description": "an allOf of references that all cycle admits every value",
+    "description": "an allOf of references that all cycle accepts every value",
     "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"allOf": [{"$ref": "#"}, {"$ref": "#/$defs/b"}]}, "b": {"$ref": "#"}}},
     "satisfiable": true,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
@@ -2204,7 +2204,7 @@
     ]
   },
   {
-    "description": "an anyOf of references that all cycle admits every value",
+    "description": "an anyOf of references that all cycle accepts every value",
     "schema": {"$ref": "#/$defs/a", "$defs": {"a": {"anyOf": [{"$ref": "#"}, {"$ref": "#/$defs/b"}]}, "b": {"$ref": "#"}}},
     "satisfiable": true,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
@@ -2227,7 +2227,7 @@
     ]
   },
   {
-    "description": "not over a self-referencing definition admits nothing",
+    "description": "not over a self-referencing definition accepts nothing",
     "schema": {"$defs": {"A": {"$ref": "#/$defs/A"}}, "not": {"$ref": "#/$defs/A"}},
     "satisfiable": false,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
@@ -2238,7 +2238,7 @@
     ]
   },
   {
-    "description": "not over two definitions pointing at each other admits nothing",
+    "description": "not over two definitions pointing at each other accepts nothing",
     "schema": {"$defs": {"A": {"$ref": "#/$defs/B"}, "B": {"$ref": "#/$defs/A"}}, "not": {"$ref": "#/$defs/A"}},
     "satisfiable": false,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
@@ -2249,7 +2249,7 @@
     ]
   },
   {
-    "description": "not over a self-referencing definition beside other keywords admits nothing",
+    "description": "not over a self-referencing definition beside other keywords accepts nothing",
     "schema": {"$defs": {"A": {"$ref": "#/$defs/A"}}, "type": "object", "not": {"$ref": "#/$defs/A"}},
     "satisfiable": false,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
@@ -2260,7 +2260,7 @@
     ]
   },
   {
-    "description": "draft4: not over a self-referencing definition admits nothing",
+    "description": "draft4: not over a self-referencing definition accepts nothing",
     "draft": "draft4",
     "schema": {"definitions": {"A": {"$ref": "#/definitions/A"}}, "type": "object", "not": {"$ref": "#/definitions/A"}},
     "satisfiable": false,
@@ -2271,7 +2271,7 @@
     ]
   },
   {
-    "description": "a dynamic reference closing on its own anchor admits every value",
+    "description": "a dynamic reference closing on its own anchor accepts every value",
     "schema": {"$id": "https://example.com/dynamic-cycle", "$dynamicAnchor": "m", "$dynamicRef": "#m"},
     "satisfiable": true,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
@@ -2282,7 +2282,7 @@
     ]
   },
   {
-    "description": "a cycle closed across two resources admits every value",
+    "description": "a cycle closed across two resources accepts every value",
     "schema": {"$id": "https://example.com/root", "$ref": "sub", "$defs": {"s": {"$id": "https://example.com/sub", "$ref": "https://example.com/root"}}},
     "satisfiable": true,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema"},
@@ -2337,7 +2337,7 @@
     ]
   },
   {
-    "description": "a recursive reference closing on the root admits every value",
+    "description": "a recursive reference closing on the root accepts every value",
     "draft": "draft2019-09",
     "schema": {"$recursiveAnchor": true, "$recursiveRef": "#"},
     "satisfiable": true,

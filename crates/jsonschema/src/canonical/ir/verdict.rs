@@ -3,7 +3,7 @@
 /// by direction: an unresolved verdict must never narrow the schema.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Verdict {
-    Admits,
+    Accepts,
     Rejects,
     Unknown,
 }
@@ -19,9 +19,9 @@ pub(crate) enum UncheckableFacet {
 }
 
 impl Verdict {
-    pub(crate) fn from_bool(admitted: bool) -> Self {
-        if admitted {
-            Verdict::Admits
+    pub(crate) fn from_bool(accepted: bool) -> Self {
+        if accepted {
+            Verdict::Accepts
         } else {
             Verdict::Rejects
         }
@@ -31,16 +31,16 @@ impl Verdict {
     /// the whole answer undecided.
     pub(crate) fn and(self, other: Self) -> Self {
         match (self, other) {
-            (Verdict::Rejects, Verdict::Admits | Verdict::Rejects | Verdict::Unknown)
-            | (Verdict::Admits | Verdict::Unknown, Verdict::Rejects) => Verdict::Rejects,
-            (Verdict::Unknown, Verdict::Admits | Verdict::Unknown)
-            | (Verdict::Admits, Verdict::Unknown) => Verdict::Unknown,
-            (Verdict::Admits, Verdict::Admits) => Verdict::Admits,
+            (Verdict::Rejects, Verdict::Accepts | Verdict::Rejects | Verdict::Unknown)
+            | (Verdict::Accepts | Verdict::Unknown, Verdict::Rejects) => Verdict::Rejects,
+            (Verdict::Unknown, Verdict::Accepts | Verdict::Unknown)
+            | (Verdict::Accepts, Verdict::Unknown) => Verdict::Unknown,
+            (Verdict::Accepts, Verdict::Accepts) => Verdict::Accepts,
         }
     }
 
     pub(crate) fn all(verdicts: impl IntoIterator<Item = Self>) -> Self {
-        let mut result = Verdict::Admits;
+        let mut result = Verdict::Accepts;
         for verdict in verdicts {
             result = result.and(verdict);
             if result == Verdict::Rejects {
@@ -56,7 +56,7 @@ impl Verdict {
         let mut result = Verdict::Rejects;
         for verdict in verdicts {
             match verdict {
-                Verdict::Admits => return Verdict::Admits,
+                Verdict::Accepts => return Verdict::Accepts,
                 Verdict::Unknown => result = Verdict::Unknown,
                 Verdict::Rejects => {}
             }
@@ -70,28 +70,28 @@ mod tests {
     use super::Verdict;
     use test_case::test_case;
 
-    #[test_case(Verdict::Admits, Verdict::Admits, Verdict::Admits)]
-    #[test_case(Verdict::Admits, Verdict::Unknown, Verdict::Unknown)]
-    #[test_case(Verdict::Unknown, Verdict::Admits, Verdict::Unknown)]
+    #[test_case(Verdict::Accepts, Verdict::Accepts, Verdict::Accepts)]
+    #[test_case(Verdict::Accepts, Verdict::Unknown, Verdict::Unknown)]
+    #[test_case(Verdict::Unknown, Verdict::Accepts, Verdict::Unknown)]
     #[test_case(Verdict::Unknown, Verdict::Unknown, Verdict::Unknown)]
-    #[test_case(Verdict::Rejects, Verdict::Admits, Verdict::Rejects)]
+    #[test_case(Verdict::Rejects, Verdict::Accepts, Verdict::Rejects)]
     #[test_case(Verdict::Rejects, Verdict::Unknown, Verdict::Rejects)]
-    #[test_case(Verdict::Admits, Verdict::Rejects, Verdict::Rejects)]
+    #[test_case(Verdict::Accepts, Verdict::Rejects, Verdict::Rejects)]
     #[test_case(Verdict::Unknown, Verdict::Rejects, Verdict::Rejects)]
     #[test_case(Verdict::Rejects, Verdict::Rejects, Verdict::Rejects)]
     fn and_truth_table(left: Verdict, right: Verdict, expected: Verdict) {
         assert_eq!(left.and(right), expected);
     }
 
-    #[test_case(true, Verdict::Admits)]
+    #[test_case(true, Verdict::Accepts)]
     #[test_case(false, Verdict::Rejects)]
-    fn from_bool_maps(admitted: bool, expected: Verdict) {
-        assert_eq!(Verdict::from_bool(admitted), expected);
+    fn from_bool_maps(accepted: bool, expected: Verdict) {
+        assert_eq!(Verdict::from_bool(accepted), expected);
     }
 
-    #[test_case(vec![], Verdict::Admits)]
-    #[test_case(vec![Verdict::Admits, Verdict::Admits], Verdict::Admits)]
-    #[test_case(vec![Verdict::Admits, Verdict::Unknown], Verdict::Unknown)]
+    #[test_case(vec![], Verdict::Accepts)]
+    #[test_case(vec![Verdict::Accepts, Verdict::Accepts], Verdict::Accepts)]
+    #[test_case(vec![Verdict::Accepts, Verdict::Unknown], Verdict::Unknown)]
     #[test_case(vec![Verdict::Unknown, Verdict::Rejects], Verdict::Rejects)]
     #[test_case(vec![Verdict::Rejects, Verdict::Unknown], Verdict::Rejects)]
     fn all_folds(verdicts: Vec<Verdict>, expected: Verdict) {
@@ -101,8 +101,8 @@ mod tests {
     #[test_case(vec![], Verdict::Rejects)]
     #[test_case(vec![Verdict::Rejects, Verdict::Rejects], Verdict::Rejects)]
     #[test_case(vec![Verdict::Rejects, Verdict::Unknown], Verdict::Unknown)]
-    #[test_case(vec![Verdict::Unknown, Verdict::Admits], Verdict::Admits)]
-    #[test_case(vec![Verdict::Admits, Verdict::Rejects], Verdict::Admits)]
+    #[test_case(vec![Verdict::Unknown, Verdict::Accepts], Verdict::Accepts)]
+    #[test_case(vec![Verdict::Accepts, Verdict::Rejects], Verdict::Accepts)]
     fn any_folds(verdicts: Vec<Verdict>, expected: Verdict) {
         assert_eq!(Verdict::any(verdicts), expected);
     }

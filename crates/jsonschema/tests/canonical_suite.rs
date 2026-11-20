@@ -131,7 +131,7 @@ fn run_case(case: CanonicalCase) {
     if case.tests.iter().any(|test| test.valid == Some(true)) {
         assert!(
             satisfiable,
-            "case `{}`: admits a valid value but satisfiability() is No\n  form = {form}",
+            "case `{}`: accepts a valid value but satisfiability() is No\n  form = {form}",
             case.description
         );
     }

@@ -85,14 +85,14 @@ impl Divisors {
 
     /// Whether the interval holds a multiple of every divisor. A folded divisor constrains more
     /// than each of the ones it came from, so the answer is taken on the folded set.
-    pub(crate) fn admit_between(
+    pub(crate) fn accept_between(
         &self,
         minimum: Option<&super::BoundNumber>,
         maximum: Option<&super::BoundNumber>,
     ) -> bool {
         self.folded
             .iter()
-            .all(|step| step.admits_between(minimum, maximum))
+            .all(|step| step.accepts_between(minimum, maximum))
     }
 
     /// Whether `value` is a multiple of every divisor, as the validator decides it.
@@ -215,7 +215,7 @@ fn fold(mut divisors: Vec<BoundRational>) -> Vec<BoundRational> {
     // Every multiple of a whole divisor is whole, so "whole" beside one adds nothing.
     if divisors
         .iter()
-        .any(|step| step.admits_only_whole() && !step.is_identity())
+        .any(|step| step.accepts_only_whole() && !step.is_identity())
     {
         divisors.retain(|step| !step.is_identity());
     }

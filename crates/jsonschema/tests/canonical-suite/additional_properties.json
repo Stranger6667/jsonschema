@@ -190,7 +190,7 @@
     ]
   },
   {
-    "description": "ir: additionalProperties:false with no keys admits only the empty object",
+    "description": "ir: additionalProperties:false with no keys accepts only the empty object",
     "schemas": [
       {
         "type": "object",
@@ -227,7 +227,7 @@
     ]
   },
   {
-    "description": "ir: an additionalProperties schema admitting everything constrains nothing",
+    "description": "ir: an additionalProperties schema accepting everything constrains nothing",
     "schemas": [
       {
         "type": "object",
@@ -515,7 +515,7 @@
     ]
   },
   {
-    "description": "ir: additionalProperties:false without a type also admits non-objects",
+    "description": "ir: additionalProperties:false without a type also accepts non-objects",
     "schema": {
       "additionalProperties": false
     },
@@ -1076,7 +1076,7 @@
     ]
   },
   {
-    "description": "ir: a required key whose crossed entry admits nothing is unsatisfiable",
+    "description": "ir: a required key whose crossed entry accepts nothing is unsatisfiable",
     "schema": {
       "allOf": [
         {

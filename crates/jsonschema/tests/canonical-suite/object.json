@@ -165,7 +165,7 @@
     ]
   },
   {
-    "description": "ir: an object window absorbs a constant object it admits",
+    "description": "ir: an object window absorbs a constant object it accepts",
     "schema": {
       "anyOf": [
         {"type": "object", "minProperties": 1},
@@ -215,7 +215,7 @@
     ]
   },
   {
-    "description": "ir: the empty object joins an object window it touches",
+    "description": "ir: the empty object merges into an object window it touches",
     "schema": {
       "anyOf": [
         {"type": "object", "minProperties": 1},
@@ -513,7 +513,7 @@
     ]
   },
   {
-    "description": "a conditional entry beside the key's bare demand admits every object",
+    "description": "a conditional entry beside the key's bare demand accepts every object",
     "schemas": [
       {
         "anyOf": [
@@ -565,7 +565,7 @@
     ]
   },
   {
-    "description": "a fold spanning the object domain joins the sibling type branch",
+    "description": "a fold spanning the object domain merges into the sibling type branch",
     "schema": {
       "anyOf": [
         {
@@ -856,7 +856,7 @@
     ]
   },
   {
-    "description": "complementary required property schemas leave only the requirement",
+    "description": "required property schemas negating each other leave only the requirement",
     "schema": {
       "anyOf": [
         {

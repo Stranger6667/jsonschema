@@ -322,7 +322,7 @@
     ]
   },
   {
-    "description": "ir: a constant object folds into a branch whose property admits it",
+    "description": "ir: a constant object folds into a branch whose property accepts it",
     "schema": {
       "anyOf": [
         {"const": {"a": 1}},
@@ -409,7 +409,7 @@
     ]
   },
   {
-    "description": "ir: a forbidden admitted key leaves only the empty object",
+    "description": "ir: a forbidden accepted key leaves only the empty object",
     "schemas": [
       {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": false}},
       {"type": "object", "maxProperties": 0},
@@ -426,7 +426,7 @@
     ]
   },
   {
-    "description": "ir: a forbidden admitted key beside a property minimum is unsatisfiable",
+    "description": "ir: a forbidden accepted key beside a property minimum is unsatisfiable",
     "schema": {
       "type": "object",
       "propertyNames": {"const": "a"},
@@ -444,7 +444,7 @@
     ]
   },
   {
-    "description": "ir: forbidden keys lower the admitted-key cap on the property count",
+    "description": "ir: forbidden keys lower the accepted-key cap on the property count",
     "schemas": [
       {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "properties": {"a": false}, "maxProperties": 1},
       {"type": "object", "propertyNames": {"enum": ["a", "b"]}, "properties": {"a": false}}
@@ -521,7 +521,7 @@
     ]
   },
   {
-    "description": "ir: a checkable format folds a constant object its property admits",
+    "description": "ir: a checkable format folds a constant object its property accepts",
     "schema": {
       "anyOf": [
         {"const": {"a": "user@example.com"}},
@@ -540,7 +540,7 @@
     ]
   },
   {
-    "description": "ir: a property schema admitting no value converges with the forbidden key",
+    "description": "ir: a property schema accepting no value converges with the forbidden key",
     "schemas": [
       {"type": "object", "properties": {"a": {"allOf": [{"type": "string"}, {"type": "integer"}]}}},
       {"type": "object", "properties": {"a": false}}
@@ -557,7 +557,7 @@
     ]
   },
   {
-    "description": "ir: demanding a key whose schema admits no value is unsatisfiable without a literal false",
+    "description": "ir: demanding a key whose schema accepts no value is unsatisfiable without a literal false",
     "schema": {
       "type": "object",
       "properties": {"a": {"allOf": [{"type": "string"}, {"type": "integer"}]}},
@@ -673,7 +673,7 @@
     ]
   },
   {
-    "description": "ir: the empty object hands off to a branch that admits it",
+    "description": "ir: the empty object hands off to a branch that accepts it",
     "schemas": [
       {"anyOf": [{"type": "object", "properties": {"a": {"type": "integer"}}}, {"type": "object", "propertyNames": {"maxLength": 3}, "minProperties": 1}]},
       {"anyOf": [{"type": "object", "properties": {"a": {"type": "integer"}}}, {"type": "object", "propertyNames": {"maxLength": 3}}]}

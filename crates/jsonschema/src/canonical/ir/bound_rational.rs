@@ -48,7 +48,7 @@ impl BoundRational {
     }
 
     /// Whether every multiple of the divisor is whole, however the validator reads it.
-    pub(crate) fn admits_only_whole(&self) -> bool {
+    pub(crate) fn accepts_only_whole(&self) -> bool {
         matches!(self.kind(), DivisorKind::Whole | DivisorKind::WholeLossy)
     }
 
@@ -108,7 +108,7 @@ impl BoundRational {
     }
 
     /// Whether any multiple lies within the interval. An absent end always leaves room for one.
-    pub(crate) fn admits_between(
+    pub(crate) fn accepts_between(
         &self,
         minimum: Option<&super::BoundNumber>,
         maximum: Option<&super::BoundNumber>,

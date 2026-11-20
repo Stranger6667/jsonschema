@@ -1859,7 +1859,7 @@ fn unsatisfiable_recursive_reference_rejects_every_candidate(tc: TestCase) {
 // descending chain of sub-values. JSON values are finite, so no member accepts anything - the
 // unsatisfiability is a theorem of the construction rather than a verdict to be read off.
 #[hegel::test(test_cases = 5_000)]
-fn a_demanding_reference_ring_admits_nothing(tc: TestCase) {
+fn a_demanding_reference_ring_accepts_nothing(tc: TestCase) {
     let schema = tc.draw(definition_graph(DEMANDING_LINKS));
     let canonical = jsonschema::canonical::options()
         .with_draft(Draft::Draft202012)
@@ -1868,7 +1868,7 @@ fn a_demanding_reference_ring_admits_nothing(tc: TestCase) {
     assert_eq!(
         canonical.satisfiability(),
         Satisfiability::No,
-        "a ring of demanded sub-values admits nothing, but the canonical form is {}\n  schema = {schema}",
+        "a ring of demanded sub-values accepts nothing, but the canonical form is {}\n  schema = {schema}",
         canonical.to_json_schema()
     );
 }
@@ -1876,7 +1876,7 @@ fn a_demanding_reference_ring_admits_nothing(tc: TestCase) {
 // A ring of bare references asserts nothing anywhere, so every value walks it forever without ever
 // hitting a constraint that could reject it. Its canonical form is `true`.
 #[hegel::test(test_cases = 5_000)]
-fn a_bare_reference_ring_admits_everything(tc: TestCase) {
+fn a_bare_reference_ring_accepts_everything(tc: TestCase) {
     let schema = tc.draw(definition_graph(BARE_LINKS));
     let canonical = jsonschema::canonical::options()
         .with_draft(Draft::Draft202012)
@@ -1885,7 +1885,7 @@ fn a_bare_reference_ring_admits_everything(tc: TestCase) {
     assert_eq!(
         canonical.view(),
         CanonicalView::True,
-        "a ring carrying no assertion admits every value\n  schema = {schema}"
+        "a ring carrying no assertion accepts every value\n  schema = {schema}"
     );
 }
 
@@ -1918,16 +1918,16 @@ fn composed_set_operations_answer_about_the_values_their_operands_accept(tc: Tes
     };
     let build = |value: &Value| jsonschema::options().with_draft(draft).build(value);
     let mut operands = Vec::new();
-    let mut admitted = Vec::new();
+    let mut accepted = Vec::new();
     for source in &sources {
         let (Ok(operand), Ok(validator)) = (canonicalize(source), build(source)) else {
             return;
         };
-        admitted.push(validator.is_valid(&instance));
+        accepted.push(validator.is_valid(&instance));
         operands.push(operand);
     }
     let (a, b, c) = (&operands[0], &operands[1], &operands[2]);
-    let (in_a, in_b, in_c) = (admitted[0], admitted[1], admitted[2]);
+    let (in_a, in_b, in_c) = (accepted[0], accepted[1], accepted[2]);
     let pair = |left: Result<CanonicalSchema, _>,
                 op: fn(
         &CanonicalSchema,
@@ -2254,7 +2254,7 @@ fn chained_set_operations_over_disagreeing_documents_answer_or_decline(tc: TestC
 // A value drawn from the canonical form is accepted by the original schema: anything else is a
 // widened facet.
 #[hegel::test(test_cases = 5_000)]
-fn drawn_instances_are_admitted_by_the_original(tc: TestCase) {
+fn drawn_instances_are_accepted_by_the_original(tc: TestCase) {
     let draft = draw_draft(&tc);
     let validate_formats = tc.draw(gs::booleans());
     let schema = draw_schema(&tc, 3);
@@ -2418,9 +2418,9 @@ fn metaschema_drawn_schemas_compile(tc: TestCase) {
             "self-intersection changed the form of {schema}"
         );
     }
-    if let Ok(join) = canonical.union(&canonical) {
+    if let Ok(union) = canonical.union(&canonical) {
         assert_eq!(
-            join.to_json_schema(),
+            union.to_json_schema(),
             emitted,
             "self-union changed the form of {schema}"
         );
@@ -2673,7 +2673,7 @@ fn algebra_results_agree_with_drawn_instances(tc: TestCase) {
                 left_validator.is_valid(&inside),
                 right_validator.is_valid(&inside)
             ),
-            "result admits a value outside the combination\n  left = {left_source}\n  right = {right_source}\n  result = {emitted}\n  value = {inside}"
+            "result accepts a value outside the combination\n  left = {left_source}\n  right = {right_source}\n  result = {emitted}\n  value = {inside}"
         );
     }
     if let Some(from_left) = draw_valid_instance(&tc, &left, &left_validator) {

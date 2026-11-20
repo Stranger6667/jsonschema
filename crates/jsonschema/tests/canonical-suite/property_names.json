@@ -61,7 +61,7 @@
     "satisfiable": false
   },
   {
-    "description": "ir: a single admitted key bounds the property count",
+    "description": "ir: a single accepted key bounds the property count",
     "schemas": [
       {"type": "object", "propertyNames": {"const": "foo"}},
       {"type": "object", "propertyNames": {"const": "foo"}, "maxProperties": 1},
@@ -79,7 +79,7 @@
     ]
   },
   {
-    "description": "ir: a property count below the admitted key count survives",
+    "description": "ir: a property count below the accepted key count survives",
     "schema": {
       "type": "object",
       "propertyNames": {"enum": ["a", "b"]},
@@ -108,7 +108,7 @@
     "satisfiable": false
   },
   {
-    "description": "ir: demanding a key the property names admit keeps both",
+    "description": "ir: demanding a key the property names accept keeps both",
     "schema": {
       "type": "object",
       "propertyNames": {"enum": ["a", "b"]},
@@ -127,7 +127,7 @@
     ]
   },
   {
-    "description": "ir: more required keys than the property names admit is unsatisfiable",
+    "description": "ir: more required keys than the property names accept is unsatisfiable",
     "schema": {
       "type": "object",
       "propertyNames": {"const": "a"},
@@ -242,7 +242,7 @@
     "satisfiable": false
   },
   {
-    "description": "ir: a constant object whose keys are admitted survives",
+    "description": "ir: a constant object whose keys are accepted survives",
     "schema": {
       "allOf": [
         {"const": {"ab": 1}},
@@ -292,7 +292,7 @@
     ]
   },
   {
-    "description": "ir: key constraints admitting no string converge on the empty object",
+    "description": "ir: key constraints accepting no string converge on the empty object",
     "schemas": [
       {"type": "object", "propertyNames": false},
       {"type": "object", "propertyNames": {"type": "integer"}},
@@ -309,7 +309,7 @@
     ]
   },
   {
-    "description": "ir: a key constraint that only other types could fail admits every key",
+    "description": "ir: a key constraint that only other types could fail accepts every key",
     "schemas": [
       {"type": "object", "propertyNames": {"type": ["string", "integer"]}},
       {"type": "object", "propertyNames": {"propertyNames": {"maxLength": 2}}},
@@ -427,7 +427,7 @@
     "satisfiable": false
   },
   {
-    "description": "ir: demanding a key one branch of the property names admits keeps both",
+    "description": "ir: demanding a key one branch of the property names accepts keeps both",
     "schema": {
       "type": "object",
       "propertyNames": {"anyOf": [{"const": "a"}, {"minLength": 3}]},
@@ -447,7 +447,7 @@
     ]
   },
   {
-    "description": "ir: a constant object with every key admitted by a branch folds into the leaf",
+    "description": "ir: a constant object with every key accepted by a branch folds into the leaf",
     "schema": {
       "anyOf": [
         {"const": {"a": 1, "xyz": 2}},

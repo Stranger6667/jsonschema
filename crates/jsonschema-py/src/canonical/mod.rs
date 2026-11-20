@@ -69,7 +69,7 @@ macro_rules! label_enum {
 }
 
 label_enum! {
-    /// Whether one schema admits every value another admits.
+    /// Whether one schema accepts every value another accepts.
     PyContainment => Containment as "Containment" {
         Yes = "YES",
         No = "NO",
@@ -431,7 +431,7 @@ impl PyCanonicalSchema {
         })
     }
 
-    /// Every value both schemas admit.
+    /// Every value both schemas accept.
     fn intersect(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .intersect(&other.inner)
@@ -439,7 +439,7 @@ impl PyCanonicalSchema {
             .map_err(|error| canonicalization_error(py, error))
     }
 
-    /// Every value either schema admits.
+    /// Every value either schema accepts.
     fn union(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .union(&other.inner)
@@ -447,7 +447,7 @@ impl PyCanonicalSchema {
             .map_err(|error| canonicalization_error(py, error))
     }
 
-    /// Every value this schema admits and `other` rejects.
+    /// Every value this schema accepts and `other` rejects.
     fn subtract(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .subtract(&other.inner)
@@ -455,7 +455,7 @@ impl PyCanonicalSchema {
             .map_err(|error| canonicalization_error(py, error))
     }
 
-    /// Whether this schema admits every value `other` admits.
+    /// Whether this schema accepts every value `other` accepts.
     ///
     /// Only `YES` proves containment; `UNKNOWN` means undecided, not disproved. Test for `YES`,
     /// and treat `UNKNOWN` like `NO`.
@@ -499,7 +499,7 @@ impl PyCanonicalSchema {
 
     /// Whether any value satisfies this schema.
     ///
-    /// Only `NO` proves the schema admits nothing; `UNKNOWN` means undecided, not empty. Test for
+    /// Only `NO` proves the schema accepts nothing; `UNKNOWN` means undecided, not empty. Test for
     /// `NO`, and treat `UNKNOWN` like `YES`.
     fn satisfiability(&self) -> PySatisfiability {
         self.inner.satisfiability().into()
@@ -939,7 +939,7 @@ impl ReferenceView {
     }
 }
 
-/// Exactly one admitted value.
+/// Exactly one accepted value.
 #[pyclass(frozen, name = "ConstView", module = "jsonschema_rs.canonical")]
 pub(crate) struct ConstView {
     #[pyo3(get)]
@@ -954,7 +954,7 @@ impl ConstView {
     }
 }
 
-/// A sorted, deduplicated finite set of admitted values.
+/// A sorted, deduplicated finite set of accepted values.
 #[pyclass(frozen, name = "EnumView", module = "jsonschema_rs.canonical")]
 pub(crate) struct EnumView {
     #[pyo3(get)]
@@ -1012,16 +1012,16 @@ impl From<Cause> for PyCause {
     }
 }
 
-/// Why a subschema admits no value.
+/// Why a subschema accepts no value.
 #[pyclass(eq, name = "UnsatisfiableReason", module = "jsonschema_rs.canonical")]
 #[derive(Clone, PartialEq)]
 pub(crate) enum PyUnsatisfiableReason {
     /// Written as `false`.
     Literal {},
-    /// One part every value must satisfy admits nothing by itself. A subschema part has a reason
+    /// One part every value must satisfy accepts nothing by itself. A subschema part has a reason
     /// of its own under its pointer.
     Empty { cause: PyCause },
-    /// Each part admits values; no value satisfies all of them together.
+    /// Each part accepts values; no value satisfies all of them together.
     Conflict { causes: Vec<PyCause> },
 }
 
@@ -1097,7 +1097,7 @@ fn build_options<'r>(
 
 /// find_unsatisfiable(schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None)
 ///
-/// The subschemas of `schema` that admit no value, by JSON Pointer, each with why.
+/// The subschemas of `schema` that accept no value, by JSON Pointer, each with why.
 ///
 /// A pointer left out is not proven satisfiable: a document the canonical form does not model
 /// reports nothing, as :class:`Satisfiability` answers `UNKNOWN`.

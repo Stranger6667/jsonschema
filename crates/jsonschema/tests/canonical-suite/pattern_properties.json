@@ -124,7 +124,7 @@
     ]
   },
   {
-    "description": "ir: a required key a pattern forbids admits nothing",
+    "description": "ir: a required key a pattern forbids accepts nothing",
     "schema": {
       "type": "object",
       "patternProperties": {
@@ -223,7 +223,7 @@
     ]
   },
   {
-    "description": "ir: a pattern no admitted key matches says nothing",
+    "description": "ir: a pattern no accepted key matches says nothing",
     "schemas": [
       {
         "type": "object",
@@ -700,7 +700,7 @@
     ]
   },
   {
-    "description": "ir: patterns fold onto every admitted key of a finite key constraint",
+    "description": "ir: patterns fold onto every accepted key of a finite key constraint",
     "schemas": [
       {"type": "object", "propertyNames": {"const": "a"}, "patternProperties": {"^a": {"type": "integer"}}},
       {"type": "object", "propertyNames": {"const": "a"}, "properties": {"a": {"type": "integer"}}}
@@ -718,7 +718,7 @@
     ]
   },
   {
-    "description": "union: a constant object folds into a branch whose pattern admits it",
+    "description": "union: a constant object folds into a branch whose pattern accepts it",
     "schema": {
       "anyOf": [
         {"const": {"ab": 5}},

@@ -443,15 +443,15 @@ Canonical schemas combine like sets of values. Every emitted schema carries `$sc
 positive = jsonschema_rs.canonicalize({"type": "integer", "minimum": 0})
 bounded = jsonschema_rs.canonicalize({"type": "integer", "maximum": 100})
 
-# Every value both admit
+# Every value both accept
 positive.intersect(bounded).to_json_schema()
 # {"type": "integer", "minimum": 0, "maximum": 100}
 
-# Every value either admits
+# Every value either accepts
 positive.union(bounded).to_json_schema()
 # {"type": "integer"}
 
-# Every value `positive` admits and `bounded` rejects
+# Every value `positive` accepts and `bounded` rejects
 positive.subtract(bounded).to_json_schema()
 # {"type": "integer", "minimum": 101}
 
@@ -523,7 +523,7 @@ match reasons["/properties/tag"]:
 assert "/properties/name" not in reasons
 ```
 
-A reason is `Literal` (written as `false`), `Empty` (one part admits nothing by itself) or `Conflict` (each part admits values, together they admit none). A missing pointer does not prove that subschema satisfiable. For a document the canonical form cannot model, `find_unsatisfiable` reports nothing, the same way `satisfiability()` answers `UNKNOWN`.
+A reason is `Literal` (written as `false`), `Empty` (one part accepts nothing by itself) or `Conflict` (each part accepts values, together they accept none). A missing pointer does not prove that subschema satisfiable. For a document the canonical form cannot model, `find_unsatisfiable` reports nothing, the same way `satisfiability()` answers `UNKNOWN`.
 
 ## Meta-Schema Validation
 

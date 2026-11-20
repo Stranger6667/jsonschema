@@ -1113,7 +1113,7 @@ mod tests {
         ]
     }
 
-    fn admits(set: JsonTypeSet, value: &Value) -> bool {
+    fn accepts(set: JsonTypeSet, value: &Value) -> bool {
         match value {
             Value::Null => set.contains(JsonType::Null),
             Value::Bool(_) => set.contains(JsonType::Boolean),
@@ -1131,11 +1131,11 @@ mod tests {
     // collapses, the value-set forms of a lone `null` or `boolean` type, and the
     // non-integer-number leaf beside its union.
     #[allow(clippy::wildcard_enum_match_arm)]
-    fn negation_admits(schema: &Schema, value: &Value) -> bool {
+    fn negation_accepts(schema: &Schema, value: &Value) -> bool {
         match schema.kind() {
             SchemaKind::True => true,
             SchemaKind::False => false,
-            SchemaKind::MultiType(set) => admits(*set, value),
+            SchemaKind::MultiType(set) => accepts(*set, value),
             SchemaKind::Const(constant) => {
                 assert_eq!(constant.as_value(), &Value::Null);
                 value.is_null()
@@ -1152,7 +1152,7 @@ mod tests {
             SchemaKind::AnyOf(branches) => branches
                 .as_slice()
                 .iter()
-                .any(|branch| negation_admits(branch, value)),
+                .any(|branch| negation_accepts(branch, value)),
             SchemaKind::Number(leaf) => {
                 assert!(leaf.get().minimum.is_none());
                 assert!(leaf.get().maximum.is_none());
@@ -1191,8 +1191,8 @@ mod tests {
                 .expect("expressible negation");
             for value in &representatives() {
                 assert_ne!(
-                    admits(set, value),
-                    negation_admits(&negation, value),
+                    accepts(set, value),
+                    negation_accepts(&negation, value),
                     "membership not partitioned for set {set:?} on {value}"
                 );
             }

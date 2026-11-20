@@ -178,7 +178,7 @@ fn reaches(last: &NumberLeaf, next: &NumberLeaf) -> bool {
         // They touch on one point, which closes the gap only if either side includes it.
         end.is_inclusive() || start.is_inclusive()
     } else {
-        end.admits(&start.to_number(), Side::Upper)
+        end.accepts(&start.to_number(), Side::Upper)
     };
     touches || steps_over(&last.multiple_of, end, start)
 }
@@ -195,7 +195,7 @@ fn steps_over(divisor: &Divisors, end: &BoundNumber, start: &BoundNumber) -> boo
     let opens = flipped(end);
     let closes = flipped(start);
     step.multiple_beyond(&opens, Round::Up)
-        .is_some_and(|multiple| !closes.admits(&multiple.to_number(), Side::Upper))
+        .is_some_and(|multiple| !closes.accepts(&multiple.to_number(), Side::Upper))
 }
 
 /// The same limit with its inclusivity flipped.

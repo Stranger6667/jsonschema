@@ -403,9 +403,9 @@ impl CanonicalSchema {
             &context,
             &mut |candidate| {
                 let (verdict, inexact) = context.probe(|| {
-                    algebra::admits_value(node, &candidate, UncheckableFacet::Undecided, &context)
+                    algebra::accepts_value(node, &candidate, UncheckableFacet::Undecided, &context)
                 });
-                if verdict == Verdict::Admits && !inexact && !context.outgrew_distribution() {
+                if verdict == Verdict::Accepts && !inexact && !context.outgrew_distribution() {
                     answer = Satisfiability::Yes;
                     return ControlFlow::Break(());
                 }
@@ -585,7 +585,7 @@ impl CanonicalSchema {
         // `removed` accepts everything `taken` accepts, so the difference is empty. The containment
         // check refuses an equality resting on a facet no checker covers, and reads through the
         // targets the pointers name.
-        if containment::covers(removed, taken, ctx) == Verdict::Admits {
+        if containment::covers(removed, taken, ctx) == Verdict::Accepts {
             return Some(Schema::falsy());
         }
         // Negating a facet no checker covers rejects, for the algebra, only the values it reads as
@@ -689,7 +689,7 @@ impl CanonicalSchema {
             if context.saw_inexact_intersection() || context.outgrew_distribution() {
                 return Some(Containment::Unknown);
             }
-            (verdict == Verdict::Admits).then_some(decided)
+            (verdict == Verdict::Accepts).then_some(decided)
         };
         if let Some(answer) = decided(
             containment::covers(&merged.left, &merged.right, &context),

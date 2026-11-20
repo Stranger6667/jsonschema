@@ -147,7 +147,7 @@
       },
       {
         name: "Enum narrowing",
-        note: "enum meets type",
+        note: "type narrows the enum",
         schema: {
           "$schema": "https://json-schema.org/draft/2020-12/schema",
           "enum": [1, "a", true],

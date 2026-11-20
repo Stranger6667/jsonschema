@@ -492,11 +492,11 @@ pub(crate) fn fold_definitions<'a>(
         // under `allOf` or `anyOf` - the only operators a qualifying body is built from - puts an
         // inversion anywhere.
         debug_assert!(
-            !inverts_on_a_cycle(&parsed, &edges) || assumptions.admits_all.is_empty(),
+            !inverts_on_a_cycle(&parsed, &edges) || assumptions.accepts_all.is_empty(),
             "resolving a target as `true` never puts an inversion over a later round"
         );
         for uri in unconstrained_members(&parsed, &edges) {
-            grew |= assumptions.admits_all.insert(uri);
+            grew |= assumptions.accepts_all.insert(uri);
         }
         for uri in resolve_empty_definitions(&parsed, &edges, value, ctx, resolver, &assumptions)? {
             grew |= assumptions.empty.insert(uri);
@@ -654,13 +654,13 @@ fn resolve_empty_definitions<'a>(
     let mut assumed = guarded_members(edges);
     // A target resolved as `true` cannot also be resolved as `false`: `reference_to_definition`
     // reads one set before the other, so an overlap would silently pick a winner.
-    assumed.retain(|key| !proven.admits_all.contains(key));
+    assumed.retain(|key| !proven.accepts_all.contains(key));
     let mut assumed = plausible_assumptions(parsed, assumed);
     // Terminates because a continuing round drops at least one assumption.
     while !assumed.is_empty() {
         let hypothesis = Assumptions {
             empty: proven.empty.union(&assumed).cloned().collect(),
-            admits_all: proven.admits_all.clone(),
+            accepts_all: proven.accepts_all.clone(),
             finished: proven.finished.clone(),
         };
         // A hypothesis that keeps the document `Raw` proves nothing; giving up is an under-claim.

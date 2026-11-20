@@ -17,7 +17,7 @@ pub(super) fn integer(leaf: &IntegerLeaf, visit: &mut Visit<'_>) -> ControlFlow<
     let bounds = &leaf.bounds;
     let end = |bound: &BoundInteger| WindowEnd {
         limit: bound.to_number(),
-        admitted: true,
+        accepted: true,
     };
     let candidates = whole_number_candidates(
         bounds.minimum.as_ref().map(end),
@@ -38,7 +38,7 @@ pub(super) fn integer(leaf: &IntegerLeaf, visit: &mut Visit<'_>) -> ControlFlow<
 pub(super) fn number(leaf: &NumberLeaf, visit: &mut Visit<'_>) -> ControlFlow<()> {
     let end = |bound: &BoundNumber| WindowEnd {
         limit: bound.to_number(),
-        admitted: bound.is_inclusive(),
+        accepted: bound.is_inclusive(),
     };
     let candidates = whole_number_candidates(
         leaf.minimum.as_ref().map(end),
@@ -51,11 +51,11 @@ pub(super) fn number(leaf: &NumberLeaf, visit: &mut Visit<'_>) -> ControlFlow<()
         .filter(|value| {
             leaf.minimum
                 .as_ref()
-                .is_none_or(|bound| bound.admits(value, Side::Lower))
+                .is_none_or(|bound| bound.accepts(value, Side::Lower))
                 && leaf
                     .maximum
                     .as_ref()
-                    .is_none_or(|bound| bound.admits(value, Side::Upper))
+                    .is_none_or(|bound| bound.accepts(value, Side::Upper))
         })
         .map(Value::Number)
         .try_for_each(visit)
@@ -73,7 +73,7 @@ fn on_integer_grid(leaf: &IntegerLeaf) -> Vec<Number> {
     for step in leaf.multiple_of.as_slice() {
         // A fractional divisor is no integer itself, so without a minimum its grid is stepped from it.
         let from = minimum.clone().or_else(|| {
-            (!step.admits_only_whole()).then(|| BoundNumber::new(&step.to_number(), false))
+            (!step.accepts_only_whole()).then(|| BoundNumber::new(&step.to_number(), false))
         });
         found.extend(multiples(step, from));
     }
@@ -142,7 +142,7 @@ fn whole_number_candidates(minimum: Option<WindowEnd>, maximum: Option<WindowEnd
     let mut candidates: Vec<Value> = [minimum, maximum]
         .into_iter()
         .flatten()
-        .filter(|end| end.admitted)
+        .filter(|end| end.accepted)
         .map(|end| Value::Number(end.limit))
         .collect();
     candidates.extend(interior);
@@ -153,7 +153,7 @@ fn whole_number_candidates(minimum: Option<WindowEnd>, maximum: Option<WindowEnd
 /// One end of a numeric window, and whether the window includes it.
 struct WindowEnd {
     limit: Number,
-    admitted: bool,
+    accepted: bool,
 }
 
 /// A number strictly inside the window, where one can be written. A window narrower than the gap

@@ -27,11 +27,11 @@ module JSONSchema
     type raw_reason = :unknown_dialect | :unmodeled | :outgrew_intersections
                     | :outgrew_cases | :inexact_intersection
 
-    # Whether one schema admits every value another does. Only `:yes` proves containment: test
+    # Whether one schema accepts every value another does. Only `:yes` proves containment: test
     # for `:yes`, and treat `:unknown` like `:no`.
     type containment = :yes | :no | :unknown
 
-    # Whether any value satisfies a schema. Only `:no` proves it admits nothing: test for `:no`,
+    # Whether any value satisfies a schema. Only `:no` proves it accepts nothing: test for `:no`,
     # and treat `:unknown` like `:yes`.
     type satisfiability = :yes | :no | :unknown
 
@@ -249,7 +249,7 @@ module JSONSchema
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
-    # The complement of an opaque schema.
+    # The negation of an opaque schema.
     class NotView
       def schema: () -> CanonicalSchema
       def inspect: () -> String
@@ -284,14 +284,14 @@ module JSONSchema
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
-    # Exactly one admitted value.
+    # Exactly one accepted value.
     class ConstView
       def value: () -> untyped
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
-    # A sorted, deduplicated finite set of admitted values.
+    # A sorted, deduplicated finite set of accepted values.
     class EnumView
       def values: () -> Array[untyped]
       def inspect: () -> String
@@ -324,7 +324,7 @@ module JSONSchema
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
-    # One part every value must satisfy admits nothing by itself. A subschema part has a reason
+    # One part every value must satisfy accepts nothing by itself. A subschema part has a reason
     # of its own under its pointer.
     class EmptyReason
       def cause: () -> Cause
@@ -332,17 +332,17 @@ module JSONSchema
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
-    # Each part admits values; no value satisfies all of them together.
+    # Each part accepts values; no value satisfies all of them together.
     class ConflictReason
       def causes: () -> Array[Cause]
       def inspect: () -> String
       def deconstruct_keys: (untyped keys) -> Hash[Symbol, untyped]
     end
 
-    # Why a subschema admits no value.
+    # Why a subschema accepts no value.
     type unsatisfiable_reason = LiteralReason | EmptyReason | ConflictReason
 
-    # The subschemas that admit no value, by JSON Pointer, each with why.
+    # The subschemas that accept no value, by JSON Pointer, each with why.
     #
     # A pointer left out is not proven satisfiable: a document the canonical form does not model
     # reports nothing, as `satisfiability` answers `:unknown`.
