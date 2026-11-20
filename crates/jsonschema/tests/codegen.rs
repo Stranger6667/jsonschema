@@ -6036,6 +6036,108 @@ fn test_failing_subschema_evaluates_nothing(
     }
 }
 
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "unevaluatedItems": false}"#, draft = Draft201909)]
+struct ContainsBesideUnevaluatedItems201909;
+#[jsonschema::validator(schema = r#"{"allOf": [{"contains": {"type": "integer"}}], "unevaluatedItems": false}"#, draft = Draft201909)]
+struct ContainsInAllOfBesideUnevaluatedItems201909;
+#[jsonschema::validator(schema = r##"{"$defs": {"c": {"contains": {"type": "integer"}}}, "$ref": "#/$defs/c", "unevaluatedItems": false}"##, draft = Draft201909)]
+struct ContainsInReferenceBesideUnevaluatedItems201909;
+#[jsonschema::validator(schema = r#"{"contains": {"type": "integer"}, "unevaluatedItems": false}"#, draft = Draft202012)]
+struct ContainsBesideUnevaluatedItems202012;
+#[jsonschema::validator(schema = r#"{"allOf": [{"contains": {"type": "integer"}}], "unevaluatedItems": false}"#, draft = Draft202012)]
+struct ContainsInAllOfBesideUnevaluatedItems202012;
+#[jsonschema::validator(schema = r##"{"$defs": {"c": {"contains": {"type": "integer"}}}, "$ref": "#/$defs/c", "unevaluatedItems": false}"##, draft = Draft202012)]
+struct ContainsInReferenceBesideUnevaluatedItems202012;
+
+// `contains` evaluates the items it matches from 2020-12 on, wherever it applies in place
+#[test_case(ContainsBesideUnevaluatedItems201909::is_valid, ContainsBesideUnevaluatedItems201909::validate, ContainsBesideUnevaluatedItems201909::iter_errors, ContainsBesideUnevaluatedItems201909::evaluate, Draft::Draft201909, serde_json::json!({"contains": {"type": "integer"}, "unevaluatedItems": false}), false ; "2019_09_beside")]
+#[test_case(ContainsInAllOfBesideUnevaluatedItems201909::is_valid, ContainsInAllOfBesideUnevaluatedItems201909::validate, ContainsInAllOfBesideUnevaluatedItems201909::iter_errors, ContainsInAllOfBesideUnevaluatedItems201909::evaluate, Draft::Draft201909, serde_json::json!({"allOf": [{"contains": {"type": "integer"}}], "unevaluatedItems": false}), false ; "2019_09_in_all_of")]
+#[test_case(ContainsInReferenceBesideUnevaluatedItems201909::is_valid, ContainsInReferenceBesideUnevaluatedItems201909::validate, ContainsInReferenceBesideUnevaluatedItems201909::iter_errors, ContainsInReferenceBesideUnevaluatedItems201909::evaluate, Draft::Draft201909, serde_json::json!({"$defs": {"c": {"contains": {"type": "integer"}}}, "$ref": "#/$defs/c", "unevaluatedItems": false}), false ; "2019_09_in_reference")]
+#[test_case(ContainsBesideUnevaluatedItems202012::is_valid, ContainsBesideUnevaluatedItems202012::validate, ContainsBesideUnevaluatedItems202012::iter_errors, ContainsBesideUnevaluatedItems202012::evaluate, Draft::Draft202012, serde_json::json!({"contains": {"type": "integer"}, "unevaluatedItems": false}), true ; "2020_12_beside")]
+#[test_case(ContainsInAllOfBesideUnevaluatedItems202012::is_valid, ContainsInAllOfBesideUnevaluatedItems202012::validate, ContainsInAllOfBesideUnevaluatedItems202012::iter_errors, ContainsInAllOfBesideUnevaluatedItems202012::evaluate, Draft::Draft202012, serde_json::json!({"allOf": [{"contains": {"type": "integer"}}], "unevaluatedItems": false}), true ; "2020_12_in_all_of")]
+#[test_case(ContainsInReferenceBesideUnevaluatedItems202012::is_valid, ContainsInReferenceBesideUnevaluatedItems202012::validate, ContainsInReferenceBesideUnevaluatedItems202012::iter_errors, ContainsInReferenceBesideUnevaluatedItems202012::evaluate, Draft::Draft202012, serde_json::json!({"$defs": {"c": {"contains": {"type": "integer"}}}, "$ref": "#/$defs/c", "unevaluatedItems": false}), true ; "2020_12_in_reference")]
+fn test_contains_evaluates_items_from_2020_12(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    draft: Draft,
+    schema: serde_json::Value,
+    expected: bool,
+) {
+    let runtime = jsonschema::options()
+        .with_draft(draft)
+        .build(&schema)
+        .expect("valid schema");
+    let instance = serde_json::json!([1]);
+    assert_eq!(is_valid(&instance), expected);
+    assert_validate_parity(
+        is_valid(&instance),
+        validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+    assert_evaluations_match(evaluate, &runtime);
+}
+
+#[jsonschema::validator(
+    schema = r#"{"$schema":"json-schema:///meta/custom","contains":{"type":"integer"},"unevaluatedItems":false}"#,
+    resources = {
+        "json-schema:///meta/custom" => { schema = r#"{"$id":"json-schema:///meta/custom","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":true,"https://json-schema.org/draft/2020-12/vocab/unevaluated":true}}"# },
+    }
+)]
+struct ContainsBesideUnevaluatedItemsCustomMetaSchema;
+
+// A `$schema` naming a custom meta-schema leaves the generated draft unknown, which reads
+// `contains` as 2020-12 does
+#[test_case(serde_json::json!([1]), true ; "matched_item")]
+#[test_case(serde_json::json!([1, "x"]), false ; "unmatched_item")]
+fn test_contains_evaluates_items_under_a_custom_meta_schema(
+    instance: serde_json::Value,
+    expected: bool,
+) {
+    let runtime = build_runtime_with_resources(
+        serde_json::json!({
+            "$schema": "json-schema:///meta/custom",
+            "contains": {"type": "integer"},
+            "unevaluatedItems": false
+        }),
+        [(
+            "json-schema:///meta/custom",
+            serde_json::json!({
+                "$id": "json-schema:///meta/custom",
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$vocabulary": {
+                    "https://json-schema.org/draft/2020-12/vocab/core": true,
+                    "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                    "https://json-schema.org/draft/2020-12/vocab/validation": true,
+                    "https://json-schema.org/draft/2020-12/vocab/unevaluated": true
+                }
+            }),
+        )],
+    );
+    assert_eq!(
+        ContainsBesideUnevaluatedItemsCustomMetaSchema::is_valid(&instance),
+        expected
+    );
+    assert_validate_parity(
+        ContainsBesideUnevaluatedItemsCustomMetaSchema::is_valid(&instance),
+        ContainsBesideUnevaluatedItemsCustomMetaSchema::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(
+        ContainsBesideUnevaluatedItemsCustomMetaSchema::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_evaluations_match(
+        ContainsBesideUnevaluatedItemsCustomMetaSchema::evaluate,
+        &runtime,
+    );
+}
+
 #[jsonschema::validator(schema = r#"{"type": "string", "minLength": 5, "const": "abcdefg"}"#)]
 struct TypeBeforeConst;
 #[jsonschema::validator(

@@ -3230,7 +3230,7 @@ fn item_cover_in_scope(
         return Ok(None);
     }
     // `contains` marks the indexes it matches, which no prefix length expresses.
-    if map.contains_key("contains") {
+    if contains_evaluates_items(draft) && map.contains_key("contains") {
         return Ok(None);
     }
     // Same reasoning as the property-cover twin's `unevaluatedProperties` branch.
@@ -3404,6 +3404,12 @@ fn sibling_item_cover(
     Ok(Some(cover))
 }
 
+/// Whether `contains` annotates the items it matches, which `unevaluatedItems` then skips. Before
+/// 2020-12 it annotates none. A document of an unknown dialect stays raw and is never parsed.
+fn contains_evaluates_items(draft: Draft) -> bool {
+    draft == Draft::Draft202012
+}
+
 /// Whether this object asserts an `unevaluated*` keyword. Both enter the vocabulary in the same
 /// draft, so one `is_known_keyword` answer covers the pair.
 fn has_unevaluated(map: &Map<String, Value>, draft: Draft) -> bool {
@@ -3496,7 +3502,10 @@ fn degrade_plain(
         // e.g.  {"contains": {"type": "integer"}, "unevaluatedItems": {"type": "string"}}
         //       =>  {"contains": {"type": "integer"},
         //            "items": {"anyOf": [{"type": "integer"}, {"type": "string"}]}}
-        let value = match map.get("contains") {
+        let value = match map
+            .get("contains")
+            .filter(|_| contains_evaluates_items(draft))
+        {
             Some(contains @ (Value::Object(_) | Value::Bool(_))) => {
                 let mut tail = Map::new();
                 tail.insert(

@@ -972,23 +972,45 @@
     }
   },
   {
-    "description": "ir: 2019-09 writes the contains tail additionalItems",
+    "description": "ir: 2019-09 contains evaluates no element, so unevaluatedItems:false beside it rejects every array",
     "draft": "draft2019-09",
-    "schema": {"type": "array", "contains": {"type": "integer"}, "unevaluatedItems": false},
+    "schemas": [
+      {"type": "array", "contains": {"type": "integer"}, "unevaluatedItems": false},
+      {"type": "array", "contains": {"type": "integer"}, "items": false}
+    ],
+    "satisfiable": false,
     "tests": [
-      {"data": [1], "valid": true},
+      {"data": [1], "valid": false},
       {"data": [], "valid": false},
       {"data": ["x"], "valid": false}
     ],
     "expected": {
       "$schema": "https://json-schema.org/draft/2019-09/schema",
-      "contains": {
-        "type": "integer"
-      },
-      "items": {
-        "type": "integer"
-      },
-      "type": "array"
+      "not": {}
+    }
+  },
+  {
+    "description": "ir: 2019-09 a contains in a branch or a reference evaluates no element either",
+    "draft": "draft2019-09",
+    "schemas": [
+      {"allOf": [{"contains": {"const": 2}}], "unevaluatedItems": false},
+      {"$defs": {"c": {"contains": {"const": 2}}}, "$ref": "#/$defs/c", "unevaluatedItems": false},
+      {"allOf": [{"contains": {"const": 2}}], "items": false}
+    ],
+    "tests": [
+      {"data": [2], "valid": false},
+      {"data": [], "valid": false},
+      {"data": 1, "valid": true}
+    ],
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "type": [
+        "null",
+        "boolean",
+        "number",
+        "string",
+        "object"
+      ]
     }
   },
   {

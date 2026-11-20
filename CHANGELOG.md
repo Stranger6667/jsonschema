@@ -23,6 +23,7 @@
 - `validator_map_for` entries below the root differing from the same subschema reached through a `$ref`.
 - Evaluation paths below a subschema reached both inline and through a `$ref` taking part of their path from the other route.
 - `$recursiveRef` and `$dynamicRef` inside a subschema with its own `$id` leaving the resource that holds it out of the dynamic scope when that subschema is reached inline or through a JSON Pointer `$ref`.
+- `unevaluatedItems` in Draft 2019-09 treating items matched by `contains` as evaluated.
 - `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.
 - `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
 - `contentEncoding` going unchecked in Draft 7 beside an unsupported `contentMediaType`.

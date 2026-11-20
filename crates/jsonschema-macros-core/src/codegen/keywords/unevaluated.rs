@@ -772,7 +772,11 @@ pub(crate) fn compile_index_evaluated_expr<E: ValueEmitter>(
             }
         }
 
-        if let Some(contains_schema) = schema.get("contains") {
+        // `contains` annotates the items it matches from 2020-12 on; earlier drafts evaluate none.
+        if let Some(contains_schema) = schema
+            .get("contains")
+            .filter(|_| matches!(ctx.draft, Draft::Draft202012 | Draft::Unknown))
+        {
             let contains_check = compile_branch_guard(ctx, contains_schema);
             parts.push(quote! {
                 (|instance: #node| #contains_check)(item)
