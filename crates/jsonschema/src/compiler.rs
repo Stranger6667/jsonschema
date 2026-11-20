@@ -425,11 +425,6 @@ pub(crate) struct Context<'a, F: Json = SerdeJson> {
     resolver: Resolver<'a>,
     vocabularies: VocabularySet,
     location: Location,
-    /// The location where the current resource starts.
-    ///
-    /// When compiling a schema reached via `$ref`, this is set to the `$ref` target location.
-    /// Used to compute the "suffix" (path relative to resource root) for evaluation paths.
-    resource_base: Location,
     /// Length of the `location` prefix outside the resource the base URI names.
     ///
     /// Absolute locations count their JSON Pointer from that resource's root, which a
@@ -446,7 +441,6 @@ impl<F: Json> Clone for Context<'_, F> {
             resolver: self.resolver.clone(),
             vocabularies: self.vocabularies.clone(),
             location: self.location.clone(),
-            resource_base: self.resource_base.clone(),
             resource_start: self.resource_start,
             draft: self.draft,
             shared: Rc::clone(&self.shared),
@@ -466,7 +460,6 @@ impl<'a, F: Json> Context<'a, F> {
         Context {
             config,
             resolver,
-            resource_base: location.clone(),
             resource_start: 0,
             location,
             vocabularies,
@@ -524,7 +517,6 @@ impl<'a, F: Json> Context<'a, F> {
             resolver,
             vocabularies,
             draft,
-            resource_base: self.resource_base.clone(),
             resource_start,
             location: self.location.clone(),
             shared: Rc::clone(&self.shared),
@@ -546,7 +538,6 @@ impl<'a, F: Json> Context<'a, F> {
             config: self.config,
             resolver: self.resolver.clone(),
             vocabularies: self.vocabularies.clone(),
-            resource_base: self.resource_base.clone(),
             resource_start: self.resource_start,
             location,
             draft: self.draft,
@@ -670,8 +661,7 @@ impl<'a, F: Json> Context<'a, F> {
             resolver,
             draft,
             vocabularies,
-            location: resource_base.clone(),
-            resource_base,
+            location: resource_base,
             resource_start: 0,
             shared: Rc::clone(&self.shared),
         })
@@ -1348,47 +1338,6 @@ impl<'a, F: Json> Context<'a, F> {
 
     pub(crate) fn location(&self) -> &Location {
         &self.location
-    }
-
-    /// Returns the current location relative to the resource base, followed by `keyword`.
-    ///
-    /// This "suffix" is used for evaluation path computation. When an error occurs
-    /// inside a `$ref` target, we combine the `$ref` traversal chain (prefix) with
-    /// this suffix to form the complete evaluation path.
-    ///
-    /// # Example
-    ///
-    /// ```text
-    /// Schema:
-    /// {
-    ///   "properties": {
-    ///     "user": { "$ref": "#/$defs/Person" }
-    ///   },
-    ///   "$defs": {
-    ///     "Person": {
-    ///       "properties": {
-    ///         "age": { "type": "integer" }
-    ///       }
-    ///     }
-    ///   }
-    /// }
-    ///
-    /// When compiling the "type" keyword inside "Person":
-    ///   location()           = /$defs/Person/properties/age
-    ///   resource_base        = /$defs/Person
-    ///   suffix_with("type")  = /properties/age/type
-    ///
-    /// At validation time, if reached via /properties/user/$ref:
-    ///   tracker = /properties/user/$ref + /properties/age/type
-    ///                   = /properties/user/$ref/properties/age/type
-    /// ```
-    pub(crate) fn suffix_with(&self, keyword: &str) -> Location {
-        let suffix = self
-            .location
-            .as_str()
-            .strip_prefix(self.resource_base.as_str())
-            .expect("location must start with resource_base");
-        Location::from_escaped_with(suffix, keyword)
     }
 
     pub(crate) fn has_vocabulary(&self, vocabulary: &Vocabulary) -> bool {
