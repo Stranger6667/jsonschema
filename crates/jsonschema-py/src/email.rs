@@ -15,7 +15,7 @@ use pyo3::prelude::*;
 ///     >>> validator.is_valid("user@example.com")
 ///     True
 ///
-/// Parameters:
+/// Args:
 ///     require_tld: Require a top-level domain (e.g., reject "user@localhost")
 ///     allow_domain_literal: Allow IP address literals like "user@[127.0.0.1]"
 ///     allow_display_text: Allow display names like "Name <user@example.com>"

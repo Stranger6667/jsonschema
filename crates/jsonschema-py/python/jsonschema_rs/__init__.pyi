@@ -110,11 +110,12 @@ class FancyRegexOptions:
         ...     pattern_options=FancyRegexOptions(backtrack_limit=10000)
         ... )
 
-    Parameters:
+    Args:
         backtrack_limit: Maximum number of backtracking steps
         size_limit: Maximum compiled pattern size in bytes
         dfa_size_limit: Maximum regex DFA cache size in bytes
         syntax: "ecma262" translates patterns for the engine, "engine" passes them to it unchanged
+
     """
 
     def __new__(
@@ -128,18 +129,18 @@ class FancyRegexOptions:
 
 @final
 class RegexOptions:
-    """Configuration for the regex engine, which matches in linear time and supports no lookaround
-    or backreferences.
+    """Configuration for the regex engine, which matches in linear time and supports no lookaround or backreferences.
 
         >>> validator = validator_for(
         ...     schema,
         ...     pattern_options=RegexOptions()
         ... )
 
-    Parameters:
+    Args:
         size_limit: Maximum compiled pattern size in bytes
         dfa_size_limit: Maximum regex DFA cache size in bytes
         syntax: "ecma262" translates patterns for the engine, "engine" passes them to it unchanged
+
     """
 
     def __new__(
@@ -165,11 +166,12 @@ class EmailOptions:
         >>> validator.is_valid("user@example.com")
         True
 
-    Parameters:
+    Args:
         require_tld: Require a top-level domain (e.g., reject "user@localhost")
         allow_domain_literal: Allow IP address literals like "user@[127.0.0.1]"
         allow_display_text: Allow display names like "Name <user@example.com>"
         minimum_sub_domains: Minimum number of domain segments required
+
     """
 
     def __new__(
@@ -191,11 +193,12 @@ class HttpOptions:
         ...     http_options=HttpOptions(timeout=30.0, connect_timeout=10.0)
         ... )
 
-    Parameters:
+    Args:
         timeout: Total request timeout in seconds (default: None - no timeout)
         connect_timeout: Connection timeout in seconds (default: None - no timeout)
         tls_verify: Whether to verify TLS certificates (default: True)
         ca_cert: Path to a custom CA certificate file in PEM format (default: None)
+
     """
 
     timeout: float | None
@@ -294,8 +297,8 @@ def iter_errors(
 ) -> Iterator[ValidationError]:
     """Iterate over every `ValidationError` of `instance` under `schema`.
 
-        >>> next(iter_errors({"minimum": 5}, 3))
-        <ValidationError: '3 is less than the minimum of 5'>
+        >>> print(next(iter_errors({"minimum": 5}, 3)).message)
+        3 is less than the minimum of 5
 
     To validate many instances against one schema, use `validator_for(schema).iter_errors`.
     """
@@ -320,11 +323,11 @@ def evaluate(
 ) -> Evaluation:
     """Evaluate `instance` against `schema` and return an `Evaluation` holding the output formats.
 
-        >>> evaluation = evaluate({"type": "integer"}, "oops")
-        >>> evaluation.flag()
-        {'valid': False}
-        >>> evaluation.errors()
-        [{'schemaLocation': '/type', 'absoluteKeywordLocation': None, 'instanceLocation': '', 'error': '"oops" is not of type "integer"'}]
+    >>> evaluation = evaluate({"type": "integer"}, "oops")
+    >>> evaluation.flag()["valid"]
+    False
+    >>> print(evaluation.errors()[0]["error"])
+    "oops" is not of type "integer"
     """
     ...
 
@@ -582,34 +585,34 @@ class Validator:
     def is_valid(self, instance: Any) -> bool:
         """Return whether `instance` is valid. Stops at the first error.
 
-            >>> validator = validator_for({"minimum": 5})
-            >>> validator.is_valid(3)
-            False
+        >>> validator = validator_for({"minimum": 5})
+        >>> validator.is_valid(3)
+        False
         """
         ...
     def validate(self, instance: Any) -> None:
         """Raise `ValidationError` for the first error of `instance`.
 
-            >>> validator = validator_for({"minimum": 5})
-            >>> validator.validate(3)
-            ...
-            ValidationError: 3 is less than the minimum of 5
+        >>> validator = validator_for({"minimum": 5})
+        >>> validator.validate(3)
+        ...
+        ValidationError: 3 is less than the minimum of 5
         """
         ...
     def iter_errors(self, instance: Any) -> Iterator[ValidationError]:
         """Iterate over every `ValidationError` of `instance`.
 
-            >>> validator = validator_for({"minimum": 5})
-            >>> next(validator.iter_errors(3))
-            <ValidationError: '3 is less than the minimum of 5'>
+        >>> validator = validator_for({"minimum": 5})
+        >>> print(next(validator.iter_errors(3)).message)
+        3 is less than the minimum of 5
         """
         ...
     def evaluate(self, instance: Any) -> Evaluation:
         """Evaluate `instance` and return an `Evaluation` holding the output formats.
 
-            >>> validator = validator_for({"type": "integer"})
-            >>> validator.evaluate("oops").flag()
-            {'valid': False}
+        >>> validator = validator_for({"type": "integer"})
+        >>> validator.evaluate("oops").flag()["valid"]
+        False
         """
         ...
     def __repr__(self) -> str: ...
@@ -617,41 +620,41 @@ class Validator:
 class Draft4Validator(Validator):
     """A JSON Schema Draft 4 validator.
 
-        >>> validator = Draft4Validator({"minimum": 5})
-        >>> validator.is_valid(3)
-        False
+    >>> validator = Draft4Validator({"minimum": 5})
+    >>> validator.is_valid(3)
+    False
     """
 
 class Draft6Validator(Validator):
     """A JSON Schema Draft 6 validator.
 
-        >>> validator = Draft6Validator({"minimum": 5})
-        >>> validator.is_valid(3)
-        False
+    >>> validator = Draft6Validator({"minimum": 5})
+    >>> validator.is_valid(3)
+    False
     """
 
 class Draft7Validator(Validator):
     """A JSON Schema Draft 7 validator.
 
-        >>> validator = Draft7Validator({"minimum": 5})
-        >>> validator.is_valid(3)
-        False
+    >>> validator = Draft7Validator({"minimum": 5})
+    >>> validator.is_valid(3)
+    False
     """
 
 class Draft201909Validator(Validator):
     """A JSON Schema Draft 2019-09 validator.
 
-        >>> validator = Draft201909Validator({"minimum": 5})
-        >>> validator.is_valid(3)
-        False
+    >>> validator = Draft201909Validator({"minimum": 5})
+    >>> validator.is_valid(3)
+    False
     """
 
 class Draft202012Validator(Validator):
     """A JSON Schema Draft 2020-12 validator.
 
-        >>> validator = Draft202012Validator({"minimum": 5})
-        >>> validator.is_valid(3)
-        False
+    >>> validator = Draft202012Validator({"minimum": 5})
+    >>> validator.is_valid(3)
+    False
     """
 
 def validator_for(
@@ -670,26 +673,23 @@ def validator_for(
     vocabularies: Sequence[str] | None = None,
     offline: bool | None = None,
 ) -> Validator:
-    """Create a validator for `schema`, an instance of the draft class its `$schema` names (Draft
-    2020-12 without one).
+    """Create a validator for `schema`, an instance of the draft class its `$schema` names (Draft 2020-12 without one).
 
-        >>> validator = validator_for({"minimum": 5})
-        >>> validator.is_valid(3)
-        False
+    >>> validator = validator_for({"minimum": 5})
+    >>> validator.is_valid(3)
+    False
     """
     ...
 
 @final
 class ValidatorMap:
-    """Compiled validators keyed by URI-fragment JSON pointer (e.g. ``"#/$defs/User"``), from
-    :func:`validator_map_for`.
-    """
+    """Compiled validators keyed by URI-fragment JSON pointer (e.g. ``"#/$defs/User"``), from :func:`validator_map_for`."""
 
     def get(self, pointer: str) -> Validator | None:
         """Return the validator for ``pointer``, or ``None`` if not found.
 
-            >>> m = validator_map_for({"$defs": {"T": {"type": "string"}}})
-            >>> v = m.get("#/$defs/T")
+        >>> m = validator_map_for({"$defs": {"T": {"type": "string"}}})
+        >>> v = m.get("#/$defs/T")
         """
         ...
 
@@ -716,8 +716,9 @@ def validator_map_for(
     vocabularies: Sequence[str] | None = None,
     offline: bool | None = None,
 ) -> ValidatorMap:
-    """Compile all subschemas in ``schema`` into a map keyed by URI-fragment JSON pointer. The root
-    schema is under ``"#"``.
+    """Compile all subschemas in ``schema`` into a map keyed by URI-fragment JSON pointer.
+
+    The root schema is under ``"#"``.
 
         >>> schema = {"$defs": {"User": {"type": "object"}}}
         >>> m = validator_map_for(schema)
@@ -812,8 +813,9 @@ class Resolved:
 
 class _Meta:
     def is_valid(self, schema: _Schema, registry: Registry | None = None) -> bool:
-        """Validate a JSON Schema document against its meta-schema. Draft version is detected automatically.
-        Schemas with unknown `$schema` values raise `jsonschema_rs.ReferencingError`.
+        """Validate a JSON Schema document against its meta-schema.
+
+        Draft version is detected automatically. Schemas with unknown `$schema` values raise `jsonschema_rs.ReferencingError`.
 
             >>> jsonschema_rs.meta.is_valid({"type": "string"})
             True
@@ -831,6 +833,7 @@ class _Meta:
         ...
     def validate(self, schema: _Schema, registry: Registry | None = None) -> None:
         """Validate a JSON Schema document against its meta-schema and raise ValidationError if invalid.
+
         Draft version is detected automatically. Schemas with custom/unknown `$schema` values raise `jsonschema_rs.ReferencingError`.
 
             >>> jsonschema_rs.meta.validate({"type": "string"})

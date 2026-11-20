@@ -104,9 +104,7 @@ class TypedGroupView:
 
 @final
 class StringView:
-    """A string within ``min_length``/``max_length``, matching every listed constraint and none of the
-    excluded ones.
-    """
+    """A string within ``min_length``/``max_length``, matching every listed constraint and none of the excluded ones."""
 
     __match_args__ = (
         "min_length",
@@ -253,9 +251,7 @@ class NameFailsView:
 
 @final
 class UndeclaredValueFailsView:
-    """The object has a key outside ``names``, matching no ``patterns``, whose value ``additional``
-    rejects.
-    """
+    """The object has a key outside ``names``, matching no ``patterns``, whose value ``additional`` rejects."""
 
     __match_args__ = ("names", "patterns", "additional")
     @property

@@ -46,7 +46,7 @@ pub(crate) fn extract_pattern_options(value: &Bound<'_, PyAny>) -> PyResult<PyPa
 ///     ...     pattern_options=FancyRegexOptions(backtrack_limit=10000)
 ///     ... )
 ///
-/// Parameters:
+/// Args:
 ///     backtrack_limit: Maximum number of backtracking steps
 ///     size_limit: Maximum compiled pattern size in bytes
 ///     dfa_size_limit: Maximum regex DFA cache size in bytes
@@ -105,7 +105,7 @@ impl FancyRegexOptions {
 ///     ...     pattern_options=RegexOptions()
 ///     ... )
 ///
-/// Parameters:
+/// Args:
 ///     size_limit: Maximum compiled pattern size in bytes
 ///     dfa_size_limit: Maximum regex DFA cache size in bytes
 ///     syntax: "ecma262" translates patterns for the engine, "engine" passes them to it unchanged

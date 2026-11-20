@@ -24,7 +24,7 @@ fn validate_timeout(value: Option<f64>, name: &str) -> PyResult<Option<f64>> {
 ///     ...     http_options=HttpOptions(timeout=30.0, connect_timeout=10.0)
 ///     ... )
 ///
-/// Parameters:
+/// Args:
 ///     timeout: Total request timeout in seconds (default: None - no timeout)
 ///     connect_timeout: Connection timeout in seconds (default: None - no timeout)
 ///     tls_verify: Whether to verify TLS certificates (default: True)

@@ -1477,8 +1477,8 @@ fn validate(
 ///
 /// Iterate over every `ValidationError` of `instance` under `schema`.
 ///
-///     >>> next(iter_errors({"minimum": 5}, 3))
-///     <ValidationError: '3 is less than the minimum of 5'>
+///     >>> print(next(iter_errors({"minimum": 5}, 3)).message)
+///     3 is less than the minimum of 5
 ///
 /// To validate many instances against one schema, use `validator_for(schema).iter_errors`.
 #[pyfunction]
@@ -1536,10 +1536,10 @@ fn iter_errors(
 /// Evaluate `instance` against `schema` and return an `Evaluation` holding the output formats.
 ///
 ///     >>> evaluation = evaluate({"type": "integer"}, "oops")
-///     >>> evaluation.flag()
-///     {'valid': False}
-///     >>> evaluation.errors()
-///     [{'schemaLocation': '/type', 'absoluteKeywordLocation': None, 'instanceLocation': '', 'error': '"oops" is not of type "integer"'}]
+///     >>> evaluation.flag()["valid"]
+///     False
+///     >>> print(evaluation.errors()[0]["error"])
+///     "oops" is not of type "integer"
 #[pyfunction]
 #[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None, vocabularies=None, offline=None))]
 #[allow(clippy::needless_pass_by_value)]
@@ -2055,8 +2055,8 @@ impl Validator {
     /// Iterate over every `ValidationError` of `instance`.
     ///
     ///     >>> validator = validator_for({"minimum": 5})
-    ///     >>> next(validator.iter_errors(3))
-    ///     <ValidationError: '3 is less than the minimum of 5'>
+    ///     >>> print(next(validator.iter_errors(3)).message)
+    ///     3 is less than the minimum of 5
     fn iter_errors(
         &self,
         py: Python<'_>,
@@ -2075,8 +2075,8 @@ impl Validator {
     /// Evaluate `instance` and return an `Evaluation` holding the output formats.
     ///
     ///     >>> validator = validator_for({"type": "integer"})
-    ///     >>> validator.evaluate("oops").flag()
-    ///     {'valid': False}
+    ///     >>> validator.evaluate("oops").flag()["valid"]
+    ///     False
     fn evaluate(&self, instance: &Bound<'_, PyAny>) -> PyResult<PyEvaluation> {
         surface_pending_errors(instance, self.holding, || {
             let _scope = KeywordCauseScope::enter();
