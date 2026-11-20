@@ -168,7 +168,8 @@ pub(crate) fn legacy_anchor_in_id(draft: Draft, contents: &Value) -> AnchorIter<
 #[cfg(test)]
 mod tests {
     use crate::{Draft, Registry};
-    use serde_json::json;
+    use serde_json::{json, Value};
+    use test_case::test_case;
 
     #[test]
     fn test_lookup_trivial_dynamic_ref() {
@@ -498,5 +499,36 @@ mod tests {
             .lookup_recursive_ref()
             .expect("Lookup failed");
         assert_eq!(fourth.contents(), two.contents());
+    }
+
+    // A resource without `$recursiveAnchor: true` between two that have it does not end the walk.
+    #[test_case(json!({}) ; "middle without the anchor")]
+    #[test_case(json!({"$recursiveAnchor": false}) ; "middle with the anchor false")]
+    fn test_lookup_recursive_ref_past_unanchored_resource(middle: Value) {
+        let outer = Draft::Draft201909
+            .create_resource(json!({"$recursiveAnchor": true, "type": "boolean"}));
+        let middle = Draft::Draft201909.create_resource(middle);
+        let inner = Draft::Draft201909
+            .create_resource(json!({"$recursiveAnchor": true, "type": "integer"}));
+
+        let registry = Registry::new()
+            .extend([
+                ("http://example.com/outer", &outer),
+                ("http://example.com/middle", &middle),
+                ("http://example.com/inner", &inner),
+            ])
+            .expect("Invalid resources")
+            .prepare()
+            .expect("Invalid resources");
+        let resolver = registry
+            .resolver(crate::uri::from_str("http://example.com/outer").expect("Invalid base URI"));
+        let first = resolver.lookup("").expect("Lookup failed");
+        let second = first.resolver().lookup("middle").expect("Lookup failed");
+        let third = second.resolver().lookup("inner").expect("Lookup failed");
+        let resolved = third
+            .resolver()
+            .lookup_recursive_ref()
+            .expect("Lookup failed");
+        assert_eq!(resolved.contents(), outer.contents());
     }
 }

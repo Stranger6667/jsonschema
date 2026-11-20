@@ -742,6 +742,120 @@
     }
   },
   {
+    "description": "$recursiveRef resolves to the outermost $recursiveAnchor past a resource without one",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "$id": "https://example.com/a",
+      "$recursiveAnchor": true,
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "b"
+        }
+      ],
+      "$defs": {
+        "b": {
+          "$id": "https://example.com/b",
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "c"
+            }
+          ]
+        },
+        "c": {
+          "$id": "https://example.com/c",
+          "$recursiveAnchor": true,
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "type": "object",
+              "additionalProperties": {
+                "$recursiveRef": "#"
+              }
+            }
+          ]
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": {
+          "x": true
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "x": "s"
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "x": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "x": {
+            "y": true
+          }
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "x": []
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fb%7Cdyn%3D%24recursiveAnchor%40https%3A%2F%2Fexample.com%2Fa": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fc%257Cdyn%253D%2524recursiveAnchor%2540https%253A%252F%252Fexample.com%252Fa"
+            }
+          ]
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fc%7Cdyn%3D%24recursiveAnchor%40https%3A%2F%2Fexample.com%2Fa": {
+          "anyOf": [
+            {
+              "type": "integer"
+            },
+            {
+              "additionalProperties": {
+                "$ref": "#"
+              },
+              "type": "object"
+            }
+          ]
+        }
+      },
+      "$schema": "https://json-schema.org/draft/2019-09/schema",
+      "anyOf": [
+        {
+          "type": "boolean"
+        },
+        {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fb%257Cdyn%253D%2524recursiveAnchor%2540https%253A%252F%252Fexample.com%252Fa"
+        }
+      ]
+    }
+  },
+  {
     "description": "an intermediary that only reaches a $dynamicRef is still specialized per path",
     "schema": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

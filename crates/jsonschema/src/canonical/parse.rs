@@ -912,7 +912,7 @@ fn parse_schema<'a>(
 
 /// The dynamic-scope facts a target's parse can observe, derived from its resolver: for each
 /// dynamic-anchor name, the outermost scope resource overriding its lexical resolution, and under
-/// 2019-09 the resource the contiguous `$recursiveAnchor` chain lands on. Equal digests resolve
+/// 2019-09 the outermost scope resource with `$recursiveAnchor: true`. Equal digests resolve
 /// every dynamic reference in the target identically, so the digest disambiguates definition keys.
 /// Sorted by name; the value set per name is finite, so recursion revisits a key and
 /// [`ParseState::in_progress`] closes the cycle.
@@ -931,7 +931,7 @@ fn dynamic_scope_digest(
     draft: Draft,
 ) -> Result<DynamicEnv, CanonicalizationError> {
     if matches!(draft, Draft::Draft201909) {
-        return recursive_chain_digest(resolver);
+        return recursive_anchor_digest(resolver);
     }
     dynamic_anchor_digest(resolver)
 }
@@ -977,17 +977,14 @@ fn resource_dynamic_anchor_names(contents: &Value, draft: Draft, names: &mut Vec
     }
 }
 
-/// The resource a `$recursiveRef` walk lands on: the outermost entry of the contiguous
-/// `$recursiveAnchor: true` chain at the inner end of the scope, mirroring
-/// [`Resolver::lookup_recursive_ref`].
-fn recursive_chain_digest(resolver: &Resolver<'_>) -> Result<DynamicEnv, CanonicalizationError> {
+/// The resource a `$recursiveRef` walk lands on: the outermost scope resource with
+/// `$recursiveAnchor: true`, mirroring [`Resolver::lookup_recursive_ref`].
+fn recursive_anchor_digest(resolver: &Resolver<'_>) -> Result<DynamicEnv, CanonicalizationError> {
     let mut landing: Option<Arc<str>> = None;
     for uri in &resolver.dynamic_scope() {
         let (contents, _, _) = resolver.lookup(uri.as_str())?.into_inner();
         if resource_root_has_recursive_anchor(contents) {
             landing = Some(Arc::from(uri.as_str()));
-        } else {
-            break;
         }
     }
     match landing {
@@ -3588,8 +3585,9 @@ fn combine_references(references: Vec<Schema>, ctx: &CanonicalizationContext) ->
 
 /// A `$recursiveRef`, the 2019-09 keyword.
 ///
-/// [`Resolver::lookup_recursive_ref`] follows the scope while each resource carries
-/// `$recursiveAnchor: true`. Absent or `false`, it behaves as `$ref: "#"`.
+/// [`Resolver::lookup_recursive_ref`] lands on the outermost scope resource with
+/// `$recursiveAnchor: true` when the resource holding it has one. Absent or `false` there, it
+/// behaves as `$ref: "#"`.
 fn resolve_recursive_reference<'a>(
     ctx: &CanonicalizationContext,
     resolver: &Resolver<'a>,

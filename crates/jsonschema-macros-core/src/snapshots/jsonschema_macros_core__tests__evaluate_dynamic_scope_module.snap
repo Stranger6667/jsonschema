@@ -688,7 +688,7 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
-        fn __enter_resource(resource: usize, anchored: bool) {
+        fn __enter_resource(resource: usize) {
             match resource {
                 0usize => {
                     __JSONSCHEMA_DYNAMIC_STACK
@@ -711,7 +711,7 @@ mod __validator_impl {
                 _ => {}
             }
         }
-        fn __leave_resource(resource: usize, anchored: bool) {
+        fn __leave_resource(resource: usize) {
             match resource {
                 0usize => {
                     __JSONSCHEMA_DYNAMIC_STACK
