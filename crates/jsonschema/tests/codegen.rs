@@ -866,6 +866,195 @@ fn test_root_referencing_itself_matches_runtime(
     }
 }
 
+const RECURSIVE_REF_IN_EMBEDDED_RESOURCE: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/x","$recursiveAnchor":true,"type":"object","properties":{"c":{"$id":"inner","$recursiveAnchor":true,"properties":{"c":{"$recursiveRef":"#"}}}}}"##;
+const RECURSIVE_REF_IN_EMBEDDED_RESOURCE_BEHIND_REF: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$ref":"https://example.com/x","$defs":{"x":{"$id":"https://example.com/x","$recursiveAnchor":true,"type":"object","properties":{"c":{"$id":"inner","$recursiveAnchor":true,"properties":{"c":{"$recursiveRef":"#"}}}}}}}"##;
+const DYNAMIC_REF_IN_EMBEDDED_RESOURCE: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}"##;
+const DYNAMIC_REF_IN_EMBEDDED_RESOURCE_BEHIND_REF: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"https://example.com/x","$defs":{"x":{"$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}}}"##;
+const DYNAMIC_REF_PAST_EMBEDDED_RESOURCE_WITHOUT_ANCHOR: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"a":{"$id":"middle","properties":{"b":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}}}"##;
+const DYNAMIC_REF_AFTER_EMBEDDED_RESOURCE_AND_REF: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$id":"middle","$ref":"leaf"}},"$defs":{"leaf":{"$id":"leaf","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}"##;
+const RECURSIVE_REF_AFTER_POINTER_INTO_EMBEDDED_RESOURCE: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/w","$ref":"x","$defs":{"x":{"$id":"x","$recursiveAnchor":true,"type":"object","properties":{"c":{"$ref":"#/$defs/inner"}},"$defs":{"inner":{"$id":"inner","$recursiveAnchor":true,"properties":{"c":{"$recursiveRef":"#"}}}}}}}"##;
+const DYNAMIC_REF_AFTER_POINTER_INTO_EMBEDDED_RESOURCE: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/w","$ref":"x","$defs":{"x":{"$id":"x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$ref":"#/$defs/inner"}},"$defs":{"inner":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}}}"##;
+const DYNAMIC_REF_IN_EMBEDDED_RESOURCE_UNDER_ITEMS: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"items":{"$id":"inner","$dynamicRef":"middle#node"}}},"$defs":{"middle":{"$id":"middle","$dynamicAnchor":"node"}}}"#;
+const REFERENCE_FROM_EMBEDDED_RESOURCE_UNDER_ITEMS: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"items":{"$id":"inner","$ref":"middle"}}},"$defs":{"middle":{"$id":"middle","$dynamicRef":"leaf#node"},"leaf":{"$id":"leaf","$dynamicAnchor":"node"}}}"#;
+const DYNAMIC_REF_IN_EMBEDDED_RESOURCE_UNDER_UNEVALUATED_PROPERTIES: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","unevaluatedProperties":{"$id":"inner","$dynamicRef":"middle#node"},"$defs":{"middle":{"$id":"middle","$dynamicAnchor":"node"}}}"#;
+const DYNAMIC_REF_IN_EMBEDDED_RESOURCE_UNDER_PROPERTY_NAMES: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","maxLength":1,"propertyNames":{"$id":"inner","$dynamicRef":"middle#node"},"$defs":{"middle":{"$id":"middle","$dynamicAnchor":"node"}}}"#;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/x","$recursiveAnchor":true,"type":"object","properties":{"c":{"$id":"inner","$recursiveAnchor":true,"properties":{"c":{"$recursiveRef":"#"}}}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefInEmbeddedResource;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$ref":"https://example.com/x","$defs":{"x":{"$id":"https://example.com/x","$recursiveAnchor":true,"type":"object","properties":{"c":{"$id":"inner","$recursiveAnchor":true,"properties":{"c":{"$recursiveRef":"#"}}}}}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefInEmbeddedResourceBehindRef;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}"##
+)]
+struct DynamicRefInEmbeddedResource;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$ref":"https://example.com/x","$defs":{"x":{"$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}}}"##
+)]
+struct DynamicRefInEmbeddedResourceBehindRef;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"a":{"$id":"middle","properties":{"b":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}}}"##
+)]
+struct DynamicRefPastEmbeddedResourceWithoutAnchor;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$id":"middle","$ref":"leaf"}},"$defs":{"leaf":{"$id":"leaf","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}"##
+)]
+struct DynamicRefAfterEmbeddedResourceAndRef;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/w","$ref":"x","$defs":{"x":{"$id":"x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$ref":"#/$defs/inner"}},"$defs":{"inner":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}}}"##
+)]
+struct DynamicRefAfterPointerIntoEmbeddedResource;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/w","$ref":"x","$defs":{"x":{"$id":"x","$recursiveAnchor":true,"type":"object","properties":{"c":{"$ref":"#/$defs/inner"}},"$defs":{"inner":{"$id":"inner","$recursiveAnchor":true,"properties":{"c":{"$recursiveRef":"#"}}}}}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefAfterPointerIntoEmbeddedResource;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"items":{"$id":"inner","$dynamicRef":"middle#node"}}},"$defs":{"middle":{"$id":"middle","$dynamicAnchor":"node"}}}"##
+)]
+struct DynamicRefInEmbeddedResourceUnderItems;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","maxLength":1,"propertyNames":{"$id":"inner","$dynamicRef":"middle#node"},"$defs":{"middle":{"$id":"middle","$dynamicAnchor":"node"}}}"##
+)]
+struct DynamicRefInEmbeddedResourceUnderPropertyNames;
+
+#[jsonschema::validator(
+    schema = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"items":{"$id":"inner","$ref":"middle"}}},"$defs":{"middle":{"$id":"middle","$dynamicRef":"leaf#node"},"leaf":{"$id":"leaf","$dynamicAnchor":"node"}}}"#
+)]
+struct ReferenceFromEmbeddedResourceUnderItems;
+
+#[jsonschema::validator(
+    schema = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","unevaluatedProperties":{"$id":"inner","$dynamicRef":"middle#node"},"$defs":{"middle":{"$id":"middle","$dynamicAnchor":"node"}}}"#
+)]
+struct DynamicRefInEmbeddedResourceUnderUnevaluatedProperties;
+
+// A resource `x` holds stays in the dynamic scope below it, entered inline or by a pointer, so a
+// reference there lands on `x`, the outermost resource with the anchor.
+#[test_case(RecursiveRefInEmbeddedResource::is_valid, RecursiveRefInEmbeddedResource::validate, RecursiveRefInEmbeddedResource::iter_errors, RecursiveRefInEmbeddedResource::evaluate, RECURSIVE_REF_IN_EMBEDDED_RESOURCE ; "recursive_ref")]
+#[test_case(RecursiveRefInEmbeddedResourceBehindRef::is_valid, RecursiveRefInEmbeddedResourceBehindRef::validate, RecursiveRefInEmbeddedResourceBehindRef::iter_errors, RecursiveRefInEmbeddedResourceBehindRef::evaluate, RECURSIVE_REF_IN_EMBEDDED_RESOURCE_BEHIND_REF ; "recursive_ref_behind_ref")]
+#[test_case(DynamicRefInEmbeddedResource::is_valid, DynamicRefInEmbeddedResource::validate, DynamicRefInEmbeddedResource::iter_errors, DynamicRefInEmbeddedResource::evaluate, DYNAMIC_REF_IN_EMBEDDED_RESOURCE ; "dynamic_ref")]
+#[test_case(DynamicRefInEmbeddedResourceBehindRef::is_valid, DynamicRefInEmbeddedResourceBehindRef::validate, DynamicRefInEmbeddedResourceBehindRef::iter_errors, DynamicRefInEmbeddedResourceBehindRef::evaluate, DYNAMIC_REF_IN_EMBEDDED_RESOURCE_BEHIND_REF ; "dynamic_ref_behind_ref")]
+#[test_case(DynamicRefPastEmbeddedResourceWithoutAnchor::is_valid, DynamicRefPastEmbeddedResourceWithoutAnchor::validate, DynamicRefPastEmbeddedResourceWithoutAnchor::iter_errors, DynamicRefPastEmbeddedResourceWithoutAnchor::evaluate, DYNAMIC_REF_PAST_EMBEDDED_RESOURCE_WITHOUT_ANCHOR ; "dynamic_ref_past_resource_without_anchor")]
+#[test_case(DynamicRefInEmbeddedResourceUnderItems::is_valid, DynamicRefInEmbeddedResourceUnderItems::validate, DynamicRefInEmbeddedResourceUnderItems::iter_errors, DynamicRefInEmbeddedResourceUnderItems::evaluate, DYNAMIC_REF_IN_EMBEDDED_RESOURCE_UNDER_ITEMS ; "dynamic_ref_under_items")]
+#[test_case(DynamicRefInEmbeddedResourceUnderPropertyNames::is_valid, DynamicRefInEmbeddedResourceUnderPropertyNames::validate, DynamicRefInEmbeddedResourceUnderPropertyNames::iter_errors, DynamicRefInEmbeddedResourceUnderPropertyNames::evaluate, DYNAMIC_REF_IN_EMBEDDED_RESOURCE_UNDER_PROPERTY_NAMES ; "dynamic_ref_under_property_names")]
+#[test_case(ReferenceFromEmbeddedResourceUnderItems::is_valid, ReferenceFromEmbeddedResourceUnderItems::validate, ReferenceFromEmbeddedResourceUnderItems::iter_errors, ReferenceFromEmbeddedResourceUnderItems::evaluate, REFERENCE_FROM_EMBEDDED_RESOURCE_UNDER_ITEMS ; "reference_from_resource_under_items")]
+#[test_case(DynamicRefInEmbeddedResourceUnderUnevaluatedProperties::is_valid, DynamicRefInEmbeddedResourceUnderUnevaluatedProperties::validate, DynamicRefInEmbeddedResourceUnderUnevaluatedProperties::iter_errors, DynamicRefInEmbeddedResourceUnderUnevaluatedProperties::evaluate, DYNAMIC_REF_IN_EMBEDDED_RESOURCE_UNDER_UNEVALUATED_PROPERTIES ; "dynamic_ref_under_unevaluated_properties")]
+#[test_case(RecursiveRefAfterPointerIntoEmbeddedResource::is_valid, RecursiveRefAfterPointerIntoEmbeddedResource::validate, RecursiveRefAfterPointerIntoEmbeddedResource::iter_errors, RecursiveRefAfterPointerIntoEmbeddedResource::evaluate, RECURSIVE_REF_AFTER_POINTER_INTO_EMBEDDED_RESOURCE ; "recursive_ref_after_pointer_into_resource")]
+#[test_case(DynamicRefAfterPointerIntoEmbeddedResource::is_valid, DynamicRefAfterPointerIntoEmbeddedResource::validate, DynamicRefAfterPointerIntoEmbeddedResource::iter_errors, DynamicRefAfterPointerIntoEmbeddedResource::evaluate, DYNAMIC_REF_AFTER_POINTER_INTO_EMBEDDED_RESOURCE ; "dynamic_ref_after_pointer_into_resource")]
+#[test_case(DynamicRefAfterEmbeddedResourceAndRef::is_valid, DynamicRefAfterEmbeddedResourceAndRef::validate, DynamicRefAfterEmbeddedResourceAndRef::iter_errors, DynamicRefAfterEmbeddedResourceAndRef::evaluate, DYNAMIC_REF_AFTER_EMBEDDED_RESOURCE_AND_REF ; "dynamic_ref_after_resource_and_ref")]
+fn test_embedded_resource_in_dynamic_scope_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    schema: &str,
+) {
+    let schema = serde_json::from_str(schema).expect("valid JSON");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    for instance in [
+        serde_json::json!({}),
+        serde_json::json!({"c": {"c": 1}}),
+        serde_json::json!({"c": {"c": {}}}),
+        serde_json::json!({"c": {"c": {"c": 1}}}),
+        serde_json::json!({"a": {"b": {"c": 1}}}),
+        serde_json::json!({"a": {"b": {"c": {}}}}),
+        serde_json::json!({"c": [1]}),
+        serde_json::json!({"c": [{}]}),
+        serde_json::json!({"ab": 1}),
+        serde_json::json!({"a": 1}),
+        serde_json::json!(1),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+        assert_eq!(
+            evaluation_outputs(&evaluate(&instance)),
+            evaluation_outputs(&runtime.evaluate(&instance)),
+            "{instance}"
+        );
+    }
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","$defs":{"leaf":{"$dynamicAnchor":"leaf","type":"number"}},"properties":{"c":{"$dynamicRef":"#node"}}},"d":{"$dynamicRef":"leaf#leaf"}},"$defs":{"leaf":{"$id":"leaf","$dynamicAnchor":"leaf","type":"string"}}}"##
+)]
+struct DynamicRefLandingOutsideItsResource;
+
+// A `$dynamicRef` in `inner` lands on `x`, which it enters as a reference does, not as a resource
+// held inline below `inner`.
+#[test_case(serde_json::json!({"c": {"c": {"d": 1}}}) ; "number")]
+#[test_case(serde_json::json!({"c": {"c": {"d": "s"}}}) ; "string")]
+#[test_case(serde_json::json!({"d": 1}) ; "outside inner")]
+fn test_dynamic_ref_landing_outside_its_resource_matches_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/x", "$dynamicAnchor": "node", "properties": {"c": {"$id": "inner", "$dynamicAnchor": "node", "$defs": {"leaf": {"$dynamicAnchor": "leaf", "type": "number"}}, "properties": {"c": {"$dynamicRef": "#node"}}}, "d": {"$dynamicRef": "leaf#leaf"}}, "$defs": {"leaf": {"$id": "leaf", "$dynamicAnchor": "leaf", "type": "string"}}});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_validate_parity(
+        DynamicRefLandingOutsideItsResource::is_valid(&instance),
+        DynamicRefLandingOutsideItsResource::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(
+        DynamicRefLandingOutsideItsResource::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_eq!(
+        evaluation_outputs(&DynamicRefLandingOutsideItsResource::evaluate(&instance)),
+        evaluation_outputs(&runtime.evaluate(&instance)),
+    );
+}
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/w","properties":{"d":{"$ref":"inner"}},"$defs":{"x":{"$id":"x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}}}"##
+)]
+struct EmbeddedResourceReachedFromOutsideItsHolder;
+
+// A `$ref` from outside `x` to a resource `x` holds inline leaves `x` out of the dynamic scope.
+#[test_case(serde_json::json!({"d": {"c": 1}}) ; "number")]
+#[test_case(serde_json::json!({"d": {"c": {"c": 1}}}) ; "nested")]
+fn test_embedded_resource_reached_from_outside_its_holder_matches_runtime(
+    instance: serde_json::Value,
+) {
+    let schema = serde_json::json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/w", "properties": {"d": {"$ref": "inner"}}, "$defs": {"x": {"$id": "x", "$dynamicAnchor": "node", "type": "object", "properties": {"c": {"$id": "inner", "$dynamicAnchor": "node", "properties": {"c": {"$dynamicRef": "#node"}}}}}}});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_validate_parity(
+        EmbeddedResourceReachedFromOutsideItsHolder::is_valid(&instance),
+        EmbeddedResourceReachedFromOutsideItsHolder::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(
+        EmbeddedResourceReachedFromOutsideItsHolder::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_eq!(
+        evaluation_outputs(&EmbeddedResourceReachedFromOutsideItsHolder::evaluate(
+            &instance
+        )),
+        evaluation_outputs(&runtime.evaluate(&instance)),
+    );
+}
+
 const DYNAMIC_SCOPE_NESTED_THEN_SAME_INSTANCE: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","type":"object","allOf":[{"$ref":"#"}],"additionalProperties":{"$dynamicRef":"#node"}}"##;
 const DYNAMIC_SCOPE_TWO_PATHS: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$dynamicAnchor":"node","type":"object","properties":{"c":{"$dynamicRef":"#node"}},"patternProperties":{"^c":{"$dynamicRef":"#node"}}}"##;
 const RECURSIVE_SCOPE_TWO_PATHS: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$recursiveAnchor":true,"type":"object","properties":{"c":{"$recursiveRef":"#"}},"patternProperties":{"^c":{"$recursiveRef":"#"}}}"##;

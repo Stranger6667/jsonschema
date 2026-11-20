@@ -182,19 +182,22 @@ impl<'r> Resolver<'r> {
             target.origin, self.base_uri,
             "a target is entered on a resolver with the base URI it was resolved from"
         );
-        let mut resolver = self.evolve(Arc::clone(&target.document));
         match &target.kind {
             TargetKind::Resolved {
                 contents,
                 base_uri,
                 draft,
             } => {
-                resolver.base_uri = Arc::clone(base_uri);
+                // A pointer into a resource embedded in the document leaves this one as well.
+                let leaves = target.document != self.base_uri || *base_uri != target.document;
+                let resolver = self.moved(Arc::clone(base_uri), leaves);
                 Resolved::new(contents, resolver, *draft)
             }
-            TargetKind::DynamicAnchor { resource, .. } => {
-                Resolved::new(resource.contents(), resolver, resource.draft())
-            }
+            TargetKind::DynamicAnchor { resource, .. } => Resolved::new(
+                resource.contents(),
+                self.evolve(Arc::clone(&target.document)),
+                resource.draft(),
+            ),
         }
     }
     /// Enter a target as `$dynamicRef` does: a dynamic anchor resolves in this dynamic scope.
@@ -288,6 +291,33 @@ impl<'r> Resolver<'r> {
             Ok(self.clone())
         }
     }
+    /// The resolver for a subschema that evaluation descends into. A subschema whose `$id` names
+    /// another resource starts it, and the resource it is embedded in joins the dynamic scope, as
+    /// it does when a reference leaves it.
+    #[doc(hidden)]
+    ///
+    /// # Errors
+    ///
+    /// Returns an error if the resource id cannot be resolved against the base URI of this resolver.
+    pub fn descend_into(&self, subresource: ResourceRef<'_>) -> Result<Self, Error> {
+        let Some(id) = subresource.id() else {
+            return Ok(self.clone());
+        };
+        let base_uri = self.registry.resolve_uri(&self.base_uri.borrow(), id)?;
+        // A reference that stayed in this resource from an empty scope put it there already.
+        let scopes = if base_uri == self.base_uri
+            || self.scopes.iter().next() == Some(self.base_uri.as_ref())
+        {
+            self.scopes.clone()
+        } else {
+            self.scopes.push_front(Arc::clone(&self.base_uri))
+        };
+        Ok(Resolver {
+            registry: self.registry,
+            base_uri,
+            scopes,
+        })
+    }
     /// The resolver a reference to the resource at this resolver's base URI enters: that resource
     /// joins the dynamic scope.
     #[doc(hidden)]
@@ -341,9 +371,14 @@ impl<'r> Resolver<'r> {
     }
     #[inline]
     fn evolve(&self, base_uri: Arc<Uri<String>>) -> Resolver<'r> {
-        if !self.base_uri.as_str().is_empty()
-            && (self.scopes.is_empty() || base_uri != self.base_uri)
-        {
+        let leaves = base_uri != self.base_uri;
+        self.moved(base_uri, leaves)
+    }
+    /// This resolver based at `base_uri`. Its resource joins the dynamic scope when the scope is
+    /// empty or a reference `leaves` it.
+    #[inline]
+    fn moved(&self, base_uri: Arc<Uri<String>>, leaves: bool) -> Resolver<'r> {
+        if !self.base_uri.as_str().is_empty() && (self.scopes.is_empty() || leaves) {
             Resolver {
                 registry: self.registry,
                 base_uri,

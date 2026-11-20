@@ -3498,6 +3498,171 @@ mod tests {
         );
     }
 
+    fn not_an_object_at(instance_path: &str, evaluation_path: &str) -> Value {
+        json!([{
+            "message": "1 is not of type \"object\"",
+            "instancePath": instance_path,
+            "schemaPath": "/type",
+            "evaluationPath": evaluation_path,
+            "absoluteKeywordLocation": "https://example.com/x#/type",
+        }])
+    }
+
+    // A resource `x` holds stays in the dynamic scope below it, entered inline or by a pointer, so
+    // a reference there lands on `x`, the outermost resource with the anchor.
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/x", "$recursiveAnchor": true, "type": "object", "properties": {"c": {"$id": "inner", "$recursiveAnchor": true, "properties": {"c": {"$recursiveRef": "#"}}}}}),
+        &json!({"c": {"c": 1}}),
+        &not_an_object_at("/c/c", "/properties/c/properties/c/$recursiveRef/type");
+        "recursive reference"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/x", "$recursiveAnchor": true, "type": "object", "properties": {"c": {"$id": "inner", "$recursiveAnchor": true, "properties": {"c": {"$recursiveRef": "#"}}}}}),
+        &json!({"c": {"c": {"c": 1}}}),
+        &json!([]);
+        "recursive reference, valid"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$ref": "https://example.com/x", "$defs": {"x": {"$id": "https://example.com/x", "$recursiveAnchor": true, "type": "object", "properties": {"c": {"$id": "inner", "$recursiveAnchor": true, "properties": {"c": {"$recursiveRef": "#"}}}}}}}),
+        &json!({"c": {"c": 1}}),
+        &not_an_object_at("/c/c", "/$ref/properties/c/properties/c/$recursiveRef/type");
+        "recursive reference, resource reached by reference"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/x", "$dynamicAnchor": "node", "type": "object", "properties": {"c": {"$id": "inner", "$dynamicAnchor": "node", "properties": {"c": {"$dynamicRef": "#node"}}}}}),
+        &json!({"c": {"c": 1}}),
+        &not_an_object_at("/c/c", "/properties/c/properties/c/$dynamicRef/type");
+        "dynamic reference"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/x", "$dynamicAnchor": "node", "type": "object", "properties": {"c": {"$id": "inner", "$dynamicAnchor": "node", "properties": {"c": {"$dynamicRef": "#node"}}}}}),
+        &json!({"c": {"c": {"c": 1}}}),
+        &json!([]);
+        "dynamic reference, valid"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$ref": "https://example.com/x", "$defs": {"x": {"$id": "https://example.com/x", "$dynamicAnchor": "node", "type": "object", "properties": {"c": {"$id": "inner", "$dynamicAnchor": "node", "properties": {"c": {"$dynamicRef": "#node"}}}}}}}),
+        &json!({"c": {"c": 1}}),
+        &not_an_object_at("/c/c", "/$ref/properties/c/properties/c/$dynamicRef/type");
+        "dynamic reference, resource reached by reference"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/x", "$dynamicAnchor": "node", "type": "object", "properties": {"a": {"$id": "middle", "properties": {"b": {"$id": "inner", "$dynamicAnchor": "node", "properties": {"c": {"$dynamicRef": "#node"}}}}}}}),
+        &json!({"a": {"b": {"c": 1}}}),
+        &not_an_object_at("/a/b/c", "/properties/a/properties/b/properties/c/$dynamicRef/type");
+        "dynamic reference past a resource without the anchor"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/x", "$dynamicAnchor": "node", "type": "object", "properties": {"c": {"$id": "middle", "$ref": "leaf"}}, "$defs": {"leaf": {"$id": "leaf", "$dynamicAnchor": "node", "properties": {"c": {"$dynamicRef": "#node"}}}}}),
+        &json!({"c": {"c": 1}}),
+        &not_an_object_at("/c/c", "/properties/c/$ref/properties/c/$dynamicRef/type");
+        "dynamic reference, resource held inline then a reference"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/w", "$ref": "x", "$defs": {"x": {"$id": "x", "$recursiveAnchor": true, "type": "object", "properties": {"c": {"$ref": "#/$defs/inner"}}, "$defs": {"inner": {"$id": "inner", "$recursiveAnchor": true, "properties": {"c": {"$recursiveRef": "#"}}}}}}}),
+        &json!({"c": {"c": 1}}),
+        &not_an_object_at("/c/c", "/$ref/properties/c/$ref/properties/c/$recursiveRef/type");
+        "recursive reference, resource reached by a pointer"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/w", "$ref": "x", "$defs": {"x": {"$id": "x", "$dynamicAnchor": "node", "type": "object", "properties": {"c": {"$ref": "#/$defs/inner"}}, "$defs": {"inner": {"$id": "inner", "$dynamicAnchor": "node", "properties": {"c": {"$dynamicRef": "#node"}}}}}}}),
+        &json!({"c": {"c": 1}}),
+        &not_an_object_at("/c/c", "/$ref/properties/c/$ref/properties/c/$dynamicRef/type");
+        "dynamic reference, resource reached by a pointer"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/x", "$dynamicAnchor": "node", "type": "object", "properties": {"c": {"items": {"$id": "inner", "$ref": "middle"}}}, "$defs": {"middle": {"$id": "middle", "$dynamicRef": "leaf#node"}, "leaf": {"$id": "leaf", "$dynamicAnchor": "node"}}}),
+        &json!({"c": [1]}),
+        &not_an_object_at("/c/0", "/properties/c/items/$ref/$dynamicRef/type");
+        "dynamic reference behind a reference from a resource under items"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/x", "$dynamicAnchor": "node", "type": "object", "unevaluatedProperties": {"$id": "inner", "$dynamicRef": "middle#node"}, "$defs": {"middle": {"$id": "middle", "$dynamicAnchor": "node"}}}),
+        &json!({"a": 1}),
+        &json!([{
+            "message": "Unevaluated properties are not allowed ('a' was unexpected)",
+            "instancePath": "",
+            "schemaPath": "/unevaluatedProperties",
+            "evaluationPath": "/unevaluatedProperties",
+            "absoluteKeywordLocation": "https://example.com/x#/unevaluatedProperties",
+        }]);
+        "dynamic reference in a resource under unevaluatedProperties"
+    )]
+    fn embedded_resource_keeps_the_enclosing_one_in_dynamic_scope(
+        schema: &Value,
+        instance: &Value,
+        expected: &Value,
+    ) {
+        let validator = crate::validator_for(schema).expect("Valid schema");
+        let errors: Vec<_> = validator
+            .iter_errors(instance)
+            .map(|error| reported_error(&error))
+            .collect();
+        assert_eq!(json!(errors), *expected);
+        assert_eq!(
+            validator
+                .validate(instance)
+                .err()
+                .as_ref()
+                .map(reported_error),
+            expected.get(0).cloned()
+        );
+        assert_eq!(validator.is_valid(instance), errors.is_empty());
+    }
+
+    // A `$ref` from outside `x` to a resource `x` holds inline leaves `x` out of the dynamic scope.
+    #[test_case(&json!({"d": {"c": 1}}); "number")]
+    #[test_case(&json!({"d": {"c": {"c": 1}}}); "nested")]
+    fn embedded_resource_reached_from_outside_its_holder(instance: &Value) {
+        let validator = crate::validator_for(&json!({
+            "$schema": "https://json-schema.org/draft/2020-12/schema",
+            "$id": "https://example.com/w",
+            "properties": {"d": {"$ref": "inner"}},
+            "$defs": {"x": {
+                "$id": "x",
+                "$dynamicAnchor": "node",
+                "type": "object",
+                "properties": {"c": {
+                    "$id": "inner",
+                    "$dynamicAnchor": "node",
+                    "properties": {"c": {"$dynamicRef": "#node"}}
+                }}
+            }}
+        }))
+        .expect("Valid schema");
+        assert_eq!(validator.iter_errors(instance).count(), 0);
+        assert!(validator.is_valid(instance));
+    }
+
+    // A root registered under another URI than its `$id` is one resource, which a `$dynamicRef`
+    // into it locates by its `$id`.
+    #[test]
+    fn dynamic_anchor_in_a_root_registered_under_another_uri() {
+        let validator = crate::options()
+            .with_base_uri("https://example.com/retrieved")
+            .build(&json!({
+                "$schema": "https://json-schema.org/draft/2020-12/schema",
+                "$id": "https://example.com/x",
+                "properties": {"c": {"$dynamicRef": "#node"}},
+                "$defs": {"n": {"$dynamicAnchor": "node", "type": "object"}}
+            }))
+            .expect("Valid schema");
+        let errors: Vec<_> = validator
+            .iter_errors(&json!({"c": 1}))
+            .map(|error| reported_error(&error))
+            .collect();
+        assert_eq!(
+            json!(errors),
+            json!([{
+                "message": "1 is not of type \"object\"",
+                "instancePath": "/c",
+                "schemaPath": "/$defs/n/type",
+                "evaluationPath": "/properties/c/$dynamicRef/type",
+                "absoluteKeywordLocation": "https://example.com/x#/$defs/n/type",
+            }])
+        );
+    }
+
     #[test_case("$ref"; "ref")]
     #[test_case("$dynamicRef"; "dynamic ref")]
     fn malformed(keyword: &str) {

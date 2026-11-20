@@ -499,12 +499,28 @@ impl<'a, F: Json> Context<'a, F> {
         self.config
     }
 
-    /// Create a context for this schema.
+    /// Create a context for this schema, which evaluation descends into.
     pub(crate) fn in_subresource(
         &self,
         resource: ResourceRef<'_>,
     ) -> Result<Context<'a, F>, referencing::Error> {
-        let resolver = self.resolver.in_subresource(resource)?;
+        self.entering(resource, Resolver::descend_into)
+    }
+    /// Create a context for the root schema, which no resource encloses.
+    fn at_root(&self, resource: ResourceRef<'_>) -> Result<Context<'a, F>, referencing::Error> {
+        self.entering(resource, Resolver::in_subresource)
+    }
+    /// A context for `resource`, with the resolver `resolve` gives for it.
+    #[inline]
+    fn entering<R>(
+        &self,
+        resource: ResourceRef<'_>,
+        resolve: R,
+    ) -> Result<Context<'a, F>, referencing::Error>
+    where
+        R: FnOnce(&Resolver<'a>, ResourceRef<'_>) -> Result<Resolver<'a>, referencing::Error>,
+    {
+        let resolver = resolve(&self.resolver, resource)?;
         let draft = resource.draft();
         // A `$schema` below the root switches the draft, and its vocabularies with it: Draft 4-7
         // roots have none, so a nested Draft 2019-09+ subschema would compile no keywords.
@@ -1810,7 +1826,7 @@ fn compile_root<'a, F: Json>(
     ctx: &Context<F>,
     resource: ResourceRef<'a>,
 ) -> Result<SchemaNode<F>, ValidationError<'a>> {
-    let ctx = ctx.in_subresource(resource)?;
+    let ctx = ctx.at_root(resource)?;
     let referenced = ctx.clone().in_dynamic_scope();
     let identity = TargetIdentity::new(resource.contents(), Location::new());
     let placeholder = PendingSchemaNode::new();

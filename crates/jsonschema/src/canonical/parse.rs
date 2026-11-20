@@ -903,7 +903,7 @@ fn parse_schema<'a>(
     resolver: &Resolver<'a>,
     state: &mut ParseState<'a, '_>,
 ) -> Result<Option<Schema>, CanonicalizationError> {
-    let resolver = resolver.in_subresource(ctx.draft().create_resource_ref(value))?;
+    let resolver = resolver.descend_into(ctx.draft().create_resource_ref(value))?;
     let parsed = parse_schema_in_scope(value, ctx, is_root, &resolver, state)?;
     if parsed.is_none() {
         ctx.note_declined(std::ptr::from_ref(value) as usize);

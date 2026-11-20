@@ -20,6 +20,7 @@
 - `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
 - `Validator` results depending on how references name a schema that a `$ref` cycle passes through, such as `cycle` and `#` inside it.
 - `Validator` results for a schema that references itself with `#` differing from the same schema reached through a `$ref`, such as `{"not": {"$ref": "#"}}` rejecting every instance.
+- `$recursiveRef` and `$dynamicRef` inside a subschema with its own `$id` leaving the resource that holds it out of the dynamic scope when that subschema is reached inline or through a JSON Pointer `$ref`.
 - `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.
 - `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
 - `evaluate` messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
