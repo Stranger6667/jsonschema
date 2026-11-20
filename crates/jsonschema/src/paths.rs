@@ -640,7 +640,12 @@ impl Location {
     /// Returns a cached instance to avoid allocation.
     #[must_use]
     pub fn new() -> Self {
-        EMPTY_LOCATION.get_or_init(|| Self(Arc::from(""))).clone()
+        Self::empty().clone()
+    }
+
+    /// The cached empty `Location`, borrowed.
+    pub(crate) fn empty() -> &'static Location {
+        EMPTY_LOCATION.get_or_init(|| Self(Arc::from("")))
     }
 
     pub(crate) fn from_escaped(escaped: &str) -> Self {

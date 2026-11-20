@@ -958,9 +958,10 @@ impl<F: Json> Validator<F> {
     #[inline]
     pub fn validate<'i>(&self, instance: F::Node<'i>) -> Result<(), ValidationError<'i>> {
         let mut ctx = ValidationContext::new();
+        let entry = self.entry();
         let result = self
             .root
-            .validate(&instance, &LazyLocation::new(), None, &mut ctx);
+            .validate(&instance, &LazyLocation::new(), entry.as_ref(), &mut ctx);
         match ctx.matches {
             None => result,
             Some(first) => self
@@ -976,8 +977,14 @@ impl<F: Json> Validator<F> {
     pub fn iter_errors<'i>(&'i self, instance: F::Node<'i>) -> ErrorIterator<'i> {
         let mut ctx = ValidationContext::new();
         let mut errors = Vec::new();
-        self.root
-            .collect_errors(&instance, &LazyLocation::new(), None, &mut ctx, &mut errors);
+        let entry = self.entry();
+        self.root.collect_errors(
+            &instance,
+            &LazyLocation::new(),
+            entry.as_ref(),
+            &mut ctx,
+            &mut errors,
+        );
         if let Some(first) = ctx.matches {
             errors = self.errors_under_every_outcome(&instance, *first);
         }
@@ -1011,6 +1018,7 @@ impl<F: Json> Validator<F> {
         instance: &F::Node<'i>,
         first: MatchAssumptions,
     ) -> Vec<ValidationError<'i>> {
+        let entry = self.entry();
         let outcomes = assume_each_outcome(
             |matches| {
                 in_context(matches, |ctx| {
@@ -1018,7 +1026,7 @@ impl<F: Json> Validator<F> {
                     self.root.collect_errors(
                         instance,
                         &LazyLocation::new(),
-                        None,
+                        entry.as_ref(),
                         ctx,
                         &mut errors,
                     );
@@ -1034,9 +1042,10 @@ impl<F: Json> Validator<F> {
     #[inline]
     pub fn evaluate(&self, instance: F::Node<'_>) -> Evaluation {
         let mut ctx = ValidationContext::new();
-        let root = self
-            .root
-            .evaluate_instance(&instance, &LazyLocation::new(), None, &mut ctx);
+        let entry = self.entry();
+        let root =
+            self.root
+                .evaluate_instance(&instance, &LazyLocation::new(), entry.as_ref(), &mut ctx);
         match ctx.matches.take() {
             None => {
                 let arena = ctx.arena();
@@ -1045,16 +1054,17 @@ impl<F: Json> Validator<F> {
             }
             // What the instance evaluates to depends on the unfinished matches; only the errors
             // shared by every outcome are known.
-            Some(first) => {
-                Self::evaluation_from_errors(self.errors_under_every_outcome(&instance, *first))
-            }
+            Some(first) => Self::evaluation_from_errors(
+                self.root.location(),
+                self.errors_under_every_outcome(&instance, *first),
+            ),
         }
     }
 
-    /// A root with one child per error and no annotations.
+    /// A root at `location` with one child per error and no annotations.
     #[cold]
-    fn evaluation_from_errors(errors: Vec<ValidationError<'_>>) -> Evaluation {
-        let root_location = crate::evaluation::format_keyword_location(&Location::new(), None);
+    fn evaluation_from_errors(location: &Location, errors: Vec<ValidationError<'_>>) -> Evaluation {
+        let root_location = crate::evaluation::format_keyword_location(location, None);
         let mut arena = EvaluationArena::default();
         let root = arena.rendered_position(Location::new());
         if errors.is_empty() {
@@ -1099,6 +1109,13 @@ impl<F: Json> Validator<F> {
             ),
         )
     }
+    /// The `$ref` a validator for a subschema below the document root stands for, so its
+    /// evaluation paths start at that subschema.
+    #[inline]
+    fn entry(&self) -> Option<RefTracker<'_>> {
+        let location = self.root.location();
+        (!location.is_empty()).then(|| RefTracker::new(Location::empty(), location, None))
+    }
     /// The [`Draft`] this validator applies: the one set via `with_draft`, else the one `$schema`
     /// declares, else the default.
     #[must_use]
@@ -1114,6 +1131,10 @@ impl<F: Json> Validator<F> {
 ///
 /// Each key is a URI-fragment JSON pointer (e.g. `"#"`, `"#/$defs/User"`).
 /// The root schema is always present under the key `"#"`.
+///
+/// A validator below the root validates as a `$ref` from the root to its pointer: its errors
+/// report schema locations in the document, such as `/$defs/User/required`, and evaluation paths
+/// from the subschema, such as `/required`.
 pub struct ValidatorMap<F: Json = SerdeJson> {
     pub(crate) validators: AHashMap<String, Validator<F>>,
 }
@@ -1173,8 +1194,8 @@ impl<F: Json> std::ops::Index<&str> for ValidatorMap<F> {
 #[cfg(test)]
 mod tests {
     use crate::{
-        error::ValidationError, keywords::custom::Keyword, paths::Location, Draft, Validator,
-        ValidatorMap,
+        error::ValidationError, keywords::custom::Keyword, paths::Location, Draft, PatternOptions,
+        Validator, ValidatorMap,
     };
     use fancy_regex::Regex;
     use num_cmp::NumCmp;
@@ -2090,6 +2111,202 @@ mod tests {
         let map = crate::validator_map_for(&schema).unwrap();
         assert!(map["#/properties/name"].is_valid(&json!("Al")));
         assert!(!map["#/properties/name"].is_valid(&json!("A")));
+    }
+
+    // Message, schema path, evaluation path without `prefix`, and absolute location of each error.
+    fn located_errors<'i>(
+        errors: impl Iterator<Item = ValidationError<'i>>,
+        prefix: &str,
+    ) -> Vec<(String, String, String, Option<String>)> {
+        errors
+            .map(|error| {
+                let evaluation_path = error
+                    .evaluation_path()
+                    .as_str()
+                    .strip_prefix(prefix)
+                    .expect("Evaluation path starts with the prefix")
+                    .to_owned();
+                (
+                    error.to_string(),
+                    error.schema_path().as_str().to_owned(),
+                    evaluation_path,
+                    error.absolute_keyword_location().map(ToString::to_string),
+                )
+            })
+            .collect()
+    }
+
+    // The document with a root `$ref` to `pointer`.
+    fn via_ref(document: &Value, pointer: &str) -> Validator {
+        let mut document = document.clone();
+        document
+            .as_object_mut()
+            .expect("Document is an object")
+            .insert("$ref".to_owned(), json!(pointer));
+        crate::validator_for(&document).expect("Valid schema")
+    }
+
+    #[test_case(
+        &json!({"$defs": {"x": {"not": {"$ref": "#/$defs/x"}}}}),
+        "#/$defs/x",
+        &json!(1) ;
+        "not over a self reference"
+    )]
+    #[test_case(
+        &json!({"$defs": {"x": {"minimum": 5, "allOf": [{"$ref": "#/$defs/x"}]}}}),
+        "#/$defs/x",
+        &json!(1) ;
+        "allOf over a self reference"
+    )]
+    #[test_case(
+        &json!({"$id": "https://example.com/doc", "$defs": {"x": {"minimum": 5}}}),
+        "#/$defs/x",
+        &json!(1) ;
+        "document with a base URI"
+    )]
+    #[test_case(
+        &json!({
+            "$id": "https://example.com/doc",
+            "$defs": {"x": {"minimum": 5, "allOf": [{"$ref": "#/$defs/x"}]}}
+        }),
+        "#/$defs/x",
+        &json!(1) ;
+        "self reference in a document with a base URI"
+    )]
+    #[test_case(
+        &json!({"$defs": {"r": {"$id": "http://example.com/r", "properties": {"a": {"type": "integer"}}}}}),
+        "#/$defs/r/properties/a",
+        &json!("s") ;
+        "keyword in an embedded resource"
+    )]
+    #[test_case(
+        &json!({"$defs": {"r": {
+            "$id": "http://example.com/r",
+            "properties": {"a": {"$ref": "#/$defs/y"}},
+            "$defs": {"y": {"type": "integer"}}
+        }}}),
+        "#/$defs/r/properties/a",
+        &json!("s") ;
+        "pointer reference in an embedded resource"
+    )]
+    #[test_case(
+        &json!({"$defs": {"r": {
+            "$id": "http://example.com/r",
+            "properties": {"a": {"$ref": "#y"}},
+            "$defs": {"y": {"$anchor": "y", "type": "integer"}}
+        }}}),
+        "#/$defs/r/properties/a",
+        &json!("s") ;
+        "anchor reference in an embedded resource"
+    )]
+    fn test_validator_map_entry_matches_ref(document: &Value, pointer: &str, instance: &Value) {
+        let map = crate::validator_map_for(document).expect("Valid schema");
+        let entry = &map[pointer];
+        let reference = via_ref(document, pointer);
+        assert_eq!(entry.is_valid(instance), reference.is_valid(instance));
+        assert_eq!(
+            located_errors(entry.validate(instance).err().into_iter(), ""),
+            located_errors(reference.validate(instance).err().into_iter(), "/$ref"),
+        );
+        assert_eq!(
+            located_errors(entry.iter_errors(instance), ""),
+            located_errors(reference.iter_errors(instance), "/$ref"),
+        );
+    }
+
+    #[test]
+    fn test_validator_map_entry_under_a_key_with_uri_delimiters() {
+        let document = json!({"$defs": {"a b%/c": {"minimum": 5}}});
+        let map = crate::validator_map_for(&document).expect("Valid schema");
+        assert_eq!(
+            located_errors(map["#/$defs/a b%~1c"].iter_errors(&json!(1)), ""),
+            vec![(
+                "1 is less than the minimum of 5".to_owned(),
+                "/$defs/a b%~1c/minimum".to_owned(),
+                "/minimum".to_owned(),
+                None
+            )]
+        );
+    }
+
+    #[test]
+    fn test_validator_map_entry_evaluate_locations() {
+        let document = json!({"$id": "https://example.com/doc", "$defs": {"x": {"minimum": 5}}});
+        let map = crate::validator_map_for(&document).expect("Valid schema");
+        let evaluation = map["#/$defs/x"].evaluate(&json!(1));
+        assert_eq!(
+            serde_json::to_value(evaluation.list()).expect("Serializable"),
+            json!({"valid": false, "details": [
+                {
+                    "valid": false,
+                    "evaluationPath": "",
+                    "schemaLocation": "https://example.com/doc#/$defs/x",
+                    "instanceLocation": ""
+                },
+                {
+                    "valid": false,
+                    "evaluationPath": "/minimum",
+                    "schemaLocation": "https://example.com/doc#/$defs/x/minimum",
+                    "instanceLocation": "",
+                    "errors": {"minimum": "1 is less than the minimum of 5"}
+                }
+            ]})
+        );
+    }
+
+    // With `backtrack_limit(1)` the engine cannot finish matching `(?<=ab)c` against "abc", so the
+    // `maxLength` error is the one either outcome reports.
+    #[test]
+    fn test_validator_map_entry_unfinished_match_locations() {
+        let document = json!({"$defs": {"x": {"pattern": "(?<=ab)c", "maxLength": 1}}});
+        let map = crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex().backtrack_limit(1))
+            .build_map(&document)
+            .expect("Valid schema");
+        let entry = &map["#/$defs/x"];
+        let instance = json!("abc");
+        let expected = vec![(
+            r#""abc" is longer than 1 character"#.to_owned(),
+            "/$defs/x/maxLength".to_owned(),
+            "/maxLength".to_owned(),
+            None,
+        )];
+        assert_eq!(
+            located_errors(entry.validate(&instance).err().into_iter(), ""),
+            expected
+        );
+        assert_eq!(located_errors(entry.iter_errors(&instance), ""), expected);
+        assert_eq!(
+            serde_json::to_value(entry.evaluate(&instance).list()).expect("Serializable"),
+            json!({"valid": false, "details": [
+                {"valid": false, "evaluationPath": "", "schemaLocation": "/$defs/x", "instanceLocation": ""},
+                {
+                    "valid": false,
+                    "evaluationPath": "/maxLength",
+                    "schemaLocation": "/$defs/x/maxLength",
+                    "instanceLocation": "",
+                    "errors": {"maxLength": r#""abc" is longer than 1 character"#}
+                }
+            ]})
+        );
+    }
+
+    // An entry applies the `$schema` of a subschema without `$id`, which a `$ref` to it ignores:
+    // Draft 4 has no `const`.
+    #[test]
+    fn test_validator_map_entry_applies_its_own_schema_keyword() {
+        let document = json!({"$defs": {"x": {
+            "$schema": "http://json-schema.org/draft-04/schema#",
+            "const": 1
+        }}});
+        let map = crate::validator_map_for(&document).expect("Valid schema");
+        assert_eq!(
+            (
+                map["#/$defs/x"].is_valid(&json!(2)),
+                via_ref(&document, "#/$defs/x").is_valid(&json!(2))
+            ),
+            (true, false)
+        );
     }
 
     #[test]

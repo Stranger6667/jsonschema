@@ -435,6 +435,33 @@ fn compile_reference_validator<'a, F: Json>(
     )
 }
 
+/// Compile the subschema at the escaped JSON Pointer `pointer` as a `$ref` to it from the document
+/// root `ctx` is at compiles it, so the `$ref`s in it that name it share its node.
+///
+/// A `$schema` the subschema declares picks the draft it compiles with.
+pub(crate) fn compile_pointer_target<F: Json>(
+    ctx: &compiler::Context<F>,
+    pointer: &str,
+) -> Result<SchemaNode<F>, ValidationError<'static>> {
+    let mut fragment = uri::EncodedBuffer::new();
+    fragment.encode_str::<uri::Path>(pointer);
+    let reference = format!("#{}", fragment.as_str());
+    let ((alias, target_base), resolved) =
+        ctx.resolve_ref_target(&reference, false, extract_ref_target_base)?;
+    let resource_start = embedded_resource_start(ctx, &alias, &target_base, &resolved)?;
+    let identity = TargetIdentity::new(resolved.contents(), target_base.clone());
+    ctx.mark_seen(&identity);
+    let (contents, resolver, draft) = resolved.into_inner();
+    let resource_ref = draft.detect(contents).create_resource_ref(contents);
+    let vocabularies = resolver.find_vocabularies(draft, contents);
+    let inner_ctx = ctx
+        .with_resolver_and_draft(resolver, resource_ref.draft(), vocabularies, target_base)?
+        .with_resource_start(resource_start);
+    compiler::compile_with_identity(&inner_ctx, resource_ref, &identity)
+        .map(TargetNode::into_node)
+        .map_err(ValidationError::to_owned)
+}
+
 fn compile_recursive_validator<'a, F: Json>(
     ctx: &compiler::Context<F>,
     reference: &str,

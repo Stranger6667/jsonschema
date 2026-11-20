@@ -2025,8 +2025,9 @@ fn compile_without_cache<'a, F: Json>(
 /// reachable subschema, keyed by URI-fragment JSON pointer.
 ///
 /// Each subschema is compiled with its own fresh [`Context`] so that caches from
-/// sibling compilations do not interfere. Nodes that fail to compile (e.g.
-/// unresolvable `$ref`) are silently skipped.
+/// sibling compilations do not interfere, and below the root as a `$ref` from the root to its
+/// pointer compiles it. Nodes that fail to compile (e.g. unresolvable `$ref`) are silently
+/// skipped.
 fn collect_validators<'a, F: Json>(
     config: &'a dyn CompilationOptions<F>,
     resolver: &Resolver<'a>,
@@ -2046,8 +2047,12 @@ fn collect_validators<'a, F: Json>(
                 Location::new(),
                 estimate_subschema_count(current),
             );
-            let resource_ref = ctx.as_resource_ref(current);
-            if let Ok(validator) = compile_validator(&ctx, resource_ref, draft) {
+            let document = ctx.as_resource_ref(schema);
+            let compiled = match &pointer[1..] {
+                "" => compile_validator(&ctx, document, draft),
+                location => compile_entry(&ctx, document, location, draft),
+            };
+            if let Ok(validator) = compiled {
                 validators.insert(pointer.clone(), validator);
             }
         }
@@ -2068,6 +2073,24 @@ fn collect_validators<'a, F: Json>(
         }
     }
     validators
+}
+
+/// Compile the subschema at the escaped JSON Pointer `pointer` in `document`, then the `$ref`
+/// targets it deferred.
+fn compile_entry<F: Json>(
+    ctx: &Context<'_, F>,
+    document: ResourceRef<'_>,
+    pointer: &str,
+    draft: Draft,
+) -> Result<Validator<F>, ValidationError<'static>> {
+    let at_root = ctx.at_root(document)?;
+    let root = keywords::ref_::compile_pointer_target(&at_root, pointer)?;
+    let targets = compile_deferred_targets(ctx)?;
+    Ok(Validator {
+        root,
+        targets,
+        draft,
+    })
 }
 
 fn build_validator_map_with_registry<R, F: Json>(
