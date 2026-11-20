@@ -330,3 +330,32 @@ fn property_names_validate_custom_representation() {
     let error = validator.validate(&short).expect_err("short name");
     assert_eq!(error.to_string(), "\"a\" is shorter than 2 characters");
 }
+
+// The schema is checked against its meta-schema the same way whatever represents instances.
+#[tokio::test]
+async fn meta_schema_rejection_with_custom_representation() {
+    let schema = json!({"properties": {"a": {"minLength": -1}}});
+    let errors = [
+        jsonschema::options_for::<ToyJson>()
+            .build(&schema)
+            .expect_err("negative minLength"),
+        jsonschema::async_options_for::<ToyJson>()
+            .build(&schema)
+            .await
+            .expect_err("negative minLength"),
+    ];
+    for error in errors {
+        assert_eq!(
+            (
+                error.to_string(),
+                error.instance_path().as_str(),
+                error.evaluation_path().as_str(),
+            ),
+            (
+                "-1 is less than the minimum of 0".to_string(),
+                "/properties/a/minLength",
+                "/allOf/1/$ref/properties/properties/additionalProperties/$dynamicRef/allOf/3/$ref/properties/minLength/$ref/$ref/minimum",
+            )
+        );
+    }
+}

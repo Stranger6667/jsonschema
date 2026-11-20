@@ -5301,7 +5301,7 @@ pub(crate) mod tests_util {
 
 #[cfg(test)]
 mod tests {
-    use crate::{validator_for, Registry, SerdeJson, ValidationError};
+    use crate::{validator_for, CanonicalizationError, Registry, SerdeJson, ValidationError};
 
     use super::Draft;
     use serde_json::{json, Value};
@@ -5977,6 +5977,115 @@ mod tests {
         ))
         .expect_err("Should reject array-form `items` under 2020-12");
         assert_eq!(error.instance_path().as_str(), "/properties/a/items");
+    }
+
+    const DRAFT201909: &str = "https://json-schema.org/draft/2019-09/schema";
+
+    fn build_error(schema: &Value) -> ValidationError<'static> {
+        validator_for(schema).expect_err("Should reject the schema")
+    }
+
+    fn build_error_with_draft4(schema: &Value) -> ValidationError<'static> {
+        crate::options()
+            .with_draft(Draft::Draft4)
+            .build(schema)
+            .expect_err("Should reject the schema")
+    }
+
+    fn build_error_asserting_formats(schema: &Value) -> ValidationError<'static> {
+        crate::options()
+            .should_validate_formats(true)
+            .build(schema)
+            .expect_err("Should reject the schema")
+    }
+
+    fn build_error_ignoring_formats(schema: &Value) -> ValidationError<'static> {
+        crate::options()
+            .should_validate_formats(false)
+            .build(schema)
+            .expect_err("Should reject the schema")
+    }
+
+    // `$schema` names a registered meta-schema written against Draft 7.
+    fn build_error_with_custom_meta_schema(schema: &Value) -> ValidationError<'static> {
+        let registry = Registry::new()
+            .add(
+                "https://example.com/meta",
+                json!({"$schema": DRAFT7, "type": "object"}),
+            )
+            .expect("Should accept the meta-schema")
+            .prepare()
+            .expect("Should create registry");
+        crate::options()
+            .with_registry(&registry)
+            .build(schema)
+            .expect_err("Should reject the schema")
+    }
+
+    fn build_map_error(schema: &Value) -> ValidationError<'static> {
+        crate::options()
+            .build_map(schema)
+            .expect_err("Should reject the schema")
+    }
+
+    fn canonical_prepare_error(schema: &Value) -> ValidationError<'static> {
+        let Err(CanonicalizationError::ValidationError(error)) =
+            crate::canonical::options().prepare(schema)
+        else {
+            panic!("Should reject the schema against its meta-schema");
+        };
+        error
+    }
+
+    // A schema its meta-schema rejects fails to build with the first error that meta-schema reports.
+    #[test_case(build_error, &json!({"$schema": DRAFT4, "minimum": "foo"}), "\"foo\" is not of type \"number\"", "/minimum", "/properties/minimum/type", "/properties/minimum/type", "http://json-schema.org/draft-04/schema#/properties/minimum/type", "type" ; "draft 4")]
+    #[test_case(build_error_with_draft4, &json!({"minimum": "foo"}), "\"foo\" is not of type \"number\"", "/minimum", "/properties/minimum/type", "/properties/minimum/type", "http://json-schema.org/draft-04/schema#/properties/minimum/type", "type" ; "explicit draft 4")]
+    #[test_case(build_error, &json!({"$schema": DRAFT6, "exclusiveMinimum": true}), "true is not of type \"number\"", "/exclusiveMinimum", "/properties/exclusiveMinimum/type", "/properties/exclusiveMinimum/type", "http://json-schema.org/draft-06/schema#/properties/exclusiveMinimum/type", "type" ; "draft 6")]
+    #[test_case(build_error, &json!({"$schema": DRAFT7, "properties": {"a": {"type": "invalid_type"}}}), "\"invalid_type\" is not valid under any of the schemas listed in the 'anyOf' keyword", "/properties/a/type", "/properties/type/anyOf", "/properties/properties/additionalProperties/$ref/properties/type/anyOf", "http://json-schema.org/draft-07/schema#/properties/type/anyOf", "anyOf" ; "draft 7 subschema")]
+    #[test_case(build_error, &json!({"$schema": DRAFT7, "pattern": "["}), "\"[\" is not a \"regex\"", "/pattern", "/properties/pattern/format", "/properties/pattern/format", "http://json-schema.org/draft-07/schema#/properties/pattern/format", "format" ; "draft 7 regex format")]
+    #[test_case(build_error_ignoring_formats, &json!({"$schema": DRAFT7, "pattern": "["}), "\"[\" is not a \"regex\"", "/pattern", "/properties/pattern/format", "/properties/pattern/format", "http://json-schema.org/draft-07/schema#/properties/pattern/format", "format" ; "draft 7 regex format with formats ignored")]
+    #[test_case(build_error, &json!({"$schema": DRAFT201909, "items": {"minItems": -1}}), "{\"minItems\":-1} is not valid under any of the schemas listed in the 'anyOf' keyword", "/items", "/properties/items/anyOf", "/allOf/1/$ref/properties/items/anyOf", "https://json-schema.org/draft/2019-09/meta/applicator#/properties/items/anyOf", "anyOf" ; "2019-09 subschema")]
+    #[test_case(build_error, &json!({"properties": {"a": {"$defs": {"b": {"required": "x"}}}}}), "\"x\" is not of type \"array\"", "/properties/a/$defs/b/required", "/$defs/stringArray/type", "/allOf/1/$ref/properties/properties/additionalProperties/$dynamicRef/allOf/0/$ref/properties/$defs/additionalProperties/$dynamicRef/allOf/3/$ref/properties/required/$ref/type", "https://json-schema.org/draft/2020-12/meta/validation#/$defs/stringArray/type", "type" ; "2020-12 subschema")]
+    #[test_case(build_error_asserting_formats, &json!({"properties": {"a": {"$defs": {"b": {"required": "x"}}}}}), "\"x\" is not of type \"array\"", "/properties/a/$defs/b/required", "/$defs/stringArray/type", "/allOf/1/$ref/properties/properties/additionalProperties/$dynamicRef/allOf/0/$ref/properties/$defs/additionalProperties/$dynamicRef/allOf/3/$ref/properties/required/$ref/type", "https://json-schema.org/draft/2020-12/meta/validation#/$defs/stringArray/type", "type" ; "2020-12 subschema with formats asserted")]
+    #[test_case(build_error, &json!({"type": "invalid_type", "minimum": "not_a_number", "required": true}), "\"not_a_number\" is not of type \"number\"", "/minimum", "/properties/minimum/type", "/allOf/3/$ref/properties/minimum/type", "https://json-schema.org/draft/2020-12/meta/validation#/properties/minimum/type", "type" ; "several violations")]
+    #[test_case(build_error_with_custom_meta_schema, &json!({"$schema": "https://example.com/meta", "minLength": -1}), "-1 is less than the minimum of 0", "/minLength", "/definitions/nonNegativeInteger/minimum", "/properties/minLength/$ref/allOf/0/$ref/minimum", "http://json-schema.org/draft-07/schema#/definitions/nonNegativeInteger/minimum", "minimum" ; "registered custom meta-schema")]
+    #[test_case(build_error, &json!({"$schema": "https://example.com/unknown", "minLength": -1}), "-1 is less than the minimum of 0", "/minLength", "/$defs/nonNegativeInteger/minimum", "/allOf/3/$ref/properties/minLength/$ref/$ref/minimum", "https://json-schema.org/draft/2020-12/meta/validation#/$defs/nonNegativeInteger/minimum", "minimum" ; "unregistered meta-schema")]
+    #[test_case(build_error, &json!({"$schema": DRAFT7, "properties": {"a": {"$id": "https://example.com/a", "$schema": DRAFT202012, "minContains": -1}}}), "-1 is less than the minimum of 0", "/properties/a/minContains", "/$defs/nonNegativeInteger/minimum", "/allOf/3/$ref/properties/minContains/$ref/minimum", "https://json-schema.org/draft/2020-12/meta/validation#/$defs/nonNegativeInteger/minimum", "minimum" ; "embedded resource")]
+    #[test_case(build_error, &json!({"$schema": DRAFT202012, "minLength": -1, "properties": {"a": {"$id": "https://example.com/a", "$schema": DRAFT4, "items": [{}]}}}), "-1 is less than the minimum of 0", "/minLength", "/$defs/nonNegativeInteger/minimum", "/allOf/3/$ref/properties/minLength/$ref/$ref/minimum", "https://json-schema.org/draft/2020-12/meta/validation#/$defs/nonNegativeInteger/minimum", "minimum" ; "resource enclosing an embedded one")]
+    #[test_case(build_map_error, &json!({"properties": {"a": {"$defs": {"b": {"required": "x"}}}}}), "\"x\" is not of type \"array\"", "/properties/a/$defs/b/required", "/$defs/stringArray/type", "/allOf/1/$ref/properties/properties/additionalProperties/$dynamicRef/allOf/0/$ref/properties/$defs/additionalProperties/$dynamicRef/allOf/3/$ref/properties/required/$ref/type", "https://json-schema.org/draft/2020-12/meta/validation#/$defs/stringArray/type", "type" ; "validator map")]
+    #[test_case(canonical_prepare_error, &json!({"$schema": DRAFT4, "minimum": "foo"}), "\"foo\" is not of type \"number\"", "/minimum", "/properties/minimum/type", "/properties/minimum/type", "http://json-schema.org/draft-04/schema#/properties/minimum/type", "type" ; "canonicalization")]
+    fn meta_schema_rejection(
+        reject: fn(&Value) -> ValidationError<'static>,
+        schema: &Value,
+        message: &str,
+        instance_path: &str,
+        schema_path: &str,
+        evaluation_path: &str,
+        absolute_keyword_location: &str,
+        keyword: &str,
+    ) {
+        let error = reject(schema);
+        assert_eq!(
+            (
+                error.to_string(),
+                error.instance_path().as_str(),
+                error.schema_path().as_str(),
+                error.evaluation_path().as_str(),
+                error
+                    .absolute_keyword_location()
+                    .map(ToString::to_string)
+                    .unwrap_or_default(),
+                error.kind().keyword(),
+            ),
+            (
+                message.to_string(),
+                instance_path,
+                schema_path,
+                evaluation_path,
+                absolute_keyword_location.to_string(),
+                keyword,
+            )
+        );
     }
 
     #[test_case(crate::is_valid ; "autodetect")]
