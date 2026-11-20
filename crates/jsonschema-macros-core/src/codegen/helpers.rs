@@ -8,7 +8,7 @@ use std::{
     sync::Arc,
 };
 
-use crate::context::{CompileContext, ErrorsFn};
+use crate::context::{CompileContext, Dialect, ErrorsFn};
 
 use super::{
     compile_schema,
@@ -96,18 +96,21 @@ pub(crate) fn collect_dynamic_anchor_bindings<E: ValueEmitter>(
                     resolved.resource_start,
                     resolved.schema,
                     resolved.base_uri.clone(),
+                    resolved.dialect.clone(),
                 );
                 let key_eval_name = get_or_create_key_eval_fn(
                     ctx,
                     &resolved.location,
                     resolved.schema,
                     resolved.base_uri.clone(),
+                    resolved.dialect.clone(),
                 );
                 let item_eval_name = get_or_create_item_eval_fn(
                     ctx,
                     &resolved.location,
                     resolved.schema,
                     resolved.base_uri,
+                    resolved.dialect,
                 );
                 bindings.push(DynamicAnchorBinding {
                     anchor,
@@ -137,6 +140,7 @@ pub(crate) fn get_or_create_key_eval_fn<E: ValueEmitter>(
     location: &str,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
+    dialect: Dialect,
 ) -> String {
     if let Some(name) = ctx.key_eval_fns.get_name(location) {
         return name.clone();
@@ -146,8 +150,7 @@ pub(crate) fn get_or_create_key_eval_fn<E: ValueEmitter>(
 
     if let Value::Object(schema_obj) = schema {
         let body = ctx.with_key_eval_scope(location, |ctx| {
-            let schema_value = Value::Object(schema_obj.clone());
-            ctx.with_schema_env(&schema_value, schema_base_uri, |ctx| {
+            ctx.with_schema_env(schema_base_uri, dialect, |ctx| {
                 let compiled = compile_key_evaluated_expr(ctx, schema_obj, true, false, None);
                 let is_recursive_anchor = ctx.draft.supports_recursive_ref_keyword()
                     && schema_obj.get("$recursiveAnchor").and_then(Value::as_bool) == Some(true);
@@ -183,6 +186,7 @@ pub(crate) fn get_or_create_item_eval_fn<E: ValueEmitter>(
     location: &str,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
+    dialect: Dialect,
 ) -> String {
     if let Some(name) = ctx.item_eval_fns.get_name(location) {
         return name.clone();
@@ -192,8 +196,7 @@ pub(crate) fn get_or_create_item_eval_fn<E: ValueEmitter>(
 
     if let Value::Object(schema_obj) = schema {
         let body = ctx.with_item_eval_scope(location, |ctx| {
-            let schema_value = Value::Object(schema_obj.clone());
-            ctx.with_schema_env(&schema_value, schema_base_uri, |ctx| {
+            ctx.with_schema_env(schema_base_uri, dialect, |ctx| {
                 let mut hoist = GuardHoist::inline();
                 let compiled = compile_index_evaluated_expr(ctx, schema_obj, &mut hoist, None);
                 let is_recursive_anchor = ctx.draft.supports_recursive_ref_keyword()
@@ -310,14 +313,15 @@ fn index_anchors(value: &Value, pointer: &mut String, index: &mut HashMap<usize,
     }
 }
 
-/// Get or create a function for a reference location. Its pointer enters the resource at
-/// `schema_base_uri` after `resource_start` bytes.
+/// Get or create a function for a reference location, written in `dialect`. Its pointer enters the
+/// resource at `schema_base_uri` after `resource_start` bytes.
 pub(crate) fn get_or_create_is_valid_fn<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     location: &str,
     resource_start: usize,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
+    dialect: Dialect,
 ) -> String {
     get_or_create_is_valid_fn_with(
         ctx,
@@ -325,6 +329,7 @@ pub(crate) fn get_or_create_is_valid_fn<E: ValueEmitter>(
         resource_start,
         schema,
         schema_base_uri,
+        dialect,
         compile_schema,
     )
 }
@@ -383,6 +388,7 @@ fn recursive_anchor_name<E: ValueEmitter>(
         root.resource_start,
         root.schema,
         root.base_uri,
+        root.dialect,
     ))
 }
 
@@ -393,6 +399,7 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
     resource_start: usize,
     schema: &Value,
     schema_base_uri: Arc<Uri<String>>,
+    dialect: Dialect,
     compile: impl Fn(&mut CompileContext<'_, E>, &Value) -> crate::codegen::CompiledExpr,
 ) -> String {
     if let Some(name) = ctx.is_valid_fns.get_name(location).cloned() {
@@ -417,7 +424,7 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
     let pointer = ref_schema_path.clone();
     let base = located_base(&schema_base_uri);
     let body = ctx.with_is_valid_scope(location, |ctx| {
-        ctx.with_schema_env(schema, schema_base_uri, |ctx| {
+        ctx.with_schema_env(schema_base_uri, dialect, |ctx| {
             // Set schema_path to the location fragment so errors embed the correct path.
             let compiled = ctx.with_schema_path_swap(ref_schema_path, |ctx| {
                 ctx.with_helper_root_scope(|ctx| compile(ctx, schema))
@@ -437,11 +444,21 @@ pub(crate) fn get_or_create_is_valid_fn_with<E: ValueEmitter>(
                     func_name.clone()
                 };
                 let recursive_ident = format_ident!("{}", recursive_name);
-                let key_eval_name =
-                    get_or_create_key_eval_fn(ctx, location, schema, ctx.current_base_uri.clone());
+                let key_eval_name = get_or_create_key_eval_fn(
+                    ctx,
+                    location,
+                    schema,
+                    ctx.current_base_uri.clone(),
+                    ctx.dialect(),
+                );
                 let key_eval_ident = format_ident!("{}", key_eval_name);
-                let item_eval_name =
-                    get_or_create_item_eval_fn(ctx, location, schema, ctx.current_base_uri.clone());
+                let item_eval_name = get_or_create_item_eval_fn(
+                    ctx,
+                    location,
+                    schema,
+                    ctx.current_base_uri.clone(),
+                    ctx.dialect(),
+                );
                 let item_eval_ident = format_ident!("{}", item_eval_name);
                 // Pops mirror pushes in reverse family order on every path.
                 let families = [

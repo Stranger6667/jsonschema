@@ -436,8 +436,6 @@ fn compile_reference_validator<'a, F: Json>(
 
 /// Compile the subschema at the escaped JSON Pointer `pointer` as a `$ref` to it from the document
 /// root `ctx` is at compiles it, so the `$ref`s in it that name it share its node.
-///
-/// A `$schema` the subschema declares picks the draft it compiles with.
 pub(crate) fn compile_pointer_target<F: Json>(
     ctx: &compiler::Context<F>,
     pointer: &str,
@@ -451,7 +449,7 @@ pub(crate) fn compile_pointer_target<F: Json>(
     let identity = TargetIdentity::new(resolved.contents(), target_base.clone());
     ctx.mark_seen(&identity);
     let (contents, resolver, draft) = resolved.into_inner();
-    let resource_ref = draft.detect(contents).create_resource_ref(contents);
+    let resource_ref = draft.create_resource_ref(contents);
     let vocabularies = resolver.find_vocabularies(draft, contents);
     let inner_ctx = ctx
         .with_resolver_and_draft(resolver, resource_ref.draft(), vocabularies, target_base)?

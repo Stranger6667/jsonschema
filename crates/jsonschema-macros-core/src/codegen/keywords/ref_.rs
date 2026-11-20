@@ -169,6 +169,7 @@ fn compile_at<E: ValueEmitter>(
         resolved.resource_start,
         resolved.schema,
         resolved.base_uri,
+        resolved.dialect,
     );
     let func_ident = format_ident!("{}", func_name);
     let call_scope_bindings = if ctx.uses_dynamic_ref {

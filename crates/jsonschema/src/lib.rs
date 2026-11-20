@@ -5207,6 +5207,157 @@ mod tests {
         assert_eq!(validator.is_valid(&json!({"pair": [1]})), expected);
     }
 
+    // A subschema's `$schema` picks its draft whether evaluation reaches it inline or through a
+    // `$ref`, in either compilation order.
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT4, "type": "integer"}), &json!(1.0), false ; "draft 4 type under 2020-12")]
+    #[test_case(DRAFT201909, &json!({"$schema": DRAFT4, "type": "integer"}), &json!(1.0), false ; "draft 4 type under 2019-09")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT4, "type": "integer"}), &json!(1.0), false ; "draft 4 type under draft 7")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT4, "maximum": 5, "exclusiveMaximum": true}), &json!(5), false ; "draft 4 boolean exclusiveMaximum under 2020-12")]
+    #[test_case(DRAFT201909, &json!({"$schema": DRAFT4, "maximum": 5, "exclusiveMaximum": true}), &json!(5), false ; "draft 4 boolean exclusiveMaximum under 2019-09")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT4, "maximum": 5, "exclusiveMaximum": true}), &json!(5), false ; "draft 4 boolean exclusiveMaximum under draft 7")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT201909, "dependentRequired": {"foo": ["bar"]}}), &json!({"foo": 1}), false ; "2019-09 dependentRequired under draft 7")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT201909, "prefixItems": [{"type": "string"}]}), &json!([1]), true ; "2019-09 prefixItems under 2020-12")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT7, "prefixItems": [{"type": "string"}]}), &json!([1]), true ; "draft 7 prefixItems under 2020-12")]
+    #[test_case(DRAFT201909, &json!({"$schema": DRAFT202012, "prefixItems": [{"type": "string"}]}), &json!([1]), false ; "2020-12 prefixItems under 2019-09")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT202012, "prefixItems": [{"type": "string"}]}), &json!([1]), false ; "2020-12 prefixItems under draft 7")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT201909, "items": [{"type": "string"}]}), &json!([1]), false ; "2019-09 array items under 2020-12")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT7, "items": [{"type": "string"}]}), &json!([1]), false ; "draft 7 array items under 2020-12")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT7, "allOf": [{"$ref": "https://example.com/any", "type": "integer"}]}), &json!("x"), true ; "draft 7 keyword beside ref under 2020-12")]
+    #[test_case(DRAFT201909, &json!({"$schema": DRAFT7, "allOf": [{"$ref": "https://example.com/any", "type": "integer"}]}), &json!("x"), true ; "draft 7 keyword beside ref under 2019-09")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT201909, "allOf": [{"$ref": "https://example.com/any", "type": "integer"}]}), &json!("x"), false ; "2019-09 keyword beside ref under draft 7")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT202012, "allOf": [{"$ref": "https://example.com/any", "type": "integer"}]}), &json!("x"), false ; "2020-12 keyword beside ref under draft 7")]
+    #[test_case(DRAFT202012, &json!({"$id": "https://example.com/x", "id": "https://example.com/x", "$schema": DRAFT4, "type": "integer"}), &json!(1.0), false ; "draft 4 resource under 2020-12")]
+    #[test_case(DRAFT7, &json!({"$id": "https://example.com/x", "$schema": DRAFT201909, "dependentRequired": {"foo": ["bar"]}}), &json!({"foo": 1}), false ; "2019-09 resource under draft 7")]
+    #[test_case(DRAFT7, &json!({"$id": "https://example.com/x", "$schema": DRAFT202012, "prefixItems": [{"type": "string"}]}), &json!([1]), false ; "2020-12 resource under draft 7")]
+    fn nested_schema_applies_inline_and_through_ref(
+        root: &str,
+        body: &Value,
+        instance: &Value,
+        expected: bool,
+    ) {
+        let any = json!({});
+        let registry = Registry::new()
+            .add("https://example.com/any", &any)
+            .expect("Valid resource")
+            .prepare()
+            .expect("Registry builds");
+        let verdict = |schema: Value, property: &str| {
+            crate::options()
+                .with_registry(&registry)
+                .build(&schema)
+                .expect("Should build validator")
+                .is_valid(&json!({property: instance}))
+        };
+        let inline_first =
+            json!({"$schema": root, "properties": {"a": body, "b": {"$ref": "#/properties/a"}}});
+        let reference_first =
+            json!({"$schema": root, "properties": {"a": {"$ref": "#/properties/b"}, "b": body}});
+        assert_eq!(
+            [
+                verdict(json!({"$schema": root, "properties": {"a": body}}), "a"),
+                verdict(
+                    json!({"$schema": root, "properties": {"a": {"$ref": "#/definitions/x"}}, "definitions": {"x": body}}),
+                    "a"
+                ),
+                verdict(inline_first.clone(), "a"),
+                verdict(inline_first, "b"),
+                verdict(reference_first.clone(), "a"),
+                verdict(reference_first, "b"),
+            ],
+            [expected; 6]
+        );
+    }
+
+    // A subschema below a `$schema` is in that draft too, and a `$ref` target is in the draft of
+    // where it is written, whatever draft the `$ref` sits in.
+    #[test_case(&json!({"properties": {"a": {"$schema": DRAFT4, "allOf": [{"type": "integer"}]}}}), &json!({"a": 1.0}), false ; "child inline")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "#/$defs/x/allOf/0"}}, "$defs": {"x": {"$schema": DRAFT4, "allOf": [{"type": "integer"}]}}}), &json!({"a": 1.0}), false ; "child through ref")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "#/$defs/x/allOf/0"}}, "$defs": {"x": {"$id": "https://example.com/x", "id": "https://example.com/x", "$schema": DRAFT4, "allOf": [{"type": "integer"}]}}}), &json!({"a": 1.0}), false ; "child of a resource through ref")]
+    #[test_case(&json!({"properties": {"a": {"$schema": DRAFT4, "properties": {"n": {"$ref": "#/$defs/t"}}}, "b": {"$ref": "#/$defs/t"}}, "$defs": {"t": {"type": "integer"}}}), &json!({"a": {"n": 1.0}}), true ; "target in root draft from draft 4 first")]
+    #[test_case(&json!({"properties": {"a": {"$schema": DRAFT4, "properties": {"n": {"$ref": "#/$defs/t"}}}, "b": {"$ref": "#/$defs/t"}}, "$defs": {"t": {"type": "integer"}}}), &json!({"b": 1.0}), true ; "target in root draft from root draft second")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "#/$defs/t"}, "b": {"$schema": DRAFT4, "properties": {"n": {"$ref": "#/$defs/t"}}}}, "$defs": {"t": {"type": "integer"}}}), &json!({"b": {"n": 1.0}}), true ; "target in root draft from draft 4 second")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "#/$defs/t"}, "b": {"$schema": DRAFT4, "properties": {"n": {"$ref": "#/$defs/t"}}}}, "$defs": {"t": {"$schema": DRAFT4, "type": "integer"}}}), &json!({"a": 1.0}), false ; "target in draft 4 from root draft first")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "#/$defs/t"}, "b": {"$schema": DRAFT4, "properties": {"n": {"$ref": "#/$defs/t"}}}}, "$defs": {"t": {"$schema": DRAFT4, "type": "integer"}}}), &json!({"b": {"n": 1.0}}), false ; "target in draft 4 from draft 4 second")]
+    // Draft 4 names a resource with `id`, so the pointer enters it and its `$ref`s resolve there.
+    #[test_case(&json!({"properties": {"a": {"$ref": "#/$defs/x"}}, "$defs": {"x": {"$schema": DRAFT4, "id": "https://example.com/x", "properties": {"n": {"$ref": "#/definitions/y"}}, "definitions": {"y": {"type": "integer"}}}}}), &json!({"a": {"n": 1.0}}), false ; "draft 4 id through ref")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "#/$defs/x/definitions/y"}}, "$defs": {"x": {"$schema": DRAFT4, "definitions": {"y": {"id": "https://example.com/y", "properties": {"n": {"$ref": "#/definitions/z"}}, "definitions": {"z": {"type": "integer"}}}}}}}), &json!({"a": {"n": 1.0}}), false ; "draft 4 id below a draft 4 subschema through ref")]
+    fn nested_schema_draft_through_ref(schema: &Value, instance: &Value, expected: bool) {
+        let validator = validator_for(schema).expect("Should build validator");
+        assert_eq!(validator.is_valid(instance), expected);
+    }
+
+    const NO_VALIDATION: &str = "json-schema:///meta/no-validation";
+
+    // The vocabularies a subschema's `$schema` declares hold for its children, inline and
+    // through a `$ref`: the meta-schema turns `minimum` off.
+    #[test_case(&json!({"properties": {"a": {"$schema": NO_VALIDATION, "allOf": [{"minimum": 5}]}}}), true ; "custom inline")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "#/$defs/x"}}, "$defs": {"x": {"$schema": NO_VALIDATION, "allOf": [{"minimum": 5}]}}}), true ; "custom through ref")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "#/$defs/x/allOf/0"}}, "$defs": {"x": {"$schema": NO_VALIDATION, "allOf": [{"minimum": 5}]}}}), true ; "custom child through ref")]
+    #[test_case(&json!({"$schema": NO_VALIDATION, "properties": {"a": {"$schema": DRAFT201909, "allOf": [{"minimum": 5}]}}}), false ; "standard under custom inline")]
+    #[test_case(&json!({"$schema": NO_VALIDATION, "properties": {"a": {"$ref": "#/$defs/x/allOf/0"}}, "$defs": {"x": {"$schema": DRAFT201909, "allOf": [{"minimum": 5}]}}}), false ; "standard under custom child through ref")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "#c"}}, "$defs": {"x": {"$schema": NO_VALIDATION, "allOf": [{"$anchor": "c", "minimum": 5}]}}}), true ; "custom child through anchor")]
+    #[test_case(&json!({"properties": {"a": {"$dynamicRef": "#c"}}, "$defs": {"x": {"$schema": NO_VALIDATION, "allOf": [{"$dynamicAnchor": "c", "minimum": 5}]}}}), true ; "custom child through dynamic anchor")]
+    #[test_case(&json!({"$schema": NO_VALIDATION, "properties": {"a": {"$ref": "#c"}}, "$defs": {"x": {"$schema": DRAFT202012, "allOf": [{"$anchor": "c", "minimum": 5}]}}}), false ; "standard under custom child through anchor")]
+    #[test_case(&json!({"$schema": NO_VALIDATION, "properties": {"a": {"$id": "https://example.com/r", "allOf": [{"minimum": 5}]}}}), true ; "resource under custom inline")]
+    #[test_case(&json!({"$schema": NO_VALIDATION, "properties": {"a": {"$ref": "https://example.com/r"}}, "$defs": {"r": {"$id": "https://example.com/r", "allOf": [{"minimum": 5}]}}}), true ; "resource under custom through ref")]
+    #[test_case(&json!({"properties": {"a": {"$ref": "https://example.com/r"}}, "$defs": {"x": {"$schema": NO_VALIDATION, "allOf": [{"$id": "https://example.com/r", "minimum": 5}]}}}), true ; "resource below custom through ref")]
+    fn nested_schema_vocabularies_through_ref(schema: &Value, expected: bool) {
+        let registry = no_validation_registry(None);
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(schema)
+            .expect("Should build validator");
+        assert_eq!(validator.is_valid(&json!({"a": 1})), expected);
+    }
+
+    fn no_validation_registry(deep: Option<Value>) -> Registry<'static> {
+        let meta_schema = json!({
+            "$id": NO_VALIDATION,
+            "$schema": DRAFT202012,
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": false
+            }
+        });
+        let registry = Registry::new()
+            .add(NO_VALIDATION, meta_schema)
+            .expect("Valid resource");
+        match deep {
+            Some(document) => registry.add("https://example.com/deep", document),
+            None => Ok(registry),
+        }
+        .expect("Valid resource")
+        .prepare()
+        .expect("Registry builds")
+    }
+
+    // An anchor nested deeper than the registry crawls recursively, below a subschema whose
+    // `$schema` turns `minimum` off, in the document itself and in an owned resource.
+    #[test_case(false ; "borrowed")]
+    #[test_case(true ; "owned")]
+    fn nested_schema_vocabularies_deep_below(owned: bool) {
+        let mut nested = json!({"$anchor": "c", "minimum": 5});
+        for _ in 0..200 {
+            nested = json!({"allOf": [nested]});
+        }
+        let document =
+            json!({"$defs": {"x": {"$schema": NO_VALIDATION, "allOf": [nested]}}, "$ref": "#c"});
+        let (registry, schema) = if owned {
+            (
+                no_validation_registry(Some(document)),
+                json!({"$ref": "https://example.com/deep#c"}),
+            )
+        } else {
+            (no_validation_registry(None), document)
+        };
+        let validator = crate::options()
+            .with_registry(&registry)
+            .build(&schema)
+            .expect("Should build validator");
+        assert!(validator.is_valid(&json!(1)));
+    }
+
     // The fragment of an absolute keyword location is a JSON Pointer from the root of the
     // resource that holds the keyword, not from the root of the document embedding it.
     #[test_case(
@@ -5808,23 +5959,25 @@ mod tests {
     const DRAFT7: &str = "http://json-schema.org/draft-07/schema#";
     const DRAFT202012: &str = "https://json-schema.org/draft/2020-12/schema";
 
-    fn with_embedded_resource(root: &str, resource: &Value) -> Value {
-        json!({"$schema": root, "properties": {"a": resource}})
+    fn with_subschema(root: &str, subschema: &Value) -> Value {
+        json!({"$schema": root, "properties": {"a": subschema}})
     }
 
-    // An embedded resource is checked against the meta-schema of its own `$schema`, not the root's.
+    // A subschema is checked against the meta-schema of its own `$schema`, not the root's.
     #[test_case(DRAFT202012, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "items": [{"type": "string"}]}), &json!(["x"]), &json!([1]) ; "draft 4 tuple items under 2020-12")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT4, "items": [{"type": "string"}]}), &json!(["x"]), &json!([1]) ; "draft 4 tuple items without id under 2020-12")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT4, "minimum": 5, "exclusiveMinimum": true}), &json!(6), &json!(5) ; "draft 4 boolean exclusiveMinimum without id under draft 7")]
     #[test_case(DRAFT202012, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "minimum": 5, "exclusiveMinimum": true}), &json!(6), &json!(5) ; "draft 4 boolean exclusiveMinimum under 2020-12")]
     #[test_case(DRAFT6, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "minimum": 5, "exclusiveMinimum": true}), &json!(6), &json!(5) ; "draft 4 boolean exclusiveMinimum under draft 6")]
     #[test_case(DRAFT4, &json!({"$id": "https://example.com/a", "$schema": DRAFT202012, "exclusiveMinimum": 5}), &json!(6), &json!(5) ; "2020-12 numeric exclusiveMinimum under draft 4")]
-    fn embedded_resource_follows_own_meta_schema(
+    fn subschema_follows_own_meta_schema(
         root: &str,
-        resource: &Value,
+        subschema: &Value,
         valid: &Value,
         invalid: &Value,
     ) {
         let validator =
-            validator_for(&with_embedded_resource(root, resource)).expect("Should build validator");
+            validator_for(&with_subschema(root, subschema)).expect("Should build validator");
         assert_eq!(
             (
                 validator.is_valid(&json!({"a": valid})),
@@ -5834,25 +5987,17 @@ mod tests {
         );
     }
 
-    // The error points at the offending keyword inside the embedded resource.
+    // The error points at the offending keyword inside the subschema.
     #[test_case(DRAFT7, &json!({"$id": "https://example.com/a", "$schema": DRAFT202012, "minContains": -1}), "/properties/a/minContains" ; "2020-12 under draft 7")]
     #[test_case(DRAFT202012, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "minimum": 1, "exclusiveMinimum": 5}), "/properties/a/exclusiveMinimum" ; "draft 4 under 2020-12")]
     #[test_case(DRAFT202012, &json!({"$id": "https://example.com/a", "$schema": DRAFT4, "properties": {"b": {"$id": "https://example.com/b", "$schema": DRAFT202012, "minContains": -1}}}), "/properties/a/properties/b/minContains" ; "2020-12 under draft 4 under 2020-12")]
-    fn embedded_resource_rejected_by_own_meta_schema(root: &str, resource: &Value, expected: &str) {
-        let error = validator_for(&with_embedded_resource(root, resource))
-            .expect_err("Should reject the embedded resource");
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT4, "exclusiveMaximum": 5}), "/properties/a/exclusiveMaximum" ; "draft 4 without id under 2020-12")]
+    #[test_case(DRAFT201909, &json!({"$schema": DRAFT4, "exclusiveMaximum": 5}), "/properties/a/exclusiveMaximum" ; "draft 4 without id under 2019-09")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT4, "exclusiveMaximum": 5}), "/properties/a/exclusiveMaximum" ; "draft 4 without id under draft 7")]
+    fn subschema_rejected_by_own_meta_schema(root: &str, subschema: &Value, expected: &str) {
+        let error = validator_for(&with_subschema(root, subschema))
+            .expect_err("Should reject the subschema");
         assert_eq!(error.instance_path().as_str(), expected);
-    }
-
-    // Without `$id` the subschema is not a resource root, so the root's meta-schema still applies.
-    #[test]
-    fn nested_schema_without_id_follows_root_meta_schema() {
-        let error = validator_for(&with_embedded_resource(
-            DRAFT202012,
-            &json!({"$schema": DRAFT4, "items": [{"type": "string"}]}),
-        ))
-        .expect_err("Should reject array-form `items` under 2020-12");
-        assert_eq!(error.instance_path().as_str(), "/properties/a/items");
     }
 
     const DRAFT201909: &str = "https://json-schema.org/draft/2019-09/schema";

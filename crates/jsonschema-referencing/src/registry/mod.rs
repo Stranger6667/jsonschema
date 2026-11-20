@@ -353,15 +353,24 @@ impl<'a> Registry<'a> {
     /// `$vocabulary` is read from the registry.
     #[must_use]
     pub fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
+        let declared = contents
+            .as_object()
+            .and_then(|obj| obj.get("$schema"))
+            .and_then(Value::as_str);
+        self.vocabularies_declared(draft, declared)
+    }
+
+    /// The vocabulary set `draft` puts in effect under a `$schema` of `declared`.
+    pub(crate) fn vocabularies_declared(
+        &self,
+        draft: Draft,
+        declared: Option<&str>,
+    ) -> VocabularySet {
         // Only a custom meta-schema declares vocabularies of its own; every other schema takes
         // them from `draft`, which the caller may have chosen over the `$schema` declaration.
-        match draft.detect(contents) {
+        match declared.map_or(draft, Draft::from_schema_uri) {
             Draft::Unknown => {
-                if let Some(specification) = contents
-                    .as_object()
-                    .and_then(|obj| obj.get("$schema"))
-                    .and_then(|s| s.as_str())
-                {
+                if let Some(specification) = declared {
                     if let Ok(mut uri) = uri::from_str(specification) {
                         uri.set_fragment(None);
                         if let Some(resource) = self.resource_by_uri(&uri) {
@@ -390,6 +399,18 @@ impl<'a> Registry<'a> {
     }
 
     #[inline]
+    /// The `$schema` above `contents` its vocabularies come from, when its resource root does not
+    /// settle them.
+    pub(crate) fn nested_dialect(&self, contents: &Value) -> Option<&str> {
+        if !self.index.nested_dialects.is_empty() {
+            if let Some(dialect) = self.index.nested_dialects.get(&build::schema_ptr(contents)) {
+                return Some(dialect);
+            }
+        }
+        self.baseline
+            .and_then(|baseline| baseline.nested_dialect(contents))
+    }
+
     pub(crate) fn resource_by_uri(&self, uri: &Uri<String>) -> Option<ResourceRef<'_>> {
         self.index
             .resources

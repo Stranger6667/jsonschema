@@ -71,6 +71,7 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
             root.resource_start,
             root.schema,
             root.base_uri,
+            root.dialect,
         );
         ctx.root_target = Some(root.location);
     }
@@ -105,26 +106,31 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
                 root.resource_start,
                 root.schema,
                 root.base_uri,
+                root.dialect,
             )
         )
     });
     let root_key_eval_ident = if recursive_stack_needed {
+        let dialect = ctx.dialect();
         let name = get_or_create_key_eval_fn(
             &mut ctx,
             "__root_key_eval",
             &config.schema,
             config.base_uri.clone(),
+            dialect,
         );
         Some(format_ident!("{}", name))
     } else {
         None
     };
     let root_item_eval_ident = if recursive_stack_needed {
+        let dialect = ctx.dialect();
         let name = get_or_create_item_eval_fn(
             &mut ctx,
             "__root_item_eval",
             &config.schema,
             config.base_uri.clone(),
+            dialect,
         );
         Some(format_ident!("{}", name))
     } else {

@@ -308,6 +308,13 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) schema_path: String,
 }
 
+/// The draft a schema is written in and the vocabularies in effect for it.
+#[derive(Clone)]
+pub(crate) struct Dialect {
+    pub(crate) draft: Draft,
+    pub(crate) vocabularies: VocabularySet,
+}
+
 /// The vocabularies of `schema`, and the first custom one it requires that the configured
 /// `vocabularies` do not declare.
 fn find_vocabularies(
@@ -316,11 +323,16 @@ fn find_vocabularies(
     schema: &serde_json::Value,
 ) -> (VocabularySet, Option<String>) {
     let vocabularies = config.registry.find_vocabularies(draft, schema);
-    let undeclared = vocabularies
+    let undeclared = undeclared_vocabulary(config, &vocabularies);
+    (vocabularies, undeclared)
+}
+
+/// The first vocabulary in `vocabularies` that nobody implements.
+fn undeclared_vocabulary(config: &CodegenConfig, vocabularies: &VocabularySet) -> Option<String> {
+    vocabularies
         .custom()
         .find(|uri| !config.vocabularies.iter().any(|declared| declared == uri))
-        .map(str::to_owned);
-    (vocabularies, undeclared)
+        .map(str::to_owned)
 }
 
 impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
@@ -471,27 +483,19 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
         f(&mut scope)
     }
 
+    /// `f` in the resource at `schema_base_uri` and the `dialect` its schema is written in.
     pub(crate) fn with_schema_env<T>(
         &mut self,
-        schema: &serde_json::Value,
         schema_base_uri: Arc<Uri<String>>,
+        dialect: Dialect,
         f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
     ) -> T {
-        let prev_base_uri = std::mem::replace(&mut self.current_base_uri, schema_base_uri);
-        let prev_draft = self.draft;
-        let prev_vocabularies = self.vocabularies.clone();
-
-        if let Some(schema_uri) = schema.get("$schema").and_then(|v| v.as_str()) {
-            self.draft = self
-                .draft
-                .detect(&serde_json::json!({ "$schema": schema_uri }));
-        }
-        let (vocabularies, undeclared_vocabulary) =
-            find_vocabularies(self.config, self.draft, schema);
-        self.vocabularies = vocabularies;
         if self.undeclared_vocabulary.is_none() {
-            self.undeclared_vocabulary = undeclared_vocabulary;
+            self.undeclared_vocabulary = undeclared_vocabulary(self.config, &dialect.vocabularies);
         }
+        let prev_base_uri = std::mem::replace(&mut self.current_base_uri, schema_base_uri);
+        let prev_draft = std::mem::replace(&mut self.draft, dialect.draft);
+        let prev_vocabularies = std::mem::replace(&mut self.vocabularies, dialect.vocabularies);
 
         let mut scope = SchemaEnvGuard {
             ctx: self,
@@ -500,6 +504,30 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             prev_vocabularies,
         };
         f(&mut scope)
+    }
+
+    /// The dialect in effect here.
+    pub(crate) fn dialect(&self) -> Dialect {
+        Dialect {
+            draft: self.draft,
+            vocabularies: self.vocabularies.clone(),
+        }
+    }
+
+    /// The dialect `schema` is written in: the one its `$schema` names, or the one in effect here.
+    pub(crate) fn dialect_of(&self, schema: &serde_json::Value) -> Dialect {
+        if schema
+            .get("$schema")
+            .and_then(serde_json::Value::as_str)
+            .is_none()
+        {
+            return self.dialect();
+        }
+        let draft = self.draft.detect(schema);
+        Dialect {
+            draft,
+            vocabularies: self.config.registry.find_vocabularies(draft, schema),
+        }
     }
 
     /// `f` in the draft and vocabularies `schema`'s `$schema` names.

@@ -1,10 +1,11 @@
 use crate::codegen::emit::ValueEmitter;
 use std::{borrow::Cow, sync::Arc};
 
-use referencing::{unescape_segment, Draft, Registry, Resolved, Uri};
+use referencing::{unescape_segment, Registry, Resolved, Uri};
 use serde_json::Value;
 
 use super::{draft::DraftExt, helpers::anchor_pointer, CompileContext};
+use crate::context::Dialect;
 
 pub(crate) struct ResolvedRef<'cfg> {
     pub(crate) schema: &'cfg Value,
@@ -14,8 +15,8 @@ pub(crate) struct ResolvedRef<'cfg> {
     pub(crate) resource_start: usize,
     /// Base URI of the resolved schema (for resolving nested references)
     pub(crate) base_uri: Arc<Uri<String>>,
-    /// The draft of the resource it sits in.
-    pub(crate) draft: Draft,
+    /// The dialect it is written in: its resource's, or the one a `$schema` on the way to it names.
+    pub(crate) dialect: Dialect,
 }
 
 /// Resolve a short top-level `$ref` chain for schema-shape analysis.
@@ -89,14 +90,18 @@ pub(crate) fn resolve_ref<'cfg, E: ValueEmitter>(
     };
     let location_key = target_location(target.document(), &pointer);
     let resolved_base_uri = resolved.resolver().base_uri().clone();
-    let (contents, _, draft) = resolved.into_inner();
+    let (contents, resolver, draft) = resolved.into_inner();
+    let vocabularies = resolver.find_vocabularies(draft, contents);
 
     Ok(ResolvedRef {
         schema: contents,
         location: location_key,
         resource_start,
         base_uri: resolved_base_uri,
-        draft,
+        dialect: Dialect {
+            draft,
+            vocabularies,
+        },
     })
 }
 

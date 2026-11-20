@@ -33,7 +33,7 @@ use super::{
         push_recursive_key_eval, IS_VALID_FAMILY, ITEM_EVAL_FAMILY, KEY_EVAL_FAMILY,
     },
 };
-use crate::context::CompileContext;
+use crate::context::{CompileContext, Dialect};
 
 /// Keywords whose units `evaluate` reports, in the runtime's priority order.
 const LEAF_KEYWORDS: [&str; 22] = [
@@ -934,7 +934,16 @@ impl Tree {
         pointer: String,
     ) -> syn::Result<usize> {
         let outer = std::mem::take(&mut self.resource_root);
-        let added = in_resource(ctx, base.clone(), draft, schema, |ctx| {
+        let vocabularies = ctx
+            .config
+            .registry
+            .resolver((**base).clone())
+            .find_vocabularies(draft, schema);
+        let dialect = Dialect {
+            draft,
+            vocabularies,
+        };
+        let added = in_resource(ctx, base.clone(), dialect, |ctx| {
             self.add(ctx, schema, pointer)
         });
         self.resource_root = outer;
@@ -951,37 +960,24 @@ impl Tree {
         let pointer = location_pointer(ctx, &resolved.location, &resolved.base_uri);
         let root = pointer[..resolved.resource_start].to_string();
         let outer = std::mem::replace(&mut self.resource_root, root);
-        let added = in_resource(
-            ctx,
-            resolved.base_uri,
-            resolved.draft,
-            resolved.schema,
-            |ctx| {
-                self.based = true;
-                self.add(ctx, resolved.schema, pointer)
-            },
-        );
+        let added = in_resource(ctx, resolved.base_uri, resolved.dialect, |ctx| {
+            self.based = true;
+            self.add(ctx, resolved.schema, pointer)
+        });
         self.resource_root = outer;
         added
     }
 }
 
-/// `f` with `ctx` at a reference target `contents` in the resource at `base`: in that resource's
-/// `draft`, with the vocabularies the target or its resource names.
+/// `f` with `ctx` at a reference target in the resource at `base`, written in `dialect`.
 fn in_resource<'cfg, E: ValueEmitter, T>(
     ctx: &mut CompileContext<'cfg, E>,
     base: Arc<Uri<String>>,
-    draft: Draft,
-    contents: &Value,
+    dialect: Dialect,
     f: impl FnOnce(&mut CompileContext<'cfg, E>) -> T,
 ) -> T {
-    let vocabularies = ctx
-        .config
-        .registry
-        .resolver((*base).clone())
-        .find_vocabularies(draft, contents);
-    let outer_draft = std::mem::replace(&mut ctx.draft, draft);
-    let outer_vocabularies = std::mem::replace(&mut ctx.vocabularies, vocabularies);
+    let outer_draft = std::mem::replace(&mut ctx.draft, dialect.draft);
+    let outer_vocabularies = std::mem::replace(&mut ctx.vocabularies, dialect.vocabularies);
     let result = ctx.with_base_uri_scope(base, f);
     ctx.draft = outer_draft;
     ctx.vocabularies = outer_vocabularies;
@@ -2659,7 +2655,12 @@ fn scope_stacks<E: ValueEmitter>(
             let resolved = ctx
                 .with_base_uri_scope(resource.base.clone(), |ctx| resolve_ref(ctx, "#"))
                 .expect("a resource's root resolves");
-            let (location, schema, base) = (resolved.location, resolved.schema, resolved.base_uri);
+            let (location, schema, base, dialect) = (
+                resolved.location,
+                resolved.schema,
+                resolved.base_uri,
+                resolved.dialect,
+            );
             let is_valid = format_ident!(
                 "{}",
                 get_or_create_is_valid_fn(
@@ -2668,15 +2669,16 @@ fn scope_stacks<E: ValueEmitter>(
                     resolved.resource_start,
                     schema,
                     base.clone(),
+                    dialect.clone(),
                 )
             );
             let key_eval = format_ident!(
                 "{}",
-                get_or_create_key_eval_fn(ctx, &location, schema, base.clone())
+                get_or_create_key_eval_fn(ctx, &location, schema, base.clone(), dialect.clone())
             );
             let item_eval = format_ident!(
                 "{}",
-                get_or_create_item_eval_fn(ctx, &location, schema, base)
+                get_or_create_item_eval_fn(ctx, &location, schema, base, dialect)
             );
             let errors = format_ident!("{is_valid}_errors");
             enter.extend([

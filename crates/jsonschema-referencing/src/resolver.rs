@@ -382,12 +382,16 @@ impl<'r> Resolver<'r> {
         self.registry.resolve_uri(base, uri)
     }
 
-    /// Vocabulary of `contents` when it declares `$schema`; otherwise of the containing resource
-    /// root (the resolver's base URI), so a `$schema`-less subschema inherits it.
+    /// Vocabulary of `contents` when it declares `$schema`; otherwise of the `$schema` above it
+    /// that its resource root does not settle, or of the containing resource root (the resolver's
+    /// base URI), so a `$schema`-less subschema inherits it.
     #[must_use]
     pub fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
         if contents.get("$schema").is_some() {
             return self.registry.find_vocabularies(draft, contents);
+        }
+        if let Some(declared) = self.registry.nested_dialect(contents) {
+            return self.registry.vocabularies_declared(draft, Some(declared));
         }
         if let Some(resource) = self.registry.resource_by_uri(self.base_uri.as_ref()) {
             return self.registry.find_vocabularies(draft, resource.contents());

@@ -5,7 +5,7 @@ use crate::{
     path::JsonPointerSegment,
     spec::{self, draft201909, draft202012, draft4, draft6, draft7, ObjectAnalysis},
     vocabularies::{VocabularySet, DRAFT_2019_09_VOCABULARIES, DRAFT_2020_12_VOCABULARIES},
-    Anchor, Error, Resolver, Resource, ResourceRef, Segments,
+    Anchor, Error, Resource, ResourceRef, Segments,
 };
 
 /// JSON Schema specification versions.
@@ -165,22 +165,14 @@ impl Draft {
             Draft::Draft202012 | Draft::Unknown => anchor::anchor(self, contents),
         }
     }
-    pub(crate) fn maybe_in_subresource<'r>(
-        self,
-        segments: &Segments,
-        resolver: &Resolver<'r>,
-        subresource: ResourceRef<'_>,
-    ) -> Result<Resolver<'r>, Error> {
+    /// Whether `contents`, at `segments` below a schema in this draft, is a subschema.
+    pub(crate) fn is_subschema(self, segments: &Segments, contents: &Value) -> bool {
         match self {
-            Draft::Draft4 => draft4::maybe_in_subresource(segments, resolver, subresource),
-            Draft::Draft6 => draft6::maybe_in_subresource(segments, resolver, subresource),
-            Draft::Draft7 => draft7::maybe_in_subresource(segments, resolver, subresource),
-            Draft::Draft201909 => {
-                draft201909::maybe_in_subresource(segments, resolver, subresource)
-            }
-            Draft::Draft202012 | Draft::Unknown => {
-                draft202012::maybe_in_subresource(segments, resolver, subresource)
-            }
+            Draft::Draft4 => draft4::is_subschema(segments, contents),
+            Draft::Draft6 => draft6::is_subschema(segments, contents),
+            Draft::Draft7 => draft7::is_subschema(segments, contents),
+            Draft::Draft201909 => draft201909::is_subschema(segments, contents),
+            Draft::Draft202012 | Draft::Unknown => draft202012::is_subschema(segments),
         }
     }
     /// Whether this draft defines `keyword`; `$comment` and meta-data keywords such as `title`

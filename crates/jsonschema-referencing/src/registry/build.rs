@@ -14,7 +14,7 @@ use crate::{
     path::JsonPointerSegment,
     pointer::{parse_index, pointer, ParsedPointer, ParsedPointerSegment},
     resource::unescape_segment,
-    spec::Children,
+    spec::{Children, ObjectAnalysis},
     uri, Draft, Error, JsonPointerNode, Retrieve,
 };
 
@@ -717,6 +717,15 @@ fn crawl_schema<'v>(
         return Ok(());
     };
     let (draft, analysis) = analyze_child(draft, object, depth != 0);
+    if analysis.meta_schema.is_some() {
+        index_nested_dialect(
+            subschema,
+            draft,
+            &analysis,
+            is_document_root,
+            &mut crawl.state.index,
+        );
+    }
 
     if let Some(id) = analysis.id {
         let ResolvedId {
@@ -882,6 +891,15 @@ fn crawl_owned_schema<'r, 'doc>(
         return Ok(());
     };
     let (draft, analysis) = analyze_child(draft, object, depth != 0);
+    if analysis.meta_schema.is_some() {
+        index_nested_dialect(
+            subschema,
+            draft,
+            &analysis,
+            is_document_root,
+            &mut state.index,
+        );
+    }
 
     if let Some(id) = analysis.id {
         let ResolvedId {
@@ -952,6 +970,39 @@ fn crawl_owned_schema<'r, 'doc>(
             }
         })
     })
+}
+
+/// Index the subschemas below `subschema`, which declares `$schema`, under that `$schema` when
+/// their resource root does not settle their vocabularies: `subschema` has no id, or its
+/// `$schema` names a custom meta-schema, whose vocabularies an embedded resource without a
+/// `$schema` also takes. A subschema below with a `$schema` of its own starts its own scope.
+#[cold]
+fn index_nested_dialect(
+    subschema: &Value,
+    draft: Draft,
+    analysis: &ObjectAnalysis<'_>,
+    is_document_root: bool,
+    index: &mut Index<'_>,
+) {
+    let Some(meta_schema) = analysis.meta_schema else {
+        return;
+    };
+    if (is_document_root || analysis.id.is_some())
+        && Draft::from_schema_uri(meta_schema) != Draft::Unknown
+    {
+        return;
+    }
+    let dialect: Arc<str> = Arc::from(meta_schema);
+    let mut pending: Vec<&Value> = draft.subresources_of(subschema).collect();
+    while let Some(child) = pending.pop() {
+        if child.get("$schema").is_some() {
+            continue;
+        }
+        index
+            .nested_dialects
+            .insert(schema_ptr(child), Arc::clone(&dialect));
+        pending.extend(draft.subresources_of(child));
+    }
 }
 
 // Children arrive with their parent's draft; a child's own `$schema` switches it. Entry nodes
@@ -1342,7 +1393,7 @@ fn base_uri_ptr(base: &Arc<Uri<String>>) -> NonZeroUsize {
     NonZeroUsize::new(Arc::as_ptr(base) as usize).expect("Arc pointer should never be null")
 }
 
-fn schema_ptr(schema: &Value) -> NonZeroUsize {
+pub(super) fn schema_ptr(schema: &Value) -> NonZeroUsize {
     NonZeroUsize::new(std::ptr::from_ref::<Value>(schema) as usize)
         .expect("Value pointer should never be null")
 }

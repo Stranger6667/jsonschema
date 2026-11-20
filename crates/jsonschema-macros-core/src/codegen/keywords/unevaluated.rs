@@ -61,6 +61,7 @@ fn compile_branch_guard<E: ValueEmitter>(
         0,
         subschema,
         ctx.current_base_uri.clone(),
+        ctx.dialect_of(subschema),
         compile_guard_validity,
     );
     let func_ident = format_ident!("{}", func_name);
@@ -414,12 +415,14 @@ impl EvalKind {
                 &resolved.location,
                 resolved.schema,
                 resolved.base_uri.clone(),
+                resolved.dialect.clone(),
             ),
             EvalKind::Item => get_or_create_item_eval_fn(
                 ctx,
                 &resolved.location,
                 resolved.schema,
                 resolved.base_uri.clone(),
+                resolved.dialect.clone(),
             ),
         };
         format_ident!("{}", name)

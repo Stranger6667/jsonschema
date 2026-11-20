@@ -167,6 +167,7 @@ fn compile_in_dialect<E: ValueEmitter>(
                         0,
                         &Value::Object(schema.clone()),
                         ctx.current_base_uri.clone(),
+                        ctx.dialect(),
                     )
                 };
                 let func_ident = format_ident!("{}", func_name);

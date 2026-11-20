@@ -2419,5 +2419,59 @@
       { "data": { "a": { "b": 1 } }, "valid": false },
       { "data": 5, "valid": false }
     ]
+  },
+  {
+    "description": "raw: a reference below a nested $schema keeps the document raw",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": { "a": { "$ref": "#/$defs/x/allOf/0" } },
+      "$defs": {
+        "x": { "$schema": "http://json-schema.org/draft-04/schema#", "allOf": [{ "type": "integer" }] }
+      }
+    },
+    "kind": "raw",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": { "a": { "$ref": "#/$defs/x/allOf/0" } },
+      "$defs": {
+        "x": { "$schema": "http://json-schema.org/draft-04/schema#", "allOf": [{ "type": "integer" }] }
+      }
+    },
+    "tests": [
+      { "data": { "a": 1 }, "valid": true },
+      { "data": { "a": 1.0 }, "valid": false }
+    ]
+  },
+  {
+    "description": "raw: a reference into an embedded resource with its own $schema keeps the document raw",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": { "a": { "$ref": "#/$defs/x/allOf/0" } },
+      "$defs": {
+        "x": {
+          "$id": "https://example.com/x",
+          "id": "https://example.com/x",
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "allOf": [{ "type": "integer" }]
+        }
+      }
+    },
+    "kind": "raw",
+    "expected": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "properties": { "a": { "$ref": "#/$defs/x/allOf/0" } },
+      "$defs": {
+        "x": {
+          "$id": "https://example.com/x",
+          "id": "https://example.com/x",
+          "$schema": "http://json-schema.org/draft-04/schema#",
+          "allOf": [{ "type": "integer" }]
+        }
+      }
+    },
+    "tests": [
+      { "data": { "a": 1 }, "valid": true },
+      { "data": { "a": 1.0 }, "valid": false }
+    ]
   }
 ]
