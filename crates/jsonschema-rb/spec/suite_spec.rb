@@ -142,13 +142,9 @@ RSpec.describe "JSON Schema Test Suite" do
                                                                               "codegen validate mismatch.\n#{error_ctx}"
                   expect(JSONSchemaTestSuite.each_error(case_id, data).empty?).to be(expected_valid),
                                                                                   "codegen each_error mismatch.\n#{error_ctx}"
-                  # `nil` until the generator supports `evaluate` for the case's schema; otherwise the
-                  # outputs of the generated validator and of a runtime one built like it.
-                  output = JSONSchemaTestSuite.evaluate(case_id, data)
-                  unless output.nil?
-                    generated, runtime = JSON.parse(output)
-                    expect(generated).to eq(runtime), "codegen evaluate mismatch.\n#{error_ctx}"
-                  end
+                  # The outputs of the generated validator and of a runtime one built like it.
+                  generated, runtime = JSON.parse(JSONSchemaTestSuite.evaluate(case_id, data))
+                  expect(generated).to eq(runtime), "codegen evaluate mismatch.\n#{error_ctx}"
                 end
               end
             end

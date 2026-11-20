@@ -15,8 +15,7 @@ pub struct SuiteEntry {
     pub validate: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Option<String>>,
     pub iter_errors: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Vec<String>>,
     /// `[generated, runtime]` as JSON, each the `list` and `hierarchical` outputs of a validator
-    /// with the same features and representation; `None` while the generator does not support the
-    /// case's schema.
+    /// with the same features and representation; `None` for a schema entry.
     pub evaluate: for<'py> fn(&Bound<'py, PyAny>) -> PyResult<Option<String>>,
 }
 
