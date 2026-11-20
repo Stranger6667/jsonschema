@@ -15,6 +15,7 @@
 - `$ref` to a `$dynamicAnchor` resolving through the dynamic scope like `$dynamicRef`, to an outer `$dynamicAnchor` of the same name instead of the schema it names. [#1923](https://github.com/Stranger6667/jsonschema/issues/1923)
 - `$dynamicRef` in a `$ref` cycle resolving as on the first pass through the cycle, ignoring a `$dynamicAnchor` that a later pass brings into the dynamic scope.
 - `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
+- `async_options().with_retriever` discarding the base URI set by `with_base_uri`.
 - `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
 - `Validator` results depending on how references name a schema that a `$ref` cycle passes through, such as `cycle` and `#` inside it.
 - `Validator` results for a schema that references itself with `#` differing from the same schema reached through a `$ref`, such as `{"not": {"$ref": "#"}}` rejecting every instance.

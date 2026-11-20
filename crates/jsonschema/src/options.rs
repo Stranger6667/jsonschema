@@ -769,7 +769,7 @@ impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::Retrieve>, F> {
 }
 
 #[cfg(feature = "resolve-async")]
-impl<'i, F: Json> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> {
+impl<F: Json> ValidationOptions<'_, Arc<dyn referencing::AsyncRetrieve>, F> {
     /// Build a JSON Schema validator using the current async options.
     ///
     /// # Errors
@@ -825,28 +825,9 @@ impl<'i, F: Json> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> 
     }
 
     #[must_use]
-    pub fn with_retriever(
-        self,
-        retriever: impl referencing::AsyncRetrieve + 'static,
-    ) -> ValidationOptions<'i, Arc<dyn referencing::AsyncRetrieve>, F> {
-        ValidationOptions {
-            draft: self.draft,
-            retriever: Arc::new(retriever),
-            content_media_type_checks: self.content_media_type_checks,
-            content_encoding_checks_and_converters: self.content_encoding_checks_and_converters,
-            base_uri: None,
-            registry: self.registry,
-            formats: self.formats,
-            validate_formats: self.validate_formats,
-            validate_schema: self.validate_schema,
-            ignore_unknown_formats: self.ignore_unknown_formats,
-            keywords: self.keywords,
-            vocabularies: self.vocabularies,
-            pattern_options: self.pattern_options,
-            pattern_cache: self.pattern_cache,
-            email_options: self.email_options,
-            representation: PhantomData,
-        }
+    pub fn with_retriever(mut self, retriever: impl referencing::AsyncRetrieve + 'static) -> Self {
+        self.retriever = Arc::new(retriever);
+        self
     }
     #[allow(clippy::unused_async, clippy::unused_async_trait_impl)]
     pub(crate) async fn draft_for(&self, contents: &Value) -> Result<Draft, referencing::Error> {
@@ -1618,6 +1599,23 @@ mod tests {
         assert_eq!(retriever.retrieved(), expected);
         assert!(validator.is_valid(&json!("foo")));
         assert!(!validator.is_valid(&json!(1)));
+    }
+
+    // Relative references resolve against the base URI set before the retriever.
+    #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
+    #[tokio::test]
+    async fn async_with_retriever_keeps_base_uri() {
+        let retriever = RecordingRetriever::default();
+        crate::async_options()
+            .with_base_uri("https://example.com/root/")
+            .with_retriever(retriever.clone())
+            .build(&json!({"$ref": "other.json"}))
+            .await
+            .expect("Validator should build");
+        assert_eq!(
+            retriever.retrieved(),
+            ["https://example.com/root/other.json"]
+        );
     }
 
     // A meta-schema already in the registry still supplies the vocabularies.
