@@ -42,7 +42,6 @@ pub(crate) fn unevaluated_items<E: ValueEmitter>(
     )
 }
 
-/// Compile the "unevaluatedItems" keyword.
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,

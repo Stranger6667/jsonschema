@@ -117,7 +117,7 @@ fn compile_in_dialect<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
 ) -> CompiledExpr {
-    // Older drafts ignore siblings when `$ref` is present.
+    // Up to Draft 7, keywords beside `$ref` are ignored.
     if !ctx.draft.supports_adjacent_validation() {
         if let Some(ref_value) = schema.get("$ref") {
             return keywords::ref_::compile(ctx, ref_value);

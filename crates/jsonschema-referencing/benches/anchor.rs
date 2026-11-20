@@ -21,7 +21,6 @@ fn bench_anchor_lookup(c: &mut Criterion) {
         .expect("Invalid registry input");
     let mut group = c.benchmark_group("Anchor Lookup");
 
-    // Benchmark lookup of existing anchor
     group.bench_with_input(
         BenchmarkId::new("resolve", "small"),
         &registry,

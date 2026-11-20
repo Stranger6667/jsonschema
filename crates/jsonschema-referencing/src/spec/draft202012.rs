@@ -34,8 +34,7 @@ type ObjectChildIter<'a> = FlatMap<
     fn((&'a std::string::String, &'a Value)) -> ChildIterInner<'a>,
 >;
 
-/// A simple iterator that either wraps an iterator producing &Value or is empty.
-/// NOTE: It is noticeably slower if `Object` is boxed.
+/// Subschemas of a schema object, or none. `Object` stays unboxed: boxing it slows iteration.
 #[allow(clippy::large_enum_variant)]
 pub(crate) enum ChildIter<'a> {
     Object(ObjectChildIter<'a>),

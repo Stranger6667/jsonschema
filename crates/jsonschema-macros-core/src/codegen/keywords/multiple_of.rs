@@ -11,7 +11,7 @@ pub(crate) fn compile<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Valu
     let err_instance = E::err_instance(format_ident!("instance"));
     let check = generate_multiple_of_check(value);
 
-    // If the check itself is an error expression (invalid schema), just return it as-is.
+    // For an invalid `multipleOf` value the check is a compile error.
     if !value.is_number() || !is_strictly_positive_number(value) {
         return CompiledExpr::from_error(check);
     }

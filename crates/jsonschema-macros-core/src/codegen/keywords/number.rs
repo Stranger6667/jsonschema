@@ -201,7 +201,7 @@ fn build_limit_value_expr(value: &Value, value_json: &str) -> TokenStream {
     } else if let Some(signed) = value.as_i64() {
         quote! { __sj::Value::Number(__sj::Number::from(#signed)) }
     } else {
-        // Float or arbitrary-precision: use LazyLock to parse at runtime.
+        // Float or arbitrary-precision: parse once, on first use.
         quote! {
             {
                 static LIMIT: __Lazy<__sj::Value> =

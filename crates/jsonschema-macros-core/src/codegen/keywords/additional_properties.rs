@@ -11,7 +11,7 @@ use quote::{format_ident, quote};
 use serde_json::Value;
 
 // The wildcard arm for keys that are not defined properties. It runs only without patternProperties
-// (patterns route through `object_pass`), so a key reaching it is simply not a defined property, and
+// (patterns route through `object_pass`), so a key reaching it is not a defined property, and
 // `additionalProperties: false` is instead rejected by the known-keys precheck.
 pub(super) fn compile_wildcard_arm<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,

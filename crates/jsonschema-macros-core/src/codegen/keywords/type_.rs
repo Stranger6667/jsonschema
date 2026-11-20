@@ -12,7 +12,7 @@ use super::super::{
     CompileContext, CompiledExpr,
 };
 
-/// Match pattern for a type whose check is a bare serde variant pattern.
+/// Match pattern for a type checked by its JSON type alone.
 /// `None` for "number"/"integer", whose checks carry an integer sub-guard.
 pub(crate) fn simple_type_pattern<E: ValueEmitter>(ty: &str) -> Option<TokenStream> {
     Some(match ty {

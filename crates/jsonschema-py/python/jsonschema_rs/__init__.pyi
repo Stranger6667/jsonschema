@@ -82,15 +82,41 @@ class ListOutput(TypedDict):
 @final
 class Evaluation:
     valid: bool
-    def flag(self) -> FlagOutput: ...
-    def list(self) -> ListOutput: ...
-    def hierarchical(self) -> OutputUnit: ...
-    def annotations(self) -> List[EvaluationAnnotation]: ...
-    def errors(self) -> List[EvaluationErrorEntry]: ...
+    """Whether the evaluated instance is valid."""
+
+    def flag(self) -> FlagOutput:
+        """Return the flag output as a dict."""
+        ...
+    def list(self) -> ListOutput:
+        """Return the list output as a dict."""
+        ...
+    def hierarchical(self) -> OutputUnit:
+        """Return the hierarchical output as a dict."""
+        ...
+    def annotations(self) -> List[EvaluationAnnotation]:
+        """Return collected annotations for all evaluated nodes."""
+        ...
+    def errors(self) -> List[EvaluationErrorEntry]:
+        """Return collected errors for all evaluated nodes."""
+        ...
     def __repr__(self) -> str: ...
 
 @final
 class FancyRegexOptions:
+    """Configuration for the fancy-regex engine, which supports lookaround and backreferences.
+
+        >>> validator = validator_for(
+        ...     {"type": "string", "pattern": "^(a+)+$"},  # Potentially problematic pattern
+        ...     pattern_options=FancyRegexOptions(backtrack_limit=10000)
+        ... )
+
+    Parameters:
+        backtrack_limit: Maximum number of backtracking steps
+        size_limit: Maximum compiled pattern size in bytes
+        dfa_size_limit: Maximum regex DFA cache size in bytes
+        syntax: "ecma262" translates patterns for the engine, "engine" passes them to it unchanged
+    """
+
     def __new__(
         cls,
         backtrack_limit: int | None = None,
@@ -102,6 +128,20 @@ class FancyRegexOptions:
 
 @final
 class RegexOptions:
+    """Configuration for the regex engine, which matches in linear time and supports no lookaround
+    or backreferences.
+
+        >>> validator = validator_for(
+        ...     schema,
+        ...     pattern_options=RegexOptions()
+        ... )
+
+    Parameters:
+        size_limit: Maximum compiled pattern size in bytes
+        dfa_size_limit: Maximum regex DFA cache size in bytes
+        syntax: "ecma262" translates patterns for the engine, "engine" passes them to it unchanged
+    """
+
     def __new__(
         cls,
         size_limit: int | None = None,
@@ -112,7 +152,25 @@ class RegexOptions:
 
 @final
 class EmailOptions:
-    """Configuration for email format validation."""
+    """Configuration for email format validation.
+
+        >>> from jsonschema_rs import validator_for, EmailOptions
+        >>> validator = validator_for(
+        ...     {"format": "email", "type": "string"},
+        ...     validate_formats=True,
+        ...     email_options=EmailOptions(require_tld=True)
+        ... )
+        >>> validator.is_valid("user@localhost")
+        False
+        >>> validator.is_valid("user@example.com")
+        True
+
+    Parameters:
+        require_tld: Require a top-level domain (e.g., reject "user@localhost")
+        allow_domain_literal: Allow IP address literals like "user@[127.0.0.1]"
+        allow_display_text: Allow display names like "Name <user@example.com>"
+        minimum_sub_domains: Minimum number of domain segments required
+    """
 
     def __new__(
         cls,
@@ -125,7 +183,20 @@ class EmailOptions:
 
 @final
 class HttpOptions:
-    """Configuration for HTTP client used in schema retrieval."""
+    """Configuration for the HTTP client that fetches external schemas.
+
+        >>> from jsonschema_rs import validator_for, HttpOptions
+        >>> validator = validator_for(
+        ...     {"$ref": "https://example.com/schema.json"},
+        ...     http_options=HttpOptions(timeout=30.0, connect_timeout=10.0)
+        ... )
+
+    Parameters:
+        timeout: Total request timeout in seconds (default: None - no timeout)
+        connect_timeout: Connection timeout in seconds (default: None - no timeout)
+        tls_verify: Whether to verify TLS certificates (default: True)
+        ca_cert: Path to a custom CA certificate file in PEM format (default: None)
+    """
 
     timeout: float | None
     connect_timeout: float | None
@@ -166,9 +237,12 @@ def is_valid(
     vocabularies: Sequence[str] | None = None,
     offline: bool | None = None,
 ) -> bool:
-    """Check if a JSON instance is valid against a schema.
+    """Return whether `instance` is valid under `schema`. Stops at the first error.
 
-    Returns True if valid, False otherwise. Stops at the first error.
+        >>> is_valid({"minimum": 5}, 3)
+        False
+
+    To validate many instances against one schema, use `validator_for(schema).is_valid`.
     """
     ...
 
@@ -190,9 +264,13 @@ def validate(
     vocabularies: Sequence[str] | None = None,
     offline: bool | None = None,
 ) -> None:
-    """Validate a JSON instance against a schema.
+    """Raise `ValidationError` for the first error of `instance` under `schema`.
 
-    Raises ValidationError if invalid. Stops at the first error.
+        >>> validate({"minimum": 5}, 3)
+        ...
+        ValidationError: 3 is less than the minimum of 5
+
+    To validate many instances against one schema, use `validator_for(schema).validate`.
     """
     ...
 
@@ -214,9 +292,12 @@ def iter_errors(
     vocabularies: Sequence[str] | None = None,
     offline: bool | None = None,
 ) -> Iterator[ValidationError]:
-    """Iterate over all validation errors.
+    """Iterate over every `ValidationError` of `instance` under `schema`.
 
-    Returns an iterator of ValidationError objects for all errors found.
+        >>> next(iter_errors({"minimum": 5}, 3))
+        <ValidationError: '3 is less than the minimum of 5'>
+
+    To validate many instances against one schema, use `validator_for(schema).iter_errors`.
     """
     ...
 
@@ -237,22 +318,30 @@ def evaluate(
     vocabularies: Sequence[str] | None = None,
     offline: bool | None = None,
 ) -> Evaluation:
-    """Evaluate an instance and return structured output.
+    """Evaluate `instance` against `schema` and return an `Evaluation` holding the output formats.
 
-    Returns an Evaluation object with flag(), list(), and hierarchical() output formats.
+        >>> evaluation = evaluate({"type": "integer"}, "oops")
+        >>> evaluation.flag()
+        {'valid': False}
+        >>> evaluation.errors()
+        [{'schemaLocation': '/type', 'absoluteKeywordLocation': None, 'instanceLocation': '', 'error': '"oops" is not of type "integer"'}]
     """
     ...
 
 class ReferencingError(Exception):
+    """A reference could not be resolved or its resource could not be retrieved."""
+
     message: str
     def __init__(self, message: str) -> None: ...
     def __eq__(self, other: object) -> bool: ...
     def __hash__(self) -> int: ...
 
 class ValidationErrorKind:
+    """Type of validation failure with its contextual data."""
+
     @property
     def name(self) -> str:
-        """The JSON Schema keyword that triggered this error."""
+        """The keyword that failed, or ``"falseSchema"`` for a ``false`` schema."""
         ...
     @property
     def value(self) -> Any: ...
@@ -442,6 +531,8 @@ class ValidationErrorKind:
         error: ReferencingError
 
 class ValidationError(ValueError):
+    """An instance is invalid under a provided schema."""
+
     message: str
     verbose_message: str
     schema_path: list[str | int]
@@ -488,17 +579,80 @@ class Validator:
         vocabularies: Sequence[str] | None = None,
         offline: bool | None = None,
     ) -> Self: ...
-    def is_valid(self, instance: Any) -> bool: ...
-    def validate(self, instance: Any) -> None: ...
-    def iter_errors(self, instance: Any) -> Iterator[ValidationError]: ...
-    def evaluate(self, instance: Any) -> Evaluation: ...
+    def is_valid(self, instance: Any) -> bool:
+        """Return whether `instance` is valid. Stops at the first error.
+
+            >>> validator = validator_for({"minimum": 5})
+            >>> validator.is_valid(3)
+            False
+        """
+        ...
+    def validate(self, instance: Any) -> None:
+        """Raise `ValidationError` for the first error of `instance`.
+
+            >>> validator = validator_for({"minimum": 5})
+            >>> validator.validate(3)
+            ...
+            ValidationError: 3 is less than the minimum of 5
+        """
+        ...
+    def iter_errors(self, instance: Any) -> Iterator[ValidationError]:
+        """Iterate over every `ValidationError` of `instance`.
+
+            >>> validator = validator_for({"minimum": 5})
+            >>> next(validator.iter_errors(3))
+            <ValidationError: '3 is less than the minimum of 5'>
+        """
+        ...
+    def evaluate(self, instance: Any) -> Evaluation:
+        """Evaluate `instance` and return an `Evaluation` holding the output formats.
+
+            >>> validator = validator_for({"type": "integer"})
+            >>> validator.evaluate("oops").flag()
+            {'valid': False}
+        """
+        ...
     def __repr__(self) -> str: ...
 
-class Draft4Validator(Validator): ...
-class Draft6Validator(Validator): ...
-class Draft7Validator(Validator): ...
-class Draft201909Validator(Validator): ...
-class Draft202012Validator(Validator): ...
+class Draft4Validator(Validator):
+    """A JSON Schema Draft 4 validator.
+
+        >>> validator = Draft4Validator({"minimum": 5})
+        >>> validator.is_valid(3)
+        False
+    """
+
+class Draft6Validator(Validator):
+    """A JSON Schema Draft 6 validator.
+
+        >>> validator = Draft6Validator({"minimum": 5})
+        >>> validator.is_valid(3)
+        False
+    """
+
+class Draft7Validator(Validator):
+    """A JSON Schema Draft 7 validator.
+
+        >>> validator = Draft7Validator({"minimum": 5})
+        >>> validator.is_valid(3)
+        False
+    """
+
+class Draft201909Validator(Validator):
+    """A JSON Schema Draft 2019-09 validator.
+
+        >>> validator = Draft201909Validator({"minimum": 5})
+        >>> validator.is_valid(3)
+        False
+    """
+
+class Draft202012Validator(Validator):
+    """A JSON Schema Draft 2020-12 validator.
+
+        >>> validator = Draft202012Validator({"minimum": 5})
+        >>> validator.is_valid(3)
+        False
+    """
 
 def validator_for(
     schema: _Schema | str,
@@ -516,31 +670,34 @@ def validator_for(
     vocabularies: Sequence[str] | None = None,
     offline: bool | None = None,
 ) -> Validator:
-    """Create a validator for the given schema.
+    """Create a validator for `schema`, an instance of the draft class its `$schema` names (Draft
+    2020-12 without one).
 
-    Automatically detects the JSON Schema draft from the $schema keyword.
-    Returns a Draft-specific validator instance.
+        >>> validator = validator_for({"minimum": 5})
+        >>> validator.is_valid(3)
+        False
     """
     ...
 
 @final
 class ValidatorMap:
-    """Map of compiled validators keyed by URI-fragment JSON pointer.
-
-    Obtained via :func:`validator_map_for`. Use it to validate instances against
-    named subschemas identified by JSON pointer (e.g. ``"#/$defs/User"``).
+    """Compiled validators keyed by URI-fragment JSON pointer (e.g. ``"#/$defs/User"``), from
+    :func:`validator_map_for`.
     """
 
     def get(self, pointer: str) -> Validator | None:
-        """Return the validator for *pointer*, or ``None`` if not found."""
+        """Return the validator for ``pointer``, or ``None`` if not found.
+
+            >>> m = validator_map_for({"$defs": {"T": {"type": "string"}}})
+            >>> v = m.get("#/$defs/T")
+        """
         ...
 
-    def __getitem__(self, pointer: str, /) -> Validator:
-        """Return the validator for *pointer*, raising ``KeyError`` if not found."""
-        ...
-
+    def __getitem__(self, pointer: str, /) -> Validator: ...
     def __contains__(self, pointer: object, /) -> bool: ...
-    def keys(self) -> list[str]: ...
+    def keys(self) -> list[str]:
+        """Return all URI-fragment JSON pointer keys in this map."""
+        ...
     def __len__(self) -> int: ...
 
 def validator_map_for(
@@ -559,9 +716,14 @@ def validator_map_for(
     vocabularies: Sequence[str] | None = None,
     offline: bool | None = None,
 ) -> ValidatorMap:
-    """Compile all subschemas in *schema* into a map keyed by URI-fragment JSON pointer.
+    """Compile all subschemas in ``schema`` into a map keyed by URI-fragment JSON pointer. The root
+    schema is under ``"#"``.
 
-    The root schema is always included as ``"#"``.
+        >>> schema = {"$defs": {"User": {"type": "object"}}}
+        >>> m = validator_map_for(schema)
+        >>> v = m.get("#/$defs/User")
+        >>> v.is_valid({})
+        True
     """
     ...
 
@@ -594,11 +756,19 @@ def dereference(
     base_uri: str | None = None,
     offline: bool | None = None,
 ) -> _SchemaT:
-    """Recursively inline all $ref values in a JSON Schema.
+    """Recursively inline all `$ref` values in a JSON Schema.
 
     Circular references are left in place as `$ref` strings.
 
-    Raises ReferencingError if any $ref cannot be resolved.
+    :param schema: The JSON Schema to dereference.
+    :param retriever: Optional callable ``(uri: str) -> dict`` for fetching external schemas.
+    :param registry: Optional pre-built :class:`Registry` of known schemas.
+    :param offline: Refuse to fetch anything outside ``registry``.
+    :param draft: Optional draft version (e.g. ``jsonschema_rs.Draft202012``).
+    :param base_uri: Optional base URI for the root schema.
+    :raises ReferencingError: if any `$ref` cannot be resolved.
+
+        >>> result = dereference({"$defs": {"t": {"type": "string"}}, "properties": {"x": {"$ref": "#/$defs/t"}}})
     """
     ...
 
@@ -611,6 +781,8 @@ def validator_cls_for(schema: _Schema | str) -> type[Validator]:
 
 @final
 class Registry:
+    """A registry of JSON Schema resources, each identified by their canonical URIs."""
+
     def __new__(
         cls,
         resources: Iterable[tuple[str, JSONType]],
@@ -639,8 +811,46 @@ class Resolved:
     def draft(self) -> int: ...
 
 class _Meta:
-    def is_valid(self, schema: _Schema, registry: Registry | None = None) -> bool: ...
-    def validate(self, schema: _Schema, registry: Registry | None = None) -> None: ...
+    def is_valid(self, schema: _Schema, registry: Registry | None = None) -> bool:
+        """Validate a JSON Schema document against its meta-schema. Draft version is detected automatically.
+        Schemas with unknown `$schema` values raise `jsonschema_rs.ReferencingError`.
+
+            >>> jsonschema_rs.meta.is_valid({"type": "string"})
+            True
+            >>> jsonschema_rs.meta.is_valid({"type": "invalid_type"})
+            False
+
+        For custom meta-schemas, provide a registry:
+
+            >>> custom_meta = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"}
+            >>> registry = Registry([("http://example.com/meta", custom_meta)])
+            >>> schema = {"$schema": "http://example.com/meta", "customKeyword": "value"}
+            >>> jsonschema_rs.meta.is_valid(schema, registry=registry)
+            True
+        """
+        ...
+    def validate(self, schema: _Schema, registry: Registry | None = None) -> None:
+        """Validate a JSON Schema document against its meta-schema and raise ValidationError if invalid.
+        Draft version is detected automatically. Schemas with custom/unknown `$schema` values raise `jsonschema_rs.ReferencingError`.
+
+            >>> jsonschema_rs.meta.validate({"type": "string"})
+            >>> jsonschema_rs.meta.validate({"type": "invalid_type"})
+            Traceback (most recent call last):
+                ...
+            jsonschema_rs.ValidationError: ...
+            >>> jsonschema_rs.meta.validate({"$schema": "http://custom.example.com/schema", "type": "object"})
+            Traceback (most recent call last):
+                ...
+            jsonschema_rs.ReferencingError: Unknown meta-schema: 'http://custom.example.com/schema'. Custom meta-schemas must be registered in the registry before use
+
+        For custom meta-schemas, provide a registry:
+
+            >>> custom_meta = {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "object"}
+            >>> registry = Registry([("http://example.com/meta", custom_meta)])
+            >>> schema = {"$schema": "http://example.com/meta", "customKeyword": "value"}
+            >>> jsonschema_rs.meta.validate(schema, registry=registry)
+        """
+        ...
 
 meta: _Meta
 
@@ -673,15 +883,15 @@ class CanonicalSchema:
     def subtract(self, other: CanonicalSchema) -> CanonicalSchema:
         """Every value this schema accepts and ``other`` rejects.
 
-        ``old.subtract(new)`` accepts exactly the values ``old`` took and ``new`` turns away, and is
-        unsatisfiable iff ``new`` still takes everything ``old`` did.
+        ``old.subtract(new)`` is unsatisfiable when ``new`` accepts every value ``old`` accepts.
         """
         ...
 
     def covers(self, other: CanonicalSchema) -> canonical.Containment:
         """Whether this schema accepts every value ``other`` accepts.
 
-        Only ``YES`` proves containment. Test for ``YES``, and treat ``UNKNOWN`` like ``NO``.
+        Only ``YES`` proves containment; ``UNKNOWN`` means undecided, not disproved. Test for
+        ``YES``, and treat ``UNKNOWN`` like ``NO``.
         """
         ...
 
@@ -696,13 +906,12 @@ class CanonicalSchema:
     def definition(self, uri: str) -> CanonicalSchema | None:
         """The reference target registered under ``uri``, or the document itself under ``#``.
 
-        The target keeps the document it was written in, so a ``#`` inside it names that document
-        and not the target standing in for it.
+        A ``#`` inside the target names the document the target was written in.
         """
         ...
 
     def definitions(self) -> dict[str, CanonicalSchema]:
-        """Map of reference uri -> canonical target."""
+        """Map of reference URI -> canonical target for every known target reachable from this schema."""
         ...
 
     def to_json_schema(self) -> JsonValue:
@@ -716,8 +925,8 @@ class CanonicalSchema:
     def satisfiability(self) -> canonical.Satisfiability:
         """Whether any value satisfies this schema.
 
-        Only ``NO`` proves the schema accepts nothing. Test for ``NO``, and treat ``UNKNOWN``
-        like ``YES``.
+        Only ``NO`` proves the schema accepts nothing; ``UNKNOWN`` means undecided, not empty. Test
+        for ``NO``, and treat ``UNKNOWN`` like ``YES``.
         """
         ...
 
@@ -739,7 +948,8 @@ def canonicalize(
 ) -> CanonicalSchema:
     """Parse and normalize a JSON Schema to its canonical form.
 
-    Raises :class:`ValidationError` when the schema fails meta-schema validation and
+    Returns a :class:`CanonicalSchema` that accepts the same values as ``schema``. Raises
+    :class:`ValidationError` when the schema fails meta-schema validation and
     :class:`canonical.CanonicalizationError` when the root is not a boolean or an object.
     """
     ...

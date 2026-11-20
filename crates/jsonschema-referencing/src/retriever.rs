@@ -22,16 +22,10 @@ impl<T: ?Sized + Send + Sync> RetrieverBounds for T {}
 pub trait Retrieve: RetrieverBounds {
     /// Attempt to retrieve a resource from the given URI.
     ///
-    /// # Arguments
-    ///
-    /// * `uri` - The URI of the resource to retrieve.
-    ///
     /// # Errors
     ///
-    /// This method can fail for various reasons:
-    /// - Resource not found
-    /// - Network errors (for remote resources)
-    /// - Permission errors
+    /// Any error; preparing the registry reports it as [`crate::Error::Unretrievable`] for a
+    /// `$ref` and ignores it for a `$schema`.
     fn retrieve(
         &self,
         uri: &Uri<String>,
@@ -67,16 +61,10 @@ pub trait AsyncRetrieve: RetrieverBounds {
     ///
     /// This is the non-blocking equivalent of [`Retrieve::retrieve`].
     ///
-    /// # Arguments
-    ///
-    /// * `uri` - The URI of the resource to retrieve.
-    ///
     /// # Errors
     ///
-    /// This method can fail for various reasons:
-    /// - Resource not found
-    /// - Network errors (for remote resources)
-    /// - Permission errors
+    /// Any error; preparing the registry reports it as [`crate::Error::Unretrievable`] for a
+    /// `$ref` and ignores it for a `$schema`.
     async fn retrieve(
         &self,
         uri: &Uri<String>,

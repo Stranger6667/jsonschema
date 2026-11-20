@@ -1,7 +1,6 @@
 //! Types used by the schema traversal machinery during registry building.
 //!
-//! When the registry walks a schema document, each JSON object is scanned to extract
-//! relevant information per [`ObjectAnalysis`].
+//! Each schema object yields an [`ObjectAnalysis`] and its subschema positions ([`Children`]).
 //!
 //! The sub-modules contain draft-specific scanning logic.
 
@@ -70,7 +69,7 @@ pub(crate) fn walk_children<'a>(
     Ok(())
 }
 
-/// Shared metadata extracted from one schema object.
+/// What the crawl reads from one schema object.
 pub(crate) struct ObjectAnalysis<'a> {
     pub(crate) id: Option<&'a str>,
     pub(crate) has_anchor: bool,
@@ -80,8 +79,8 @@ pub(crate) struct ObjectAnalysis<'a> {
 
 /// `analyze_object` implementation for drafts 2019-09 and 2020-12.
 ///
-/// In these drafts anchors are a first-class `"$anchor"` keyword. Draft 2020-12 additionally
-/// recognises `"$dynamicAnchor"` — pass `dynamic_anchor: true` for that draft.
+/// In these drafts anchors are a first-class `"$anchor"` keyword. Draft 2020-12 also has
+/// `$dynamicAnchor`; pass `dynamic_anchor: true` for it.
 pub(crate) fn analyze_object_modern(
     schema: &Map<String, Value>,
     dynamic_anchor: bool,

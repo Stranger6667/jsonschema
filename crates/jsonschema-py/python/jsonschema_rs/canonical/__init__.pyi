@@ -7,7 +7,7 @@ from . import schema as schema
 
 @final
 class Containment:
-    """Whether one schema accepts every value another does."""
+    """Whether one schema accepts every value another accepts."""
 
     YES: Containment
     NO: Containment
@@ -40,7 +40,7 @@ class Distinctness:
 
 @final
 class RawReason:
-    """What stopped a run from modeling a document."""
+    """Why canonicalization kept a document as ``Raw``."""
 
     UNKNOWN_DIALECT: RawReason
     UNMODELED: RawReason
@@ -86,7 +86,7 @@ class FalseView:
 
 @final
 class MultiTypeView:
-    """A value matches iff its JSON type is in ``types``."""
+    """Accepts a value when its JSON type is in ``types``."""
 
     __match_args__ = ("types",)
     @property
@@ -94,7 +94,7 @@ class MultiTypeView:
 
 @final
 class TypedGroupView:
-    """A value matches iff its JSON type is ``type_name`` and it satisfies ``body``."""
+    """Accepts a value when its JSON type is ``type_name`` and ``body`` accepts it."""
 
     __match_args__ = ("type_name", "body")
     @property
@@ -104,7 +104,9 @@ class TypedGroupView:
 
 @final
 class StringView:
-    """A string value within a length window, matching every required facet and no barred one."""
+    """A string within ``min_length``/``max_length``, matching every listed constraint and none of the
+    excluded ones.
+    """
 
     __match_args__ = (
         "min_length",
@@ -243,7 +245,7 @@ class ObjectView:
 
 @final
 class NameFailsView:
-    """Some key's name fails the schema."""
+    """The object has a key whose name ``schema`` rejects."""
 
     __match_args__ = ("schema",)
     @property
@@ -251,7 +253,9 @@ class NameFailsView:
 
 @final
 class UndeclaredValueFailsView:
-    """Some key outside `names` and matching none of `patterns` has a value failing `additional`."""
+    """The object has a key outside ``names``, matching no ``patterns``, whose value ``additional``
+    rejects.
+    """
 
     __match_args__ = ("names", "patterns", "additional")
     @property
@@ -263,7 +267,7 @@ class UndeclaredValueFailsView:
 
 @final
 class PatternValueFailsView:
-    """Some key matching `pattern` has a value failing `schema`."""
+    """The object has a key matching ``pattern`` whose value ``schema`` rejects."""
 
     __match_args__ = ("pattern", "schema")
     @property
@@ -273,7 +277,7 @@ class PatternValueFailsView:
 
 @final
 class NotView:
-    """The exact negation of ``schema``."""
+    """Accepts the values ``schema`` rejects, keeping its references symbolic."""
 
     __match_args__ = ("schema",)
     @property
@@ -281,7 +285,7 @@ class NotView:
 
 @final
 class AllOfView:
-    """A value matches iff every branch matches."""
+    """Accepts a value when every branch accepts it."""
 
     __match_args__ = ("branches",)
     @property
@@ -289,7 +293,7 @@ class AllOfView:
 
 @final
 class AnyOfView:
-    """A value matches iff at least one branch matches."""
+    """Accepts a value when at least one branch accepts it."""
 
     __match_args__ = ("branches",)
     @property
@@ -297,7 +301,7 @@ class AnyOfView:
 
 @final
 class OneOfView:
-    """A value matches iff exactly one branch matches."""
+    """Accepts a value when exactly one branch accepts it."""
 
     __match_args__ = ("branches",)
     @property
@@ -393,10 +397,10 @@ def find_unsatisfiable(
     base_uri: str | None = None,
     offline: bool | None = None,
 ) -> dict[str, UnsatisfiableReason]:
-    """The subschemas that accept no value, by JSON Pointer, each with why.
+    """Map the JSON Pointer of each subschema that accepts no value to the reason.
 
-    A pointer left out is not proven satisfiable: a document the canonical form does not
-    model reports nothing, as :class:`Satisfiability` answers ``UNKNOWN``.
+    A pointer left out is not proven satisfiable: for a document the canonical form does not model,
+    the map is empty and ``satisfiability()`` answers ``UNKNOWN``.
 
     Raises :class:`ValidationError` when the schema fails meta-schema validation and
     :class:`CanonicalizationError` when the root is not a boolean or an object.

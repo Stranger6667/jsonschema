@@ -45,7 +45,6 @@ impl fmt::Debug for Resolver<'_> {
 }
 
 impl<'r> Resolver<'r> {
-    /// Create a new `Resolver` with the given registry and base URI.
     #[inline]
     pub(crate) fn new(registry: &'r Registry<'r>, base_uri: Arc<Uri<String>>) -> Self {
         Self {
@@ -188,7 +187,7 @@ impl<'r> Resolver<'r> {
                 base_uri,
                 draft,
             } => {
-                // A pointer into a resource embedded in the document leaves this one as well.
+                // A pointer that lands in an embedded resource also leaves the current one.
                 let leaves = target.document != self.base_uri || *base_uri != target.document;
                 let resolver = self.moved(Arc::clone(base_uri), leaves);
                 Resolved::new(contents, resolver, *draft)
@@ -285,7 +284,7 @@ impl<'r> Resolver<'r> {
             return Ok(self.clone());
         };
         let base_uri = self.registry.resolve_uri(&self.base_uri.borrow(), id)?;
-        // A reference that stayed in this resource from an empty scope put it there already.
+        // `moved` pushes this resource onto an empty scope for a reference that stays in it.
         let scopes = if base_uri == self.base_uri
             || self.scopes.iter().next() == Some(self.base_uri.as_ref())
         {
@@ -299,8 +298,8 @@ impl<'r> Resolver<'r> {
             scopes,
         })
     }
-    /// The resolver a reference to the resource at this resolver's base URI enters: that resource
-    /// joins the dynamic scope.
+    /// The resolver a `$ref` to this resolver's own resource enters; the resource joins an empty
+    /// dynamic scope.
     #[doc(hidden)]
     #[must_use]
     pub fn in_dynamic_scope(&self) -> Self {
@@ -355,8 +354,8 @@ impl<'r> Resolver<'r> {
         let leaves = base_uri != self.base_uri;
         self.moved(base_uri, leaves)
     }
-    /// This resolver based at `base_uri`. Its resource joins the dynamic scope when the scope is
-    /// empty or a reference `leaves` it.
+    /// This resolver based at `base_uri`; the current resource joins the dynamic scope when the
+    /// scope is empty or `leaves` is set.
     #[inline]
     fn moved(&self, base_uri: Arc<Uri<String>>, leaves: bool) -> Resolver<'r> {
         if !self.base_uri.as_str().is_empty() && (self.scopes.is_empty() || leaves) {
@@ -441,7 +440,7 @@ enum TargetKind<'r> {
 pub struct Resolved<'r> {
     /// The contents of the resolved reference.
     contents: &'r Value,
-    /// The resolver that resolved this reference, which can be used for further resolutions.
+    /// Resolver for references inside `contents`.
     resolver: Resolver<'r>,
     draft: Draft,
 }
@@ -459,7 +458,7 @@ impl<'r> Resolved<'r> {
     pub fn contents(&self) -> &'r Value {
         self.contents
     }
-    /// Resolver used to resolve this contents.
+    /// Resolver for references inside the resolved contents.
     #[must_use]
     pub fn resolver(&self) -> &Resolver<'r> {
         &self.resolver

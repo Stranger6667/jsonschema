@@ -32,7 +32,7 @@ impl Resource {
     pub fn draft(&self) -> Draft {
         self.draft
     }
-    /// Create a resource with automatically detecting specification which applies to the contents.
+    /// Create a resource whose draft comes from `$schema`, Draft 2020-12 without one.
     ///
     /// Unknown `$schema` values are treated as `Draft::Unknown`.
     #[must_use]
@@ -66,7 +66,7 @@ impl<'a> ResourceRef<'a> {
         self.draft
     }
 
-    /// Create a resource-ref with automatically detecting specification which applies to the contents.
+    /// Create a resource reference whose draft comes from `$schema`, Draft 2020-12 without one.
     ///
     /// Unknown `$schema` values are treated as `Draft::Unknown`.
     #[must_use]
@@ -141,14 +141,7 @@ impl<'r> ResourceRef<'r> {
 /// Unescape JSON Pointer path segments by converting `~1` to `/` and `~0` to `~`.
 #[must_use]
 pub fn unescape_segment(mut segment: &str) -> Cow<'_, str> {
-    // Naively, checking for `~` and then replacing implies two passes
-    // over the input buffer. First, search in the first `contains('~')` call
-    // and then replacing `~1` & `~0` at once in a single pass.
-    //
-    // This implementation is ~3x faster than the naive one.
-    //
-    // **NOTE**: Heavily inspired by the implementation in `boon`:
-    // `https://github.com/santhosh-tekuri/boon/blob/fb09df2db19be75c32c0970b4bdedf1655f5f943/src/util.rs#L31`
+    // One `find('~')` per escape; a segment without `~` is borrowed unchanged.
     let Some(mut tilde_idx) = segment.find('~') else {
         return Cow::Borrowed(segment);
     };

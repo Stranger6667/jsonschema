@@ -19,7 +19,7 @@ pub(super) struct Index<'a> {
 }
 
 impl<'a> Index<'a> {
-    /// Register a document: insert its resource entry and all its anchors.
+    /// Register a document: its resource entry and the anchors on its root object.
     pub(super) fn register_document(
         &mut self,
         key: &Arc<Uri<String>>,

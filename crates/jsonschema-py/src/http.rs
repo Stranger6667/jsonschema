@@ -16,10 +16,7 @@ fn validate_timeout(value: Option<f64>, name: &str) -> PyResult<Option<f64>> {
 
 /// HttpOptions(timeout=None, connect_timeout=None, tls_verify=True, ca_cert=None)
 ///
-/// Configuration for HTTP client used when fetching external schemas.
-///
-/// This allows customization of HTTP request behavior when validating schemas
-/// that reference external resources via HTTP/HTTPS.
+/// Configuration for the HTTP client that fetches external schemas.
 ///
 ///     >>> from jsonschema_rs import validator_for, HttpOptions
 ///     >>> validator = validator_for(

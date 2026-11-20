@@ -10,9 +10,7 @@ use super::super::{
 };
 use crate::codegen::CompiledExpr;
 
-/// Emitted checks deciding whether a property key is covered by
-/// `patternProperties`. Built once and shared by `additionalProperties`,
-/// the wildcard properties arm, and `unevaluatedProperties`.
+/// Emitted checks deciding whether `patternProperties` covers a property key.
 pub(super) struct PatternCoverage {
     pub(super) statics: Vec<TokenStream>,
     pub(super) checks: Vec<TokenStream>,

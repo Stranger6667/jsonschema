@@ -19,7 +19,7 @@ mod tests;
 use referencing::{uri, Draft, Registry};
 
 /// Expand `#[jsonschema::validator(...)]`. `attr` is the attribute arguments, `item` the annotated
-/// struct; returns the generated impl (or a `compile_error!`).
+/// struct; returns the struct with its generated impl (or a `compile_error!`).
 #[must_use]
 pub fn expand(attr: TokenStream, item: TokenStream) -> TokenStream {
     let config = match syn::parse2::<Config>(attr) {
@@ -986,7 +986,7 @@ so the generated methods cannot depend on type parameters",
 }
 
 // Without `arbitrary-precision`, a number past `f64` parses only when another crate in the build
-// enables `serde_json/arbitrary_precision`; it is refused as the parse without that feature does.
+// enables `serde_json/arbitrary_precision`; reject it as a parse without that feature would.
 fn reject_number_past_f64(document: Value) -> Result<Value, String> {
     if cfg!(feature = "arbitrary-precision") {
         return Ok(document);
@@ -1026,7 +1026,6 @@ fn detect_draft(schema: &Value, draft: Option<&syn::Expr>) -> syn::Result<Draft>
             .last()
             .expect("a parsed path expression always has at least one segment");
 
-        // Can't match on ident, but comparisons are faster than allocating a string + match
         let detected = if item.ident == "Draft4" {
             Draft::Draft4
         } else if item.ident == "Draft6" {

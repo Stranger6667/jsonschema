@@ -274,7 +274,6 @@ def test_custom_metaschema_chain_resolution():
 
 
 def test_builtin_schemas_work_without_registry():
-    # Ensure backward compatibility - built-in schemas work without registry
     schemas = [
         {"type": "string"},
         {"$schema": "http://json-schema.org/draft-04/schema#", "type": "number"},
@@ -299,7 +298,6 @@ def test_builtin_schemas_work_with_empty_registry():
 
 
 def test_complex_custom_metaschema():
-    # More complex metaschema similar to the Rust test
     meta_schema = {
         "$id": "http://example.com/meta/schema",
         "$schema": "https://json-schema.org/draft/2020-12/schema",

@@ -10,7 +10,6 @@ use crate::context::MethodGates;
 
 pub(crate) struct MagnusEmitter;
 
-// A member name reaches its text through `AsRef<str>`.
 fn name_str(name: impl ToTokens) -> TokenStream {
     quote! { ::std::convert::AsRef::<str>::as_ref(&#name) }
 }

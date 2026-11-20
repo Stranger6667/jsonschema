@@ -254,7 +254,7 @@ fn named_target_pointer<E: ValueEmitter>(
 ) -> String {
     let resolver = ctx.config.registry.resolver(base_uri.clone());
     let (Ok(resource), Ok(target)) = (resolver.lookup(""), resolver.lookup(reference)) else {
-        // Guard helpers key on the serialized subschema, not a URI
+        // A guard helper's location is a serialized subschema, which names no anchor.
         return String::new();
     };
     anchor_pointer(ctx, resource.contents(), target.contents())

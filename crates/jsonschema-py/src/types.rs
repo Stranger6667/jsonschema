@@ -54,9 +54,7 @@ fn look_up_decimal_type(py: Python<'_>) -> *mut PyTypeObject {
     decimal_type.as_type_ptr()
 }
 
-/// Set empty type object pointers with their actual values.
-/// We need these Python-side type objects for direct comparison during conversion to serde types
-/// NOTE. This function should be called before any serialization logic
+/// Fill the type pointers serialization compares against. Call before any serialization.
 pub fn init(py: Python<'_>) {
     INIT.get_or_init(py, || unsafe {
         TRUE = Py_True();

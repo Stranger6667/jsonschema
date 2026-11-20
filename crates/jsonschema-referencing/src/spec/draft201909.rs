@@ -33,7 +33,6 @@ pub(crate) fn children(key: &str, value: &Value) -> Children {
 
 pub(crate) fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> ChildIterInner<'a> {
     match key.as_str() {
-        // For these keys, yield the value once.
         "additionalItems"
         | "additionalProperties"
         | "contains"
@@ -45,7 +44,6 @@ pub(crate) fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> ChildIte
         | "then"
         | "unevaluatedItems"
         | "unevaluatedProperties" => ChildIterInner::Once(value),
-        // For these keys, if the value is an array, iterate over its items.
         "allOf" | "anyOf" | "oneOf" => {
             if let Some(arr) = value.as_array() {
                 ChildIterInner::Array(arr.iter())
@@ -53,7 +51,6 @@ pub(crate) fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> ChildIte
                 ChildIterInner::Empty
             }
         }
-        // For these keys, if the value is an object, iterate over its values.
         "$defs" | "definitions" | "dependentSchemas" | "patternProperties" | "properties" => {
             if let Some(obj) = value.as_object() {
                 ChildIterInner::Object(obj.values())
@@ -61,12 +58,10 @@ pub(crate) fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> ChildIte
                 ChildIterInner::Empty
             }
         }
-        // For "items": if it's an array, iterate over its items; otherwise, yield the value once.
         "items" => match value {
             Value::Array(arr) => ChildIterInner::Array(arr.iter()),
             _ => ChildIterInner::Once(value),
         },
-        // For any other key, yield nothing.
         _ => ChildIterInner::Empty,
     }
 }

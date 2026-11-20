@@ -6,7 +6,7 @@ use crate::context::{CompileContext, PatternEngineConfig, PatternSyntaxConfig};
 
 use super::{errors::invalid_regex_expression, CompiledExpr};
 
-/// The literal form of `pattern`, if it has one. The analysis reads the pattern as ECMA 262.
+/// A regex-free check for `pattern`, if it has one; only under `syntax = ecma262`.
 pub(super) fn analyze_pattern<'a, E: ValueEmitter>(
     ctx: &CompileContext<'_, E>,
     pattern: &'a str,

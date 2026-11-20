@@ -9,7 +9,7 @@ require_relative "support/jsonschema_testsuite_magnus"
 module SuiteHelpers
   SUITE_PATH = Pathname.new(__dir__).join("../../jsonschema/tests/suite/validation/tests")
 
-  # Draft name => JSONSchema draft constant and the number the suite's `compatibility` property uses for it
+  # Draft name => draft symbol and the number the suite's `compatibility` property uses for it
   DRAFT_MAP = {
     "draft4" => [:draft4, 4],
     "draft6" => [:draft6, 6],

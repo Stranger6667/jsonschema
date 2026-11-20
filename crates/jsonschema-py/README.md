@@ -155,7 +155,7 @@ The resulting `ValidationError` keeps that exception as `__cause__`:
 
 ```python
 try:
-    validator.validate(instance)
+    validator.validate(10)
 except jsonschema_rs.ValidationError as e:
     print(type(e.__cause__))   # <class 'ValueError'>
     print(e.__cause__)         # original message
@@ -364,8 +364,6 @@ try:
     validator.validate(0)
 except ValidationError as exc:
     assert exc.kind.expected_value == Decimal("1e10000")
-
-# Exponents beyond ~10^1_000_000 are clamped to keep parsing predictable
 ```
 
 ## Schema Bundling and Dereferencing
@@ -406,7 +404,7 @@ dereferenced = jsonschema_rs.dereference(schema, registry=registry)
 
 > **Experimental**: the canonicalization API may change in minor releases.
 
-`canonicalize` reduces a schema to a normal form that accepts the same values. Schemas that accept the same values reduce to equal `CanonicalSchema` objects, and a schema proven to accept nothing reduces to `false`:
+`canonicalize` reduces a schema to a normal form that accepts the same values. Many schemas that accept the same values reduce to equal `CanonicalSchema` objects, and a schema proven to accept nothing reduces to `false`:
 
 ```python
 import jsonschema_rs
@@ -422,7 +420,7 @@ assert canonical.to_json_schema() == {
     "type": "integer", "minimum": 10, "maximum": 100,
 }
 
-# However they were written, equivalent schemas compare equal
+# These two accept the same values and compare equal
 same = jsonschema_rs.canonicalize(
     {"type": "integer", "maximum": 100, "minimum": 10}
 )
@@ -437,7 +435,7 @@ empty = jsonschema_rs.canonicalize(
 assert empty.satisfiability() == Satisfiability.NO
 ```
 
-A schema the canonical form cannot model exactly comes back unchanged, with `kind == CanonicalKind.RAW`. Its `view().reason` names what stopped the run, and `view().pointer` the subschema at fault when a single one is.
+A schema the canonical form cannot model exactly comes back unchanged, with `kind == CanonicalKind.RAW`. Its `view().reason` names why canonicalization kept it raw, and `view().pointer` the subschema at fault when a single one is.
 
 Canonical schemas combine like sets of values. Every emitted schema carries `$schema`; the comments below leave it out:
 
@@ -464,7 +462,7 @@ positive.negate().to_json_schema()
 #            {"type": "integer", "maximum": -1},
 #            {"type": "number", "not": {"multipleOf": 1}}]}
 
-# Containment.NO: `bounded` takes negative integers, `positive` does not
+# Containment.NO: `bounded` accepts negative integers, `positive` rejects them
 positive.covers(bounded)
 positive.satisfiability()  # Satisfiability.YES
 ```
@@ -764,7 +762,7 @@ registry = jsonschema_rs.Registry(
 
 ## Error Handling
 
-A `ValidationError` carries the message, both locations and a `kind` with keyword-specific details:
+A `ValidationError` carries the message, the instance and schema paths, and a `kind` with keyword-specific details:
 
 ```python
 import jsonschema_rs
@@ -846,7 +844,7 @@ On instance["password"]:
 Compared with other Python validators:
 
 - **215-15,699x** faster than `jsonschema` for complex schemas and large instances
-- **12-2,623x** faster than `fastjsonschema` on CPython
+- **12-2,623x** faster than `fastjsonschema` on CPython, except `validate` on the invalid `Fast` instance (x0.87)
 
 Full results and methodology are in [BENCHMARKS.md](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-py/BENCHMARKS.md).
 

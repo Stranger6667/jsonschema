@@ -33,7 +33,7 @@ pub fn resolve_against(base: &Uri<&str>, uri: &str) -> Result<Uri<String>, Error
         .normalize())
 }
 
-/// Parses a URI reference from a string into a [`crate::Uri`].
+/// Parses a URI reference, resolving a relative one against `json-schema:///`.
 ///
 /// # Errors
 ///

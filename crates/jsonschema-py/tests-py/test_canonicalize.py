@@ -15,8 +15,8 @@ from jsonschema_rs.canonical import (
 
 DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
 # `dependencies` is the one conditional applicator canonicalization does not split beside an
-# `unevaluated*`, so this stays raw. Each construct canonicalization learns needs a
-# still-unsupported stand-in here.
+# `unevaluated*`, so this stays raw. Swap in another unmodeled construct once canonicalization
+# models it.
 UNSUPPORTED = {"dependencies": {}, "unevaluatedProperties": False}
 
 
@@ -406,7 +406,7 @@ def test_view_number_interval():
 
 def test_view_number_bound_off_the_float_grid():
     # Folding `multipleOf` into an exclusive bound lands a fraction past a number no float can hold
-    # apart from its neighbour, and rounding it there would accept the value the schema excludes.
+    # apart from its neighbour, and rounding it there would accept the value the schema rejects.
     schema = {"type": "number", "multipleOf": 0.1, "exclusiveMinimum": 10**20}
     match canonicalize(schema).view():
         case canonical.NumberView(minimum=minimum, exclusive_minimum=exclusive_minimum):
@@ -729,7 +729,7 @@ def test_union(left, right, expected):
             Satisfiability.NO,
         ),
         # What a narrowed schema stopped accepting, which is the comparison workflow: the values
-        # `old` took and `new` turns away.
+        # `old` accepts and `new` rejects.
         (
             {"type": "string"},
             {"type": "string", "maxLength": 50},

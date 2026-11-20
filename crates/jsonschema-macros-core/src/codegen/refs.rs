@@ -28,9 +28,9 @@ pub(super) fn resolve_lone_top_level_ref<'cfg: 'b, 'b, E: ValueEmitter>(
     // Each hop resolves in the resource the previous one landed in.
     let mut base = ctx.current_base_uri.clone();
     let mut draft = ctx.draft;
-    // Bounded hop count: discriminator analysis is a best-effort optimization,
-    // so give up on longer (or cyclic) $ref chains instead of tracking visited
-    // locations. 8 hops covers realistic hand-written indirection.
+    // Bounded hop count: shape analysis is best-effort, so give up on longer (or
+    // cyclic) $ref chains instead of tracking visited locations. 8 hops covers
+    // realistic hand-written indirection.
     for _ in 0..8 {
         let Value::Object(obj) = current else {
             break;
@@ -52,7 +52,6 @@ pub(super) fn resolve_lone_top_level_ref<'cfg: 'b, 'b, E: ValueEmitter>(
     current
 }
 
-/// Resolve a reference using the Registry.
 pub(crate) fn resolve_ref<'cfg, E: ValueEmitter>(
     ctx: &mut CompileContext<'cfg, E>,
     reference: &str,
@@ -110,7 +109,7 @@ fn resource_start(
     pointer: &str,
     resolved: &Resolved<'_>,
 ) -> usize {
-    // A pointer staying in the document's own resource never comes back to its root.
+    // A target in the document's own resource: that resource starts at the root.
     if resolved.resolver().base_uri().as_str() == document.as_str() {
         return 0;
     }

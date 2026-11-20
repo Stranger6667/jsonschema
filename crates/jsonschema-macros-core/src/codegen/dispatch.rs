@@ -29,8 +29,8 @@ fn type_keyword_includes(type_value: &Value, name: &str) -> bool {
 }
 
 /// The checks of keywords for one instance type. Without `report_type_error`, they leave the
-/// `type` error to the caller; with `split_unevaluated`, the `unevaluated*` errors come apart, in a
-/// second type dispatch.
+/// `type` error to the caller; with `split_unevaluated`, the `unevaluated*` errors go to a second
+/// type dispatch.
 pub(super) fn compile_typed<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
@@ -114,8 +114,7 @@ pub(super) fn compile_typed<E: ValueEmitter>(
     let mut unevaluated_array = None;
     let mut unevaluated_object = None;
     let mut unevaluated_skips_valid = true;
-    // Whether any arm reports an error: with `unevaluated*` errors in their own dispatch, none
-    // may.
+    // Whether any arm reports an error, which may be none once `unevaluated*` errors are split out.
     let mut reports_errors = false;
     // The type error, when `type` leaves out every one of `names`: such instances fail, and the
     // runtime reports the type error before the errors of their keywords.

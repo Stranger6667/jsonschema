@@ -1,11 +1,12 @@
 //! Anchors identify sub-schemas within a document by name.
 //!
 //! JSON Schema defines two anchor flavors:
-//! - [`Anchor::Default`]: a plain anchor (`$anchor`), resolved against the current base URI.
+//! - [`Anchor::Default`]: `$anchor`, or `#name` in `id`/`$id` before Draft 2019-09; resolved
+//!   against the current base URI.
 //! - [`Anchor::Dynamic`]: a dynamic anchor (`$dynamicAnchor`), which `$dynamicRef` re-anchors to
 //!   the outermost matching dynamic anchor found in the dynamic scope.
 //!
-//! [`AnchorIter`] avoids a heap allocation for the common case of 0–2 anchors per schema object.
+//! A schema object has at most two anchors, so [`AnchorIter`] needs no heap allocation.
 
 use serde_json::Value;
 
@@ -25,7 +26,6 @@ pub(crate) enum Anchor<'a> {
 }
 
 impl<'a> Anchor<'a> {
-    /// Anchor's name.
     #[inline]
     pub(crate) fn name(&self) -> &'a str {
         match self {
@@ -68,7 +68,7 @@ pub(crate) fn resolve_dynamic<'r>(
     ))
 }
 
-/// An iterator over 0, 1, or 2 anchors — avoids a [`Vec`] allocation for the common case.
+/// An iterator over the anchors of one schema object.
 pub(crate) enum AnchorIter<'a> {
     Empty,
     One(Anchor<'a>),
@@ -95,7 +95,6 @@ pub(crate) fn anchor(draft: Draft, contents: &Value) -> AnchorIter<'_> {
         return AnchorIter::Empty;
     };
 
-    // First check for top-level anchors
     let default_anchor =
         schema
             .get("$anchor")

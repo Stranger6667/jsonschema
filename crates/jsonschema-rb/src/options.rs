@@ -65,7 +65,7 @@ pub struct ParsedOptions<'i> {
     pub registry: Option<&'i jsonschema::Registry<'static>>,
     pub retriever: Option<RubyRetriever>,
     // Runtime callbacks invoked during `validator.*` calls (formats / custom keywords).
-    // Retriever callbacks are used at build time and do not affect GVL behavior at runtime.
+    // Retrievers run only at build time, so they leave this flag unset.
     pub has_ruby_callbacks: bool,
     pub callback_roots: CallbackRoots,
     pub compilation_roots: CompilationRootsRef,
@@ -80,8 +80,7 @@ pub struct ParsedOptions<'i> {
 /// Two complementary collections keep every callback alive:
 ///
 /// * **`CallbackRoots`** — held by the `Validator` wrapper and marked during Ruby's
-///   GC mark phase (`DataTypeFunctions::mark`). This is the standard Magnus/Ruby
-///   mechanism for preventing collection of objects referenced by native extensions.
+///   GC mark phase (`DataTypeFunctions::mark`).
 ///   For one-off validation functions (module-level `valid?`, `validate!`, etc.),
 ///   where no persistent `Validator` exists, a [`CallbackRootGuard`](crate::CallbackRootGuard)
 ///   temporarily registers the same roots via `gc_register_address` for the duration
@@ -730,14 +729,12 @@ pub fn make_options_from_kwargs(
                         ))
                     })?;
 
-                    // Convert keyword value to Ruby
                     let rb_value = value_to_ruby(&inner_ruby, value).map_err(|e| {
                         jsonschema::ValidationError::custom(format!(
                             "Failed to convert keyword value to Ruby: {e}"
                         ))
                     })?;
 
-                    // Convert path to Ruby array
                     let rb_path =
                         inner_ruby.ary_from_iter(path.iter().map(|segment| match segment {
                             jsonschema::paths::LocationSegment::Property(p) => {

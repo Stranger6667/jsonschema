@@ -39,8 +39,7 @@ pub(crate) fn extract_pattern_options(value: &Bound<'_, PyAny>) -> PyResult<PyPa
 
 /// FancyRegexOptions(backtrack_limit=None, size_limit=None, dfa_size_limit=None, syntax="ecma262")
 ///
-/// Configuration for the fancy-regex engine, which supports advanced regex features like
-/// lookaround assertions and backreferences.
+/// Configuration for the fancy-regex engine, which supports lookaround and backreferences.
 ///
 ///     >>> validator = validator_for(
 ///     ...     {"type": "string", "pattern": "^(a+)+$"},  # Potentially problematic pattern
@@ -98,8 +97,8 @@ impl FancyRegexOptions {
 
 /// RegexOptions(size_limit=None, dfa_size_limit=None, syntax="ecma262")
 ///
-/// Configuration for the standard regex engine, which guarantees linear-time matching
-/// to prevent regex DoS attacks but supports fewer features.
+/// Configuration for the regex engine, which matches in linear time and supports no lookaround
+/// or backreferences.
 ///
 ///     >>> validator = validator_for(
 ///     ...     schema,
@@ -110,8 +109,6 @@ impl FancyRegexOptions {
 ///     size_limit: Maximum compiled pattern size in bytes
 ///     dfa_size_limit: Maximum regex DFA cache size in bytes
 ///     syntax: "ecma262" translates patterns for the engine, "engine" passes them to it unchanged
-///
-/// Note: Unlike FancyRegexOptions, this engine doesn't support lookaround or backreferences.
 #[pyclass(module = "jsonschema_rs")]
 pub(crate) struct RegexOptions {
     pub(crate) size_limit: Option<usize>,

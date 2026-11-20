@@ -387,8 +387,6 @@ def test_init_error_propagates():
 
 
 class DomainValidationError(Exception):
-    """User-defined exception for domain-specific validation failures."""
-
     def __init__(self, field, reason):
         self.field = field
         self.reason = reason

@@ -69,7 +69,6 @@ impl fmt::Debug for VocabularySet {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let mut debug_list = f.debug_list();
 
-        // Add known vocabularies
         if self.known & (1 << 0) != 0 {
             debug_list.entry(&"core");
         }
@@ -98,7 +97,6 @@ impl fmt::Debug for VocabularySet {
             debug_list.entry(&"format-assertion");
         }
 
-        // Add custom vocabularies
         if !self.custom.is_empty() {
             let mut custom: Vec<_> = self.custom.iter().map(Uri::as_str).collect();
             custom.sort_unstable();

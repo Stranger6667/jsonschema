@@ -7,12 +7,9 @@ _T = TypeVar("_T")
 def clone(object: _T) -> _T:
     """Deep-clone a JSON-compatible Python object.
 
-    Only ``dict`` and ``list`` are copied. All other values (str, int, float,
-    bool, None) are shared by reference since they are immutable.
-
-    Dict subclasses (e.g. ``CaseInsensitiveDict``) are cloned into plain
-    ``dict``. All other non-JSON types are returned as-is (treated as
-    immutable).
+    ``dict``, its subclasses and ``list`` are copied; dict subclasses (e.g.
+    ``CaseInsensitiveDict``) become plain ``dict``. All other values are shared by
+    reference.
 
     Faster than ``copy.deepcopy`` for JSON Schema documents.
 

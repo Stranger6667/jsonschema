@@ -35,7 +35,7 @@ fn property_names_implied_by_coverage(schema: &Map<String, Value>) -> bool {
 }
 
 /// Compile all object-specific keywords; with `split_unevaluated`, the `unevaluatedProperties`
-/// errors come apart from the other errors.
+/// errors are returned separately.
 pub(in super::super) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,
@@ -175,8 +175,6 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         Some(Value::Bool(false) | Value::Object(_))
     );
 
-    // Every cluster subschema is compiled exactly once and shared by the
-    // per-keyword and unified-pass emitters below.
     let required_in_properties_pass = !required_fields.is_empty()
         && checks.len() == required_slot
         && properties_map.is_some()
@@ -194,6 +192,8 @@ pub(in super::super) fn compile<E: ValueEmitter>(
         &[]
     };
 
+    // Every cluster subschema is compiled exactly once and shared by the
+    // per-keyword and unified-pass emitters below.
     let cluster = object_pass::compile_cluster_subschemas(
         ctx,
         properties_map.filter(|m| !m.is_empty()),

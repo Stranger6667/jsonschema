@@ -1,12 +1,6 @@
 //! BFS pipeline that processes pending resources into the prepared index.
 //!
-//! Entry points:
-//! - [`index_resources`]: processes pending resources and returns a prepared index.
-//! - [`build_index_from_stored`]: builds an index from pre-stored documents
-//!   (used by the static [`super::SPECIFICATIONS`] registry).
-//!
-//! [`StoredResource`] holds borrowed (externally-owned, zero-copy), owned (retrieved),
-//! or shared ([`Arc<Value>`]) documents uniformly.
+//! [`StoredResource`] holds a borrowed, owned or shared ([`Arc<Value>`]) document.
 
 use std::{collections::VecDeque, num::NonZeroUsize, sync::Arc};
 
@@ -287,10 +281,8 @@ pub(super) fn validate_custom_metaschemas(
     Ok(())
 }
 
-/// Shared sync processing loop used during registry preparation. After the
-/// initial input has been ingested into `state`, this function drives the
-/// BFS-fetch cycle until all reachable external resources have been retrieved,
-/// then handles meta-schema injection and runs a final queue pass.
+/// Crawl and retrieve until no external reference is pending, then inject referenced
+/// meta-schemas and crawl them.
 fn fetch_and_index<'a>(
     state: &mut BuildState<'a>,
     documents: &mut ResourceStore<'a>,
@@ -313,9 +305,7 @@ fn fetch_and_index<'a>(
     )
 }
 
-/// Shared async processing loop used during registry preparation. Batches
-/// concurrent external retrievals with `join_all` and otherwise mirrors
-/// [`fetch_and_index`].
+/// Async [`fetch_and_index`]; each round retrieves its external resources with one `join_all`.
 #[cfg(feature = "retrieve-async")]
 async fn fetch_and_index_async<'a>(
     state: &mut BuildState<'a>,
@@ -343,7 +333,8 @@ async fn fetch_and_index_async<'a>(
 /// Convert resources into stored documents, register them with the
 /// index, and enqueue them as the starting set for BFS traversal.
 ///
-/// `draft` forces a specific draft for all resources; `None` means auto-detect per resource.
+/// `draft` replaces detection for `Value`, `&Value` and `Arc<Value>` inputs; a `Resource` keeps
+/// its own draft.
 /// Resources are added to `known_resources` here so the retriever does not re-fetch them
 /// during the BFS loop.
 fn enqueue_resources<'a>(
@@ -464,12 +455,9 @@ fn flush_pending<'a>(
 
 /// Process deferred local-ref targets collected during the main traversal.
 ///
-/// Called after `drain_queue` finishes so that all subresource nodes are already in
-/// `visited_schemas`. Targets that were visited by the main BFS (e.g. `#/definitions/Foo`
-/// under a JSON Schema keyword) are skipped in O(1) via the pre-stored value address,
-/// avoiding a redundant `pointer()` traversal. Non-subresource targets
-/// (e.g. `#/components/schemas/Foo`) are still fully traversed. New deferred entries
-/// added during traversal are also processed iteratively until none remain.
+/// Runs after `drain_queue`: targets the root crawl already walked (`is_crawled_path`, e.g.
+/// `#/definitions/Foo`) are skipped, others (e.g. `#/components/schemas/Foo`) are walked here.
+/// Targets found while walking are processed until none remain.
 fn process_deferred_refs<'a>(
     state: &mut BuildState<'_>,
     documents: &'a ResourceStore<'a>,
@@ -586,7 +574,7 @@ fn fetch_external_resources<'a>(
 }
 
 /// Fetch all pending external resources concurrently and enqueue the results.
-/// Groups requests by base URI and issues them in a single `join_all` batch.
+/// Groups requests by fragment-less URI and issues them in one `join_all` batch.
 #[cfg(feature = "retrieve-async")]
 async fn fetch_external_resources_async<'a>(
     state: &mut BuildState<'a>,
@@ -649,10 +637,6 @@ async fn fetch_external_resources_async<'a>(
     Ok(())
 }
 
-// Recursion depth at which the crawl stops descending and defers the remaining subtree to a heap
-// work-list. Real schemas nest far shallower, so the list stays empty and the crawl runs as plain
-// recursion; only pathologically deep documents pay for the iterative fallback that avoids a
-// stack overflow.
 // Recursion depth at which the crawl stops descending and defers the remaining subtree to a heap
 // work-list. Real schemas nest far shallower, so the list stays empty and the crawl runs as plain
 // recursion; only pathologically deep documents pay for the iterative fallback that avoids a
@@ -1441,7 +1425,6 @@ mod tests {
 
     #[test]
     fn test_lookup_unresolvable_url() {
-        // Create a registry with a single resource
         let schema = Draft::Draft202012.create_resource(json!({
             "type": "object",
             "properties": {
@@ -1454,7 +1437,6 @@ mod tests {
             .prepare()
             .expect("Invalid resources");
 
-        // Attempt to create a resolver for a URL not in the registry
         let resolver = registry.resolver(
             from_str("http://example.com/non_existent_schema").expect("Invalid base URI"),
         );
@@ -1469,7 +1451,7 @@ mod tests {
 
     // Drafts 4-7 allow a fragment in `$id`, which makes the resource's base URI carry one.
     // RFC 3986 5.2.1 leaves the base URI's fragment undefined, so it must be dropped when
-    // resolving a reference against it rather than rejected. See GH-1473.
+    // resolving a reference against it rather than rejected.
     #[test]
     fn test_lookup_relative_ref_against_base_with_fragment() {
         let root = json!({
@@ -1900,7 +1882,6 @@ mod tests {
             "type": "string"
         });
 
-        // Register all meta-schemas and schema in a chained manner
         // All resources are provided upfront, so no external retrieval should occur
         Registry::new()
             .add(
@@ -2457,7 +2438,6 @@ mod async_tests {
 
         let resolver = registry.resolver(uri::from_str("").expect("Invalid base URI"));
 
-        // Check both references are resolved correctly
         let resolved2 = resolver
             .lookup("http://example.com/schema2")
             .expect("Lookup failed");
@@ -2512,7 +2492,6 @@ mod async_tests {
 
         let resolver = registry.resolver(uri::from_str("").expect("Invalid base URI"));
 
-        // Verify nested reference resolution
         let resolved = resolver
             .lookup("http://example.com/city")
             .expect("Lookup failed");
@@ -2522,7 +2501,7 @@ mod async_tests {
         );
     }
 
-    // Multiple refs to the same external schema with different fragments were fetched multiple times in async mode.
+    // Refs to one external document under different fragments retrieve it once.
     #[tokio::test]
     async fn test_async_registry_with_duplicate_fragment_refs() {
         static FETCH_COUNT: AtomicUsize = AtomicUsize::new(0);
@@ -2585,7 +2564,6 @@ mod async_tests {
             .await
             .expect("Invalid resource");
 
-        // Should only fetch the external schema once
         let fetches = FETCH_COUNT.load(Ordering::SeqCst);
         assert_eq!(
             fetches, 1,
@@ -2595,7 +2573,6 @@ mod async_tests {
         let resolver =
             registry.resolver(uri::from_str("http://example.com/main").expect("Invalid base URI"));
 
-        // Verify both fragment references resolve correctly
         let foo = resolver
             .lookup("http://example.com/external#/$defs/foo")
             .expect("Lookup failed");

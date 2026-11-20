@@ -407,8 +407,6 @@ fn build_discriminator_plan<E: ValueEmitter>(
 fn select_discriminator(
     branch_discriminators: &[HashMap<String, Vec<DiscriminatorLiteral>>],
 ) -> Option<DiscriminatorPlan> {
-    // For each candidate key: track (coverage, distinct_value_set, total_cardinality, kind).
-    // Keys whose values have inconsistent kinds across branches are rejected.
     // BTreeMap: iteration order below decides ties, so it must not depend on hashing.
     let mut stats: BTreeMap<String, KeyStats> = BTreeMap::new();
     for branch in branch_discriminators {

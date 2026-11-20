@@ -155,7 +155,6 @@ fn serialize_decimal<S>(object: *mut ffi::PyObject, serializer: S) -> Result<S::
 where
     S: Serializer,
 {
-    // Get string representation of the Decimal
     let str_obj = unsafe { ffi::PyObject_Str(object) };
     if str_obj.is_null() {
         return Err(ser::Error::custom("Failed to convert Decimal to string"));
@@ -581,7 +580,7 @@ impl<const HOLDING: bool> Serialize for CanonicalPyObject<'_, HOLDING> {
                             value,
                         });
                     }
-                    // Sort keys alphabetically for canonical form
+                    // Sort keys by UTF-8 bytes
                     entries.sort_unstable_by(|a, b| unsafe {
                         std::slice::from_raw_parts(a.key_ptr, a.key_len)
                             .cmp(std::slice::from_raw_parts(b.key_ptr, b.key_len))
@@ -751,9 +750,20 @@ fn to_canonical_string(object: *mut ffi::PyObject) -> serde_json::Result<String>
     })
 }
 
-/// Serialize a Python object to canonical JSON.
+/// to_string(object)
 ///
-/// Main use case: deduplicating equivalent JSON Schemas.
+/// Serialize a Python object to a canonical JSON string.
+///
+/// JSON values that differ only in key order or number form give equal strings, so the output
+/// works as a dedup key.
+///
+/// - Dict keys are sorted by their UTF-8 bytes.
+/// - Integer-valued floats are serialized as integers (1.0 becomes 1).
+/// - NaN and Infinity are serialized as null.
+/// - Output is always compact.
+///
+/// Raises ValueError on serialization failure (e.g., recursion limit exceeded,
+/// unsupported type, lone surrogates in strings).
 #[pyfunction(name = "to_string")]
 pub(crate) fn canonical_json_to_string(object: &Bound<'_, PyAny>) -> PyResult<String> {
     to_canonical_string(object.as_ptr())

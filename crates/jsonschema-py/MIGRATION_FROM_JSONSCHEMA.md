@@ -6,7 +6,7 @@
 |--------------|-----------------|
 | `validate(instance, schema)` | `validate(schema, instance)` |
 | `Draft3Validator` | Not supported |
-| `validators.validator_for(schema)` returns class | `validator_for(schema)` returns instance |
+| `validators.validator_for(schema)` returns class | `validator_cls_for(schema)` returns class; `validator_for(schema)` returns instance |
 | `FormatChecker` class | `formats` dict parameter |
 | `RefResolver` / `referencing.Registry` | `retriever` function / `Registry` |
 | `error.path` / `error.absolute_path` | `error.instance_path` |

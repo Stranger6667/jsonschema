@@ -1,7 +1,7 @@
 use std::{fs, path::Path, process::Command};
 
-/// In this crate's own test targets `jsonschema` is always in the extern prelude,
-/// masking unresolved bare `jsonschema::` paths in generated code.
+// In this crate's own test targets `jsonschema` is always in the extern prelude,
+// masking unresolved bare `jsonschema::` paths in generated code.
 #[test]
 fn works_with_renamed_dependency() {
     let scratch = Path::new(env!("CARGO_TARGET_TMPDIR")).join("renamed-dependency-probe");
