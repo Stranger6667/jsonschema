@@ -47,7 +47,7 @@ impl EvaluationPathCache {
         let parent_identifier = tracker
             .parent()
             .map_or(0, |parent| self.prefix_identifier(parent));
-        let key = (parent_identifier, tracker.suffix().as_ptr());
+        let key = (parent_identifier, tracker.location().as_ptr());
         let next_identifier = self.prefix_identifiers.len() + 1;
         let identifier = match self.prefix_identifiers.entry(key) {
             Entry::Occupied(entry) => *entry.get(),
@@ -552,8 +552,9 @@ impl ValidationContext {
     }
     /// Evaluation path for `location` under `tracker`, cached across instance nodes.
     ///
-    /// Keying on addresses is sound because none of them can be freed and reused mid-run:
-    /// keyword locations and `$ref` suffixes live in the compiled schema.
+    /// Keying on addresses is sound because none of them can be freed and reused mid-run: keyword
+    /// locations live in the compiled schema, and a `$ref` keyword's location belongs to one
+    /// validator, which fixes the target below it.
     pub(crate) fn evaluation_path(
         &mut self,
         tracker: &RefTracker<'_>,
@@ -1214,6 +1215,42 @@ mod tests {
             assert_eq!(unit["instanceLocation"], format!("/{idx}/value"));
             assert_eq!(unit["schemaLocation"], "/$defs/leaf/type");
         }
+    }
+
+    // Two `$ref`s to one target keep their own evaluation paths past the cache threshold.
+    #[test]
+    fn cached_evaluation_paths_keep_each_reference() {
+        const ELEMENTS: usize = 5000;
+
+        let schema = json!({
+            "items": {"properties": {"a": {"$ref": "#/$defs/leaf"}, "b": {"$ref": "#/$defs/leaf"}}},
+            "$defs": {"leaf": {"type": "integer"}}
+        });
+        let validator = crate::validator_for(&schema).expect("Valid schema");
+        let instance = Value::Array(
+            (0..ELEMENTS)
+                .map(|_| json!({"a": "no", "b": "no"}))
+                .collect(),
+        );
+
+        let list =
+            serde_json::to_value(validator.evaluate(&instance).list()).expect("Serializable");
+        let paths: Vec<Value> = list["details"]
+            .as_array()
+            .expect("`details` is an array")
+            .iter()
+            .filter(|unit| unit.get("errors").is_some())
+            .map(|unit| unit["evaluationPath"].clone())
+            .collect();
+        let expected: Vec<Value> = (0..ELEMENTS)
+            .flat_map(|_| {
+                [
+                    json!("/items/properties/a/$ref/type"),
+                    json!("/items/properties/b/$ref/type"),
+                ]
+            })
+            .collect();
+        assert_eq!(paths, expected);
     }
 
     #[test]

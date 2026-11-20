@@ -4080,6 +4080,69 @@ fn test_keywords_in_embedded_resource_are_located_in_it(
     }
 }
 
+// A subschema applied inline and as a `$ref` target, with a reference below it.
+#[jsonschema::validator(
+    schema = r##"{"$id":"http://example.com/a.json","properties":{"foo":{"$id":"http://example.com/b.json","definitions":{"inner":{"properties":{"bar":{"type":"string"}}}},"allOf":[{"$ref":"#/definitions/inner"}]}},"$ref":"#/properties/foo/allOf/0"}"##
+)]
+struct InlineAndReferencedInEmbeddedResource;
+#[jsonschema::validator(
+    schema = r##"{"$id":"http://example.com/a.json","properties":{"foo":{"$id":"http://example.com/b.json","definitions":{"inner":{"properties":{"bar":{"type":"string"}}}},"allOf":[{"$ref":"#/definitions/inner"}]}},"allOf":[{"$ref":"#/properties/foo/allOf/0"}]}"##,
+    draft = Draft7
+)]
+struct InlineAndReferencedInEmbeddedResourceDraft7;
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/a","$defs":{"a":{"$ref":"#/$defs/a/properties/foo","properties":{"foo":{"properties":{"bar":{"$ref":"#/$defs/s"}}}}},"s":{"type":"string"}}}"##
+)]
+struct InlineAndReferencedBelowTarget;
+#[jsonschema::validator(
+    schema = r##"{"$ref":"#/$defs/a","$defs":{"a":{"allOf":[{"properties":{"bar":{"$ref":"#/$defs/s"}}}],"properties":{"foo":{"$ref":"#/$defs/a/allOf/0"}}},"s":{"type":"string"}}}"##
+)]
+struct ReferencedAfterInline;
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","type":"object","$ref":"#/$defs/a","$defs":{"a":{"$ref":"#/$defs/a/properties/foo","properties":{"foo":{"properties":{"bar":{"$recursiveRef":"#"}}}}}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefInlineAndReferencedBelowTarget;
+
+// Its errors report the evaluation path of the route that reached it.
+#[test_case(InlineAndReferencedInEmbeddedResource::is_valid, InlineAndReferencedInEmbeddedResource::validate, InlineAndReferencedInEmbeddedResource::iter_errors, InlineAndReferencedInEmbeddedResource::evaluate, r##"{"$id":"http://example.com/a.json","properties":{"foo":{"$id":"http://example.com/b.json","definitions":{"inner":{"properties":{"bar":{"type":"string"}}}},"allOf":[{"$ref":"#/definitions/inner"}]}},"$ref":"#/properties/foo/allOf/0"}"##, Draft::Draft202012 ; "embedded_resource")]
+#[test_case(InlineAndReferencedInEmbeddedResourceDraft7::is_valid, InlineAndReferencedInEmbeddedResourceDraft7::validate, InlineAndReferencedInEmbeddedResourceDraft7::iter_errors, InlineAndReferencedInEmbeddedResourceDraft7::evaluate, r##"{"$id":"http://example.com/a.json","properties":{"foo":{"$id":"http://example.com/b.json","definitions":{"inner":{"properties":{"bar":{"type":"string"}}}},"allOf":[{"$ref":"#/definitions/inner"}]}},"allOf":[{"$ref":"#/properties/foo/allOf/0"}]}"##, Draft::Draft7 ; "embedded_resource_draft7")]
+#[test_case(InlineAndReferencedBelowTarget::is_valid, InlineAndReferencedBelowTarget::validate, InlineAndReferencedBelowTarget::iter_errors, InlineAndReferencedBelowTarget::evaluate, r##"{"$ref":"#/$defs/a","$defs":{"a":{"$ref":"#/$defs/a/properties/foo","properties":{"foo":{"properties":{"bar":{"$ref":"#/$defs/s"}}}}},"s":{"type":"string"}}}"##, Draft::Draft202012 ; "below_target")]
+#[test_case(ReferencedAfterInline::is_valid, ReferencedAfterInline::validate, ReferencedAfterInline::iter_errors, ReferencedAfterInline::evaluate, r##"{"$ref":"#/$defs/a","$defs":{"a":{"allOf":[{"properties":{"bar":{"$ref":"#/$defs/s"}}}],"properties":{"foo":{"$ref":"#/$defs/a/allOf/0"}}},"s":{"type":"string"}}}"##, Draft::Draft202012 ; "referenced_after_inline")]
+#[test_case(RecursiveRefInlineAndReferencedBelowTarget::is_valid, RecursiveRefInlineAndReferencedBelowTarget::validate, RecursiveRefInlineAndReferencedBelowTarget::iter_errors, RecursiveRefInlineAndReferencedBelowTarget::evaluate, r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","type":"object","$ref":"#/$defs/a","$defs":{"a":{"$ref":"#/$defs/a/properties/foo","properties":{"foo":{"properties":{"bar":{"$recursiveRef":"#"}}}}}}}"##, Draft::Draft201909 ; "recursive_ref_below_target")]
+fn test_subschema_applied_inline_and_by_reference_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    schema: &str,
+    draft: Draft,
+) {
+    let schema = serde_json::from_str(schema).expect("valid JSON");
+    let runtime = jsonschema::options()
+        .with_draft(draft)
+        .build(&schema)
+        .expect("valid schema");
+    for instance in [
+        serde_json::json!({"bar": 1, "foo": {"bar": 1}}),
+        serde_json::json!({"bar": "a", "foo": {"bar": 1}}),
+        serde_json::json!({"bar": 1, "foo": {"bar": "a"}}),
+        serde_json::json!({"bar": "a", "foo": {"bar": "a"}}),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+        assert_eq!(
+            evaluation_outputs(&evaluate(&instance)),
+            evaluation_outputs(&runtime.evaluate(&instance)),
+        );
+    }
+}
+
 #[test_case(serde_json::json!(1), false ; "number_rejected")]
 #[test_case(serde_json::json!("x"), false ; "string_rejected")]
 fn test_ref_siblings_are_enforced_in_draft_201909(instance: serde_json::Value, expected: bool) {

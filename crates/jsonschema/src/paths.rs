@@ -182,8 +182,9 @@ fn write_segments(value: &LazyLocation<'_, '_>, segments: usize, buffer: &mut St
 /// Tracks `$ref` traversals during validation for evaluation path computation.
 ///
 /// This is a stack-allocated linked list that gets pushed when crossing `$ref` boundaries.
-/// Each entry stores the **suffix** of the `$ref` keyword: its location relative to the `$ref`
-/// target it sits in (the root at the top), precomputed at compile time.
+/// Each entry stores the location of the `$ref` keyword. Its **suffix**, the part below the target
+/// its parent entered (the root at the top), depends on the route, as one subschema can be applied
+/// inline and as a `$ref` target.
 ///
 /// Use `Option<&RefTracker>` throughout the validation code:
 /// - `None` means no `$ref` has been traversed yet
@@ -232,17 +233,18 @@ fn write_segments(value: &LazyLocation<'_, '_>, segments: usize, buffer: &mut St
 ///
 /// At the "type" validator:
 ///   tracker has two entries:
-///     1. suffix = /properties/order/$ref (relative to the root)
-///     2. suffix = /properties/item/$ref  (relative to /$defs/Order)
+///     1. location = /properties/order/$ref, suffix = /properties/order/$ref (from the root)
+///     2. location = /$defs/Order/properties/item/$ref, suffix = /properties/item/$ref
+///        (from /$defs/Order)
 ///   tracker.prefix() = /properties/order/$ref/properties/item/$ref
 ///   keyword suffix   = /type
 ///   evaluation path  = /properties/order/$ref/properties/item/$ref/type
 /// ```
 #[derive(Debug)]
 pub(crate) struct RefTracker<'a> {
-    /// Path of the `$ref` keyword relative to its resource base.
-    /// E.g., `/properties/user/$ref` (not the full canonical path).
-    suffix: &'a Location,
+    /// Location of the `$ref` keyword, below the `target_base` of its parent.
+    /// E.g., `/$defs/Order/properties/item/$ref`.
+    location: &'a Location,
     /// The resource base of the `$ref` target.
     /// Used to compute validator suffixes at runtime.
     /// E.g., `/$defs/Person` when `$ref` points to `#/$defs/Person`.
@@ -260,12 +262,12 @@ impl<'a> RefTracker<'a> {
     #[inline]
     #[must_use]
     pub(crate) fn new(
-        suffix: &'a Location,
+        location: &'a Location,
         target_base: &'a Location,
         parent: Option<&'a RefTracker<'a>>,
     ) -> Self {
         RefTracker {
-            suffix,
+            location,
             target_base,
             parent,
             cached_prefix: std::sync::OnceLock::new(),
@@ -315,9 +317,19 @@ impl<'a> RefTracker<'a> {
         self.parent
     }
 
+    /// Location of the `$ref` keyword, which with the parent's prefix identifies this prefix.
     #[inline]
-    pub(crate) fn suffix(&self) -> &Location {
-        self.suffix
+    pub(crate) fn location(&self) -> &Location {
+        self.location
+    }
+
+    /// The `$ref` keyword's location below the target its parent entered.
+    fn suffix(&self) -> &str {
+        let base = self.parent.map_or("", |parent| parent.target_base.as_str());
+        self.location
+            .as_str()
+            .strip_prefix(base)
+            .expect("A `$ref` keyword lies below the target its parent entered")
     }
 
     #[inline]
@@ -338,9 +350,9 @@ impl<'a> RefTracker<'a> {
     // a prefix per level would hold memory quadratic in the `$ref` chain depth.
     fn compute_prefix(&self) -> Location {
         let Some(parent) = self.parent else {
-            return self.suffix.clone();
+            return self.location.clone();
         };
-        let mut suffixes = vec![self.suffix.as_str()];
+        let mut suffixes = vec![self.suffix()];
         let mut base = "";
         let mut ancestor = Some(parent);
         while let Some(tracker) = ancestor {
@@ -348,7 +360,7 @@ impl<'a> RefTracker<'a> {
                 base = prefix.as_str();
                 break;
             }
-            suffixes.push(tracker.suffix.as_str());
+            suffixes.push(tracker.suffix());
             ancestor = tracker.parent;
         }
         let capacity = base.len() + suffixes.iter().map(|suffix| suffix.len()).sum::<usize>();
@@ -578,15 +590,6 @@ impl Location {
         build_location(escaped.len() + suffix.len(), |buffer| {
             buffer.push_str(escaped);
             buffer.push_str(suffix);
-        })
-    }
-
-    /// `escaped` followed by `property` as one more segment.
-    pub(crate) fn from_escaped_with(escaped: &str, property: &str) -> Self {
-        build_location(escaped.len() + property.len() + 1, |buffer| {
-            buffer.push_str(escaped);
-            buffer.push('/');
-            write_escaped_str(buffer, property);
         })
     }
 

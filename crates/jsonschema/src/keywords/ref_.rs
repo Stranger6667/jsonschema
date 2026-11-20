@@ -18,10 +18,9 @@ use std::sync::Arc;
 /// (either a `PendingSchemaNode` or a cached node returned by `lookup_maybe_recursive`).
 struct RefValidator<F: Json> {
     inner: BoxedValidator<F>,
-    /// Path of this `$ref` keyword relative to its resource base.
-    /// E.g., `/properties/foo/$ref` (not the full canonical path).
+    /// Location of this `$ref` keyword, e.g. `/$defs/Order/properties/foo/$ref`.
     /// Used for building the `tracker` prefix.
-    ref_suffix: Location,
+    ref_location: Location,
     /// The resource base of the `$ref` target.
     /// E.g., `/$defs/Item` when `$ref` points to `#/$defs/Item`.
     /// Used for computing validator suffixes at runtime.
@@ -46,7 +45,7 @@ impl<F: Json> Validate<F> for RefValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        let child_tracker = RefTracker::new(&self.ref_location, &self.ref_target_base, tracker);
         self.inner
             .validate(instance, location, Some(&child_tracker), ctx)
     }
@@ -59,7 +58,7 @@ impl<F: Json> Validate<F> for RefValidator<F> {
         ctx: &mut ValidationContext,
         errors: &mut Vec<ValidationError<'i>>,
     ) {
-        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        let child_tracker = RefTracker::new(&self.ref_location, &self.ref_target_base, tracker);
         self.inner
             .collect_errors(instance, location, Some(&child_tracker), ctx, errors);
     }
@@ -88,7 +87,7 @@ impl<F: Json> Validate<F> for RefValidator<F> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        let child_tracker = RefTracker::new(&self.ref_location, &self.ref_target_base, tracker);
         self.inner.evaluate_with_location(
             instance,
             location,
@@ -112,7 +111,7 @@ impl<F: Json> Validate<F> for RefValidator<F> {
 /// Used for non-recursive refs: a compiled node, or a placeholder for a deferred one.
 struct DirectRefValidator<T> {
     inner: T,
-    ref_suffix: Location,
+    ref_location: Location,
     ref_target_base: Location,
     target_location: Option<Arc<Uri<String>>>,
 }
@@ -137,7 +136,7 @@ impl<F: Json, T: Validate<F>> Validate<F> for DirectRefValidator<T> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
-        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        let child_tracker = RefTracker::new(&self.ref_location, &self.ref_target_base, tracker);
         self.inner
             .validate(instance, location, Some(&child_tracker), ctx)
     }
@@ -150,7 +149,7 @@ impl<F: Json, T: Validate<F>> Validate<F> for DirectRefValidator<T> {
         ctx: &mut ValidationContext,
         errors: &mut Vec<ValidationError<'i>>,
     ) {
-        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        let child_tracker = RefTracker::new(&self.ref_location, &self.ref_target_base, tracker);
         self.inner
             .collect_errors(instance, location, Some(&child_tracker), ctx, errors);
     }
@@ -179,7 +178,7 @@ impl<F: Json, T: Validate<F>> Validate<F> for DirectRefValidator<T> {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationResult {
-        let child_tracker = RefTracker::new(&self.ref_suffix, &self.ref_target_base, tracker);
+        let child_tracker = RefTracker::new(&self.ref_location, &self.ref_target_base, tracker);
         self.inner.evaluate_with_location(
             instance,
             location,
@@ -299,20 +298,20 @@ enum RefTarget<F: Json> {
 impl<F: Json> RefTarget<F> {
     fn into_validator(
         self,
-        ref_suffix: Location,
+        ref_location: Location,
         ref_target_base: Location,
         target_location: Option<Arc<Uri<String>>>,
     ) -> BoxedValidator<F> {
         match self {
             RefTarget::Node(inner) => Box::new(DirectRefValidator {
                 inner,
-                ref_suffix,
+                ref_location,
                 ref_target_base,
                 target_location,
             }),
             RefTarget::Pending(inner) => Box::new(DirectRefValidator {
                 inner,
-                ref_suffix,
+                ref_location,
                 ref_target_base,
                 target_location,
             }),
@@ -338,7 +337,7 @@ fn compile_reference_validator<'a, F: Json>(
             Err(error) => return Some(Err(ValidationError::from(error))),
         };
 
-    let ref_suffix = ctx.suffix_with(keyword);
+    let ref_location = ctx.location().join(keyword);
     // A pointer counts from the resource the reference names, an anchor from the one it is in.
     let (ref_target_base, target_location, resource_start) = if is_named(&alias) {
         match named_target_base(ctx, &resolved) {
@@ -388,7 +387,7 @@ fn compile_reference_validator<'a, F: Json>(
             CachedTarget::Placeholder(placeholder) => RefTarget::Pending(placeholder),
         };
         return Some(Ok(target.into_validator(
-            ref_suffix,
+            ref_location,
             ref_target_base,
             target_location,
         )));
@@ -400,7 +399,7 @@ fn compile_reference_validator<'a, F: Json>(
         let placeholder = ctx.defer_ref_target(resolved, ref_target_base.clone(), identity);
         return Some(Ok(Box::new(DirectRefValidator {
             inner: placeholder,
-            ref_suffix,
+            ref_location,
             ref_target_base,
             target_location,
         })));
@@ -429,7 +428,7 @@ fn compile_reference_validator<'a, F: Json>(
                     RefTarget::Pending(PendingSchemaNode::pointing_at(&node))
                 }
             };
-            target.into_validator(ref_suffix, ref_target_base, target_location)
+            target.into_validator(ref_location, ref_target_base, target_location)
         })
         .map_err(ValidationError::to_owned),
     )
@@ -466,7 +465,7 @@ fn compile_recursive_validator<'a, F: Json>(
     ctx: &compiler::Context<F>,
     reference: &str,
 ) -> CompilationResult<'a, F> {
-    let ref_suffix = ctx.suffix_with("$recursiveRef");
+    let ref_location = ctx.location().join("$recursiveRef");
     let (_, ref_target_base) = ctx
         .ref_target(reference, extract_ref_target_base)
         .map_err(ValidationError::from)?;
@@ -480,7 +479,7 @@ fn compile_recursive_validator<'a, F: Json>(
     if let Some(validator) = ctx.lookup_maybe_recursive(&identity, resolved.resolver()) {
         return Ok(Box::new(RefValidator {
             inner: validator,
-            ref_suffix,
+            ref_location,
             ref_target_base,
             target_location,
         }));
@@ -498,7 +497,7 @@ fn compile_recursive_validator<'a, F: Json>(
         .map(|target| {
             Box::new(RefValidator {
                 inner: target.into_validator(),
-                ref_suffix,
+                ref_location,
                 ref_target_base,
                 target_location,
             }) as Box<dyn Validate<F>>
@@ -3310,6 +3309,85 @@ mod tests {
             .map(|error| reported_error(&error))
             .collect();
         assert_eq!(json!(errors), *expected);
+    }
+
+    // A subschema applied inline and as a `$ref` target is one node, whose errors report the
+    // evaluation path of the route that reached it.
+    #[test_case(
+        &json!({"$id": "http://example.com/a.json", "properties": {"foo": {"$id": "http://example.com/b.json", "definitions": {"inner": {"properties": {"bar": {"type": "string"}}}}, "allOf": [{"$ref": "#/definitions/inner"}]}}, "$ref": "#/properties/foo/allOf/0"}),
+        &json!([
+            {"message": "1 is not of type \"string\"", "instancePath": "/foo/bar", "schemaPath": "/definitions/inner/properties/bar/type", "evaluationPath": "/properties/foo/allOf/0/$ref/properties/bar/type", "absoluteKeywordLocation": "http://example.com/b.json#/definitions/inner/properties/bar/type"},
+            {"message": "1 is not of type \"string\"", "instancePath": "/bar", "schemaPath": "/definitions/inner/properties/bar/type", "evaluationPath": "/$ref/$ref/properties/bar/type", "absoluteKeywordLocation": "http://example.com/b.json#/definitions/inner/properties/bar/type"}
+        ])
+        ; "pointer into an embedded resource"
+    )]
+    #[test_case(
+        &json!({"$schema": "http://json-schema.org/draft-07/schema#", "$id": "http://example.com/a.json", "properties": {"foo": {"$id": "http://example.com/b.json", "definitions": {"inner": {"properties": {"bar": {"type": "string"}}}}, "allOf": [{"$ref": "#/definitions/inner"}]}}, "allOf": [{"$ref": "#/properties/foo/allOf/0"}]}),
+        &json!([
+            {"message": "1 is not of type \"string\"", "instancePath": "/foo/bar", "schemaPath": "/definitions/inner/properties/bar/type", "evaluationPath": "/properties/foo/allOf/0/$ref/properties/bar/type", "absoluteKeywordLocation": "http://example.com/b.json#/definitions/inner/properties/bar/type"},
+            {"message": "1 is not of type \"string\"", "instancePath": "/bar", "schemaPath": "/definitions/inner/properties/bar/type", "evaluationPath": "/allOf/0/$ref/$ref/properties/bar/type", "absoluteKeywordLocation": "http://example.com/b.json#/definitions/inner/properties/bar/type"}
+        ])
+        ; "pointer into an embedded resource in Draft 7"
+    )]
+    #[test_case(
+        &json!({"$ref": "#/$defs/a", "$defs": {"a": {"$ref": "#/$defs/a/properties/foo", "properties": {"foo": {"properties": {"bar": {"$ref": "#/$defs/s"}}}}}, "s": {"type": "string"}}}),
+        &json!([
+            {"message": "1 is not of type \"string\"", "instancePath": "/foo/bar", "schemaPath": "/$defs/s/type", "evaluationPath": "/$ref/properties/foo/properties/bar/$ref/type", "absoluteKeywordLocation": null},
+            {"message": "1 is not of type \"string\"", "instancePath": "/bar", "schemaPath": "/$defs/s/type", "evaluationPath": "/$ref/$ref/properties/bar/$ref/type", "absoluteKeywordLocation": null}
+        ])
+        ; "pointer below a reference target"
+    )]
+    #[test_case(
+        &json!({"$ref": "#/$defs/a", "$defs": {"a": {"allOf": [{"properties": {"bar": {"$ref": "#/$defs/s"}}}], "properties": {"foo": {"$ref": "#/$defs/a/allOf/0"}}}, "s": {"type": "string"}}}),
+        &json!([
+            {"message": "1 is not of type \"string\"", "instancePath": "/foo/bar", "schemaPath": "/$defs/s/type", "evaluationPath": "/$ref/properties/foo/$ref/properties/bar/$ref/type", "absoluteKeywordLocation": null},
+            {"message": "1 is not of type \"string\"", "instancePath": "/bar", "schemaPath": "/$defs/s/type", "evaluationPath": "/$ref/allOf/0/properties/bar/$ref/type", "absoluteKeywordLocation": null}
+        ])
+        ; "pointer to a subschema applied inline first"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "type": "object", "$ref": "#/$defs/a", "$defs": {"a": {"$ref": "#/$defs/a/properties/foo", "properties": {"foo": {"properties": {"bar": {"$recursiveRef": "#"}}}}}}}),
+        &json!([
+            {"message": "1 is not of type \"object\"", "instancePath": "/foo/bar", "schemaPath": "/type", "evaluationPath": "/$ref/properties/foo/properties/bar/$recursiveRef/type", "absoluteKeywordLocation": null},
+            {"message": "1 is not of type \"object\"", "instancePath": "/bar", "schemaPath": "/type", "evaluationPath": "/$ref/$ref/properties/bar/$recursiveRef/type", "absoluteKeywordLocation": null}
+        ])
+        ; "recursive reference below a reference target"
+    )]
+    fn subschema_applied_inline_and_by_reference_reports_each_route(
+        schema: &Value,
+        expected: &Value,
+    ) {
+        let validator = crate::validator_for(schema).expect("Valid schema");
+        let instance = json!({"bar": 1, "foo": {"bar": 1}});
+        let errors: Vec<Value> = validator
+            .iter_errors(&instance)
+            .map(|error| reported_error(&error))
+            .collect();
+        assert_eq!(json!(errors), *expected);
+        assert_eq!(
+            validator
+                .validate(&instance)
+                .err()
+                .as_ref()
+                .map(reported_error),
+            expected.get(0).cloned()
+        );
+        let evaluation =
+            serde_json::to_value(validator.evaluate(&instance).list()).expect("Serializable");
+        let evaluated: Vec<Value> = evaluation["details"]
+            .as_array()
+            .expect("List output has details")
+            .iter()
+            .filter(|unit| unit.get("errors").is_some())
+            .map(|unit| json!([unit["instanceLocation"], unit["evaluationPath"]]))
+            .collect();
+        let routes: Vec<Value> = expected
+            .as_array()
+            .expect("Errors are a list")
+            .iter()
+            .map(|error| json!([error["instancePath"], error["evaluationPath"]]))
+            .collect();
+        assert_eq!(evaluated, routes);
     }
 
     const SELF_REFERENCING_ID: &str = "https://example.com/x";
