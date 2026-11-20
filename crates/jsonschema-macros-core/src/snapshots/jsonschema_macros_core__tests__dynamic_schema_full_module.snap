@@ -332,7 +332,21 @@ mod __validator_impl {
                                         if __reentered {
                                             true
                                         } else {
-                                            let __valid = target(instance);
+                                            let __valid = {
+                                                __JSONSCHEMA_DYNAMIC_STACK
+                                                    .with(|stack| {
+                                                        stack.borrow_mut().push(("node", validate_ref_0));
+                                                    });
+                                                let __valid = target(instance);
+                                                __JSONSCHEMA_DYNAMIC_STACK
+                                                    .with(|stack| {
+                                                        let mut stack = stack.borrow_mut();
+                                                        for _ in 0..1usize {
+                                                            stack.pop();
+                                                        }
+                                                    });
+                                                __valid
+                                            };
                                             __JSONSCHEMA_VALIDATE_MARK
                                                 .with(|__marks| __marks.borrow_mut().pop());
                                             __valid
@@ -453,7 +467,21 @@ mod __validator_impl {
                                             if __reentered {
                                                 true
                                             } else {
-                                                let __valid = target(instance);
+                                                let __valid = {
+                                                    __JSONSCHEMA_DYNAMIC_STACK
+                                                        .with(|stack| {
+                                                            stack.borrow_mut().push(("node", validate_ref_0));
+                                                        });
+                                                    let __valid = target(instance);
+                                                    __JSONSCHEMA_DYNAMIC_STACK
+                                                        .with(|stack| {
+                                                            let mut stack = stack.borrow_mut();
+                                                            for _ in 0..1usize {
+                                                                stack.pop();
+                                                            }
+                                                        });
+                                                    __valid
+                                                };
                                                 __JSONSCHEMA_VALIDATE_MARK
                                                     .with(|__marks| __marks.borrow_mut().pop());
                                                 __valid
@@ -496,12 +524,37 @@ mod __validator_impl {
                                                         }
                                                     });
                                                 if !__reentered {
-                                                    let __stop = target_errors(
-                                                        instance,
-                                                        __path,
-                                                        __errors,
-                                                        "/properties/child/$dynamicRef",
-                                                    );
+                                                    let __stop = {
+                                                        __JSONSCHEMA_DYNAMIC_STACK
+                                                            .with(|stack| {
+                                                                stack.borrow_mut().push(("node", validate_ref_0));
+                                                            });
+                                                        __JSONSCHEMA_DYNAMIC_ERRORS_STACK
+                                                            .with(|stack| {
+                                                                stack.borrow_mut().push(("node", validate_ref_0_errors));
+                                                            });
+                                                        let __stop = target_errors(
+                                                            instance,
+                                                            __path,
+                                                            __errors,
+                                                            "/properties/child/$dynamicRef",
+                                                        );
+                                                        __JSONSCHEMA_DYNAMIC_ERRORS_STACK
+                                                            .with(|stack| {
+                                                                let mut stack = stack.borrow_mut();
+                                                                for _ in 0..1usize {
+                                                                    stack.pop();
+                                                                }
+                                                            });
+                                                        __JSONSCHEMA_DYNAMIC_STACK
+                                                            .with(|stack| {
+                                                                let mut stack = stack.borrow_mut();
+                                                                for _ in 0..1usize {
+                                                                    stack.pop();
+                                                                }
+                                                            });
+                                                        __stop
+                                                    };
                                                     __JSONSCHEMA_VALIDATE_MARK
                                                         .with(|__marks| __marks.borrow_mut().pop());
                                                     if __stop {

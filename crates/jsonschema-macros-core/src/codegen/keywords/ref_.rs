@@ -2,6 +2,7 @@ use super::super::{
     expr::{call_errors, ErrorsBlock, RefErrors},
     helpers::{
         collect_dynamic_anchor_bindings, dynamic_ref_anchor_name, get_or_create_is_valid_fn,
+        DynamicAnchorBinding,
     },
     refs::resolve_ref,
     stack_emit::{
@@ -130,6 +131,38 @@ fn ref_call<E: ValueEmitter>(
     }
 }
 
+/// The code putting the `$dynamicAnchor` bindings of the resource a reference leaves on the
+/// dynamic-scope stacks while its target runs, and taking them off after.
+struct CallScope {
+    pushes: Vec<TokenStream>,
+    errors_pushes: Vec<TokenStream>,
+    pop: TokenStream,
+    errors_pop: TokenStream,
+}
+
+impl CallScope {
+    fn new(bindings: &[DynamicAnchorBinding]) -> Self {
+        CallScope {
+            pushes: bindings
+                .iter()
+                .map(|binding| {
+                    let is_valid_ident = format_ident!("{}", binding.is_valid_name);
+                    push_dynamic_is_valid(&binding.anchor, &is_valid_ident)
+                })
+                .collect(),
+            errors_pushes: bindings
+                .iter()
+                .map(|binding| {
+                    let errors_ident = format_ident!("{}_errors", binding.is_valid_name);
+                    push_dynamic_errors(&binding.anchor, &errors_ident)
+                })
+                .collect(),
+            pop: pop_dynamic_is_valid_n(bindings.len()),
+            errors_pop: pop_dynamic_errors_n(bindings.len()),
+        }
+    }
+}
+
 /// A static reference, through the `keyword` that holds it.
 fn compile_at<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -187,23 +220,12 @@ fn compile_at<E: ValueEmitter>(
     }
     let call = ref_call(ctx, &func_ident, cycle, &resolved.location);
     if ctx.uses_dynamic_ref && !call_scope_bindings.is_empty() {
-        let call_scope_pushes: Vec<_> = call_scope_bindings
-            .iter()
-            .map(|binding| {
-                let is_valid_ident = format_ident!("{}", binding.is_valid_name);
-                push_dynamic_is_valid(&binding.anchor, &is_valid_ident)
-            })
-            .collect();
-        let call_scope_errors_pushes: Vec<_> = call_scope_bindings
-            .iter()
-            .map(|binding| {
-                let errors_ident = format_ident!("{}_errors", binding.is_valid_name);
-                push_dynamic_errors(&binding.anchor, &errors_ident)
-            })
-            .collect();
-        let call_scope_count = call_scope_bindings.len();
-        let dynamic_pop = pop_dynamic_is_valid_n(call_scope_count);
-        let dynamic_errors_pop = pop_dynamic_errors_n(call_scope_count);
+        let CallScope {
+            pushes: call_scope_pushes,
+            errors_pushes: call_scope_errors_pushes,
+            pop: dynamic_pop,
+            errors_pop: dynamic_errors_pop,
+        } = CallScope::new(&call_scope_bindings);
         let is_valid = quote! {
             {
                 #(#call_scope_pushes)*
@@ -293,6 +315,7 @@ pub(crate) fn compile_dynamic<E: ValueEmitter>(
     };
 
     ctx.uses_dynamic_ref = true;
+    let caller = collect_dynamic_anchor_bindings(ctx, ctx.current_base_uri.clone());
     through_dynamic_scope(
         ctx,
         &resolved.location,
@@ -303,6 +326,7 @@ pub(crate) fn compile_dynamic<E: ValueEmitter>(
             pattern: quote! { (dynamic_anchor, target) },
             selects: quote! { *dynamic_anchor == #anchor_name },
         },
+        &caller,
         "$dynamicRef",
     )
 }
@@ -339,6 +363,7 @@ pub(crate) fn compile_recursive<E: ValueEmitter>(
             pattern: quote! { (target, is_anchor) },
             selects: quote! { *is_anchor },
         },
+        &[],
         "$recursiveRef",
     )
 }
@@ -383,12 +408,14 @@ impl BoundEntry {
 ///
 /// Bound to its static target, at `location`, it is the static reference `fallback`: the runtime
 /// compiles both under one name, so they share a cycle guard and the first entry stays unguarded.
-/// Bound elsewhere, it enters that code under a guard of its own.
+/// Bound elsewhere, it enters that code under a guard of its own, with the `caller` bindings of the
+/// resource it leaves on the stacks.
 fn through_dynamic_scope<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     location: &str,
     fallback: &CompiledExpr,
     bound: &BoundEntry,
+    caller: &[DynamicAnchorBinding],
     keyword: &'static str,
 ) -> CompiledExpr {
     let node_address = E::node_address(format_ident!("instance"));
@@ -402,7 +429,37 @@ fn through_dynamic_scope<E: ValueEmitter>(
         .insert(bound.is_valid_stack.to_string());
     let lookup = bound.lookup(&bound.is_valid_stack, &static_target);
     let fallback_is_valid = fallback.is_valid_token_stream();
-    let guarded_is_valid = cycle_guarded_is_valid(&node_address, &quote! { target(instance) });
+    let site = ctx.schema_path_for_keyword(keyword);
+    let (landed_is_valid, landed_errors) = if caller.is_empty() {
+        (
+            quote! { target(instance) },
+            quote! { target_errors(instance, __path, __errors, #site) },
+        )
+    } else {
+        let CallScope {
+            pushes,
+            errors_pushes,
+            pop,
+            errors_pop,
+        } = CallScope::new(caller);
+        (
+            quote! {{
+                #(#pushes)*
+                let __valid = target(instance);
+                #pop
+                __valid
+            }},
+            quote! {{
+                #(#pushes)*
+                #(#errors_pushes)*
+                let __stop = target_errors(instance, __path, __errors, #site);
+                #errors_pop
+                #pop
+                __stop
+            }},
+        )
+    };
+    let guarded_is_valid = cycle_guarded_is_valid(&node_address, &landed_is_valid);
     let is_valid = quote! {
         {
             let __dynamic_target = #lookup;
@@ -422,11 +479,7 @@ fn through_dynamic_scope<E: ValueEmitter>(
         ErrorsBlock::Expr(expr) => expr.clone(),
         ErrorsBlock::AlwaysValid => quote! {},
     };
-    let site = ctx.schema_path_for_keyword(keyword);
-    let guarded_errors = cycle_guarded_errors(
-        &node_address,
-        &quote! { target_errors(instance, __path, __errors, #site) },
-    );
+    let guarded_errors = cycle_guarded_errors(&node_address, &landed_errors);
     CompiledExpr::with_errors(
         is_valid,
         quote! {

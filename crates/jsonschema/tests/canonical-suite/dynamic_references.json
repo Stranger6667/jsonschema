@@ -589,6 +589,76 @@
     }
   },
   {
+    "description": "a $dynamicRef landing outside its resource keeps that resource in the dynamic scope",
+    "schema": {
+      "$schema": "https://json-schema.org/draft/2020-12/schema",
+      "$id": "https://example.com/caller-scope/root",
+      "$ref": "caller",
+      "$defs": {
+        "a": {
+          "$dynamicAnchor": "a",
+          "$ref": "leaf"
+        },
+        "caller": {
+          "$id": "caller",
+          "$dynamicRef": "#a",
+          "$defs": {
+            "a": {
+              "$dynamicAnchor": "a",
+              "type": "null"
+            },
+            "b": {
+              "$dynamicAnchor": "b",
+              "type": "string"
+            }
+          }
+        },
+        "leaf": {
+          "$id": "leaf",
+          "$dynamicRef": "#b",
+          "$defs": {
+            "b": {
+              "$dynamicAnchor": "b",
+              "type": "integer"
+            }
+          }
+        }
+      }
+    },
+    "tests": [
+      {
+        "data": "x",
+        "valid": true
+      },
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": null,
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$defs": {
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fcaller-scope%2Fcaller%23a%7Cdyn%3Da%40https%3A%2F%2Fexample.com%2Fcaller-scope%2Froot%7Cdyn%3Db%40https%3A%2F%2Fexample.com%2Fcaller-scope%2Fcaller": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fcaller-scope%252Fleaf%257Cdyn%253Da%2540https%253A%252F%252Fexample.com%252Fcaller-scope%252Froot%257Cdyn%253Db%2540https%253A%252F%252Fexample.com%252Fcaller-scope%252Fcaller"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fcaller-scope%2Fcaller%7Cdyn%3Da%40https%3A%2F%2Fexample.com%2Fcaller-scope%2Froot": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fcaller-scope%252Fcaller%2523a%257Cdyn%253Da%2540https%253A%252F%252Fexample.com%252Fcaller-scope%252Froot%257Cdyn%253Db%2540https%253A%252F%252Fexample.com%252Fcaller-scope%252Fcaller"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fcaller-scope%2Fleaf%23b%7Cdyn%3Da%40https%3A%2F%2Fexample.com%2Fcaller-scope%2Froot%7Cdyn%3Db%40https%3A%2F%2Fexample.com%2Fcaller-scope%2Fcaller": {
+          "type": "string"
+        },
+        "urn:jsonschema:canonical:https%3A%2F%2Fexample.com%2Fcaller-scope%2Fleaf%7Cdyn%3Da%40https%3A%2F%2Fexample.com%2Fcaller-scope%2Froot%7Cdyn%3Db%40https%3A%2F%2Fexample.com%2Fcaller-scope%2Fcaller": {
+          "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fcaller-scope%252Fleaf%2523b%257Cdyn%253Da%2540https%253A%252F%252Fexample.com%252Fcaller-scope%252Froot%257Cdyn%253Db%2540https%253A%252F%252Fexample.com%252Fcaller-scope%252Fcaller"
+        }
+      },
+      "$ref": "#/$defs/urn:jsonschema:canonical:https%253A%252F%252Fexample.com%252Fcaller-scope%252Fcaller%257Cdyn%253Da%2540https%253A%252F%252Fexample.com%252Fcaller-scope%252Froot",
+      "$schema": "https://json-schema.org/draft/2020-12/schema"
+    }
+  },
+  {
     "description": "$recursiveRef without $recursiveAnchor works like $ref",
     "schema": {
       "$schema": "https://json-schema.org/draft/2019-09/schema",

@@ -8,6 +8,9 @@
 //!
 //! A schema object has at most two anchors, so [`AnchorIter`] needs no heap allocation.
 
+use std::sync::Arc;
+
+use fluent_uri::Uri;
 use serde_json::Value;
 
 use crate::{Draft, Error, Resolved, Resolver, ResourceRef};
@@ -34,18 +37,21 @@ impl<'a> Anchor<'a> {
     }
 }
 
-/// The outermost resource in the dynamic scope with a `$dynamicAnchor` called `name`; `resource`
-/// when the scope has none.
+/// The outermost resource with a `$dynamicAnchor` called `name` among the dynamic scope and the
+/// resource `caller` is based at; `resource`, in `document`, when none has one.
 pub(crate) fn resolve_dynamic<'r>(
     name: &str,
     resource: ResourceRef<'r>,
-    resolver: Resolver<'r>,
+    document: &Arc<Uri<String>>,
+    caller: &Resolver<'r>,
 ) -> Result<Resolved<'r>, Error> {
-    let scope = resolver.dynamic_scope();
+    let base_uri = caller.base_uri();
+    let scope = caller.dynamic_scope();
     let mut last = resource;
     let mut found_in = None;
-    for uri in &scope {
-        match resolver.lookup_anchor(uri, name) {
+    // Innermost first, so the last match is the outermost
+    for uri in std::iter::once(&base_uri).chain(scope.iter_shared()) {
+        match caller.lookup_anchor(uri, name) {
             Ok(anchor) => {
                 if let Anchor::Dynamic { resource, .. } = anchor {
                     last = resource;
@@ -57,13 +63,10 @@ pub(crate) fn resolve_dynamic<'r>(
         }
     }
     // The anchor's own document is the base for references inside it
-    let resolver = match found_in {
-        Some(uri) => resolver.at_uri(uri)?,
-        None => resolver,
-    };
+    let landed = Arc::clone(found_in.unwrap_or(document));
     Ok(Resolved::new(
         last.contents(),
-        resolver.in_subresource(last)?,
+        caller.dynamic_ref_lands_in(landed).in_subresource(last)?,
         last.draft(),
     ))
 }
@@ -167,6 +170,7 @@ pub(crate) fn legacy_anchor_in_id(draft: Draft, contents: &Value) -> AnchorIter<
 #[cfg(test)]
 mod tests {
     use crate::{Draft, Registry};
+    use fluent_uri::Uri;
     use serde_json::{json, Value};
     use test_case::test_case;
 
@@ -296,6 +300,69 @@ mod tests {
             resolved.resolver().base_uri().as_str(),
             "https://example.com/root"
         );
+    }
+
+    // `caller`'s `$dynamicRef "#a"` lands in `root`. `caller` stays in the dynamic scope there when
+    // it declares a `$dynamicAnchor` no resource in the scope declares, so `leaf`'s `"#b"` binds it.
+    #[test_case(
+        &json!({"$dynamicAnchor": "b", "type": "string"}),
+        &["https://example.com/caller", "https://example.com/root"],
+        &json!({"$dynamicAnchor": "b", "type": "string"});
+        "caller declares a name the scope lacks"
+    )]
+    #[test_case(
+        &json!({"type": "string"}),
+        &["https://example.com/root"],
+        &json!({"$dynamicAnchor": "b", "type": "integer"});
+        "caller declares only names the scope has"
+    )]
+    fn dynamic_ref_landing_outside_its_resource(b: &Value, scope: &[&str], bound: &Value) {
+        let root = Draft::Draft202012.create_resource(json!({
+            "$id": "https://example.com/root",
+            "$defs": {
+                "a": {"$dynamicAnchor": "a", "$ref": "leaf"},
+                "caller": {
+                    "$id": "caller",
+                    "$dynamicRef": "#a",
+                    "$defs": {"a": {"$dynamicAnchor": "a", "type": "null"}, "b": b}
+                },
+                "leaf": {
+                    "$id": "leaf",
+                    "$dynamicRef": "#b",
+                    "$defs": {"b": {"$dynamicAnchor": "b", "type": "integer"}}
+                }
+            }
+        }));
+        let registry = Registry::new()
+            .add("https://example.com/root", &root)
+            .expect("Invalid resources")
+            .prepare()
+            .expect("Invalid resources");
+        let resolver = registry
+            .resolver(crate::uri::from_str("https://example.com/root").expect("Invalid base URI"));
+
+        let caller = resolver.lookup("caller").expect("Lookup failed");
+        let landed = caller
+            .resolver()
+            .lookup_dynamic_ref("#a")
+            .expect("Lookup failed");
+        assert_eq!(landed.contents(), &root.contents()["$defs"]["a"]);
+        assert_eq!(
+            landed
+                .resolver()
+                .dynamic_scope()
+                .iter()
+                .map(Uri::as_str)
+                .collect::<Vec<_>>(),
+            scope
+        );
+
+        let leaf = landed.resolver().lookup("leaf").expect("Lookup failed");
+        let bound_to = leaf
+            .resolver()
+            .lookup_dynamic_ref("#b")
+            .expect("Lookup failed");
+        assert_eq!(bound_to.contents(), bound);
     }
 
     #[test]

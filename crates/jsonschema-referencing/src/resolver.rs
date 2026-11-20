@@ -70,9 +70,11 @@ impl<'r> Resolver<'r> {
     }
     /// Resolve a `$dynamicRef` to the resource it points to.
     ///
-    /// A fragment naming a `$dynamicAnchor` resolves to the outermost resource in the dynamic
-    /// scope with a `$dynamicAnchor` of that name. Any other reference resolves as
-    /// [`Resolver::lookup`] does.
+    /// A fragment naming a `$dynamicAnchor` resolves to the outermost resource with a
+    /// `$dynamicAnchor` of that name, in the dynamic scope or at this resolver's base URI. When
+    /// that resource is another one, the resource at the base URI joins the dynamic scope of the
+    /// returned resolver if it declares a `$dynamicAnchor` that no resource in the scope declares.
+    /// Any other reference resolves as [`Resolver::lookup`] does.
     ///
     /// # Errors
     ///
@@ -214,8 +216,7 @@ impl<'r> Resolver<'r> {
                     target.origin, self.base_uri,
                     "a target is entered on a resolver with the base URI it was resolved from"
                 );
-                let resolver = self.evolve(Arc::clone(&target.document));
-                crate::anchor::resolve_dynamic(name, *resource, resolver)
+                crate::anchor::resolve_dynamic(name, *resource, &target.document, self)
             }
         }
     }
@@ -305,16 +306,22 @@ impl<'r> Resolver<'r> {
     pub fn in_dynamic_scope(&self) -> Self {
         self.evolve(Arc::clone(&self.base_uri))
     }
-    /// The same resolver based at `uri`, keeping the dynamic scope.
-    #[inline]
-    pub(crate) fn at_uri(&self, uri: &Uri<String>) -> Result<Self, Error> {
-        Ok(Resolver {
-            registry: self.registry,
-            base_uri: self
-                .registry
-                .resolve_uri(&self.base_uri.borrow(), uri.as_str())?,
-            scopes: self.scopes.clone(),
-        })
+    /// The resolver for the target of a `$dynamicRef` in this resolver's resource, which landed in
+    /// the resource at `landed`. Landing in another resource keeps this one in the dynamic scope,
+    /// which matters only when it declares a `$dynamicAnchor` no resource in the scope declares.
+    pub(crate) fn dynamic_ref_lands_in(&self, landed: Arc<Uri<String>>) -> Self {
+        let leaves = landed != self.base_uri && self.adds_dynamic_anchors();
+        self.moved(landed, leaves)
+    }
+    /// Whether the resource at the base URI declares a `$dynamicAnchor` no resource in the dynamic
+    /// scope declares.
+    fn adds_dynamic_anchors(&self) -> bool {
+        let mut adds = false;
+        self.registry
+            .for_each_dynamic_anchor(&self.base_uri, |name| {
+                adds = adds || !self.declares_dynamic_anchor(&self.scopes, name);
+            });
+        adds
     }
     #[must_use]
     #[inline]

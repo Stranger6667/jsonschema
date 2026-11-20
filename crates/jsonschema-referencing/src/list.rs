@@ -78,6 +78,10 @@ impl<T> List<T> {
             current: self.head.as_ref(),
         }
     }
+    /// An iterator over the shared pointers to the list elements.
+    pub(crate) fn iter_shared(&self) -> impl Iterator<Item = &Arc<T>> {
+        std::iter::successors(self.head.as_ref(), |node| node.next.as_ref()).map(|node| &node.value)
+    }
     /// The elements in front of `tail`, when this list continues with the elements of `tail`.
     pub(crate) fn prefix_before(&self, tail: &List<T>) -> Option<std::iter::Take<Iter<'_, T>>>
     where

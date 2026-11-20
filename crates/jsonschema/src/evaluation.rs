@@ -3236,24 +3236,34 @@ pub mod generated {
                     pushed,
                 };
             }
-            let pushed = self.pushed(leaves, caller);
             let Some(name) = anchor else {
                 return Landing {
                     schema: target,
-                    pushed,
+                    pushed: self.pushed(leaves, caller),
                 };
             };
-            // The outermost resource in the scope with that anchor, the pushed one included.
-            let found = self.scope.iter().chain(&pushed).find_map(|&resource| {
-                resources[resource]
-                    .anchors
-                    .iter()
-                    .find(|(anchor, _)| anchor == name)
-                    .map(|&(_, schema)| schema)
-            });
-            Landing {
-                schema: found.unwrap_or(target),
-                pushed,
+            // The outermost resource with that anchor in the scope or the caller's. Landing in
+            // another resource keeps the caller's in the scope.
+            let found = self
+                .scope
+                .iter()
+                .chain(std::iter::once(&caller))
+                .find_map(|&resource| {
+                    resources[resource]
+                        .anchors
+                        .iter()
+                        .find(|(anchor, _)| anchor == name)
+                        .map(|&(_, schema)| (schema, resource))
+                });
+            match found {
+                Some((schema, resource)) => Landing {
+                    schema,
+                    pushed: self.pushed(resource != caller, caller),
+                },
+                None => Landing {
+                    schema: target,
+                    pushed: self.pushed(leaves, caller),
+                },
             }
         }
 
