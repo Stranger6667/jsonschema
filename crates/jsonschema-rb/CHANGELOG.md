@@ -24,6 +24,7 @@
 - `$recursiveRef` and `$dynamicRef` inside a subschema with its own `$id` leaving the resource that holds it out of the dynamic scope when that subschema is reached inline or through a JSON Pointer `$ref`.
 - `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.
 - `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
+- `contentEncoding` going unchecked in Draft 6 and 7 beside an unsupported `contentMediaType`.
 - `evaluate` messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
 - `evaluate` output for `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.
 - `evaluate` output for one `required` name beside `properties` and `additionalProperties: false` reporting the name inside the `additionalProperties` unit, and only when missing.

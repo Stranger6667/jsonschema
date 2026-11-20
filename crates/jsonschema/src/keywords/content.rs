@@ -278,9 +278,13 @@ pub(crate) fn compile_content_encoding<'a, F: Json>(
     schema: &'a Map<String, Value>,
     subschema: &'a Value,
 ) -> Option<CompilationResult<'a, F>> {
-    // `compile_media_type` checks the encoding together with the media type; an unsupported
-    // `contentMediaType` leaves `contentEncoding` unchecked too.
-    if schema.get("contentMediaType").is_some() {
+    // `compile_media_type` rejects a non-string `contentMediaType` and checks the encoding together
+    // with a supported media type.
+    if schema.get("contentMediaType").is_some_and(|media_type| {
+        media_type
+            .as_str()
+            .is_none_or(|media_type| ctx.get_content_media_type_check(media_type).is_some())
+    }) {
         return None;
     }
     if let Value::String(content_encoding) = subschema {
@@ -503,13 +507,17 @@ mod tests {
     #[test_case(&json!({"contentMediaType": "application/json"}), &json!("asd"), "/contentMediaType")]
     #[test_case(&json!({"contentMediaType": "application/json", "contentEncoding": "base64"}), &json!("ezp9Cg=="), "/contentMediaType")]
     #[test_case(&json!({"contentMediaType": "application/json", "contentEncoding": "base64"}), &json!("{}"), "/contentEncoding")]
+    #[test_case(&json!({"contentMediaType": "text/x-unknown", "contentEncoding": "base64"}), &json!("not base64!"), "/contentEncoding")]
     fn location(schema: &Value, instance: &Value, expected: &str) {
         let validator = crate::options()
             .with_draft(Draft::Draft7)
             .build(schema)
             .expect("Invalid schema");
-        let error = validator.validate(instance).expect_err("Should fail");
-        assert_eq!(error.schema_path().as_str(), expected);
+        let locations: Vec<String> = validator
+            .iter_errors(instance)
+            .map(|error| error.schema_path().as_str().to_owned())
+            .collect();
+        assert_eq!(locations, [expected]);
     }
 
     #[test]
@@ -561,7 +569,9 @@ mod tests {
     }
 
     #[test_case(&json!({"contentMediaType": 5}), "/contentMediaType"; "media type")]
+    #[test_case(&json!({"contentMediaType": 5, "contentEncoding": 6}), "/contentMediaType"; "media type with malformed encoding")]
     #[test_case(&json!({"contentMediaType": "application/json", "contentEncoding": 5}), "/contentEncoding"; "encoding with media type")]
+    #[test_case(&json!({"contentMediaType": "text/x-unknown", "contentEncoding": 5}), "/contentEncoding"; "encoding with unknown media type")]
     #[test_case(&json!({"contentEncoding": 5}), "/contentEncoding"; "encoding")]
     fn malformed(schema: &Value, location: &str) {
         crate::tests_util::assert_compile_error_with(

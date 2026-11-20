@@ -17,6 +17,7 @@ use super::{
         get_or_create_item_eval_fn, get_or_create_key_eval_fn, location_pointer,
     },
     keywords::{
+        content::checks_media_type,
         format::format_emits_assertion,
         one_of::{branch_discriminator, BranchDiscriminator, DiscriminatorLiteral},
         pattern_properties::name_match_expr,
@@ -2788,9 +2789,15 @@ fn unit<E: ValueEmitter>(
         // The runtime skips a format it validates formats with but does not know.
         (_, "format") if ctx.validates_formats() && !format_emits_assertion(ctx, value) => None,
         (_, "format") => Some(unit.annotating(value)),
-        // Draft 6 and 7 assert content, reporting both keywords in the `contentMediaType` unit.
+        // Draft 6 and 7 assert content: the runtime skips an unsupported media type and reports
+        // both keywords in the unit of a supported one.
+        (Draft::Draft6 | Draft::Draft7, "contentMediaType") if !checks_media_type(ctx, value) => {
+            None
+        }
         (Draft::Draft6 | Draft::Draft7, "contentEncoding")
-            if keywords.contains_key("contentMediaType") =>
+            if keywords
+                .get("contentMediaType")
+                .is_some_and(|media_type| checks_media_type(ctx, media_type)) =>
         {
             None
         }
