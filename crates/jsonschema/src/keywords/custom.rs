@@ -1,5 +1,5 @@
 use crate::{
-    paths::{LazyLocation, Location, RefTracker},
+    paths::{capture_evaluation_path, LazyLocation, Location, RefTracker},
     validator::{Validate, ValidationContext},
     Json, Node, SerdeJson, ValidationError,
 };
@@ -30,13 +30,19 @@ impl<F: Json> Validate<F> for CustomKeyword<F> {
         &self,
         instance: &F::Node<'i>,
         instance_path: &LazyLocation,
-        _tracker: Option<&RefTracker>,
+        tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         self.inner.validate(instance.clone()).map_err(|err| {
             let value = instance.to_value();
-            err.with_context(&value, instance_path, &self.location, &self.keyword)
-                .to_owned()
+            err.with_context(
+                &value,
+                instance_path,
+                &self.location,
+                capture_evaluation_path(tracker, &self.location),
+                &self.keyword,
+            )
+            .to_owned()
         })
     }
 
@@ -48,7 +54,7 @@ impl<F: Json> Validate<F> for CustomKeyword<F> {
         &self,
         instance: &F::Node<'i>,
         instance_path: &LazyLocation,
-        _tracker: Option<&RefTracker>,
+        tracker: Option<&RefTracker>,
         _ctx: &mut ValidationContext,
         errors: &mut Vec<ValidationError<'i>>,
     ) {
@@ -57,9 +63,16 @@ impl<F: Json> Validate<F> for CustomKeyword<F> {
             return;
         }
         let value = instance.to_value();
+        let evaluation_path = capture_evaluation_path(tracker, &self.location);
         errors.extend(inner_errors.map(|err| {
-            err.with_context(&value, instance_path, &self.location, &self.keyword)
-                .to_owned()
+            err.with_context(
+                &value,
+                instance_path,
+                &self.location,
+                evaluation_path.clone(),
+                &self.keyword,
+            )
+            .to_owned()
         }));
     }
 }

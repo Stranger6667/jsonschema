@@ -1315,15 +1315,13 @@ impl<'a> ValidationError<'a> {
         )
     }
 
-    /// Fill in context for a placeholder validation error.
-    ///
-    /// Used by custom keywords, which never involve `$ref` traversal,
-    /// so evaluation path equals schema path.
+    /// Fill in context for a placeholder validation error from a custom keyword.
     pub(crate) fn with_context<'i>(
         self,
         instance: &'i Value,
         instance_path: &LazyLocation,
         schema_path: &Location,
+        evaluation_path: LazyEvaluationPath,
         keyword: &str,
     ) -> ValidationError<'i> {
         let kind = match self.repr.kind {
@@ -1338,12 +1336,13 @@ impl<'a> ValidationError<'a> {
             kind,
             instance_path.into(),
             schema_path.clone(),
-            // Custom keywords are never reached via $ref, so evaluation path = schema path
-            LazyEvaluationPath::SameAsSchemaPath,
+            evaluation_path,
         )
     }
 
     /// [`Self::with_context`] variant for macro-generated code, which tracks the instance path as an owned [`Location`].
+    /// The evaluation path starts as the schema path; the generated code moves it for every
+    /// `$ref` the error was reached through.
     #[cfg(feature = "macros")]
     pub(crate) fn with_generated_context<'i>(
         self,
