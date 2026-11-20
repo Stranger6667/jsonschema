@@ -1282,6 +1282,82 @@ fn test_dynamic_ref_landing_outside_its_resource_matches_runtime(instance: serde
     );
 }
 
+const DYNAMIC_REF_LANDING_OUTSIDE_ITS_RESOURCE: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","$defs":{"leaf":{"$dynamicAnchor":"leaf","type":"number"}},"properties":{"c":{"$dynamicRef":"#node"}}},"d":{"$dynamicRef":"leaf#leaf"}},"$defs":{"leaf":{"$id":"leaf","$dynamicAnchor":"leaf","type":"string"}}}"##;
+const CALLER_SCOPE_THROUGH_REF: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","type":"string"}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","type":"integer"}}}}}"##;
+const CALLER_SCOPE_THROUGH_DYNAMIC_REF: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","$defs":{"a":{"$dynamicAnchor":"a","$dynamicRef":"leaf#b"},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","type":"string"}}},"leaf":{"$id":"leaf","$defs":{"b":{"$dynamicAnchor":"b","type":"integer"}}}}}"##;
+const CALLER_SCOPE_INTERMEDIATE_RESOURCE: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"middle","$defs":{"middle":{"$id":"middle","$ref":"caller","$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"}}},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","type":"string"}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","type":"integer"}}}}}"##;
+const CALLER_SCOPE_ANOTHER_RESOURCE: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"},"caller":{"$id":"caller","$dynamicRef":"anchors#a","$defs":{"b":{"$dynamicAnchor":"b","type":"string"}}},"anchors":{"$id":"anchors","$defs":{"a":{"$dynamicAnchor":"a","type":"null"}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","type":"integer"}}}}}"##;
+const CALLER_SCOPE_UNEVALUATED_PROPERTIES: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","unevaluatedProperties":false,"$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","properties":{"s":true}}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","properties":{"i":true}}}}}}"##;
+const CALLER_SCOPE_UNEVALUATED_ITEMS: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","unevaluatedItems":false,"$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","prefixItems":[true]}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","prefixItems":[true,true]}}}}}"##;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","type":"string"}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","type":"integer"}}}}}"##
+)]
+struct CallerScopeThroughRef;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","$defs":{"a":{"$dynamicAnchor":"a","$dynamicRef":"leaf#b"},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","type":"string"}}},"leaf":{"$id":"leaf","$defs":{"b":{"$dynamicAnchor":"b","type":"integer"}}}}}"##
+)]
+struct CallerScopeThroughDynamicRef;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"middle","$defs":{"middle":{"$id":"middle","$ref":"caller","$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"}}},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","type":"string"}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","type":"integer"}}}}}"##
+)]
+struct CallerScopeIntermediateResource;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"},"caller":{"$id":"caller","$dynamicRef":"anchors#a","$defs":{"b":{"$dynamicAnchor":"b","type":"string"}}},"anchors":{"$id":"anchors","$defs":{"a":{"$dynamicAnchor":"a","type":"null"}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","type":"integer"}}}}}"##
+)]
+struct CallerScopeAnotherResource;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","unevaluatedProperties":false,"$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","properties":{"s":true}}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","properties":{"i":true}}}}}}"##
+)]
+struct CallerScopeUnevaluatedProperties;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$ref":"caller","unevaluatedItems":false,"$defs":{"a":{"$dynamicAnchor":"a","$ref":"leaf"},"caller":{"$id":"caller","$dynamicRef":"#a","$defs":{"a":{"$dynamicAnchor":"a","type":"null"},"b":{"$dynamicAnchor":"b","prefixItems":[true]}}},"leaf":{"$id":"leaf","$dynamicRef":"#b","$defs":{"b":{"$dynamicAnchor":"b","prefixItems":[true,true]}}}}}"##
+)]
+struct CallerScopeUnevaluatedItems;
+
+// `caller` declares `b`, which no resource around it does. Its `$dynamicRef` lands in another
+// resource, below which `caller` stays in the dynamic scope, so `leaf`'s `$dynamicRef "#b"` binds
+// `caller`'s `b` rather than its own.
+#[test_case(CallerScopeThroughRef::is_valid, CallerScopeThroughRef::validate, CallerScopeThroughRef::iter_errors, CallerScopeThroughRef::evaluate, CALLER_SCOPE_THROUGH_REF, serde_json::json!("x"), serde_json::json!(1) ; "landed target holds a reference")]
+#[test_case(CallerScopeThroughDynamicRef::is_valid, CallerScopeThroughDynamicRef::validate, CallerScopeThroughDynamicRef::iter_errors, CallerScopeThroughDynamicRef::evaluate, CALLER_SCOPE_THROUGH_DYNAMIC_REF, serde_json::json!("x"), serde_json::json!(1) ; "landed target holds a dynamic reference")]
+#[test_case(CallerScopeIntermediateResource::is_valid, CallerScopeIntermediateResource::validate, CallerScopeIntermediateResource::iter_errors, CallerScopeIntermediateResource::evaluate, CALLER_SCOPE_INTERMEDIATE_RESOURCE, serde_json::json!("x"), serde_json::json!(1) ; "lands in an intermediate resource")]
+#[test_case(CallerScopeAnotherResource::is_valid, CallerScopeAnotherResource::validate, CallerScopeAnotherResource::iter_errors, CallerScopeAnotherResource::evaluate, CALLER_SCOPE_ANOTHER_RESOURCE, serde_json::json!("x"), serde_json::json!(1) ; "initial target in another resource")]
+#[test_case(DynamicRefLandingOutsideItsResource::is_valid, DynamicRefLandingOutsideItsResource::validate, DynamicRefLandingOutsideItsResource::iter_errors, DynamicRefLandingOutsideItsResource::evaluate, DYNAMIC_REF_LANDING_OUTSIDE_ITS_RESOURCE, serde_json::json!({"c": {"c": {"d": 1}}}), serde_json::json!({"c": {"c": {"d": "s"}}}) ; "caller entered inline")]
+#[test_case(CallerScopeUnevaluatedProperties::is_valid, CallerScopeUnevaluatedProperties::validate, CallerScopeUnevaluatedProperties::iter_errors, CallerScopeUnevaluatedProperties::evaluate, CALLER_SCOPE_UNEVALUATED_PROPERTIES, serde_json::json!({"s": 1}), serde_json::json!({"i": 1}) ; "unevaluated properties")]
+#[test_case(CallerScopeUnevaluatedItems::is_valid, CallerScopeUnevaluatedItems::validate, CallerScopeUnevaluatedItems::iter_errors, CallerScopeUnevaluatedItems::evaluate, CALLER_SCOPE_UNEVALUATED_ITEMS, serde_json::json!([1]), serde_json::json!([1, 2]) ; "unevaluated items")]
+fn test_dynamic_ref_keeps_its_resource_in_dynamic_scope_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    schema: &str,
+    valid: serde_json::Value,
+    invalid: serde_json::Value,
+) {
+    let schema = serde_json::from_str(schema).expect("valid JSON");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    for (instance, expected) in [(valid, true), (invalid, false)] {
+        assert_eq!(is_valid(&instance), expected, "{instance}");
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+        assert_eq!(
+            evaluation_outputs(&evaluate(&instance)),
+            evaluation_outputs(&runtime.evaluate(&instance)),
+            "{instance}"
+        );
+    }
+}
+
 #[jsonschema::validator(
     schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/w","properties":{"d":{"$ref":"inner"}},"$defs":{"x":{"$id":"x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}}}"##
 )]

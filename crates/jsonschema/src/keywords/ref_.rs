@@ -3205,6 +3205,72 @@ mod tests {
         }
     }
 
+    // `caller` declares `b`, which no resource around it does. Its `$dynamicRef` lands in another
+    // resource, below which `caller` stays in the dynamic scope, so `leaf`'s `$dynamicRef "#b"`
+    // binds `caller`'s `b` rather than its own.
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "caller", "$defs": {"a": {"$dynamicAnchor": "a", "$ref": "leaf"}, "caller": {"$id": "caller", "$dynamicRef": "#a", "$defs": {"a": {"$dynamicAnchor": "a", "type": "null"}, "b": {"$dynamicAnchor": "b", "type": "string"}}}, "leaf": {"$id": "leaf", "$dynamicRef": "#b", "$defs": {"b": {"$dynamicAnchor": "b", "type": "integer"}}}}}),
+        &json!("x"),
+        &json!(1);
+        "landed target holds a reference"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "caller", "$defs": {"a": {"$dynamicAnchor": "a", "$dynamicRef": "leaf#b"}, "caller": {"$id": "caller", "$dynamicRef": "#a", "$defs": {"a": {"$dynamicAnchor": "a", "type": "null"}, "b": {"$dynamicAnchor": "b", "type": "string"}}}, "leaf": {"$id": "leaf", "$defs": {"b": {"$dynamicAnchor": "b", "type": "integer"}}}}}),
+        &json!("x"),
+        &json!(1);
+        "landed target holds a dynamic reference"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "middle", "$defs": {"middle": {"$id": "middle", "$ref": "caller", "$defs": {"a": {"$dynamicAnchor": "a", "$ref": "leaf"}}}, "caller": {"$id": "caller", "$dynamicRef": "#a", "$defs": {"a": {"$dynamicAnchor": "a", "type": "null"}, "b": {"$dynamicAnchor": "b", "type": "string"}}}, "leaf": {"$id": "leaf", "$dynamicRef": "#b", "$defs": {"b": {"$dynamicAnchor": "b", "type": "integer"}}}}}),
+        &json!("x"),
+        &json!(1);
+        "lands in an intermediate resource"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "caller", "$defs": {"a": {"$dynamicAnchor": "a", "$ref": "leaf"}, "caller": {"$id": "caller", "$dynamicRef": "anchors#a", "$defs": {"b": {"$dynamicAnchor": "b", "type": "string"}}}, "anchors": {"$id": "anchors", "$defs": {"a": {"$dynamicAnchor": "a", "type": "null"}}}, "leaf": {"$id": "leaf", "$dynamicRef": "#b", "$defs": {"b": {"$dynamicAnchor": "b", "type": "integer"}}}}}),
+        &json!("x"),
+        &json!(1);
+        "initial target in another resource"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/x", "$dynamicAnchor": "node", "properties": {"c": {"$id": "inner", "$dynamicAnchor": "node", "$defs": {"leaf": {"$dynamicAnchor": "leaf", "type": "number"}}, "properties": {"c": {"$dynamicRef": "#node"}}}, "d": {"$dynamicRef": "leaf#leaf"}}, "$defs": {"leaf": {"$id": "leaf", "$dynamicAnchor": "leaf", "type": "string"}}}),
+        &json!({"c": {"c": {"d": 1}}}),
+        &json!({"c": {"c": {"d": "s"}}});
+        "caller entered inline"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "caller", "unevaluatedProperties": false, "$defs": {"a": {"$dynamicAnchor": "a", "$ref": "leaf"}, "caller": {"$id": "caller", "$dynamicRef": "#a", "$defs": {"a": {"$dynamicAnchor": "a", "type": "null"}, "b": {"$dynamicAnchor": "b", "properties": {"s": true}}}}, "leaf": {"$id": "leaf", "$dynamicRef": "#b", "$defs": {"b": {"$dynamicAnchor": "b", "properties": {"i": true}}}}}}),
+        &json!({"s": 1}),
+        &json!({"i": 1});
+        "unevaluatedProperties"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "unevaluatedProperties": false, "allOf": [{"$id": "caller", "$dynamicRef": "#a", "$defs": {"a": {"$dynamicAnchor": "a", "type": "null"}, "b": {"$dynamicAnchor": "b", "properties": {"s": true}}}}], "$defs": {"a": {"$dynamicAnchor": "a", "$ref": "leaf"}, "leaf": {"$id": "leaf", "$dynamicRef": "#b", "$defs": {"b": {"$dynamicAnchor": "b", "properties": {"i": true}}}}}}),
+        &json!({"s": 1}),
+        &json!({"i": 1});
+        "unevaluatedProperties, caller entered inline"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "$ref": "caller", "unevaluatedItems": false, "$defs": {"a": {"$dynamicAnchor": "a", "$ref": "leaf"}, "caller": {"$id": "caller", "$dynamicRef": "#a", "$defs": {"a": {"$dynamicAnchor": "a", "type": "null"}, "b": {"$dynamicAnchor": "b", "prefixItems": [true]}}}, "leaf": {"$id": "leaf", "$dynamicRef": "#b", "$defs": {"b": {"$dynamicAnchor": "b", "prefixItems": [true, true]}}}}}),
+        &json!([1]),
+        &json!([1, 2]);
+        "unevaluatedItems"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "$id": "https://example.com/root", "unevaluatedItems": false, "allOf": [{"$id": "caller", "$dynamicRef": "#a", "$defs": {"a": {"$dynamicAnchor": "a", "type": "null"}, "b": {"$dynamicAnchor": "b", "prefixItems": [true]}}}], "$defs": {"a": {"$dynamicAnchor": "a", "$ref": "leaf"}, "leaf": {"$id": "leaf", "$dynamicRef": "#b", "$defs": {"b": {"$dynamicAnchor": "b", "prefixItems": [true, true]}}}}}),
+        &json!([1]),
+        &json!([1, 2]);
+        "unevaluatedItems, caller entered inline"
+    )]
+    fn dynamic_ref_keeps_its_resource_in_dynamic_scope(
+        schema: &Value,
+        valid: &Value,
+        invalid: &Value,
+    ) {
+        tests_util::is_valid(schema, valid);
+        tests_util::is_not_valid(schema, invalid);
+    }
+
     fn reported_error(error: &ValidationError<'_>) -> Value {
         json!({
             "message": error.to_string(),
