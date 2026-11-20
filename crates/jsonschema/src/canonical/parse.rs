@@ -426,7 +426,7 @@ pub(crate) struct Assumptions {
     /// Resolved as `false`.
     pub(crate) empty: AHashSet<Arc<str>>,
     /// Resolved as `true`.
-    pub(crate) admits_all: AHashSet<Arc<str>>,
+    pub(crate) accepts_all: AHashSet<Arc<str>>,
     /// Bodies a finished round produced, for the decisions a target still being parsed cannot
     /// answer. A body only ever narrows between rounds, so a decision this map settles stays
     /// settled the same way.
@@ -753,8 +753,8 @@ impl<'a, 'b> ParseState<'a, 'b> {
     }
 
     /// Whether `key` is being resolved as `true` for this parse.
-    fn assumes_admits_all(&self, key: &str) -> bool {
-        self.assumptions.admits_all.contains(key)
+    fn assumes_accepts_all(&self, key: &str) -> bool {
+        self.assumptions.accepts_all.contains(key)
     }
 
     /// Remember what `value` parsed to, when that decides whether it is unsatisfiable.
@@ -1935,7 +1935,7 @@ fn parse_schema_in_scope<'a>(
         }
     }
 
-    let base = match (type_set, admitted_values(enum_values, const_value)) {
+    let base = match (type_set, accepted_values(enum_values, const_value)) {
         (None, None) => Schema::truthy(),
         (Some(set), None) => type_set_schema(set),
         (None, Some(values)) => canonicalize_value_set(values),
@@ -3650,7 +3650,7 @@ fn reference_to_definition<'a>(
         if state.assumes_empty(ROOT_DEFINITION_KEY) {
             return Ok(Some(Schema::falsy()));
         }
-        if state.assumes_admits_all(ROOT_DEFINITION_KEY) {
+        if state.assumes_accepts_all(ROOT_DEFINITION_KEY) {
             return Ok(Some(Schema::truthy()));
         }
         return Ok(Some(Schema::new(SchemaKind::Reference(Arc::from(
@@ -3675,7 +3675,7 @@ fn reference_to_definition<'a>(
     if state.assumes_empty(&key) {
         return Ok(Some(Schema::falsy()));
     }
-    if state.assumes_admits_all(&key) {
+    if state.assumes_accepts_all(&key) {
         return Ok(Some(Schema::truthy()));
     }
     // Folding an empty target lets the surrounding leaf normalization see the contradiction:
@@ -3939,7 +3939,7 @@ fn object_with_required(required: Vec<Arc<str>>, ctx: &CanonicalizationContext) 
 }
 
 /// The finite value set `const` and `enum` accept together: the values both accept.
-fn admitted_values(
+fn accepted_values(
     enum_values: Option<&Vec<Value>>,
     const_value: Option<&Value>,
 ) -> Option<Vec<CanonicalJson>> {

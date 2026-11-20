@@ -93,7 +93,7 @@ impl Sequence {
             return None;
         }
         // Across branches the engine's scan, or its check of a literal suffix, outpaces this one
-        // over the long subjects an unbounded wide class admits, when the match must reach their
+        // over the long subjects an unbounded wide class matches, when the match must reach their
         // end. Without an end anchor, a match ends at the first accepting slot.
         if anchored_end == Some(true)
             && branches.len() > 1

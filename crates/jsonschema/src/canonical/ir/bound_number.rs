@@ -40,7 +40,7 @@ impl BoundNumber {
     }
 
     /// Whether `value` lies on the included side of this bound.
-    pub(crate) fn admits(&self, value: &Number, side: Side) -> bool {
+    pub(crate) fn accepts(&self, value: &Number, side: Side) -> bool {
         check_bound(&compile_bound(self.op(side), &self.limit), value)
     }
 
@@ -51,7 +51,7 @@ impl BoundNumber {
             return self.inclusive <= other.inclusive;
         }
         // With different limits, the tighter bound is the one the other still includes.
-        other.admits(&self.limit, side) && !self.admits(&other.limit, side)
+        other.accepts(&self.limit, side) && !self.accepts(&other.limit, side)
     }
 
     fn op(&self, side: Side) -> BoundOp {

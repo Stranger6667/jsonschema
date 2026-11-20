@@ -108,7 +108,7 @@ impl Slot {
 
     /// Whether two positions in one schema can apply their subschemas to the same instance. A
     /// failing subschema ends the schema's validation before its `unevaluated*` keyword runs.
-    fn meets(self, other: Self) -> bool {
+    fn overlaps(self, other: Self) -> bool {
         match (self, other) {
             (Slot::Then, Slot::Else) | (Slot::Else, Slot::Then) => false,
             (Slot::Same | Slot::Then | Slot::Else, _)
@@ -575,7 +575,7 @@ impl<'cfg> Graph<'cfg> {
                 let component = reaches.component_of[target_of[candidate.node]];
                 let children = &self.nodes[candidate.node].children;
                 reaches
-                    .meet(
+                    .overlap_into(
                         &children[candidate.first],
                         &children[candidate.second],
                         component,
@@ -621,7 +621,7 @@ impl<'cfg> Graph<'cfg> {
             accepted.resize(children.len(), None);
             for (offset, &first) in leading.iter().enumerate() {
                 for &second in &leading[offset + 1..] {
-                    if children[first].slot.meets(children[second].slot)
+                    if children[first].slot.overlaps(children[second].slot)
                         && !self.discriminated(
                             ctx,
                             &children[first],
@@ -881,7 +881,7 @@ impl Reaches<'_, '_> {
     }
 
     /// Whether two subschemas of one schema both lead into `component` through the same instance.
-    fn meet(&self, first: &Child<'_>, second: &Child<'_>, component: usize) -> bool {
+    fn overlap_into(&self, first: &Child<'_>, second: &Child<'_>, component: usize) -> bool {
         match (
             self.steps_into(first, component),
             self.steps_into(second, component),

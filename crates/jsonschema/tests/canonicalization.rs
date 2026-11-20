@@ -343,7 +343,7 @@ fn cause(pointer: &str, keywords: &[&str]) -> Cause {
         cause("/allOf/1", &[]),
         cause("/allOf/2", &[]),
     ]))];
-    "branches that admit values pairwise but not together"
+    "branches that accept values pairwise but not together"
 )]
 #[test_case(
     &json!({"allOf": [{"type": "string"}, {"type": "integer"}]}),
@@ -466,7 +466,7 @@ fn cause(pointer: &str, keywords: &[&str]) -> Cause {
         ])),
         ("/dependencies/a", UnsatisfiableReason::Literal),
     ];
-    "a required key whose dependency admits nothing"
+    "a required key whose dependency accepts nothing"
 )]
 #[test_case(
     &json!({
@@ -483,7 +483,7 @@ fn cause(pointer: &str, keywords: &[&str]) -> Cause {
         ])),
         ("/properties/b", UnsatisfiableReason::Literal),
     ];
-    "a required key demanding a key that admits nothing"
+    "a required key demanding a key that accepts nothing"
 )]
 #[test_case(
     &json!({"type": "object", "required": ["a"], "dependentSchemas": {"a": false}}),
@@ -495,7 +495,7 @@ fn cause(pointer: &str, keywords: &[&str]) -> Cause {
         ])),
         ("/dependentSchemas/a", UnsatisfiableReason::Literal),
     ];
-    "a required key whose dependent schema admits nothing"
+    "a required key whose dependent schema accepts nothing"
 )]
 #[test_case(
     &json!({"properties": {"a": {"type": "array", "minItems": 1, "items": false}}}),
@@ -506,7 +506,7 @@ fn cause(pointer: &str, keywords: &[&str]) -> Cause {
         ])),
         ("/properties/a/items", UnsatisfiableReason::Literal),
     ];
-    "an array that must hold an element no schema admits"
+    "an array that must hold an element no schema accepts"
 )]
 #[test_case(
     &json!({"$defs": {"E": false}, "$ref": "#/$defs/E", "type": "string"}),
@@ -1381,7 +1381,7 @@ fn a_definition_name_written_as_a_canonical_uri_does_not_alias_a_registry_resour
     assert_ne!(
         canonical.satisfiability(),
         Satisfiability::No,
-        "the string branch admits a value, so the document is not empty"
+        "the string branch accepts a value, so the document is not empty"
     );
 
     let validator = jsonschema::options()
@@ -2699,7 +2699,7 @@ fn emitting_a_target_leaves_a_value_written_like_a_pointer() {
 
 // The emitted document accepts what the target accepts, which the pointer it carries decides.
 #[test]
-fn an_emitted_target_admits_what_the_target_admits() {
+fn an_emitted_target_accepts_what_the_target_accepts() {
     let canonical = canonicalize(&json!({
         "type": "object",
         "properties": {"allOf": {"$ref": "#/$defs/schemaArray"}},
@@ -3137,7 +3137,7 @@ fn an_approximated_intersection_read_twice_keeps_the_document_unsupported() {
 // `additionalProperties` leaves the keys a pattern map matches to it, so closing a map around such
 // a key keeps the pattern's demand rather than `additionalProperties`.
 #[test]
-fn a_closed_map_keeps_the_pattern_demand_of_an_admitted_key() {
+fn a_closed_map_keeps_the_pattern_demand_of_an_accepted_key() {
     let closed = json!({"type": "object", "additionalProperties": false, "properties": {"a": {}}});
     let patterned = json!({
         "type": "object",
@@ -3545,7 +3545,7 @@ fn a_root_reading_itself_through_a_negation_combines_as_its_own_target(
         &CanonicalSchema,
         &CanonicalSchema,
     ) -> Result<CanonicalSchema, CanonicalizationError>,
-    admits: fn(bool, bool) -> bool,
+    accepts: fn(bool, bool) -> bool,
 ) {
     let other = json!({"type": "integer"});
     let build = |schema: &Value| {
@@ -3562,7 +3562,7 @@ fn a_root_reading_itself_through_a_negation_combines_as_its_own_target(
     for instance in [json!(null), json!(1), json!("a")] {
         assert_eq!(
             combined_validator.is_valid(&instance),
-            admits(
+            accepts(
                 root_validator.is_valid(&instance),
                 other_validator.is_valid(&instance)
             ),
@@ -3676,7 +3676,7 @@ fn a_root_reading_itself_through_a_negation_comes_back_as_itself(
 // A pointer stands for the schema it references, so a member that schema accepts is accepted -
 // comparing the pointer itself against the member instead reads as a rejection that never happened.
 #[test]
-fn a_member_admitted_through_a_pointer_survives_the_intersection() {
+fn a_member_accepted_through_a_pointer_survives_the_intersection() {
     let left = canonicalize(&json!({
         "$defs": {"E": {"const": "x"}},
         "type": "array",
@@ -3938,13 +3938,13 @@ fn a_document_and_an_operation_over_its_parts_reach_the_same_form() {
 
     // The union keeps its branches named where the intersection writes its result out, and a document
     // holding the same union reaches that named form too.
-    let joined = canonicalize(&json!({
+    let union = canonicalize(&json!({
         "$defs": {"x": {"type": "integer", "minimum": 5}},
         "anyOf": [{"$ref": "#/$defs/x"}, {"type": "string"}]
     }))
     .expect("canonicalizes");
     assert_eq!(
-        joined,
+        union,
         canonicalize(
             &json!({"$defs": {"x": {"type": "integer", "minimum": 5}}, "$ref": "#/$defs/x"})
         )
@@ -3952,7 +3952,7 @@ fn a_document_and_an_operation_over_its_parts_reach_the_same_form() {
         .union(&canonicalize(&json!({"type": "string"})).expect("canonicalizes"))
         .expect("unions")
     );
-    assert_eq!(joined.definitions().count(), 1);
+    assert_eq!(union.definitions().count(), 1);
 
     // An `allOf` whose bodies contradict is empty, rather than an opaque `allOf`.
     let contradiction = canonicalize(&json!({
@@ -3971,7 +3971,7 @@ fn latest(mut schema: Map<String, Value>) -> Value {
     Value::Object(schema)
 }
 
-#[test_case(&json!({"type": "string"}), &json!({"type": "integer"}), &json!({"type": ["integer", "string"]}); "disjoint types join into one type set")]
+#[test_case(&json!({"type": "string"}), &json!({"type": "integer"}), &json!({"type": ["integer", "string"]}); "disjoint types merge into one type set")]
 #[test_case(&json!({"const": "a"}), &json!({"enum": ["a", "b"]}), &json!({"enum": ["a", "b"]}); "a value the other branch already holds adds nothing")]
 #[test_case(&json!({"type": "string", "minLength": 4}), &json!({"type": "string"}), &json!({"type": "string"}); "a narrower branch is absorbed by the wider one")]
 fn union_folds(left: &Value, right: &Value, expected: &Value) {
@@ -4377,7 +4377,7 @@ fn union_and_difference_keep_references_resolvable_within_one_document() {
     let right = view.properties.get("b").expect("property b").clone();
     let left_validator = validator_for(&left.to_json_schema()).expect("builds");
     let right_validator = validator_for(&right.to_json_schema()).expect("builds");
-    for (combined, admits) in [
+    for (combined, accepts) in [
         (
             left.union(&right).expect("unions"),
             (|left: bool, right: bool| left || right) as fn(bool, bool) -> bool,
@@ -4391,7 +4391,7 @@ fn union_and_difference_keep_references_resolvable_within_one_document() {
         let validator = validator_for(&emitted).expect("the emitted references resolve");
         for instance in [json!("a"), json!("abc"), json!(1), json!(null)] {
             assert_eq!(
-                admits(
+                accepts(
                     left_validator.is_valid(&instance),
                     right_validator.is_valid(&instance)
                 ),
@@ -4413,7 +4413,7 @@ fn combining_across_documents_never_rebinds_a_root_reference(left: &Value, right
     struct Combination {
         name: &'static str,
         result: Result<CanonicalSchema, CanonicalizationError>,
-        admits: fn(bool, bool) -> bool,
+        accepts: fn(bool, bool) -> bool,
     }
     let instances = [
         json!({"a": "x"}),
@@ -4431,23 +4431,23 @@ fn combining_across_documents_never_rebinds_a_root_reference(left: &Value, right
         Combination {
             name: "union",
             result: canonical_left.union(&canonical_right),
-            admits: |left, right| left || right,
+            accepts: |left, right| left || right,
         },
         Combination {
             name: "intersect",
             result: canonical_left.intersect(&canonical_right),
-            admits: |left, right| left && right,
+            accepts: |left, right| left && right,
         },
         Combination {
             name: "subtract",
             result: canonical_left.subtract(&canonical_right),
-            admits: |left, right| left && !right,
+            accepts: |left, right| left && !right,
         },
     ];
     for Combination {
         name,
         result,
-        admits,
+        accepts,
     } in combinations
     {
         let combined = match result {
@@ -4462,7 +4462,7 @@ fn combining_across_documents_never_rebinds_a_root_reference(left: &Value, right
         let validator = validator_for(&emitted).expect("builds");
         for instance in &instances {
             assert_eq!(
-                admits(
+                accepts(
                     left_validator.is_valid(instance),
                     right_validator.is_valid(instance)
                 ),
@@ -4657,7 +4657,7 @@ fn an_operand_mismatch_says_what_disagreed(mismatch: OperandMismatch, expected: 
 #[test_case(&json!(true), Satisfiability::Yes; "everything names its own members")]
 #[test_case(&json!({"const": 5}), Satisfiability::Yes; "a constant carries the value that proves it")]
 #[test_case(&json!({"enum": [1, 2]}), Satisfiability::Yes; "a value set names its members")]
-#[test_case(&json!(false), Satisfiability::No; "nothing admits no value")]
+#[test_case(&json!(false), Satisfiability::No; "nothing accepts no value")]
 #[test_case(&json!({"type": "string"}), Satisfiability::Yes; "a type has values of its own")]
 #[test_case(&json!({"type": ["integer", "object"]}), Satisfiability::Yes; "a type list has values of its own")]
 #[test_case(
@@ -5013,7 +5013,7 @@ fn negate_intersected_draft4_closed_pattern_maps_keeps_validation_parity(instanc
 #[test_case(
     &json!({"patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
     &json!({"properties": {"a1": {"type": "string"}}});
-    "named entry a pattern admits"
+    "named entry a pattern accepts"
 )]
 #[test_case(
     &json!({"properties": {"x": {"type": "integer"}}, "patternProperties": {"^a": {"type": "integer"}}, "additionalProperties": false}),
@@ -5677,7 +5677,7 @@ fn negate_produces_the_draft_4_negation(schema: &Value, expected: &Value) {
         "prefixItems": [{"type": "string"}, {"type": "integer"}], "items": {"type": "boolean"}});
     "array tuple with a tail beyond its ceiling"
 )]
-fn negate_admits_exactly_what_the_source_rejects(schema: &Value) {
+fn negate_accepts_exactly_what_the_source_rejects(schema: &Value) {
     let negation = canonicalize(schema)
         .expect("canonicalizes")
         .negate()
@@ -6089,7 +6089,7 @@ fn required_key_violation_stays_when_it_can_satisfy_property_names() {
             "properties": {"a": {"type": "string"}},
             "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}),
     Satisfiability::Yes;
-    "a second slot admits the violating key"
+    "a second slot accepts the violating key"
 )]
 #[test_case(
     // `{"c": null}`: one property, the required key present, and outside `{a, b}` as demanded.
@@ -6107,7 +6107,7 @@ fn required_key_violation_stays_when_it_can_satisfy_property_names() {
     Satisfiability::No;
     "no room for the undeclared-value-fails demand beyond the required key"
 )]
-fn a_required_key_the_demand_admits_needs_room_for_another(
+fn a_required_key_the_demand_accepts_needs_room_for_another(
     schema: &Value,
     expected: Satisfiability,
 ) {
@@ -6117,7 +6117,7 @@ fn a_required_key_the_demand_admits_needs_room_for_another(
 
 // An object using the extra slot from the second case above validates.
 #[test]
-fn the_extra_slot_admits_a_validating_instance() {
+fn the_extra_slot_accepts_a_validating_instance() {
     let schema = json!({"type": "object", "maxProperties": 2, "minProperties": 1, "required": ["a"],
         "properties": {"a": {"type": "string"}},
         "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}});
@@ -6128,7 +6128,7 @@ fn the_extra_slot_admits_a_validating_instance() {
 // The required key "c" already breaks the schema the demand names on its own, so the fold above
 // removes the demand entirely and the leaf is satisfiable with just that one key.
 #[test]
-fn the_folded_required_key_admits_a_validating_instance() {
+fn the_folded_required_key_accepts_a_validating_instance() {
     let schema = json!({"type": "object", "maxProperties": 1, "minProperties": 1, "required": ["c"],
         "properties": {"a": {"type": "string"}},
         "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}});
@@ -6693,10 +6693,10 @@ fn coverage_over_an_intersection_the_form_cannot_express_rests_on_a_value() {
     // The negation keeps the pattern facet under `not`, so the difference exists: a key matching
     // the pattern with a value past its ceiling, and nothing the pattern map accepts.
     let difference = additional.subtract(&patterns).expect("subtracts");
-    let admits = jsonschema::validator_for(&difference.to_json_schema()).expect("builds");
-    assert!(admits.is_valid(&json!({"ab": "0123456789x"})));
-    assert!(!admits.is_valid(&json!({"b": "x"})));
-    assert!(!admits.is_valid(&json!({"ab": "x"})));
+    let validator = jsonschema::validator_for(&difference.to_json_schema()).expect("builds");
+    assert!(validator.is_valid(&json!({"ab": "0123456789x"})));
+    assert!(!validator.is_valid(&json!({"b": "x"})));
+    assert!(!validator.is_valid(&json!({"ab": "x"})));
 }
 
 // `#` names the document root, which is no entry of the map: reading through the pointer is reading
@@ -6755,7 +6755,7 @@ fn nodes_are_ordered_by_the_part_of_their_document_they_read() {
 }
 
 #[test]
-fn a_branch_admitting_everything_is_the_whole_union() {
+fn a_branch_accepting_everything_is_the_whole_union() {
     let everything = canonicalize(&json!(true)).expect("canonicalizes");
     let strings = canonicalize(&json!({"type": "string"})).expect("canonicalizes");
     assert_eq!(everything.union(&strings).expect("unions"), everything);
@@ -7232,7 +7232,7 @@ fn a_difference_carrying_a_demand_onto_a_closed_leaf_agrees_with_the_validators(
 // accepted in part - reading it as satisfied outright would hand back a difference holding a value
 // both operands accept.
 #[test]
-fn a_draft_4_member_half_a_demand_admits_is_not_admitted_whole() {
+fn a_draft_4_member_half_a_demand_accepts_is_not_accepted_whole() {
     let taken = json!({"$defs": {"t": {"minimum": -2, "type": "integer"}}, "enum": [{"a": 1}]});
     let removed = json!({
         "$defs": {"t": {"minimum": -2, "type": "integer"}},

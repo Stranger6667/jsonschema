@@ -327,7 +327,7 @@ impl NumberLeaf {
         // An interval holding no multiple of the divisor leaves nothing either.
         if !self
             .multiple_of
-            .admit_between(self.minimum.as_ref(), self.maximum.as_ref())
+            .accept_between(self.minimum.as_ref(), self.maximum.as_ref())
         {
             return true;
         }
@@ -335,7 +335,7 @@ impl NumberLeaf {
             return false;
         };
         // The ends cross, or they touch on a limit at least one side excludes.
-        !min.admits(&max.to_number(), Side::Lower) || !max.admits(&min.to_number(), Side::Upper)
+        !min.accepts(&max.to_number(), Side::Lower) || !max.accepts(&min.to_number(), Side::Upper)
     }
 }
 
@@ -475,16 +475,16 @@ impl ObjectLeaf {
     /// The number of keys that can be present, when the property-name schema accepts a finite
     /// set: a key whose property schema accepts no value can never appear, so it does not count.
     #[must_use]
-    pub(crate) fn admitted_key_count(&self) -> Option<BoundCardinality> {
+    pub(crate) fn accepted_key_count(&self) -> Option<BoundCardinality> {
         let values = self.property_names.as_ref()?.kind().finite_values()?;
         // Only a key whose own schema accepts nothing drops out of the count. Those keys are the
         // ones looked up in the name set, not the other way round: the property map hands them over
         // in ascending order, so the set answers all of them in one pass.
-        let mut admitted = AscendingMembership::new(values);
+        let mut accepted = AscendingMembership::new(values);
         let barred = self
             .properties
             .iter()
-            .filter(|(key, child)| matches!(child.kind(), SchemaKind::False) && admitted.holds(key))
+            .filter(|(key, child)| matches!(child.kind(), SchemaKind::False) && accepted.holds(key))
             .count();
         Some(BoundCardinality::from((values.len() - barred) as u64))
     }
@@ -497,7 +497,7 @@ impl ObjectLeaf {
             minimum: self.sizes.minimum.clone(),
             maximum: tighter(
                 self.sizes.maximum.clone(),
-                self.admitted_key_count(),
+                self.accepted_key_count(),
                 Ord::min,
             ),
         }

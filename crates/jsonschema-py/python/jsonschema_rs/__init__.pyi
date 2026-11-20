@@ -663,23 +663,23 @@ class CanonicalSchema:
         ...
 
     def intersect(self, other: CanonicalSchema) -> CanonicalSchema:
-        """Every value both schemas admit."""
+        """Every value both schemas accept."""
         ...
 
     def union(self, other: CanonicalSchema) -> CanonicalSchema:
-        """Every value either schema admits."""
+        """Every value either schema accepts."""
         ...
 
     def subtract(self, other: CanonicalSchema) -> CanonicalSchema:
-        """Every value this schema admits and ``other`` rejects.
+        """Every value this schema accepts and ``other`` rejects.
 
-        ``old.subtract(new)`` admits exactly the values ``old`` took and ``new`` turns away, and is
+        ``old.subtract(new)`` accepts exactly the values ``old`` took and ``new`` turns away, and is
         unsatisfiable iff ``new`` still takes everything ``old`` did.
         """
         ...
 
     def covers(self, other: CanonicalSchema) -> canonical.Containment:
-        """Whether this schema admits every value ``other`` admits.
+        """Whether this schema accepts every value ``other`` accepts.
 
         Only ``YES`` proves containment. Test for ``YES``, and treat ``UNKNOWN`` like ``NO``.
         """
@@ -716,7 +716,7 @@ class CanonicalSchema:
     def satisfiability(self) -> canonical.Satisfiability:
         """Whether any value satisfies this schema.
 
-        Only ``NO`` proves the schema admits nothing. Test for ``NO``, and treat ``UNKNOWN``
+        Only ``NO`` proves the schema accepts nothing. Test for ``NO``, and treat ``UNKNOWN``
         like ``YES``.
         """
         ...

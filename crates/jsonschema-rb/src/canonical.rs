@@ -1315,7 +1315,7 @@ impl ReferenceView {
     }
 }
 
-/// Exactly one admitted value.
+/// Exactly one accepted value.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::ConstView", free_immediately)]
 pub struct ConstView {
@@ -1343,7 +1343,7 @@ impl ConstView {
     }
 }
 
-/// A sorted, deduplicated finite set of admitted values.
+/// A sorted, deduplicated finite set of accepted values.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::EnumView", free_immediately)]
 pub struct EnumView {
@@ -1438,7 +1438,7 @@ impl LiteralReason {
     }
 }
 
-/// One part every value must satisfy admits nothing by itself. A subschema part has a reason of
+/// One part every value must satisfy accepts nothing by itself. A subschema part has a reason of
 /// its own under its pointer.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::EmptyReason", free_immediately)]
@@ -1467,7 +1467,7 @@ impl EmptyReason {
     }
 }
 
-/// Each part admits values; no value satisfies all of them together.
+/// Each part accepts values; no value satisfies all of them together.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::ConflictReason", free_immediately)]
 pub struct ConflictReason {
@@ -1583,7 +1583,7 @@ fn with_canonical_options<R>(
     call(options.with_registry(registry.inner.as_ref()))
 }
 
-/// The subschemas of `schema` that admit no value, by JSON Pointer, each with why.
+/// The subschemas of `schema` that accept no value, by JSON Pointer, each with why.
 fn find_unsatisfiable(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     let parsed = scan_args::<(Value,), (), (), (), _, ()>(args)?;
     let (schema_arg,) = parsed.required;

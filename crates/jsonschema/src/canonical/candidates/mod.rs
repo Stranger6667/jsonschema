@@ -43,7 +43,7 @@ fn demanded_length(minimum: Option<&BoundCardinality>) -> Option<usize> {
 pub(crate) type Visit<'v> = dyn FnMut(Value) -> ControlFlow<()> + 'v;
 
 /// Offer each instance worth trying against `node` to `visit` until it breaks. A candidate proves
-/// nothing on its own - `algebra::admits_value` decides - so the sequence only has to be short.
+/// nothing on its own - `algebra::accepts_value` decides - so the sequence only has to be short.
 pub(crate) fn search<'a>(
     node: &'a Schema,
     target: &dyn Fn(&str) -> Option<&'a Schema>,
@@ -81,7 +81,7 @@ pub(crate) fn search<'a>(
         SchemaKind::Number(leaf) => number::number(leaf.get(), visit),
         SchemaKind::Array(leaf) => array::array(leaf.get(), &walk, visit),
         SchemaKind::Object(leaf) => object::object(leaf.get(), &walk, visit),
-        // A branch's values are worth trying against the whole: `admits_value` decides.
+        // A branch's values are worth trying against the whole: `accepts_value` decides.
         SchemaKind::AllOf(branches) | SchemaKind::AnyOf(branches) => branches
             .as_slice()
             .iter()

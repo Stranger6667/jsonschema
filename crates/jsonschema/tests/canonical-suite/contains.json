@@ -97,7 +97,7 @@
     ]
   },
   {
-    "description": "ir: bare contains false admits every non-array",
+    "description": "ir: bare contains false accepts every non-array",
     "schema": {"contains": false},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

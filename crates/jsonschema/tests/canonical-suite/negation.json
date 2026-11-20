@@ -185,7 +185,7 @@
     ]
   },
   {
-    "description": "not of a bare numeric facet complements within the number domain",
+    "description": "not of a bare numeric facet negates within the number domain",
     "schema": {
       "not": {
         "minimum": 2
@@ -208,7 +208,7 @@
     ]
   },
   {
-    "description": "not of a union complements every branch",
+    "description": "not of a union negates every branch",
     "schema": {
       "not": {
         "anyOf": [
@@ -292,7 +292,7 @@
     ]
   },
   {
-    "description": "not of null admits every other value",
+    "description": "not of null accepts every other value",
     "schemas": [
       {
         "not": {
@@ -340,7 +340,7 @@
     ]
   },
   {
-    "description": "not of boolean admits every other value",
+    "description": "not of boolean accepts every other value",
     "schemas": [
       {
         "not": {
@@ -548,7 +548,7 @@
     ]
   },
   {
-    "description": "not of a typed number window complements within the number domain",
+    "description": "not of a typed number window negates within the number domain",
     "schema": {
       "not": {
         "type": "number",
@@ -643,7 +643,7 @@
     ]
   },
   {
-    "description": "not of a string length floor admits only shorter strings among strings",
+    "description": "not of a string length floor accepts only shorter strings among strings",
     "schema": {
       "not": {
         "type": "string",
@@ -684,7 +684,7 @@
     ]
   },
   {
-    "description": "not of an array length ceiling admits only longer arrays among arrays",
+    "description": "not of an array length ceiling accepts only longer arrays among arrays",
     "schema": {
       "not": {
         "type": "array",
@@ -731,7 +731,7 @@
     ]
   },
   {
-    "description": "not of an object size floor admits only smaller objects among objects",
+    "description": "not of an object size floor accepts only smaller objects among objects",
     "schema": {
       "not": {
         "type": "object",
@@ -1051,7 +1051,7 @@
     ]
   },
   {
-    "description": "not of a required key admits objects missing it",
+    "description": "not of a required key accepts objects missing it",
     "schema": {
       "not": {
         "type": "object",
@@ -1104,7 +1104,7 @@
     ]
   },
   {
-    "description": "not of two required keys admits objects missing either",
+    "description": "not of two required keys accepts objects missing either",
     "schema": {
       "not": {
         "type": "object",
@@ -1274,7 +1274,7 @@
     ]
   },
   {
-    "description": "not of a required key beside a size floor complements each facet",
+    "description": "not of a required key beside a size floor negates each facet",
     "schema": {
       "not": {
         "type": "object",
@@ -1488,7 +1488,7 @@
     ]
   },
   {
-    "description": "not of a mixed union intersects the branch complements",
+    "description": "not of a mixed union intersects the negated branches",
     "schema": {
       "not": {
         "anyOf": [
@@ -1608,7 +1608,7 @@
     ]
   },
   {
-    "description": "not of a union with an integer branch intersects the branch complements",
+    "description": "not of a union with an integer branch intersects the negated branches",
     "schema": {
       "not": {
         "anyOf": [
@@ -2167,7 +2167,7 @@
     ]
   },
   {
-    "description": "The only string a window admits, excluded",
+    "description": "The only string a window accepts, excluded",
     "schema": {
       "allOf": [
         {
@@ -2302,7 +2302,7 @@
     ]
   },
   {
-    "description": "An excluded value a sibling pattern admits, which the leaf keeps",
+    "description": "An excluded value a sibling pattern accepts, which the leaf keeps",
     "schema": {
       "allOf": [
         {
@@ -2503,7 +2503,7 @@
     ]
   },
   {
-    "description": "a format barred from itself admits no string",
+    "description": "a format barred from itself accepts no string",
     "validate_formats": true,
     "schema": {"allOf": [{"type": "string", "format": "date"}, {"not": {"format": "date"}}]},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
@@ -2599,7 +2599,7 @@
     ]
   },
   {
-    "description": "a divisor demanded and barred at once admits no number",
+    "description": "a divisor demanded and barred at once accepts no number",
     "schema": {"type": "number", "multipleOf": 3, "not": {"multipleOf": 3}},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false,
@@ -2747,7 +2747,7 @@
     ]
   },
   {
-    "description": "an integer type intersecting the barred integers under draft 4 admits nothing",
+    "description": "an integer type intersecting the barred integers under draft 4 accepts nothing",
     "draft": "draft4",
     "schema": {"allOf": [{"type": "integer"}, {"not": {"type": "integer"}}]},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "not": {}},
@@ -2791,7 +2791,7 @@
     ]
   },
   {
-    "description": "a fractional divisor demanded and barred at once admits no number",
+    "description": "a fractional divisor demanded and barred at once accepts no number",
     "schema": {"type": "number", "multipleOf": 0.5, "not": {"multipleOf": 0.5}},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false,
@@ -3113,7 +3113,7 @@
     ]
   },
   {
-    "description": "a required key the demand admits leaves no slot for another to carry it",
+    "description": "a required key the demand accepts leaves no slot for another to carry it",
     "schema": {"type": "object", "maxProperties": 1, "minProperties": 1, "required": ["a"],
       "properties": {"a": {"type": "string"}},
       "not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}},
@@ -3169,7 +3169,7 @@
     ]
   },
   {
-    "description": "a key constraint beside its own negation admits nothing",
+    "description": "a key constraint beside its own negation accepts nothing",
     "schema": {"allOf": [
       {"type": "object", "propertyNames": {"maxLength": 2}},
       {"not": {"type": "object", "propertyNames": {"maxLength": 2}}}
@@ -3183,7 +3183,7 @@
     ]
   },
   {
-    "description": "a finite key set whose every key the negated constraint admits leaves no key to break it",
+    "description": "a finite key set whose every key the negated constraint accepts leaves no key to break it",
     "schema": {"allOf": [
       {"type": "object", "propertyNames": {"const": "a"}},
       {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
@@ -3196,7 +3196,7 @@
     ]
   },
   {
-    "description": "an additionalProperties beside its own negation admits nothing",
+    "description": "an additionalProperties beside its own negation accepts nothing",
     "schema": {"allOf": [
       {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}},
       {"not": {"type": "object", "properties": {"a": {"type": "integer"}}, "additionalProperties": {"type": "string"}}}
@@ -3370,7 +3370,7 @@
     ]
   },
   {
-    "description": "a constant the negated key constraint already admits folds into it",
+    "description": "a constant the negated key constraint already accepts folds into it",
     "schema": {"anyOf": [
       {"const": {"x": 1}},
       {"not": {"type": "object", "propertyNames": {"enum": ["a", "b"]}}}
@@ -3403,7 +3403,7 @@
     ]
   },
   {
-    "description": "a constant the negated additionalProperties already admits folds into it",
+    "description": "a constant the negated additionalProperties already accepts folds into it",
     "schema": {"anyOf": [
       {"const": {"c": 5}},
       {"not": {"type": "object", "additionalProperties": {"type": "string"}}}
@@ -4253,7 +4253,7 @@
     ]
   },
   {
-    "description": "a negated tuple whose position admits an array value stays barred",
+    "description": "a negated tuple whose position accepts an array value stays barred",
     "draft": "draft7",
     "schema": {"not": {"type": "array", "items": [{"enum": [[1]]}]}},
     "kind": "raw",
@@ -4833,7 +4833,7 @@
     ]
   },
   {
-    "description": "a negated pattern map admitting every value drops its branch",
+    "description": "a negated pattern map accepting every value drops its branch",
     "schema": {"not": {"type": "object", "patternProperties": {"^a": true}}},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

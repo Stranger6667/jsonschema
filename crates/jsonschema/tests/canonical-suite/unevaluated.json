@@ -840,7 +840,7 @@
     }
   },
   {
-    "description": "ir: unevaluatedItems:false beside contains admits only what contains matches",
+    "description": "ir: unevaluatedItems:false beside contains accepts only what contains matches",
     "schema": {"type": "array", "contains": {"type": "integer"}, "unevaluatedItems": false},
     "tests": [
       {"data": [1], "valid": true},
@@ -862,7 +862,7 @@
     }
   },
   {
-    "description": "ir: unevaluatedItems beside contains admits either",
+    "description": "ir: unevaluatedItems beside contains accepts either",
     "schema": {"type": "array", "contains": {"type": "integer"}, "unevaluatedItems": {"type": "string"}},
     "tests": [
       {"data": [1], "valid": true},
@@ -2163,7 +2163,7 @@
     ]
   },
   {
-    "description": "ir: dependentSchemas triggers only on objects, so a non-object beside unevaluatedProperties stays admitted",
+    "description": "ir: dependentSchemas triggers only on objects, so a non-object beside unevaluatedProperties stays accepted",
     "schema": {"type": "string", "dependentSchemas": {"a": {"type": "object"}}, "unevaluatedProperties": false},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -3076,7 +3076,7 @@
     ]
   },
   {
-    "description": "ir: the node's own keys join every case of a sibling oneOf",
+    "description": "ir: the node's own keys go into every case of a sibling oneOf",
     "schema": {
       "properties": {"a": {"type": "integer"}},
       "required": ["a"],
@@ -3174,7 +3174,7 @@
     ]
   },
   {
-    "description": "ir: untyped anyOf branches both pass a non-object, which the choice admits",
+    "description": "ir: untyped anyOf branches both pass a non-object, which the choice accepts",
     "schema": {
       "anyOf": [
         {"properties": {"b": {}}, "required": ["b"]},

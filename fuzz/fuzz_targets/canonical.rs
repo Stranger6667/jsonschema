@@ -31,25 +31,25 @@ fuzz_target!(|data: (&[u8], &[u8], &[u8])| {
         return;
     };
 
-    let admitted = source.is_valid(&instance);
+    let accepted = source.is_valid(&instance);
     assert_eq!(
-        admitted,
+        accepted,
         canonical_validator.is_valid(&instance),
         "source = {left}\n  canonical = {emitted}\n  instance = {instance}"
     );
 
     if canonical.satisfiability() == Satisfiability::No {
         // Checked against the source so a wrong collapse cannot confirm itself.
-        assert!(!admitted, "source = {left}\n  instance = {instance}");
+        assert!(!accepted, "source = {left}\n  instance = {instance}");
     }
 
     if let Ok(negated) = canonical.negate() {
-        let complement = negated.to_json_schema();
-        if let Ok(validator) = jsonschema::validator_for(&complement) {
+        let negation = negated.to_json_schema();
+        if let Ok(validator) = jsonschema::validator_for(&negation) {
             assert_eq!(
-                admitted,
+                accepted,
                 !validator.is_valid(&instance),
-                "source = {left}\n  complement = {complement}\n  instance = {instance}"
+                "source = {left}\n  negation = {negation}\n  instance = {instance}"
             );
         }
     }
@@ -71,17 +71,17 @@ fuzz_target!(|data: (&[u8], &[u8], &[u8])| {
         (
             "intersection",
             canonical.intersect(&other),
-            admitted && accepted_by_other,
+            accepted && accepted_by_other,
         ),
         (
             "union",
             canonical.union(&other),
-            admitted || accepted_by_other,
+            accepted || accepted_by_other,
         ),
         (
             "difference",
             canonical.subtract(&other),
-            admitted && !accepted_by_other,
+            accepted && !accepted_by_other,
         ),
     ] {
         let Ok(result) = result else {
@@ -183,11 +183,11 @@ fuzz_target!(|data: (&[u8], &[u8], &[u8])| {
         }
     }
 
-    // Coverage is refuted by a value the argument admits and the receiver rejects, and proven by
+    // Coverage is refuted by a value the argument accepts and the receiver rejects, and proven by
     // there being none - both read against the sources rather than against the canonical forms.
     match canonical.covers(&other) {
         Ok(Containment::Yes) => assert!(
-            !accepted_by_other || admitted,
+            !accepted_by_other || accepted,
             "covers yes: left = {left}\n  right = {right}\n  instance = {instance}"
         ),
         // `No` is a claim that some such value exists, which one instance cannot refute.

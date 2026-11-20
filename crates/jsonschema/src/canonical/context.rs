@@ -201,7 +201,7 @@ impl CanonicalizationContext {
     }
 
     /// Whether `text` satisfies `format`, or `None` when the format is not one of the built-ins.
-    pub(crate) fn format_admits(&self, format: &StringFormat, text: &str) -> Option<bool> {
+    pub(crate) fn format_accepts(&self, format: &StringFormat, text: &str) -> Option<bool> {
         if self.pattern_options.syntax() == PatternSyntax::Engine
             && matches!(format, StringFormat::Builtin(BuiltinFormat::Regex))
         {

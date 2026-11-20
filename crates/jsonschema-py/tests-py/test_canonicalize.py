@@ -406,7 +406,7 @@ def test_view_number_interval():
 
 def test_view_number_bound_off_the_float_grid():
     # Folding `multipleOf` into an exclusive bound lands a fraction past a number no float can hold
-    # apart from its neighbour, and rounding it there would admit the value the schema excludes.
+    # apart from its neighbour, and rounding it there would accept the value the schema excludes.
     schema = {"type": "number", "multipleOf": 0.1, "exclusiveMinimum": 10**20}
     match canonicalize(schema).view():
         case canonical.NumberView(minimum=minimum, exclusive_minimum=exclusive_minimum):
@@ -962,7 +962,7 @@ def test_subtract_raises_unsupported_result():
         plain.subtract(hard)
 
 
-def test_subtracting_a_schema_from_itself_needs_no_complement():
+def test_subtracting_a_schema_from_itself_needs_no_negation():
     schema = {"type": "array", "contains": {"type": "string"}, "minContains": 2}
     # Negating this schema declines, so the self-difference must not go through a negation.
     with pytest.raises(canonical.UnsupportedResult):
@@ -1158,9 +1158,9 @@ def reason_data(reason):
         "a literal false",
         "a numeric window nothing falls in",
         "siblings empty beside a reference",
-        "an array element no schema admits",
+        "an array element no schema accepts",
         "a reference beside its own negation",
-        "a choice of references beside a type none of them admits",
+        "a choice of references beside a type none of them accepts",
     ],
 )
 def test_find_unsatisfiable_names_its_reason(schema, expected):

@@ -524,7 +524,7 @@
     ]
   },
   {
-    "description": "a null member saturates its domain and joins the type list, a lone boolean stays",
+    "description": "a null member saturates its domain and merges into the type list, a lone boolean stays",
     "schemas": [
       {
         "anyOf": [
@@ -593,7 +593,7 @@
     ]
   },
   {
-    "description": "a null member saturates its domain and joins the type list under draft 4",
+    "description": "a null member saturates its domain and merges into the type list under draft 4",
     "draft": "draft4",
     "schemas": [
       {

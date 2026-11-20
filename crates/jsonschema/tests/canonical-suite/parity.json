@@ -2271,7 +2271,7 @@
     }
   },
   {
-    "description": "canonicalize_matches_expected_verdict partial_if_then_admits_non_matching",
+    "description": "canonicalize_matches_expected_verdict partial_if_then_accepts_non_matching",
     "schema": {
       "if": {
         "type": "integer"
@@ -2316,7 +2316,7 @@
     }
   },
   {
-    "description": "canonicalize_matches_expected_verdict partial_if_else_admits_matching",
+    "description": "canonicalize_matches_expected_verdict partial_if_else_accepts_matching",
     "schema": {
       "if": {
         "type": "integer"

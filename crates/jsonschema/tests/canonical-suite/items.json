@@ -60,7 +60,7 @@
     ]
   },
   {
-    "description": "ir: an item schema admitting no value converges with the `false` form",
+    "description": "ir: an item schema accepting no value converges with the `false` form",
     "schemas": [
       {"type": "array", "items": {"allOf": [{"type": "string"}, {"type": "integer"}]}},
       {"type": "array", "items": false}
@@ -205,7 +205,7 @@
     ]
   },
   {
-    "description": "ir: a constant array folds into a branch whose items admit it",
+    "description": "ir: a constant array folds into a branch whose items accept it",
     "schema": {
       "anyOf": [
         {"const": [1]},
@@ -421,7 +421,7 @@
     ]
   },
   {
-    "description": "ir: a checkable format folds a constant array its item schema admits",
+    "description": "ir: a checkable format folds a constant array its item schema accepts",
     "schema": {
       "anyOf": [
         {"const": ["user@example.com"]},
@@ -559,7 +559,7 @@
     ]
   },
   {
-    "description": "ir: the empty array hands off to every branch that admits it",
+    "description": "ir: the empty array hands off to every branch that accepts it",
     "schemas": [
       {"anyOf": [{"const": []}, {"type": "array", "uniqueItems": true, "minItems": 1}, {"type": "array", "items": {"type": "integer"}, "minItems": 1}]},
       {"anyOf": [{"type": "array", "uniqueItems": true, "minItems": 1}, {"type": "array", "items": {"type": "integer"}}]},

@@ -109,7 +109,7 @@
     ]
   },
   {
-    "description": "ir: more required keys than the size window admits is unsatisfiable",
+    "description": "ir: more required keys than `maxProperties` allows is unsatisfiable",
     "schema": {"type": "object", "required": ["a", "b", "c"], "maxProperties": 2},
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
     "satisfiable": false
@@ -233,7 +233,7 @@
     ]
   },
   {
-    "description": "ir: a required leaf absorbs a constant object it admits",
+    "description": "ir: a required leaf absorbs a constant object it accepts",
     "schema": {
       "anyOf": [
         {"type": "object", "required": ["a"]},

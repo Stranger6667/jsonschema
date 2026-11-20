@@ -71,10 +71,10 @@ fn demanded_element<'a>(
         return walk.first(&facet.schema);
     };
     let ctx = walk.ctx();
-    let admitted = |schema: &Schema, value: &Value| {
+    let accepted = |schema: &Schema, value: &Value| {
         holds(ctx, || {
-            algebra::admits_value(schema, value, UncheckableFacet::Undecided, ctx)
-                == Verdict::Admits
+            algebra::accepts_value(schema, value, UncheckableFacet::Undecided, ctx)
+                == Verdict::Accepts
         })
     };
     // A candidate of the demand need not be valid under it, so both schemas are asked; one of a type the
@@ -84,8 +84,8 @@ fn demanded_element<'a>(
     let mut attempts = DEMAND_ATTEMPTS;
     let _ = walk.each(&facet.schema, &mut |value| {
         if !bars_type(position, &value, walk)
-            && admitted(position, &value)
-            && admitted(&facet.schema, &value)
+            && accepted(position, &value)
+            && accepted(&facet.schema, &value)
         {
             found = Some(value);
             return ControlFlow::Break(());
@@ -112,7 +112,7 @@ fn demanded_element<'a>(
             }
             let _ = walk.each_owned(
                 &both,
-                &mut keep_accepted(&mut found, DEMAND_ATTEMPTS, |value| admitted(&both, value)),
+                &mut keep_accepted(&mut found, DEMAND_ATTEMPTS, |value| accepted(&both, value)),
             );
             if found.is_some() {
                 return found;
@@ -125,7 +125,7 @@ fn demanded_element<'a>(
     if !inexact {
         let _ = walk.each_owned(
             &both,
-            &mut keep_accepted(&mut found, DEMAND_ATTEMPTS, |value| admitted(&both, value)),
+            &mut keep_accepted(&mut found, DEMAND_ATTEMPTS, |value| accepted(&both, value)),
         );
         if found.is_some() {
             return found;
@@ -137,8 +137,8 @@ fn demanded_element<'a>(
 /// Pointers followed before `bars_type` gives up on a chain.
 const TYPE_HOPS: usize = 8;
 
-/// Whether `schema` holds no value of `value`'s type, as its kind alone tells: `admits_value` would
-/// turn the value down. `false` wherever the kind does not tell.
+/// Whether `schema` holds no value of `value`'s type, as its kind alone tells: `accepts_value`
+/// would turn the value down. `false` wherever the kind does not tell.
 fn bars_type<'a>(schema: &'a Schema, value: &Value, walk: &Walk<'a, '_>) -> bool {
     // Integers and other numbers are one type here: which numbers a schema holds is the check's call.
     let ty = match value {
@@ -241,7 +241,7 @@ mod tests {
         assert_eq!(bars_type(&node, value, &walk), expected);
         if expected {
             assert_eq!(
-                algebra::admits_value(&node, value, UncheckableFacet::Undecided, &ctx),
+                algebra::accepts_value(&node, value, UncheckableFacet::Undecided, &ctx),
                 Verdict::Rejects
             );
         }

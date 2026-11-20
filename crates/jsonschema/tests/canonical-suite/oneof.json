@@ -355,7 +355,7 @@
     ]
   },
   {
-    "description": "only_the_overlapping_pair_pays_its_complement",
+    "description": "only_the_overlapping_pair_pays_its_negation",
     "schema": {
       "oneOf": [
         {
@@ -463,7 +463,7 @@
     ]
   },
   {
-    "description": "a_true_branch_admits_exactly_the_other_branch_complement",
+    "description": "a_true_branch_accepts_exactly_the_other_branch_negation",
     "schema": {
       "oneOf": [
         true,
@@ -1021,7 +1021,7 @@
     ]
   },
   {
-    "description": "a symbolic oneOf whose every branch repeats admits nothing",
+    "description": "a symbolic oneOf whose every branch repeats accepts nothing",
     "schema": {"oneOf": [{"$ref": "#/$defs/x"}, {"$ref": "#/$defs/x"}], "$defs": {"x": {"type": "string"}}},
     "kind": "false",
     "satisfiable": false,
@@ -1321,7 +1321,7 @@
     ]
   },
   {
-    "description": "a pointer chain closing on itself admits every value inside a choice",
+    "description": "a pointer chain closing on itself accepts every value inside a choice",
     "schema": {
       "oneOf": [{"$ref": "#/$defs/a"}, {"type": "integer"}],
       "$defs": {"a": {"$ref": "#/$defs/b"}, "b": {"$ref": "#/$defs/a"}}
@@ -2737,7 +2737,7 @@
     ]
   },
   {
-    "description": "a sibling type no branch of a symbolic oneOf admits",
+    "description": "a sibling type no branch of a symbolic oneOf accepts",
     "schema": {
       "type": "string",
       "oneOf": [
@@ -2785,7 +2785,7 @@
     ]
   },
   {
-    "description": "a sibling type no branch of a oneOf mixing a pointer with an inline branch admits",
+    "description": "a sibling type no branch of a oneOf mixing a pointer with an inline branch accepts",
     "schema": {
       "type": "string",
       "oneOf": [
@@ -2825,7 +2825,7 @@
     ]
   },
   {
-    "description": "a sibling window no branch of a symbolic oneOf admits",
+    "description": "a sibling window no branch of a symbolic oneOf accepts",
     "schema": {
       "type": "integer",
       "minimum": 10,
@@ -2864,7 +2864,7 @@
     ]
   },
   {
-    "description": "a sibling type one branch of a symbolic oneOf admits keeps the choice",
+    "description": "a sibling type one branch of a symbolic oneOf accepts keeps the choice",
     "schema": {
       "type": "string",
       "oneOf": [

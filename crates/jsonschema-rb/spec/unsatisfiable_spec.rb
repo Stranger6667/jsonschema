@@ -39,7 +39,7 @@ RSpec.describe "JSONSchema::Canonical.find_unsatisfiable" do
       { "" => ["empty", ["", %w[type enum]]] }
     ],
     [
-      "an array element no schema admits",
+      "an array element no schema accepts",
       { "properties" => { "a" => { "type" => "array", "minItems" => 1, "items" => false } } },
       { "/properties/a" => ["conflict", [["/properties/a", %w[type]], ["/properties/a", %w[items minItems]]]],
         "/properties/a/items" => "literal" }

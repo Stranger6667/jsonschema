@@ -117,15 +117,15 @@ fn governing<'a>(
 }
 
 /// Whether the leaf's `propertyNames` accepts `key`.
-fn admits_name(leaf: &ObjectLeaf, key: &str, ctx: &CanonicalizationContext) -> bool {
+fn accepts_name(leaf: &ObjectLeaf, key: &str, ctx: &CanonicalizationContext) -> bool {
     leaf.property_names.as_ref().is_none_or(|names| {
         holds(ctx, || {
-            algebra::admits_value(
+            algebra::accepts_value(
                 names,
                 &Value::String(key.to_string()),
                 UncheckableFacet::Undecided,
                 ctx,
-            ) == Verdict::Admits
+            ) == Verdict::Accepts
         })
     })
 }
@@ -157,7 +157,7 @@ fn candidate_keys(leaf: &ObjectLeaf, size: usize, ctx: &CanonicalizationContext)
                 return keys;
             }
             let key = format!("{seed}{index}");
-            if !keys.contains(&key) && admits_name(leaf, &key, ctx) {
+            if !keys.contains(&key) && accepts_name(leaf, &key, ctx) {
                 keys.push(key);
             }
         }
@@ -230,7 +230,7 @@ fn violating_entry<'a>(
         .chain(seeded)
         .chain(fillers)
         .chain(named)
-        .find(|key| !taken.contains_key(key) && reaches(key) && admits_name(leaf, key, ctx))?;
+        .find(|key| !taken.contains_key(key) && reaches(key) && accepts_name(leaf, key, ctx))?;
     let governing = governing(leaf, &key, ctx);
     let value = match violation {
         // The name breaks the rule, so the value only has to be one the leaf takes.

@@ -7,7 +7,7 @@ from . import schema as schema
 
 @final
 class Containment:
-    """Whether one schema admits every value another does."""
+    """Whether one schema accepts every value another does."""
 
     YES: Containment
     NO: Containment
@@ -313,7 +313,7 @@ class ReferenceView:
 
 @final
 class ConstView:
-    """Exactly one admitted value."""
+    """Exactly one accepted value."""
 
     __match_args__ = ("value",)
     @property
@@ -321,7 +321,7 @@ class ConstView:
 
 @final
 class EnumView:
-    """A sorted, deduplicated finite set of admitted values."""
+    """A sorted, deduplicated finite set of accepted values."""
 
     __match_args__ = ("values",)
     @property
@@ -354,7 +354,7 @@ class Cause:
         ...
 
 class UnsatisfiableReason:
-    """Why a subschema admits no value."""
+    """Why a subschema accepts no value."""
 
     @final
     class Literal(UnsatisfiableReason):
@@ -364,7 +364,7 @@ class UnsatisfiableReason:
 
     @final
     class Empty(UnsatisfiableReason):
-        """One part every value must satisfy admits nothing by itself.
+        """One part every value must satisfy accepts nothing by itself.
 
         A subschema part has a reason of its own under its pointer.
         """
@@ -375,7 +375,7 @@ class UnsatisfiableReason:
 
     @final
     class Conflict(UnsatisfiableReason):
-        """Each part admits values; no value satisfies all of them together."""
+        """Each part accepts values; no value satisfies all of them together."""
 
         __match_args__ = ("causes",)
         @property
@@ -393,7 +393,7 @@ def find_unsatisfiable(
     base_uri: str | None = None,
     offline: bool | None = None,
 ) -> dict[str, UnsatisfiableReason]:
-    """The subschemas that admit no value, by JSON Pointer, each with why.
+    """The subschemas that accept no value, by JSON Pointer, each with why.
 
     A pointer left out is not proven satisfiable: a document the canonical form does not
     model reports nothing, as :class:`Satisfiability` answers ``UNKNOWN``.

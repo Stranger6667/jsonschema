@@ -120,7 +120,7 @@ pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyRe
                         // observe the exact literal from JSON instead of ValueError/inf when numbers
                         // exceed binary64 limits, or a rounded neighbour when they exceed its
                         // precision. A canonical bound can sit a fraction away from a round number,
-                        // and rounding it there would admit values the schema excludes.
+                        // and rounding it there would accept values the schema excludes.
                         let decimal_type =
                             unsafe { PyType::from_borrowed_type_ptr(py, types::DECIMAL_TYPE) };
                         decimal_type.call1((s,)).map(|obj| obj.into_any().unbind())

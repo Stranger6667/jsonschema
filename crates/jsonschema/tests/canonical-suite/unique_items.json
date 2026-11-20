@@ -358,7 +358,7 @@
     ]
   },
   {
-    "description": "ir: a unique leaf absorbs a constant array it admits",
+    "description": "ir: a unique leaf absorbs a constant array it accepts",
     "schema": {
       "anyOf": [
         {"type": "array", "uniqueItems": true},
@@ -610,7 +610,7 @@
     ]
   },
   {
-    "description": "ir: a one-value item domain under uniqueItems admits at most one element",
+    "description": "ir: a one-value item domain under uniqueItems accepts at most one element",
     "schema": {"type": "array", "items": {"type": "null"}, "uniqueItems": true},
     "expected": {
       "$schema": "https://json-schema.org/draft/2020-12/schema",

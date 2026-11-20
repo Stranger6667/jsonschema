@@ -213,7 +213,7 @@
     ]
   },
   {
-    "description": "an if whose then admits everything collapses away",
+    "description": "an if whose then accepts everything collapses away",
     "schema": {
       "if": {"type": "integer"},
       "then": true

@@ -356,7 +356,7 @@
     ]
   },
   {
-    "description": "ir: a length window too short for the format admits nothing",
+    "description": "ir: a length window too short for the format accepts nothing",
     "schema": {"type": "string", "format": "ipv4", "maxLength": 5},
     "validate_formats": true,
     "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
@@ -444,7 +444,7 @@
     ]
   },
   {
-    "description": "not a pattern bars it on the string branch and admits every other type",
+    "description": "not a pattern bars it on the string branch and accepts every other type",
     "schemas": [
       {"not": {"type": "string", "pattern": "^a"}}
     ],
@@ -509,7 +509,7 @@
     ]
   },
   {
-    "description": "a branch accepting only the empty string joins the enum beside it",
+    "description": "a branch accepting only the empty string merges into the enum beside it",
     "schema": {
       "anyOf": [
         {"type": "string", "maxLength": 0, "pattern": "^[ab]+$"},
