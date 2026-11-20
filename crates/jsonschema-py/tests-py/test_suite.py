@@ -11,9 +11,6 @@ TEST_SUITE_PATH = Path(__file__).parent.parent.parent / "jsonschema/tests/suite/
 
 # Draft name -> the number the suite's `compatibility` property uses for it.
 SUPPORTED_DRAFTS = {"4": 4, "6": 6, "7": 7, "2019-09": 2019, "2020-12": 2020}
-NOT_SUPPORTED_CASES = {
-    "4": ("bignum.json",),
-}
 
 
 def is_compatible(compatibility, release):
@@ -75,9 +72,7 @@ def maybe_skipped(draft, block, test, filename, case_id):
         validate_formats(block),
         case_id,
     )
-    if filename in NOT_SUPPORTED_CASES.get(draft, ()):
-        output = pytest.param(*output, marks=pytest.mark.skip(reason=f"{filename} is not supported"))
-    elif unencodable_string(test["data"]):
+    if unencodable_string(test["data"]):
         output = pytest.param(*output, marks=pytest.mark.skip(reason="instance has no UTF-8 representation"))
     return output
 

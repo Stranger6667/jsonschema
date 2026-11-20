@@ -20,10 +20,6 @@ mod tests {
         "draft7",
         "draft2019-09",
         "draft2020-12",
-    ],
-    xfail = [
-        "draft4::optional::bignum::integer::a_bignum_is_an_integer",
-        "draft4::optional::bignum::integer::a_negative_bignum_is_an_integer",
     ]
 )]
     fn test_suite(test: &Test, codegen_validator: Option<Box<dyn CodegenValidator>>) {
