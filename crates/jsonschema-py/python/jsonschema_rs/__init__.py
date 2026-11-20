@@ -124,7 +124,7 @@ class ValidationError(ValueError):
 
 
 class ReferencingError(Exception):
-    """Errors that can occur during reference resolution and resource handling."""
+    """A reference could not be resolved or its resource could not be retrieved."""
 
     message: str
 

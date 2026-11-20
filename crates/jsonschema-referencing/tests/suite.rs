@@ -45,7 +45,7 @@ fn test_suite(draft: &'static str, test: Test) {
         _ => panic!("Unknown draft"),
     };
 
-    // Borrowed path: &Value entries, draft inferred from registry default
+    // Borrowed `&Value` entries take the builder's draft
     let mut registry = Registry::new().draft(draft);
     for (uri, content) in &test.registry {
         registry = registry

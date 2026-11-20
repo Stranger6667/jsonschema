@@ -4,9 +4,6 @@ use pyo3::prelude::*;
 ///
 /// Configuration for email format validation.
 ///
-/// This allows customization of email format validation behavior beyond the default
-/// JSON Schema spec requirements.
-///
 ///     >>> from jsonschema_rs import validator_for, EmailOptions
 ///     >>> validator = validator_for(
 ///     ...     {"format": "email", "type": "string"},

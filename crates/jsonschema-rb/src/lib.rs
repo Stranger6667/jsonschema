@@ -218,7 +218,7 @@ thread_local! {
     static SUPPRESS_PANIC_OUTPUT: RefCell<bool> = const { RefCell::new(false) };
 }
 
-// RAII scope giving each surfacing call its own keyword-cause queue and restoring the caller's on
+// RAII scope giving each validation call its own keyword-cause queue and restoring the caller's on
 // exit. This discards causes a call leaves unconsumed (`evaluate`, an abandoned enumeration, a
 // panic — the drop still runs) and lets a keyword re-enter validation without clobbering the outer
 // call's pending causes.
@@ -388,8 +388,8 @@ fn error_message(error: &jsonschema::ValidationError<'_>, mask: Option<&str>) ->
     }
 }
 
-// The object at `location` under `root`, when it and everything in it are plain JSON types, which
-// convert to and from JSON unchanged. Other values keep their JSON form.
+// The Ruby value at `location` under `root` when it holds only plain JSON types; `None` makes the
+// caller convert the JSON copy.
 fn plain_instance_at(ruby: &Ruby, root: RbNode<'_>, location: &str) -> Option<Value> {
     #[allow(unsafe_code)]
     let mut current: Value = unsafe { magnus::rb_sys::FromRawValue::from_raw(root.raw()) };
@@ -586,9 +586,7 @@ fn raise_validation_error(
     }
 }
 
-/// RAII guard that sets `SUPPRESS_PANIC_OUTPUT` to `true` on creation and
-/// resets it to `false` on drop, ensuring the flag is always restored even
-/// if `catch_unwind` itself encounters a double-panic.
+/// RAII guard that sets `SUPPRESS_PANIC_OUTPUT` for one `catch_unwind_silent` call.
 struct SuppressPanicGuard;
 
 impl SuppressPanicGuard {
@@ -631,9 +629,9 @@ fn handle_callback_panic(ruby: &Ruby, err: Box<dyn std::any::Any + Send>) -> Err
     })
 }
 
-/// Run validation over `instance` in place, raising anything the representation could only record.
+/// Run `run` on `instance` read in place, then raise any read error the Magnus accessors recorded.
 ///
-/// Accessors cannot fail, so a value the representation cannot read is stashed and surfaced here.
+/// Accessors cannot fail, so they stash what they cannot read for this function to raise.
 fn surface_pending_errors<T>(
     instance: Value,
     run: impl FnOnce(RbNode<'_>) -> Result<T, Error>,
@@ -805,10 +803,8 @@ impl Validator {
 /// Detect the JSON Schema draft for a schema and return the corresponding validator class.
 /// Draft is detected automatically from the `$schema` field. Defaults to Draft202012Validator.
 ///
-///     >>> cls = JSONSchema.validator_cls_for({"type" => "string"})
-///     >>> validator = cls.new({"type" => "string"})
-///     >>> cls = JSONSchema.validator_cls_for({"$schema" => "http://json-schema.org/draft-07/schema#", "type" => "string"})
-///     >>> validator = cls.new({"$schema" => "http://json-schema.org/draft-07/schema#", "type" => "string"})
+///     JSONSchema.validator_cls_for({ "type" => "string" })  # => JSONSchema::Draft202012Validator
+///     JSONSchema.validator_cls_for({ "$schema" => "http://json-schema.org/draft-07/schema#" })  # => JSONSchema::Draft7Validator
 ///
 fn validator_cls_for(ruby: &Ruby, schema: Value) -> Result<RClass, Error> {
     let draft = if let Some(hash) = RHash::from_value(schema) {
@@ -1242,8 +1238,8 @@ fn json_text_schema(schema: Value) -> Option<serde_json::Value> {
     serde_json::from_slice(bytes).ok()
 }
 
-// The bundled meta-schemas are compiled in and read the Ruby object in place; `None` sends a
-// `$schema` outside them through its chain.
+// Checks against a compiled-in meta-schema, reading the Ruby object in place; `None` when `$schema`
+// names none of them.
 fn compiled_meta_is_valid(schema: Value) -> Option<Result<bool, Error>> {
     #[allow(unsafe_code)]
     let node = RbNode::new(schema.as_raw());
@@ -1398,9 +1394,8 @@ fn validation_error_hash(ruby: &Ruby, rb_self: Value) -> Result<Value, Error> {
 
 #[magnus::init(name = "jsonschema_rb")]
 fn init(ruby: &Ruby) -> Result<(), Error> {
-    // Conditionally suppress panic output — only when inside `catch_unwind`
-    // blocks used for Ruby callback panics (format checkers, custom keywords).
-    // Other panics pass through to the default handler to preserve debugging output.
+    // Silence panic output inside `catch_unwind_silent`, which wraps every validation call; other
+    // panics keep the default output.
     let default_hook = std::panic::take_hook();
     std::panic::set_hook(Box::new(move |info| {
         let suppress = SUPPRESS_PANIC_OUTPUT.with(|flag| *flag.borrow());

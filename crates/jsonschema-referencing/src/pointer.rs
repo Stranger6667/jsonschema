@@ -79,7 +79,7 @@ impl ParsedPointerSegment {
 
 /// Look up a value by a JSON Pointer.
 ///
-/// **NOTE**: A slightly faster version of pointer resolution based on `Value::pointer` from `serde_json`.
+/// Same lookup as `serde_json::Value::pointer`.
 pub fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
     if pointer.is_empty() {
         return Some(document);
@@ -97,7 +97,6 @@ pub fn pointer<'a>(document: &'a Value, pointer: &str) -> Option<&'a Value> {
     )
 }
 
-// Taken from `serde_json`.
 #[must_use]
 pub fn parse_index(s: &str) -> Option<usize> {
     if s.starts_with('+') || (s.starts_with('0') && s.len() != 1) {

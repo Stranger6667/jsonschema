@@ -11,7 +11,7 @@ use quote::format_ident;
 use serde_json::{Map, Value};
 
 /// Compile all array-specific keywords; with `split_unevaluated`, the `unevaluatedItems` errors
-/// come apart from the other errors.
+/// are returned separately.
 pub(in super::super) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,

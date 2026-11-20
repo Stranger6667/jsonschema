@@ -53,7 +53,7 @@ end
 - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 - ✨ Meta-schema validation for schema documents, including custom metaschemas
 - 🧮 Experimental schema canonicalization
-- ♦️ Supports Ruby 3.2, 3.4 and 4.0
+- ♦️ Supports Ruby 3.2+
 
 ### Supported drafts
 
@@ -121,7 +121,7 @@ With a chosen draft (a draft-specific class or `draft:`), the `$schema` URI is n
 
 ### Custom format validators
 
-Pass a callable that takes a `String` and returns a boolean via `formats`. Drafts 2019-09 and 2020-12 treat `format` as an annotation, so set `validate_formats: true` to get it checked:
+Pass a Proc or lambda that takes a `String` and returns a boolean via `formats`. Drafts 2019-09 and 2020-12 treat `format` as an annotation, so set `validate_formats: true` to get it checked:
 
 ```ruby
 phone_format = ->(value) { value.match?(/^\+?[1-9]\d{1,14}$/) }
@@ -300,7 +300,7 @@ Use it to deduplicate schemas that differ only in key order.
 
 > **Experimental**: the canonicalization API may change in minor releases.
 
-`JSONSchema.canonicalize` reduces a schema to a normal form that accepts the same values. Schemas that accept the same values reduce to equal `CanonicalSchema` objects, and a schema proven to accept nothing reduces to `false`:
+`JSONSchema.canonicalize` reduces a schema to a normal form that accepts the same values. Many schemas that accept the same values reduce to equal `CanonicalSchema` objects, and a schema proven to accept nothing reduces to `false`:
 
 ```ruby
 canonical = JSONSchema.canonicalize(
@@ -310,7 +310,7 @@ canonical.to_json_schema
 # => {"$schema"=>"https://json-schema.org/draft/2020-12/schema",
 #     "type"=>"integer", "minimum"=>10, "maximum"=>100}
 
-# However they were written, equivalent schemas compare equal
+# Written differently, these two schemas accept the same values and compare equal
 canonical == JSONSchema.canonicalize({ "type" => "integer", "maximum" => 100, "minimum" => 10 })
 # => true
 
@@ -319,34 +319,34 @@ JSONSchema.canonicalize({ "type" => "integer", "minimum" => 10, "maximum" => 5 }
 # => :no, which is JSONSchema::Canonical::Satisfiability::NO
 ```
 
-A schema the canonical form cannot model exactly comes back unchanged, with `kind == :raw`. Its `view.reason` names what stopped the run, and `view.pointer` the subschema at fault when a single one is.
+A schema the canonical form cannot model exactly comes back unchanged, with `kind == :raw`. Its `view.reason` names why it stayed raw, and `view.pointer` the subschema at fault when a single one is.
 
 Canonical schemas combine like sets of values. Every emitted schema carries `$schema`; the comments below leave it out:
 
 ```ruby
-positive = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 0 })
-bounded  = JSONSchema.canonicalize({ "type" => "integer", "maximum" => 100 })
+non_negative = JSONSchema.canonicalize({ "type" => "integer", "minimum" => 0 })
+bounded      = JSONSchema.canonicalize({ "type" => "integer", "maximum" => 100 })
 
 # Every value both accept
-positive.intersect(bounded).to_json_schema
+non_negative.intersect(bounded).to_json_schema
 # => {"type"=>"integer", "minimum"=>0, "maximum"=>100}
 
 # Every value either accepts
-positive.union(bounded).to_json_schema
+non_negative.union(bounded).to_json_schema
 # => {"type"=>"integer"}
 
-# Every value `positive` accepts and `bounded` rejects
-positive.subtract(bounded).to_json_schema
+# Every value `non_negative` accepts and `bounded` rejects
+non_negative.subtract(bounded).to_json_schema
 # => {"type"=>"integer", "minimum"=>101}
 
-# Every value `positive` rejects: other types, negative integers and non-integer numbers
-positive.negate.to_json_schema
+# Every value `non_negative` rejects: other types, negative integers and non-integer numbers
+non_negative.negate.to_json_schema
 # => {"anyOf"=>[{"type"=>["null", "boolean", "string", "array", "object"]},
 #               {"type"=>"integer", "maximum"=>-1},
 #               {"type"=>"number", "not"=>{"multipleOf"=>1}}]}
 
-positive.covers(bounded)        # => :no: `bounded` takes negative integers, `positive` does not
-positive.satisfiability         # => :yes
+non_negative.covers(bounded)    # => :no: `bounded` accepts negative integers, `non_negative` rejects them
+non_negative.satisfiability     # => :yes
 ```
 
 ### Comparing two versions of a schema
@@ -377,7 +377,7 @@ The direction to check depends on who sends the value:
 - `satisfiability`: only `:no` proves a schema accepts nothing. Treat `:unknown` like `:yes`.
 - `a.covers(b)`: only `:yes` proves `a` accepts every value `b` accepts. Treat `:unknown` like `:no`.
 
-`JSONSchema::Canonical::Containment`, `Satisfiability`, `Distinctness` and `Kind` hold these symbols as constants, each with an `ALL` list.
+`Containment`, `Satisfiability`, `Distinctness`, `Kind` and `RawReason` under `JSONSchema::Canonical` hold these symbols as constants, each with an `ALL` list.
 
 The set operations raise `IncompatibleOperands` when the operands differ in draft, `format` assertion or regular-expression engine, or resolve `#` or one external resource to different schemas. They raise `UnsupportedOperand` when an operand is `:raw`, and `UnsupportedResult` when the canonical form cannot express the result exactly. All three live under `JSONSchema::Canonical`.
 
@@ -639,7 +639,7 @@ validator = JSONSchema.validator_for(
 
 ## Error Handling
 
-A `ValidationError` carries the message, both locations and a `kind` with keyword-specific details:
+A `ValidationError` carries the message, the instance and schema paths, and a `kind` with keyword-specific details:
 
 ```ruby
 schema = { "type" => "string", "maxLength" => 5 }
@@ -655,8 +655,8 @@ rescue JSONSchema::ValidationError => error
 
   # Detailed error information via `kind`
   error.kind.name       # => "maxLength"
-  error.kind.value      # => { "limit" => 5 }
-  error.kind.to_h       # => { "name" => "maxLength", "value" => { "limit" => 5 } }
+  error.kind.value      # => { limit: 5 }
+  error.kind.to_h       # => { name: "maxLength", value: { limit: 5 } }
 end
 ```
 
@@ -667,8 +667,8 @@ end
 ```ruby
 JSONSchema.each_error({ "minimum" => 5 }, 3).each do |error|
   error.kind.name   # => "minimum"
-  error.kind.value  # => { "limit" => 5 }
-  error.kind.to_h   # => { "name" => "minimum", "value" => { "limit" => 5 } }
+  error.kind.value  # => { limit: 5 }
+  error.kind.to_h   # => { name: "minimum", value: { limit: 5 } }
   error.kind.to_s   # => "minimum"
 end
 ```
@@ -692,16 +692,16 @@ begin
   validator.validate!({ "password" => "123", "api_key" => "secret_key_123" })
 rescue JSONSchema::ValidationError => exc
   puts exc.message
-  # => '[REDACTED] does not match "^[A-Z0-9]{32}$"'
+  # => '[REDACTED] is shorter than 8 characters'
   puts exc.verbose_message
-  # => '[REDACTED] does not match "^[A-Z0-9]{32}$"\n\nFailed validating...\nOn instance["api_key"]:\n    [REDACTED]'
+  # => '[REDACTED] is shorter than 8 characters\n\nFailed validating...\nOn instance["password"]:\n    [REDACTED]'
 end
 ```
 
 ### Exception Classes
 
 - **`JSONSchema::ValidationError`**: raised on validation failure
-  - `message`, `verbose_message`, `instance_path`, `schema_path`, `evaluation_path`, `kind`, `instance`
+  - `message`, `verbose_message`, `instance_path`, `schema_path`, `evaluation_path`, `kind`, `instance`, `absolute_keyword_location`
   - JSON Pointer helpers: `instance_path_pointer`, `schema_path_pointer`, `evaluation_path_pointer`
 - **`JSONSchema::ReferencingError`**: raised when a `$ref` cannot be resolved
 
@@ -728,7 +728,7 @@ JSONSchema.valid?(schema, instance,
 )
 ```
 
-`evaluate` accepts the same options except `mask` (currently unsupported for evaluation output).
+`evaluate` accepts the same options except `mask`.
 
 `validator_for` accepts the same options except `draft:`. To pin a draft, use a draft-specific class such as `Draft7Validator.new`.
 
@@ -738,9 +738,9 @@ Valid draft symbols: `:draft4`, `:draft6`, `:draft7`, `:draft201909`, `:draft202
 
 Compared with other Ruby validators:
 
-- **96-1,189x** faster than `json_schemer` for complex schemas and large instances
-- **987-1,081x** faster than `json-schema` where supported
-- **25-161x** faster than `rj_schema` (RapidJSON/C++)
+- **96-2,891,549x** faster than `json_schemer`
+- **987-342,162x** faster than `json-schema` where supported
+- **25-1,638,462x** faster than `rj_schema` (RapidJSON/C++) where supported
 
 Full results and methodology are in [BENCHMARKS.md](https://github.com/Stranger6667/jsonschema/blob/master/crates/jsonschema-rb/BENCHMARKS.md).
 

@@ -17,9 +17,10 @@ Install the dependencies:
 $ bundle install --with benchmark
 ```
 
-Run the benchmarks:
+Run the benchmarks, building the compiled validators first for the codegen columns:
 
 ```console
+$ JSONSCHEMA_RB_CODEGEN_BENCH=1 bundle exec rake compile
 $ bundle exec ruby bench/benchmark.rb
 ```
 
@@ -68,7 +69,7 @@ Not all libraries support the same compile-once, validate-many pattern, which af
 
 Notes:
 
-1. `json-schema` does not support Draft 7 schemas.
+1. `json-schema` does not support Draft 7 or later.
 
 2. `json_schemer` fails to resolve the Draft 4 meta-schema reference in the Swagger schema.
 
@@ -100,4 +101,4 @@ You can find benchmark code in [bench/](bench/), Ruby version `4.0.1`, Rust vers
 
 ## Contributing
 
-Contributions to improve, expand, or optimize the benchmark suite are welcome. This includes adding new benchmarks, ensuring fair representation of real-world use cases, and optimizing the configuration and usage of benchmarked libraries. Such efforts are highly appreciated as they ensure accurate and meaningful performance comparisons.
+Contributions that add benchmarks or fix how a library is configured are welcome.

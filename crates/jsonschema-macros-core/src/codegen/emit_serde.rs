@@ -177,8 +177,8 @@ impl ValueEmitter for SerdeEmitter {
         }
     }
 
-    // `const: 1` matches `1.0`, so integral floats within i64 range must
-    // normalize to the same discriminator value as their integer spelling.
+    // `const: 1` matches `1.0`, so integral floats within i64 range map to the discriminator
+    // value of the integer they equal.
     fn instance_object_property_as_i64(key: &str) -> TokenStream {
         quote! {
             match instance {

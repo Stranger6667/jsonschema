@@ -74,7 +74,7 @@ fn compile_email_options_argument<E: ValueEmitter>(ctx: &CompileContext<'_, E>) 
     quote! { Some(&(#expr)) }
 }
 
-/// Whether the engine builds `s` as written.
+/// Whether the configured regex engine compiles `s` unchanged.
 fn engine_accepts(options: PatternEngineConfig) -> TokenStream {
     let limit =
         |limit: Option<usize>| limit.map_or_else(|| quote! { None }, |n| quote! { Some(#n) });
@@ -187,7 +187,6 @@ pub(crate) fn format_emits_assertion<E: ValueEmitter>(
     !ctx.are_unknown_formats_ignored()
 }
 
-/// Compile the "format" keyword.
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     value: &Value,

@@ -61,7 +61,6 @@ pub(crate) enum ErrorsBlock {
 }
 
 impl ErrorsBlock {
-    /// Convert to a `TokenStream`: empty for `AlwaysValid`, the inner stream for `Expr`.
     pub(crate) fn as_token_stream(&self) -> TokenStream {
         match self {
             Self::AlwaysValid => quote! {},
@@ -166,8 +165,8 @@ impl CompiledExpr {
         self.compile_error
     }
 
-    /// A check that cannot compile: `is_valid` carries the compile error, and there is nothing to
-    /// report at runtime.
+    /// A check that cannot compile: `is_valid` carries the compile error, and the generated code
+    /// reports nothing.
     pub(crate) fn from_error(is_valid: TokenStream) -> Self {
         Self {
             is_valid: IsValidExpr::Expr(is_valid),

@@ -58,7 +58,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     let schema_check =
         ctx.with_schema_path_segment("propertyNames", |ctx| compile_schema(ctx, value));
     let is_valid = schema_check.is_valid_token_stream();
-    // Closure avoids temporary lifetime issues: the key becomes a temporary Value::String inside.
+    // Closure avoids temporary lifetime issues: the key becomes a temporary string node inside.
     match &schema_check.errors {
         ErrorsBlock::Expr(_) => {
             let child_errors = schema_check.errors.as_token_stream();
@@ -76,7 +76,7 @@ pub(crate) fn compile<E: ValueEmitter>(
     }
 }
 
-/// Per-key errors loop: each key becomes a temporary `Value::String`, the child reports into a
+/// Per-key errors loop: each key becomes a temporary string node, the child reports into a
 /// scratch sink of the same mode, and every error is wrapped into a `propertyNames` error. `bind_s` also binds
 /// `s` for the string fast path, whose checks read the `&str` subject directly.
 fn property_name_errors<E: ValueEmitter>(

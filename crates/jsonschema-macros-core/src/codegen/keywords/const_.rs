@@ -4,7 +4,6 @@ use serde_json::Value;
 
 use super::super::CompiledExpr;
 
-/// Compile the "const" keyword.
 pub(in super::super) fn compile<E: ValueEmitter>(
     ctx: &CompileContext<'_, E>,
     value: &Value,

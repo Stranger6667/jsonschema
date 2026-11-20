@@ -3,9 +3,8 @@
 require "spec_helper"
 
 DRAFT202012 = "https://json-schema.org/draft/2020-12/schema"
-# `dependencies` is the one conditional applicator canonicalization does not split beside an
-# `unevaluated*`, so this stays raw. Each construct canonicalization learns needs a
-# still-unsupported stand-in here.
+# Canonicalization keeps `dependencies` beside `unevaluatedProperties` raw, so this stands in for an
+# unsupported schema.
 UNSUPPORTED = { "dependencies" => {}, "unevaluatedProperties" => false }.freeze
 # A cycle keeps a reference symbolic: such a document is not folded through its targets.
 RECURSIVE_DEFS = {
@@ -106,8 +105,8 @@ RSpec.describe "JSONSchema.canonicalize" do
   end
 
   it "view returns StringView carrying an independent media type and encoding" do
-    # Same-object contentEncoding+contentMediaType decode-then-check and stay raw; separate allOf
-    # branches model independently, which the view then exposes.
+    # In one object, `contentMediaType` checks the decoded string, so the schema stays raw; in separate
+    # `allOf` branches each keyword is modeled and the view exposes both.
     schema = { "allOf" => [{ "type" => "string", "contentEncoding" => "base64" },
                            { "contentMediaType" => "application/json" }] }
     case JSONSchema.canonicalize(schema, draft: :draft7).view
@@ -563,12 +562,10 @@ RSpec.describe "JSONSchema.canonicalize" do
     [{ "enum" => %w[a b] }, { "enum" => ["a"] }, { "$schema" => DRAFT202012, "const" => "b" }, :yes],
     [{ "type" => "integer" }, { "type" => %w[integer string] },
      { "$schema" => DRAFT202012, "not" => {} }, :no],
-    # What a narrowed schema stopped accepting, which is the comparison workflow: the values the
-    # old schema took and the new one turns away.
+    # What a narrowed schema stopped accepting: values the old schema accepts and the new one rejects.
     [{ "type" => "string" }, { "type" => "string", "maxLength" => 50 },
      { "$schema" => DRAFT202012, "type" => "string", "minLength" => 51 }, :yes],
-    # Empty the other way round, since the new schema only narrowed - which is what proves nothing
-    # was lost.
+    # Empty the other way round: the narrowed schema accepts nothing the old one rejects.
     [{ "type" => "string", "maxLength" => 50 }, { "type" => "string" },
      { "$schema" => DRAFT202012, "not" => {} }, :no]
   ].each do |left, right, expected, satisfiability|

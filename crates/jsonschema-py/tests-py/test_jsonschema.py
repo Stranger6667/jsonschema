@@ -674,7 +674,7 @@ def test_one_of_multiple_valid_with_context():
 @pytest.mark.parametrize(
     "schema,instance,expected_name,draft",
     [
-        # additionalItems is Draft 4/7 only
+        # additionalItems is not a Draft 2020-12 keyword
         ({"additionalItems": False, "items": [{}]}, [1, 2], "additionalItems", Draft7Validator),
         (
             {"type": "object", "properties": {"x": {}}, "additionalProperties": False},
@@ -899,7 +899,7 @@ def test_invalid_value(method):
 
 
 def test_invalid_schema_keyword():
-    # Use a genuinely invalid/unknown meta-schema URL
+    # An unknown meta-schema URI
     schema = {"$schema": "https://json-schema.org/draft-99/schema"}
     with pytest.raises(ValidationError, match="Unknown meta-schema: 'https://json-schema.org/draft-99/schema'"):
         validator_for(schema)
@@ -1631,7 +1631,7 @@ def test_large_number_validation_error_attributes(schema, instance):
     ],
 )
 def test_float_precision_from_string_schema(instance, expected):
-    # Schema values are no longer converted to f64, maintaining better precision
+    # Schema numbers keep their decimal precision
     validator = validator_for('{"multipleOf": 0.01}')
     assert validator.is_valid(instance) == expected
 
@@ -1679,7 +1679,6 @@ def test_decimal_in_schema():
 )
 def test_large_integer_type_validation_all_drafts(validator_cls, value):
     # Large integers outside i64/u64 range should be valid for type: integer in all drafts
-    # This was a bug where Draft4Validator specifically rejected these values
     validator = validator_cls({"type": "integer"})
     assert validator.is_valid(value), f"{validator_cls.__name__} should accept {value} as integer"
 

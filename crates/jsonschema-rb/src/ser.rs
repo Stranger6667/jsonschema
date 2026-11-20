@@ -17,7 +17,6 @@ use serde_json::{Map, Number, Value as JsonValue};
 use std::{cell::RefCell, fmt::Write};
 
 static BIG_DECIMAL_CLASS: Lazy<RClass> = Lazy::new(|ruby| {
-    // Ensure bigdecimal is loaded
     let _: Value = ruby
         .eval("require 'bigdecimal'")
         .expect("Failed to require bigdecimal");
@@ -719,8 +718,7 @@ fn convert_big_decimal(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
     ))
 }
 
-/// Convert Ruby Integer to JSON Number
-/// Handles Fixnum, Bignum, and arbitrary precision
+/// Convert a Ruby Integer of any size to a JSON number.
 #[inline]
 fn convert_integer(ruby: &Ruby, value: Value) -> Result<JsonValue, Error> {
     // Try i64 first (handles most integers including negative fixnums)

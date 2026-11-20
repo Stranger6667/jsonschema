@@ -108,7 +108,7 @@ impl Evaluation {
 // Builds an output unit straight into a Ruby Hash, with the keys and order the serialized
 // output has.
 fn unit_to_ruby(ruby: &Ruby, unit: OutputUnit<'_>, nested: bool) -> Result<RHash, Error> {
-    // Key-value pairs inserted with one call, the order the serialized output has.
+    // Inserted with one `bulk_insert` call.
     let mut pairs = [ruby.qnil().as_value(); 16];
     let mut len = 0;
     let mut push = |key: Value, value: Value| {

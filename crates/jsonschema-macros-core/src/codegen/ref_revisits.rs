@@ -669,7 +669,7 @@ impl<'cfg> Graph<'cfg> {
         }
     }
 
-    /// The instance types a subschema can descend from, computed once per child.
+    /// The types of the holding instance from which a child can descend further, computed once.
     fn accepted<E: ValueEmitter>(
         &self,
         ctx: &mut CompileContext<'cfg, E>,
@@ -818,7 +818,7 @@ struct Reaches<'a, 'cfg> {
 }
 
 impl Reaches<'_, '_> {
-    /// Recomputes the nodes of a target's schema, innermost first.
+    /// Recomputes the reach of each node of a target's schema, innermost first.
     fn walk(&mut self, target: usize) {
         for node in self.graph.spans[target].clone().rev() {
             let children = &self.graph.nodes[node].children;

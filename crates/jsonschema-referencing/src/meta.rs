@@ -1,6 +1,4 @@
 //! Built-in JSON Schema meta-schemas.
-//!
-//! This module provides access to the official JSON Schema meta-schemas for different draft versions.
 use serde_json::Value;
 use std::sync::{Arc, LazyLock};
 
@@ -243,8 +241,7 @@ pub(crate) fn metas_for_draft(draft: Draft) -> &'static [(&'static str, &'static
         Draft::Draft6 => &*META_SCHEMAS_DRAFT6,
         Draft::Draft7 => &*META_SCHEMAS_DRAFT7,
         Draft::Draft201909 => &*META_SCHEMAS_DRAFT2019,
-        // Unknown drafts default to 2020-12 vocabularies.
-        // Custom meta-schemas should explicitly declare vocabularies in their $vocabulary field.
+        // An unknown draft gets the 2020-12 meta-schemas.
         Draft::Draft202012 | Draft::Unknown => &*META_SCHEMAS_DRAFT2020,
     }
 }

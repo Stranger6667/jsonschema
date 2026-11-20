@@ -9,7 +9,7 @@ Arbitrary precision support is now always enabled. Numeric values in `Validation
 - Integers fitting in i64/u64 → `int`
 - Larger integers → `int` (parsed from string)
 - Floats within f64 range → `float`
-- Floats outside f64 range → `decimal.Decimal`
+- Floats a `float` cannot hold exactly (out of range or too precise) → `decimal.Decimal`
 
 **Breaking change**: `ValidationErrorKind.MultipleOf.multiple_of` changed from `float` to `int | float | Decimal`.
 
@@ -25,7 +25,7 @@ except ValidationError as exc:
     if isinstance(exc.kind, ValidationErrorKind.MultipleOf):
         multiple = exc.kind.multiple_of  # int, float, or Decimal
         if isinstance(multiple, Decimal):
-            # Handle Decimal (rare - only for huge numbers)
+            # Handle Decimal (rare - only for huge or very precise numbers)
             multiple_str = str(multiple)
 ```
 

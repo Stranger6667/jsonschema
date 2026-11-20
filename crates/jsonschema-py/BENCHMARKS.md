@@ -84,4 +84,4 @@ You can find benchmark code in [benches/](benches/), Python version `3.14.7`, Ru
 
 ## Contributing
 
-Contributions to improve, expand, or optimize the benchmark suite are welcome. This includes adding new benchmarks, ensuring fair representation of real-world use cases, and optimizing the configuration and usage of benchmarked libraries. Such efforts are highly appreciated as they ensure accurate and meaningful performance comparisons.
+Contributions are welcome: new benchmarks, more realistic workloads, or fairer settings for the compared libraries.

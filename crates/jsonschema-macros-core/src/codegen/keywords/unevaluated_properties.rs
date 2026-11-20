@@ -39,7 +39,6 @@ pub(crate) fn unevaluated_members<E: ValueEmitter>(
     )
 }
 
-/// Compile the "unevaluatedProperties" keyword.
 pub(crate) fn compile<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     schema: &Map<String, Value>,

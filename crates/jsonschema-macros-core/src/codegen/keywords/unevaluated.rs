@@ -18,7 +18,7 @@ use super::super::{
 };
 
 /// Break a self-referential eval-tracking cycle under an unevaluated keyword: a re-entry on
-/// the same (helper fn pointer, instance pointer) evaluates nothing, mirroring the engine's marking.
+/// the same (helper fn pointer, instance pointer) evaluates nothing, as the runtime's marking does.
 fn cycle_guarded_dispatch(node_address: &TokenStream, call: &TokenStream) -> TokenStream {
     quote! {
         {
@@ -78,7 +78,7 @@ fn has_composable_applicators<E: ValueEmitter>(
         || (ctx.draft.supports_if_then_else_keyword() && obj.contains_key("if"))
 }
 
-/// Validity-only compilation that spells applicator branches as guard-helper
+/// Validity-only compilation that emits applicator branches as guard-helper
 /// calls instead of inlined subtrees.
 fn compile_guard_validity<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
@@ -219,8 +219,8 @@ impl GuardHoist {
 }
 
 /// What the schema with an `unevaluated*` keyword reports as evaluated: a subschema it applies in
-/// place that fails evaluates nothing. The ones below them validate whenever they do, so only the
-/// schema's own are checked, each at most once per instance and only for a member it evaluates.
+/// place that fails evaluates nothing. Deeper in-place subschemas pass whenever these pass, so only
+/// the schema's own are checked, each at most once per instance and only for a member it evaluates.
 #[derive(Default)]
 pub(crate) struct ReportGuards {
     cells: Vec<TokenStream>,

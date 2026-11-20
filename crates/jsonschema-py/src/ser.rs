@@ -366,8 +366,7 @@ macro_rules! tri {
     };
 }
 
-/// Helper function to serialize a large integer that doesn't fit in i64
-/// by converting it to a string and parsing as serde_json::Number
+/// Serialize an int past i64 by parsing its decimal text as a `serde_json::Number`.
 pub(crate) fn serialize_large_int<S>(
     object: *mut pyo3::ffi::PyObject,
     serializer: S,
@@ -503,7 +502,6 @@ impl<const HOLDING: bool> Serialize for SerializePyObject<HOLDING> {
                         let (key, value) = (key_item.as_ptr(), value_item.as_ptr());
                         let object_type = unsafe { Py_TYPE(key) };
                         let (key_unicode, owned) = if object_type == unsafe { types::STR_TYPE } {
-                            // if the key type is string, use it as is
                             (key, false)
                         } else {
                             // cover for both old-style str enums subclassing str and Enum and for new-style

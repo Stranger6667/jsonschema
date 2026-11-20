@@ -68,13 +68,13 @@ struct Unit {
     alias: Option<&'static str>,
     /// Its annotation of a string instance.
     string_annotation: Option<Value>,
-    /// Its keyword alone, to check where the errors run is skipped.
+    /// A schema of its keyword alone, checked directly when `evaluate` skips the errors run.
     check: Option<LeafCheck>,
-    /// Its generated check, which reports its errors without the errors run.
+    /// Index of its generated check, which reports its errors without the errors run.
     direct: Option<usize>,
 }
 
-/// How a leaf unit reporting its errors itself words them.
+/// The error text of a leaf unit that checks the instance itself.
 enum DirectErrors {
     /// The errors code of its keyword alone.
     Reported(TokenStream),
@@ -278,7 +278,7 @@ struct Tree {
     /// The code the schemas being added run in: the innermost reference target's, `None` for the
     /// root's.
     function: Option<usize>,
-    /// The addresses of the schemas being added from there on, the outermost first.
+    /// Addresses of the schemas being added since entering `function`'s code, outermost first.
     inline: Vec<usize>,
 }
 
@@ -399,9 +399,8 @@ impl Tree {
         }
     }
 
-    /// The locations of the reference targets whose code holds the schema being added, while
-    /// it compiles: the targets whose code reached the innermost one's, and the targets the
-    /// schemas from there on are.
+    /// Locations of the reference targets whose code holds the schema being added: `function`'s
+    /// target and the targets its code compiled within, then the targets the `inline` schemas are.
     fn compiling<E: ValueEmitter>(&self, ctx: &CompileContext<'_, E>) -> Vec<String> {
         let mut locations = Vec::new();
         let mut current = self.function.map(|function| &self.functions[function]);
@@ -566,7 +565,7 @@ impl Tree {
                     keyword: "additionalItems",
                     schema,
                     skip: tuple.len(),
-                    // The errors run reports one error for every extra item of `false`.
+                    // With `additionalItems: false`, the errors run reports each extra item.
                     closed: *subschema == Value::Bool(false),
                 });
             }
@@ -1540,7 +1539,7 @@ struct Code<'t> {
     reporting: bool,
     /// Generated validity code runs with the evaluation's dynamic scope on the generated stacks.
     scoped: bool,
-    /// References keep the dynamic scope, which something reads.
+    /// References keep the dynamic scope: `$dynamicRef`, `$recursiveRef` or validity code reads it.
     keeps_scope: bool,
     /// The guard of each reference target's code, by index of `Tree::functions`.
     guards: HashMap<usize, proc_macro2::Ident>,
@@ -2496,8 +2495,8 @@ impl Code<'_> {
     }
 }
 
-/// The schemas a reference resolving through the dynamic scope may land on besides its static
-/// target: the `anchor` schemas, or the roots under `$recursiveRef`, of every resource.
+/// The schemas a reference resolving through the dynamic scope may land on: the `anchor` schemas,
+/// or the roots under `$recursiveRef`, of every resource.
 fn landings(tree: &Tree, anchor: Option<&str>, recursive: bool) -> BTreeSet<usize> {
     let resources = tree.resources.iter();
     if recursive {
@@ -2786,7 +2785,7 @@ fn unit<E: ValueEmitter>(
         (Draft::Draft4, "minimum") => Some(unit.with_alias("exclusiveMinimum")),
         (Draft::Draft4, "maximum") => Some(unit.with_alias("exclusiveMaximum")),
         (_, "uniqueItems") if value == &Value::Bool(false) => None,
-        // The runtime skips a format it validates formats with but does not know.
+        // With format validation on, the runtime gives an ignored unknown format no unit.
         (_, "format") if ctx.validates_formats() && !format_emits_assertion(ctx, value) => None,
         (_, "format") => Some(unit.annotating(value)),
         // Draft 7 asserts content: the runtime skips an unsupported media type or encoding, and

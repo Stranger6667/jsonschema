@@ -4,7 +4,6 @@ use serde_json::Value;
 
 use super::super::{invalid_schema_type_expression, CompiledExpr};
 
-/// Compile the "enum" keyword.
 pub(in super::super) fn compile<E: ValueEmitter>(
     ctx: &CompileContext<'_, E>,
     value: &Value,

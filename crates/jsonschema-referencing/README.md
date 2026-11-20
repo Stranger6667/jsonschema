@@ -7,10 +7,9 @@ An implementation-agnostic JSON reference resolution library for Rust.
 
 ## Features and Design
 
-- Eagerly resolves all external references
-- Does not support on-demand resolving of external references
+- Retrieves external resources when the registry is prepared, never during lookup
 
 ## Acknowledgements
 
-This crate is heavily inspired by the Python [`referencing`](https://github.com/python-jsonschema/referencing) package. We extend our gratitude to its authors for their excellent work and design.
+This crate follows the design of the Python [`referencing`](https://github.com/python-jsonschema/referencing) package; thanks to its authors.
 

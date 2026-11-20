@@ -69,7 +69,7 @@ impl UriCache {
     }
 }
 
-/// A dedicated type for URI resolution caching.
+/// `UriCache` behind a read-write lock, for the prepared registry.
 #[derive(Debug)]
 pub(crate) struct SharedUriCache {
     cache: RwLock<CacheMap>,

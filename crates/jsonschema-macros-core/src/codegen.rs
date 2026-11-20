@@ -60,9 +60,9 @@ pub(crate) fn generate_from_config<E: ValueEmitter>(
     if ref_cycles.through_scope {
         ctx.ref_results_key = RefResultsKey::InstanceAndScope { calls: 0 };
     }
-    // The root is the code a `$ref` naming it by `#` runs: a reference back to the root's instance
-    // passes the cycle guard that code's own references take, and one the root holds itself
-    // applies nothing.
+    // A `$ref` to `#` runs the root's code. On a cycle back to the root's instance, the root
+    // compiles as that target, so references back to it take the target's cycle guard and the
+    // root's own `$ref: "#"` applies nothing.
     let root = root_reference_target(&mut ctx, &config.schema);
     if ctx.closes_same_instance_cycle(&root.location) {
         get_or_create_is_valid_fn(

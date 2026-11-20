@@ -194,11 +194,12 @@ impl<'a> RegistryBuilder<'a> {
         Ok(builder)
     }
 
-    /// Prepare the registry for reuse.
+    /// Retrieve every external resource the added ones reference and build the registry.
     ///
     /// # Errors
     ///
-    /// Returns an error if URI processing, retrieval, or custom meta-schema validation fails.
+    /// Returns an error if a URI is invalid, a `$ref` target cannot be retrieved, or a custom
+    /// `$schema` is not in the registry.
     pub fn prepare(self) -> Result<Registry<'a>, Error> {
         // When extending an existing registry, seed known resources from the baseline so the
         // retriever skips URIs already owned by the parent.
@@ -227,11 +228,13 @@ impl<'a> RegistryBuilder<'a> {
     }
 
     #[cfg(feature = "retrieve-async")]
-    /// Prepare the registry for reuse with async retrieval.
+    /// Retrieve every external resource the added ones reference, asynchronously, and build
+    /// the registry.
     ///
     /// # Errors
     ///
-    /// Returns an error if URI processing, retrieval, or custom meta-schema validation fails.
+    /// Returns an error if a URI is invalid, a `$ref` target cannot be retrieved, or a custom
+    /// `$schema` is not in the registry.
     pub async fn async_prepare(self) -> Result<Registry<'a>, Error> {
         let retriever = self
             .async_retriever
@@ -300,7 +303,7 @@ impl<'a> Registry<'a> {
         RegistryBuilder::from_registry(self).extend(pairs)
     }
 
-    /// Build a registry with all the given meta-schemas from specs.
+    /// Build a registry of the given meta-schemas.
     pub(crate) fn from_meta_schemas(schemas: &[(&'static str, &'static Value)]) -> Self {
         let mut documents = ResourceStore::with_capacity(schemas.len());
         let mut known_resources = KnownResources::with_capacity(schemas.len());
@@ -347,12 +350,11 @@ impl<'a> Registry<'a> {
     /// Returns the vocabulary set `draft` puts in effect for a schema with the given `contents`.
     ///
     /// A `$schema` naming a custom meta-schema is the one case where `contents` decides: its
-    /// `$vocabulary` is read from the registry. Never errors.
+    /// `$vocabulary` is read from the registry.
     #[must_use]
     pub fn find_vocabularies(&self, draft: Draft, contents: &Value) -> VocabularySet {
-        // Detection answers one question: whether `$schema` names a custom meta-schema, the
-        // only kind that declares vocabularies of its own. Every other schema takes them from
-        // `draft`, which `with_draft` may have set over the `$schema` declaration.
+        // Only a custom meta-schema declares vocabularies of its own; every other schema takes
+        // them from `draft`, which the caller may have chosen over the `$schema` declaration.
         match draft.detect(contents) {
             Draft::Unknown => {
                 if let Some(specification) = contents
@@ -378,12 +380,11 @@ impl<'a> Registry<'a> {
 
     /// Resolves `uri` against `base` and returns the resulting absolute URI.
     ///
-    /// Results are cached. Returns an error if `base` has no scheme or if
-    /// resolution fails.
+    /// Results are cached.
     ///
     /// # Errors
     ///
-    /// Returns an error if base has no schema or there is a fragment.
+    /// Returns an error if `uri` is not a URI reference or cannot be resolved against `base`.
     pub fn resolve_uri(&self, base: &Uri<&str>, uri: &str) -> Result<Arc<Uri<String>>, Error> {
         self.resolution_cache.resolve_against(base, uri)
     }

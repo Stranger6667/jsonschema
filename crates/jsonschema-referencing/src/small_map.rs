@@ -37,14 +37,14 @@ impl<K, V, const N: usize> SmallMap<K, V, N> {
                     map.insert(key, value);
                     return;
                 }
-                // Full and key is new — fall through to promotion.
+                // Full and the key is new: promote below.
             }
             SmallMap::Large(map) => {
                 map.insert(key, value);
                 return;
             }
         }
-        // Promotion: atomically swap self to Large, drain old Small into it.
+        // Swap in a `Large` map and move the `Small` entries into it.
         let old = match mem::replace(self, SmallMap::Large(AHashMap::with_capacity(N + 1))) {
             SmallMap::Small(m) => m,
             SmallMap::Large(_) => unreachable!(),
@@ -148,7 +148,6 @@ mod tests {
         map.insert("key".to_string(), 1);
         map.insert("key".to_string(), 2);
         assert_eq!(map.get("key"), Some(&2));
-        // Verify no duplicate was added: inserting the same key again should still return 2
         map.insert("key".to_string(), 2);
         assert_eq!(map.get("key"), Some(&2));
     }
@@ -190,7 +189,6 @@ mod tests {
         map.insert("key".to_string(), 42);
         let v = map.get_or_insert_default("key".to_string());
         assert_eq!(*v, 42);
-        // Verify key was not duplicated: original value still accessible
         assert_eq!(map.get("key"), Some(&42));
     }
 

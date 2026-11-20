@@ -37,7 +37,6 @@ pub(crate) struct ErrorsFn {
 /// Generated functions of one category, interned by schema location to
 /// deduplicate repeated subschemas and break reference cycles.
 pub(crate) struct FnTable {
-    /// Maps a schema location to the generated function's name.
     location_to_name: HashMap<String, String>,
     /// Maps a generated function name to its compiled body.
     bodies: IndexMap<String, TokenStream>,
@@ -61,7 +60,6 @@ impl FnTable {
         }
     }
 
-    /// Returns the name previously assigned to `location`, if any.
     pub(crate) fn get_name(&self, location: &str) -> Option<&String> {
         self.location_to_name.get(location)
     }
@@ -85,7 +83,6 @@ impl FnTable {
         self.errors_bodies.insert(name.to_string(), errors);
     }
 
-    /// Returns the error-reporting body for a function, if available.
     pub(crate) fn get_errors_body(&self, name: &str) -> Option<&ErrorsFn> {
         self.errors_bodies.get(name)
     }
@@ -105,7 +102,6 @@ impl FnTable {
         self.in_progress.remove(location);
     }
 
-    /// Returns `true` if `location` is currently being compiled.
     pub(crate) fn is_compiling(&self, location: &str) -> bool {
         self.in_progress.contains(location)
     }
@@ -141,8 +137,7 @@ impl Default for PatternEngineConfig {
     }
 }
 
-/// URI/IRI `format` checks memoized per validation, since their `fluent-uri` parse is expensive and
-/// schema documents repeat the same URIs many times.
+/// URI/IRI `format` results memoized per validation run, since instances repeat the same URIs.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
 pub(crate) enum UriFormatCache {
     Uri,
@@ -233,14 +228,14 @@ pub(crate) struct CodegenConfig {
     pub(crate) methods: MethodGates,
 }
 
-/// What the results of `$ref` cycles are kept by.
+/// The key memoized `$ref` cycle results are stored under.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub(crate) enum RefResultsKey {
     /// The target and the instance.
     Instance,
     /// Also the dynamic scope, which `$recursiveRef` and `$dynamicRef` make a result depend on.
     InstanceAndScope {
-        /// The calls keeping their results.
+        /// How many generated calls keep their results.
         calls: usize,
     },
 }
@@ -254,7 +249,7 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     /// The first vocabulary an entered meta-schema requires that is neither implemented nor declared.
     pub(crate) undeclared_vocabulary: Option<String>,
     pub(crate) current_base_uri: Arc<Uri<String>>,
-    /// Per-subschema validity checks: `fn(&Value) -> bool` (plus an error-reporting variant).
+    /// Per-subschema validity functions returning `bool`, plus an error-reporting variant.
     pub(crate) is_valid_fns: FnTable,
     /// Per-subschema `unevaluatedProperties` checks: is a given property key evaluated?
     pub(crate) key_eval_fns: FnTable,
@@ -262,7 +257,7 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) item_eval_fns: FnTable,
     /// Applicator branches emitted once as paired validity and error-collection helpers.
     pub(crate) branch_helpers: Vec<(TokenStream, TokenStream)>,
-    /// Each entry of `branch_helpers` by its code.
+    /// Index into `branch_helpers`, keyed by the helper's code.
     branch_helper_ids: HashMap<String, usize>,
     /// Error reporting for `type: array` with every item checked by one referenced schema, keyed
     /// by that schema's `is_valid` function.
@@ -291,21 +286,21 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) uses_ref_cycle: bool,
     /// `$ref` targets in cycles one validation can take through the same instance more than once.
     pub(crate) revisited_ref_targets: HashSet<String>,
-    /// The reference target whose code each target's code is first compiled in, by location;
-    /// `None` for the root's.
+    /// For each target location, the target whose code first compiled it; `None` when the root's
+    /// did.
     pub(crate) compiled_within: HashMap<String, Option<String>>,
     /// Reference targets a reference reaches while their own code compiles.
     pub(crate) reentered_targets: HashSet<String>,
-    /// The locations of the reference targets each schema is, by its address.
+    /// Reference-target locations of each schema, keyed by its address.
     pub(crate) target_locations: HashMap<usize, Vec<String>>,
     /// `$ref` targets in cycles that come back to the instance they hold.
     pub(crate) same_instance_ref_targets: HashSet<String>,
     /// The location of the `$ref` target the root's code is, when a cycle through the root comes
     /// back to the instance it holds.
     pub(crate) root_target: Option<String>,
-    /// What the results of `$ref` cycles are kept by.
+    /// The key memoized `$ref` cycle results are stored under.
     pub(crate) ref_results_key: RefResultsKey,
-    /// The dynamic-scope stacks references in validity code look up, by name.
+    /// Names of the dynamic-scope stacks that generated references look up.
     pub(crate) looked_up_stacks: BTreeSet<String>,
     pub(crate) uri_format_caches: BTreeSet<UriFormatCache>,
     /// JSON Pointer tracking the current position in the schema document, embedded into the
@@ -313,7 +308,8 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) schema_path: String,
 }
 
-/// The dialect of `schema`, and the first vocabulary it requires that nobody implements.
+/// The vocabularies of `schema`, and the first custom one it requires that the configured
+/// `vocabularies` do not declare.
 fn find_vocabularies(
     config: &CodegenConfig,
     draft: Draft,
@@ -560,8 +556,8 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
         f(&mut scope)
     }
 
-    /// `f` compiled as within the code of each reference target at `locations`, as at their
-    /// references that do not change the instance.
+    /// Runs `f` as if inside the code of each reference target in `locations`, entered on the same
+    /// instance.
     pub(crate) fn within_targets<T>(
         &mut self,
         locations: &[String],

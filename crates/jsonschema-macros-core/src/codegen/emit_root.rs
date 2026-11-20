@@ -41,8 +41,7 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     let ref_cycle_needed = ctx.uses_ref_cycle;
     let methods = ctx.config.methods;
     // Validity bodies and `is_branch_valid_*` serve every method and always stay. Error bodies serve
-    // `validate` (first error) and `iter_errors` (every error), so they go only when both are off.
-    // `evaluate` reads its errors from the same function.
+    // `validate`, `iter_errors` and `evaluate`, so they go only when all three are off.
     let emit_errors = methods.validate || methods.iter_errors || methods.evaluate;
     let module_prelude = E::module_prelude();
     let function_prelude = E::function_prelude();
@@ -376,8 +375,8 @@ pub(super) fn emit_root_module<E: ValueEmitter>(
     } else {
         quote! {}
     };
-    // Break self-referential `$dynamicRef`/`$recursiveRef` cycles at runtime, keyed by
-    // (helper fn pointer, instance pointer). Separate stacks for validation vs eval tracking.
+    // Cycle guards for `$ref`, `$dynamicRef` and `$recursiveRef` re-entries, keyed by
+    // (helper fn pointer, instance pointer); `unevaluated*` tracking has its own stack.
     let mark_defs = if recursive_stack_needed || dynamic_stack_needed || ref_cycle_needed {
         quote! {
             static __JSONSCHEMA_VALIDATE_MARK: std::cell::RefCell<Vec<(usize, usize)>> =

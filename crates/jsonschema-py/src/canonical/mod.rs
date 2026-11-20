@@ -96,7 +96,7 @@ label_enum! {
 }
 
 label_enum! {
-    /// What stopped a run from modeling a document.
+    /// Why canonicalization kept a document as ``Raw``.
     PyRawReason => RawReason as "RawReason" {
         UnknownDialect = "UNKNOWN_DIALECT",
         Unmodeled = "UNMODELED",
@@ -129,6 +129,7 @@ label_enum! {
     }
 }
 
+/// Canonical representation of a JSON Schema, obtained via :func:`canonicalize`.
 #[pyclass(frozen, name = "CanonicalSchema")]
 pub(crate) struct PyCanonicalSchema {
     inner: CanonicalSchema,
@@ -161,7 +162,7 @@ impl PyCanonicalSchema {
         self.inner.kind().into()
     }
 
-    /// Return the single view object for this node.
+    /// Return the single view object for this node; dispatch with ``match``.
     fn view(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         Ok(match self.inner.view() {
             CanonicalView::MultiType(set) => Py::new(
@@ -447,7 +448,9 @@ impl PyCanonicalSchema {
             .map_err(|error| canonicalization_error(py, error))
     }
 
-    /// Every value this schema accepts and `other` rejects.
+    /// Every value this schema accepts and ``other`` rejects.
+    ///
+    /// ``old.subtract(new)`` is unsatisfiable when ``new`` accepts every value ``old`` accepts.
     fn subtract(&self, py: Python<'_>, other: &Self) -> PyResult<Self> {
         self.inner
             .subtract(&other.inner)
@@ -455,10 +458,10 @@ impl PyCanonicalSchema {
             .map_err(|error| canonicalization_error(py, error))
     }
 
-    /// Whether this schema accepts every value `other` accepts.
+    /// Whether this schema accepts every value ``other`` accepts.
     ///
-    /// Only `YES` proves containment; `UNKNOWN` means undecided, not disproved. Test for `YES`,
-    /// and treat `UNKNOWN` like `NO`.
+    /// Only ``YES`` proves containment; ``UNKNOWN`` means undecided, not disproved. Test for
+    /// ``YES``, and treat ``UNKNOWN`` like ``NO``.
     fn covers(&self, py: Python<'_>, other: &Self) -> PyResult<PyContainment> {
         self.inner
             .covers(&other.inner)
@@ -467,6 +470,9 @@ impl PyCanonicalSchema {
     }
 
     /// Every value this schema rejects.
+    ///
+    /// Raises ``UnsupportedOperand`` when this schema is a ``Raw`` pass-through, and
+    /// ``UnsupportedResult`` when the canonical form does not support the negation.
     fn negate(&self, py: Python<'_>) -> PyResult<Self> {
         self.inner
             .negate()
@@ -474,10 +480,9 @@ impl PyCanonicalSchema {
             .map_err(|error| canonicalization_error(py, error))
     }
 
-    /// The reference target registered under `uri`, or the document itself under `#`.
+    /// The reference target registered under ``uri``, or the document itself under ``#``.
     ///
-    /// The target keeps the document it was written in, so a `#` inside it names that document and
-    /// not the target standing in for it.
+    /// A ``#`` inside the target names the document the target was written in.
     fn definition(&self, uri: &str) -> Option<Self> {
         self.inner.definition(uri).map(|inner| Self { inner })
     }
@@ -499,8 +504,8 @@ impl PyCanonicalSchema {
 
     /// Whether any value satisfies this schema.
     ///
-    /// Only `NO` proves the schema accepts nothing; `UNKNOWN` means undecided, not empty. Test for
-    /// `NO`, and treat `UNKNOWN` like `YES`.
+    /// Only ``NO`` proves the schema accepts nothing; ``UNKNOWN`` means undecided, not empty. Test
+    /// for ``NO``, and treat ``UNKNOWN`` like ``YES``.
     fn satisfiability(&self) -> PySatisfiability {
         self.inner.satisfiability().into()
     }
@@ -549,7 +554,7 @@ pub(crate) struct TrueView;
 #[pyclass(frozen, name = "FalseView", module = "jsonschema_rs.canonical")]
 pub(crate) struct FalseView;
 
-/// A value matches iff its JSON type is in `types`.
+/// Accepts a value when its JSON type is in ``types``.
 #[pyclass(frozen, name = "MultiTypeView", module = "jsonschema_rs.canonical")]
 pub(crate) struct MultiTypeView {
     #[pyo3(get)]
@@ -564,7 +569,7 @@ impl MultiTypeView {
     }
 }
 
-/// A value matches iff its JSON type is `type_name` *and* it satisfies `body`.
+/// Accepts a value when its JSON type is ``type_name`` and ``body`` accepts it.
 #[pyclass(frozen, name = "TypedGroupView", module = "jsonschema_rs.canonical")]
 pub(crate) struct TypedGroupView {
     #[pyo3(get)]
@@ -581,7 +586,8 @@ impl TypedGroupView {
     }
 }
 
-/// A string value within a length window, matching every required facet and no barred one.
+/// A string within ``min_length``/``max_length``, matching every listed constraint and none of the
+/// excluded ones.
 #[pyclass(frozen, name = "StringView", module = "jsonschema_rs.canonical")]
 pub(crate) struct StringView {
     #[pyo3(get)]
@@ -739,8 +745,7 @@ impl ObjectView {
     }
 }
 
-/// One demand produced by negation: the object must hold at least one entry that breaks the
-/// stored rule. Some key's name fails the schema.
+/// The object has a key whose name ``schema`` rejects.
 #[pyclass(frozen, name = "NameFailsView", module = "jsonschema_rs.canonical")]
 pub(crate) struct NameFailsView {
     #[pyo3(get)]
@@ -755,8 +760,8 @@ impl NameFailsView {
     }
 }
 
-/// One demand produced by negation: some key outside `names` and matching none of `patterns`
-/// has a value failing `additional`.
+/// The object has a key outside ``names``, matching no ``patterns``, whose value ``additional``
+/// rejects.
 #[pyclass(
     frozen,
     name = "UndeclaredValueFailsView",
@@ -779,7 +784,7 @@ impl UndeclaredValueFailsView {
     }
 }
 
-/// A demand that some key matching `pattern` has a value failing `schema`.
+/// The object has a key matching ``pattern`` whose value ``schema`` rejects.
 #[pyclass(
     frozen,
     name = "PatternValueFailsView",
@@ -864,7 +869,7 @@ impl IntegerView {
     }
 }
 
-/// A value matches iff at least one branch matches.
+/// Accepts a value when at least one branch accepts it.
 #[pyclass(frozen, name = "AnyOfView", module = "jsonschema_rs.canonical")]
 pub(crate) struct AnyOfView {
     #[pyo3(get)]
@@ -879,7 +884,7 @@ impl AnyOfView {
     }
 }
 
-/// A value matches iff exactly one branch matches.
+/// Accepts a value when exactly one branch accepts it.
 #[pyclass(frozen, name = "OneOfView", module = "jsonschema_rs.canonical")]
 pub(crate) struct OneOfView {
     #[pyo3(get)]
@@ -894,7 +899,7 @@ impl OneOfView {
     }
 }
 
-/// A value matches iff every branch matches.
+/// Accepts a value when every branch accepts it.
 #[pyclass(frozen, name = "AllOfView", module = "jsonschema_rs.canonical")]
 pub(crate) struct AllOfView {
     #[pyo3(get)]
@@ -909,7 +914,7 @@ impl AllOfView {
     }
 }
 
-/// The negation of `schema`, preserving a symbolic ref under ``not``, conditionals, and ``oneOf``.
+/// Accepts the values ``schema`` rejects, keeping its references symbolic.
 #[pyclass(frozen, name = "NotView", module = "jsonschema_rs.canonical")]
 pub(crate) struct NotView {
     #[pyo3(get)]
@@ -1097,10 +1102,13 @@ fn build_options<'r>(
 
 /// find_unsatisfiable(schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None)
 ///
-/// The subschemas of `schema` that accept no value, by JSON Pointer, each with why.
+/// Map the JSON Pointer of each subschema that accepts no value to the reason.
 ///
-/// A pointer left out is not proven satisfiable: a document the canonical form does not model
-/// reports nothing, as :class:`Satisfiability` answers `UNKNOWN`.
+/// A pointer left out is not proven satisfiable: for a document the canonical form does not model,
+/// the map is empty and ``satisfiability()`` answers ``UNKNOWN``.
+///
+/// Raises :class:`ValidationError` when the schema fails meta-schema validation and
+/// :class:`CanonicalizationError` when the root is not a boolean or an object.
 #[pyfunction]
 #[pyo3(signature = (schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None))]
 pub(crate) fn find_unsatisfiable(
@@ -1142,7 +1150,9 @@ pub(crate) fn find_unsatisfiable(
 ///
 /// Parse and normalize a JSON Schema to its canonical form.
 ///
-/// Returns a :class:`CanonicalSchema` that is semantically equivalent to the input.
+/// Returns a :class:`CanonicalSchema` that accepts the same values as ``schema``. Raises
+/// :class:`ValidationError` when the schema fails meta-schema validation and
+/// :class:`canonical.CanonicalizationError` when the root is not a boolean or an object.
 #[pyfunction]
 #[pyo3(signature = (schema, /, *, draft=None, validate_formats=None, pattern_options=None, retriever=None, registry=None, base_uri=None, offline=None))]
 pub(crate) fn canonicalize(

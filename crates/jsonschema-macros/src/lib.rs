@@ -1,9 +1,6 @@
 use proc_macro::TokenStream;
 
-/// Generates a compile-time JSON Schema validator.
-///
-/// Reads and compiles the schema at compile time, generating inherent methods on the
-/// annotated struct:
+/// Generates a JSON Schema validator at compile time as inherent methods on the annotated struct:
 ///
 /// - `pub fn is_valid(instance: &serde_json::Value) -> bool`
 /// - `pub fn validate(instance: &Value) -> Result<(), jsonschema::ValidationError<'_>>`
@@ -16,7 +13,7 @@ use proc_macro::TokenStream;
 ///
 /// Exactly one schema source must be provided:
 ///
-/// - `path = "relative/or/absolute/path/to/schema.json"`
+/// - `path = "schema.json"` (relative to the crate's `Cargo.toml` directory, or absolute)
 /// - `schema = r#"{"type":"string"}"#`
 ///
 /// # Optional attributes
@@ -29,6 +26,7 @@ use proc_macro::TokenStream;
 ///   `jsonschema::Draft::Draft7` is accepted; only the final segment is inspected)
 /// - `base_uri = "json-schema:///root/main.json"`
 /// - `resources = { "uri" => { schema = r#"..."# }, "uri2" => { path = "..." } }`
+/// - `vocabularies = ["uri", ...]` (same as `ValidationOptions::with_vocabulary`)
 /// - `validate_formats = true|false`
 /// - `ignore_unknown_formats = true|false` (default: `true`)
 /// - `formats = { "name" => crate::path::to::format_fn }`

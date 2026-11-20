@@ -11,7 +11,7 @@ use crate::{
 
 /// Deep-clone a JSON-compatible Python object.
 ///
-/// Only `dict` and `list` are copied. All other values (str, int, float, bool, None)
+/// `dict`, its subclasses and `list` are copied. All other values (str, int, float, bool, None)
 /// are shared by reference — they are immutable and safe to reuse.
 ///
 /// Dict subclasses (e.g. `CaseInsensitiveDict`) are cloned into plain `dict`.
@@ -31,10 +31,6 @@ pub(crate) unsafe fn clone_impl(
         ffi::Py_IncRef(object);
         return Ok(object);
     }
-    // BOOL_TYPE must precede INT_TYPE: Python bool is a subtype of int, but the
-    // type pointer for `True`/`False` is BOOL_TYPE, not INT_TYPE. Exact pointer
-    // comparison is used throughout, so ordering only matters conceptually here,
-    // but listing bool first makes the intent explicit.
     if object_type == unsafe { types::BOOL_TYPE } {
         ffi::Py_IncRef(object);
         return Ok(object);
@@ -205,10 +201,17 @@ unsafe fn clone_list(object: *mut ffi::PyObject, depth: u8) -> PyResult<*mut ffi
     Ok(output)
 }
 
-/// `canonical.schema.clone(object) -> object`
+/// clone(object)
 ///
-/// Deep-clone a JSON-compatible Python object. Only `dict` and `list` are
-/// copied; all other values are shared by reference.
+/// Deep-clone a JSON-compatible Python object.
+///
+/// ``dict``, its subclasses and ``list`` are copied; dict subclasses (e.g.
+/// ``CaseInsensitiveDict``) become plain ``dict``. All other values are shared by
+/// reference.
+///
+/// Faster than ``copy.deepcopy`` for JSON Schema documents.
+///
+/// :raises ValueError: if the object exceeds 255 levels of nesting.
 #[pyfunction(name = "clone")]
 #[allow(unsafe_code)]
 pub(crate) fn canonical_schema_clone(object: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {

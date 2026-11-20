@@ -343,7 +343,7 @@ impl RawView {
     }
 }
 
-/// Matches any value.
+/// Accepts every value.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::TrueView", free_immediately)]
 pub struct TrueView;
@@ -356,7 +356,7 @@ impl TrueView {
 
 impl DataTypeFunctions for TrueView {}
 
-/// Matches no value.
+/// Rejects every value.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::FalseView", free_immediately)]
 pub struct FalseView;
@@ -369,7 +369,7 @@ impl FalseView {
 
 impl DataTypeFunctions for FalseView {}
 
-/// A value matches iff its JSON type is in `types`.
+/// Accepts a value whose JSON type is in `types`.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::MultiTypeView", free_immediately)]
 pub struct MultiTypeView {
@@ -401,7 +401,7 @@ impl MultiTypeView {
     }
 }
 
-/// A value matches iff its JSON type is `type_name` *and* it satisfies `body`.
+/// Accepts a value of JSON type `type_name` that `body` accepts.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::TypedGroupView", free_immediately)]
 pub struct TypedGroupView {
@@ -465,7 +465,8 @@ fn strings_to_ruby(ruby: &Ruby, values: &[String]) -> Result<Value, Error> {
     Ok(array.as_value())
 }
 
-/// A string value within a length window, matching every required facet and no barred one.
+/// A string within `min_length`..`max_length`, matching every listed constraint and none of the
+/// excluded ones.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::StringView", free_immediately)]
 pub struct StringView {
@@ -646,7 +647,8 @@ impl NumberView {
     }
 }
 
-/// An integer value within a closed interval, optionally a multiple of a divisor.
+/// An integer within `minimum`..`maximum`, a multiple of every `multiple_of` and of no
+/// `not_multiple_of` divisor.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::IntegerView", free_immediately)]
 pub struct IntegerView {
@@ -850,8 +852,6 @@ impl ContainsView {
     }
 }
 
-// The violation list needs the same lazy Ruby-object conversion `ContainsView::from_core` does,
-// so this stays a free function rather than a method on either violation view class.
 fn object_violation_to_ruby(ruby: &Ruby, violation: &CoreObjectViolationView) -> Value {
     match violation {
         CoreObjectViolationView::NameFails(schema) => ruby
@@ -1133,7 +1133,7 @@ impl ObjectView {
     }
 }
 
-/// A value matches iff at least one branch matches.
+/// Accepts a value any branch accepts.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::AnyOfView", free_immediately)]
 pub struct AnyOfView {
@@ -1174,7 +1174,7 @@ impl AnyOfView {
     }
 }
 
-/// A value matches iff exactly one branch matches.
+/// Accepts a value exactly one branch accepts.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::OneOfView", free_immediately)]
 pub struct OneOfView {
@@ -1215,7 +1215,7 @@ impl OneOfView {
     }
 }
 
-/// A value matches iff every branch matches.
+/// Accepts a value every branch accepts.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::AllOfView", free_immediately)]
 pub struct AllOfView {
@@ -1256,7 +1256,7 @@ impl AllOfView {
     }
 }
 
-/// The negation of `schema`, preserving a symbolic ref under `not`, conditionals, and `oneOf`.
+/// Accepts the values `schema` rejects, keeping the references it names symbolic.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::NotView", free_immediately)]
 pub struct NotView {
@@ -1375,7 +1375,7 @@ impl EnumView {
     }
 }
 
-/// One part of a schema object, as a reason names it.
+/// A schema location and the keywords there that a reason names.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::Cause", free_immediately)]
 pub struct Cause {
@@ -1438,8 +1438,7 @@ impl LiteralReason {
     }
 }
 
-/// One part every value must satisfy accepts nothing by itself. A subschema part has a reason of
-/// its own under its pointer.
+/// One required part accepts no value; a subschema part is also reported under its own pointer.
 #[derive(magnus::TypedData)]
 #[magnus(class = "JSONSchema::Canonical::EmptyReason", free_immediately)]
 pub struct EmptyReason {
@@ -1583,7 +1582,8 @@ fn with_canonical_options<R>(
     call(options.with_registry(registry.inner.as_ref()))
 }
 
-/// The subschemas of `schema` that accept no value, by JSON Pointer, each with why.
+/// The subschemas of `schema` that accept no value, keyed by JSON Pointer, with the reason for
+/// each.
 fn find_unsatisfiable(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     let parsed = scan_args::<(Value,), (), (), (), _, ()>(args)?;
     let (schema_arg,) = parsed.required;

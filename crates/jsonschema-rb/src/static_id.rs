@@ -1,8 +1,7 @@
 //! Pre-interned Ruby symbol IDs for avoiding repeated `rb_intern` calls.
 //!
-//! Ruby's `rb_intern` does a hash table lookup each time it's called with a string.
-//! By interning strings once at startup and reusing the resulting IDs, we eliminate
-//! repeated lookups in hot paths like error construction.
+//! Ruby's `rb_intern` does a hash table lookup on every call. Each string here is interned once,
+//! on first use, and its ID reused in hot paths such as error construction.
 
 use std::num::NonZeroUsize;
 
@@ -74,8 +73,6 @@ impl IntoId for StaticId {
 ///
 /// ```ignore
 /// define_rb_intern!(static ID_MESSAGE: "@message");
-/// // Use with funcall:
-/// obj.funcall(*ID_ALLOCATE, ())?;
 /// // Use with ivar_set:
 /// obj.ivar_set(*ID_MESSAGE, value)?;
 /// ```

@@ -25,8 +25,8 @@ fn known_keys_is_valid<E: ValueEmitter>(properties: &Map<String, Value>) -> Toke
     }
 }
 
-/// Compile `properties` together with the `additionalProperties` wildcard arm. This integrated
-/// form emits a single `obj.iter().all(...)` pass with a match on each key.
+/// Compile `properties` together with the `additionalProperties` wildcard arm into one loop over
+/// the members, matching each key.
 ///
 /// `required` names are checked ahead of the property values, as the runtime does.
 pub(crate) fn compile<E: ValueEmitter>(
