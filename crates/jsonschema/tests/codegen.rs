@@ -7984,6 +7984,15 @@ struct EvaluateContentUnknownMediaTypeDraft7;
 #[jsonschema::validator(schema = r#"{"contentMediaType": "text/x-unknown"}"#, draft = Draft7)]
 struct EvaluateUnknownMediaTypeDraft7;
 
+#[jsonschema::validator(schema = r#"{"contentEncoding": "rot13"}"#, draft = Draft7)]
+struct EvaluateUnknownEncodingDraft7;
+
+#[jsonschema::validator(schema = r#"{"contentEncoding": "rot13", "contentMediaType": "application/json"}"#, draft = Draft7)]
+struct EvaluateUnknownEncodingJsonDraft7;
+
+#[jsonschema::validator(schema = r#"{"contentEncoding": "rot13", "contentMediaType": "text/x-unknown"}"#, draft = Draft7)]
+struct EvaluateUnknownEncodingAndMediaTypeDraft7;
+
 #[jsonschema::validator(schema = r#"{"contentEncoding": "base64", "contentMediaType": "application/json", "contentSchema": {"type": "integer"}}"#, draft = Draft202012)]
 struct EvaluateContent;
 
@@ -8572,6 +8581,9 @@ type EvaluateFn = fn(&serde_json::Value) -> jsonschema::Evaluation;
 #[test_case(EvaluateContentEncodingDraft7::evaluate, serde_json::json!({"contentEncoding": "base64"}), None, Draft::Draft7 ; "content_encoding_draft7")]
 #[test_case(EvaluateContentUnknownMediaTypeDraft7::evaluate, serde_json::json!({"contentEncoding": "base64", "contentMediaType": "text/x-unknown"}), None, Draft::Draft7 ; "content_unknown_media_type_draft7")]
 #[test_case(EvaluateUnknownMediaTypeDraft7::evaluate, serde_json::json!({"contentMediaType": "text/x-unknown"}), None, Draft::Draft7 ; "unknown_media_type_draft7")]
+#[test_case(EvaluateUnknownEncodingDraft7::evaluate, serde_json::json!({"contentEncoding": "rot13"}), None, Draft::Draft7 ; "unknown_encoding_draft7")]
+#[test_case(EvaluateUnknownEncodingJsonDraft7::evaluate, serde_json::json!({"contentEncoding": "rot13", "contentMediaType": "application/json"}), None, Draft::Draft7 ; "unknown_encoding_json_draft7")]
+#[test_case(EvaluateUnknownEncodingAndMediaTypeDraft7::evaluate, serde_json::json!({"contentEncoding": "rot13", "contentMediaType": "text/x-unknown"}), None, Draft::Draft7 ; "unknown_encoding_and_media_type_draft7")]
 #[test_case(EvaluateContent::evaluate, serde_json::json!({"contentEncoding": "base64", "contentMediaType": "application/json", "contentSchema": {"type": "integer"}}), None, Draft::Draft202012 ; "content_annotations")]
 #[test_case(EvaluateContentSchemaAlone::evaluate, serde_json::json!({"contentSchema": {"type": "integer"}}), None, Draft::Draft202012 ; "content_schema_alone")]
 #[test_case(EvaluateObjectsAndPattern::evaluate, serde_json::json!({"required": ["a"], "maxProperties": 2, "minProperties": 1, "pattern": "^a"}), None, Draft::Draft202012 ; "objects_and_pattern")]
