@@ -1,6 +1,6 @@
 use serde_json::Value;
 
-use crate::{Error, Resolver, ResourceRef, Segments};
+use crate::Segments;
 
 use super::{
     draft202012::{self, ChildIterInner},
@@ -57,11 +57,7 @@ pub(crate) fn object_iter<'a>((key, value): (&'a String, &'a Value)) -> ChildIte
     }
 }
 
-pub(crate) fn maybe_in_subresource<'r>(
-    segments: &Segments,
-    resolver: &Resolver<'r>,
-    subresource: ResourceRef<'_>,
-) -> Result<Resolver<'r>, Error> {
+pub(crate) fn is_subschema(segments: &Segments, contents: &Value) -> bool {
     const IN_VALUE: &[&str] = &[
         "additionalItems",
         "additionalProperties",
@@ -77,11 +73,5 @@ pub(crate) fn maybe_in_subresource<'r>(
         "patternProperties",
         "properties",
     ];
-    draft202012::maybe_in_subresource_with_items_and_dependencies(
-        segments,
-        resolver,
-        subresource,
-        IN_VALUE,
-        IN_CHILD,
-    )
+    draft202012::is_subschema_with_items_and_dependencies(segments, contents, IN_VALUE, IN_CHILD)
 }

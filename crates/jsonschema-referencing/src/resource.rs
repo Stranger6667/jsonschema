@@ -93,6 +93,9 @@ impl<'r> ResourceRef<'r> {
     ) -> Result<Resolved<'r>, Error> {
         // INVARIANT: Pointer always starts with `/`
         let mut contents = self.contents;
+        // The draft `contents` is in: a `$schema` on the way switches it, as it does when the
+        // schema is reached from the root.
+        let mut draft = self.draft;
         let mut segments = Segments::new();
         let original_pointer = pointer;
         let pointer = &pointer[1..];
@@ -123,18 +126,18 @@ impl<'r> ResourceRef<'r> {
                 }
                 segments.push(segment);
             }
-            let last = &resolver;
-            let new_resolver = self.draft.maybe_in_subresource(
-                &segments,
-                &resolver,
-                ResourceRef::new(contents, self.draft),
-            )?;
-            if new_resolver != *last {
-                segments = Segments::new();
+            if draft.is_subschema(&segments, contents) {
+                let own = draft.detect(contents);
+                let new_resolver = resolver.in_subresource(ResourceRef::new(contents, own))?;
+                // Keyword positions count from the innermost resource or `$schema`, in its draft.
+                if new_resolver != resolver || own != draft {
+                    segments = Segments::new();
+                }
+                resolver = new_resolver;
+                draft = own;
             }
-            resolver = new_resolver;
         }
-        Ok(Resolved::new(contents, resolver, self.draft))
+        Ok(Resolved::new(contents, resolver, draft))
     }
 }
 
@@ -298,6 +301,42 @@ mod tests {
         assert_eq!(
             result.expect_err("Should fail").to_string(),
             "Pointer '/properties/bar/items/2' does not exist"
+        );
+    }
+
+    // A pointer lands in the draft and the resource that a `$schema` and an id on its way name.
+    #[test_case("#/properties/a", Draft::Draft202012, "http://example.com" ; "root draft")]
+    #[test_case("#/$defs/x", Draft::Draft4, "http://example.com" ; "subschema")]
+    #[test_case("#/$defs/x/allOf/0", Draft::Draft4, "http://example.com" ; "below a subschema")]
+    #[test_case("#/$defs/y", Draft::Draft4, "http://example.com/y" ; "resource")]
+    #[test_case("#/$defs/x/definitions/z", Draft::Draft4, "http://example.com/z" ; "resource below a subschema")]
+    fn test_pointer_through_nested_schema(reference: &str, draft: Draft, base_uri: &str) {
+        let schema = Draft::Draft202012.create_resource(json!({
+            "properties": {"a": {}},
+            "$defs": {
+                "x": {
+                    "$schema": "http://json-schema.org/draft-04/schema#",
+                    "allOf": [{}],
+                    "definitions": {"z": {"id": "http://example.com/z"}}
+                },
+                "y": {"$schema": "http://json-schema.org/draft-04/schema#", "id": "http://example.com/y"}
+            }
+        }));
+        let registry = Registry::new()
+            .add("http://example.com", schema)
+            .expect("Invalid resources")
+            .prepare()
+            .expect("Invalid resources");
+        let resolver = registry
+            .resolver(crate::uri::from_str("http://example.com").expect("Invalid base URI"));
+
+        let (_, resolver, resolved_draft) = resolver
+            .lookup(reference)
+            .expect("Lookup failed")
+            .into_inner();
+        assert_eq!(
+            (resolved_draft, resolver.base_uri().as_str()),
+            (draft, base_uri)
         );
     }
 

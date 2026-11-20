@@ -1,6 +1,7 @@
 //! Lookup structures produced by the build pass.
-use std::sync::Arc;
+use std::{num::NonZeroUsize, sync::Arc};
 
+use ahash::AHashMap;
 use fluent_uri::Uri;
 
 use serde_json::Value;
@@ -16,6 +17,9 @@ use super::build::StoredResource;
 pub(super) struct Index<'a> {
     pub(super) resources: SmallMap<Arc<Uri<String>>, IndexedResource<'a>>,
     pub(super) anchors: SmallMap<Arc<Uri<String>>, SmallMap<Box<str>, IndexedAnchor<'a>>>,
+    /// For each subschema whose vocabularies its resource root does not settle, by address, the
+    /// `$schema` above it they come from.
+    pub(super) nested_dialects: AHashMap<NonZeroUsize, Arc<str>>,
 }
 
 impl<'a> Index<'a> {

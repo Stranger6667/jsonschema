@@ -2322,21 +2322,88 @@ mod tests {
         );
     }
 
-    // An entry applies the `$schema` of a subschema without `$id`, which a `$ref` to it ignores:
-    // Draft 4 has no `const`.
-    #[test]
-    fn test_validator_map_entry_applies_its_own_schema_keyword() {
-        let document = json!({"$defs": {"x": {
-            "$schema": "http://json-schema.org/draft-04/schema#",
-            "const": 1
-        }}});
-        let map = crate::validator_map_for(&document).expect("Valid schema");
+    const DRAFT4: &str = "http://json-schema.org/draft-04/schema#";
+    const DRAFT6: &str = "http://json-schema.org/draft-06/schema#";
+    const DRAFT7: &str = "http://json-schema.org/draft-07/schema#";
+    const DRAFT201909: &str = "https://json-schema.org/draft/2019-09/schema";
+    const DRAFT202012: &str = "https://json-schema.org/draft/2020-12/schema";
+
+    // An entry below a subschema keeps the vocabularies its `$schema` declares: `minimum` is off.
+    #[test_case("#/$defs/x" ; "subschema")]
+    #[test_case("#/$defs/x/allOf/0" ; "child")]
+    #[test_case("#/properties/a" ; "child through anchor")]
+    fn test_validator_map_entry_in_the_vocabularies_its_schema_declares(pointer: &str) {
+        let meta_schema = json!({
+            "$id": "json-schema:///meta/no-validation",
+            "$schema": DRAFT202012,
+            "$vocabulary": {
+                "https://json-schema.org/draft/2020-12/vocab/core": true,
+                "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                "https://json-schema.org/draft/2020-12/vocab/validation": false
+            }
+        });
+        let registry = crate::Registry::new()
+            .add("json-schema:///meta/no-validation", &meta_schema)
+            .expect("Valid resource")
+            .prepare()
+            .expect("Registry builds");
+        let document = json!({
+            "properties": {"a": {"$ref": "#c"}},
+            "$defs": {"x": {
+                "$schema": "json-schema:///meta/no-validation",
+                "allOf": [{"$anchor": "c", "minimum": 5}]
+            }}
+        });
+        let map = crate::options()
+            .with_registry(&registry)
+            .build_map(&document)
+            .expect("Valid schema");
+        assert!(map[pointer].is_valid(&json!(1)));
+    }
+
+    // An entry is in the draft its subschema's `$schema` names, as a `$ref` to it is.
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT4, "type": "integer"}), &json!(1.0), false ; "draft 4 type under 2020-12")]
+    #[test_case(DRAFT201909, &json!({"$schema": DRAFT4, "type": "integer"}), &json!(1.0), false ; "draft 4 type under 2019-09")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT4, "type": "integer"}), &json!(1.0), false ; "draft 4 type under draft 7")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT4, "maximum": 5, "exclusiveMaximum": true}), &json!(5), false ; "draft 4 boolean exclusiveMaximum under 2020-12")]
+    #[test_case(DRAFT201909, &json!({"$schema": DRAFT4, "maximum": 5, "exclusiveMaximum": true}), &json!(5), false ; "draft 4 boolean exclusiveMaximum under 2019-09")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT4, "maximum": 5, "exclusiveMaximum": true}), &json!(5), false ; "draft 4 boolean exclusiveMaximum under draft 7")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT201909, "dependentRequired": {"foo": ["bar"]}}), &json!({"foo": 1}), false ; "2019-09 dependentRequired under draft 7")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT201909, "prefixItems": [{"type": "string"}]}), &json!([1]), true ; "2019-09 prefixItems under 2020-12")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT7, "prefixItems": [{"type": "string"}]}), &json!([1]), true ; "draft 7 prefixItems under 2020-12")]
+    #[test_case(DRAFT201909, &json!({"$schema": DRAFT202012, "prefixItems": [{"type": "string"}]}), &json!([1]), false ; "2020-12 prefixItems under 2019-09")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT202012, "prefixItems": [{"type": "string"}]}), &json!([1]), false ; "2020-12 prefixItems under draft 7")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT201909, "items": [{"type": "string"}]}), &json!([1]), false ; "2019-09 array items under 2020-12")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT7, "items": [{"type": "string"}]}), &json!([1]), false ; "draft 7 array items under 2020-12")]
+    #[test_case(DRAFT202012, &json!({"$schema": DRAFT7, "allOf": [{"$ref": "#/definitions/any", "type": "integer"}]}), &json!("x"), true ; "draft 7 keyword beside ref under 2020-12")]
+    #[test_case(DRAFT201909, &json!({"$schema": DRAFT7, "allOf": [{"$ref": "#/definitions/any", "type": "integer"}]}), &json!("x"), true ; "draft 7 keyword beside ref under 2019-09")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT201909, "allOf": [{"$ref": "#/definitions/any", "type": "integer"}]}), &json!("x"), false ; "2019-09 keyword beside ref under draft 7")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT202012, "allOf": [{"$ref": "#/definitions/any", "type": "integer"}]}), &json!("x"), false ; "2020-12 keyword beside ref under draft 7")]
+    #[test_case(DRAFT7, &json!({"$schema": DRAFT201909, "type": "string"}), &json!(1), false ; "2019-09 type under draft 7")]
+    #[test_case(DRAFT6, &json!({"$schema": DRAFT202012, "type": "string"}), &json!(1), false ; "2020-12 type under draft 6")]
+    #[test_case(DRAFT4, &json!({"$schema": DRAFT202012, "type": "string"}), &json!(1), false ; "2020-12 type under draft 4")]
+    #[test_case(DRAFT202012, &json!({"$id": "https://example.com/x", "id": "https://example.com/x", "$schema": DRAFT4, "type": "integer"}), &json!(1.0), false ; "draft 4 resource under 2020-12")]
+    #[test_case(DRAFT7, &json!({"$id": "https://example.com/x", "$schema": DRAFT201909, "dependentRequired": {"foo": ["bar"]}}), &json!({"foo": 1}), false ; "2019-09 resource under draft 7")]
+    #[test_case(DRAFT7, &json!({"$id": "https://example.com/x", "$schema": DRAFT202012, "prefixItems": [{"type": "string"}]}), &json!([1]), false ; "2020-12 resource under draft 7")]
+    fn test_validator_map_entry_in_the_draft_its_schema_names(
+        root: &str,
+        body: &Value,
+        instance: &Value,
+        expected: bool,
+    ) {
+        let inline =
+            json!({"$schema": root, "properties": {"a": body}, "definitions": {"any": {}}});
+        let target = json!({"$schema": root, "definitions": {"x": body, "any": {}}});
+        let inline_map = crate::validator_map_for(&inline).expect("Valid schema");
+        let target_map = crate::validator_map_for(&target).expect("Valid schema");
         assert_eq!(
-            (
-                map["#/$defs/x"].is_valid(&json!(2)),
-                via_ref(&document, "#/$defs/x").is_valid(&json!(2))
-            ),
-            (true, false)
+            [
+                inline_map["#/properties/a"].is_valid(instance),
+                via_ref(&inline, "#/properties/a").is_valid(instance),
+                target_map["#/definitions/x"].is_valid(instance),
+                via_ref(&target, "#/definitions/x").is_valid(instance),
+            ],
+            [expected; 4]
         );
     }
 
