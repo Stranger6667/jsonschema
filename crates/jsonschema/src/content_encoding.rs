@@ -82,9 +82,8 @@ pub fn from_base16(instance_string: &str) -> Result<Option<String>, ValidationEr
     }
 }
 
-// Supported in JSON Schema Draft 6, 7, 2019-09, and 2020-12
-// The RFC 4648 encodings; other `contentEncoding` values, RFC 2045 quoted-printable included,
-// are not checked.
+// The encodings Draft 7 `contentEncoding` checks: the RFC 4648 ones; other values, RFC 2045
+// quoted-printable included, are not checked.
 pub(crate) static DEFAULT_CONTENT_ENCODING_CHECKS_AND_CONVERTERS: LazyLock<
     AHashMap<&'static str, (ContentEncodingCheckType, ContentEncodingConverterType)>,
 > = LazyLock::new(|| {

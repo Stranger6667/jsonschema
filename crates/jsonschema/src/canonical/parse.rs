@@ -1508,14 +1508,12 @@ fn parse_schema_in_scope<'a>(
             // facets cannot express - each alone checks the string it sits beside directly, so the
             // guard only fires when both keywords share this schema object.
             ("contentMediaType", Value::String(name))
-                if matches!(ctx.draft(), Draft::Draft6 | Draft::Draft7)
-                    && !map.contains_key("contentEncoding") =>
+                if ctx.draft() == Draft::Draft7 && !map.contains_key("contentEncoding") =>
             {
                 content_media_types.push(Arc::from(name.as_str()));
             }
             ("contentEncoding", Value::String(name))
-                if matches!(ctx.draft(), Draft::Draft6 | Draft::Draft7)
-                    && !map.contains_key("contentMediaType") =>
+                if ctx.draft() == Draft::Draft7 && !map.contains_key("contentMediaType") =>
             {
                 content_encodings.push(Arc::from(name.as_str()));
             }

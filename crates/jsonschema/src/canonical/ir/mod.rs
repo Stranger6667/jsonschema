@@ -558,11 +558,11 @@ pub(crate) struct StringLeaf {
     /// Sorted, deduplicated. A string must satisfy none of these formats. Empty unless formats
     /// assert.
     pub(crate) excluded_formats: Vec<StringFormat>,
-    /// Sorted, deduplicated. A string must satisfy every media type. Empty outside Draft 6/7, since
-    /// other drafts treat `contentMediaType` as an annotation.
+    /// Sorted, deduplicated. A string must satisfy every media type. Empty outside Draft 7, the
+    /// only draft that asserts `contentMediaType`.
     pub(crate) content_media_types: Vec<Arc<str>>,
-    /// Sorted, deduplicated. A string must satisfy every encoding. Empty outside Draft 6/7, since
-    /// other drafts treat `contentEncoding` as an annotation.
+    /// Sorted, deduplicated. A string must satisfy every encoding. Empty outside Draft 7, the only
+    /// draft that asserts `contentEncoding`.
     pub(crate) content_encodings: Vec<Arc<str>>,
     /// Sorted, deduplicated. A string must differ from every member. Members the rest of the leaf
     /// already rejects are dropped, so one value set has one form.

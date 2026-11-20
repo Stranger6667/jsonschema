@@ -568,6 +568,31 @@ mod tests {
         crate::tests_util::is_valid_with(&validator, instance);
     }
 
+    // Draft 4 and 6 do not define the content keywords
+    #[test_case(Draft::Draft4, &json!({"contentEncoding": "base64"}), &json!("not base64!"))]
+    #[test_case(Draft::Draft4, &json!({"contentMediaType": "application/json"}), &json!("{"))]
+    #[test_case(Draft::Draft6, &json!({"contentEncoding": "base64"}), &json!("not base64!"))]
+    #[test_case(Draft::Draft6, &json!({"contentMediaType": "application/json"}), &json!("{"))]
+    #[test_case(Draft::Draft6, &json!({"contentEncoding": "base64", "contentMediaType": "application/json"}), &json!("ezp9Cg=="))]
+    #[test_case(Draft::Draft6, &json!({"contentEncoding": 5, "contentMediaType": 6}), &json!("{"))]
+    fn undefined(draft: Draft, schema: &Value, instance: &Value) {
+        let validator = crate::options()
+            .with_draft(draft)
+            .build(schema)
+            .expect("Invalid schema");
+        crate::tests_util::is_valid_with(&validator, instance);
+    }
+
+    #[test_case(&json!({"contentEncoding": "base64"}), &json!("not base64!"))]
+    #[test_case(&json!({"contentMediaType": "application/json"}), &json!("{"))]
+    fn asserted_in_draft7(schema: &Value, instance: &Value) {
+        let validator = crate::options()
+            .with_draft(Draft::Draft7)
+            .build(schema)
+            .expect("Invalid schema");
+        crate::tests_util::is_not_valid_with(&validator, instance);
+    }
+
     #[test_case(&json!({"contentMediaType": 5}), "/contentMediaType"; "media type")]
     #[test_case(&json!({"contentMediaType": 5, "contentEncoding": 6}), "/contentMediaType"; "media type with malformed encoding")]
     #[test_case(&json!({"contentMediaType": "application/json", "contentEncoding": 5}), "/contentEncoding"; "encoding with media type")]

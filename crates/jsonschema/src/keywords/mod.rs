@@ -465,11 +465,11 @@ pub(crate) fn get_for_draft<'a, F: Json>(
         ) if ctx.has_vocabulary(&Vocabulary::Validation) => {
             Some((BuiltinKeyword::Type.into(), type_::compile))
         }
-        (Draft::Draft6 | Draft::Draft7, "contentMediaType") => Some((
+        (Draft::Draft7, "contentMediaType") => Some((
             BuiltinKeyword::ContentMediaType.into(),
             content::compile_media_type,
         )),
-        (Draft::Draft6 | Draft::Draft7, "contentEncoding") => Some((
+        (Draft::Draft7, "contentEncoding") => Some((
             BuiltinKeyword::ContentEncoding.into(),
             content::compile_content_encoding,
         )),

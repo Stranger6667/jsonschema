@@ -79,7 +79,7 @@ impl DraftExt for Draft {
 
     #[inline]
     fn supports_content_validation_keywords(self) -> bool {
-        matches!(self, Draft::Draft6 | Draft::Draft7)
+        self == Draft::Draft7
     }
 
     #[inline]

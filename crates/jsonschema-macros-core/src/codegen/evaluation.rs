@@ -2789,9 +2789,9 @@ fn unit<E: ValueEmitter>(
         // The runtime skips a format it validates formats with but does not know.
         (_, "format") if ctx.validates_formats() && !format_emits_assertion(ctx, value) => None,
         (_, "format") => Some(unit.annotating(value)),
-        // Draft 6 and 7 assert content: the runtime skips an unsupported media type or encoding,
-        // and reports both keywords in the unit of a supported media type.
-        (Draft::Draft6 | Draft::Draft7, "contentMediaType")
+        // Draft 7 asserts content: the runtime skips an unsupported media type or encoding, and
+        // reports both keywords in the unit of a supported media type.
+        (Draft::Draft7, "contentMediaType")
             if !checks_media_type(ctx, value)
                 || keywords
                     .get("contentEncoding")
@@ -2799,7 +2799,7 @@ fn unit<E: ValueEmitter>(
         {
             None
         }
-        (Draft::Draft6 | Draft::Draft7, "contentEncoding")
+        (Draft::Draft7, "contentEncoding")
             if !checks_encoding(ctx, value)
                 || keywords
                     .get("contentMediaType")
@@ -2807,12 +2807,10 @@ fn unit<E: ValueEmitter>(
         {
             None
         }
-        (Draft::Draft6 | Draft::Draft7, "contentMediaType")
-            if keywords.contains_key("contentEncoding") =>
-        {
+        (Draft::Draft7, "contentMediaType") if keywords.contains_key("contentEncoding") => {
             Some(unit.with_alias("contentEncoding"))
         }
-        (Draft::Draft6 | Draft::Draft7, _) => Some(unit),
+        (Draft::Draft7, _) => Some(unit),
         (_, "contentSchema") if !keywords.contains_key("contentMediaType") => None,
         (_, "contentEncoding" | "contentMediaType" | "contentSchema") => {
             Some(unit.annotating(value))
