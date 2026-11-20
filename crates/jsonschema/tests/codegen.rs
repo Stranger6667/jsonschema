@@ -506,6 +506,30 @@ fn test_dynamic_anchor_bound_inside_ref_cycle_matches_runtime(instance: serde_js
     );
 }
 
+const LARGE_SUBSCHEMAS: &str = r#"{"oneOf":[{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"},"c":{"type":"integer"},"d":{"type":"integer"},"e":{"type":"integer"},"f":{"type":"integer"},"g":{"type":"integer"},"h":{"type":"integer"},"i":{"type":"integer"},"j":{"type":"integer"},"k":{"type":"integer"},"l":{"type":"integer"},"m":{"type":"integer"},"n":{"type":"integer"},"o":{"type":"integer"},"p":{"type":"integer"}},"required":["a"]},{"type":"array","items":{"properties":{"a":{"minimum":0},"b":{"minimum":0},"c":{"minimum":0},"d":{"minimum":0},"e":{"minimum":0},"f":{"minimum":0},"g":{"minimum":0},"h":{"minimum":0},"i":{"minimum":0},"j":{"minimum":0},"k":{"minimum":0},"l":{"minimum":0},"m":{"minimum":0},"n":{"minimum":0},"o":{"minimum":0},"p":{"minimum":0}}}},{"type":"null"}]}"#;
+
+// A `oneOf` branch and an `items` subschema with code large enough for functions of their own.
+#[jsonschema::validator(
+    schema = r#"{"oneOf":[{"type":"object","properties":{"a":{"type":"integer"},"b":{"type":"integer"},"c":{"type":"integer"},"d":{"type":"integer"},"e":{"type":"integer"},"f":{"type":"integer"},"g":{"type":"integer"},"h":{"type":"integer"},"i":{"type":"integer"},"j":{"type":"integer"},"k":{"type":"integer"},"l":{"type":"integer"},"m":{"type":"integer"},"n":{"type":"integer"},"o":{"type":"integer"},"p":{"type":"integer"}},"required":["a"]},{"type":"array","items":{"properties":{"a":{"minimum":0},"b":{"minimum":0},"c":{"minimum":0},"d":{"minimum":0},"e":{"minimum":0},"f":{"minimum":0},"g":{"minimum":0},"h":{"minimum":0},"i":{"minimum":0},"j":{"minimum":0},"k":{"minimum":0},"l":{"minimum":0},"m":{"minimum":0},"n":{"minimum":0},"o":{"minimum":0},"p":{"minimum":0}}}},{"type":"null"}]}"#
+)]
+struct LargeSubschemasValidator;
+
+#[test_case(serde_json::json!({"a": 1, "p": 2}) ; "object branch accepts")]
+#[test_case(serde_json::json!({"a": 1, "p": "x"}) ; "object branch rejects a member")]
+#[test_case(serde_json::json!({"b": 1}) ; "object branch misses a")]
+#[test_case(serde_json::json!([{"a": 1}, {"p": 0}]) ; "array branch accepts")]
+#[test_case(serde_json::json!([{"a": 1}, {"p": -1}]) ; "array branch rejects an item")]
+#[test_case(serde_json::json!(null) ; "null branch")]
+#[test_case(serde_json::json!("x") ; "no branch")]
+fn test_large_subschemas_match_runtime(instance: serde_json::Value) {
+    let schema: serde_json::Value = serde_json::from_str(LARGE_SUBSCHEMAS).expect("valid JSON");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_eq!(
+        evaluation_outputs(&LargeSubschemasValidator::evaluate(&instance)),
+        evaluation_outputs(&runtime.evaluate(&instance)),
+    );
+}
+
 const NO_VALIDATION_META_SCHEMA: &str = r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":false,"https://json-schema.org/draft/2020-12/vocab/unevaluated":true,"https://json-schema.org/draft/2020-12/vocab/format-annotation":true}}"#;
 const SUBSCHEMA_IN_DRAFT_4: &str = r#"{"properties":{"a":{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}"#;
 const BRANCH_IN_DRAFT_4: &str = r#"{"anyOf":[{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"},{"type":"string"}]}"#;

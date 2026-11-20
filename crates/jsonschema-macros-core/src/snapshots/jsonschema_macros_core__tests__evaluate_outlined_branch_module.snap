@@ -1,0 +1,1169 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+assertion_line: 513
+expression: "render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)"
+---
+struct Validator;
+#[doc(hidden)]
+#[allow(
+    non_snake_case,
+    dead_code,
+    unused_imports,
+    unused_variables,
+    unreachable_code,
+    clippy::all
+)]
+mod __validator_impl {
+    use super::*;
+    use jsonschema::__private::cmp as __cmp;
+    use jsonschema::__private::content as __content;
+    use jsonschema::__private::custom as __custom;
+    use jsonschema::__private::error as __err;
+    use jsonschema::__private::evaluation as __eval;
+    use jsonschema::__private::fancy_regex as __fancy;
+    use jsonschema::__private::format as __fmt;
+    use jsonschema::__private::numeric as __num;
+    use jsonschema::__private::regex as __re;
+    use jsonschema::__private::serde_json as __sj;
+    use jsonschema::__private::types as __types;
+    use jsonschema::__private::unique_items as __uniq;
+    use jsonschema::__private::unfinished_matches as __unfinished;
+    use jsonschema::paths as __paths;
+    use jsonschema::JsonType as __JT;
+    use jsonschema::JsonTypeSet as __JTS;
+    use jsonschema::ErrorIterator as __EI;
+    use jsonschema::ValidationError as __VE;
+    use __sj::Value as __Value;
+    use std::sync::LazyLock as __Lazy;
+    type __Map = __sj::Map<String, __Value>;
+    fn is_branch_valid_0(instance: &__Value) -> bool {
+        match instance {
+            __Value::Object(obj) => '__all_0: {
+                for (key, instance) in obj.iter() {
+                    let key_str = key.as_str();
+                    if !(match key_str {
+                        "a" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "b" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "c" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "d" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "e" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "f" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "g" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "h" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "i" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "j" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "k" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "l" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "m" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "n" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "o" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        "p" => {
+                            match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }
+                        }
+                        _ => true,
+                    }) {
+                        break '__all_0 false;
+                    }
+                }
+                true
+            }
+            _ => true,
+        }
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_0<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        match instance {
+            __Value::Object(obj) => {
+                for (key, value) in obj.iter() {
+                    let key_str = key.as_str();
+                    match key_str {
+                        "a" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("a");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/a/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "b" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("b");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/b/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "c" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("c");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/c/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "d" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("d");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/d/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "e" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("e");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/e/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "f" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("f");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/f/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "g" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("g");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/g/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "h" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("h");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/h/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "i" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("i");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/i/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "j" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("j");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/j/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "k" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("k");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/k/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "l" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("l");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/l/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "m" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("m");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/m/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "n" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("n");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/n/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "o" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("o");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/o/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        "p" => {
+                            let instance = value;
+                            if !(match instance {
+                                __Value::Number(n) => __types::is_integer(n),
+                                _ => false,
+                            }) {
+                                let __path = &__path.push("p");
+                                if !(match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }) {
+                                    if __errors
+                                        .push(
+                                            __err::single_type(
+                                                "/oneOf/0/properties/p/type",
+                                                __path.into(),
+                                                instance,
+                                                __JT::Integer,
+                                            ),
+                                        )
+                                    {
+                                        return true;
+                                    }
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+            _ => {}
+        }
+        false
+    }
+    fn is_branch_valid_1(instance: &__Value) -> bool {
+        instance.is_null()
+    }
+    #[cold]
+    #[inline(never)]
+    fn collect_branch_errors_1<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        if !(instance.is_null()) {
+            if __errors
+                .push(
+                    __err::single_type(
+                        "/oneOf/1/type",
+                        __path.into(),
+                        instance,
+                        __JT::Null,
+                    ),
+                )
+            {
+                return true;
+            }
+        }
+        false
+    }
+    pub(super) fn is_valid(instance: &__Value) -> bool {
+        {
+            let mut matched = is_branch_valid_0(instance);
+            (if is_branch_valid_1(instance) {
+                if matched {
+                    false
+                } else {
+                    matched = true;
+                    true
+                }
+            } else {
+                true
+            }) && matched
+        }
+    }
+    pub(super) fn errors<'__i>(
+        instance: &'__i __Value,
+        __path: &__paths::LazyLocation,
+        __errors: &mut __err::Errors<'__i>,
+    ) -> bool {
+        if let Some(__e) = '__first_error: {
+            {
+                let mut __count = 0usize;
+                if is_branch_valid_0(instance) {
+                    __count += 1;
+                }
+                if is_branch_valid_1(instance) {
+                    __count += 1;
+                }
+                if __count != 1 {
+                    let mut __context = Vec::with_capacity(2usize);
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_0(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
+                    }
+                    {
+                        let mut __branch_errors = __err::Errors::new(false);
+                        let _ = collect_branch_errors_1(
+                            instance,
+                            __path,
+                            &mut __branch_errors,
+                        );
+                        __context.push(__branch_errors.into_vec());
+                    }
+                    break '__first_error Some(
+                        if __count == 0 {
+                            __err::one_of_not_valid(
+                                "/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
+                        } else {
+                            __err::one_of_multiple_valid(
+                                "/oneOf",
+                                __path.into(),
+                                instance,
+                                __context,
+                            )
+                        },
+                    );
+                }
+            }
+            None
+        } {
+            if __errors.push(__e) {
+                return true;
+            }
+        }
+        false
+    }
+    pub(super) fn run_is_valid(instance: &__Value) -> bool {
+        is_valid(instance)
+    }
+    pub(super) fn run_validate<'__i>(instance: &'__i __Value) -> Option<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(true);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_first()
+    }
+    pub(super) fn run_collect_errors<'__i>(instance: &'__i __Value) -> Vec<__VE<'__i>> {
+        let mut __errors = __err::Errors::new(false);
+        let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+        __errors.into_vec()
+    }
+    pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        fn __valid_0(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+        ) -> bool {
+            let instance = ::core::clone::Clone::clone(instance);
+            match instance {
+                __Value::Object(obj) => '__all_1: {
+                    for (key, instance) in obj.iter() {
+                        let key_str = key.as_str();
+                        if !(match key_str {
+                            "a" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "b" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "c" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "d" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "e" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "f" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "g" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "h" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "i" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "j" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "k" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "l" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "m" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "n" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "o" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            "p" => {
+                                match instance {
+                                    __Value::Number(n) => __types::is_integer(n),
+                                    _ => false,
+                                }
+                            }
+                            _ => true,
+                        }) {
+                            break '__all_1 false;
+                        }
+                    }
+                    true
+                }
+                _ => true,
+            }
+        }
+        fn __valid_1(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+        ) -> bool {
+            let instance = ::core::clone::Clone::clone(instance);
+            instance.is_null()
+        }
+        fn __not_of_type_0(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+        ) -> Vec<__eval::ErrorDescription> {
+            if {
+                let instance = ::core::clone::Clone::clone(instance);
+                match instance {
+                    __Value::Number(n) => __types::is_integer(n),
+                    _ => false,
+                }
+            } {
+                return Vec::new();
+            }
+            vec![
+                __eval::ErrorDescription::described("type",
+                format!("{} is not of type \"integer\"", __eval::instance_value:: <
+                jsonschema::json::SerdeJson > (instance)),)
+            ]
+        }
+        fn __not_of_type_1(
+            instance: &<jsonschema::json::SerdeJson as jsonschema::json::Json>::Node<'_>,
+        ) -> Vec<__eval::ErrorDescription> {
+            if {
+                let instance = ::core::clone::Clone::clone(instance);
+                instance.is_null()
+            } {
+                return Vec::new();
+            }
+            vec![
+                __eval::ErrorDescription::described("type",
+                format!("{} is not of type \"null\"", __eval::instance_value:: <
+                jsonschema::json::SerdeJson > (instance)),)
+            ]
+        }
+        type __J = jsonschema::json::SerdeJson;
+        fn __evaluate_0<'__i>(
+            __e: &mut __eval::Evaluator<'_, '_>,
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __position: __eval::InstancePosition,
+        ) -> __eval::EvaluationNode {
+            let mut __units = __eval::ChildList::default();
+            {
+                let __accepts = [__valid_0(&instance), __valid_1(&instance)];
+                let __any = __accepts.contains(&true);
+                let mut __children = __eval::ChildList::default();
+                if !__any || __accepts[0usize] {
+                    let __child = __evaluate_1(__e, instance, __path, __position);
+                    __children = __e.push(__children, __child);
+                }
+                if !__any || __accepts[1usize] {
+                    let __child = {
+                        let mut __units = __eval::ChildList::default();
+                        __units = __e
+                            .not_of_type::<
+                                __J,
+                            >(__units, 17usize, __not_of_type_1, &instance, __position);
+                        __e.schema(18usize, Vec::new(), __units, __position)
+                    };
+                    __children = __e.push(__children, __child);
+                }
+                __units = __e
+                    .unit(
+                        __units,
+                        18usize,
+                        if __e.checks() && __eval::several(&__accepts) {
+                            __eval::one_of_multiple_valid::<__J>(&instance)
+                        } else {
+                            Vec::new()
+                        },
+                        None,
+                        __children,
+                        __position,
+                    );
+            }
+            __e.schema(0usize, Vec::new(), __units, __position)
+        }
+        #[inline(never)]
+        fn __evaluate_1<'__i>(
+            __e: &mut __eval::Evaluator<'_, '_>,
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __position: __eval::InstancePosition,
+        ) -> __eval::EvaluationNode {
+            let mut __units = __eval::ChildList::default();
+            match instance {
+                __Value::Object(obj) => {
+                    const __NAMES: [&str; 16usize] = [
+                        "a",
+                        "b",
+                        "c",
+                        "d",
+                        "e",
+                        "f",
+                        "g",
+                        "h",
+                        "i",
+                        "j",
+                        "k",
+                        "l",
+                        "m",
+                        "n",
+                        "o",
+                        "p",
+                    ];
+                    let mut __matched = Vec::new();
+                    for (__key, __value) in obj.iter() {
+                        let __offset: usize = match __key.as_str() {
+                            "a" => 0usize,
+                            "b" => 1usize,
+                            "c" => 2usize,
+                            "d" => 3usize,
+                            "e" => 4usize,
+                            "f" => 5usize,
+                            "g" => 6usize,
+                            "h" => 7usize,
+                            "i" => 8usize,
+                            "j" => 9usize,
+                            "k" => 10usize,
+                            "l" => 11usize,
+                            "m" => 12usize,
+                            "n" => 13usize,
+                            "o" => 14usize,
+                            "p" => 15usize,
+                            _ => continue,
+                        };
+                        __matched.push((__offset, __value));
+                    }
+                    if __eval::in_declared_order::<__J>(obj.len(), 16usize) {
+                        __eval::sort_declared(&mut __matched);
+                    }
+                    let mut __names = Vec::with_capacity(__matched.len());
+                    let mut __children = __eval::ChildList::default();
+                    for (__offset, instance) in __matched {
+                        let __name = __NAMES[__offset];
+                        __names.push(__name);
+                        let __member = __path.push(__name);
+                        let __path = &__member;
+                        let __position = __e.position_below(__position, __path);
+                        let __child = match __offset {
+                            0usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 0usize, __not_of_type_0, &instance, __position);
+                                __e.schema(2usize, Vec::new(), __units, __position)
+                            }
+                            1usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 1usize, __not_of_type_0, &instance, __position);
+                                __e.schema(3usize, Vec::new(), __units, __position)
+                            }
+                            2usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 2usize, __not_of_type_0, &instance, __position);
+                                __e.schema(4usize, Vec::new(), __units, __position)
+                            }
+                            3usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 3usize, __not_of_type_0, &instance, __position);
+                                __e.schema(5usize, Vec::new(), __units, __position)
+                            }
+                            4usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 4usize, __not_of_type_0, &instance, __position);
+                                __e.schema(6usize, Vec::new(), __units, __position)
+                            }
+                            5usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 5usize, __not_of_type_0, &instance, __position);
+                                __e.schema(7usize, Vec::new(), __units, __position)
+                            }
+                            6usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 6usize, __not_of_type_0, &instance, __position);
+                                __e.schema(8usize, Vec::new(), __units, __position)
+                            }
+                            7usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 7usize, __not_of_type_0, &instance, __position);
+                                __e.schema(9usize, Vec::new(), __units, __position)
+                            }
+                            8usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 8usize, __not_of_type_0, &instance, __position);
+                                __e.schema(10usize, Vec::new(), __units, __position)
+                            }
+                            9usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 9usize, __not_of_type_0, &instance, __position);
+                                __e.schema(11usize, Vec::new(), __units, __position)
+                            }
+                            10usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 10usize, __not_of_type_0, &instance, __position);
+                                __e.schema(12usize, Vec::new(), __units, __position)
+                            }
+                            11usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 11usize, __not_of_type_0, &instance, __position);
+                                __e.schema(13usize, Vec::new(), __units, __position)
+                            }
+                            12usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 12usize, __not_of_type_0, &instance, __position);
+                                __e.schema(14usize, Vec::new(), __units, __position)
+                            }
+                            13usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 13usize, __not_of_type_0, &instance, __position);
+                                __e.schema(15usize, Vec::new(), __units, __position)
+                            }
+                            14usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 14usize, __not_of_type_0, &instance, __position);
+                                __e.schema(16usize, Vec::new(), __units, __position)
+                            }
+                            _ => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 15usize, __not_of_type_0, &instance, __position);
+                                __e.schema(17usize, Vec::new(), __units, __position)
+                            }
+                        };
+                        __children = __e.push(__children, __child);
+                    }
+                    __units = __e
+                        .unit(
+                            __units,
+                            16usize,
+                            Vec::new(),
+                            Some(__eval::names(__names)),
+                            __children,
+                            __position,
+                        );
+                }
+                _ => {
+                    __units = __e
+                        .unit(
+                            __units,
+                            16usize,
+                            Vec::new(),
+                            None,
+                            __eval::ChildList::default(),
+                            __position,
+                        );
+                }
+            }
+            __e.schema(1usize, Vec::new(), __units, __position)
+        }
+        static __SITES: __eval::Sites = __eval::Sites {
+            tables: "{\"schemas\":[{\"count\":1,\"first\":18,\"pointer\":\"\"},{\"count\":1,\"first\":16,\"pointer\":\"/oneOf/0\"},{\"count\":1,\"first\":0,\"pointer\":\"/oneOf/0/properties/a\"},{\"count\":1,\"first\":1,\"pointer\":\"/oneOf/0/properties/b\"},{\"count\":1,\"first\":2,\"pointer\":\"/oneOf/0/properties/c\"},{\"count\":1,\"first\":3,\"pointer\":\"/oneOf/0/properties/d\"},{\"count\":1,\"first\":4,\"pointer\":\"/oneOf/0/properties/e\"},{\"count\":1,\"first\":5,\"pointer\":\"/oneOf/0/properties/f\"},{\"count\":1,\"first\":6,\"pointer\":\"/oneOf/0/properties/g\"},{\"count\":1,\"first\":7,\"pointer\":\"/oneOf/0/properties/h\"},{\"count\":1,\"first\":8,\"pointer\":\"/oneOf/0/properties/i\"},{\"count\":1,\"first\":9,\"pointer\":\"/oneOf/0/properties/j\"},{\"count\":1,\"first\":10,\"pointer\":\"/oneOf/0/properties/k\"},{\"count\":1,\"first\":11,\"pointer\":\"/oneOf/0/properties/l\"},{\"count\":1,\"first\":12,\"pointer\":\"/oneOf/0/properties/m\"},{\"count\":1,\"first\":13,\"pointer\":\"/oneOf/0/properties/n\"},{\"count\":1,\"first\":14,\"pointer\":\"/oneOf/0/properties/o\"},{\"count\":1,\"first\":15,\"pointer\":\"/oneOf/0/properties/p\"},{\"count\":1,\"first\":17,\"pointer\":\"/oneOf/1\"}],\"units\":[\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"type\",\"properties\",\"type\",\"oneOf\"]}",
+            scope: None,
+            built: ::std::sync::OnceLock::new(),
+        };
+        let mut __e = __SITES.checking(is_valid(instance));
+        let __root = __evaluate_0(
+            &mut __e,
+            instance,
+            &__paths::LazyLocation::new(),
+            __eval::InstancePosition::ROOT,
+        );
+        __e.finish(__root)
+    }
+    pub(super) fn entry_is_valid(instance: &__Value) -> bool {
+        run_is_valid(instance)
+    }
+    pub(super) fn entry_validate<'__i>(
+        instance: &'__i __Value,
+    ) -> ::std::result::Result<(), __VE<'__i>> {
+        match run_validate(instance) {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
+    pub(super) fn entry_iter_errors<'__i>(instance: &'__i __Value) -> __EI<'__i> {
+        __err::iterator_from(run_collect_errors(instance))
+    }
+    pub(super) fn entry_evaluate(instance: &__Value) -> jsonschema::Evaluation {
+        evaluate(instance)
+    }
+}
+impl Validator {
+    pub fn is_valid(instance: &jsonschema::__private::serde_json::Value) -> bool {
+        __validator_impl::entry_is_valid(instance)
+    }
+    pub fn validate<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> ::std::result::Result<(), jsonschema::ValidationError<'__i>> {
+        __validator_impl::entry_validate(instance)
+    }
+    pub fn iter_errors<'__i>(
+        instance: &'__i jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::ErrorIterator<'__i> {
+        __validator_impl::entry_iter_errors(instance)
+    }
+    pub fn evaluate(
+        instance: &jsonschema::__private::serde_json::Value,
+    ) -> jsonschema::Evaluation {
+        __validator_impl::entry_evaluate(instance)
+    }
+}

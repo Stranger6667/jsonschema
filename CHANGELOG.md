@@ -81,6 +81,7 @@
 - Faster compilation of `#[jsonschema::validator]` output for schemas with many `$ref`s, checking each referenced schema's validity once before reporting its errors.
 - Faster compilation of `#[jsonschema::validator]` output for schemas with many `type: array` subschemas whose `items` is the same `$ref`, reporting their errors through one shared function.
 - Faster compilation of `#[jsonschema::validator]` output, with fewer closures in the generated code.
+- Faster release builds of `#[jsonschema::validator]` output for schemas with large subschemas that no `$ref` names, with the `evaluate` code of each in a function of its own.
 - Linear-time `#[jsonschema::validator]` validation below a `$ref` cycle that reaches one instance through two keywords, such as two `oneOf` branches, instead of validating the instance once per path to it.
 - Fewer allocations when `#[jsonschema::validator]` reports errors, with the errors of one keyword sharing its schema location.
 - Lower cost of collecting errors over the valid parts of an instance.

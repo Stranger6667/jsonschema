@@ -1352,6 +1352,8 @@ pub(super) fn compile<E: ValueEmitter>(
                     })
         })
         .collect();
+    let mut callable = callable(&tree);
+    let outlined = outlined(&tree, &item_runs, &mut callable);
     let code = Code {
         tree: &tree,
         not_of_type: direct
@@ -1363,7 +1365,8 @@ pub(super) fn compile<E: ValueEmitter>(
         keeps_scope,
         guards,
         item_runs,
-        callable: callable(&tree),
+        callable,
+        outlined,
     };
     let schema_fns = (0..tree.schemas.len())
         .filter(|&index| code.callable[index])
@@ -1543,9 +1546,11 @@ struct Code<'t> {
     /// Whether each schema has leaf units only and nothing in it annotates, so its valid items
     /// join runs.
     item_runs: Vec<bool>,
-    /// Whether each schema has a function of its own: one many places reach. Every other schema's
-    /// code sits in the one place reaching it.
+    /// Whether each schema has a function of its own: one many places reach, or one whose code is
+    /// large. Every other schema's code sits in the one place reaching it.
     callable: Vec<bool>,
+    /// Whether each schema's function is one for its large code, which stays out of line.
+    outlined: Vec<bool>,
 }
 
 impl Code<'_> {
@@ -1703,7 +1708,9 @@ impl Code<'_> {
         let name = Self::evaluate_fn(index);
         let node = E::node_param(Some(quote! { '__i }));
         let body = self.body::<E>(index);
+        let inline = self.outlined[index].then(|| quote! { #[inline(never)] });
         quote! {
+            #inline
             fn #name<'__i>(
                 __e: &mut __eval::Evaluator<'_, '_>,
                 instance: #node,
@@ -2535,6 +2542,89 @@ fn callable(tree: &Tree) -> Vec<bool> {
         }
     }
     callable
+}
+
+/// Units of inlined code from which a schema gets a function of its own: LLVM optimizes one
+/// function holding a whole document's code slower than the same code in parts.
+const OUTLINED_UNITS: usize = 16;
+
+/// Whether each schema gets a function for its large code, marking it in `callable`. A schema's
+/// code counts its units and those of the schemas inlined into it.
+fn outlined(tree: &Tree, item_runs: &[bool], callable: &mut [bool]) -> Vec<bool> {
+    fn size(
+        tree: &Tree,
+        schema: usize,
+        item_runs: &[bool],
+        callable: &mut [bool],
+        outlined: &mut [bool],
+    ) -> usize {
+        let entry = &tree.schemas[schema];
+        let mut total = entry.count;
+        for unit in &tree.units[entry.first..entry.first + entry.count] {
+            for child in inlined_children(tree, unit) {
+                if callable[child] {
+                    continue;
+                }
+                let inlined = size(tree, child, item_runs, callable, outlined);
+                // An item run's schema below `items` has its leaf item function instead.
+                if inlined >= OUTLINED_UNITS && !item_runs[child] {
+                    callable[child] = true;
+                    outlined[child] = true;
+                } else {
+                    total += inlined;
+                }
+            }
+        }
+        total
+    }
+    let mut outlined = vec![false; callable.len()];
+    let roots: Vec<usize> = (0..callable.len())
+        .filter(|&schema| callable[schema])
+        .collect();
+    for root in roots {
+        size(tree, root, item_runs, callable, &mut outlined);
+    }
+    outlined
+}
+
+/// The subschemas whose code the code of `unit` holds, unless they have functions of their own.
+fn inlined_children(tree: &Tree, unit: &TreeUnit) -> Vec<usize> {
+    match unit {
+        TreeUnit::Leaf(_) | TreeUnit::Ref { .. } => Vec::new(),
+        TreeUnit::Properties {
+            declared: (first, count),
+            ..
+        } => tree.properties[*first..first + count]
+            .iter()
+            .map(|(_, schema)| *schema)
+            .collect(),
+        TreeUnit::Patterns((first, count)) => tree.patterns[*first..first + count]
+            .iter()
+            .map(|(schema, _)| *schema)
+            .collect(),
+        TreeUnit::Dependencies {
+            schemas: (first, count),
+            ..
+        } => tree.dependencies[*first..first + count]
+            .iter()
+            .map(|(_, schema)| *schema)
+            .collect(),
+        TreeUnit::Branches {
+            schemas: (first, count),
+            ..
+        }
+        | TreeUnit::Tuple {
+            schemas: (first, count),
+            ..
+        } => tree.tuples[*first..first + count].to_vec(),
+        TreeUnit::Additional { schema, .. }
+        | TreeUnit::Names { schema, .. }
+        | TreeUnit::Contains { schema, .. }
+        | TreeUnit::Condition { schema, .. }
+        | TreeUnit::Branch { schema, .. }
+        | TreeUnit::Rest { schema, .. }
+        | TreeUnit::Unevaluated { schema, .. } => vec![*schema],
+    }
 }
 
 /// Functions putting a resource's entries on the generated code's dynamic-scope stacks, and taking
