@@ -1500,8 +1500,6 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                     if !unevaluated_schema.is_valid(&value, ctx) {
                         unevaluated.push(property.as_ref().to_owned());
                     }
-                } else {
-                    unevaluated.push(property.as_ref().to_owned());
                 }
             }
 
@@ -1606,8 +1604,6 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                     if !unevaluated_schema.is_valid(&value, ctx) {
                         return false;
                     }
-                } else {
-                    return false;
                 }
             }
         }
@@ -1643,9 +1639,6 @@ impl<F: Json> Validate<F> for UnevaluatedPropertiesValidator<F> {
                         unevaluated.push(property.as_ref().to_owned());
                     }
                     children.push(ctx.arena(), child);
-                } else {
-                    invalid = true;
-                    unevaluated.push(property.as_ref().to_owned());
                 }
             }
 

@@ -677,7 +677,6 @@ struct ParseState<'a, 'b> {
 
 /// Facts set anywhere in the document and read after the whole parse.
 #[derive(Default)]
-#[allow(clippy::struct_excessive_bools)]
 struct DocumentFacts {
     /// `reference_to_definition` is the only producer of `Reference`, so this gates the emptiness
     /// pass.
