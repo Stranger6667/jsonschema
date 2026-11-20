@@ -248,24 +248,148 @@ mod __validator_impl {
             }
             false
         }
-        static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"properties\":[[\"d\",3],[\"a\",1],[\"b/c\",2]],\"schemas\":[{\"count\":2,\"first\":2,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/b~1c\"},{\"count\":0,\"first\":1,\"pointer\":\"/properties/b~1c/properties/d\",\"rejects\":true}],\"units\":[{\"keyword\":\"type\",\"not_of_type\":0},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,1]},{\"direct\":0,\"keyword\":\"required\"},{\"keyword\":\"properties\",\"members\":false,\"properties\":[1,2]}]}",
-            matchers: &[],
-            valid: &[],
-            guards: &[],
-            discriminators: &[],
-            not_of_type: &[__not_of_type_0],
-            direct: &[__direct_1],
-            unevaluated: &[],
-            unevaluated_errors: &[],
+        type __J = jsonschema::json::SerdeJson;
+        fn __evaluate_0<'__i>(
+            __e: &mut __eval::Evaluator<'_, '_>,
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __position: __eval::InstancePosition,
+        ) -> __eval::EvaluationNode {
+            let mut __units = __eval::ChildList::default();
+            __units = __e
+                .checked::<
+                    __J,
+                >(__units, 2usize, __direct_1, &instance, false, __position);
+            match instance {
+                __Value::Object(obj) => {
+                    const __NAMES: [&str; 2usize] = ["a", "b/c"];
+                    let mut __matched = Vec::new();
+                    for (__key, __value) in obj.iter() {
+                        let __offset: usize = match __key.as_str() {
+                            "a" => 0usize,
+                            "b/c" => 1usize,
+                            _ => continue,
+                        };
+                        __matched.push((__offset, __value));
+                    }
+                    if __eval::in_declared_order::<__J>(obj.len(), 2usize) {
+                        __eval::sort_declared(&mut __matched);
+                    }
+                    let mut __names = Vec::with_capacity(__matched.len());
+                    let mut __children = __eval::ChildList::default();
+                    for (__offset, instance) in __matched {
+                        let __name = __NAMES[__offset];
+                        __names.push(__name);
+                        let __member = __path.push(__name);
+                        let __path = &__member;
+                        let __position = __e.position_below(__position, __path);
+                        let __child = match __offset {
+                            0usize => {
+                                let mut __units = __eval::ChildList::default();
+                                __units = __e
+                                    .not_of_type::<
+                                        __J,
+                                    >(__units, 0usize, __not_of_type_0, &instance, __position);
+                                __e.schema(1usize, Vec::new(), __units, __position)
+                            }
+                            _ => {
+                                let mut __units = __eval::ChildList::default();
+                                match instance {
+                                    __Value::Object(obj) => {
+                                        const __NAMES: [&str; 1usize] = ["d"];
+                                        let mut __matched = Vec::new();
+                                        for (__key, __value) in obj.iter() {
+                                            let __offset: usize = match __key.as_str() {
+                                                "d" => 0usize,
+                                                _ => continue,
+                                            };
+                                            __matched.push((__offset, __value));
+                                        }
+                                        let mut __names = Vec::with_capacity(__matched.len());
+                                        let mut __children = __eval::ChildList::default();
+                                        for (__offset, instance) in __matched {
+                                            let __name = __NAMES[__offset];
+                                            __names.push(__name);
+                                            let __member = __path.push(__name);
+                                            let __path = &__member;
+                                            let __position = __e.position_below(__position, __path);
+                                            let __child = match __offset {
+                                                _ => {
+                                                    let mut __units = __eval::ChildList::default();
+                                                    __e.schema(
+                                                        3usize,
+                                                        __e.rejection::<__J>(3usize, &instance, __path),
+                                                        __units,
+                                                        __position,
+                                                    )
+                                                }
+                                            };
+                                            __children = __e.push(__children, __child);
+                                        }
+                                        __units = __e
+                                            .unit(
+                                                __units,
+                                                1usize,
+                                                Vec::new(),
+                                                Some(__eval::names(__names)),
+                                                __children,
+                                                __position,
+                                            );
+                                    }
+                                    _ => {
+                                        __units = __e
+                                            .unit(
+                                                __units,
+                                                1usize,
+                                                Vec::new(),
+                                                None,
+                                                __eval::ChildList::default(),
+                                                __position,
+                                            );
+                                    }
+                                }
+                                __e.schema(2usize, Vec::new(), __units, __position)
+                            }
+                        };
+                        __children = __e.push(__children, __child);
+                    }
+                    __units = __e
+                        .unit(
+                            __units,
+                            3usize,
+                            Vec::new(),
+                            Some(__eval::names(__names)),
+                            __children,
+                            __position,
+                        );
+                }
+                _ => {
+                    __units = __e
+                        .unit(
+                            __units,
+                            3usize,
+                            Vec::new(),
+                            None,
+                            __eval::ChildList::default(),
+                            __position,
+                        );
+                }
+            }
+            __e.schema(0usize, Vec::new(), __units, __position)
+        }
+        static __SITES: __eval::Sites = __eval::Sites {
+            tables: "{\"schemas\":[{\"count\":2,\"first\":2,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/a\"},{\"count\":1,\"first\":1,\"pointer\":\"/properties/b~1c\"},{\"count\":0,\"first\":1,\"pointer\":\"/properties/b~1c/properties/d\"}],\"units\":[\"type\",\"properties\",\"required\",\"properties\"]}",
             scope: None,
             built: ::std::sync::OnceLock::new(),
         };
-        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate_reporting(
-            &__TREE,
-            &instance,
-            is_valid(instance),
-        )
+        let mut __e = __SITES.checking(is_valid(instance));
+        let __root = __evaluate_0(
+            &mut __e,
+            instance,
+            &__paths::LazyLocation::new(),
+            __eval::InstancePosition::ROOT,
+        );
+        __e.finish(__root)
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {
         run_is_valid(instance)

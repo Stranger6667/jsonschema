@@ -237,11 +237,11 @@ const RUN_LINK: u32 = 1 << 31;
 /// An instance position recorded during evaluation. Its JSON Pointer is rendered on first read,
 /// since most positions are never shown.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct InstancePosition(u32);
+pub struct InstancePosition(u32);
 
 impl InstancePosition {
     /// The instance itself, implicit in every arena.
-    pub(crate) const ROOT: InstancePosition = InstancePosition(0);
+    pub const ROOT: InstancePosition = InstancePosition(0);
 }
 
 #[derive(Debug, Clone, Copy)]
@@ -336,7 +336,7 @@ impl InstancePositions {
 }
 
 #[derive(Debug, PartialEq)]
-pub(crate) struct EvaluationNode {
+pub struct EvaluationNode {
     pub(crate) keyword_location: Location,
     pub(crate) absolute_keyword_location: Option<Arc<Uri<String>>>,
     pub(crate) schema_location: Arc<str>,
@@ -385,7 +385,7 @@ pub(crate) struct RunUnit {
 /// A range of `EvaluationArena::run_units`: the subschema's unit, then its keywords' in output
 /// order.
 #[derive(Debug, Clone, Copy)]
-pub(crate) struct RunUnits {
+pub struct RunUnits {
     start: u32,
     len: u32,
 }
@@ -401,7 +401,7 @@ struct LatestRunUnits {
 
 /// The items collected for one run until an item breaks it.
 #[derive(Debug, Default, Clone, Copy)]
-pub(crate) struct PendingRun {
+pub struct PendingRun {
     start: usize,
     count: u32,
 }
@@ -409,7 +409,7 @@ pub(crate) struct PendingRun {
 impl PendingRun {
     /// Adds the item at `index`, which follows the previous item.
     #[inline]
-    pub(crate) fn add(&mut self, index: usize) {
+    pub fn add(&mut self, index: usize) {
         if self.count == 0 {
             self.start = index;
         }
@@ -491,19 +491,30 @@ impl EvaluationArena {
 
     #[inline]
     pub(crate) fn push(&mut self, node: EvaluationNode) -> u32 {
-        let index = match u32::try_from(self.len) {
-            Ok(index) if index < RUN_LINK => index,
-            _ => panic!("evaluation exceeded 2^31 nodes"),
-        };
         if self.len % CHUNK == 0 {
-            self.chunks.push(Vec::with_capacity(CHUNK));
+            self.reserve_chunk();
         }
+        // Below `RUN_LINK`, which `reserve_chunk` checks at every chunk start.
+        #[allow(clippy::cast_possible_truncation)]
+        let index = self.len as u32;
         self.chunks
             .last_mut()
             .expect("a chunk was just reserved")
             .push(node);
         self.len += 1;
         index
+    }
+
+    /// Adds the chunk the next nodes go to. `RUN_LINK` is a multiple of `CHUNK`, so the node
+    /// reaching it starts a chunk.
+    #[cold]
+    #[inline(never)]
+    fn reserve_chunk(&mut self) {
+        assert!(
+            self.len < RUN_LINK as usize,
+            "evaluation exceeded 2^31 nodes"
+        );
+        self.chunks.push(Vec::with_capacity(CHUNK));
     }
 
     #[inline]
@@ -622,8 +633,14 @@ impl EvaluationArena {
         if link & RUN_LINK == 0 {
             self.node_mut(link).next_sibling = next;
         } else {
-            self.runs[(link & !RUN_LINK) as usize].next_sibling = next;
+            self.set_run_next_sibling(link, next);
         }
+    }
+
+    #[cold]
+    #[inline(never)]
+    fn set_run_next_sibling(&mut self, link: u32, next: u32) {
+        self.runs[(link & !RUN_LINK) as usize].next_sibling = next;
     }
 }
 
@@ -646,9 +663,9 @@ impl Iterator for ChildIndices<'_> {
     }
 }
 
-/// The children collected for one node, as a chain into [`EvaluationArena`].
+/// The children collected for one node, as a chain into the evaluation arena.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(crate) struct ChildList {
+pub struct ChildList {
     first: u32,
     last: u32,
     len: u32,
@@ -2049,10 +2066,10 @@ impl<'a> Serialize for ErrorEntriesSerializer<'a> {
 #[cfg(feature = "macros")]
 #[doc(hidden)]
 pub mod generated {
-    pub use super::ErrorDescription;
-    use super::{
-        format_keyword_location, Annotations, ChildList, Evaluation, EvaluationArena,
-        EvaluationNode, InstancePosition, PendingRun, RunUnit, RunUnits,
+    use super::{format_keyword_location, Evaluation, EvaluationArena, RunUnit, NO_NODE};
+    pub use super::{
+        Annotations, ChildList, ErrorDescription, EvaluationNode, InstancePosition, PendingRun,
+        RunUnits,
     };
     use crate::{
         compiler::resolve_absolute_location,
@@ -2061,7 +2078,7 @@ pub mod generated {
         paths::{capture_evaluation_path, write_location, LazyLocation, Location},
         properties::{scan_members, HASHMAP_THRESHOLD},
         validator::EVALUATION_PATH_CACHE_THRESHOLD,
-        Json, Node, Object, ValidationError,
+        Json, Node, ValidationError,
     };
     use ahash::AHashMap;
     use referencing::{uri, Uri};
@@ -2071,31 +2088,17 @@ pub mod generated {
         borrow::Cow,
         cell::{Cell, RefCell},
         collections::hash_map::Entry,
-        convert::Infallible,
-        ops::ControlFlow,
         sync::{Arc, OnceLock},
         thread::LocalKey,
     };
 
-    /// The tables a generated `evaluate` reports from, as the generator writes them in JSON: one
+    /// The locations a generated `evaluate` reports at, as the generator writes them in JSON: one
     /// string literal costs the compiler far less than the same tables as Rust values.
     #[derive(Deserialize)]
     struct Tables {
         /// The root first.
         schemas: Vec<SchemaTable>,
         units: Vec<UnitTable>,
-        /// Each declared property: its name and its schema's index.
-        #[serde(default)]
-        properties: Vec<(String, usize)>,
-        /// Each `patternProperties` subschema's index, in the order of the matchers.
-        #[serde(default)]
-        patterns: Vec<usize>,
-        /// Each property whose presence applies a subschema, with that subschema's index.
-        #[serde(default)]
-        dependencies: Vec<(String, usize)>,
-        /// Each subschema listed in an array, by position.
-        #[serde(default)]
-        tuples: Vec<usize>,
         /// The absolute URI the pointers resolve against, if the schema has one.
         #[serde(default)]
         base: Option<String>,
@@ -2103,18 +2106,15 @@ pub mod generated {
         /// use them.
         #[serde(default)]
         resources: Vec<ResourceTable>,
-        /// The resource each `Tree::valid` entry runs in, where the walk's scope reaches them.
-        #[serde(default)]
-        valid_resources: Vec<usize>,
-        /// The resource each `Tree::unevaluated` entry runs in, likewise.
-        #[serde(default)]
-        unevaluated_resources: Vec<usize>,
         /// The code of each reference target a `$ref` enters.
         #[serde(default)]
         functions: Vec<Function>,
         /// The code the root runs as, whose references to the root pass its cycle guard.
         #[serde(default)]
         root_function: Option<usize>,
+        /// References keep the dynamic scope, which something reads.
+        #[serde(default)]
+        keeps_scope: bool,
     }
 
     /// A reference target's generated code.
@@ -2124,23 +2124,6 @@ pub mod generated {
         /// while that code did.
         #[serde(default)]
         parent: Option<usize>,
-        /// Its entry in `Tree::guards`, where a reference reaches it while it compiles.
-        #[serde(default)]
-        guard: Option<usize>,
-    }
-
-    /// How following a reference moves through the dynamic scope.
-    #[derive(Deserialize, Default)]
-    struct ScopeTable {
-        /// Its target is in another document than the schema holding it.
-        #[serde(default)]
-        leaves: bool,
-        /// The `$dynamicAnchor` a `$dynamicRef` resolves through the dynamic scope.
-        #[serde(default)]
-        anchor: Option<String>,
-        /// A `$recursiveRef` resolves through the dynamic scope.
-        #[serde(default)]
-        recursive: bool,
     }
 
     /// A resource the dynamic scope may hold.
@@ -2176,157 +2159,44 @@ pub mod generated {
         /// The draft's unknown keywords.
         #[serde(default)]
         annotations: Option<Value>,
-        /// It is `false`.
-        #[serde(default)]
-        rejects: bool,
     }
 
+    /// A unit: its keyword alone, or with the other keywords whose errors it reports, its
+    /// annotation of a string instance, or the static target of its reference.
     #[derive(Deserialize)]
-    struct UnitTable {
-        keyword: String,
-        /// Other keywords whose errors it reports.
-        #[serde(default)]
-        aliases: Vec<String>,
-        /// Its annotation of a string instance.
-        #[serde(default)]
-        strings: Option<Value>,
-        /// A range of `Tables::properties`: a `properties` unit's own, or the ones beside an
-        /// `additionalProperties` unit.
-        #[serde(default)]
-        properties: Option<(usize, usize)>,
-        /// The runtime checks `properties` in one pass with `additionalProperties`, in member order.
-        #[serde(default)]
-        members: bool,
-        /// A range of `Tables::patterns`: a `patternProperties` unit's own, or the ones beside an
-        /// `additionalProperties` unit.
-        #[serde(default)]
-        patterns: Option<(usize, usize)>,
-        /// An `additionalProperties` unit's subschema.
-        #[serde(default)]
-        additional: Option<usize>,
-        /// A `propertyNames` unit's subschema.
-        #[serde(default)]
-        names: Option<usize>,
-        /// A `dependencies` or `dependentSchemas` unit's range of `Tables::dependencies`.
-        #[serde(default)]
-        dependencies: Option<(usize, usize)>,
-        /// An array-form `items` or `prefixItems` unit's range of `Tables::tuples`.
-        #[serde(default)]
-        tuple: Option<(usize, usize)>,
-        /// A schema-form `items` or `additionalItems` unit's subschema, applied from `skip` on.
-        #[serde(default)]
-        rest: Option<usize>,
-        #[serde(default)]
-        skip: usize,
-        /// A `contains` unit's subschema, and its index in `Tree::valid`.
-        #[serde(default)]
-        contains: Option<(usize, usize)>,
-        /// A `contains` unit's `minContains` and `maxContains`.
-        #[serde(default)]
-        bounds: Option<ContainsBounds>,
-        /// An `allOf`, `anyOf` or `oneOf` unit's range of `Tables::tuples`.
-        #[serde(default)]
-        branches: Option<(usize, usize)>,
-        /// Where the checks of the `anyOf` or `oneOf` branches start in `Tree::valid`.
-        #[serde(default)]
-        valid: Option<usize>,
-        /// The `anyOf` or `oneOf` branches' entry in `Tree::discriminators`.
-        #[serde(default)]
-        discriminator: Option<usize>,
-        /// A leaf unit's entry in `Tree::direct`.
-        #[serde(default)]
-        direct: Option<usize>,
-        /// A single `type` unit's entry in `Tree::not_of_type`.
-        #[serde(default)]
-        not_of_type: Option<usize>,
-        /// An `if` unit's subschema, and its index in `Tree::valid`.
-        #[serde(default)]
-        condition: Option<(usize, usize)>,
-        /// A `then` or `else` unit's subschema.
-        #[serde(default)]
-        branch: Option<usize>,
-        /// A `$ref`, `$dynamicRef` or `$recursiveRef` unit's static target.
-        #[serde(default)]
-        target: Option<usize>,
-        /// That target's code, an index of `Tables::functions`.
-        #[serde(default)]
-        function: Option<usize>,
-        /// How following it moves through the dynamic scope.
-        #[serde(default)]
-        scope: ScopeTable,
-        /// An `unevaluatedProperties` or `unevaluatedItems` unit's subschema, and its index in
-        /// `Tree::unevaluated`.
-        #[serde(default)]
-        unevaluated: Option<(usize, usize)>,
-        /// That subschema is `false`.
-        #[serde(default)]
-        closed: bool,
-    }
-
-    /// What a unit checks.
-    enum Kind {
-        Leaf,
-        /// A leaf unit reporting its errors through `Tree::direct`.
-        Direct(usize),
-        /// A single `type` unit reporting its error through `Tree::not_of_type`.
-        NotOfType(usize),
-        Properties {
-            declared: (usize, usize),
-            in_member_order: bool,
-        },
-        Patterns((usize, usize)),
-        Additional {
-            schema: usize,
-            closed: bool,
-            declared: (usize, usize),
-            patterns: (usize, usize),
-        },
-        Names {
-            schema: usize,
-            closed: bool,
-        },
-        Dependencies((usize, usize)),
-        Tuple((usize, usize)),
-        Contains {
-            schema: usize,
-            valid: usize,
-            bounds: ContainsBounds,
-        },
-        Branches {
-            schemas: (usize, usize),
-            valid: Option<usize>,
-            discriminator: Option<usize>,
-            /// `oneOf`, which fails when several branches pass.
-            exclusive: bool,
-        },
-        Condition {
-            schema: usize,
-            valid: usize,
-        },
-        Branch {
-            schema: usize,
-            then: bool,
-        },
-        Ref {
+    #[serde(untagged)]
+    enum UnitTable {
+        Keyword(String),
+        Detailed {
+            keyword: String,
+            #[serde(default)]
+            aliases: Vec<String>,
+            #[serde(default)]
+            strings: Option<Value>,
+            #[serde(default)]
             target: usize,
+            /// That target's code, an index of `Tables::functions`.
+            #[serde(default)]
             function: usize,
+            /// That target is in another document than the schema holding the reference.
+            #[serde(default)]
             leaves: bool,
-            anchor: Option<Box<str>>,
-            recursive: bool,
-        },
-        Unevaluated {
-            schema: usize,
-            closed: bool,
-            evaluated: usize,
-        },
-        Rest {
-            schema: usize,
-            skip: usize,
-            closed: bool,
         },
     }
 
-    /// Where a unit sits, fixed when the validator is generated.
+    /// The static target of a reference unit.
+    #[derive(Clone, Copy, Default)]
+    struct Reference {
+        target: usize,
+        /// The target's code, an index of `Built::functions`.
+        function: usize,
+        /// The target is in another document than the schema holding the reference.
+        leaves: bool,
+        /// The resource holding the reference.
+        caller: usize,
+    }
+
+    /// Where a unit or a schema sits, fixed when the validator is generated.
     struct UnitLocation {
         keyword: Location,
         schema: Arc<str>,
@@ -2336,23 +2206,13 @@ pub mod generated {
         /// Its index among `Built::units`, then `Built::schemas`.
         site: usize,
         annotations: Option<Annotations>,
-        /// The annotations apply to string instances only.
-        strings_only: bool,
-        kind: Kind,
+        reference: Reference,
     }
-
-    /// Whether a name matches one `patternProperties` regex.
-    pub type Matcher = fn(&str) -> bool;
-
-    /// Whether an instance is valid under one subschema.
-    pub type Validity<F> = for<'a> fn(&<F as Json>::Node<'a>) -> bool;
 
     /// With `enter`, enters the cycle guard of one reference target's code on an instance, unless
     /// the instance is being validated against the target already, which it returns; without,
-    /// leaves the guard entered last. The generated code's own references to the target share it.
-    pub type Guard<F> = for<'a> fn(&<F as Json>::Node<'a>, bool) -> bool;
-
-    /// [`Guard`] over the generated code's guard entries, `marks`, entering `mark`.
+    /// leaves the guard entered last, over the generated code's guard entries, `marks`, entering
+    /// `mark`. The generated code's own references to the target share it.
     #[must_use]
     pub fn guard(
         marks: &'static LocalKey<RefCell<Vec<(usize, usize)>>>,
@@ -2373,7 +2233,7 @@ pub mod generated {
     }
 
     /// The `minContains` and `maxContains` beside a `contains`.
-    #[derive(Clone, Copy, Deserialize)]
+    #[derive(Clone, Copy)]
     struct ContainsBounds {
         min: Option<u64>,
         max: Option<u64>,
@@ -2436,13 +2296,6 @@ pub mod generated {
         instance.to_value()
     }
 
-    /// The errors of a single `type` for an instance.
-    pub type NotOfType<F> = for<'a> fn(&<F as Json>::Node<'a>) -> Vec<ErrorDescription>;
-
-    /// Reports the errors of a leaf unit for an instance, through its keyword's errors code.
-    pub type Direct<F> =
-        for<'a> fn(<F as Json>::Node<'a>, &LazyLocation, &mut Descriptions) -> bool;
-
     /// A leaf unit's errors as `evaluate` reports them.
     #[derive(Default)]
     pub struct Descriptions(Vec<ErrorDescription>);
@@ -2457,42 +2310,6 @@ pub mod generated {
             self.0.push(ErrorDescription::from_validation_error(&error));
             false
         }
-    }
-
-    /// The branches of a discriminated `anyOf` or `oneOf` that may accept an instance, by the value
-    /// of its discriminator property; `None` when any may.
-    pub type Candidates<F> = for<'a> fn(&<F as Json>::Node<'a>) -> Option<&'static [usize]>;
-
-    /// The positions of an instance's members or items that a schema leaves unevaluated.
-    pub type Unevaluated<F> = for<'a> fn(&<F as Json>::Node<'a>) -> Vec<usize>;
-
-    /// The errors of one subschema for an instance at a location.
-    pub type SubschemaErrors<F> =
-        for<'a> fn(&<F as Json>::Node<'a>, &LazyLocation) -> Vec<ValidationError<'static>>;
-
-    /// The units a generated `evaluate` reports, built on first use.
-    pub struct Tree<F: Json> {
-        /// The JSON the generator writes.
-        pub tables: &'static str,
-        /// One per entry of `Tables::patterns`.
-        pub matchers: &'static [Matcher],
-        /// One per subschema a unit checks.
-        pub valid: &'static [Validity<F>],
-        /// One per entry of `Tables::functions` with a guard.
-        pub guards: &'static [Guard<F>],
-        /// One per discriminated `anyOf` or `oneOf`.
-        pub discriminators: &'static [Candidates<F>],
-        /// One per single `type` reporting its error itself.
-        pub not_of_type: &'static [NotOfType<F>],
-        /// One per other leaf unit reporting its errors itself.
-        pub direct: &'static [Direct<F>],
-        /// One per `unevaluated*` unit.
-        pub unevaluated: &'static [Unevaluated<F>],
-        /// The errors of each `unevaluated*` unit's subschema, which the errors run leaves out.
-        pub unevaluated_errors: &'static [SubschemaErrors<F>],
-        /// Set when the code above resolves references through the dynamic scope.
-        pub scope: Option<ScopeStacks>,
-        pub built: OnceLock<Built>,
     }
 
     /// Put one resource's entries on the generated code's dynamic-scope stacks, and take them off:
@@ -2511,107 +2328,26 @@ pub mod generated {
         functions: Box<[Function]>,
         /// `Tables::root_function`.
         root_function: Option<usize>,
-        /// Whether each schema has leaf units only.
-        leaves: Box<[bool]>,
-        /// Whether each schema has leaf units only and nothing in it annotates, so its valid items
-        /// join runs.
-        item_runs: Box<[bool]>,
-        /// Whether each schema is `false`.
-        rejects: Box<[bool]>,
-        /// Each schema's index in `resources`.
-        schema_resources: Box<[usize]>,
         resources: Box<[ResourceTable]>,
-        valid_resources: Box<[usize]>,
-        unevaluated_resources: Box<[usize]>,
+        /// References keep the dynamic scope, which something reads.
+        keeps_scope: bool,
         /// Each schema's units, a range of `units`.
         schema_units: Box<[(usize, usize)]>,
         units: Box<[UnitLocation]>,
-        properties: Box<[(String, usize)]>,
-        patterns: Box<[usize]>,
-        dependencies: Box<[(String, usize)]>,
-        tuples: Box<[usize]>,
     }
 
-    /// A schema with leaf units only.
-    struct LeafSchema<'b> {
-        units: &'b [UnitLocation],
-        site: &'b UnitLocation,
-        rejects: bool,
-    }
-
-    impl Built {
-        /// The schema at `index`, which has leaf units only.
-        #[inline]
-        fn leaf_schema(&self, index: usize) -> LeafSchema<'_> {
-            let (first, count) = self.schema_units[index];
-            LeafSchema {
-                units: &self.units[first..first + count],
-                site: &self.schemas[index],
-                rejects: self.rejects[index],
-            }
-        }
-    }
-
-    impl<F: Json> Tree<F> {
-        /// The evaluation of `instance`, which the schema reports `errors` for: each unit fails
-        /// with the errors reported at its location, or with its own ones when `checks`.
-        fn walk(
-            &'static self,
-            instance: &F::Node<'_>,
-            errors: &[ValidationError<'_>],
-            checks: bool,
-        ) -> Evaluation {
-            let mut flat = Vec::with_capacity(errors.len());
-            flatten(errors, &mut flat);
-            let paths: Vec<&str> = flat
-                .iter()
-                .map(|error| error.evaluation_path().as_str())
-                .collect();
-            let built = self.built.get_or_init(|| self.build());
-            let (reported, by_visit) = index(built, &flat, &paths);
-            let mut walk: Walker<'_, '_, '_, F> = Walker {
-                built,
-                matchers: self.matchers,
-                valid: self.valid,
-                guards: self.guards,
-                discriminators: self.discriminators,
-                not_of_type: self.not_of_type,
-                direct: self.direct,
-                checks,
-                unevaluated: self.unevaluated,
-                unevaluated_errors: self.unevaluated_errors,
-                stacks: self.scope,
-                reported,
-                by_visit,
-                errors: flat,
-                arena: EvaluationArena::default(),
-                rebases: Vec::new(),
-                function: built.root_function,
-                active: Vec::new(),
-                scope: Vec::new(),
-                rebased_paths: RefCell::default(),
-                rebased_calls: Cell::new(0),
-                rebase_ids: RefCell::default(),
-                instance_location: Cell::default(),
-            };
-            let root = walk.schema(0, instance, &LazyLocation::new(), InstancePosition::ROOT);
-            Evaluation::with_root(walk.arena, root)
-        }
-
-        /// # Panics
-        ///
-        /// The tables are not ones the generator writes.
-        fn build(&self) -> Built {
-            let tables: Tables =
-                serde_json::from_str(self.tables).expect("the generator writes valid tables");
-            let base = tables
-                .base
-                .map(|base| Uri::parse(base).expect("the generator writes a URI base"));
-            let mut buffer = uri::EncodedBuffer::new();
-            let mut locate = |base: Option<&Uri<String>>,
-                              pointer: &str,
-                              at: &str,
-                              annotations: Option<Value>| {
+    /// # Panics
+    ///
+    /// The tables are not ones the generator writes.
+    fn build(tables: &str) -> Built {
+        let tables: Tables =
+            serde_json::from_str(tables).expect("the generator writes valid tables");
+        let base = tables
+            .base
+            .map(|base| Uri::parse(base).expect("the generator writes a URI base"));
+        let mut buffer = uri::EncodedBuffer::new();
+        let mut locate =
+            |base: Option<&Uri<String>>, pointer: &str, at: &str, annotations: Option<Value>| {
                 let keyword = Location::from_escaped(pointer);
                 let absolute =
                     base.map(|base| Arc::new(resolve_absolute_location(base, at, &mut buffer)));
@@ -2622,272 +2358,90 @@ pub mod generated {
                     aliases: Vec::new(),
                     site: 0,
                     annotations: annotations.map(Annotations::new),
-                    strings_only: false,
-                    kind: Kind::Leaf,
+                    reference: Reference::default(),
                 }
             };
-            let mut units: Vec<Option<UnitLocation>> = tables.units.iter().map(|_| None).collect();
-            let mut unit_tables: Vec<Option<UnitTable>> =
-                tables.units.into_iter().map(Some).collect();
-            let mut schema_units = Vec::with_capacity(tables.schemas.len());
-            let mut schema_resources = Vec::with_capacity(tables.schemas.len());
-            let mut schemas = Vec::with_capacity(tables.schemas.len());
-            let rejects = tables.schemas.iter().map(|schema| schema.rejects).collect();
-            for schema in tables.schemas {
-                let pointer = &schema.pointer;
-                let at = schema.at.as_deref().unwrap_or(pointer);
-                let own = schema
-                    .base
-                    .map(|base| Uri::parse(base).expect("the generator writes a URI base"));
-                let base = if schema.default_base {
-                    None
-                } else {
-                    own.as_ref().or(base.as_ref())
-                };
-                for index in schema.first..schema.first + schema.count {
-                    let unit = unit_tables[index]
-                        .take()
-                        .expect("every unit belongs to one schema");
-                    units[index] = Some(UnitLocation {
-                        aliases: unit
-                            .aliases
-                            .iter()
-                            .map(|alias| Location::from_escaped(&format!("{pointer}/{alias}")))
-                            .collect(),
-                        strings_only: unit.strings.is_some(),
-                        kind: match unit.keyword.as_str() {
-                            "properties" => Kind::Properties {
-                                declared: unit.properties.unwrap_or_default(),
-                                in_member_order: unit.members,
-                            },
-                            "patternProperties" => {
-                                Kind::Patterns(unit.patterns.unwrap_or_default())
-                            }
-                            "additionalProperties" => Kind::Additional {
-                                schema: unit.additional.expect("the subschema's index"),
-                                closed: unit.closed,
-                                declared: unit.properties.unwrap_or_default(),
-                                patterns: unit.patterns.unwrap_or_default(),
-                            },
-                            "propertyNames" => Kind::Names {
-                                schema: unit.names.expect("the subschema's index"),
-                                closed: unit.closed,
-                            },
-                            "dependencies" | "dependentSchemas" => Kind::Dependencies(
-                                unit.dependencies.expect("the range of subschemas"),
-                            ),
-                            "contains" => {
-                                let (schema, valid) =
-                                    unit.contains.expect("the subschema and its validity");
-                                Kind::Contains {
-                                    schema,
-                                    valid,
-                                    bounds: unit.bounds.expect("the bounds"),
-                                }
-                            }
-                            "allOf" | "anyOf" | "oneOf" => Kind::Branches {
-                                schemas: unit.branches.expect("the range of subschemas"),
-                                valid: unit.valid,
-                                discriminator: unit.discriminator,
-                                exclusive: unit.keyword == "oneOf",
-                            },
-                            "if" => {
-                                let (schema, valid) =
-                                    unit.condition.expect("the subschema and its validity");
-                                Kind::Condition { schema, valid }
-                            }
-                            "then" | "else" => Kind::Branch {
-                                schema: unit.branch.expect("the subschema's index"),
-                                then: unit.keyword == "then",
-                            },
-                            "$ref" | "$dynamicRef" | "$recursiveRef" => Kind::Ref {
-                                target: unit.target.expect("the target's index"),
-                                function: unit.function.expect("the target's code"),
-                                leaves: unit.scope.leaves,
-                                anchor: unit.scope.anchor.map(Into::into),
-                                recursive: unit.scope.recursive,
-                            },
-                            "unevaluatedProperties" | "unevaluatedItems" => {
-                                let (schema, evaluated) = unit
-                                    .unevaluated
-                                    .expect("the subschema and its evaluated positions");
-                                Kind::Unevaluated {
-                                    schema,
-                                    closed: unit.closed,
-                                    evaluated,
-                                }
-                            }
-                            "items" | "prefixItems" | "additionalItems" => {
-                                if let Some(tuple) = unit.tuple {
-                                    Kind::Tuple(tuple)
-                                } else {
-                                    Kind::Rest {
-                                        schema: unit.rest.expect("the subschema's index"),
-                                        skip: unit.skip,
-                                        closed: unit.closed,
-                                    }
-                                }
-                            }
-                            _ => match (unit.direct, unit.not_of_type) {
-                                (Some(direct), _) => Kind::Direct(direct),
-                                (_, Some(check)) => Kind::NotOfType(check),
-                                (None, None) => Kind::Leaf,
-                            },
+        let mut units: Vec<Option<UnitLocation>> = tables.units.iter().map(|_| None).collect();
+        let mut unit_tables: Vec<Option<UnitTable>> = tables.units.into_iter().map(Some).collect();
+        let mut schema_units = Vec::with_capacity(tables.schemas.len());
+        let mut schemas = Vec::with_capacity(tables.schemas.len());
+        for schema in tables.schemas {
+            let pointer = &schema.pointer;
+            let at = schema.at.as_deref().unwrap_or(pointer);
+            let own = schema
+                .base
+                .map(|base| Uri::parse(base).expect("the generator writes a URI base"));
+            let base = if schema.default_base {
+                None
+            } else {
+                own.as_ref().or(base.as_ref())
+            };
+            for index in schema.first..schema.first + schema.count {
+                let caller = schema.resource;
+                let (keyword, aliases, strings, reference) = match unit_tables[index]
+                    .take()
+                    .expect("every unit belongs to one schema")
+                {
+                    UnitTable::Keyword(keyword) => {
+                        (keyword, Vec::new(), None, Reference::default())
+                    }
+                    UnitTable::Detailed {
+                        keyword,
+                        aliases,
+                        strings,
+                        target,
+                        function,
+                        leaves,
+                    } => (
+                        keyword,
+                        aliases,
+                        strings,
+                        Reference {
+                            target,
+                            function,
+                            leaves,
+                            caller,
                         },
-                        ..locate(
-                            base,
-                            &format!("{pointer}/{}", unit.keyword),
-                            &format!("{at}/{}", unit.keyword),
-                            unit.strings,
-                        )
-                    });
-                }
-                schema_units.push((schema.first, schema.count));
-                schema_resources.push(schema.resource);
-                schemas.push(locate(base, pointer, at, schema.annotations));
+                    ),
+                };
+                units[index] = Some(UnitLocation {
+                    aliases: aliases
+                        .iter()
+                        .map(|alias| Location::from_escaped(&format!("{pointer}/{alias}")))
+                        .collect(),
+                    reference,
+                    ..locate(
+                        base,
+                        &format!("{pointer}/{keyword}"),
+                        &format!("{at}/{keyword}"),
+                        strings,
+                    )
+                });
             }
-            let mut units: Box<[UnitLocation]> = units
-                .into_iter()
-                .map(|unit| unit.expect("every unit belongs to a schema"))
-                .collect();
-            let mut sites: AHashMap<Box<str>, Vec<usize>> = AHashMap::new();
-            for (id, site) in units.iter_mut().chain(schemas.iter_mut()).enumerate() {
-                site.site = id;
-                for path in std::iter::once(&site.keyword).chain(&site.aliases) {
-                    sites.entry(path.as_str().into()).or_default().push(id);
-                }
-            }
-            let leaves: Box<[bool]> = schema_units
-                .iter()
-                .map(|&(first, count)| {
-                    units[first..first + count].iter().all(|unit| {
-                        matches!(unit.kind, Kind::Leaf | Kind::Direct(_) | Kind::NotOfType(_))
-                    })
-                })
-                .collect();
-            let item_runs = schema_units
-                .iter()
-                .zip(&schemas)
-                .zip(&leaves)
-                .map(|((&(first, count), schema), &leaf)| {
-                    leaf && schema.annotations.is_none()
-                        && units[first..first + count]
-                            .iter()
-                            .all(|unit| unit.annotations.is_none())
-                })
-                .collect();
-            Built {
-                sites,
-                schemas: schemas.into_boxed_slice(),
-                functions: tables.functions.into_boxed_slice(),
-                root_function: tables.root_function,
-                leaves,
-                item_runs,
-                rejects,
-                schema_resources: schema_resources.into_boxed_slice(),
-                resources: tables.resources.into_boxed_slice(),
-                valid_resources: tables.valid_resources.into_boxed_slice(),
-                unevaluated_resources: tables.unevaluated_resources.into_boxed_slice(),
-                schema_units: schema_units.into_boxed_slice(),
-                units,
-                properties: tables.properties.into_boxed_slice(),
-                patterns: tables.patterns.into_boxed_slice(),
-                dependencies: tables.dependencies.into_boxed_slice(),
-                tuples: tables.tuples.into_boxed_slice(),
+            schema_units.push((schema.first, schema.count));
+            schemas.push(locate(base, pointer, at, schema.annotations));
+        }
+        let mut units: Box<[UnitLocation]> = units
+            .into_iter()
+            .map(|unit| unit.expect("every unit belongs to a schema"))
+            .collect();
+        let mut sites: AHashMap<Box<str>, Vec<usize>> = AHashMap::new();
+        for (id, site) in units.iter_mut().chain(schemas.iter_mut()).enumerate() {
+            site.site = id;
+            for path in std::iter::once(&site.keyword).chain(&site.aliases) {
+                sites.entry(path.as_str().into()).or_default().push(id);
             }
         }
-    }
-
-    /// `Tree::evaluate` for one JSON representation, compiled here rather than in each crate
-    /// with a generated validator.
-    pub trait Walk: Json {
-        fn evaluate(
-            tree: &'static Tree<Self>,
-            instance: &Self::Node<'_>,
-            errors: &[ValidationError<'_>],
-        ) -> Evaluation;
-
-        /// The evaluation of `instance` with every unit reporting its own errors, of which there
-        /// are none when the instance is `valid`.
-        fn evaluate_reporting(
-            tree: &'static Tree<Self>,
-            instance: &Self::Node<'_>,
-            valid: bool,
-        ) -> Evaluation {
-            tree.walk(instance, &[], !valid)
+        Built {
+            sites,
+            schemas: schemas.into_boxed_slice(),
+            functions: tables.functions.into_boxed_slice(),
+            root_function: tables.root_function,
+            resources: tables.resources.into_boxed_slice(),
+            keeps_scope: tables.keeps_scope,
+            schema_units: schema_units.into_boxed_slice(),
+            units,
         }
-    }
-
-    impl Walk for crate::SerdeJson {
-        fn evaluate(
-            tree: &'static Tree<Self>,
-            instance: &Self::Node<'_>,
-            errors: &[ValidationError<'_>],
-        ) -> Evaluation {
-            tree.walk(instance, errors, false)
-        }
-    }
-
-    #[cfg(feature = "pyo3")]
-    impl Walk for crate::json::Pyo3 {
-        fn evaluate(
-            tree: &'static Tree<Self>,
-            instance: &Self::Node<'_>,
-            errors: &[ValidationError<'_>],
-        ) -> Evaluation {
-            tree.walk(instance, errors, false)
-        }
-    }
-
-    #[cfg(feature = "magnus")]
-    impl Walk for crate::json::Magnus {
-        fn evaluate(
-            tree: &'static Tree<Self>,
-            instance: &Self::Node<'_>,
-            errors: &[ValidationError<'_>],
-        ) -> Evaluation {
-            tree.walk(instance, errors, false)
-        }
-    }
-
-    struct Walker<'t, 'e, 'i, F: Json> {
-        built: &'static Built,
-        matchers: &'t [Matcher],
-        valid: &'t [Validity<F>],
-        guards: &'t [Guard<F>],
-        discriminators: &'t [Candidates<F>],
-        not_of_type: &'t [NotOfType<F>],
-        direct: &'t [Direct<F>],
-        /// Whether units report their own errors, as the instance fails; without it they take the
-        /// errors run's, if there is one.
-        checks: bool,
-        unevaluated: &'t [Unevaluated<F>],
-        unevaluated_errors: &'t [SubschemaErrors<F>],
-        stacks: Option<ScopeStacks>,
-        errors: Vec<&'e ValidationError<'i>>,
-        /// Whether each site, by `UnitLocation::site`, has errors at one of its schema locations, so
-        /// one without builds no visit key; empty without errors.
-        reported: Vec<bool>,
-        /// Indices into `errors` by the visit that reports them.
-        by_visit: Visits<'e>,
-        arena: EvaluationArena,
-        /// The rebases of the `$ref`s the walk is below, the outermost first.
-        rebases: Vec<Rebase>,
-        /// The code the walk is in, an index of `Built::functions`: the innermost static `$ref`
-        /// target's, `None` at the root and below a reference through the dynamic scope.
-        function: Option<usize>,
-        /// Each schema a reference through the dynamic scope entered, with the address of its
-        /// instance location.
-        active: Vec<(usize, usize)>,
-        /// The dynamic scope: the resources references left, the outermost first.
-        scope: Vec<usize>,
-        /// Evaluation paths below a `$ref`, built once per rebase and unit after the first
-        /// `EVALUATION_PATH_CACHE_THRESHOLD`, which small instances do not repay.
-        rebased_paths: RefCell<AHashMap<RebasedPath, Location>>,
-        rebased_calls: Cell<u32>,
-        rebase_ids: RefCell<AHashMap<RebaseIdentity, usize>>,
-        /// Reused for the instance location of each visit with errors.
-        instance_location: Cell<String>,
     }
 
     /// A unit's evaluation path below a `$ref`: its rebase, and the address of its keyword
@@ -2917,26 +2471,6 @@ pub mod generated {
         site: usize,
         /// Its identity, set on first use; `0` before.
         id: Cell<usize>,
-    }
-
-    /// How a reference reaches its target.
-    #[derive(Clone, Copy)]
-    enum Through {
-        /// The dynamic scope, to another schema than its static target, whose code guards every
-        /// entry.
-        Scope,
-        /// Statically, into the code at that index of `Built::functions`.
-        Function(usize),
-    }
-
-    /// The cycle guard a reference entered its target under.
-    enum Entered {
-        /// None: the code the walk is in calls the target without one.
-        Unguarded,
-        /// An entry of `Walker::active`.
-        Scope,
-        /// That entry of `Tree::guards`.
-        Guard(usize),
     }
 
     /// The sites with errors at one of their schema locations, and each visit's errors by index
@@ -2990,7 +2524,7 @@ pub mod generated {
     enum Visits<'e> {
         /// In report order.
         Scan(Vec<Visit<'e>>),
-        /// Indices into `Walker::errors` by visit.
+        /// Indices into `Evaluator::errors` by visit.
         Keyed(AHashMap<Visit<'e>, Reported>),
     }
 
@@ -3013,13 +2547,13 @@ pub mod generated {
         }
     }
 
-    /// Where the walk reaches a unit. The visits of one unit below a `$ref` cycle, or for each
+    /// Where the evaluation reaches a unit. The visits of one unit below a `$ref` cycle, or for each
     /// item of an array, share its schema location.
     #[derive(PartialEq, Eq, Hash)]
     struct Visit<'e> {
         evaluation_path: &'e str,
         instance_location: &'e str,
-        /// A name is walked at its object's location; its value tells the names apart.
+        /// A name is evaluated at its object's location; its value tells the names apart.
         string: Option<&'e str>,
     }
 
@@ -3046,173 +2580,585 @@ pub mod generated {
         }
     }
 
-    impl<F: Json> Walker<'_, '_, '_, F> {
-        #[inline]
-        fn schema(
-            &mut self,
-            index: usize,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            if self.built.leaves[index] {
-                self.leaves(index, instance, location, position)
-            } else {
-                self.applicators(index, instance, location, position)
+    /// The units and schemas a generated `evaluate` reports, located on first use.
+    pub struct Sites {
+        /// The JSON the generator writes.
+        pub tables: &'static str,
+        /// Set when the generated code resolves references through the dynamic scope.
+        pub scope: Option<ScopeStacks>,
+        pub built: OnceLock<Built>,
+    }
+
+    impl Sites {
+        /// An evaluation whose units report their own errors, of which there are none when the
+        /// instance is `valid`.
+        pub fn checking(&'static self, valid: bool) -> Evaluator<'static, 'static> {
+            Evaluator::new(self.built(), self.scope, !valid, false, Vec::new())
+        }
+
+        /// An evaluation whose units report the `errors` of the schema's errors run.
+        pub fn reporting<'e, 'i>(
+            &'static self,
+            errors: &'e [ValidationError<'i>],
+        ) -> Evaluator<'e, 'i> {
+            let mut flat = Vec::with_capacity(errors.len());
+            flatten(errors, &mut flat);
+            Evaluator::new(self.built(), self.scope, false, true, flat)
+        }
+
+        fn built(&'static self) -> &'static Built {
+            self.built.get_or_init(|| build(self.tables))
+        }
+    }
+
+    /// Builds the output of a generated `evaluate`, for the code the generator emits per schema.
+    pub struct Evaluator<'e, 'i> {
+        built: &'static Built,
+        /// Whether units report their own errors, as the instance fails.
+        checks: bool,
+        /// Whether units take their errors from the errors run instead.
+        reporting: bool,
+        stacks: Option<ScopeStacks>,
+        errors: Vec<&'e ValidationError<'i>>,
+        /// Whether each site, by `UnitLocation::site`, has errors at one of its schema locations, so
+        /// one without builds no visit key; empty without errors.
+        reported: Vec<bool>,
+        /// Indices into `errors` by the visit that reports them.
+        by_visit: Visits<'e>,
+        arena: EvaluationArena,
+        /// The rebases of the `$ref`s the evaluation is below, the outermost first.
+        rebases: Vec<Rebase>,
+        /// The code the evaluation is in, an index of `Built::functions`: the innermost static
+        /// `$ref` target's, `Built::root_function` at the root, `None` below a reference through
+        /// the dynamic scope.
+        function: Option<usize>,
+        /// Each schema a reference through the dynamic scope entered, with the address of its
+        /// instance location.
+        active: Vec<(usize, usize)>,
+        /// The dynamic scope: the resources references left, the outermost first.
+        scope: Vec<usize>,
+        /// Evaluation paths below a `$ref`, built once per rebase and unit after the first
+        /// `EVALUATION_PATH_CACHE_THRESHOLD`, which small instances do not repay.
+        rebased_paths: RefCell<AHashMap<RebasedPath, Location>>,
+        rebased_calls: Cell<u32>,
+        rebase_ids: RefCell<AHashMap<RebaseIdentity, usize>>,
+        /// Reused for the instance location of each visit with errors.
+        instance_location: Cell<String>,
+    }
+
+    /// The schemas references through the dynamic scope entered, set aside while a name is
+    /// evaluated at its object's location.
+    pub struct ActiveTargets(Vec<(usize, usize)>);
+
+    impl<'e, 'i> Evaluator<'e, 'i> {
+        fn new(
+            built: &'static Built,
+            stacks: Option<ScopeStacks>,
+            checks: bool,
+            reporting: bool,
+            errors: Vec<&'e ValidationError<'i>>,
+        ) -> Self {
+            let paths: Vec<&str> = errors
+                .iter()
+                .map(|error| error.evaluation_path().as_str())
+                .collect();
+            let (reported, by_visit) = index(built, &errors, &paths);
+            Evaluator {
+                built,
+                checks,
+                reporting,
+                stacks,
+                errors,
+                reported,
+                by_visit,
+                arena: EvaluationArena::default(),
+                rebases: Vec::new(),
+                function: built.root_function,
+                active: Vec::new(),
+                scope: Vec::new(),
+                rebased_paths: RefCell::default(),
+                rebased_calls: Cell::new(0),
+                rebase_ids: RefCell::default(),
+                instance_location: Cell::default(),
             }
         }
 
-        /// A schema with units other than leaves.
-        #[inline(never)]
-        fn applicators(
+        /// The evaluation whose root output unit is `root`.
+        #[must_use]
+        pub fn finish(self, root: EvaluationNode) -> Evaluation {
+            Evaluation::with_root(self.arena, root)
+        }
+
+        /// Whether units report their own errors.
+        #[inline]
+        #[must_use]
+        pub fn checks(&self) -> bool {
+            self.checks
+        }
+
+        /// Records the position of the instance at `location`, one segment below `parent`.
+        #[cfg_attr(debug_assertions, inline)]
+        pub fn position_below(
             &mut self,
-            index: usize,
+            parent: InstancePosition,
+            location: &LazyLocation,
+        ) -> InstancePosition {
+            self.arena.position_below(parent, location.segment())
+        }
+
+        /// `list` with `node` added.
+        #[cfg_attr(debug_assertions, inline)]
+        #[must_use]
+        pub fn push(&mut self, mut list: ChildList, node: EvaluationNode) -> ChildList {
+            list.push(&mut self.arena, node);
+            list
+        }
+
+        /// `units` with the node of the leaf unit at `unit` added, with its keyword's annotation
+        /// when `annotated`.
+        #[cfg_attr(debug_assertions, inline)]
+        #[must_use]
+        pub fn leaf(
+            &mut self,
+            mut units: ChildList,
+            unit: usize,
+            errors: Vec<ErrorDescription>,
+            annotated: bool,
+            position: InstancePosition,
+        ) -> ChildList {
+            let site = &self.built.units[unit];
+            let annotations = if annotated {
+                site.annotations.clone()
+            } else {
+                None
+            };
+            let node = self.node(site, errors, annotations, ChildList::default(), position);
+            units.push(&mut self.arena, node);
+            units
+        }
+
+        /// `units` with the node of the single `type` unit at `unit` added, with the error
+        /// `check` words for `instance` when units check.
+        #[cfg_attr(debug_assertions, inline)]
+        #[must_use]
+        pub fn not_of_type<'a, F: Json>(
+            &mut self,
+            units: ChildList,
+            unit: usize,
+            check: fn(&F::Node<'a>) -> Vec<ErrorDescription>,
+            instance: &F::Node<'a>,
+            position: InstancePosition,
+        ) -> ChildList {
+            let errors = if self.checks {
+                check(instance)
+            } else {
+                Vec::new()
+            };
+            self.leaf(units, unit, errors, false, position)
+        }
+
+        /// `units` with the node of the leaf unit at `unit` added, with the errors its keyword's
+        /// code `check` reports for `instance` when units check, and its keyword's annotation when
+        /// `annotated`.
+        #[cfg_attr(debug_assertions, inline)]
+        #[must_use]
+        pub fn checked<'a, F: Json>(
+            &mut self,
+            units: ChildList,
+            unit: usize,
+            check: fn(F::Node<'a>, &LazyLocation, &mut Descriptions) -> bool,
+            instance: &F::Node<'a>,
+            annotated: bool,
+            position: InstancePosition,
+        ) -> ChildList {
+            let errors = if self.checks {
+                let mut errors = Descriptions::default();
+                let _ = check(instance.clone(), &LazyLocation::new(), &mut errors);
+                errors.0
+            } else {
+                Vec::new()
+            };
+            self.leaf(units, unit, errors, annotated, position)
+        }
+
+        /// `units` with the node of the leaf unit at `unit` added, with the errors the errors run
+        /// reports there for `instance` at `location`, and its keyword's annotation when
+        /// `annotated`.
+        #[inline]
+        #[must_use]
+        pub fn reported<F: Json>(
+            &mut self,
+            units: ChildList,
+            unit: usize,
             instance: &F::Node<'_>,
+            location: &LazyLocation,
+            annotated: bool,
+            position: InstancePosition,
+        ) -> ChildList {
+            let errors = self.errors_at::<F>(&self.built.units[unit], instance, location);
+            self.leaf(units, unit, errors, annotated, position)
+        }
+
+        /// `units` with the node of the unit at `unit`, over `children`, added.
+        #[cfg_attr(debug_assertions, inline)]
+        #[must_use]
+        pub fn unit(
+            &mut self,
+            mut units: ChildList,
+            unit: usize,
+            errors: Vec<ErrorDescription>,
+            annotations: Option<Annotations>,
+            children: ChildList,
+            position: InstancePosition,
+        ) -> ChildList {
+            let node = self.node(
+                &self.built.units[unit],
+                errors,
+                annotations,
+                children,
+                position,
+            );
+            units.push(&mut self.arena, node);
+            units
+        }
+
+        /// The node of the schema at `schema`, over its `units`.
+        #[cfg_attr(debug_assertions, inline)]
+        #[must_use]
+        pub fn schema(
+            &self,
+            schema: usize,
+            errors: Vec<ErrorDescription>,
+            units: ChildList,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let site = &self.built.schemas[schema];
+            self.node(site, errors, site.annotations.clone(), units, position)
+        }
+
+        /// The errors the errors run reports at the unit at `unit` for the instance at `location`.
+        #[must_use]
+        pub fn unit_errors<F: Json>(
+            &self,
+            unit: usize,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+        ) -> Vec<ErrorDescription> {
+            self.errors_at::<F>(&self.built.units[unit], instance, location)
+        }
+
+        /// The errors the errors run reports at the schema at `schema` itself.
+        #[must_use]
+        pub fn schema_errors<F: Json>(
+            &self,
+            schema: usize,
+            instance: &F::Node<'_>,
+            location: &LazyLocation,
+        ) -> Vec<ErrorDescription> {
+            self.errors_at::<F>(&self.built.schemas[schema], instance, location)
+        }
+
+        /// The error of the `false` schema at `schema` for `value` at `location`, when units check.
+        #[must_use]
+        pub fn rejection<F: Json>(
+            &self,
+            schema: usize,
+            value: &F::Node<'_>,
+            location: &LazyLocation,
+        ) -> Vec<ErrorDescription> {
+            if self.checks {
+                vec![rejection::<F>(&self.built.schemas[schema], value, location)]
+            } else {
+                Vec::new()
+            }
+        }
+
+        /// The `false` subschema at `schema` failing for `value` at `location`.
+        #[must_use]
+        pub fn rejected<F: Json>(
+            &self,
+            schema: usize,
+            value: &F::Node<'_>,
             location: &LazyLocation,
             position: InstancePosition,
         ) -> EvaluationNode {
-            let built = self.built;
-            let (first, count) = built.schema_units[index];
+            let site = &self.built.schemas[schema];
+            let errors = vec![rejection::<F>(site, value, location)];
+            self.node(site, errors, None, ChildList::default(), position)
+        }
+
+        /// Moves the items `run` holds onto `children`, as one run of the schema at `schema`, which
+        /// has leaf units only and annotates nothing, over the array at `parent`.
+        #[inline]
+        fn end_run(
+            &mut self,
+            children: &mut ChildList,
+            run: &mut PendingRun,
+            units: &mut Option<RunUnits>,
+            schema: usize,
+            parent: InstancePosition,
+        ) {
+            if run.is_empty() {
+                return;
+            }
+            let units = *units.get_or_insert_with(|| self.run_units(schema));
+            children.push_run(&mut self.arena, parent, run, units);
+        }
+
+        /// The units each valid item of the leaf schema at `schema` reports, below the current
+        /// `$ref`s.
+        #[inline]
+        fn run_units(&mut self, schema: usize) -> RunUnits {
+            let site = &self.built.schemas[schema];
+            let latest = if self.rebases.is_empty() {
+                self.arena.latest_run_units(schema, &site.keyword)
+            } else {
+                self.arena
+                    .latest_run_units(schema, &self.rebased_path(site))
+            };
+            latest.unwrap_or_else(|| self.add_run_units(schema))
+        }
+
+        /// Records the units [`Self::run_units`] finds no latest ones for.
+        #[cold]
+        #[inline(never)]
+        fn add_run_units(&mut self, schema: usize) -> RunUnits {
+            let (first, count) = self.built.schema_units[schema];
+            let shared: Vec<RunUnit> = std::iter::once(&self.built.schemas[schema])
+                .chain(&self.built.units[first..first + count])
+                .map(|site| RunUnit {
+                    evaluation_path: self.evaluation_path(site),
+                    schema_location: Arc::clone(&site.schema),
+                })
+                .collect();
+            self.arena.add_run_units(schema, shared)
+        }
+
+        /// `units` with the node of the static reference unit at `unit` added, which evaluates its
+        /// target with `evaluate`.
+        #[inline]
+        #[must_use]
+        pub fn reference<'a, F: Json>(
+            &mut self,
+            mut units: ChildList,
+            unit: usize,
+            guard: Option<fn(&F::Node<'a>, bool) -> bool>,
+            evaluate: fn(&mut Self, F::Node<'a>, &LazyLocation, InstancePosition) -> EvaluationNode,
+            instance: F::Node<'a>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> ChildList {
+            let reference = self.built.units[unit].reference;
+            let pushed = if self.built.keeps_scope {
+                self.pushed(reference.leaves, reference.caller)
+            } else {
+                None
+            };
+            let node = self
+                .reference_node::<F>(unit, guard, pushed, evaluate, instance, location, position);
+            units.push(&mut self.arena, node);
+            units
+        }
+
+        /// The node of the schema at `schema`, whose only unit is a static reference, which
+        /// evaluates its target with `evaluate`.
+        #[inline]
+        pub fn reference_schema<'a, F: Json>(
+            &mut self,
+            schema: usize,
+            guard: Option<fn(&F::Node<'a>, bool) -> bool>,
+            evaluate: fn(&mut Self, F::Node<'a>, &LazyLocation, InstancePosition) -> EvaluationNode,
+            instance: F::Node<'a>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let errors = if self.reporting {
+                self.errors_at::<F>(&self.built.schemas[schema], &instance, location)
+            } else {
+                Vec::new()
+            };
+            let (unit, _) = self.built.schema_units[schema];
+            let units = self.reference::<F>(
+                ChildList::default(),
+                unit,
+                guard,
+                evaluate,
+                instance,
+                location,
+                position,
+            );
+            self.schema(schema, errors, units, position)
+        }
+
+        /// `units` with the node of the schema-form `items` or `additionalItems` unit at `unit`
+        /// added, applying the schema at `schema`, whose only unit is a static reference, to each
+        /// item of the array `instance` from `skip` on.
+        #[must_use]
+        pub fn reference_items<'a, F: Json>(
+            &mut self,
+            units: ChildList,
+            unit: usize,
+            schema: usize,
+            skip: usize,
+            guard: Option<fn(&F::Node<'a>, bool) -> bool>,
+            evaluate: fn(&mut Self, F::Node<'a>, &LazyLocation, InstancePosition) -> EvaluationNode,
+            instance: &F::Node<'a>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> ChildList {
+            let Some(array) = instance.as_array() else {
+                return self.unit(
+                    units,
+                    unit,
+                    Vec::new(),
+                    None,
+                    ChildList::default(),
+                    position,
+                );
+            };
+            let len = array.len();
             let mut children = ChildList::default();
-            // Whether the instance is valid under `if`, which picks `then` or `else`.
-            let mut passed = false;
-            for site in &built.units[first..first + count] {
-                let node = match site.kind {
-                    Kind::Leaf => {
-                        let errors = self.errors_at(site, instance, location);
-                        let annotations = site.annotations(instance.is_string());
-                        self.node(site, errors, annotations, ChildList::default(), position)
+            for (index, item) in array.elements().enumerate().skip(skip) {
+                let path = location.push(index);
+                let below = self.position_below(position, &path);
+                let child = self.reference_schema::<F>(schema, guard, evaluate, item, &path, below);
+                children.push(&mut self.arena, child);
+            }
+            let annotations = Some(Annotations::boolean(len > skip));
+            self.unit(units, unit, Vec::new(), annotations, children, position)
+        }
+
+        /// The node of the reference unit at `unit` entering its static target, `pushed` joining
+        /// the dynamic scope. Code reaching the target while it compiles enters it under its
+        /// `guard`.
+        #[inline]
+        pub fn reference_node<'a, F: Json>(
+            &mut self,
+            unit: usize,
+            guard: Option<fn(&F::Node<'a>, bool) -> bool>,
+            pushed: Option<usize>,
+            evaluate: fn(&mut Self, F::Node<'a>, &LazyLocation, InstancePosition) -> EvaluationNode,
+            instance: F::Node<'a>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            let Reference {
+                target, function, ..
+            } = self.built.units[unit].reference;
+            self.enter_reference(unit, target, pushed);
+            let guarded = guard.filter(|_| self.compiling(function));
+            let node = if guarded.is_some_and(|guard| guard(&instance, true)) {
+                self.reentered(target, position)
+            } else {
+                let outer = self.function.replace(function);
+                let node = match guarded {
+                    Some(guard) => {
+                        let node = evaluate(self, instance.clone(), location, position);
+                        guard(&instance, false);
+                        node
                     }
-                    Kind::NotOfType(check) => {
-                        let errors = self.not_of_type(check, instance);
-                        let annotations = site.annotations(instance.is_string());
-                        self.node(site, errors, annotations, ChildList::default(), position)
-                    }
-                    Kind::Direct(direct) => {
-                        let errors = self.direct_errors(direct, instance);
-                        let annotations = site.annotations(instance.is_string());
-                        self.node(site, errors, annotations, ChildList::default(), position)
-                    }
-                    Kind::Properties {
-                        declared,
-                        in_member_order,
-                    } => self.properties(
-                        site,
-                        declared,
-                        in_member_order,
-                        instance,
-                        location,
-                        position,
-                    ),
-                    Kind::Patterns(patterns) => {
-                        self.patterns(site, patterns, instance, location, position)
-                    }
-                    Kind::Additional {
-                        schema,
-                        closed,
-                        declared,
-                        patterns,
-                    } => self.additional(
-                        site, schema, closed, declared, patterns, instance, location, position,
-                    ),
-                    Kind::Names { schema, closed } => {
-                        self.names(site, schema, closed, instance, location, position)
-                    }
-                    Kind::Dependencies(schemas) => {
-                        self.dependencies(site, schemas, instance, location, position)
-                    }
-                    Kind::Contains {
-                        schema,
-                        valid,
-                        bounds,
-                    } => self.contains(site, schema, valid, bounds, instance, location, position),
-                    Kind::Branches {
-                        schemas,
-                        valid,
-                        discriminator,
-                        exclusive,
-                    } => self.branches(
-                        site,
-                        schemas,
-                        valid,
-                        discriminator,
-                        exclusive,
-                        instance,
-                        location,
-                        position,
-                    ),
-                    Kind::Condition { schema, valid } => {
-                        passed = self.is_valid(valid, instance);
-                        let mut children = ChildList::default();
-                        if passed {
-                            let child = self.schema(schema, instance, location, position);
+                    None => evaluate(self, instance, location, position),
+                };
+                self.function = outer;
+                node
+            };
+            self.leave_reference(pushed.is_some());
+            node
+        }
+
+        /// The node of the reference unit at `unit` landing on `landed` through the dynamic scope,
+        /// `pushed` joining it.
+        pub fn landed<'a, F: Json>(
+            &mut self,
+            unit: usize,
+            landed: usize,
+            pushed: Option<usize>,
+            evaluate: fn(&mut Self, F::Node<'a>, &LazyLocation, InstancePosition) -> EvaluationNode,
+            instance: F::Node<'a>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> EvaluationNode {
+            self.enter_reference(unit, landed, pushed);
+            // In-place applicators pass the same location on, so its address identifies it.
+            let entry = (landed, std::ptr::from_ref(location).addr());
+            let node = if self.active.contains(&entry) {
+                self.reentered(landed, position)
+            } else {
+                self.active.push(entry);
+                let outer = self.function.take();
+                let node = evaluate(self, instance, location, position);
+                self.function = outer;
+                self.active.pop();
+                node
+            };
+            self.leave_reference(pushed.is_some());
+            node
+        }
+
+        /// `units` with the node of the schema-form `items` or `additionalItems` unit at `unit`
+        /// added, applying the schema at `schema`, which joins item runs, to each item of the array
+        /// `instance` from `skip` on, through `leaf_item`.
+        #[must_use]
+        pub fn leaf_items<'a, F: Json>(
+            &mut self,
+            units: ChildList,
+            unit: usize,
+            schema: usize,
+            skip: usize,
+            leaf_item: fn(
+                &mut Self,
+                F::Node<'a>,
+                &LazyLocation,
+                InstancePosition,
+            ) -> Option<EvaluationNode>,
+            instance: &F::Node<'a>,
+            location: &LazyLocation,
+            position: InstancePosition,
+        ) -> ChildList {
+            let Some(array) = instance.as_array() else {
+                return self.unit(
+                    units,
+                    unit,
+                    Vec::new(),
+                    None,
+                    ChildList::default(),
+                    position,
+                );
+            };
+            let len = array.len();
+            let mut children = ChildList::default();
+            if self.reporting || self.checks {
+                let mut run = PendingRun::default();
+                let mut run_units = None;
+                for (index, item) in array.elements().enumerate().skip(skip) {
+                    let path = location.push(index);
+                    match leaf_item(self, item, &path, position) {
+                        Some(child) => {
+                            self.end_run(&mut children, &mut run, &mut run_units, schema, position);
                             children.push(&mut self.arena, child);
                         }
-                        self.node(site, Vec::new(), None, children, position)
+                        None => run.add(index),
                     }
-                    Kind::Ref {
-                        target,
-                        function,
-                        leaves,
-                        ref anchor,
-                        recursive,
-                    } => {
-                        let caller = built.schema_resources[index];
-                        let (landed, pushed) =
-                            self.resolve(target, leaves, anchor.as_deref(), recursive, caller);
-                        // Landing on its static target, it is the static reference.
-                        let through = if landed == target {
-                            Through::Function(function)
-                        } else {
-                            Through::Scope
-                        };
-                        self.reference(site, landed, through, pushed, instance, location, position)
-                    }
-                    Kind::Branch { schema, then } => {
-                        if passed != then {
-                            continue;
-                        }
-                        let child = self.schema(schema, instance, location, position);
-                        let children = ChildList::of(&mut self.arena, child);
-                        self.node(site, Vec::new(), None, children, position)
-                    }
-                    Kind::Tuple(schemas) => self.tuple(site, schemas, instance, location, position),
-                    Kind::Unevaluated {
-                        schema,
-                        closed,
-                        evaluated,
-                    } => self.unevaluated(
-                        site, schema, closed, evaluated, instance, location, position,
-                    ),
-                    Kind::Rest {
-                        schema,
-                        skip,
-                        closed,
-                    } => self.rest(site, schema, skip, closed, instance, location, position),
+                }
+                self.end_run(&mut children, &mut run, &mut run_units, schema, position);
+            } else if len > skip {
+                // Without errors to report, every item joins one run.
+                let mut run = PendingRun {
+                    start: skip,
+                    count: u32::try_from(len - skip).expect("evaluation exceeded u32 run items"),
                 };
-                children.push(&mut self.arena, node);
+                let run_units = self.run_units(schema);
+                children.push_run(&mut self.arena, position, &mut run, run_units);
             }
-            let site = &built.schemas[index];
-            let errors = self.schema_errors(site, built.rejects[index], instance, location);
-            let annotations = site.annotations(true);
-            self.node(site, errors, annotations, children, position)
+            let annotations = Some(Annotations::boolean(len > skip));
+            self.unit(units, unit, Vec::new(), annotations, children, position)
         }
 
-        /// The target's units, reported below the `$ref`.
-        // This and the other `Kind` handlers stay out of line, so the leaf path in `schema` keeps
-        // its values in registers.
-        #[inline(never)]
-        #[allow(clippy::too_many_arguments)]
-        fn reference(
-            &mut self,
-            site: &UnitLocation,
-            target: usize,
-            through: Through,
-            pushed: Option<usize>,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
+        /// Enters the schema at `target` through the reference unit at `unit`: its units report
+        /// below the reference, and `pushed` joins the dynamic scope.
+        #[inline]
+        fn enter_reference(&mut self, unit: usize, target: usize, pushed: Option<usize>) {
+            let site = &self.built.units[unit];
             let rebase = Rebase {
                 strip: self.built.schemas[target].keyword.as_str().len(),
                 prefix: self.evaluation_path(site),
@@ -3221,73 +3167,19 @@ pub mod generated {
             };
             self.rebases.push(rebase);
             self.scope.extend(pushed);
-            let node = match self.enter(target, through, instance, location) {
-                Some(entered) => {
-                    let function = match through {
-                        Through::Scope => None,
-                        Through::Function(function) => Some(function),
-                    };
-                    let outer = std::mem::replace(&mut self.function, function);
-                    let node = self.schema(target, instance, location, position);
-                    self.function = outer;
-                    match entered {
-                        Entered::Unguarded => {}
-                        Entered::Scope => {
-                            self.active.pop();
-                        }
-                        Entered::Guard(guard) => {
-                            (self.guards[guard])(instance, false);
-                        }
-                    }
-                    node
-                }
-                // The runtime's guard reports the reference valid, with nothing below it.
-                None => self.node(
-                    &self.built.schemas[target],
-                    Vec::new(),
-                    None,
-                    ChildList::default(),
-                    position,
-                ),
-            };
-            if pushed.is_some() {
+        }
+
+        /// Leaves the reference entered last, which `pushed` a resource to the dynamic scope.
+        #[inline]
+        fn leave_reference(&mut self, pushed: bool) {
+            if pushed {
                 self.scope.pop();
             }
             self.rebases.pop();
-            node
         }
 
-        /// Enters the target of a reference through `through`, or `None` where the instance is
-        /// being walked through it already.
-        fn enter(
-            &mut self,
-            target: usize,
-            through: Through,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-        ) -> Option<Entered> {
-            match through {
-                Through::Scope => {
-                    // In-place applicators pass the same location on, so its address identifies it.
-                    let entry = (target, std::ptr::from_ref(location).addr());
-                    if self.active.contains(&entry) {
-                        return None;
-                    }
-                    self.active.push(entry);
-                    Some(Entered::Scope)
-                }
-                Through::Function(function) if self.compiling(function) => {
-                    let guard = self.built.functions[function]
-                        .guard
-                        .expect("a target reached while it compiles has a guard");
-                    (!(self.guards[guard])(instance, true)).then_some(Entered::Guard(guard))
-                }
-                Through::Function(_) => Some(Entered::Unguarded),
-            }
-        }
-
-        /// Whether `function` compiled while the code the walk is in did, so that code guards its
-        /// references to it.
+        /// Whether the target code at `function` compiled while the code the evaluation is in did,
+        /// so that code guards its references to it.
         fn compiling(&self, function: usize) -> bool {
             let mut current = self.function;
             while let Some(index) = current {
@@ -3299,74 +3191,36 @@ pub mod generated {
             false
         }
 
-        /// The identity of `rebases[index]`, from the rebase it sits in and its `$ref` unit.
-        fn rebase_id(&self, index: usize) -> usize {
-            let rebase = &self.rebases[index];
-            if rebase.id.get() != 0 {
-                return rebase.id.get();
-            }
-            let outer = index
-                .checked_sub(1)
-                .map_or(0, |outer| self.rebase_id(outer));
-            let mut ids = self.rebase_ids.borrow_mut();
-            let next = ids.len() + 1;
-            let id = *ids
-                .entry(RebaseIdentity {
-                    outer,
-                    site: rebase.site,
-                })
-                .or_insert(next);
-            rebase.id.set(id);
-            id
+        /// The node of the schema at `target` reached again on an instance it is being evaluated
+        /// against: the runtime's guard reports it valid, with nothing below it.
+        fn reentered(&self, target: usize, position: InstancePosition) -> EvaluationNode {
+            self.node(
+                &self.built.schemas[target],
+                Vec::new(),
+                None,
+                ChildList::default(),
+                position,
+            )
         }
 
-        /// Whether `instance` is valid under the subschema of `Tree::valid` entry `valid`.
+        /// The resource a static reference in the resource `caller` adds to the dynamic scope: the
+        /// caller's, when the scope is empty or the reference `leaves` its document.
         #[inline]
-        fn is_valid(&self, valid: usize, instance: &F::Node<'_>) -> bool {
-            let check = self.valid[valid];
-            self.in_scope(&self.built.valid_resources, valid, || check(instance))
+        fn pushed(&self, leaves: bool, caller: usize) -> Option<usize> {
+            (self.scope.is_empty() || leaves).then_some(caller)
         }
 
-        /// Runs generated code, which runs in `resources[index]`, with the generated stacks
-        /// holding the walk's dynamic scope. Under `$recursiveRef`, only the resources from the
-        /// innermost outward while each root has `$recursiveAnchor: true` count.
-        #[inline]
-        fn in_scope<T>(&self, resources: &[usize], index: usize, run: impl FnOnce() -> T) -> T {
-            let Some(stacks) = self.stacks else {
-                return run();
-            };
-            let current = resources[index];
-            let scope = &self.scope;
-            let anchored = scope
-                .iter()
-                .chain([&current])
-                .rev()
-                .take_while(|&&resource| self.built.resources[resource].recursive)
-                .count();
-            let outer = scope.len() + 1 - anchored;
-            for (position, &resource) in scope.iter().enumerate() {
-                (stacks.enter)(resource, position >= outer);
-            }
-            (stacks.enter)(current, anchored > 0);
-            let result = run();
-            (stacks.leave)(current, anchored > 0);
-            for (position, &resource) in scope.iter().enumerate().rev() {
-                (stacks.leave)(resource, position >= outer);
-            }
-            result
-        }
-
-        /// The schema a reference in the resource `caller` lands on, and the resource following it
-        /// adds to the dynamic scope: the caller's, when the scope is empty or the reference leaves
-        /// its document.
-        fn resolve(
-            &self,
-            target: usize,
-            leaves: bool,
-            anchor: Option<&str>,
-            recursive: bool,
-            caller: usize,
-        ) -> (usize, Option<usize>) {
+        /// The schema the reference unit at `unit` lands on, resolving through the dynamic scope
+        /// by `anchor` or under `$recursiveRef` when `recursive`, and the resource following it
+        /// adds to the dynamic scope.
+        #[must_use]
+        pub fn resolve(&self, unit: usize, anchor: Option<&str>, recursive: bool) -> Landing {
+            let Reference {
+                target,
+                leaves,
+                caller,
+                ..
+            } = self.built.units[unit].reference;
             let resources = &self.built.resources;
             if recursive {
                 // Outward through the scope while each resource's root has `$recursiveAnchor: true`.
@@ -3379,11 +3233,17 @@ pub mod generated {
                     landed = (entered.root.expect("a recursive resource's root"), resource);
                 }
                 let pushed = (self.scope.is_empty() || landed.1 != caller).then_some(caller);
-                return (landed.0, pushed);
+                return Landing {
+                    schema: landed.0,
+                    pushed,
+                };
             }
-            let pushed = (self.scope.is_empty() || leaves).then_some(caller);
+            let pushed = self.pushed(leaves, caller);
             let Some(name) = anchor else {
-                return (target, pushed);
+                return Landing {
+                    schema: target,
+                    pushed,
+                };
             };
             // The outermost resource in the scope with that anchor, the pushed one included.
             let found = self.scope.iter().chain(&pushed).find_map(|&resource| {
@@ -3393,7 +3253,110 @@ pub mod generated {
                     .find(|(anchor, _)| anchor == name)
                     .map(|&(_, schema)| schema)
             });
-            (found.unwrap_or(target), pushed)
+            Landing {
+                schema: found.unwrap_or(target),
+                pushed,
+            }
+        }
+
+        /// Sets the targets entered through the dynamic scope aside, for a name evaluated at its
+        /// object's location as a different instance.
+        #[must_use]
+        pub fn take_active(&mut self) -> ActiveTargets {
+            ActiveTargets(std::mem::take(&mut self.active))
+        }
+
+        /// Restores the targets [`Self::take_active`] set aside.
+        pub fn restore_active(&mut self, active: ActiveTargets) {
+            self.active = active.0;
+        }
+
+        /// Puts the evaluation's dynamic scope on the generated stacks, for generated code running
+        /// in `resource`. Under `$recursiveRef`, only the resources from the innermost outward
+        /// while each root has `$recursiveAnchor: true` count.
+        pub fn enter_scope(&self, resource: usize) {
+            if let Some(stacks) = self.stacks {
+                let (outer, anchored) = self.anchored(resource);
+                for (position, &entered) in self.scope.iter().enumerate() {
+                    (stacks.enter)(entered, position >= outer);
+                }
+                (stacks.enter)(resource, anchored);
+            }
+        }
+
+        /// Takes off what [`Self::enter_scope`] put on the generated stacks.
+        pub fn leave_scope(&self, resource: usize) {
+            if let Some(stacks) = self.stacks {
+                let (outer, anchored) = self.anchored(resource);
+                (stacks.leave)(resource, anchored);
+                for (position, &entered) in self.scope.iter().enumerate().rev() {
+                    (stacks.leave)(entered, position >= outer);
+                }
+            }
+        }
+
+        /// Where the scope's `$recursiveRef` entries start, and whether `resource` has one.
+        fn anchored(&self, resource: usize) -> (usize, bool) {
+            let anchored = self
+                .scope
+                .iter()
+                .chain([&resource])
+                .rev()
+                .take_while(|&&entered| self.built.resources[entered].recursive)
+                .count();
+            (self.scope.len() + 1 - anchored, anchored > 0)
+        }
+
+        /// The errors run's errors of an `unevaluated*` subschema, which the errors of the run
+        /// below it come from, located below the current `$ref`s.
+        #[must_use]
+        pub fn nested_errors<'n, 'm>(
+            &self,
+            errors: &'n [ValidationError<'m>],
+        ) -> NestedErrors<'n, 'm> {
+            let mut flat = Vec::with_capacity(errors.len());
+            flatten(errors, &mut flat);
+            let paths = flat
+                .iter()
+                .map(|error| self.rebased_str(error.evaluation_path().as_str()))
+                .collect();
+            NestedErrors {
+                errors: flat,
+                paths,
+            }
+        }
+
+        /// An evaluation continuing this one, with its units reporting `errors`.
+        #[must_use]
+        pub fn nest<'n, 'm>(&mut self, errors: &'n NestedErrors<'_, 'm>) -> Evaluator<'n, 'm> {
+            let paths: Vec<&str> = errors.paths.iter().map(AsRef::as_ref).collect();
+            let (reported, by_visit) = index(self.built, &errors.errors, &paths);
+            Evaluator {
+                built: self.built,
+                checks: self.checks,
+                reporting: self.reporting,
+                stacks: self.stacks,
+                errors: errors.errors.clone(),
+                reported,
+                by_visit,
+                arena: std::mem::take(&mut self.arena),
+                rebases: self.rebases.clone(),
+                function: self.function,
+                active: self.active.clone(),
+                scope: self.scope.clone(),
+                rebased_paths: RefCell::new(self.rebased_paths.take()),
+                rebased_calls: self.rebased_calls.clone(),
+                rebase_ids: RefCell::new(self.rebase_ids.take()),
+                instance_location: Cell::default(),
+            }
+        }
+
+        /// Continues this evaluation after `nested`.
+        pub fn unnest(&mut self, nested: Evaluator<'_, '_>) {
+            self.arena = nested.arena;
+            self.rebased_paths = nested.rebased_paths;
+            self.rebased_calls = nested.rebased_calls;
+            self.rebase_ids = nested.rebase_ids;
         }
 
         #[inline]
@@ -3434,9 +3397,25 @@ pub mod generated {
                 .clone()
         }
 
-        /// The evaluation path of the unit at `keyword`.
-        fn rebased<'k>(&self, keyword: &'k Location) -> Cow<'k, str> {
-            self.rebased_str(keyword.as_str())
+        /// The identity of `rebases[index]`, from the rebase it sits in and its `$ref` unit.
+        fn rebase_id(&self, index: usize) -> usize {
+            let rebase = &self.rebases[index];
+            if rebase.id.get() != 0 {
+                return rebase.id.get();
+            }
+            let outer = index
+                .checked_sub(1)
+                .map_or(0, |outer| self.rebase_id(outer));
+            let mut ids = self.rebase_ids.borrow_mut();
+            let next = ids.len() + 1;
+            let id = *ids
+                .entry(RebaseIdentity {
+                    outer,
+                    site: rebase.site,
+                })
+                .or_insert(next);
+            rebase.id.set(id);
+            id
         }
 
         fn rebased_str<'k>(&self, path: &'k str) -> Cow<'k, str> {
@@ -3450,541 +3429,23 @@ pub mod generated {
             }
         }
 
-        #[inline(never)]
-        fn properties(
-            &mut self,
-            site: &UnitLocation,
-            (first, count): (usize, usize),
-            in_member_order: bool,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let Some(object) = instance.as_object() else {
-                return self.node(site, Vec::new(), None, ChildList::default(), position);
-            };
-            let built = self.built;
-            let declared = &built.properties[first..first + count];
-            let mut matched: Vec<_> = object
-                .members()
-                .filter_map(|(name, value)| {
-                    let name = name.as_ref();
-                    let index = declared.iter().position(|(declared, _)| declared == name)?;
-                    Some((index, value))
-                })
-                .collect();
-            // The runtime looks a few declared names up on a wide object, in declared order.
-            if !in_member_order
-                && count < HASHMAP_THRESHOLD
-                && !scan_members::<F>(object.len(), count)
-            {
-                matched.sort_unstable_by_key(|(index, _)| *index);
-            }
-            let mut names = Vec::with_capacity(matched.len());
-            let mut children = ChildList::default();
-            for (index, value) in matched {
-                let (name, schema) = &declared[index];
-                let schema = *schema;
-                names.push(name.as_str());
-                let path = location.push(name);
-                let below = self.arena.position_below(position, path.segment());
-                let child = self.schema(schema, &value, &path, below);
-                children.push(&mut self.arena, child);
-            }
-            let annotations = Some(Annotations::names(names.into_boxed_slice()));
-            self.node(site, Vec::new(), annotations, children, position)
-        }
-
-        /// Pattern by pattern, the members whose names match it, in member order; a name matching
-        /// two patterns is annotated twice.
-        #[inline(never)]
-        fn patterns(
-            &mut self,
-            site: &UnitLocation,
-            (first, count): (usize, usize),
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let Some(object) = instance.as_object() else {
-                return self.node(site, Vec::new(), None, ChildList::default(), position);
-            };
-            let (built, matchers) = (self.built, self.matchers);
-            let mut names = Vec::new();
-            let mut children = ChildList::default();
-            for pattern in first..first + count {
-                let (schema, matches) = (built.patterns[pattern], matchers[pattern]);
-                for (name, value) in object.members() {
-                    let name = name.as_ref();
-                    if matches(name) {
-                        names.push(Value::String(name.to_owned()));
-                        let path = location.push(name);
-                        let below = self.arena.position_below(position, path.segment());
-                        let child = self.schema(schema, &value, &path, below);
-                        children.push(&mut self.arena, child);
-                    }
-                }
-            }
-            let annotations = Some(Annotations::new(Value::Array(names)));
-            self.node(site, Vec::new(), annotations, children, position)
-        }
-
-        /// The members no sibling `properties` or `patternProperties` names, in member order.
-        /// `false` fails each one; the errors run reports one error for all of them instead.
-        #[allow(clippy::too_many_arguments)]
-        #[inline(never)]
-        fn additional(
-            &mut self,
-            site: &UnitLocation,
-            schema: usize,
-            closed: bool,
-            (first, count): (usize, usize),
-            patterns: (usize, usize),
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let Some(object) = instance.as_object() else {
-                return self.node(site, Vec::new(), None, ChildList::default(), position);
-            };
-            let (built, matchers) = (self.built, self.matchers);
-            let declared = &built.properties[first..first + count];
-            let matchers = &matchers[patterns.0..patterns.0 + patterns.1];
-            let mut names = Vec::new();
-            let mut children = ChildList::default();
-            for (name, value) in object.members() {
-                let name = name.as_ref();
-                if declared.iter().any(|(declared, _)| declared == name)
-                    || matchers.iter().any(|matches| matches(name))
-                {
-                    continue;
-                }
-                let path = location.push(name);
-                let below = self.arena.position_below(position, path.segment());
-                let child = if closed {
-                    self.rejected(&built.schemas[schema], &value, &path, below)
-                } else {
-                    names.push(Value::String(name.to_owned()));
-                    self.schema(schema, &value, &path, below)
-                };
-                children.push(&mut self.arena, child);
-            }
-            let annotations = (!closed).then(|| Annotations::new(Value::Array(names)));
-            self.node(site, Vec::new(), annotations, children, position)
-        }
-
-        /// The items valid under the subschema, annotated by their positions. Count errors are
-        /// the unit's own.
-        #[inline(never)]
-        #[allow(clippy::too_many_arguments)]
-        fn contains(
-            &mut self,
-            site: &UnitLocation,
-            schema: usize,
-            valid: usize,
-            bounds: ContainsBounds,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let Some(array) = instance.as_array() else {
-                return self.node(site, Vec::new(), None, ChildList::default(), position);
-            };
-            let mut errors = self.errors_at(site, instance, location);
-            let mut indices = Vec::new();
-            let mut children = ChildList::default();
-            for (idx, item) in array.elements().enumerate() {
-                if !self.is_valid(valid, &item) {
-                    continue;
-                }
-                indices.push(idx);
-                let path = location.push(idx);
-                let below = self.arena.position_below(position, path.segment());
-                let child = self.schema(schema, &item, &path, below);
-                children.push(&mut self.arena, child);
-            }
-            if self.checks {
-                errors.extend(bounds.error::<F>(indices.len(), instance));
-            }
-            let annotations = (!indices.is_empty()).then(|| Annotations::new(Value::from(indices)));
-            self.node(site, errors, annotations, children, position)
-        }
-
-        /// Each branch applied to the instance: under `anyOf` and `oneOf`, the valid ones if any.
-        /// A `oneOf` error is the unit's own.
-        #[inline(never)]
-        #[allow(clippy::too_many_arguments)]
-        fn branches(
-            &mut self,
-            site: &UnitLocation,
-            (first, count): (usize, usize),
-            valid: Option<usize>,
-            discriminator: Option<usize>,
-            exclusive: bool,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let built = self.built;
-            // The other branches reject the instance's discriminator value.
-            let candidates = discriminator
-                .and_then(|discriminator| (self.discriminators[discriminator])(instance));
-            let accepts = |walker: &Self, valid: usize, offset: usize| {
-                candidates.is_none_or(|candidates| candidates.binary_search(&offset).is_ok())
-                    && walker.is_valid(valid + offset, instance)
-            };
-            let first_valid =
-                valid.and_then(|valid| (0..count).position(|offset| accepts(self, valid, offset)));
-            let mut children = ChildList::default();
-            for (idx, schema) in built.tuples[first..first + count].iter().enumerate() {
-                if let (Some(valid), Some(first_valid)) = (valid, first_valid) {
-                    if idx < first_valid || (idx > first_valid && !accepts(self, valid, idx)) {
-                        continue;
-                    }
-                }
-                let child = self.schema(*schema, instance, location, position);
-                children.push(&mut self.arena, child);
-            }
-            let errors = if self.checks {
-                // Only `oneOf` with several valid branches reports an error of its own.
-                match (valid, first_valid) {
-                    (Some(valid), Some(first_valid))
-                        if exclusive
-                            && (first_valid + 1..count)
-                                .any(|offset| accepts(self, valid, offset)) =>
-                    {
-                        vec![ErrorDescription::from_validation_error(
-                            &ValidationError::one_of_multiple_valid(
-                                Location::new(),
-                                Location::new(),
-                                Location::new(),
-                                instance.lazy_value(),
-                                Vec::new(),
-                            ),
-                        )]
-                    }
-                    _ => Vec::new(),
-                }
-            } else {
-                self.errors_at(site, instance, location)
-            };
-            self.node(site, errors, None, children, position)
-        }
-
-        /// The item at each position with a subschema. The annotation is `true` when every item
-        /// has one, otherwise the largest position.
-        #[inline(never)]
-        fn tuple(
-            &mut self,
-            site: &UnitLocation,
-            (first, count): (usize, usize),
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let Some(array) = instance.as_array().filter(|array| array.len() != 0) else {
-                return self.node(site, Vec::new(), None, ChildList::default(), position);
-            };
-            let built = self.built;
-            let mut children = ChildList::default();
-            for (idx, (item, schema)) in array
-                .elements()
-                .zip(&built.tuples[first..first + count])
-                .enumerate()
-            {
-                let path = location.push(idx);
-                let below = self.arena.position_below(position, path.segment());
-                let child = self.schema(*schema, &item, &path, below);
-                children.push(&mut self.arena, child);
-            }
-            let annotation = if children.len() == array.len() {
-                Value::Bool(true)
-            } else {
-                Value::from(children.len() - 1)
-            };
-            self.node(
-                site,
-                Vec::new(),
-                Some(Annotations::new(annotation)),
-                children,
-                position,
-            )
-        }
-
-        /// Each item from `skip` on. `false` fails each one, where the errors run reports one
-        /// error for all.
-        #[allow(clippy::too_many_arguments)]
-        #[inline(never)]
-        fn rest(
-            &mut self,
-            site: &UnitLocation,
-            schema: usize,
-            skip: usize,
-            closed: bool,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let Some(array) = instance.as_array() else {
-                return self.node(site, Vec::new(), None, ChildList::default(), position);
-            };
-            let built = self.built;
-            let mut children = ChildList::default();
-            if !closed && built.item_runs[schema] {
-                let leaves = built.leaf_schema(schema);
-                let mut run = PendingRun::default();
-                let mut units = None;
-                for (idx, item) in array.elements().enumerate().skip(skip) {
-                    let path = location.push(idx);
-                    if let Some(child) = self.leaf_item(&leaves, &item, &path, position) {
-                        self.end_run(
-                            &mut run,
-                            &mut units,
-                            &leaves,
-                            schema,
-                            position,
-                            &mut children,
-                        );
-                        children.push(&mut self.arena, child);
-                    } else {
-                        run.add(idx);
-                    }
-                }
-                self.end_run(
-                    &mut run,
-                    &mut units,
-                    &leaves,
-                    schema,
-                    position,
-                    &mut children,
-                );
-            } else {
-                let leaves = built.leaves[schema].then(|| built.leaf_schema(schema));
-                for (idx, item) in array.elements().enumerate().skip(skip) {
-                    let path = location.push(idx);
-                    let below = self.arena.position_below(position, path.segment());
-                    let child = if closed {
-                        self.rejected(&built.schemas[schema], &item, &path, below)
-                    } else if let Some(leaves) = &leaves {
-                        // Each item runs the same small schema, so its walk stays in the loop.
-                        self.leaves_of(leaves, &item, &path, below)
-                    } else {
-                        self.applicators(schema, &item, &path, below)
-                    };
-                    children.push(&mut self.arena, child);
-                }
-            }
-            let annotation = Annotations::boolean(array.len() > skip);
-            self.node(site, Vec::new(), Some(annotation), children, position)
-        }
-
-        /// Missing required names are the unit's own errors; each present property with a
-        /// subschema applies it to the object, in declared order.
-        /// The subschema for each member or item the schema leaves unevaluated; `false` fails each.
-        /// Its errors are the unit's own.
-        #[allow(clippy::too_many_arguments)]
-        #[inline(never)]
-        fn unevaluated(
-            &mut self,
-            site: &UnitLocation,
-            schema: usize,
-            closed: bool,
-            evaluated: usize,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let errors = self.errors_at(site, instance, location);
-            let unevaluated = self.unevaluated[evaluated];
-            let positions = self.in_scope(&self.built.unevaluated_resources, evaluated, || {
-                unevaluated(instance)
-            });
-            let mut positions = positions.iter().peekable();
-            let mut children = ChildList::default();
-            if let Some(object) = instance.as_object() {
-                for (index, (name, value)) in object.members().enumerate() {
-                    if positions.next_if_eq(&&index).is_some() {
-                        let path = location.push(name.as_ref());
-                        let child =
-                            self.applied(schema, closed, evaluated, &value, &path, position);
-                        children.push(&mut self.arena, child);
-                    }
-                }
-            } else if let Some(array) = instance.as_array() {
-                for (index, item) in array.elements().enumerate() {
-                    if positions.next_if_eq(&&index).is_some() {
-                        let path = location.push(index);
-                        let child = self.applied(schema, closed, evaluated, &item, &path, position);
-                        children.push(&mut self.arena, child);
-                    }
-                }
-            }
-            self.node(site, errors, None, children, position)
-        }
-
-        /// The subschema at `path` below `position`, or its rejection when it is `false`.
-        #[allow(clippy::too_many_arguments)]
-        fn applied(
-            &mut self,
-            schema: usize,
-            closed: bool,
-            evaluated: usize,
-            value: &F::Node<'_>,
-            path: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let below = self.arena.position_below(position, path.segment());
-            if closed {
-                return self.rejected(&self.built.schemas[schema], value, path, below);
-            }
-            let unevaluated_errors = self.unevaluated_errors[evaluated];
-            let errors = self.in_scope(&self.built.unevaluated_resources, evaluated, || {
-                unevaluated_errors(value, path)
-            });
-            if errors.is_empty() {
-                return self.schema(schema, value, path, below);
-            }
-            // Its errors, reported at the evaluation paths the walk gives their keywords.
-            let mut flat = Vec::with_capacity(errors.len());
-            flatten(&errors, &mut flat);
-            let rebased: Vec<Cow<'_, str>> = flat
-                .iter()
-                .map(|error| self.rebased_str(error.evaluation_path().as_str()))
-                .collect();
-            let paths: Vec<&str> = rebased.iter().map(AsRef::as_ref).collect();
-            let (reported, by_visit) = index(self.built, &flat, &paths);
-            let mut nested: Walker<'_, '_, '_, F> = Walker {
-                built: self.built,
-                matchers: self.matchers,
-                valid: self.valid,
-                guards: self.guards,
-                discriminators: self.discriminators,
-                not_of_type: self.not_of_type,
-                direct: self.direct,
-                checks: self.checks,
-                unevaluated: self.unevaluated,
-                unevaluated_errors: self.unevaluated_errors,
-                stacks: self.stacks,
-                errors: flat,
-                reported,
-                by_visit,
-                arena: std::mem::take(&mut self.arena),
-                rebases: self.rebases.clone(),
-                function: self.function,
-                active: self.active.clone(),
-                scope: self.scope.clone(),
-                rebased_paths: RefCell::new(self.rebased_paths.take()),
-                rebased_calls: self.rebased_calls.clone(),
-                rebase_ids: RefCell::new(self.rebase_ids.take()),
-                instance_location: Cell::default(),
-            };
-            let node = nested.schema(schema, value, path, below);
-            self.arena = nested.arena;
-            self.rebased_paths = nested.rebased_paths;
-            self.rebased_calls = nested.rebased_calls;
-            self.rebase_ids = nested.rebase_ids;
-            node
-        }
-
-        #[inline(never)]
-        fn dependencies(
-            &mut self,
-            site: &UnitLocation,
-            (first, count): (usize, usize),
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let Some(object) = instance.as_object() else {
-                return self.node(site, Vec::new(), None, ChildList::default(), position);
-            };
-            let errors = self.errors_at(site, instance, location);
-            let built = self.built;
-            let mut children = ChildList::default();
-            for (name, schema) in &built.dependencies[first..first + count] {
-                if object.get(&F::prepare_key(name)).is_some() {
-                    let child = self.schema(*schema, instance, location, position);
-                    children.push(&mut self.arena, child);
-                }
-            }
-            self.node(site, errors, None, children, position)
-        }
-
-        /// Each name at the object's location, matched with the errors whose instance is that
-        /// name. `false` fails each name, where the errors run reports one error for all.
-        #[inline(never)]
-        fn names(
-            &mut self,
-            site: &UnitLocation,
-            schema: usize,
-            closed: bool,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let Some(object) = instance.as_object() else {
-                return self.node(site, Vec::new(), None, ChildList::default(), position);
-            };
-            let built = self.built;
-            let mut children = ChildList::default();
-            let mut buffer = F::StringBuffer::default();
-            // A schema of leaf units holds no reference, so no cycle guard sees the name.
-            let leaves = built.leaves[schema];
-            let ControlFlow::Continue(()) =
-                object.try_for_each_name_node::<Infallible>(&mut buffer, |name| {
-                    let child = if closed {
-                        self.rejected(&built.schemas[schema], &name, location, position)
-                    } else if leaves {
-                        self.leaves_inline(schema, &name, location, position)
-                    } else {
-                        // The name is walked at the object's location, as a different instance.
-                        let outer_active = std::mem::take(&mut self.active);
-                        let child = self.applicators(schema, &name, location, position);
-                        self.active = outer_active;
-                        child
-                    };
-                    children.push(&mut self.arena, child);
-                    ControlFlow::Continue(())
-                });
-            self.node(site, Vec::new(), None, children, position)
-        }
-
-        #[inline]
-        fn direct_errors(&self, direct: usize, instance: &F::Node<'_>) -> Vec<ErrorDescription> {
-            if !self.checks {
-                return Vec::new();
-            }
-            let mut errors = Descriptions::default();
-            let _ = (self.direct[direct])(instance.clone(), &LazyLocation::new(), &mut errors);
-            errors.0
-        }
-
-        #[inline]
-        fn not_of_type(&self, check: usize, instance: &F::Node<'_>) -> Vec<ErrorDescription> {
-            if self.checks {
-                (self.not_of_type[check])(instance)
-            } else {
-                Vec::new()
-            }
-        }
-
         /// The errors reported at `site` or its alias for the instance at `location`, in the order
         /// they were reported.
         #[inline]
-        fn errors_at(
+        fn errors_at<F: Json>(
             &self,
             site: &UnitLocation,
             instance: &F::Node<'_>,
             location: &LazyLocation,
         ) -> Vec<ErrorDescription> {
             if self.reported.get(site.site).copied().unwrap_or(false) {
-                self.reported_errors_at(site, instance, location)
+                self.reported_errors_at::<F>(site, instance, location)
             } else {
                 Vec::new()
             }
         }
 
-        fn reported_errors_at(
+        fn reported_errors_at<F: Json>(
             &self,
             site: &UnitLocation,
             instance: &F::Node<'_>,
@@ -4002,7 +3463,7 @@ pub mod generated {
                     buffer
                 });
                 let string = string.get_or_insert_with(|| instance.as_string());
-                let evaluation_path = self.rebased(path);
+                let evaluation_path = self.rebased_str(path.as_str());
                 let visit = Visit {
                     evaluation_path: &evaluation_path,
                     instance_location: instance_location.as_str(),
@@ -4040,213 +3501,7 @@ pub mod generated {
             Vec::new()
         }
 
-        /// The `false` subschema at `site` failing for `value`, at `location`.
-        fn rejected(
-            &self,
-            site: &UnitLocation,
-            value: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let errors = vec![rejection::<F>(site, value, location)];
-            self.node(site, errors, None, ChildList::default(), position)
-        }
-
-        /// The errors of the schema at `site` itself, `false` when it `rejects`, for the instance
-        /// at `location`.
-        #[allow(clippy::inline_always)]
-        #[inline(always)]
-        fn schema_errors(
-            &self,
-            site: &UnitLocation,
-            rejects: bool,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-        ) -> Vec<ErrorDescription> {
-            // Units report their own errors where they check the instance, so none is reported.
-            if !self.checks {
-                self.errors_at(site, instance, location)
-            } else if rejects {
-                vec![rejection::<F>(site, instance, location)]
-            } else {
-                Vec::new()
-            }
-        }
-
-        /// A schema with leaf units only, which no reference below it can re-enter.
-        #[inline(never)]
-        fn leaves(
-            &mut self,
-            index: usize,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            self.leaves_inline(index, instance, location, position)
-        }
-
-        /// [`Self::leaves`] in the caller, for loops walking one schema many times.
-        #[allow(clippy::inline_always)]
-        #[inline(always)]
-        fn leaves_inline(
-            &mut self,
-            index: usize,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let schema = self.built.leaf_schema(index);
-            self.leaves_of(&schema, instance, location, position)
-        }
-
-        /// The schema at `index`, of leaf `units` only.
-        #[allow(clippy::inline_always)]
-        #[inline(always)]
-        fn leaves_of(
-            &mut self,
-            schema: &LeafSchema<'_>,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            position: InstancePosition,
-        ) -> EvaluationNode {
-            let string = instance.is_string();
-            let mut children = ChildList::default();
-            for site in schema.units {
-                let errors = self.leaf_errors(site, instance, location);
-                let node = self.node(
-                    site,
-                    errors,
-                    site.annotations(string),
-                    ChildList::default(),
-                    position,
-                );
-                children.push(&mut self.arena, node);
-            }
-            let errors = self.schema_errors(schema.site, schema.rejects, instance, location);
-            self.node(
-                schema.site,
-                errors,
-                schema.site.annotations(true),
-                children,
-                position,
-            )
-        }
-
-        /// The leaf `schema`, which annotates nothing, at an item of the array at `parent`: `None`
-        /// when no unit reports an error, as the item then joins a run and needs no position.
-        #[allow(clippy::inline_always)]
-        #[inline(always)]
-        fn leaf_item(
-            &mut self,
-            schema: &LeafSchema<'_>,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-            parent: InstancePosition,
-        ) -> Option<EvaluationNode> {
-            // Set once a unit reports an error: the item's position, and the units walked so far.
-            let mut reported = None;
-            for (offset, site) in schema.units.iter().enumerate() {
-                let errors = self.leaf_errors(site, instance, location);
-                if reported.is_none() && errors.is_empty() {
-                    continue;
-                }
-                let (position, walked) = reported.get_or_insert_with(|| {
-                    self.reporting_nothing(&schema.units[..offset], parent, location)
-                });
-                let node = self.node(site, errors, None, ChildList::default(), *position);
-                walked.push(&mut self.arena, node);
-            }
-            let errors = self.schema_errors(schema.site, schema.rejects, instance, location);
-            let (position, children) = match reported {
-                Some(reported) => reported,
-                None if errors.is_empty() => return None,
-                None => self.reporting_nothing(schema.units, parent, location),
-            };
-            Some(self.node(schema.site, errors, None, children, position))
-        }
-
-        /// The position of the item at `location` in the array at `parent`, and the nodes of
-        /// `units` there, which report no error and no annotation.
-        #[cold]
-        #[inline(never)]
-        fn reporting_nothing(
-            &mut self,
-            units: &[UnitLocation],
-            parent: InstancePosition,
-            location: &LazyLocation,
-        ) -> (InstancePosition, ChildList) {
-            let position = self.arena.position_below(parent, location.segment());
-            let mut children = ChildList::default();
-            for site in units {
-                let node = self.node(site, Vec::new(), None, ChildList::default(), position);
-                children.push(&mut self.arena, node);
-            }
-            (position, children)
-        }
-
-        /// Moves the items `run` holds onto `children`, as one run of the leaf `schema` at `index`
-        /// over the array at `parent`.
-        #[inline]
-        fn end_run(
-            &mut self,
-            run: &mut PendingRun,
-            units: &mut Option<RunUnits>,
-            schema: &LeafSchema<'_>,
-            index: usize,
-            parent: InstancePosition,
-            children: &mut ChildList,
-        ) {
-            if run.is_empty() {
-                return;
-            }
-            let units = *units.get_or_insert_with(|| self.run_units(schema, index));
-            children.push_run(&mut self.arena, parent, run, units);
-        }
-
-        /// The units each valid item of the leaf `schema` at `index` reports, below the current
-        /// `$ref`s.
-        #[inline]
-        fn run_units(&mut self, schema: &LeafSchema<'_>, index: usize) -> RunUnits {
-            let latest = if self.rebases.is_empty() {
-                self.arena.latest_run_units(index, &schema.site.keyword)
-            } else {
-                self.arena
-                    .latest_run_units(index, &self.rebased_path(schema.site))
-            };
-            latest.unwrap_or_else(|| self.add_run_units(schema, index))
-        }
-
-        /// Records the units [`Self::run_units`] finds no latest ones for.
-        #[cold]
-        #[inline(never)]
-        fn add_run_units(&mut self, schema: &LeafSchema<'_>, index: usize) -> RunUnits {
-            let shared: Vec<RunUnit> = std::iter::once(schema.site)
-                .chain(schema.units)
-                .map(|site| RunUnit {
-                    evaluation_path: self.evaluation_path(site),
-                    schema_location: Arc::clone(&site.schema),
-                })
-                .collect();
-            self.arena.add_run_units(index, shared)
-        }
-
-        /// The errors of the leaf unit at `site` for the instance at `location`.
-        #[allow(clippy::inline_always)]
-        #[inline(always)]
-        fn leaf_errors(
-            &self,
-            site: &UnitLocation,
-            instance: &F::Node<'_>,
-            location: &LazyLocation,
-        ) -> Vec<ErrorDescription> {
-            match site.kind {
-                Kind::NotOfType(check) => self.not_of_type(check, instance),
-                Kind::Direct(direct) => self.direct_errors(direct, instance),
-                _ => self.errors_at(site, instance, location),
-            }
-        }
-
-        // With `#[inline]` alone it stays a call per node in the walk's loops.
+        // With `#[inline]` alone it stays a call per node in the generated loops.
         #[allow(clippy::inline_always)]
         #[inline(always)]
         fn node(
@@ -4257,36 +3512,144 @@ pub mod generated {
             children: ChildList,
             position: InstancePosition,
         ) -> EvaluationNode {
-            let path = self.evaluation_path(site);
-            if errors.is_empty() && children.all_valid() {
-                EvaluationNode::valid(
-                    path,
-                    site.absolute.clone(),
-                    Arc::clone(&site.schema),
-                    position,
-                    annotations,
-                    children,
-                )
+            let valid = errors.is_empty() && children.all_valid();
+            // A failing unit's annotations are dropped.
+            let (annotations, dropped_annotations) = if valid {
+                (annotations, None)
             } else {
-                EvaluationNode::invalid(
-                    path,
-                    site.absolute.clone(),
-                    Arc::clone(&site.schema),
-                    position,
-                    annotations,
-                    errors,
-                    children,
-                )
+                (None, annotations)
+            };
+            EvaluationNode {
+                keyword_location: self.evaluation_path(site),
+                absolute_keyword_location: site.absolute.clone(),
+                schema_location: Arc::clone(&site.schema),
+                instance_location: position,
+                valid,
+                annotations,
+                dropped_annotations,
+                errors,
+                first_child: children.first,
+                next_sibling: NO_NODE,
             }
         }
     }
 
-    impl UnitLocation {
-        fn annotations(&self, string: bool) -> Option<Annotations> {
-            self.annotations
-                .clone()
-                .filter(|_| string || !self.strings_only)
-        }
+    /// The errors an `unevaluated*` subschema's units report, with their evaluation paths.
+    pub struct NestedErrors<'n, 'm> {
+        errors: Vec<&'n ValidationError<'m>>,
+        paths: Vec<Cow<'n, str>>,
+    }
+
+    /// Where a reference through the dynamic scope lands.
+    pub struct Landing {
+        /// The schema's index.
+        pub schema: usize,
+        /// The resource following the reference adds to the dynamic scope.
+        pub pushed: Option<usize>,
+    }
+
+    /// The names of the declared properties an object has, as a `properties` annotation.
+    #[must_use]
+    pub fn names(names: Vec<&'static str>) -> Annotations {
+        Annotations::names(names.into_boxed_slice())
+    }
+
+    /// An annotation of `values`.
+    #[must_use]
+    pub fn values(values: Vec<Value>) -> Annotations {
+        Annotations::new(Value::Array(values))
+    }
+
+    /// The positions of the items `contains` matched, as its annotation.
+    #[must_use]
+    pub fn indices(indices: Vec<usize>) -> Annotations {
+        Annotations::new(Value::from(indices))
+    }
+
+    /// The error of an array with `count` items matching `contains`, if that count fails its
+    /// `minContains` and `maxContains`.
+    #[must_use]
+    pub fn contains_errors<F: Json>(
+        count: usize,
+        min: Option<u64>,
+        max: Option<u64>,
+        instance: &F::Node<'_>,
+    ) -> Vec<ErrorDescription> {
+        ContainsBounds { min, max }
+            .error::<F>(count, instance)
+            .into_iter()
+            .collect()
+    }
+
+    /// The annotation `value`.
+    #[must_use]
+    pub fn boolean(value: bool) -> Annotations {
+        Annotations::boolean(value)
+    }
+
+    /// The annotation of an array-form `items` or `prefixItems` whose `children` are the items of
+    /// an array of `len` with a subschema: `true` when every item had one, otherwise the largest
+    /// position.
+    #[must_use]
+    pub fn tuple(children: ChildList, len: usize) -> Annotations {
+        let applied = children.len();
+        Annotations::new(if applied == len {
+            Value::Bool(true)
+        } else {
+            Value::from(applied - 1)
+        })
+    }
+
+    /// Whether `properties` checks the declared names of an object of `members` in declared order:
+    /// the runtime looks a few declared names up on a wide object.
+    #[inline]
+    #[must_use]
+    pub fn in_declared_order<F: Json>(members: usize, declared: usize) -> bool {
+        declared < HASHMAP_THRESHOLD && !scan_members::<F>(members, declared)
+    }
+
+    /// Whether the branch at `branch` of a discriminated `anyOf` or `oneOf` may accept the
+    /// instance, given the `candidates` its discriminator value leaves.
+    #[inline]
+    #[must_use]
+    pub fn candidate(candidates: Option<&[usize]>, branch: usize) -> bool {
+        candidates.is_none_or(|candidates| candidates.binary_search(&branch).is_ok())
+    }
+
+    /// Whether several branches accept the instance.
+    #[inline]
+    #[must_use]
+    pub fn several(accepts: &[bool]) -> bool {
+        accepts.iter().filter(|accepts| **accepts).nth(1).is_some()
+    }
+
+    /// Orders the `(declared index, value)` matches of `properties` by declared index.
+    pub fn sort_declared<T>(matched: &mut [(usize, T)]) {
+        matched.sort_unstable_by_key(|(index, _)| *index);
+    }
+
+    /// The error of a `oneOf` with several branches accepting `instance`.
+    #[must_use]
+    pub fn one_of_multiple_valid<F: Json>(instance: &F::Node<'_>) -> Vec<ErrorDescription> {
+        vec![ErrorDescription::from_validation_error(
+            &ValidationError::one_of_multiple_valid(
+                Location::new(),
+                Location::new(),
+                Location::new(),
+                instance.lazy_value(),
+                Vec::new(),
+            ),
+        )]
+    }
+
+    /// The errors of a leaf unit for `instance`, from its keyword's errors code `check`.
+    pub fn leaf_errors<N>(
+        check: fn(N, &LazyLocation, &mut Descriptions) -> bool,
+        instance: N,
+    ) -> Vec<ErrorDescription> {
+        let mut errors = Descriptions::default();
+        let _ = check(instance, &LazyLocation::new(), &mut errors);
+        errors.0
     }
 }
 

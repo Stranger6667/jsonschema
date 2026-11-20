@@ -81,12 +81,6 @@ enum DirectErrors {
     NotOfType(String),
 }
 
-/// A leaf unit's check among the generated ones of its shape.
-enum DirectSlot {
-    NotOfType(usize),
-    Reported(usize),
-}
-
 /// The `minContains` and `maxContains` beside a `contains`.
 struct ContainsBounds {
     min: Option<u64>,
@@ -645,7 +639,8 @@ impl Tree {
             // `not` reports its error alone.
             if let Some(negated) = keywords.get("not") {
                 let mut unit = Unit::new("not");
-                // Checked apart from the walk, its subschema has no scope to resolve references in.
+                // Checked apart from the evaluation, its subschema has no scope to resolve
+                // references in.
                 if !references(negated) {
                     unit.check = Some(LeafCheck {
                         schema: json!({"not": negated}),
@@ -1081,176 +1076,85 @@ pub(super) fn compile<E: ValueEmitter>(
         .flatten();
     let without_errors_run = direct.is_some();
     let direct = direct.unwrap_or_default();
-    // Each check's place among the generated checks of its shape.
-    let mut shapes = (0, 0);
-    let direct_slots: Vec<DirectSlot> = direct
-        .iter()
-        .map(|(_, errors)| match errors {
-            DirectErrors::NotOfType(_) => {
-                shapes.0 += 1;
-                DirectSlot::NotOfType(shapes.0 - 1)
-            }
-            DirectErrors::Reported(_) => {
-                shapes.1 += 1;
-                DirectSlot::Reported(shapes.1 - 1)
-            }
-        })
-        .collect();
     let schemas: Vec<Value> = tree
         .schemas
-        .into_iter()
+        .iter()
         .map(|schema| {
             let mut entry = json!({
                 "pointer": schema.pointer,
                 "first": schema.first,
                 "count": schema.count,
             });
-            if let Some(annotations) = schema.annotations {
-                entry["annotations"] = annotations;
+            if let Some(annotations) = &schema.annotations {
+                entry["annotations"] = annotations.clone();
             }
             if schema.resource != 0 {
                 entry["resource"] = json!(schema.resource);
             }
-            if let Some(base) = schema.base {
+            if let Some(base) = &schema.base {
                 entry["base"] = json!(base);
             }
             if schema.default_base {
                 entry["default_base"] = json!(true);
             }
-            if let Some(at) = schema.at {
+            if let Some(at) = &schema.at {
                 entry["at"] = json!(at);
-            }
-            if schema.rejects {
-                entry["rejects"] = json!(true);
             }
             entry
         })
         .collect();
-    // A reference through the dynamic scope landing elsewhere enters there under a guard of its
-    // own; landing on its static target, it enters it as a `$ref` does.
-    let entered_statically: HashSet<usize> = tree
-        .units
-        .iter()
-        .filter_map(|unit| match unit {
-            TreeUnit::Ref { function, .. } => Some(*function),
-            _ => None,
-        })
-        .collect();
+    // Every unit's location is its keyword below its schema's; a leaf unit may also report the
+    // errors of other keywords and annotate strings, and a reference names its static target.
     let units: Vec<Value> = tree
         .units
-        .into_iter()
-        .map(|unit| match unit {
-            TreeUnit::Leaf(unit) => {
-                let mut entry = json!({"keyword": unit.keyword});
-                match unit.direct.map(|index| &direct_slots[index]) {
-                    Some(DirectSlot::NotOfType(slot)) => entry["not_of_type"] = json!(slot),
-                    Some(DirectSlot::Reported(slot)) => entry["direct"] = json!(slot),
-                    None => {}
-                }
-                if let Some(alias) = unit.alias {
-                    entry["aliases"] = json!([alias]);
-                }
-                if let Some(annotation) = unit.string_annotation {
-                    entry["strings"] = annotation;
-                }
-                entry
-            }
-            TreeUnit::Properties {
-                declared,
-                in_member_order,
-            } => {
-                json!({"keyword": "properties", "properties": declared, "members": in_member_order})
-            }
-            TreeUnit::Patterns(patterns) => {
-                json!({"keyword": "patternProperties", "patterns": patterns})
-            }
-            TreeUnit::Additional {
-                schema,
-                closed,
-                declared,
-                patterns,
-            } => json!({
-                "keyword": "additionalProperties",
-                "additional": schema,
-                "closed": closed,
-                "properties": declared,
-                "patterns": patterns,
-            }),
-            TreeUnit::Names { schema, closed } => {
-                json!({"keyword": "propertyNames", "names": schema, "closed": closed})
-            }
-            TreeUnit::Dependencies { keyword, schemas } => {
-                json!({"keyword": keyword, "dependencies": schemas})
-            }
-            TreeUnit::Tuple { keyword, schemas } => json!({"keyword": keyword, "tuple": schemas}),
-            TreeUnit::Branches {
-                keyword,
-                schemas,
-                valid,
-                discriminator,
-            } => {
-                let mut entry = json!({"keyword": keyword, "branches": schemas, "valid": valid});
-                if let Some(discriminator) = discriminator {
-                    entry["discriminator"] = json!(discriminator);
-                }
-                entry
-            }
-            TreeUnit::Condition { schema, valid } => {
-                json!({"keyword": "if", "condition": [schema, valid]})
-            }
-            TreeUnit::Branch { keyword, schema } => json!({"keyword": keyword, "branch": schema}),
-            TreeUnit::Ref {
+        .iter()
+        .map(|unit| {
+            if let TreeUnit::Ref {
                 keyword,
                 target,
                 function,
                 leaves,
-                anchor,
-                recursive,
-            } => {
+                ..
+            } = unit
+            {
                 let mut entry = json!({"keyword": keyword, "target": target, "function": function});
-                let mut scope = Map::new();
-                if leaves {
-                    scope.insert("leaves".to_string(), json!(true));
+                if *leaves {
+                    entry["leaves"] = json!(true);
                 }
-                if let Some(anchor) = anchor {
-                    scope.insert("anchor".to_string(), json!(anchor));
-                }
-                if recursive {
-                    scope.insert("recursive".to_string(), json!(true));
-                }
-                if !scope.is_empty() {
-                    entry["scope"] = Value::Object(scope);
-                }
-                entry
+                return entry;
             }
-            // The errors run reports the count errors at the bound keywords, unless the unit
-            // counts the matching items itself.
-            TreeUnit::Contains {
-                schema,
-                valid,
-                bounds: ContainsBounds { min, max },
-            } => json!({
-                "keyword": "contains",
-                "contains": [schema, valid],
-                "aliases": ["minContains", "maxContains"],
-                "bounds": {"min": min, "max": max},
-            }),
-            TreeUnit::Rest {
-                keyword,
-                schema,
-                skip,
-                closed,
-            } => json!({"keyword": keyword, "rest": schema, "skip": skip, "closed": closed}),
-            TreeUnit::Unevaluated {
-                keyword,
-                schema,
-                closed,
-                evaluated,
-            } => json!({
-                "keyword": keyword,
-                "unevaluated": [schema, evaluated],
-                "closed": closed,
-            }),
+            let (keyword, aliases, strings) = match unit {
+                TreeUnit::Leaf(unit) => (
+                    unit.keyword.as_str(),
+                    unit.alias.map(|alias| vec![alias]).unwrap_or_default(),
+                    unit.string_annotation.as_ref(),
+                ),
+                // The errors run reports the count errors at the bound keywords.
+                TreeUnit::Contains { .. } => ("contains", vec!["minContains", "maxContains"], None),
+                TreeUnit::Properties { .. } => ("properties", Vec::new(), None),
+                TreeUnit::Patterns(_) => ("patternProperties", Vec::new(), None),
+                TreeUnit::Additional { .. } => ("additionalProperties", Vec::new(), None),
+                TreeUnit::Names { .. } => ("propertyNames", Vec::new(), None),
+                TreeUnit::Condition { .. } => ("if", Vec::new(), None),
+                TreeUnit::Branches { keyword, .. }
+                | TreeUnit::Branch { keyword, .. }
+                | TreeUnit::Ref { keyword, .. }
+                | TreeUnit::Tuple { keyword, .. }
+                | TreeUnit::Rest { keyword, .. }
+                | TreeUnit::Dependencies { keyword, .. }
+                | TreeUnit::Unevaluated { keyword, .. } => (*keyword, Vec::new(), None),
+            };
+            if aliases.is_empty() && strings.is_none() {
+                return json!(keyword);
+            }
+            let mut entry = json!({"keyword": keyword});
+            if !aliases.is_empty() {
+                entry["aliases"] = json!(aliases);
+            }
+            if let Some(annotation) = strings {
+                entry["strings"] = annotation.clone();
+            }
+            entry
         })
         .collect();
     let mut tables = json!({"schemas": schemas, "units": units});
@@ -1271,9 +1175,20 @@ pub(super) fn compile<E: ValueEmitter>(
             })
             .collect();
     }
+    // A reference through the dynamic scope landing elsewhere enters there under a guard of its
+    // own; landing on its static target, it enters it as a `$ref` does.
+    let entered_statically: HashSet<usize> = tree
+        .units
+        .iter()
+        .filter_map(|unit| match unit {
+            TreeUnit::Ref { function, .. } => Some(*function),
+            _ => None,
+        })
+        .collect();
     // A `$ref` re-entering a target while the target's code compiles enters it under the guard
     // that code shares with its own references to the target.
     let mut guarded = Vec::new();
+    let mut guards = HashMap::new();
     let functions: Vec<Value> = tree
         .functions
         .iter()
@@ -1289,7 +1204,7 @@ pub(super) fn compile<E: ValueEmitter>(
                 within = ctx.compiled_within.get(outer).and_then(Option::as_ref);
             }
             if entered_statically.contains(&id) && ctx.reentered_targets.contains(location) {
-                entry["guard"] = json!(guarded.len());
+                guards.insert(id, format_ident!("__guard_{}", guarded.len()));
                 guarded.push(format_ident!(
                     "{}",
                     ctx.is_valid_fns
@@ -1310,39 +1225,21 @@ pub(super) fn compile<E: ValueEmitter>(
     {
         tables["root_function"] = json!(function);
     }
+    let scope = scope_stacks(ctx, &tree.resources);
+    let dynamic = tree.units.iter().any(|unit| {
+        matches!(unit, TreeUnit::Ref { anchor, recursive, .. } if anchor.is_some() || *recursive)
+    });
+    if scope.is_some() || dynamic {
+        tables["keeps_scope"] = json!(true);
+    }
     if !guarded.is_empty() {
         ctx.uses_ref_cycle = true;
     }
-    let guards: Vec<_> = (0..guarded.len())
+    let guard_names: Vec<_> = (0..guarded.len())
         .map(|index| format_ident!("__guard_{index}"))
         .collect();
     let node = E::node_param(None);
     let node_address = E::node_address(format_ident!("instance"));
-    let scope = scope_stacks(ctx, &tree.resources);
-    if scope.is_some() {
-        if !tree.valid_resources.is_empty() {
-            tables["valid_resources"] = json!(tree.valid_resources);
-        }
-        if !tree.unevaluated_resources.is_empty() {
-            tables["unevaluated_resources"] = json!(tree.unevaluated_resources);
-        }
-    }
-    if !tree.properties.is_empty() {
-        tables["properties"] = json!(tree.properties);
-    }
-    if !tree.tuples.is_empty() {
-        tables["tuples"] = json!(tree.tuples);
-    }
-    if !tree.dependencies.is_empty() {
-        tables["dependencies"] = json!(tree.dependencies);
-    }
-    if !tree.patterns.is_empty() {
-        tables["patterns"] = json!(tree
-            .patterns
-            .iter()
-            .map(|(schema, _)| schema)
-            .collect::<Vec<_>>());
-    }
     let matchers: Vec<_> = (0..tree.patterns.len())
         .map(|index| format_ident!("__matches_{index}"))
         .collect();
@@ -1375,15 +1272,13 @@ pub(super) fn compile<E: ValueEmitter>(
     }
     let tables = tables.to_string();
     let json = E::json_representation();
-    let mut type_checks = Vec::new();
-    let mut type_names = Vec::new();
-    let mut reported_checks = Vec::new();
-    let mut reported_names = Vec::new();
-    for (index, (is_valid, errors)) in direct.iter().enumerate() {
-        match errors {
+    let direct_checks = direct
+        .iter()
+        .enumerate()
+        .map(|(index, (is_valid, errors))| match errors {
             DirectErrors::NotOfType(message) => {
                 let name = format_ident!("__not_of_type_{index}");
-                type_checks.push(quote! {
+                quote! {
                     fn #name(
                         instance: &<#json as jsonschema::json::Json>::Node<'_>,
                     ) -> Vec<__eval::ErrorDescription> {
@@ -1399,12 +1294,11 @@ pub(super) fn compile<E: ValueEmitter>(
                             format!(#message, __eval::instance_value::<#json>(instance)),
                         )]
                     }
-                });
-                type_names.push(name);
+                }
             }
             DirectErrors::Reported(errors) => {
                 let name = format_ident!("__direct_{index}");
-                reported_checks.push(quote! {
+                quote! {
                     fn #name<'__i>(
                         instance: #borrowed_node,
                         __path: &__paths::LazyLocation,
@@ -1416,24 +1310,64 @@ pub(super) fn compile<E: ValueEmitter>(
                         }
                         false
                     }
-                });
-                reported_names.push(name);
+                }
             }
-        }
-    }
-    let run = if without_errors_run {
-        quote! { <#json as __eval::Walk>::evaluate_reporting(&__TREE, &instance, is_valid(instance)) }
-    } else {
-        quote! {
-            let mut __errors = __err::Errors::new(false);
-            let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
-            <#json as __eval::Walk>::evaluate(&__TREE, &instance, &__errors.into_vec())
-        }
-    };
+        });
     let scope_field = if scope.is_some() {
         quote! { Some(__eval::ScopeStacks { enter: __enter_resource, leave: __leave_resource }) }
     } else {
         quote! { None }
+    };
+    let item_runs: Vec<bool> = tree
+        .schemas
+        .iter()
+        .map(|schema| {
+            schema.annotations.is_none()
+                && tree.units[schema.first..schema.first + schema.count]
+                    .iter()
+                    .all(|unit| {
+                        matches!(unit, TreeUnit::Leaf(unit) if unit.string_annotation.is_none())
+                    })
+        })
+        .collect();
+    let code = Code {
+        tree: &tree,
+        not_of_type: direct
+            .iter()
+            .map(|(_, errors)| matches!(errors, DirectErrors::NotOfType(_)))
+            .collect(),
+        reporting: !without_errors_run,
+        scoped: scope.is_some(),
+        guards,
+        item_runs,
+        callable: callable(&tree),
+    };
+    let schema_fns = (0..tree.schemas.len())
+        .filter(|&index| code.callable[index])
+        .map(|index| code.schema_fn::<E>(index));
+    let mut runs = BTreeSet::new();
+    for unit in &tree.units {
+        if let TreeUnit::Rest {
+            schema,
+            closed: false,
+            ..
+        } = unit
+        {
+            if code.item_runs[*schema] {
+                runs.insert(*schema);
+            }
+        }
+    }
+    let leaf_item_fns = runs.into_iter().map(|index| code.leaf_item_fn::<E>(index));
+    let entry = if without_errors_run {
+        quote! { let mut __e = __SITES.checking(is_valid(instance)); }
+    } else {
+        quote! {
+            let mut __errors = __err::Errors::new(false);
+            let _ = errors(instance, &__paths::LazyLocation::new(), &mut __errors);
+            let __errors = __errors.into_vec();
+            let mut __e = __SITES.reporting(&__errors);
+        }
     };
     Ok(quote! {
         #scope
@@ -1446,7 +1380,10 @@ pub(super) fn compile<E: ValueEmitter>(
             }
         )*
         #(
-            fn #guards(instance: &<#json as jsonschema::json::Json>::Node<'_>, enter: bool) -> bool {
+            fn #guard_names(
+                instance: &<#json as jsonschema::json::Json>::Node<'_>,
+                enter: bool,
+            ) -> bool {
                 let instance = ::core::clone::Clone::clone(instance);
                 #prelude
                 __eval::guard(
@@ -1456,8 +1393,7 @@ pub(super) fn compile<E: ValueEmitter>(
                 )
             }
         )*
-        #(#type_checks)*
-        #(#reported_checks)*
+        #(#direct_checks)*
         #(
             fn #discriminators(
                 instance: &<#json as jsonschema::json::Json>::Node<'_>,
@@ -1480,7 +1416,11 @@ pub(super) fn compile<E: ValueEmitter>(
                 __path: &__paths::LazyLocation,
             ) -> Vec<__VE<'static>> {
                 let mut __errors = __err::Errors::new(false);
-                let _ = #unevaluated_errors_bodies(::core::clone::Clone::clone(instance), __path, &mut __errors);
+                let _ = #unevaluated_errors_bodies(
+                    ::core::clone::Clone::clone(instance),
+                    __path,
+                    &mut __errors,
+                );
                 __errors.into_vec().into_iter().map(__VE::to_owned).collect()
             }
             fn #unevaluated_errors_bodies<'__i>(
@@ -1493,20 +1433,22 @@ pub(super) fn compile<E: ValueEmitter>(
                 false
             }
         )*
-        static __TREE: __eval::Tree<#json> = __eval::Tree {
+        type __J = #json;
+        #(#schema_fns)*
+        #(#leaf_item_fns)*
+        static __SITES: __eval::Sites = __eval::Sites {
             tables: #tables,
-            matchers: &[#(#matchers),*],
-            valid: &[#(#validities),*],
-            guards: &[#(#guards),*],
-            discriminators: &[#(#discriminators),*],
-            not_of_type: &[#(#type_names),*],
-            direct: &[#(#reported_names),*],
-            unevaluated: &[#(#unevaluated),*],
-            unevaluated_errors: &[#(#unevaluated_errors),*],
             scope: #scope_field,
             built: ::std::sync::OnceLock::new(),
         };
-        #run
+        #entry
+        let __root = __evaluate_0(
+            &mut __e,
+            instance,
+            &__paths::LazyLocation::new(),
+            __eval::InstancePosition::ROOT,
+        );
+        __e.finish(__root)
     })
 }
 
@@ -1562,9 +1504,989 @@ fn direct_checks<E: ValueEmitter>(
     Some(direct)
 }
 
+/// What the code of every schema shares.
+struct Code<'t> {
+    tree: &'t Tree,
+    /// Whether each leaf check is a single `type`'s, which words its error itself.
+    not_of_type: Vec<bool>,
+    /// Units take their errors from the errors run instead of checking the instance themselves.
+    reporting: bool,
+    /// Generated validity code runs with the evaluation's dynamic scope on the generated stacks.
+    scoped: bool,
+    /// The guard of each reference target's code, by index of `Tree::functions`.
+    guards: HashMap<usize, proc_macro2::Ident>,
+    /// Whether each schema has leaf units only and nothing in it annotates, so its valid items
+    /// join runs.
+    item_runs: Vec<bool>,
+    /// Whether each schema has a function of its own: one many places reach. Every other schema's
+    /// code sits in the one place reaching it.
+    callable: Vec<bool>,
+}
+
+impl Code<'_> {
+    fn evaluate_fn(index: usize) -> proc_macro2::Ident {
+        format_ident!("__evaluate_{index}")
+    }
+
+    fn leaf_item_name(index: usize) -> proc_macro2::Ident {
+        format_ident!("__leaf_item_{index}")
+    }
+
+    /// The node of the schema at `schema` for `instance` at `__path` and `__position`.
+    fn child<E: ValueEmitter>(&self, schema: usize) -> TokenStream {
+        if self.callable[schema] {
+            let name = Self::evaluate_fn(schema);
+            return quote! { #name(__e, instance, __path, __position) };
+        }
+        if let Some((target, function)) = self.static_reference(schema) {
+            // The runtime's code for a schema whose only unit is a static reference.
+            let guard = self.guard(function);
+            let evaluate = Self::evaluate_fn(target);
+            return quote! {
+                __e.reference_schema::<__J>(
+                    #schema,
+                    #guard,
+                    #evaluate,
+                    instance,
+                    __path,
+                    __position,
+                )
+            };
+        }
+        let body = self.body::<E>(schema);
+        quote! {{ #body }}
+    }
+
+    /// The static target and its code, of the schema at `schema` whose only unit is a reference
+    /// to it.
+    fn static_reference(&self, schema: usize) -> Option<(usize, usize)> {
+        let entry = &self.tree.schemas[schema];
+        if entry.count != 1 || entry.rejects {
+            return None;
+        }
+        match &self.tree.units[entry.first] {
+            TreeUnit::Ref {
+                target,
+                function,
+                anchor: None,
+                recursive: false,
+                ..
+            } => Some((*target, *function)),
+            _ => None,
+        }
+    }
+
+    /// The guard argument of a reference into the code at `function`.
+    fn guard(&self, function: usize) -> TokenStream {
+        self.guards
+            .get(&function)
+            .map_or_else(|| quote! { None }, |guard| quote! { Some(#guard) })
+    }
+
+    /// The check of the subschema at `Tree::valid` entry `valid` for `instance`.
+    fn validity(&self, valid: usize) -> TokenStream {
+        let check = format_ident!("__valid_{valid}");
+        if self.scoped {
+            let resource = self.tree.valid_resources[valid];
+            quote! {{
+                __e.enter_scope(#resource);
+                let __valid = #check(&instance);
+                __e.leave_scope(#resource);
+                __valid
+            }}
+        } else {
+            quote! { #check(&instance) }
+        }
+    }
+
+    /// The errors of the leaf `unit` at `index` for `instance`.
+    fn leaf_errors(&self, unit: &Unit, index: usize) -> TokenStream {
+        if self.reporting {
+            return Self::unit_errors(index);
+        }
+        let check = unit.direct.expect("every leaf unit checks itself");
+        if self.not_of_type[check] {
+            let check = format_ident!("__not_of_type_{check}");
+            quote! { if __e.checks() { #check(&instance) } else { Vec::new() } }
+        } else {
+            let check = format_ident!("__direct_{check}");
+            quote! { if __e.checks() { __eval::leaf_errors(#check, instance) } else { Vec::new() } }
+        }
+    }
+
+    /// The errors the errors run reports at the unit at `index`.
+    fn unit_errors(index: usize) -> TokenStream {
+        quote! { __e.unit_errors::<__J>(#index, &instance, __path) }
+    }
+
+    /// The errors of the schema at `index` itself for `instance`.
+    fn schema_errors(&self, index: usize) -> TokenStream {
+        if self.reporting {
+            quote! { __e.schema_errors::<__J>(#index, &instance, __path) }
+        } else if self.tree.schemas[index].rejects {
+            quote! { __e.rejection::<__J>(#index, &instance, __path) }
+        } else {
+            quote! { Vec::new() }
+        }
+    }
+
+    /// The code evaluating the schema at `index` for `instance` at `__path` and `__position`.
+    fn body<E: ValueEmitter>(&self, index: usize) -> TokenStream {
+        let schema = &self.tree.schemas[index];
+        let prelude = E::function_prelude();
+        let units = (schema.first..schema.first + schema.count).map(|unit| self.unit::<E>(unit));
+        let errors = self.schema_errors(index);
+        quote! {
+            #prelude
+            let mut __units = __eval::ChildList::default();
+            #(#units)*
+            __e.schema(#index, #errors, __units, __position)
+        }
+    }
+
+    /// The function evaluating the schema at `index`.
+    fn schema_fn<E: ValueEmitter>(&self, index: usize) -> TokenStream {
+        let name = Self::evaluate_fn(index);
+        let node = E::node_param(Some(quote! { '__i }));
+        let body = self.body::<E>(index);
+        quote! {
+            fn #name<'__i>(
+                __e: &mut __eval::Evaluator<'_, '_>,
+                instance: #node,
+                __path: &__paths::LazyLocation,
+                __position: __eval::InstancePosition,
+            ) -> __eval::EvaluationNode {
+                #body
+            }
+        }
+    }
+
+    /// The function evaluating the schema at `index`, which joins item runs, at an item of the
+    /// array at `__parent`: `None` when nothing reports an error.
+    fn leaf_item_fn<E: ValueEmitter>(&self, index: usize) -> TokenStream {
+        let schema = &self.tree.schemas[index];
+        let name = Self::leaf_item_name(index);
+        let node = E::node_param(Some(quote! { '__i }));
+        let prelude = E::function_prelude();
+        let units: Vec<usize> = (schema.first..schema.first + schema.count).collect();
+        let errors: Vec<_> = units
+            .iter()
+            .map(|&unit| format_ident!("__errors_{unit}"))
+            .collect();
+        let checks = units.iter().map(|&unit| {
+            let TreeUnit::Leaf(leaf) = &self.tree.units[unit] else {
+                unreachable!("an item run's schema has leaf units only")
+            };
+            self.leaf_errors(leaf, unit)
+        });
+        let schema_errors = self.schema_errors(index);
+        quote! {
+            fn #name<'__i>(
+                __e: &mut __eval::Evaluator<'_, '_>,
+                instance: #node,
+                __path: &__paths::LazyLocation,
+                __parent: __eval::InstancePosition,
+            ) -> Option<__eval::EvaluationNode> {
+                #prelude
+                #(let #errors = #checks;)*
+                let __errors = #schema_errors;
+                if #(#errors.is_empty() &&)* __errors.is_empty() {
+                    return None;
+                }
+                let __position = __e.position_below(__parent, __path);
+                let mut __units = __eval::ChildList::default();
+                #(__units = __e.leaf(__units, #units, #errors, false, __position);)*
+                Some(__e.schema(#index, __errors, __units, __position))
+            }
+        }
+    }
+
+    /// Code adding the node of the unit at `index` to `__units`.
+    fn unit<E: ValueEmitter>(&self, index: usize) -> TokenStream {
+        let empty = quote! {
+            __units = __e.unit(
+                __units,
+                #index,
+                Vec::new(),
+                None,
+                __eval::ChildList::default(),
+                __position,
+            )
+        };
+        // Below a member or an item, `instance`, `__path` and `__position` are its own.
+        let below = quote! {
+            let __member = __path.push(__name);
+            let __path = &__member;
+            let __position = __e.position_below(__position, __path);
+        };
+        let below_item = quote! {
+            let __member = __path.push(__idx);
+            let __path = &__member;
+            let __position = __e.position_below(__position, __path);
+        };
+        match &self.tree.units[index] {
+            TreeUnit::Leaf(unit) => {
+                let annotated = if unit.string_annotation.is_some() {
+                    E::instance_is_string()
+                } else {
+                    quote! { false }
+                };
+                if self.reporting {
+                    return quote! {
+                        __units = __e.reported::<__J>(
+                            __units,
+                            #index,
+                            &instance,
+                            __path,
+                            #annotated,
+                            __position,
+                        );
+                    };
+                }
+                let check = unit.direct.expect("every leaf unit checks itself");
+                if self.not_of_type[check] {
+                    let check = format_ident!("__not_of_type_{check}");
+                    quote! {
+                        __units =
+                            __e.not_of_type::<__J>(__units, #index, #check, &instance, __position);
+                    }
+                } else {
+                    let check = format_ident!("__direct_{check}");
+                    quote! {
+                        __units = __e.checked::<__J>(
+                            __units,
+                            #index,
+                            #check,
+                            &instance,
+                            #annotated,
+                            __position,
+                        );
+                    }
+                }
+            }
+            TreeUnit::Properties {
+                declared: (first, count),
+                in_member_order,
+            } => {
+                let declared = &self.tree.properties[*first..first + count];
+                if declared.is_empty() {
+                    let body = quote! {
+                        __units = __e.unit(
+                            __units,
+                            #index,
+                            Vec::new(),
+                            Some(__eval::names(Vec::new())),
+                            __eval::ChildList::default(),
+                            __position,
+                        )
+                    };
+                    return E::sole_object_match(quote! { #body; }, quote! {{ #empty; }});
+                }
+                let names: Vec<&str> = declared.iter().map(|(name, _)| name.as_str()).collect();
+                let count = names.len();
+                let offsets = 0..count;
+                let members = E::object_iter_entries(quote! { obj });
+                let key = E::key_as_str(quote! { __key });
+                // One declared property needs no order.
+                let order = (!in_member_order && count > 1).then(|| {
+                    let len = E::object_len(quote! { obj });
+                    quote! {
+                        if __eval::in_declared_order::<__J>(#len, #count) {
+                            __eval::sort_declared(&mut __matched);
+                        }
+                    }
+                });
+                // The last declared property takes the match's remaining arm.
+                let mut children: Vec<TokenStream> = declared
+                    .iter()
+                    .map(|(_, subschema)| self.child::<E>(*subschema))
+                    .collect();
+                let last = children.pop().expect("declared properties");
+                let child_offsets = 0..children.len();
+                let body = quote! {
+                    const __NAMES: [&str; #count] = [#(#names),*];
+                    let mut __matched = Vec::new();
+                    for (__key, __value) in #members {
+                        let __offset: usize = match #key {
+                            #(#names => #offsets,)*
+                            _ => continue,
+                        };
+                        __matched.push((__offset, __value));
+                    }
+                    #order
+                    let mut __names = Vec::with_capacity(__matched.len());
+                    let mut __children = __eval::ChildList::default();
+                    for (__offset, instance) in __matched {
+                        let __name = __NAMES[__offset];
+                        __names.push(__name);
+                        #below
+                        let __child = match __offset {
+                            #(#child_offsets => #children,)*
+                            _ => #last,
+                        };
+                        __children = __e.push(__children, __child);
+                    }
+                    __units = __e.unit(
+                        __units,
+                        #index,
+                        Vec::new(),
+                        Some(__eval::names(__names)),
+                        __children,
+                        __position,
+                    );
+                };
+                E::sole_object_match(body, quote! {{ #empty; }})
+            }
+            TreeUnit::Patterns((first, count)) => {
+                let members = E::object_iter_entries(quote! { obj });
+                let key = E::key_as_str(quote! { __key });
+                let loops = (*first..first + count).map(|pattern| {
+                    let matcher = format_ident!("__matches_{pattern}");
+                    let child = self.child::<E>(self.tree.patterns[pattern].0);
+                    quote! {
+                        for (__key, instance) in #members {
+                            let __name: &str = #key;
+                            if #matcher(__name) {
+                                __names.push(__sj::Value::String(__name.to_owned()));
+                                #below
+                                let __child = #child;
+                                __children = __e.push(__children, __child);
+                            }
+                        }
+                    }
+                });
+                let body = quote! {
+                    let mut __names = Vec::new();
+                    let mut __children = __eval::ChildList::default();
+                    #(#loops)*
+                    __units = __e.unit(
+                        __units,
+                        #index,
+                        Vec::new(),
+                        Some(__eval::values(__names)),
+                        __children,
+                        __position,
+                    );
+                };
+                E::sole_object_match(body, quote! {{ #empty; }})
+            }
+            TreeUnit::Additional {
+                schema: subschema,
+                closed,
+                declared,
+                patterns,
+            } => {
+                let names: Vec<&str> = declared
+                    .map(|(first, count)| &self.tree.properties[first..first + count])
+                    .unwrap_or_default()
+                    .iter()
+                    .map(|(name, _)| name.as_str())
+                    .collect();
+                let matchers: Vec<_> = patterns
+                    .map(|(first, count)| first..first + count)
+                    .unwrap_or_default()
+                    .map(|pattern| format_ident!("__matches_{pattern}"))
+                    .collect();
+                let skip = (!names.is_empty() || !matchers.is_empty()).then(|| {
+                    let declared =
+                        (!names.is_empty()).then(|| quote! { matches!(__name, #(#names)|*) });
+                    let matched = matchers.iter().map(|matcher| quote! { #matcher(__name) });
+                    let conditions = declared.into_iter().chain(matched);
+                    quote! {
+                        if #(#conditions)||* {
+                            continue;
+                        }
+                    }
+                });
+                let members = E::object_iter_entries(quote! { obj });
+                let key = E::key_as_str(quote! { __key });
+                let (names_init, child, annotations) = if *closed {
+                    (
+                        None,
+                        quote! { __e.rejected::<__J>(#subschema, &instance, __path, __position) },
+                        quote! { None },
+                    )
+                } else {
+                    let child = self.child::<E>(*subschema);
+                    (
+                        Some(quote! { let mut __names = Vec::new(); }),
+                        quote! {{
+                            __names.push(__sj::Value::String(__name.to_owned()));
+                            #child
+                        }},
+                        quote! { Some(__eval::values(__names)) },
+                    )
+                };
+                let body = quote! {
+                    #names_init
+                    let mut __children = __eval::ChildList::default();
+                    for (__key, instance) in #members {
+                        let __name: &str = #key;
+                        #skip
+                        #below
+                        let __child = #child;
+                        __children = __e.push(__children, __child);
+                    }
+                    __units = __e.unit(
+                        __units,
+                        #index,
+                        Vec::new(),
+                        #annotations,
+                        __children,
+                        __position,
+                    );
+                };
+                E::sole_object_match(body, quote! {{ #empty; }})
+            }
+            TreeUnit::Names {
+                schema: subschema,
+                closed,
+            } => {
+                let members = E::object_iter_entries(quote! { obj });
+                let declare = E::declare_key_node(quote! { __key });
+                let name = E::key_node_expr(quote! { __key });
+                let entry = &self.tree.schemas[*subschema];
+                let child = if *closed {
+                    quote! { __e.rejected::<__J>(#subschema, &instance, __path, __position) }
+                } else if self.tree.units[entry.first..entry.first + entry.count]
+                    .iter()
+                    .all(|unit| matches!(unit, TreeUnit::Leaf(_)))
+                {
+                    // A schema of leaf units holds no reference, so no cycle guard sees the name.
+                    self.child::<E>(*subschema)
+                } else {
+                    // The name is evaluated at the object's location, as a different instance.
+                    let child = self.child::<E>(*subschema);
+                    quote! {{
+                        let __active = __e.take_active();
+                        let __child = #child;
+                        __e.restore_active(__active);
+                        __child
+                    }}
+                };
+                let body = quote! {
+                    let mut __children = __eval::ChildList::default();
+                    for (__key, _) in #members {
+                        #declare
+                        let instance = #name;
+                        let __child = #child;
+                        __children = __e.push(__children, __child);
+                    }
+                    __units = __e.unit(__units, #index, Vec::new(), None, __children, __position);
+                };
+                E::sole_object_match(body, quote! {{ #empty; }})
+            }
+            TreeUnit::Dependencies {
+                schemas: (first, count),
+                ..
+            } => {
+                let present = self.tree.dependencies[*first..first + count].iter().map(
+                    |(name, subschema)| {
+                        let contains = E::object_contains_key(quote! { obj }, name);
+                        let child = self.child::<E>(*subschema);
+                        quote! {
+                            if #contains {
+                                let __child = #child;
+                                __children = __e.push(__children, __child);
+                            }
+                        }
+                    },
+                );
+                let errors = Self::unit_errors(index);
+                let body = quote! {
+                    let __errors = #errors;
+                    let mut __children = __eval::ChildList::default();
+                    #(#present)*
+                    __units = __e.unit(__units, #index, __errors, None, __children, __position);
+                };
+                E::sole_object_match(body, quote! {{ #empty; }})
+            }
+            TreeUnit::Tuple {
+                schemas: (first, count),
+                ..
+            } => {
+                let schemas = &self.tree.tuples[*first..first + count];
+                let items = E::array_iter(quote! { arr });
+                let len = E::array_len(quote! { arr });
+                // The last position takes the match's remaining arm.
+                let mut children: Vec<TokenStream> = schemas
+                    .iter()
+                    .map(|subschema| self.child::<E>(*subschema))
+                    .collect();
+                let count = schemas.len();
+                let items_loop = children.pop().map(|last| {
+                    let offsets = 0..children.len();
+                    quote! {
+                        for (__idx, instance) in #items.enumerate() {
+                            if __idx == #count {
+                                break;
+                            }
+                            #below_item
+                            let __child = match __idx {
+                                #(#offsets => #children,)*
+                                _ => #last,
+                            };
+                            __children = __e.push(__children, __child);
+                        }
+                    }
+                });
+                let body = quote! {
+                    if #len == 0 {
+                        #empty;
+                    } else {
+                        let mut __children = __eval::ChildList::default();
+                        #items_loop
+                        let __annotation = __eval::tuple(__children, #len);
+                        __units = __e.unit(
+                            __units,
+                            #index,
+                            Vec::new(),
+                            Some(__annotation),
+                            __children,
+                            __position,
+                        );
+                    }
+                };
+                E::sole_array_match(body, quote! {{ #empty; }})
+            }
+            TreeUnit::Rest {
+                schema: subschema,
+                skip,
+                closed,
+                ..
+            } => {
+                if !*closed && self.item_runs[*subschema] {
+                    let leaf_item = Self::leaf_item_name(*subschema);
+                    return quote! {
+                        __units = __e.leaf_items::<__J>(
+                            __units,
+                            #index,
+                            #subschema,
+                            #skip,
+                            #leaf_item,
+                            &instance,
+                            __path,
+                            __position,
+                        );
+                    };
+                }
+                if let Some((target, function)) = self
+                    .static_reference(*subschema)
+                    .filter(|_| !*closed && !self.callable[*subschema])
+                {
+                    let guard = self.guard(function);
+                    let evaluate = Self::evaluate_fn(target);
+                    return quote! {
+                        __units = __e.reference_items::<__J>(
+                            __units,
+                            #index,
+                            #subschema,
+                            #skip,
+                            #guard,
+                            #evaluate,
+                            &instance,
+                            __path,
+                            __position,
+                        );
+                    };
+                }
+                let items = E::array_iter(quote! { arr });
+                let len = E::array_len(quote! { arr });
+                let enumerate = if *skip == 0 {
+                    quote! { #items.enumerate() }
+                } else {
+                    quote! { #items.enumerate().skip(#skip) }
+                };
+                let child = if *closed {
+                    quote! { __e.rejected::<__J>(#subschema, &instance, __path, __position) }
+                } else {
+                    self.child::<E>(*subschema)
+                };
+                let body = quote! {
+                    let mut __children = __eval::ChildList::default();
+                    for (__idx, instance) in #enumerate {
+                        #below_item
+                        let __child = #child;
+                        __children = __e.push(__children, __child);
+                    }
+                    __units = __e.unit(
+                        __units,
+                        #index,
+                        Vec::new(),
+                        Some(__eval::boolean(#len > #skip)), __children, __position,
+                    );
+                };
+                E::sole_array_match(body, quote! {{ #empty; }})
+            }
+            TreeUnit::Contains {
+                schema: subschema,
+                valid,
+                bounds: ContainsBounds { min, max },
+            } => {
+                let items = E::array_iter(quote! { arr });
+                let check = self.validity(*valid);
+                let child = self.child::<E>(*subschema);
+                let errors = if self.reporting {
+                    Self::unit_errors(index)
+                } else {
+                    let min = min.map_or_else(|| quote! { None }, |min| quote! { Some(#min) });
+                    let max = max.map_or_else(|| quote! { None }, |max| quote! { Some(#max) });
+                    quote! {
+                        if __e.checks() {
+                            __eval::contains_errors::<__J>(__indices.len(), #min, #max, &instance)
+                        } else {
+                            Vec::new()
+                        }
+                    }
+                };
+                let body = quote! {
+                    let mut __indices = Vec::new();
+                    let mut __children = __eval::ChildList::default();
+                    for (__idx, instance) in #items.enumerate() {
+                        if !#check {
+                            continue;
+                        }
+                        __indices.push(__idx);
+                        #below_item
+                        let __child = #child;
+                        __children = __e.push(__children, __child);
+                    }
+                    let __errors = #errors;
+                    let __annotations = if __indices.is_empty() {
+                        None
+                    } else {
+                        Some(__eval::indices(__indices))
+                    };
+                    __units = __e.unit(
+                        __units,
+                        #index,
+                        __errors,
+                        __annotations,
+                        __children,
+                        __position,
+                    );
+                };
+                E::sole_array_match(body, quote! {{ #empty; }})
+            }
+            TreeUnit::Branches {
+                keyword,
+                schemas: (first, count),
+                valid,
+                discriminator,
+            } => {
+                let schemas = &self.tree.tuples[*first..first + count];
+                let children: Vec<TokenStream> = schemas
+                    .iter()
+                    .map(|subschema| self.child::<E>(*subschema))
+                    .collect();
+                let Some(valid) = valid else {
+                    return quote! {{
+                        let mut __children = __eval::ChildList::default();
+                        #(
+                            let __child = #children;
+                            __children = __e.push(__children, __child);
+                        )*
+                        __units = __e.unit(
+                            __units,
+                            #index,
+                            Vec::new(),
+                            None,
+                            __children,
+                            __position,
+                        );
+                    }};
+                };
+                let candidates = discriminator.map(|discriminator| {
+                    let candidates = format_ident!("__candidates_{discriminator}");
+                    quote! { let __candidates = #candidates(&instance); }
+                });
+                let accepts = (0..schemas.len()).map(|offset| {
+                    let check = self.validity(valid + offset);
+                    if discriminator.is_some() {
+                        quote! { __eval::candidate(__candidates, #offset) && #check }
+                    } else {
+                        check
+                    }
+                });
+                let offsets = 0..schemas.len();
+                let errors = if self.reporting {
+                    Self::unit_errors(index)
+                } else if *keyword == "oneOf" {
+                    quote! {
+                        if __e.checks() && __eval::several(&__accepts) {
+                            __eval::one_of_multiple_valid::<__J>(&instance)
+                        } else {
+                            Vec::new()
+                        }
+                    }
+                } else {
+                    quote! { Vec::new() }
+                };
+                quote! {{
+                    #candidates
+                    let __accepts = [#(#accepts),*];
+                    let __any = __accepts.contains(&true);
+                    let mut __children = __eval::ChildList::default();
+                    #(
+                        if !__any || __accepts[#offsets] {
+                            let __child = #children;
+                            __children = __e.push(__children, __child);
+                        }
+                    )*
+                    __units = __e.unit(__units, #index, #errors, None, __children, __position);
+                }}
+            }
+            TreeUnit::Condition {
+                schema: subschema,
+                valid,
+            } => {
+                let check = self.validity(*valid);
+                let child = self.child::<E>(*subschema);
+                quote! {
+                    let __passed = #check;
+                    {
+                        let mut __children = __eval::ChildList::default();
+                        if __passed {
+                            let __child = #child;
+                            __children = __e.push(__children, __child);
+                        }
+                        __units = __e.unit(
+                            __units,
+                            #index,
+                            Vec::new(),
+                            None,
+                            __children,
+                            __position,
+                        );
+                    }
+                }
+            }
+            TreeUnit::Branch {
+                keyword,
+                schema: subschema,
+            } => {
+                let child = self.child::<E>(*subschema);
+                let passed = if *keyword == "then" {
+                    quote! { __passed }
+                } else {
+                    quote! { !__passed }
+                };
+                quote! {
+                    if #passed {
+                        let mut __children = __eval::ChildList::default();
+                        let __child = #child;
+                        __children = __e.push(__children, __child);
+                        __units = __e.unit(
+                            __units,
+                            #index,
+                            Vec::new(),
+                            None,
+                            __children,
+                            __position,
+                        );
+                    }
+                }
+            }
+            TreeUnit::Unevaluated {
+                schema: subschema,
+                closed,
+                evaluated,
+                ..
+            } => {
+                let resource = self.tree.unevaluated_resources[*evaluated];
+                let positions = format_ident!("__unevaluated_{evaluated}");
+                let subschema_errors = format_ident!("__unevaluated_errors_{evaluated}");
+                let (enter, leave) = if self.scoped {
+                    (
+                        Some(quote! { __e.enter_scope(#resource); }),
+                        Some(quote! { __e.leave_scope(#resource); }),
+                    )
+                } else {
+                    (None, None)
+                };
+                let evaluate = Self::evaluate_fn(*subschema);
+                let child = if *closed {
+                    quote! { __e.rejected::<__J>(#subschema, &instance, __path, __position) }
+                } else {
+                    quote! {{
+                        #enter
+                        let __subschema_errors = #subschema_errors(&instance, __path);
+                        #leave
+                        if __subschema_errors.is_empty() {
+                            #evaluate(__e, instance, __path, __position)
+                        } else {
+                            // Its errors, reported at the evaluation paths its keywords get here.
+                            let __nested_errors = __e.nested_errors(&__subschema_errors);
+                            let mut __nested = __e.nest(&__nested_errors);
+                            let __child = #evaluate(&mut __nested, instance, __path, __position);
+                            __e.unnest(__nested);
+                            __child
+                        }
+                    }}
+                };
+                let members = E::object_iter_entries(quote! { obj });
+                let key = E::key_as_str(quote! { __key });
+                let items = E::array_iter(quote! { arr });
+                let objects = E::if_object(
+                    quote! { instance },
+                    quote! {
+                        for (__offset, (__key, instance)) in #members.enumerate() {
+                            if __positions.next_if_eq(&__offset).is_some() {
+                                let __name: &str = #key;
+                                #below
+                                let __child = #child;
+                                __children = __e.push(__children, __child);
+                            }
+                        }
+                    },
+                );
+                let arrays = E::if_array(
+                    quote! { instance },
+                    quote! {
+                        for (__idx, instance) in #items.enumerate() {
+                            if __positions.next_if_eq(&__idx).is_some() {
+                                #below_item
+                                let __child = #child;
+                                __children = __e.push(__children, __child);
+                            }
+                        }
+                    },
+                );
+                let errors = Self::unit_errors(index);
+                quote! {{
+                    let __errors = #errors;
+                    #enter
+                    let __positions = #positions(&instance);
+                    #leave
+                    let mut __positions = __positions.into_iter().peekable();
+                    let mut __children = __eval::ChildList::default();
+                    #objects
+                    #arrays
+                    __units = __e.unit(__units, #index, __errors, None, __children, __position);
+                }}
+            }
+            TreeUnit::Ref {
+                target,
+                function,
+                anchor,
+                recursive,
+                ..
+            } => {
+                let guard = self.guard(*function);
+                let evaluate = Self::evaluate_fn(*target);
+                if anchor.is_none() && !recursive {
+                    return quote! {
+                        __units = __e.reference::<__J>(
+                            __units,
+                            #index,
+                            #guard,
+                            #evaluate,
+                            instance,
+                            __path,
+                            __position,
+                        );
+                    };
+                }
+                let landings = self.landings(*target, anchor.as_deref(), *recursive);
+                let anchor = anchor
+                    .as_ref()
+                    .map_or_else(|| quote! { None }, |anchor| quote! { Some(#anchor) });
+                let arms = landings.into_iter().map(|landed| {
+                    let evaluate = Self::evaluate_fn(landed);
+                    quote! {
+                        #landed => __e.landed::<__J>(
+                            #index,
+                            #landed,
+                            __landing.pushed,
+                            #evaluate,
+                            instance,
+                            __path,
+                            __position,
+                        ),
+                    }
+                });
+                quote! {{
+                    let __landing = __e.resolve(#index, #anchor, #recursive);
+                    let __node = match __landing.schema {
+                        #(#arms)*
+                        _ => __e.reference_node::<__J>(
+                            #index,
+                            #guard,
+                            __landing.pushed,
+                            #evaluate,
+                            instance,
+                            __path,
+                            __position,
+                        ),
+                    };
+                    __units = __e.push(__units, __node);
+                }}
+            }
+        }
+    }
+
+    /// The schemas other than `target` a reference resolving through the dynamic scope may land
+    /// on: the `anchor` schemas, or the roots under `$recursiveRef`, of every resource.
+    fn landings(&self, target: usize, anchor: Option<&str>, recursive: bool) -> BTreeSet<usize> {
+        landings(self.tree, anchor, recursive)
+            .into_iter()
+            .filter(|&landed| landed != target)
+            .collect()
+    }
+}
+
+/// The schemas a reference resolving through the dynamic scope may land on besides its static
+/// target: the `anchor` schemas, or the roots under `$recursiveRef`, of every resource.
+fn landings(tree: &Tree, anchor: Option<&str>, recursive: bool) -> BTreeSet<usize> {
+    let resources = tree.resources.iter();
+    if recursive {
+        resources
+            .filter(|resource| resource.recursive)
+            .filter_map(|resource| resource.root)
+            .collect()
+    } else if let Some(anchor) = anchor {
+        resources
+            .flat_map(|resource| &resource.anchors)
+            .filter(|(name, _)| name == anchor)
+            .map(|&(_, schema)| schema)
+            .collect()
+    } else {
+        BTreeSet::new()
+    }
+}
+
+/// Whether each schema of `tree` gets a function of its own: the root, every schema a reference
+/// may land on, and every `unevaluated*` subschema, which two evaluations call.
+fn callable(tree: &Tree) -> Vec<bool> {
+    let mut callable = vec![false; tree.schemas.len()];
+    callable[0] = true;
+    for unit in &tree.units {
+        match unit {
+            TreeUnit::Ref {
+                target,
+                anchor,
+                recursive,
+                ..
+            } => {
+                callable[*target] = true;
+                for landed in landings(tree, anchor.as_deref(), *recursive) {
+                    callable[landed] = true;
+                }
+            }
+            TreeUnit::Unevaluated {
+                schema,
+                closed: false,
+                ..
+            } => callable[*schema] = true,
+            _ => {}
+        }
+    }
+    callable
+}
+
 /// Functions putting a resource's entries on the generated code's dynamic-scope stacks, and taking
-/// them off, so the code the walk calls resolves dynamic references in the walk's scope. The
-/// `$recursiveRef` entry goes on only when `anchored`.
+/// them off, so the generated validity code resolves dynamic references in the evaluation's scope.
+/// The `$recursiveRef` entry goes on only when `anchored`.
 fn scope_stacks<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     resources: &[TreeResource],

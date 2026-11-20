@@ -85,24 +85,35 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: __Value<'_>) -> jsonschema::Evaluation {
-        static __TREE: __eval::Tree<__Json> = __eval::Tree {
-            tables: "{\"schemas\":[{\"count\":0,\"first\":0,\"pointer\":\"\",\"rejects\":true}],\"units\":[]}",
-            matchers: &[],
-            valid: &[],
-            guards: &[],
-            discriminators: &[],
-            not_of_type: &[],
-            direct: &[],
-            unevaluated: &[],
-            unevaluated_errors: &[],
+        type __J = __Json;
+        fn __evaluate_0<'__i>(
+            __e: &mut __eval::Evaluator<'_, '_>,
+            instance: __Value<'__i>,
+            __path: &__paths::LazyLocation,
+            __position: __eval::InstancePosition,
+        ) -> __eval::EvaluationNode {
+            let __py = instance.py();
+            let mut __units = __eval::ChildList::default();
+            __e.schema(
+                0usize,
+                __e.rejection::<__J>(0usize, &instance, __path),
+                __units,
+                __position,
+            )
+        }
+        static __SITES: __eval::Sites = __eval::Sites {
+            tables: "{\"schemas\":[{\"count\":0,\"first\":0,\"pointer\":\"\"}],\"units\":[]}",
             scope: None,
             built: ::std::sync::OnceLock::new(),
         };
-        <__Json as __eval::Walk>::evaluate_reporting(
-            &__TREE,
-            &instance,
-            is_valid(instance),
-        )
+        let mut __e = __SITES.checking(is_valid(instance));
+        let __root = __evaluate_0(
+            &mut __e,
+            instance,
+            &__paths::LazyLocation::new(),
+            __eval::InstancePosition::ROOT,
+        );
+        __e.finish(__root)
     }
     pub(super) fn entry_is_valid(instance: &__Bound<'_>) -> __py3::PyResult<bool> {
         __json::inspect(

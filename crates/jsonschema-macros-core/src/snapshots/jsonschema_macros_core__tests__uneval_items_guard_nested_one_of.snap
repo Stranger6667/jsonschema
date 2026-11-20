@@ -16,11 +16,11 @@ match instance {
             }
         }
         if let Some(__e) = '__first_error: {
-            if !((is_branch_valid_2(instance))) {
+            if !((is_branch_valid_1(instance))) {
                 let mut __context = Vec::with_capacity(1usize);
                 {
                     let mut __branch_errors = __err::Errors::new(false);
-                    let _ = collect_branch_errors_2(
+                    let _ = collect_branch_errors_1(
                         instance,
                         __path,
                         &mut __branch_errors,

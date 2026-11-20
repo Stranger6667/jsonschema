@@ -43,50 +43,49 @@ mod bench {
                     IsValid,
                     Validate,
                     IterErrors,
-                    Option<Evaluate>,
+                    Evaluate,
                 ) = match name {
                     "Fast" => (
                         FastSchemaValidator::is_valid,
                         FastSchemaValidator::validate,
                         FastSchemaValidator::iter_errors,
-                        Some(FastSchemaValidator::evaluate),
+                        FastSchemaValidator::evaluate,
                     ),
                     "Open API" => (
                         OpenAPIValidator::is_valid,
                         OpenAPIValidator::validate,
                         OpenAPIValidator::iter_errors,
-                        Some(OpenAPIValidator::evaluate),
+                        OpenAPIValidator::evaluate,
                     ),
-                    // `evaluate` is not generated for it yet.
                     "Swagger" => (
                         SwaggerValidator::is_valid,
                         SwaggerValidator::validate,
                         SwaggerValidator::iter_errors,
-                        None,
+                        SwaggerValidator::evaluate,
                     ),
                     "GeoJSON" => (
                         GeoJSONValidator::is_valid,
                         GeoJSONValidator::validate,
                         GeoJSONValidator::iter_errors,
-                        Some(GeoJSONValidator::evaluate),
+                        GeoJSONValidator::evaluate,
                     ),
                     "CITM" => (
                         CITMValidator::is_valid,
                         CITMValidator::validate,
                         CITMValidator::iter_errors,
-                        Some(CITMValidator::evaluate),
+                        CITMValidator::evaluate,
                     ),
                     "FHIR" => (
                         FHIRValidator::is_valid,
                         FHIRValidator::validate,
                         FHIRValidator::iter_errors,
-                        Some(FHIRValidator::evaluate),
+                        FHIRValidator::evaluate,
                     ),
                     "Recursive" => (
                         RecursiveValidator::is_valid,
                         RecursiveValidator::validate,
                         RecursiveValidator::iter_errors,
-                        Some(RecursiveValidator::evaluate),
+                        RecursiveValidator::evaluate,
                     ),
                     _ => return,
                 };
@@ -106,13 +105,11 @@ mod bench {
                         &instance.data,
                         |b, data| b.iter(|| black_box(iter_errors(data).count())),
                     );
-                    if let Some(evaluate) = evaluate {
-                        c.bench_with_input(
-                            BenchmarkId::new(format!("codegen/{name}/evaluate"), &instance.name),
-                            &instance.data,
-                            |b, data| b.iter_with_large_drop(|| black_box(evaluate(data))),
-                        );
-                    }
+                    c.bench_with_input(
+                        BenchmarkId::new(format!("codegen/{name}/evaluate"), &instance.name),
+                        &instance.data,
+                        |b, data| b.iter_with_large_drop(|| black_box(evaluate(data))),
+                    );
                 }
             });
         }

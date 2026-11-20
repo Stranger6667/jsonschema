@@ -267,24 +267,108 @@ mod __validator_impl {
                 jsonschema::json::SerdeJson > (instance)),)
             ]
         }
-        static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"functions\":[{\"guard\":0},{\"parent\":0}],\"properties\":[[\"next\",1],[\"value\",2]],\"schemas\":[{\"count\":1,\"first\":3,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/next\"},{\"count\":1,\"first\":2,\"pointer\":\"/properties/value\"},{\"count\":1,\"first\":1,\"pointer\":\"/$defs/value\"}],\"units\":[{\"function\":0,\"keyword\":\"$ref\",\"target\":0},{\"keyword\":\"type\",\"not_of_type\":0},{\"function\":1,\"keyword\":\"$ref\",\"target\":3},{\"keyword\":\"properties\",\"members\":false,\"properties\":[0,2]}]}",
-            matchers: &[],
-            valid: &[],
-            guards: &[__guard_0],
-            discriminators: &[],
-            not_of_type: &[__not_of_type_0],
-            direct: &[],
-            unevaluated: &[],
-            unevaluated_errors: &[],
+        type __J = jsonschema::json::SerdeJson;
+        fn __evaluate_0<'__i>(
+            __e: &mut __eval::Evaluator<'_, '_>,
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __position: __eval::InstancePosition,
+        ) -> __eval::EvaluationNode {
+            let mut __units = __eval::ChildList::default();
+            match instance {
+                __Value::Object(obj) => {
+                    const __NAMES: [&str; 2usize] = ["next", "value"];
+                    let mut __matched = Vec::new();
+                    for (__key, __value) in obj.iter() {
+                        let __offset: usize = match __key.as_str() {
+                            "next" => 0usize,
+                            "value" => 1usize,
+                            _ => continue,
+                        };
+                        __matched.push((__offset, __value));
+                    }
+                    if __eval::in_declared_order::<__J>(obj.len(), 2usize) {
+                        __eval::sort_declared(&mut __matched);
+                    }
+                    let mut __names = Vec::with_capacity(__matched.len());
+                    let mut __children = __eval::ChildList::default();
+                    for (__offset, instance) in __matched {
+                        let __name = __NAMES[__offset];
+                        __names.push(__name);
+                        let __member = __path.push(__name);
+                        let __path = &__member;
+                        let __position = __e.position_below(__position, __path);
+                        let __child = match __offset {
+                            0usize => {
+                                __e.reference_schema::<
+                                        __J,
+                                    >(
+                                    1usize,
+                                    Some(__guard_0),
+                                    __evaluate_0,
+                                    instance,
+                                    __path,
+                                    __position,
+                                )
+                            }
+                            _ => {
+                                __e.reference_schema::<
+                                        __J,
+                                    >(2usize, None, __evaluate_3, instance, __path, __position)
+                            }
+                        };
+                        __children = __e.push(__children, __child);
+                    }
+                    __units = __e
+                        .unit(
+                            __units,
+                            3usize,
+                            Vec::new(),
+                            Some(__eval::names(__names)),
+                            __children,
+                            __position,
+                        );
+                }
+                _ => {
+                    __units = __e
+                        .unit(
+                            __units,
+                            3usize,
+                            Vec::new(),
+                            None,
+                            __eval::ChildList::default(),
+                            __position,
+                        );
+                }
+            }
+            __e.schema(0usize, Vec::new(), __units, __position)
+        }
+        fn __evaluate_3<'__i>(
+            __e: &mut __eval::Evaluator<'_, '_>,
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __position: __eval::InstancePosition,
+        ) -> __eval::EvaluationNode {
+            let mut __units = __eval::ChildList::default();
+            __units = __e
+                .not_of_type::<
+                    __J,
+                >(__units, 1usize, __not_of_type_0, &instance, __position);
+            __e.schema(3usize, Vec::new(), __units, __position)
+        }
+        static __SITES: __eval::Sites = __eval::Sites {
+            tables: "{\"functions\":[{},{\"parent\":0}],\"schemas\":[{\"count\":1,\"first\":3,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/properties/next\"},{\"count\":1,\"first\":2,\"pointer\":\"/properties/value\"},{\"count\":1,\"first\":1,\"pointer\":\"/$defs/value\"}],\"units\":[{\"function\":0,\"keyword\":\"$ref\",\"target\":0},\"type\",{\"function\":1,\"keyword\":\"$ref\",\"target\":3},\"properties\"]}",
             scope: None,
             built: ::std::sync::OnceLock::new(),
         };
-        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate_reporting(
-            &__TREE,
-            &instance,
-            is_valid(instance),
-        )
+        let mut __e = __SITES.checking(is_valid(instance));
+        let __root = __evaluate_0(
+            &mut __e,
+            instance,
+            &__paths::LazyLocation::new(),
+            __eval::InstancePosition::ROOT,
+        );
+        __e.finish(__root)
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {
         run_is_valid(instance)

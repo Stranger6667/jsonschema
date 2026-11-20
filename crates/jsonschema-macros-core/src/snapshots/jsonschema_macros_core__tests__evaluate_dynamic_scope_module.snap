@@ -339,32 +339,6 @@ mod __validator_impl {
         }
         false
     }
-    fn is_branch_valid_3(instance: &__Value) -> bool {
-        instance.is_null()
-    }
-    #[cold]
-    #[inline(never)]
-    fn collect_branch_errors_3<'__i>(
-        instance: &'__i __Value,
-        __path: &__paths::LazyLocation,
-        __errors: &mut __err::Errors<'__i>,
-    ) -> bool {
-        if !(instance.is_null()) {
-            if __errors
-                .push(
-                    __err::single_type(
-                        "/items/anyOf/1/type",
-                        __path.into(),
-                        instance,
-                        __JT::Null,
-                    ),
-                )
-            {
-                return true;
-            }
-        }
-        false
-    }
     fn validate_ref_0(instance: &__Value) -> bool {
         {
             __JSONSCHEMA_DYNAMIC_STACK
@@ -566,7 +540,7 @@ mod __validator_impl {
                 __Value::Array(arr) => {
                     arr.iter()
                         .all(|instance| {
-                            (is_branch_valid_2(instance) || is_branch_valid_3(instance))
+                            (is_branch_valid_2(instance) || is_branch_valid_1(instance))
                         })
                 }
                 _ => true,
@@ -622,12 +596,12 @@ mod __validator_impl {
                     for (idx, item) in arr.iter().enumerate() {
                         let instance = item;
                         if !((is_branch_valid_2(instance)
-                            || is_branch_valid_3(instance)))
+                            || is_branch_valid_1(instance)))
                         {
                             let __path = &__path.push(idx);
                             if let Some(__e) = '__first_error: {
                                 if !((is_branch_valid_2(instance)
-                                    || is_branch_valid_3(instance)))
+                                    || is_branch_valid_1(instance)))
                                 {
                                     let mut __context = Vec::with_capacity(2usize);
                                     {
@@ -641,7 +615,7 @@ mod __validator_impl {
                                     }
                                     {
                                         let mut __branch_errors = __err::Errors::new(false);
-                                        let _ = collect_branch_errors_3(
+                                        let _ = collect_branch_errors_1(
                                             instance,
                                             __path,
                                             &mut __branch_errors,
@@ -870,27 +844,131 @@ mod __validator_impl {
                 jsonschema::json::SerdeJson > (instance)),)
             ]
         }
-        static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"functions\":[{\"guard\":0}],\"resources\":[{\"anchors\":[[\"node\",0]],\"recursive\":false,\"root\":null}],\"schemas\":[{\"count\":1,\"first\":3,\"pointer\":\"\"},{\"count\":1,\"first\":2,\"pointer\":\"/items\"},{\"count\":1,\"first\":0,\"pointer\":\"/items/anyOf/0\"},{\"count\":1,\"first\":1,\"pointer\":\"/items/anyOf/1\"}],\"tuples\":[2,3],\"units\":[{\"function\":0,\"keyword\":\"$dynamicRef\",\"scope\":{\"anchor\":\"node\"},\"target\":0},{\"keyword\":\"type\",\"not_of_type\":0},{\"branches\":[0,2],\"keyword\":\"anyOf\",\"valid\":0},{\"closed\":false,\"keyword\":\"items\",\"rest\":1,\"skip\":0}],\"valid_resources\":[0,0]}",
-            matchers: &[],
-            valid: &[__valid_0, __valid_1],
-            guards: &[__guard_0],
-            discriminators: &[],
-            not_of_type: &[__not_of_type_0],
-            direct: &[],
-            unevaluated: &[],
-            unevaluated_errors: &[],
+        type __J = jsonschema::json::SerdeJson;
+        fn __evaluate_0<'__i>(
+            __e: &mut __eval::Evaluator<'_, '_>,
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __position: __eval::InstancePosition,
+        ) -> __eval::EvaluationNode {
+            let mut __units = __eval::ChildList::default();
+            match instance {
+                __Value::Array(arr) => {
+                    let mut __children = __eval::ChildList::default();
+                    for (__idx, instance) in arr.iter().enumerate() {
+                        let __member = __path.push(__idx);
+                        let __path = &__member;
+                        let __position = __e.position_below(__position, __path);
+                        let __child = {
+                            let mut __units = __eval::ChildList::default();
+                            {
+                                let __accepts = [
+                                    {
+                                        __e.enter_scope(0usize);
+                                        let __valid = __valid_0(&instance);
+                                        __e.leave_scope(0usize);
+                                        __valid
+                                    },
+                                    {
+                                        __e.enter_scope(0usize);
+                                        let __valid = __valid_1(&instance);
+                                        __e.leave_scope(0usize);
+                                        __valid
+                                    },
+                                ];
+                                let __any = __accepts.contains(&true);
+                                let mut __children = __eval::ChildList::default();
+                                if !__any || __accepts[0usize] {
+                                    let __child = {
+                                        let mut __units = __eval::ChildList::default();
+                                        {
+                                            let __landing = __e.resolve(0usize, Some("node"), false);
+                                            let __node = match __landing.schema {
+                                                _ => {
+                                                    __e.reference_node::<
+                                                            __J,
+                                                        >(
+                                                        0usize,
+                                                        Some(__guard_0),
+                                                        __landing.pushed,
+                                                        __evaluate_0,
+                                                        instance,
+                                                        __path,
+                                                        __position,
+                                                    )
+                                                }
+                                            };
+                                            __units = __e.push(__units, __node);
+                                        }
+                                        __e.schema(2usize, Vec::new(), __units, __position)
+                                    };
+                                    __children = __e.push(__children, __child);
+                                }
+                                if !__any || __accepts[1usize] {
+                                    let __child = {
+                                        let mut __units = __eval::ChildList::default();
+                                        __units = __e
+                                            .not_of_type::<
+                                                __J,
+                                            >(__units, 1usize, __not_of_type_0, &instance, __position);
+                                        __e.schema(3usize, Vec::new(), __units, __position)
+                                    };
+                                    __children = __e.push(__children, __child);
+                                }
+                                __units = __e
+                                    .unit(
+                                        __units,
+                                        2usize,
+                                        Vec::new(),
+                                        None,
+                                        __children,
+                                        __position,
+                                    );
+                            }
+                            __e.schema(1usize, Vec::new(), __units, __position)
+                        };
+                        __children = __e.push(__children, __child);
+                    }
+                    __units = __e
+                        .unit(
+                            __units,
+                            3usize,
+                            Vec::new(),
+                            Some(__eval::boolean(arr.len() > 0usize)),
+                            __children,
+                            __position,
+                        );
+                }
+                _ => {
+                    __units = __e
+                        .unit(
+                            __units,
+                            3usize,
+                            Vec::new(),
+                            None,
+                            __eval::ChildList::default(),
+                            __position,
+                        );
+                }
+            }
+            __e.schema(0usize, Vec::new(), __units, __position)
+        }
+        static __SITES: __eval::Sites = __eval::Sites {
+            tables: "{\"functions\":[{}],\"keeps_scope\":true,\"resources\":[{\"anchors\":[[\"node\",0]],\"recursive\":false,\"root\":null}],\"schemas\":[{\"count\":1,\"first\":3,\"pointer\":\"\"},{\"count\":1,\"first\":2,\"pointer\":\"/items\"},{\"count\":1,\"first\":0,\"pointer\":\"/items/anyOf/0\"},{\"count\":1,\"first\":1,\"pointer\":\"/items/anyOf/1\"}],\"units\":[{\"function\":0,\"keyword\":\"$dynamicRef\",\"target\":0},\"type\",\"anyOf\",\"items\"]}",
             scope: Some(__eval::ScopeStacks {
                 enter: __enter_resource,
                 leave: __leave_resource,
             }),
             built: ::std::sync::OnceLock::new(),
         };
-        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate_reporting(
-            &__TREE,
-            &instance,
-            is_valid(instance),
-        )
+        let mut __e = __SITES.checking(is_valid(instance));
+        let __root = __evaluate_0(
+            &mut __e,
+            instance,
+            &__paths::LazyLocation::new(),
+            __eval::InstancePosition::ROOT,
+        );
+        __e.finish(__root)
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {
         run_is_valid(instance)

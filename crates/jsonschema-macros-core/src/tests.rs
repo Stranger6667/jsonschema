@@ -500,6 +500,22 @@ fn evaluate_contains_module() {
     );
 }
 
+// Each branch of nested `anyOf` gets one helper, however many enclosing branches `evaluate`
+// checks the validity of.
+#[test_case(1 ; "one level")]
+#[test_case(4 ; "four levels")]
+#[test_case(16 ; "sixteen levels")]
+fn evaluate_nested_any_of_branch_helpers(depth: usize) {
+    let mut schema = json!({"type": "integer"});
+    for level in 0..depth {
+        schema = json!({"anyOf": [schema, {"maxLength": level}]});
+    }
+    let mut config = test_config(schema);
+    config.methods.evaluate = true;
+    let code = render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config);
+    assert_eq!(code.matches("fn is_branch_valid_").count(), 2 * depth);
+}
+
 #[test]
 fn evaluate_combinators_module() {
     let config = test_config(json!({
