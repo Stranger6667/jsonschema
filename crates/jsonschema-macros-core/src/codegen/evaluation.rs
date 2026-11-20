@@ -167,7 +167,8 @@ enum TreeUnit {
         target: usize,
         /// Its static target's code, an index of `Tree::functions`.
         function: usize,
-        /// Its target is in another document than the schema holding it.
+        /// Its target is in another resource than the schema holding it: in another document, or
+        /// embedded in the same one.
         leaves: bool,
         /// The `$dynamicAnchor` a `$dynamicRef` resolves through the dynamic scope.
         anchor: Option<String>,
@@ -219,6 +220,9 @@ struct TreeSchema {
     count: usize,
     /// It is `false`.
     rejects: bool,
+    /// The resource holding it, where it starts a resource of its own below a schema in another
+    /// one.
+    enclosing: Option<usize>,
 }
 
 /// Where a schema sits: the resource holding it, its pointer, which counts from the document a
@@ -357,6 +361,7 @@ impl Tree {
             first: 0,
             count: 0,
             rejects: false,
+            enclosing: None,
         });
         self.by_pointer.insert(place, index);
         self.inline.push(std::ptr::from_ref(schema).addr());
@@ -381,6 +386,7 @@ impl Tree {
     ) -> syn::Result<usize> {
         match resource_base(ctx, schema).filter(|_| index != 0 && !based) {
             Some(base) => {
+                self.schemas[index].enclosing = Some(self.resource(ctx));
                 let outer = std::mem::replace(&mut self.resource_root, pointer.clone());
                 let added = ctx.with_base_uri_scope(base, |ctx| {
                     self.add_keywords(ctx, schema, index, pointer)
@@ -771,6 +777,7 @@ impl Tree {
             first: self.units.len(),
             count: units.len(),
             rejects: self.schemas[index].rejects,
+            enclosing: self.schemas[index].enclosing,
         };
         self.units.extend(units);
     }
@@ -840,6 +847,19 @@ impl Tree {
         self.functions.push(location.clone());
         self.function_ids.insert(location, id);
         id
+    }
+
+    /// Marks each reference whose static target sits in another resource than the schema holding
+    /// it as leaving that resource, as one into another document does.
+    fn mark_references_leaving_their_resource(&mut self) {
+        let Tree { schemas, units, .. } = self;
+        for schema in schemas.iter() {
+            for unit in &mut units[schema.first..schema.first + schema.count] {
+                if let TreeUnit::Ref { target, leaves, .. } = unit {
+                    *leaves |= schemas[*target].resource != schema.resource;
+                }
+            }
+        }
     }
 
     /// Every schema a reference resolving through the dynamic scope may land on, in every
@@ -1055,6 +1075,7 @@ pub(super) fn compile<E: ValueEmitter>(
     let mut tree = Tree::default();
     tree.add(ctx, root, String::new())?;
     tree.add_scope_targets(ctx)?;
+    tree.mark_references_leaving_their_resource();
     // Every error comes from a unit reporting it itself.
     let without_errors_run = tree.units.iter().all(|unit| match unit {
         TreeUnit::Leaf(unit) => unit.check.is_some(),
@@ -1229,7 +1250,8 @@ pub(super) fn compile<E: ValueEmitter>(
     let dynamic = tree.units.iter().any(|unit| {
         matches!(unit, TreeUnit::Ref { anchor, recursive, .. } if anchor.is_some() || *recursive)
     });
-    if scope.is_some() || dynamic {
+    let keeps_scope = scope.is_some() || dynamic;
+    if keeps_scope {
         tables["keeps_scope"] = json!(true);
     }
     if !guarded.is_empty() {
@@ -1338,6 +1360,7 @@ pub(super) fn compile<E: ValueEmitter>(
             .collect(),
         reporting: !without_errors_run,
         scoped: scope.is_some(),
+        keeps_scope,
         guards,
         item_runs,
         callable: callable(&tree),
@@ -1513,6 +1536,8 @@ struct Code<'t> {
     reporting: bool,
     /// Generated validity code runs with the evaluation's dynamic scope on the generated stacks.
     scoped: bool,
+    /// References keep the dynamic scope, which something reads.
+    keeps_scope: bool,
     /// The guard of each reference target's code, by index of `Tree::functions`.
     guards: HashMap<usize, proc_macro2::Ident>,
     /// Whether each schema has leaf units only and nothing in it annotates, so its valid items
@@ -1532,8 +1557,37 @@ impl Code<'_> {
         format_ident!("__leaf_item_{index}")
     }
 
-    /// The node of the schema at `schema` for `instance` at `__path` and `__position`.
+    /// The node of the schema at `schema` for `instance` at `__path` and `__position`, which the
+    /// schema holding it descends into.
     fn child<E: ValueEmitter>(&self, schema: usize) -> TokenStream {
+        let node = self.node::<E>(schema);
+        self.descending(schema, node)
+    }
+
+    /// `node`, the node of the schema at `schema`, built after descending into it: a schema
+    /// starting a resource of its own puts the resource holding it on the dynamic scope.
+    fn descending(&self, schema: usize, node: TokenStream) -> TokenStream {
+        match self.enclosing(schema) {
+            Some(resource) => quote! {{
+                let __entered = __e.enter_resource(#resource);
+                let __node = #node;
+                __e.leave_resource(__entered);
+                __node
+            }},
+            None => node,
+        }
+    }
+
+    /// The resource holding the schema at `schema`, where descending into it enters a resource of
+    /// its own and the dynamic scope is kept.
+    fn enclosing(&self, schema: usize) -> Option<usize> {
+        self.tree.schemas[schema]
+            .enclosing
+            .filter(|_| self.keeps_scope)
+    }
+
+    /// The node of the schema at `schema` for `instance` at `__path` and `__position`.
+    fn node<E: ValueEmitter>(&self, schema: usize) -> TokenStream {
         if self.callable[schema] {
             let name = Self::evaluate_fn(schema);
             return quote! { #name(__e, instance, __path, __position) };
@@ -2070,10 +2124,9 @@ impl Code<'_> {
                         );
                     };
                 }
-                if let Some((target, function)) = self
-                    .static_reference(*subschema)
-                    .filter(|_| !*closed && !self.callable[*subschema])
-                {
+                if let Some((target, function)) = self.static_reference(*subschema).filter(|_| {
+                    !*closed && !self.callable[*subschema] && self.enclosing(*subschema).is_none()
+                }) {
                     let guard = self.guard(function);
                     let evaluate = Self::evaluate_fn(target);
                     return quote! {
@@ -2308,7 +2361,7 @@ impl Code<'_> {
                 let child = if *closed {
                     quote! { __e.rejected::<__J>(#subschema, &instance, __path, __position) }
                 } else {
-                    quote! {{
+                    self.descending(*subschema, quote! {{
                         #enter
                         let __subschema_errors = #subschema_errors(&instance, __path);
                         #leave
@@ -2322,7 +2375,7 @@ impl Code<'_> {
                             __e.unnest(__nested);
                             __child
                         }
-                    }}
+                    }})
                 };
                 let members = E::object_iter_entries(quote! { obj });
                 let key = E::key_as_str(quote! { __key });

@@ -1108,10 +1108,10 @@ fn recursive_ref_chain_breaks_at_an_anchorless_resource() {
     );
 }
 
-// A `$recursiveRef` under a lexically entered anchored resource lands on that resource, not on
-// the root, so the back-reference cannot take the `#` form.
+// The root stays in the dynamic scope below an anchored resource it holds inline, so a
+// `$recursiveRef` reached back through that resource lands on the root, the outermost one.
 #[test]
-fn back_reference_through_an_anchored_resource_is_not_the_root() {
+fn back_reference_through_an_anchored_resource_lands_on_the_root() {
     let schema = json!({
         "$schema": "https://json-schema.org/draft/2019-09/schema",
         "$id": "https://example.com/back/root",
@@ -1136,10 +1136,10 @@ fn back_reference_through_an_anchored_resource_is_not_the_root() {
     );
 }
 
-// A `$dynamicAnchor` re-declared by an embedded resource binds for paths through that resource,
-// even though the root already bound the same name.
+// The root stays in the dynamic scope below a resource it holds inline, so its `$dynamicAnchor`
+// binds over the one that resource re-declares.
 #[test]
-fn redeclared_dynamic_anchor_in_an_embedded_resource_binds() {
+fn dynamic_anchor_redeclared_in_an_embedded_resource_yields_to_the_root() {
     let schema = json!({
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": "https://example.com/redeclare/root",

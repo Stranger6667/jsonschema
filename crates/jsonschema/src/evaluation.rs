@@ -2178,7 +2178,8 @@ pub mod generated {
             /// That target's code, an index of `Tables::functions`.
             #[serde(default)]
             function: usize,
-            /// That target is in another document than the schema holding the reference.
+            /// That target is in another resource than the schema holding the reference: in another
+            /// document, or embedded in the same one.
             #[serde(default)]
             leaves: bool,
         },
@@ -2190,7 +2191,8 @@ pub mod generated {
         target: usize,
         /// The target's code, an index of `Built::functions`.
         function: usize,
-        /// The target is in another document than the schema holding the reference.
+        /// The target is in another resource than the schema holding the reference: in another
+        /// document, or embedded in the same one.
         leaves: bool,
         /// The resource holding the reference.
         caller: usize,
@@ -2635,7 +2637,8 @@ pub mod generated {
         /// Each schema a reference through the dynamic scope entered, with the address of its
         /// instance location.
         active: Vec<(usize, usize)>,
-        /// The dynamic scope: the resources references left, the outermost first.
+        /// The dynamic scope: the resources references left and those holding a resource the
+        /// evaluation descended into, the outermost first.
         scope: Vec<usize>,
         /// Evaluation paths below a `$ref`, built once per rebase and unit after the first
         /// `EVALUATION_PATH_CACHE_THRESHOLD`, which small instances do not repay.
@@ -3178,6 +3181,27 @@ pub mod generated {
             self.rebases.pop();
         }
 
+        /// Descends into a resource embedded in the one at `enclosing`, which joins the dynamic
+        /// scope below it unless a reference staying in it put it there already. Whether it
+        /// joined goes to [`Self::leave_resource`].
+        #[inline]
+        #[must_use]
+        pub fn enter_resource(&mut self, enclosing: usize) -> bool {
+            let joins = self.scope.last() != Some(&enclosing);
+            if joins {
+                self.scope.push(enclosing);
+            }
+            joins
+        }
+
+        /// Leaves the resource [`Self::enter_resource`] descended into.
+        #[inline]
+        pub fn leave_resource(&mut self, joined: bool) {
+            if joined {
+                self.scope.pop();
+            }
+        }
+
         /// Whether the target code at `function` compiled while the code the evaluation is in did,
         /// so that code guards its references to it.
         fn compiling(&self, function: usize) -> bool {
@@ -3204,7 +3228,7 @@ pub mod generated {
         }
 
         /// The resource a static reference in the resource `caller` adds to the dynamic scope: the
-        /// caller's, when the scope is empty or the reference `leaves` its document.
+        /// caller's, when the scope is empty or the reference `leaves` it.
         #[inline]
         fn pushed(&self, leaves: bool, caller: usize) -> Option<usize> {
             (self.scope.is_empty() || leaves).then_some(caller)
