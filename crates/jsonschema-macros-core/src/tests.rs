@@ -500,6 +500,37 @@ fn evaluate_contains_module() {
     );
 }
 
+// A branch with this much code gets a function of its own, kept out of line; the small one stays
+// inline.
+#[test]
+fn evaluate_outlined_branch_module() {
+    let properties = Value::Object(
+        (b'a'..=b'p')
+            .map(|name| (char::from(name).to_string(), json!({"type": "integer"})))
+            .collect(),
+    );
+    let config = test_config(json!({"oneOf": [{"properties": properties}, {"type": "null"}]}));
+    insta::assert_snapshot!(
+        "evaluate_outlined_branch_module",
+        render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)
+    );
+}
+
+// An `items` subschema of leaf keywords only is evaluated by its item function, however many it
+// has.
+#[test]
+fn evaluate_leaf_items_not_outlined() {
+    let config = test_config(json!({"items": {
+        "type": "number", "minimum": 0, "maximum": 100, "exclusiveMinimum": -1,
+        "exclusiveMaximum": 101, "multipleOf": 0.5, "minLength": 1, "maxLength": 9,
+        "minItems": 1, "maxItems": 9, "minProperties": 1, "maxProperties": 9,
+        "required": ["x"], "pattern": "^a", "uniqueItems": true,
+        "dependentRequired": {"x": ["y"]}
+    }}));
+    let code = render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config);
+    assert!(!code.contains("fn __evaluate_1"), "{code}");
+}
+
 // Each branch of nested `anyOf` gets one helper, however many enclosing branches `evaluate`
 // checks the validity of.
 #[test_case(1 ; "one level")]
