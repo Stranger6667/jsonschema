@@ -168,9 +168,6 @@ def test_draft_codegen(
     assert (jsonschema_testsuite_pyo3.iter_errors(case_id, instance) == []) is expected, (
         f"iter_errors mismatch: {error_message}"
     )
-    # `None` until the generator supports `evaluate` for the case's schema; otherwise the outputs of
-    # the generated validator and of a runtime one built like it.
-    output = jsonschema_testsuite_pyo3.evaluate(case_id, instance)
-    if output is not None:
-        generated, runtime = json.loads(output)
-        assert generated == runtime, f"evaluate mismatch: {error_message}"
+    # The outputs of the generated validator and of a runtime one built like it.
+    generated, runtime = json.loads(jsonschema_testsuite_pyo3.evaluate(case_id, instance))
+    assert generated == runtime, f"evaluate mismatch: {error_message}"

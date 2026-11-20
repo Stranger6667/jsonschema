@@ -19,8 +19,7 @@ pub struct SuiteEntry {
     pub validate: fn(&Value) -> Result<Option<String>, Error>,
     pub iter_errors: fn(&Value) -> Result<Vec<String>, Error>,
     /// `[generated, runtime]` as JSON, each the `list` and `hierarchical` outputs of a validator
-    /// with the same features and representation; `None` while the generator does not support the
-    /// case's schema.
+    /// with the same features and representation; `None` for a schema entry.
     pub evaluate: fn(&Value) -> Result<Option<String>, Error>,
 }
 
