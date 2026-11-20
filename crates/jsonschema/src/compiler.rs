@@ -1654,22 +1654,32 @@ pub(crate) fn validate_schema(
     }
     let validator = crate::meta::validator_for_draft(draft);
     if embedded.is_empty() {
-        return validator
-            .validate(schema)
-            .map_err(ValidationError::to_owned);
+        return check_against_meta_schema(&validator, schema);
     }
     // Each embedded resource with its own dialect is validated against its own meta-schema
     // (JSON Schema 2020-12 Core, Section 9.3.3), so the enclosing one sees it as `{}`.
     let mut resources = Vec::with_capacity(embedded.len());
     let enclosing = without_embedded_resources(schema, &embedded, &Location::new(), &mut resources);
-    validator
-        .validate(&enclosing)
-        .map_err(ValidationError::to_owned)?;
+    check_against_meta_schema(&validator, &enclosing)?;
     for (location, draft, contents) in resources {
         validate_schema(draft, contents)
             .map_err(|error| error.with_instance_path_prefix(&location))?;
     }
     Ok(())
+}
+
+/// The first error `validator` reports for `schema`. Most schemas are accepted, and `is_valid`
+/// reaches that verdict without the error-path bookkeeping of `validate`.
+fn check_against_meta_schema(
+    validator: &crate::meta::MetaValidator<'_>,
+    schema: &Value,
+) -> Result<(), ValidationError<'static>> {
+    if validator.is_valid(schema) {
+        return Ok(());
+    }
+    validator
+        .validate(schema)
+        .map_err(ValidationError::to_owned)
 }
 
 /// Whether `$schema` appears anywhere below the root. This structural scan is several times

@@ -47,6 +47,7 @@
 ### Performance
 
 - Fewer allocations per subschema when building a validator.
+- Faster validator builds for valid schemas, which skip collecting meta-schema errors.
 - Lower cost of collecting errors over the valid parts of an instance.
 - Fewer allocations in `evaluate` for arrays, with every `items` and `additionalItems` annotation sharing one value.
 - Lower cost of `evaluate` for arrays whose `items` is a single `type`, such as `{"type": "number"}`, with consecutive accepted items recorded together instead of as output units per item.
