@@ -1,0 +1,283 @@
+---
+source: crates/jsonschema-macros-core/src/tests.rs
+description: "{\"$defs\":{\"a\":{\"$dynamicAnchor\":\"a\",\"properties\":{\"p\":true}}},\"$id\":\"https://example.com/root\",\"allOf\":[{\"$dynamicRef\":\"#a\"},{\"$defs\":{\"a\":{\"$dynamicAnchor\":\"a\",\"properties\":{\"q\":true}}},\"$dynamicRef\":\"#a\",\"$id\":\"x\"}],\"unevaluatedProperties\":false}"
+expression: is_valid_body(schema)
+---
+__JSONSCHEMA_DYNAMIC_STACK
+            .with(|stack| {
+                stack.borrow_mut().push(("a", validate_ref_1));
+            });
+        __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push(("a", eval_ref_0));
+            });
+        __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK
+            .with(|stack| {
+                stack.borrow_mut().push(("a", eval_items_ref_1));
+            });
+        let __result = {
+            (match instance {
+                __Value::Object(obj) => {
+                    obj.iter()
+                        .all(|(__key, __value)| {
+                            let key_str = __key.as_str();
+                            if ({
+                                let __dynamic_target = __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
+                                    .with(|stack| {
+                                        let stack = stack.borrow();
+                                        let mut selected = None;
+                                        for (dynamic_anchor, validate) in stack.iter().rev() {
+                                            if *dynamic_anchor == "a" {
+                                                selected = Some(*validate);
+                                            }
+                                        }
+                                        selected
+                                    });
+                                if let Some(target) = __dynamic_target {
+                                    {
+                                        let __mark = (
+                                            target as usize,
+                                            std::ptr::from_ref(instance) as usize,
+                                        );
+                                        if __JSONSCHEMA_EVAL_MARK
+                                            .with(|__marks| __marks.borrow().contains(&__mark))
+                                        {
+                                            false
+                                        } else {
+                                            __JSONSCHEMA_EVAL_MARK
+                                                .with(|__marks| __marks.borrow_mut().push(__mark));
+                                            let __evaluated = target(instance, obj, key_str);
+                                            __JSONSCHEMA_EVAL_MARK
+                                                .with(|__marks| __marks.borrow_mut().pop());
+                                            __evaluated
+                                        }
+                                    }
+                                } else {
+                                    eval_ref_0(instance, obj, key_str)
+                                }
+                            }
+                                || {
+                                    __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
+                                        .with(|stack| {
+                                            stack.borrow_mut().push(("a", eval_ref_1));
+                                        });
+                                    let __evaluated = {
+                                        let __dynamic_target = __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
+                                            .with(|stack| {
+                                                let stack = stack.borrow();
+                                                let mut selected = None;
+                                                for (dynamic_anchor, validate) in stack.iter().rev() {
+                                                    if *dynamic_anchor == "a" {
+                                                        selected = Some(*validate);
+                                                    }
+                                                }
+                                                selected
+                                            });
+                                        if let Some(target) = __dynamic_target {
+                                            {
+                                                let __mark = (
+                                                    target as usize,
+                                                    std::ptr::from_ref(instance) as usize,
+                                                );
+                                                if __JSONSCHEMA_EVAL_MARK
+                                                    .with(|__marks| __marks.borrow().contains(&__mark))
+                                                {
+                                                    false
+                                                } else {
+                                                    __JSONSCHEMA_EVAL_MARK
+                                                        .with(|__marks| __marks.borrow_mut().push(__mark));
+                                                    let __evaluated = target(instance, obj, key_str);
+                                                    __JSONSCHEMA_EVAL_MARK
+                                                        .with(|__marks| __marks.borrow_mut().pop());
+                                                    __evaluated
+                                                }
+                                            }
+                                        } else {
+                                            eval_ref_1(instance, obj, key_str)
+                                        }
+                                    };
+                                    __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
+                                        .with(|stack| {
+                                            let mut stack = stack.borrow_mut();
+                                            for _ in 0..1usize {
+                                                stack.pop();
+                                            }
+                                        });
+                                    __evaluated
+                                })
+                            {
+                                true
+                            } else {
+                                false
+                            }
+                        })
+                }
+                _ => true,
+            })
+                && (({
+                    let __dynamic_target = __JSONSCHEMA_DYNAMIC_STACK
+                        .with(|stack| {
+                            let stack = stack.borrow();
+                            let mut selected = None;
+                            for (dynamic_anchor, target) in stack.iter() {
+                                if *dynamic_anchor == "a" {
+                                    if *target as usize != validate_ref_1 as usize {
+                                        selected = Some(*target);
+                                    }
+                                    break;
+                                }
+                            }
+                            selected
+                        });
+                    if let Some(target) = __dynamic_target {
+                        {
+                            let __mark = (
+                                target as usize,
+                                std::ptr::from_ref(instance) as usize,
+                            );
+                            let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                .with(|__marks| {
+                                    let mut __marks = __marks.borrow_mut();
+                                    if __marks.contains(&__mark) {
+                                        true
+                                    } else {
+                                        __marks.push(__mark);
+                                        false
+                                    }
+                                });
+                            if __reentered {
+                                true
+                            } else {
+                                let __valid = {
+                                    __JSONSCHEMA_DYNAMIC_STACK
+                                        .with(|stack| {
+                                            stack.borrow_mut().push(("a", validate_ref_1));
+                                        });
+                                    let __valid = target(instance);
+                                    __JSONSCHEMA_DYNAMIC_STACK
+                                        .with(|stack| {
+                                            let mut stack = stack.borrow_mut();
+                                            for _ in 0..1usize {
+                                                stack.pop();
+                                            }
+                                        });
+                                    __valid
+                                };
+                                __JSONSCHEMA_VALIDATE_MARK
+                                    .with(|__marks| __marks.borrow_mut().pop());
+                                __valid
+                            }
+                        }
+                    } else {
+                        {
+                            __JSONSCHEMA_DYNAMIC_STACK
+                                .with(|stack| {
+                                    stack.borrow_mut().push(("a", validate_ref_1));
+                                });
+                            let __result = validate_ref_1(instance);
+                            __JSONSCHEMA_DYNAMIC_STACK
+                                .with(|stack| {
+                                    let mut stack = stack.borrow_mut();
+                                    for _ in 0..1usize {
+                                        stack.pop();
+                                    }
+                                });
+                            __result
+                        }
+                    }
+                })
+                    && ({
+                        let __dynamic_target = __JSONSCHEMA_DYNAMIC_STACK
+                            .with(|stack| {
+                                let stack = stack.borrow();
+                                let mut selected = None;
+                                for (dynamic_anchor, target) in stack.iter() {
+                                    if *dynamic_anchor == "a" {
+                                        if *target as usize != validate_ref_0 as usize {
+                                            selected = Some(*target);
+                                        }
+                                        break;
+                                    }
+                                }
+                                selected
+                            });
+                        if let Some(target) = __dynamic_target {
+                            {
+                                let __mark = (
+                                    target as usize,
+                                    std::ptr::from_ref(instance) as usize,
+                                );
+                                let __reentered = __JSONSCHEMA_VALIDATE_MARK
+                                    .with(|__marks| {
+                                        let mut __marks = __marks.borrow_mut();
+                                        if __marks.contains(&__mark) {
+                                            true
+                                        } else {
+                                            __marks.push(__mark);
+                                            false
+                                        }
+                                    });
+                                if __reentered {
+                                    true
+                                } else {
+                                    let __valid = {
+                                        __JSONSCHEMA_DYNAMIC_STACK
+                                            .with(|stack| {
+                                                stack.borrow_mut().push(("a", validate_ref_0));
+                                            });
+                                        let __valid = target(instance);
+                                        __JSONSCHEMA_DYNAMIC_STACK
+                                            .with(|stack| {
+                                                let mut stack = stack.borrow_mut();
+                                                for _ in 0..1usize {
+                                                    stack.pop();
+                                                }
+                                            });
+                                        __valid
+                                    };
+                                    __JSONSCHEMA_VALIDATE_MARK
+                                        .with(|__marks| __marks.borrow_mut().pop());
+                                    __valid
+                                }
+                            }
+                        } else {
+                            {
+                                __JSONSCHEMA_DYNAMIC_STACK
+                                    .with(|stack| {
+                                        stack.borrow_mut().push(("a", validate_ref_0));
+                                    });
+                                let __result = validate_ref_0(instance);
+                                __JSONSCHEMA_DYNAMIC_STACK
+                                    .with(|stack| {
+                                        let mut stack = stack.borrow_mut();
+                                        for _ in 0..1usize {
+                                            stack.pop();
+                                        }
+                                    });
+                                __result
+                            }
+                        }
+                    }))
+        };
+        __JSONSCHEMA_DYNAMIC_ITEM_EVAL_STACK
+            .with(|stack| {
+                let mut stack = stack.borrow_mut();
+                for _ in 0..1usize {
+                    stack.pop();
+                }
+            });
+        __JSONSCHEMA_DYNAMIC_KEY_EVAL_STACK
+            .with(|stack| {
+                let mut stack = stack.borrow_mut();
+                for _ in 0..1usize {
+                    stack.pop();
+                }
+            });
+        __JSONSCHEMA_DYNAMIC_STACK
+            .with(|stack| {
+                let mut stack = stack.borrow_mut();
+                for _ in 0..1usize {
+                    stack.pop();
+                }
+            });
+        __result
