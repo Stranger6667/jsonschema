@@ -140,24 +140,85 @@ mod __validator_impl {
                 jsonschema::json::SerdeJson > (instance)),)
             ]
         }
-        static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"schemas\":[{\"count\":1,\"first\":1,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/contains\"}],\"units\":[{\"keyword\":\"type\",\"not_of_type\":0},{\"aliases\":[\"minContains\",\"maxContains\"],\"bounds\":{\"max\":null,\"min\":2},\"contains\":[1,0],\"keyword\":\"contains\"}]}",
-            matchers: &[],
-            valid: &[__valid_0],
-            guards: &[],
-            discriminators: &[],
-            not_of_type: &[__not_of_type_0],
-            direct: &[],
-            unevaluated: &[],
-            unevaluated_errors: &[],
+        type __J = jsonschema::json::SerdeJson;
+        fn __evaluate_0<'__i>(
+            __e: &mut __eval::Evaluator<'_, '_>,
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __position: __eval::InstancePosition,
+        ) -> __eval::EvaluationNode {
+            let mut __units = __eval::ChildList::default();
+            match instance {
+                __Value::Array(arr) => {
+                    let mut __indices = Vec::new();
+                    let mut __children = __eval::ChildList::default();
+                    for (__idx, instance) in arr.iter().enumerate() {
+                        if !__valid_0(&instance) {
+                            continue;
+                        }
+                        __indices.push(__idx);
+                        let __member = __path.push(__idx);
+                        let __path = &__member;
+                        let __position = __e.position_below(__position, __path);
+                        let __child = {
+                            let mut __units = __eval::ChildList::default();
+                            __units = __e
+                                .not_of_type::<
+                                    __J,
+                                >(__units, 0usize, __not_of_type_0, &instance, __position);
+                            __e.schema(1usize, Vec::new(), __units, __position)
+                        };
+                        __children = __e.push(__children, __child);
+                    }
+                    let __errors = if __e.checks() {
+                        __eval::contains_errors::<
+                            __J,
+                        >(__indices.len(), Some(2u64), None, &instance)
+                    } else {
+                        Vec::new()
+                    };
+                    let __annotations = if __indices.is_empty() {
+                        None
+                    } else {
+                        Some(__eval::indices(__indices))
+                    };
+                    __units = __e
+                        .unit(
+                            __units,
+                            1usize,
+                            __errors,
+                            __annotations,
+                            __children,
+                            __position,
+                        );
+                }
+                _ => {
+                    __units = __e
+                        .unit(
+                            __units,
+                            1usize,
+                            Vec::new(),
+                            None,
+                            __eval::ChildList::default(),
+                            __position,
+                        );
+                }
+            }
+            __e.schema(0usize, Vec::new(), __units, __position)
+        }
+        static __SITES: __eval::Sites = __eval::Sites {
+            tables: "{\"schemas\":[{\"count\":1,\"first\":1,\"pointer\":\"\"},{\"count\":1,\"first\":0,\"pointer\":\"/contains\"}],\"units\":[\"type\",{\"aliases\":[\"minContains\",\"maxContains\"],\"keyword\":\"contains\"}]}",
             scope: None,
             built: ::std::sync::OnceLock::new(),
         };
-        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate_reporting(
-            &__TREE,
-            &instance,
-            is_valid(instance),
-        )
+        let mut __e = __SITES.checking(is_valid(instance));
+        let __root = __evaluate_0(
+            &mut __e,
+            instance,
+            &__paths::LazyLocation::new(),
+            __eval::InstancePosition::ROOT,
+        );
+        __e.finish(__root)
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {
         run_is_valid(instance)

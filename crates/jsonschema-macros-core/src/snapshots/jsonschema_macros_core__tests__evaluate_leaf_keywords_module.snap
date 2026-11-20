@@ -168,24 +168,41 @@ mod __validator_impl {
             }
             false
         }
-        static __TREE: __eval::Tree<jsonschema::json::SerdeJson> = __eval::Tree {
-            tables: "{\"schemas\":[{\"count\":3,\"first\":0,\"pointer\":\"\"}],\"units\":[{\"keyword\":\"type\",\"not_of_type\":0},{\"direct\":0,\"keyword\":\"minLength\"},{\"direct\":1,\"keyword\":\"maxLength\"}]}",
-            matchers: &[],
-            valid: &[],
-            guards: &[],
-            discriminators: &[],
-            not_of_type: &[__not_of_type_0],
-            direct: &[__direct_1, __direct_2],
-            unevaluated: &[],
-            unevaluated_errors: &[],
+        type __J = jsonschema::json::SerdeJson;
+        fn __evaluate_0<'__i>(
+            __e: &mut __eval::Evaluator<'_, '_>,
+            instance: &'__i __Value,
+            __path: &__paths::LazyLocation,
+            __position: __eval::InstancePosition,
+        ) -> __eval::EvaluationNode {
+            let mut __units = __eval::ChildList::default();
+            __units = __e
+                .not_of_type::<
+                    __J,
+                >(__units, 0usize, __not_of_type_0, &instance, __position);
+            __units = __e
+                .checked::<
+                    __J,
+                >(__units, 1usize, __direct_1, &instance, false, __position);
+            __units = __e
+                .checked::<
+                    __J,
+                >(__units, 2usize, __direct_2, &instance, false, __position);
+            __e.schema(0usize, Vec::new(), __units, __position)
+        }
+        static __SITES: __eval::Sites = __eval::Sites {
+            tables: "{\"schemas\":[{\"count\":3,\"first\":0,\"pointer\":\"\"}],\"units\":[\"type\",\"minLength\",\"maxLength\"]}",
             scope: None,
             built: ::std::sync::OnceLock::new(),
         };
-        <jsonschema::json::SerdeJson as __eval::Walk>::evaluate_reporting(
-            &__TREE,
-            &instance,
-            is_valid(instance),
-        )
+        let mut __e = __SITES.checking(is_valid(instance));
+        let __root = __evaluate_0(
+            &mut __e,
+            instance,
+            &__paths::LazyLocation::new(),
+            __eval::InstancePosition::ROOT,
+        );
+        __e.finish(__root)
     }
     pub(super) fn entry_is_valid(instance: &__Value) -> bool {
         run_is_valid(instance)

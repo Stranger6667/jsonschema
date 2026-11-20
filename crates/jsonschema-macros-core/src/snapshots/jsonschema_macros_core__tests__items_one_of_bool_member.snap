@@ -21,7 +21,7 @@ match instance {
                 if is_branch_valid_0(instance) {
                     __count += 1;
                 }
-                if is_branch_valid_1(instance) {
+                if is_branch_valid_0(instance) {
                     __count += 1;
                 }
                 if __count != 1 {
@@ -37,7 +37,7 @@ match instance {
                     }
                     {
                         let mut __branch_errors = __err::Errors::new(false);
-                        let _ = collect_branch_errors_1(
+                        let _ = collect_branch_errors_0(
                             instance,
                             __path,
                             &mut __branch_errors,

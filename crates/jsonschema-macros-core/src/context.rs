@@ -262,6 +262,8 @@ pub(crate) struct CompileContext<'cfg, E: ValueEmitter> {
     pub(crate) item_eval_fns: FnTable,
     /// Applicator branches emitted once as paired validity and error-collection helpers.
     pub(crate) branch_helpers: Vec<(TokenStream, TokenStream)>,
+    /// Each entry of `branch_helpers` by its code.
+    branch_helper_ids: HashMap<String, usize>,
     /// Error reporting for `type: array` with every item checked by one referenced schema, keyed
     /// by that schema's `is_valid` function.
     pub(crate) array_errors_helpers: IndexMap<String, (Ident, TokenStream)>,
@@ -348,6 +350,7 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
             key_eval_fns: FnTable::new("eval_ref"),
             item_eval_fns: FnTable::new("eval_items_ref"),
             branch_helpers: Vec::new(),
+            branch_helper_ids: HashMap::new(),
             array_errors_helpers: IndexMap::new(),
             loop_labels: 0,
             discriminator_assumption: None,
@@ -379,13 +382,20 @@ impl<'cfg, E: ValueEmitter> CompileContext<'cfg, E> {
         }
     }
 
+    /// The helper running `is_valid` and `errors` for one branch, shared by every branch
+    /// compiling to the same code: `evaluate` compiles each branch again for its validity, which
+    /// would otherwise copy every helper below it once per enclosing branch.
     pub(crate) fn register_branch_helper(
         &mut self,
         is_valid: TokenStream,
         errors: TokenStream,
     ) -> usize {
-        let idx = self.branch_helpers.len();
-        self.branch_helpers.push((is_valid, errors));
+        let key = format!("{is_valid}\u{0}{errors}");
+        let next = self.branch_helpers.len();
+        let idx = *self.branch_helper_ids.entry(key).or_insert(next);
+        if idx == next {
+            self.branch_helpers.push((is_valid, errors));
+        }
         idx
     }
 
