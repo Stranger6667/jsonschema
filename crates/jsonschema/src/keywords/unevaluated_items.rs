@@ -334,7 +334,8 @@ fn compile_pending_items_validators<'a, F: Json>(
     let applicator = ctx.has_vocabulary(&Vocabulary::Applicator);
 
     let unevaluated = compile_unevaluated(ctx, parent)?;
-    let contains = if applicator {
+    // `contains` annotates the items it matches from 2020-12 on; earlier drafts evaluate none.
+    let contains = if applicator && matches!(ctx.draft(), Draft::Draft202012 | Draft::Unknown) {
         compile_contains(ctx, parent)?
     } else {
         None
@@ -912,7 +913,7 @@ pub(crate) fn compile<'a, F: Json>(
 #[cfg(test)]
 mod tests {
     use crate::{error::ValidationErrorKind, tests_util};
-    use referencing::Draft;
+    use referencing::{Draft, Retrieve, Uri};
     use serde_json::{json, Value};
     use test_case::test_case;
 
@@ -1327,6 +1328,61 @@ mod tests {
     #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"items": true}), &[]; "2020-12 items true")]
     #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"prefixItems": [true]}), &[]; "2020-12 prefixItems true")]
     fn boolean_subschemas(draft: &str, applicator: &Value, expected: &[(&str, &str)]) {
+        assert_first_item_outcome(draft, applicator, expected);
+    }
+
+    // `contains` evaluates the items it matches from 2020-12 on, wherever it applies in place
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"contains": {"type": "integer"}}), FIRST_UNEXPECTED; "2019-09 contains")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"allOf": [{"contains": {"type": "integer"}}]}), FIRST_UNEXPECTED; "2019-09 contains in allOf")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema", &json!({"$defs": {"c": {"contains": {"type": "integer"}}}, "$ref": "#/$defs/c"}), FIRST_UNEXPECTED; "2019-09 contains in a reference")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"contains": {"type": "integer"}}), &[]; "2020-12 contains")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"allOf": [{"contains": {"type": "integer"}}]}), &[]; "2020-12 contains in allOf")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema", &json!({"$defs": {"c": {"contains": {"type": "integer"}}}, "$ref": "#/$defs/c"}), &[]; "2020-12 contains in a reference")]
+    fn contains_evaluates_from_2020_12(draft: &str, applicator: &Value, expected: &[(&str, &str)]) {
+        assert_first_item_outcome(draft, applicator, expected);
+    }
+
+    struct CustomMetaSchema;
+
+    impl Retrieve for CustomMetaSchema {
+        fn retrieve(
+            &self,
+            uri: &Uri<String>,
+        ) -> Result<Value, Box<dyn std::error::Error + Send + Sync>> {
+            match uri.as_str() {
+                "json-schema:///meta/custom" => Ok(json!({
+                    "$id": "json-schema:///meta/custom",
+                    "$schema": "https://json-schema.org/draft/2020-12/schema",
+                    "$vocabulary": {
+                        "https://json-schema.org/draft/2020-12/vocab/core": true,
+                        "https://json-schema.org/draft/2020-12/vocab/applicator": true,
+                        "https://json-schema.org/draft/2020-12/vocab/validation": true,
+                        "https://json-schema.org/draft/2020-12/vocab/unevaluated": true
+                    }
+                })),
+                other => Err(format!("unexpected retrieval of {other}").into()),
+            }
+        }
+    }
+
+    // A `$schema` naming a meta-schema outside the registry leaves the draft unknown, which
+    // reads `contains` as 2020-12 does
+    #[test_case(&json!([1]), true; "matched item")]
+    #[test_case(&json!([1, "x"]), false; "unmatched item")]
+    fn contains_evaluates_under_a_custom_meta_schema(instance: &Value, expected: bool) {
+        let validator = crate::options()
+            .with_retriever(CustomMetaSchema)
+            .build(&json!({
+                "$schema": "json-schema:///meta/custom",
+                "contains": {"type": "integer"},
+                "unevaluatedItems": false
+            }))
+            .expect("schema compiles");
+        assert_eq!(validator.is_valid(instance), expected);
+    }
+
+    // The outcome of `applicator` beside `unevaluatedItems: false` on `[1]`
+    fn assert_first_item_outcome(draft: &str, applicator: &Value, expected: &[(&str, &str)]) {
         let expected: Vec<_> = expected
             .iter()
             .map(|(location, message)| ((*location).to_owned(), (*message).to_owned()))
