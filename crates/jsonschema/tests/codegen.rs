@@ -1017,6 +1017,98 @@ fn test_embedded_resource_in_dynamic_scope_matches_runtime(
     }
 }
 
+const RECURSIVE_REF_PAST_RESOURCE_WITHOUT_ANCHOR: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"anyOf":[{"type":"boolean"},{"$ref":"b"}],"$defs":{"b":{"$id":"https://example.com/b","anyOf":[{"type":"string"},{"$ref":"c"}]},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"anyOf":[{"type":"integer"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}}}"##;
+const RECURSIVE_REF_PAST_INLINE_RESOURCE_WITH_ANCHOR_FALSE: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"anyOf":[{"type":"boolean"},{"$id":"https://example.com/b","$recursiveAnchor":false,"anyOf":[{"type":"string"},{"$id":"https://example.com/c","$recursiveAnchor":true,"anyOf":[{"type":"integer"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}]}]}"##;
+const RECURSIVE_TARGET_SHARED_BY_TWO_SCOPES_MIDDLE_FIRST: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"anyOf":[{"type":"boolean"},{"type":"object","properties":{"a":{"$ref":"b"},"m":{"$ref":"c"}},"additionalProperties":false}],"$defs":{"b":{"$id":"https://example.com/b","anyOf":[{"type":"string"},{"$ref":"c"}]},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"anyOf":[{"type":"integer"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}}}"##;
+const RECURSIVE_REF_PAST_RESOURCE_WITHOUT_ANCHOR_UNEVALUATED_PROPERTIES: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"properties":{"y":true},"$ref":"b","$defs":{"b":{"$id":"https://example.com/b","$ref":"c"},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"properties":{"x":{"$recursiveRef":"#","unevaluatedProperties":false}}}}}"##;
+const RECURSIVE_REF_PAST_RESOURCE_WITHOUT_ANCHOR_UNEVALUATED_ITEMS: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"items":[true],"$ref":"b","$defs":{"b":{"$id":"https://example.com/b","$ref":"c"},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"properties":{"x":{"$recursiveRef":"#","unevaluatedItems":false}}}}}"##;
+const RECURSIVE_TARGET_SHARED_BY_TWO_SCOPES_MIDDLE_LAST: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"anyOf":[{"type":"boolean"},{"type":"object","properties":{"z":{"$ref":"b"},"m":{"$ref":"c"}},"additionalProperties":false}],"$defs":{"b":{"$id":"https://example.com/b","anyOf":[{"type":"string"},{"$ref":"c"}]},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"anyOf":[{"type":"integer"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}}}"##;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"anyOf":[{"type":"boolean"},{"$ref":"b"}],"$defs":{"b":{"$id":"https://example.com/b","anyOf":[{"type":"string"},{"$ref":"c"}]},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"anyOf":[{"type":"integer"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefPastResourceWithoutAnchor;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"anyOf":[{"type":"boolean"},{"$id":"https://example.com/b","$recursiveAnchor":false,"anyOf":[{"type":"string"},{"$id":"https://example.com/c","$recursiveAnchor":true,"anyOf":[{"type":"integer"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}]}]}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefPastInlineResourceWithAnchorFalse;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"anyOf":[{"type":"boolean"},{"type":"object","properties":{"a":{"$ref":"b"},"m":{"$ref":"c"}},"additionalProperties":false}],"$defs":{"b":{"$id":"https://example.com/b","anyOf":[{"type":"string"},{"$ref":"c"}]},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"anyOf":[{"type":"integer"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveTargetSharedByTwoScopesMiddleFirst;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"anyOf":[{"type":"boolean"},{"type":"object","properties":{"z":{"$ref":"b"},"m":{"$ref":"c"}},"additionalProperties":false}],"$defs":{"b":{"$id":"https://example.com/b","anyOf":[{"type":"string"},{"$ref":"c"}]},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"anyOf":[{"type":"integer"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveTargetSharedByTwoScopesMiddleLast;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"properties":{"y":true},"$ref":"b","$defs":{"b":{"$id":"https://example.com/b","$ref":"c"},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"properties":{"x":{"$recursiveRef":"#","unevaluatedProperties":false}}}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefPastResourceWithoutAnchorUnevaluatedProperties;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/a","$recursiveAnchor":true,"items":[true],"$ref":"b","$defs":{"b":{"$id":"https://example.com/b","$ref":"c"},"c":{"$id":"https://example.com/c","$recursiveAnchor":true,"properties":{"x":{"$recursiveRef":"#","unevaluatedItems":false}}}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefPastResourceWithoutAnchorUnevaluatedItems;
+
+// A `$recursiveRef` in `c` lands on `a`, the outermost resource with `$recursiveAnchor: true`,
+// past `b`, which has none.
+#[test_case(RecursiveRefPastResourceWithoutAnchor::is_valid, RecursiveRefPastResourceWithoutAnchor::validate, RecursiveRefPastResourceWithoutAnchor::iter_errors, RecursiveRefPastResourceWithoutAnchor::evaluate, RECURSIVE_REF_PAST_RESOURCE_WITHOUT_ANCHOR ; "past_resource_without_anchor")]
+#[test_case(RecursiveRefPastInlineResourceWithAnchorFalse::is_valid, RecursiveRefPastInlineResourceWithAnchorFalse::validate, RecursiveRefPastInlineResourceWithAnchorFalse::iter_errors, RecursiveRefPastInlineResourceWithAnchorFalse::evaluate, RECURSIVE_REF_PAST_INLINE_RESOURCE_WITH_ANCHOR_FALSE ; "past_inline_resource_with_anchor_false")]
+#[test_case(RecursiveTargetSharedByTwoScopesMiddleFirst::is_valid, RecursiveTargetSharedByTwoScopesMiddleFirst::validate, RecursiveTargetSharedByTwoScopesMiddleFirst::iter_errors, RecursiveTargetSharedByTwoScopesMiddleFirst::evaluate, RECURSIVE_TARGET_SHARED_BY_TWO_SCOPES_MIDDLE_FIRST ; "target_shared_by_two_scopes_middle_first")]
+#[test_case(RecursiveTargetSharedByTwoScopesMiddleLast::is_valid, RecursiveTargetSharedByTwoScopesMiddleLast::validate, RecursiveTargetSharedByTwoScopesMiddleLast::iter_errors, RecursiveTargetSharedByTwoScopesMiddleLast::evaluate, RECURSIVE_TARGET_SHARED_BY_TWO_SCOPES_MIDDLE_LAST ; "target_shared_by_two_scopes_middle_last")]
+#[test_case(RecursiveRefPastResourceWithoutAnchorUnevaluatedProperties::is_valid, RecursiveRefPastResourceWithoutAnchorUnevaluatedProperties::validate, RecursiveRefPastResourceWithoutAnchorUnevaluatedProperties::iter_errors, RecursiveRefPastResourceWithoutAnchorUnevaluatedProperties::evaluate, RECURSIVE_REF_PAST_RESOURCE_WITHOUT_ANCHOR_UNEVALUATED_PROPERTIES ; "past_resource_without_anchor_unevaluated_properties")]
+#[test_case(RecursiveRefPastResourceWithoutAnchorUnevaluatedItems::is_valid, RecursiveRefPastResourceWithoutAnchorUnevaluatedItems::validate, RecursiveRefPastResourceWithoutAnchorUnevaluatedItems::iter_errors, RecursiveRefPastResourceWithoutAnchorUnevaluatedItems::evaluate, RECURSIVE_REF_PAST_RESOURCE_WITHOUT_ANCHOR_UNEVALUATED_ITEMS ; "past_resource_without_anchor_unevaluated_items")]
+fn test_recursive_ref_past_resource_without_anchor_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    schema: &str,
+) {
+    let schema = serde_json::from_str(schema).expect("valid JSON");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    for instance in [
+        serde_json::json!({"x": true}),
+        serde_json::json!({"x": "s"}),
+        serde_json::json!({"x": 1}),
+        serde_json::json!({"x": {"y": true}}),
+        serde_json::json!({"x": []}),
+        serde_json::json!({"m": {"x": true}}),
+        serde_json::json!({"m": {"x": 1}}),
+        serde_json::json!({"a": {"x": true}}),
+        serde_json::json!({"a": {"x": 1}}),
+        serde_json::json!({"z": {"x": true}}),
+        serde_json::json!({"z": {"x": 1}}),
+        serde_json::json!({"x": {"y": 1}}),
+        serde_json::json!({"x": {"z": 1}}),
+        serde_json::json!({"x": [1]}),
+        serde_json::json!({"x": [1, 2]}),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+        assert_eq!(
+            evaluation_outputs(&evaluate(&instance)),
+            evaluation_outputs(&runtime.evaluate(&instance)),
+            "{instance}"
+        );
+    }
+}
+
 #[jsonschema::validator(
     schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","$defs":{"leaf":{"$dynamicAnchor":"leaf","type":"number"}},"properties":{"c":{"$dynamicRef":"#node"}}},"d":{"$dynamicRef":"leaf#leaf"}},"$defs":{"leaf":{"$id":"leaf","$dynamicAnchor":"leaf","type":"string"}}}"##
 )]

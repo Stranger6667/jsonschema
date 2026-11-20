@@ -694,52 +694,48 @@ mod __validator_impl {
         __errors.into_vec()
     }
     pub(super) fn evaluate(instance: &__Value) -> jsonschema::Evaluation {
-        fn __enter_resource(resource: usize, anchored: bool) {
+        fn __enter_resource(resource: usize) {
             match resource {
                 0usize => {
-                    if anchored {
-                        __JSONSCHEMA_RECURSIVE_STACK
-                            .with(|stack| {
-                                stack.borrow_mut().push((validate_ref_0, true));
-                            });
-                        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
-                            .with(|stack| {
-                                stack.borrow_mut().push((eval_ref_0, true));
-                            });
-                        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
-                            .with(|stack| {
-                                stack.borrow_mut().push((eval_items_ref_0, true));
-                            });
-                        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
-                            .with(|stack| {
-                                stack.borrow_mut().push((validate_ref_0_errors, true));
-                            });
-                    }
+                    __JSONSCHEMA_RECURSIVE_STACK
+                        .with(|stack| {
+                            stack.borrow_mut().push((validate_ref_0, true));
+                        });
+                    __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                        .with(|stack| {
+                            stack.borrow_mut().push((eval_ref_0, true));
+                        });
+                    __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                        .with(|stack| {
+                            stack.borrow_mut().push((eval_items_ref_0, true));
+                        });
+                    __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+                        .with(|stack| {
+                            stack.borrow_mut().push((validate_ref_0_errors, true));
+                        });
                 }
                 _ => {}
             }
         }
-        fn __leave_resource(resource: usize, anchored: bool) {
+        fn __leave_resource(resource: usize) {
             match resource {
                 0usize => {
-                    if anchored {
-                        __JSONSCHEMA_RECURSIVE_ERRORS_STACK
-                            .with(|stack| {
-                                stack.borrow_mut().pop();
-                            });
-                        __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
-                            .with(|stack| {
-                                stack.borrow_mut().pop();
-                            });
-                        __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
-                            .with(|stack| {
-                                stack.borrow_mut().pop();
-                            });
-                        __JSONSCHEMA_RECURSIVE_STACK
-                            .with(|stack| {
-                                stack.borrow_mut().pop();
-                            });
-                    }
+                    __JSONSCHEMA_RECURSIVE_ERRORS_STACK
+                        .with(|stack| {
+                            stack.borrow_mut().pop();
+                        });
+                    __JSONSCHEMA_RECURSIVE_ITEM_EVAL_STACK
+                        .with(|stack| {
+                            stack.borrow_mut().pop();
+                        });
+                    __JSONSCHEMA_RECURSIVE_KEY_EVAL_STACK
+                        .with(|stack| {
+                            stack.borrow_mut().pop();
+                        });
+                    __JSONSCHEMA_RECURSIVE_STACK
+                        .with(|stack| {
+                            stack.borrow_mut().pop();
+                        });
                 }
                 _ => {}
             }

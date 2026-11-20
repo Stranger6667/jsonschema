@@ -2630,7 +2630,6 @@ fn inlined_children(tree: &Tree, unit: &TreeUnit) -> Vec<usize> {
 
 /// Functions putting a resource's entries on the generated code's dynamic-scope stacks, and taking
 /// them off, so the generated validity code resolves dynamic references in the evaluation's scope.
-/// The `$recursiveRef` entry goes on only when `anchored`.
 fn scope_stacks<E: ValueEmitter>(
     ctx: &mut CompileContext<'_, E>,
     resources: &[TreeResource],
@@ -2681,20 +2680,18 @@ fn scope_stacks<E: ValueEmitter>(
                 get_or_create_item_eval_fn(ctx, &location, schema, base)
             );
             let errors = format_ident!("{is_valid}_errors");
-            let pushes = [
+            enter.extend([
                 push_recursive_is_valid(&is_valid, true),
                 push_recursive_key_eval(&key_eval, true),
                 push_recursive_item_eval(&item_eval, true),
                 push_recursive_errors(&errors, true),
-            ];
-            let pops = [
+            ]);
+            leave.extend([
                 pop_recursive_errors(),
                 pop_recursive_item_eval(),
                 pop_recursive_key_eval(),
                 pop_recursive_is_valid(),
-            ];
-            enter.push(quote! { if anchored { #(#pushes)* } });
-            leave.push(quote! { if anchored { #(#pops)* } });
+            ]);
         }
         if !enter.is_empty() {
             enter_arms.push(quote! { #index => { #(#enter)* } });
@@ -2705,13 +2702,13 @@ fn scope_stacks<E: ValueEmitter>(
         return None;
     }
     Some(quote! {
-        fn __enter_resource(resource: usize, anchored: bool) {
+        fn __enter_resource(resource: usize) {
             match resource {
                 #(#enter_arms)*
                 _ => {}
             }
         }
-        fn __leave_resource(resource: usize, anchored: bool) {
+        fn __leave_resource(resource: usize) {
             match resource {
                 #(#leave_arms)*
                 _ => {}

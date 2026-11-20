@@ -2279,11 +2279,12 @@ pub mod generated {
     }
 
     /// Put one resource's entries on the generated code's dynamic-scope stacks, and take them off:
-    /// its `$dynamicAnchor` schemas, and its root for `$recursiveRef` when the flag is set.
+    /// its `$dynamicAnchor` schemas, and its root for `$recursiveRef` when that root has
+    /// `$recursiveAnchor: true`.
     #[derive(Clone, Copy)]
     pub struct ScopeStacks {
-        pub enter: fn(usize, bool),
-        pub leave: fn(usize, bool),
+        pub enter: fn(usize),
+        pub leave: fn(usize),
     }
 
     pub struct Built {
@@ -3215,15 +3216,20 @@ pub mod generated {
             } = self.built.units[unit].reference;
             let resources = &self.built.resources;
             if recursive {
-                // Outward through the scope while each resource's root has `$recursiveAnchor: true`.
-                let mut landed = (target, caller);
-                for &resource in self.scope.iter().rev() {
-                    let entered = &resources[resource];
-                    if !entered.recursive {
-                        break;
-                    }
-                    landed = (entered.root.expect("a recursive resource's root"), resource);
-                }
+                // The outermost resource in the scope whose root has `$recursiveAnchor: true`.
+                let landed = match self
+                    .scope
+                    .iter()
+                    .find(|&&resource| resources[resource].recursive)
+                {
+                    Some(&resource) => (
+                        resources[resource]
+                            .root
+                            .expect("a recursive resource's root"),
+                        resource,
+                    ),
+                    None => (target, caller),
+                };
                 let pushed = (self.scope.is_empty() || landed.1 != caller).then_some(caller);
                 return Landing {
                     schema: landed.0,
@@ -3264,39 +3270,24 @@ pub mod generated {
         }
 
         /// Puts the evaluation's dynamic scope on the generated stacks, for generated code running
-        /// in `resource`. Under `$recursiveRef`, only the resources from the innermost outward
-        /// while each root has `$recursiveAnchor: true` count.
+        /// in `resource`.
         pub fn enter_scope(&self, resource: usize) {
             if let Some(stacks) = self.stacks {
-                let (outer, anchored) = self.anchored(resource);
-                for (position, &entered) in self.scope.iter().enumerate() {
-                    (stacks.enter)(entered, position >= outer);
+                for &entered in &self.scope {
+                    (stacks.enter)(entered);
                 }
-                (stacks.enter)(resource, anchored);
+                (stacks.enter)(resource);
             }
         }
 
         /// Takes off what [`Self::enter_scope`] put on the generated stacks.
         pub fn leave_scope(&self, resource: usize) {
             if let Some(stacks) = self.stacks {
-                let (outer, anchored) = self.anchored(resource);
-                (stacks.leave)(resource, anchored);
-                for (position, &entered) in self.scope.iter().enumerate().rev() {
-                    (stacks.leave)(entered, position >= outer);
+                (stacks.leave)(resource);
+                for &entered in self.scope.iter().rev() {
+                    (stacks.leave)(entered);
                 }
             }
-        }
-
-        /// Where the scope's `$recursiveRef` entries start, and whether `resource` has one.
-        fn anchored(&self, resource: usize) -> (usize, bool) {
-            let anchored = self
-                .scope
-                .iter()
-                .chain([&resource])
-                .rev()
-                .take_while(|&&entered| self.built.resources[entered].recursive)
-                .count();
-            (self.scope.len() + 1 - anchored, anchored > 0)
         }
 
         /// The errors run's errors of an `unevaluated*` subschema, rebased below the current

@@ -225,42 +225,23 @@ impl<'r> Resolver<'r> {
     /// This method implements the recursive reference resolution algorithm
     /// as specified in JSON Schema Draft 2019-09.
     ///
-    /// It starts by resolving "#" and then follows the dynamic scope,
-    /// looking for resources with `$recursiveAnchor: true`.
+    /// It resolves "#", and when that resource has `$recursiveAnchor: true`, lands on the
+    /// outermost resource in the dynamic scope with `$recursiveAnchor: true` instead. Resources
+    /// in between without it do not end the search.
     ///
     /// # Errors
     ///
     /// This method can return any error that [`Resolver::lookup`] can return.
     pub fn lookup_recursive_ref(&self) -> Result<Resolved<'r>, Error> {
         let mut resolved = self.lookup("#")?;
-
-        if let Value::Object(obj) = resolved.contents {
-            if obj
-                .get("$recursiveAnchor")
-                .and_then(Value::as_bool)
-                .unwrap_or(false)
-            {
-                for uri in &self.dynamic_scope() {
-                    let next_resolved = self.lookup(uri.as_str())?;
-
-                    match next_resolved.contents {
-                        Value::Object(next_obj) => {
-                            if !next_obj
-                                .get("$recursiveAnchor")
-                                .and_then(Value::as_bool)
-                                .unwrap_or(false)
-                            {
-                                break;
-                            }
-                        }
-                        _ => break,
-                    }
-
-                    resolved = next_resolved;
+        if has_recursive_anchor(resolved.contents) {
+            for uri in &self.dynamic_scope() {
+                let next = self.lookup(uri.as_str())?;
+                if has_recursive_anchor(next.contents) {
+                    resolved = next;
                 }
             }
         }
-
         Ok(resolved)
     }
 
@@ -414,6 +395,10 @@ impl<'r> Resolver<'r> {
         }
         self.registry.find_vocabularies(draft, contents)
     }
+}
+
+fn has_recursive_anchor(contents: &Value) -> bool {
+    contents.get("$recursiveAnchor").and_then(Value::as_bool) == Some(true)
 }
 
 /// A reference resolved by [`Resolver::lookup_target`], before entering the dynamic scope.

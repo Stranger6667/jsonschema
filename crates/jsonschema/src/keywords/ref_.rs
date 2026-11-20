@@ -2931,6 +2931,123 @@ mod tests {
         assert_eq!(results, vec![true, false, false, true]);
     }
 
+    // Dynamic scope `a` -> `b` -> `c`: `a` accepts booleans, `b` strings, `c` integers, so the value
+    // under `x` shows where the `$recursiveRef` in `c` lands.
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/a", "$recursiveAnchor": true, "anyOf": [{"type": "boolean"}, {"$ref": "b"}], "$defs": {"b": {"$id": "https://example.com/b", "anyOf": [{"type": "string"}, {"$ref": "c"}]}, "c": {"$id": "https://example.com/c", "$recursiveAnchor": true, "anyOf": [{"type": "integer"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}}),
+        &[true, true, true, true, false];
+        "middle without the anchor, references"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/a", "$recursiveAnchor": true, "anyOf": [{"type": "boolean"}, {"$id": "https://example.com/b", "$recursiveAnchor": false, "anyOf": [{"type": "string"}, {"$id": "https://example.com/c", "$recursiveAnchor": true, "anyOf": [{"type": "integer"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}]}]}),
+        &[true, true, true, true, false];
+        "middle with the anchor false, inline"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/a", "$recursiveAnchor": true, "anyOf": [{"type": "boolean"}, {"$ref": "b"}], "$defs": {"b": {"$id": "https://example.com/b", "$recursiveAnchor": false, "anyOf": [{"type": "string"}, {"$id": "https://example.com/c", "$recursiveAnchor": true, "anyOf": [{"type": "integer"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}]}}}),
+        &[true, true, true, true, false];
+        "middle with the anchor false, reference then inline"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/a", "$recursiveAnchor": true, "anyOf": [{"type": "boolean"}, {"$id": "https://example.com/b", "anyOf": [{"type": "string"}, {"$ref": "c"}], "$defs": {"c": {"$id": "https://example.com/c", "$recursiveAnchor": true, "anyOf": [{"type": "integer"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}}]}),
+        &[true, true, true, true, false];
+        "middle without the anchor, inline then reference"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/a", "$recursiveAnchor": true, "anyOf": [{"type": "boolean"}, {"$ref": "b"}], "$defs": {"b": {"$id": "https://example.com/b", "anyOf": [{"type": "string"}, {"$ref": "c"}]}, "c": {"$id": "https://example.com/c", "anyOf": [{"type": "integer"}, {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}]}}}),
+        &[false, false, true, false, false];
+        "target without the anchor"
+    )]
+    fn recursive_reference_lands_on_outermost_anchored_resource(schema: &Value, expected: &[bool]) {
+        let validator = crate::validator_for(schema).expect("Invalid schema");
+        let results: Vec<bool> = [
+            json!({"x": true}),
+            json!({"x": "s"}),
+            json!({"x": 1}),
+            json!({"x": {"y": true}}),
+            json!({"x": []}),
+        ]
+        .iter()
+        .map(|instance| validator.is_valid(instance))
+        .collect();
+        assert_eq!(results, expected);
+    }
+
+    // Scope `a` -> `b` -> `c`: only `a` evaluates `y` and the first item, so `unevaluated*` beside
+    // the `$recursiveRef` in `c` accepts them only when it lands on `a`.
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/a", "$recursiveAnchor": true, "properties": {"y": true}, "$ref": "b", "$defs": {"b": {"$id": "https://example.com/b", "$ref": "c"}, "c": {"$id": "https://example.com/c", "$recursiveAnchor": true, "properties": {"x": {"$recursiveRef": "#", "unevaluatedProperties": false}}}}}),
+        &json!({"x": {"y": 1}}),
+        &json!({"x": {"z": 1}});
+        "unevaluatedProperties"
+    )]
+    #[test_case(
+        &json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "$id": "https://example.com/a", "$recursiveAnchor": true, "items": [true], "$ref": "b", "$defs": {"b": {"$id": "https://example.com/b", "$ref": "c"}, "c": {"$id": "https://example.com/c", "$recursiveAnchor": true, "properties": {"x": {"$recursiveRef": "#", "unevaluatedItems": false}}}}}),
+        &json!({"x": [1]}),
+        &json!({"x": [1, 2]});
+        "unevaluatedItems"
+    )]
+    fn recursive_reference_past_unanchored_resource_evaluates_outermost(
+        schema: &Value,
+        valid: &Value,
+        invalid: &Value,
+    ) {
+        let validator = crate::validator_for(schema).expect("Invalid schema");
+        assert_eq!(
+            [validator.is_valid(valid), validator.is_valid(invalid)],
+            [true, false]
+        );
+    }
+
+    // One `c` reached from `a` directly and through `b`, which has no `$recursiveAnchor`; `a`
+    // accepts booleans and objects only.
+    fn recursive_target_shared_by_two_scopes(through_middle: &str) -> Value {
+        json!({
+            "$schema": "https://json-schema.org/draft/2019-09/schema",
+            "$id": "https://example.com/a",
+            "$recursiveAnchor": true,
+            "anyOf": [
+                {"type": "boolean"},
+                {
+                    "type": "object",
+                    "properties": {through_middle: {"$ref": "b"}, "m": {"$ref": "c"}},
+                    "additionalProperties": false
+                }
+            ],
+            "$defs": {
+                "b": {"$id": "https://example.com/b", "anyOf": [{"type": "string"}, {"$ref": "c"}]},
+                "c": {
+                    "$id": "https://example.com/c",
+                    "$recursiveAnchor": true,
+                    "anyOf": [
+                        {"type": "integer"},
+                        {"type": "object", "additionalProperties": {"$recursiveRef": "#"}}
+                    ]
+                }
+            }
+        })
+    }
+
+    #[test_case("a" ; "through the middle compiled first")]
+    #[test_case("z" ; "through the middle compiled last")]
+    fn recursive_target_shared_by_two_scopes_lands_on_outermost_anchored_resource(
+        through_middle: &str,
+    ) {
+        let validator =
+            crate::validator_for(&recursive_target_shared_by_two_scopes(through_middle))
+                .expect("Invalid schema");
+        let results: Vec<bool> = [
+            json!({"m": {"x": true}}),
+            json!({"m": {"x": 1}}),
+            json!({through_middle: {"x": true}}),
+            json!({through_middle: {"x": 1}}),
+        ]
+        .iter()
+        .map(|instance| validator.is_valid(instance))
+        .collect();
+        assert_eq!(results, vec![true, false, true, false]);
+    }
+
     // `inner` is the resource every reference names; `outer` is the outermost `item` in scope
     fn same_name_dynamic_anchors(root: &Value) -> Value {
         let mut schema = json!({
