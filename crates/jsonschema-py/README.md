@@ -104,6 +104,8 @@ validator = jsonschema_rs.Draft201909Validator({"minimum": 42})
 validator = jsonschema_rs.Draft202012Validator({"minimum": 42})
 ```
 
+With a chosen draft (a draft-specific class or `draft=`), the `$schema` URI is not retrieved: pass a custom meta-schema in `registry=` so its `$vocabulary` applies.
+
 `jsonschema-rs` ships validators for the standard `format` values. To add your own, pass a function that takes a `str` and returns a `bool` via `formats`.
 Drafts 2019-09 and 2020-12 treat `format` as an annotation, so set `validate_formats=True` to get it checked:
 

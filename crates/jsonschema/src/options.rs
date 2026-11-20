@@ -148,6 +148,10 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
 
     /// Sets the JSON Schema draft version.
     ///
+    /// The schema's `$schema` URI is then not retrieved: a custom meta-schema's `$vocabulary`
+    /// applies only when the meta-schema is in the registry given to
+    /// [`with_registry`](Self::with_registry).
+    ///
     /// ```rust
     /// use jsonschema::Draft;
     ///

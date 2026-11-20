@@ -117,6 +117,8 @@ validator = JSONSchema::Draft7Validator.new(schema)
 #            Draft201909Validator, Draft202012Validator
 ```
 
+With a chosen draft (a draft-specific class or `draft:`), the `$schema` URI is not retrieved: pass a custom meta-schema in `registry:` so its `$vocabulary` applies.
+
 ### Custom format validators
 
 Pass a callable that takes a `String` and returns a boolean via `formats`. Drafts 2019-09 and 2020-12 treat `format` as an annotation, so set `validate_formats: true` to get it checked:
