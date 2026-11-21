@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Error messages for an empty `enum` ending after "is not one of" instead of naming the empty `enum`.
 - `HttpOptions.new(ca_cert: ...)` accepting a file without certificates.
 - Draft 4 schemas with an empty `enum`, or one with equal members such as `[0, 0.0]`, passing the meta-schema check.
 - `HttpOptions.new(ca_cert: ...)` reporting invalid PEM as an HTTP client build error instead of a certificate parse error that names the file.

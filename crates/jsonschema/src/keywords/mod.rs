@@ -579,6 +579,8 @@ mod tests {
     #[test_case(&json!({"anyOf": [{"type": "integer"}, {"minimum": 2}]}), &json!(1.5), r"1.5 is not valid under any of the schemas listed in the 'anyOf' keyword")]
     #[test_case(&json!({"const": 2}), &json!(5), r"2 was expected")]
     #[test_case(&json!({"contains": {"minimum": 5}}), &json!([2, 3, 4]), r"None of [2,3,4] are valid under the given schema")]
+    #[test_case(&json!({"enum": []}), &json!(4), r#"Empty "enum" does not allow 4"#)]
+    #[test_case(&json!({"enum": [[]]}), &json!(4), r"4 is not one of []")]
     #[test_case(&json!({"enum": [1]}), &json!(4), r"4 is not one of 1")]
     #[test_case(&json!({"enum": [1, 2]}), &json!(4), r"4 is not one of 1 or 2")]
     #[test_case(&json!({"enum": [1, 2, 3]}), &json!(4), r"4 is not one of 1, 2 or 3")]

@@ -6455,6 +6455,34 @@ fn test_type_beside_const_or_enum_reports_its_error(
     }
 }
 
+#[jsonschema::validator(schema = r#"{"enum": []}"#)]
+struct EmptyEnum;
+
+// `enum: []` rejects every value; no other `enum` produces its message.
+#[test]
+fn test_empty_enum_message() {
+    let runtime =
+        jsonschema::validator_for(&serde_json::json!({"enum": []})).expect("valid schema");
+    let instance = serde_json::json!(1);
+    let generated_evaluation = EmptyEnum::evaluate(&instance);
+    let runtime_evaluation = runtime.evaluate(&instance);
+    let messages: Vec<String> = EmptyEnum::validate(&instance)
+        .err()
+        .into_iter()
+        .chain(runtime.validate(&instance).err())
+        .chain(EmptyEnum::iter_errors(&instance))
+        .chain(runtime.iter_errors(&instance))
+        .map(|error| error.to_string())
+        .chain(
+            generated_evaluation
+                .iter_errors()
+                .chain(runtime_evaluation.iter_errors())
+                .map(|entry| entry.error.to_string()),
+        )
+        .collect();
+    assert_eq!(messages, vec![r#"Empty "enum" does not allow 1"#; 6]);
+}
+
 #[jsonschema::validator(
     schema = r##"{"$defs": {"t": {"properties": {"a": {"type": "string"}}}}, "$ref": "#/$defs/t", "unevaluatedProperties": false}"##
 )]

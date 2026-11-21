@@ -1469,9 +1469,13 @@ fn write_enum_message(
         .as_array()
         .expect("Enum options must be a JSON array");
 
-    write!(f, "{value} is not one of ")?;
-
     let total_count = array.len();
+
+    if total_count == 0 {
+        return write!(f, r#"Empty "enum" does not allow {value}"#);
+    }
+
+    write!(f, "{value} is not one of ")?;
 
     if total_count <= MAX_DISPLAYED_ENUM_VARIANTS {
         // Show all options with proper "a, b or c" formatting
@@ -2274,6 +2278,7 @@ mod tests {
     #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema#", "contentMediaType": "application/json"}), &json!("{"), "contentMediaType", "[REDACTED] is not compliant with \"application/json\" media type"; "content media type")]
     #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema#", "contentMediaType": "application/json", "contentEncoding": "base64"}), &json!("/w=="), "contentEncoding", "invalid utf-8 sequence of 1 bytes from index 0"; "decoded content is not utf-8")]
     #[test_case(&json!({"enum": ["a", "b"]}), &json!("c"), "enum", "[REDACTED] is not one of \"a\" or \"b\""; "enumeration")]
+    #[test_case(&json!({"enum": []}), &json!("c"), "enum", "Empty \"enum\" does not allow [REDACTED]"; "empty enumeration")]
     #[test_case(&json!({"exclusiveMaximum": 1}), &json!(1), "exclusiveMaximum", "[REDACTED] is greater than or equal to the maximum of 1"; "exclusive maximum")]
     #[test_case(&json!({"exclusiveMinimum": 1}), &json!(1), "exclusiveMinimum", "[REDACTED] is less than or equal to the minimum of 1"; "exclusive minimum")]
     #[test_case(&json!(false), &json!(1), "falseSchema", "False schema does not allow [REDACTED]"; "false schema")]
