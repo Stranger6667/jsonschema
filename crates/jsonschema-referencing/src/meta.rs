@@ -245,3 +245,34 @@ pub(crate) fn metas_for_draft(draft: Draft) -> &'static [(&'static str, &'static
         Draft::Draft202012 | Draft::Unknown => &*META_SCHEMAS_DRAFT2020,
     }
 }
+
+/// The draft whose bundled meta-schemas include the resource at `uri`.
+pub(crate) fn bundled_meta_schema_draft(uri: &str) -> Option<Draft> {
+    let draft = if let Some(rest) = uri.strip_prefix("https://json-schema.org/draft/") {
+        if rest.starts_with("2020-12/") {
+            Draft::Draft202012
+        } else if rest.starts_with("2019-09/") {
+            Draft::Draft201909
+        } else {
+            return None;
+        }
+    } else {
+        match uri
+            .strip_prefix("http://json-schema.org/draft-0")?
+            .as_bytes()
+        {
+            [b'4', b'/', ..] => Draft::Draft4,
+            [b'6', b'/', ..] => Draft::Draft6,
+            [b'7', b'/', ..] => Draft::Draft7,
+            _ => return None,
+        }
+    };
+    metas_for_draft(draft)
+        .iter()
+        .any(|(bundled, _)| {
+            let bundled = bundled.strip_suffix('#').unwrap_or(bundled);
+            uri.strip_prefix(bundled)
+                .is_some_and(|fragment| fragment.is_empty() || fragment.starts_with('#'))
+        })
+        .then_some(draft)
+}

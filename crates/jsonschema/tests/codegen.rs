@@ -426,6 +426,48 @@ fn test_resource_in_its_own_draft_matches_runtime(instance: serde_json::Value) {
     );
 }
 
+// A `$ref` to the bundled meta-schema of another draft than the root's
+#[jsonschema::validator(
+    schema = r##"{"$ref":"https://json-schema.org/draft/2020-12/schema"}"##,
+    draft = referencing::Draft::Draft7
+)]
+struct Draft7RefToDraft202012MetaSchemaValidator;
+
+#[jsonschema::validator(schema = r##"{"$ref":"http://json-schema.org/draft-07/schema#"}"##)]
+struct Draft202012RefToDraft7MetaSchemaValidator;
+
+#[jsonschema::validator(
+    schema = r##"{"$ref":"https://json-schema.org/draft/2019-09/meta/validation"}"##,
+    draft = referencing::Draft::Draft4
+)]
+struct Draft4RefToDraft201909VocabularyMetaSchemaValidator;
+
+#[test_case(Draft7RefToDraft202012MetaSchemaValidator::is_valid, Draft7RefToDraft202012MetaSchemaValidator::validate, referencing::Draft::Draft7, "https://json-schema.org/draft/2020-12/schema", serde_json::json!({"type": "string"}) ; "draft 7 to 2020-12 accepts")]
+#[test_case(Draft7RefToDraft202012MetaSchemaValidator::is_valid, Draft7RefToDraft202012MetaSchemaValidator::validate, referencing::Draft::Draft7, "https://json-schema.org/draft/2020-12/schema", serde_json::json!({"type": 12}) ; "draft 7 to 2020-12 rejects")]
+#[test_case(Draft202012RefToDraft7MetaSchemaValidator::is_valid, Draft202012RefToDraft7MetaSchemaValidator::validate, referencing::Draft::Draft202012, "http://json-schema.org/draft-07/schema#", serde_json::json!({"type": "string"}) ; "2020-12 to draft 7 accepts")]
+#[test_case(Draft202012RefToDraft7MetaSchemaValidator::is_valid, Draft202012RefToDraft7MetaSchemaValidator::validate, referencing::Draft::Draft202012, "http://json-schema.org/draft-07/schema#", serde_json::json!({"type": 12}) ; "2020-12 to draft 7 rejects")]
+#[test_case(Draft4RefToDraft201909VocabularyMetaSchemaValidator::is_valid, Draft4RefToDraft201909VocabularyMetaSchemaValidator::validate, referencing::Draft::Draft4, "https://json-schema.org/draft/2019-09/meta/validation", serde_json::json!({"type": "string"}) ; "draft 4 to 2019-09 vocabulary accepts")]
+#[test_case(Draft4RefToDraft201909VocabularyMetaSchemaValidator::is_valid, Draft4RefToDraft201909VocabularyMetaSchemaValidator::validate, referencing::Draft::Draft4, "https://json-schema.org/draft/2019-09/meta/validation", serde_json::json!({"type": 12}) ; "draft 4 to 2019-09 vocabulary rejects")]
+fn test_ref_to_meta_schema_of_another_draft_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    draft: referencing::Draft,
+    target: &str,
+    instance: serde_json::Value,
+) {
+    let runtime = jsonschema::options()
+        .with_draft(draft)
+        .offline()
+        .build(&serde_json::json!({"$ref": target}))
+        .expect("valid schema");
+    assert_validate_parity(
+        is_valid(&instance),
+        validate(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
 // `myobject` is reached by `$ref` through the outer document, then by `$recursiveRef` within its own.
 #[jsonschema::validator(
     schema = r##"{"$defs":{"myobject":{"$id":"myobject.json","$recursiveAnchor":true,"anyOf":[{"type":"string"},{"type":"object","additionalProperties":{"$recursiveRef":"#"}}]}},"anyOf":[{"type":"integer"},{"$ref":"#/$defs/myobject"}]}"##,
