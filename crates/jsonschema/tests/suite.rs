@@ -1,6 +1,8 @@
 #![allow(clippy::large_stack_arrays, clippy::needless_pass_by_value)]
 
 mod tests {
+    #[cfg(feature = "json-text")]
+    use jsonschema::json::JsonText;
     #[cfg(feature = "jsonb")]
     use jsonschema::json::Jsonb;
     use jsonschema::{canonical::CanonicalKind, Draft, PatternOptions, Registry, Retrieve, Uri};
@@ -92,6 +94,40 @@ mod tests {
                     valid,
                     test.valid,
                     "`{method}` over jsonb:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
+                    test.case,
+                    test.description,
+                    pretty_json(&test.schema),
+                    pretty_json(&test.data),
+                );
+            }
+        }
+
+        #[cfg(feature = "json-text")]
+        {
+            let mut options = jsonschema::options_for::<JsonText>()
+                .with_draft(draft)
+                .with_registry(&registry);
+            if let Some(validate_formats) = test.validate_formats {
+                options = options.should_validate_formats(validate_formats);
+            }
+            let validator = options
+                .build(&test.schema)
+                .expect("Failed to build a schema");
+            let text = serde_json::to_vec(&test.data).expect("serializable");
+            let document = JsonText::parse(&text).expect("valid JSON");
+            for (method, valid) in [
+                ("is_valid", validator.is_valid(document.root())),
+                ("validate", validator.validate(document.root()).is_ok()),
+                (
+                    "iter_errors",
+                    validator.iter_errors(document.root()).next().is_none(),
+                ),
+                ("evaluate", validator.evaluate(document.root()).flag().valid),
+            ] {
+                assert_eq!(
+                    valid,
+                    test.valid,
+                    "`{method}` over JSON text:\nCase: {}\nTest: {}\nSchema: {}\nInstance: {}",
                     test.case,
                     test.description,
                     pretty_json(&test.schema),

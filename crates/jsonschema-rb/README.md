@@ -119,6 +119,22 @@ validator = JSONSchema::Draft7Validator.new(schema)
 
 With a chosen draft (a draft-specific class or `draft:`), the `$schema` URI is not retrieved: pass a custom meta-schema in `registry:` so its `$vocabulary` applies.
 
+### Validating JSON text
+
+When instances arrive as JSON text, such as request bodies or queue messages,
+`JsonTextValidator` validates the string directly, without building Ruby objects for it.
+It takes the same keyword arguments as `validator_for`, plus `draft:`:
+
+```ruby
+validator = JSONSchema::JsonTextValidator.new({ "type" => "object", "required" => ["id"] })
+
+validator.valid?('{"id": 1}')      # => true
+validator.valid?('{"name": "x"}')  # => false
+```
+
+Text that is not a single JSON document raises `ArgumentError`, and a repeated key keeps its last
+value, as with `JSON.parse`. Custom keywords receive the instance as Ruby objects.
+
 ### Custom format validators
 
 Pass a Proc or lambda that takes a `String` and returns a boolean via `formats`. Drafts 2019-09 and 2020-12 treat `format` as an annotation, so set `validate_formats: true` to get it checked:

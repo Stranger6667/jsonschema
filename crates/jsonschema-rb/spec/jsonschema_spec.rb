@@ -414,6 +414,13 @@ RSpec.describe "Reusable validators" do
 end
 
 RSpec.describe "Custom formats" do
+  it "raises a format checker's error from each_error with a block" do
+    validator = JSONSchema.validator_for(
+      { "format" => "boom" }, formats: { "boom" => ->(_value) { raise ArgumentError, "boom" } }, validate_formats: true
+    )
+    expect { validator.each_error("a") { |_error| nil } }.to raise_error(ArgumentError, "boom")
+  end
+
   describe "with module-level functions" do
     it "validates with custom format" do
       schema = { "type" => "string", "format" => "my-format" }

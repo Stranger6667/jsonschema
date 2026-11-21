@@ -8,6 +8,7 @@
 mod canonical;
 mod error_kind;
 mod evaluation;
+mod json_text;
 mod options;
 mod registry;
 mod retriever;
@@ -18,7 +19,7 @@ mod validator_map;
 use jsonschema::{
     json::{
         magnus_child, magnus_invalidate_members_cache, magnus_is_object, magnus_probe_root,
-        magnus_take_pending_error, Magnus, MagnusPendingErrorScope, RbNode,
+        magnus_take_pending_error, Json, Magnus, MagnusPendingErrorScope, RbNode,
     },
     paths::LocationSegment,
     ValidationOptions,
@@ -86,21 +87,21 @@ define_rb_intern!(static ID_SYM_SCHEMA_PATH_POINTER: "schema_path_pointer");
 define_rb_intern!(static ID_SYM_EVALUATION_PATH_POINTER: "evaluation_path_pointer");
 define_rb_intern!(static ID_SYM_ABSOLUTE_KEYWORD_LOCATION: "absolute_keyword_location");
 
-struct BuiltValidator {
-    validator: jsonschema::Validator<Magnus>,
+struct BuiltValidator<F: Json = Magnus> {
+    validator: jsonschema::Validator<F>,
     callback_roots: CallbackRoots,
     compilation_roots: CompilationRootsRef,
 }
 
-fn build_validator(
+fn build_validator<F: Json>(
     ruby: &Ruby,
-    options: ValidationOptions<'_, Arc<dyn jsonschema::Retrieve>, Magnus>,
+    options: ValidationOptions<'_, Arc<dyn jsonschema::Retrieve>, F>,
     registry: Option<&jsonschema::Registry<'_>>,
     retriever: Option<RubyRetriever>,
     callback_roots: CallbackRoots,
     compilation_roots: Arc<CompilationRoots>,
     schema: &serde_json::Value,
-) -> Result<BuiltValidator, Error> {
+) -> Result<BuiltValidator<F>, Error> {
     let mut options = match retriever {
         Some(ret) => options.with_retriever(ret),
         None => options,
@@ -128,11 +129,14 @@ fn build_validator(
     })
 }
 
-fn build_parsed_options(
+fn build_parsed_options<F: Json>(
     ruby: &Ruby,
     kw: ExtractedKwargs,
     draft_override: Option<jsonschema::Draft>,
-) -> Result<ParsedOptions<'_>, Error> {
+) -> Result<ParsedOptions<'_, F>, Error>
+where
+    options::RubyKeyword: for<'i> jsonschema::Keyword<'i, F>,
+{
     let (
         draft_val,
         validate_formats,
@@ -690,8 +694,11 @@ impl Validator {
             let _scope = KeywordCauseScope::enter();
 
             if ruby.block_given() {
-                // Lazy path: yield errors one at a time to the block
-                let mut iter = rb_self.validator.iter_errors(node);
+                // Lazy path: yield errors one at a time to the block. Building the iterator
+                // validates, which can run Ruby callbacks.
+                let mut iter =
+                    catch_unwind_silent(AssertUnwindSafe(|| rb_self.validator.iter_errors(node)))
+                        .map_err(|err| handle_callback_panic(ruby, err))?;
                 loop {
                     let result = catch_unwind_silent(AssertUnwindSafe(|| iter.next()));
                     match result {
@@ -810,7 +817,7 @@ fn validator_for(ruby: &Ruby, args: &[Value]) -> Result<Validator, Error> {
     let kw = extract_kwargs_no_draft(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let parsed = build_parsed_options(ruby, kw, None)?;
+    let parsed = build_parsed_options::<Magnus>(ruby, kw, None)?;
     let BuiltValidator {
         validator,
         callback_roots,
@@ -838,7 +845,7 @@ fn validator_map_for(ruby: &Ruby, args: &[Value]) -> Result<validator_map::Valid
     let kw = extract_kwargs_no_draft(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let parsed = build_parsed_options(ruby, kw, None)?;
+    let parsed = build_parsed_options::<Magnus>(ruby, kw, None)?;
     let callback_roots = parsed.callback_roots;
     let compilation_roots = parsed.compilation_roots;
     let mask = parsed.mask;
@@ -879,7 +886,7 @@ fn bundle(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let parsed = build_parsed_options(ruby, kw, None)?;
+    let parsed = build_parsed_options::<Magnus>(ruby, kw, None)?;
     let mut options = match parsed.retriever {
         Some(ret) => parsed.options.with_retriever(ret),
         None => parsed.options,
@@ -902,7 +909,7 @@ fn dereference(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let parsed = build_parsed_options(ruby, kw, None)?;
+    let parsed = build_parsed_options::<Magnus>(ruby, kw, None)?;
     let mut options = match parsed.retriever {
         Some(ret) => parsed.options.with_retriever(ret),
         None => parsed.options,
@@ -934,7 +941,7 @@ fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let parsed = build_parsed_options(ruby, kw, None)?;
+    let parsed = build_parsed_options::<Magnus>(ruby, kw, None)?;
     let BuiltValidator {
         validator,
         compilation_roots: _compilation_roots,
@@ -962,7 +969,7 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let parsed = build_parsed_options(ruby, kw, None)?;
+    let parsed = build_parsed_options::<Magnus>(ruby, kw, None)?;
     let BuiltValidator {
         validator,
         compilation_roots: _compilation_roots,
@@ -998,7 +1005,7 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     let kw = extract_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let parsed = build_parsed_options(ruby, kw, None)?;
+    let parsed = build_parsed_options::<Magnus>(ruby, kw, None)?;
     let BuiltValidator {
         validator,
         compilation_roots: _compilation_roots,
@@ -1058,7 +1065,7 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
     let kw = extract_evaluate_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
-    let parsed = build_parsed_options(ruby, kw, None)?;
+    let parsed = build_parsed_options::<Magnus>(ruby, kw, None)?;
     let BuiltValidator {
         validator,
         compilation_roots: _compilation_roots,
@@ -1102,7 +1109,7 @@ macro_rules! define_draft_validator {
                 let kw = extract_kwargs_no_draft(ruby, parsed_args.keywords)?;
 
                 let json_schema = to_schema_value(ruby, schema)?;
-                let parsed = build_parsed_options(ruby, kw, Some($draft))?;
+                let parsed = build_parsed_options::<Magnus>(ruby, kw, Some($draft))?;
                 let BuiltValidator {
                     validator,
                     callback_roots,
@@ -1395,6 +1402,7 @@ fn init(ruby: &Ruby) -> Result<(), Error> {
     canonical::init_canonical(ruby, &module)?;
 
     // Validator class
+    json_text::define_class(ruby, &module)?;
     let validator_class = module.define_class("Validator", ruby.class_object())?;
     validator_class.define_method("valid?", method!(Validator::is_valid, 1))?;
     validator_class.define_method("validate!", method!(Validator::validate, 1))?;

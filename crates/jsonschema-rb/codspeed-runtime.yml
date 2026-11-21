@@ -27,3 +27,17 @@ benchmarks:
     exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb openapi evaluate 1
   - name: "ruby-evaluate-fhir"
     exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb fhir evaluate 1700
+  - name: "ruby-text-openapi"
+    exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb openapi text-valid 20
+  - name: "ruby-text-swagger"
+    exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb swagger text-valid 10
+  - name: "ruby-text-geojson"
+    exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb geojson text-valid 80
+  - name: "ruby-text-citm"
+    exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb citm text-valid 20
+  - name: "ruby-text-fhir"
+    exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb fhir text-valid 50000
+  - name: "ruby-text-recursive"
+    exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb recursive text-valid 700
+  - name: "ruby-text-validate-swagger"
+    exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb swagger text-validate 10

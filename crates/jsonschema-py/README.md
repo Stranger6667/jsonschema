@@ -126,6 +126,27 @@ validator.is_valid("USD")  # True
 validator.is_valid("invalid")  # False
 ```
 
+### Validating JSON Text
+
+When instances arrive as JSON text, such as request bodies or queue messages, `JsonTextValidator`
+validates the `str` or `bytes` directly, without building Python objects for them. On the benchmark
+documents this is 2.5-9.9x faster than `json.loads` followed by `is_valid`, and 1.3-2.3x faster
+than `orjson.loads` followed by `is_valid`. It takes the same arguments as `validator_for`, plus
+`draft`:
+
+```python
+import jsonschema_rs
+
+validator = jsonschema_rs.JsonTextValidator({"type": "object", "required": ["id"]})
+validator.is_valid('{"id": 1}')  # True
+validator.is_valid(b'{"name": "x"}')  # False
+```
+
+Text that is not a single JSON document raises `ValueError`, and a repeated key keeps its last
+value, as with `json.loads`. Unlike `json.loads`, it also raises for `NaN` and `Infinity`, which
+are not JSON, and for documents nested 128 levels deep or more. Custom keywords receive the
+instance as Python objects.
+
 ### Custom Keywords
 
 A custom keyword is a class. The validator builds one instance per occurrence of the keyword, passing the parent schema, the keyword value and its schema path.

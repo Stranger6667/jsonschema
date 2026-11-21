@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `JsonTextValidator`, validating instances given as JSON text without building Ruby objects for them.
+
 ### Fixed
 
 - `HttpOptions.new(ca_cert: ...)` accepting a file without certificates.

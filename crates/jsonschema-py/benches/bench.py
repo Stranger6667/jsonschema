@@ -31,6 +31,8 @@ OPENAPI = load_from_benches("openapi.json")
 ZUORA = load_from_benches("zuora.json")
 SWAGGER = load_from_benches("swagger.json")
 KUBERNETES = load_from_benches("kubernetes.json")
+# One error, on a scalar, in a large document: what building an error costs.
+KUBERNETES_INVALID = {**KUBERNETES, "info": {**KUBERNETES["info"], "version": 1}}
 GEOJSON = load_from_benches("geojson.json")
 CANADA = load_from_benches("canada.json")
 CITM_CATALOG_SCHEMA = load_from_benches("citm_catalog_schema.json")
@@ -65,6 +67,8 @@ if jsonschema_rs is not None:
     variants = [
         "jsonschema-rs-is-valid",
         "jsonschema-rs-validate",
+        "jsonschema-rs-json-text-is-valid",
+        "jsonschema-rs-json-text-validate",
         "jsonschema",
         "fastjsonschema",
     ]
@@ -105,6 +109,10 @@ def args(request, variant):
         return jsonschema_rs.validator_for(schema).is_valid, instance
     if variant == "jsonschema-rs-validate":
         return jsonschema_rs.validator_for(schema).validate, instance
+    if variant == "jsonschema-rs-json-text-is-valid":
+        return jsonschema_rs.JsonTextValidator(schema).is_valid, json.dumps(instance)
+    if variant == "jsonschema-rs-json-text-validate":
+        return jsonschema_rs.JsonTextValidator(schema).validate, json.dumps(instance)
     if variant == "jsonschema":
         return jsonschema.validators.validator_for(schema)(schema).is_valid, instance
     if variant == "fastjsonschema":
@@ -190,6 +198,17 @@ def test_openapi(benchmark, args):
 @pytest.mark.benchmark(group="swagger")
 def test_swagger(benchmark, args):
     benchmark(*args)
+
+
+@pytest.mark.data(SWAGGER, KUBERNETES_INVALID)
+@pytest.mark.codegen("swagger")
+@pytest.mark.benchmark(group="swagger-invalid")
+def test_swagger_invalid(benchmark, args):
+    def func():
+        with suppress(Exception):
+            args[0](*args[1:])
+
+    benchmark(func)
 
 
 @pytest.mark.data(GEOJSON, CANADA)

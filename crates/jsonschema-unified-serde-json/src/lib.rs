@@ -1,5 +1,6 @@
 #[cfg(test)]
 mod tests {
+    use jsonschema::json::Node;
     use proc_macro2::TokenStream;
     use quote::quote;
     use serde_json::Value;
@@ -7,6 +8,17 @@ mod tests {
 
     fn parse(text: &str) -> Value {
         serde_json::from_str(text).expect("valid JSON")
+    }
+
+    // `serde_json` keeps numbers past `f64` here, so checking JSON text must accept them too.
+    #[test_case("1e400")]
+    #[test_case("[-1e400]")]
+    #[test_case(&format!("1{}", "0".repeat(400)))]
+    #[test_case(&format!("{{\"a\": 1{}.5}}", "0".repeat(400)))]
+    fn json_text_parses_numbers_past_f64(text: &str) {
+        let expected = parse(text);
+        let document = jsonschema::json::JsonText::parse(text.as_bytes()).expect("valid JSON");
+        assert_eq!(document.root().to_value().into_owned(), expected);
     }
 
     #[test_case(r#"{"const": 1e400}"#, "1", false)]

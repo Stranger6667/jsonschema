@@ -9,7 +9,7 @@ publish = false
 [workspace]
 
 [dependencies]
-jsonschema = { path = "../jsonschema", default-features = false }
+jsonschema = { path = "../jsonschema", default-features = false, features = ["json-text"] }
 jsonschema-macros-core = { path = "../jsonschema-macros-core" }
 serde_json = { version = "1", features = ["arbitrary_precision", "preserve_order"] }
 

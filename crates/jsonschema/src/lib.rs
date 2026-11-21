@@ -1043,6 +1043,15 @@ pub(crate) use jsonschema_value::{
 /// past 128 levels of nesting it holds `null`, and `json::jsonb::take_pending_error` returns
 /// the message.
 ///
+/// Enable the `json-text` feature for `json::JsonText`, which validates JSON text without building
+/// a `serde_json::Value`. `JsonText::parse` accepts exactly what `serde_json::from_slice` accepts,
+/// returning its error otherwise, and a repeated key keeps its last value:
+///
+/// ```rust,ignore
+/// let document = JsonText::parse(bytes)?;
+/// validator.is_valid(document.root())
+/// ```
+///
 /// The accessors are infallible, so every node must map to a JSON value: reject nodes with no
 /// JSON meaning (tags, foreign objects) before validation, or track them on a side channel of
 /// the representation.
@@ -1272,6 +1281,8 @@ pub mod json {
         magnus_probe_root, magnus_string_node, magnus_take_pending_error, Magnus,
         MagnusPendingErrorScope, PendingError, RbNode,
     };
+    #[cfg(feature = "json-text")]
+    pub use jsonschema_value::{JsonText, JsonTextDocument, JsonTextNode};
 }
 mod http;
 mod keywords;

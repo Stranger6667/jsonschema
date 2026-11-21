@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `json::JsonText`, validating JSON text without building a `serde_json::Value`, behind the `json-text` feature.
+
 ### Fixed
 
 - `HttpOptions::add_root_certificate` accepting a file without certificates.

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `JsonTextValidator`, validating instances given as JSON text in `str` or `bytes` without building Python objects for them.
+
 ### Fixed
 
 - `HttpOptions(ca_cert=...)` accepting a file without certificates.
