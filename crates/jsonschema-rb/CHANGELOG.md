@@ -5,6 +5,7 @@
 ### Fixed
 
 - `HttpOptions.new(ca_cert: ...)` accepting a file without certificates.
+- Draft 4 schemas with an empty `enum`, or one with equal members such as `[0, 0.0]`, passing the meta-schema check.
 - `HttpOptions.new(ca_cert: ...)` reporting invalid PEM as an HTTP client build error instead of a certificate parse error that names the file.
 - Custom keyword `iter_errors` returning a non-exception producing a message prefixed with `RuntimeError: ` and no `cause`.
 

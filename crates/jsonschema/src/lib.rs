@@ -6413,14 +6413,22 @@ mod tests {
             .contains("htt://json-schema.org/draft-07/schema"));
     }
 
-    #[test_case(Draft::Draft4)]
-    #[test_case(Draft::Draft6)]
-    #[test_case(Draft::Draft7)]
-    fn meta_schemas(draft: Draft) {
-        // The bundled meta-schemas accept an empty `enum` and one with equal members.
-        for schema in [json!({"enum": [0, 0.0]}), json!({"enum": []})] {
-            assert!(crate::options().with_draft(draft).build(&schema).is_ok());
-        }
+    #[test_case("http://json-schema.org/draft-04/schema#", &json!([]), Some("[] has less than 1 item") ; "draft4 empty")]
+    #[test_case("http://json-schema.org/draft-04/schema#", &json!([0, 0.0]), Some("[0,0.0] has non-unique elements") ; "draft4 equal members")]
+    #[test_case("http://json-schema.org/draft-06/schema#", &json!([]), None ; "draft6 empty")]
+    #[test_case("http://json-schema.org/draft-06/schema#", &json!([0, 0.0]), None ; "draft6 equal members")]
+    #[test_case("http://json-schema.org/draft-07/schema#", &json!([]), None ; "draft7 empty")]
+    #[test_case("http://json-schema.org/draft-07/schema#", &json!([0, 0.0]), None ; "draft7 equal members")]
+    fn enum_members_in_meta_schemas(schema_uri: &str, members: &Value, expected: Option<&str>) {
+        // Draft 4 requires a non-empty `enum` with unique members; Draft 6 and 7 only recommend it.
+        let schema = json!({"$schema": schema_uri, "enum": members});
+        assert_eq!(crate::meta::is_valid(&schema), expected.is_none());
+        assert_eq!(
+            crate::validator_for(&schema)
+                .err()
+                .map(|error| error.to_string()),
+            expected.map(str::to_owned)
+        );
     }
 
     #[test]
