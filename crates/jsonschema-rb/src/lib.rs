@@ -128,48 +128,6 @@ fn build_validator(
     })
 }
 
-/// RAII guard that registers Ruby callback values as GC roots for the duration
-/// of a one-off validation call (module-level `valid?`, `validate!`, etc.).
-///
-/// Persistent `Validator` instances protect their callbacks via the GC mark phase
-/// (see `Validator::mark_callback_roots`). One-off calls have no such wrapper, so
-/// this guard calls `gc_register_address` on construction and `gc_unregister_address` on
-/// drop to keep callbacks alive while validation runs.
-struct CallbackRootGuard {
-    roots: Vec<Value>,
-}
-
-impl CallbackRootGuard {
-    fn new(ruby: &Ruby, callback_roots: &CallbackRoots) -> Self {
-        let roots = {
-            let roots_guard = match callback_roots.lock() {
-                Ok(roots) => roots,
-                Err(poisoned) => poisoned.into_inner(),
-            };
-            roots_guard
-                .iter()
-                .map(|root| ruby.get_inner(*root))
-                .collect::<Vec<_>>()
-        };
-        // We do not mutate `roots` after this point, so references used for GC address
-        // registration remain valid for the lifetime of the guard.
-        for root in &roots {
-            ruby.gc_register_address(root);
-        }
-
-        Self { roots }
-    }
-}
-
-impl Drop for CallbackRootGuard {
-    fn drop(&mut self) {
-        let ruby = Ruby::get().expect("Ruby VM should be initialized");
-        for root in &self.roots {
-            ruby.gc_unregister_address(root);
-        }
-    }
-}
-
 fn build_parsed_options(
     ruby: &Ruby,
     kw: ExtractedKwargs,
@@ -977,11 +935,10 @@ fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
-    let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let BuiltValidator {
         validator,
-        callback_roots,
         compilation_roots: _compilation_roots,
+        ..
     } = build_validator(
         ruby,
         parsed.options,
@@ -993,8 +950,6 @@ fn is_valid(ruby: &Ruby, args: &[Value]) -> Result<bool, Error> {
     )?;
 
     surface_pending_errors(instance, |node| {
-        let _callback_roots =
-            has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
         catch_unwind_silent(AssertUnwindSafe(|| validator.is_valid(node)))
             .map_err(|err| handle_callback_panic(ruby, err))
     })
@@ -1008,11 +963,10 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
-    let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let BuiltValidator {
         validator,
-        callback_roots,
         compilation_roots: _compilation_roots,
+        ..
     } = build_validator(
         ruby,
         parsed.options,
@@ -1024,8 +978,6 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
     )?;
 
     surface_pending_errors(instance, |node| {
-        let _callback_roots =
-            has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
         match catch_unwind_silent(AssertUnwindSafe(|| validator.validate(node))) {
             Ok(Ok(())) => Ok(()),
             Ok(Err(error)) => Err(raise_validation_error(
@@ -1047,11 +999,10 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
-    let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let BuiltValidator {
         validator,
-        callback_roots,
         compilation_roots: _compilation_roots,
+        ..
     } = build_validator(
         ruby,
         parsed.options,
@@ -1063,9 +1014,6 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
     )?;
 
     surface_pending_errors(instance, |node| {
-        let _callback_roots =
-            has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
-
         if ruby.block_given() {
             // Lazy path: yield errors one at a time to the block
             let mut iter = validator.iter_errors(node);
@@ -1111,11 +1059,10 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options(ruby, kw, None)?;
-    let has_ruby_callbacks = parsed.has_ruby_callbacks;
     let BuiltValidator {
         validator,
-        callback_roots,
         compilation_roots: _compilation_roots,
+        ..
     } = build_validator(
         ruby,
         parsed.options,
@@ -1127,8 +1074,6 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
     )?;
 
     surface_pending_errors(instance, |node| {
-        let _callback_roots =
-            has_ruby_callbacks.then(|| CallbackRootGuard::new(ruby, &callback_roots));
         match catch_unwind_silent(AssertUnwindSafe(|| validator.evaluate(node))) {
             Ok(output) => Ok(Evaluation::new(output)),
             Err(err) => Err(handle_callback_panic(ruby, err)),

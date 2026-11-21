@@ -64,9 +64,6 @@ pub struct ParsedOptions<'i> {
     pub options: jsonschema::ValidationOptions<'i, Arc<dyn jsonschema::Retrieve>, Magnus>,
     pub registry: Option<&'i jsonschema::Registry<'static>>,
     pub retriever: Option<RubyRetriever>,
-    // Runtime callbacks invoked during `validator.*` calls (formats / custom keywords).
-    // Retrievers run only at build time, so they leave this flag unset.
-    pub has_ruby_callbacks: bool,
     pub callback_roots: CallbackRoots,
     pub compilation_roots: CompilationRootsRef,
 }
@@ -81,14 +78,12 @@ pub struct ParsedOptions<'i> {
 ///
 /// * **`CallbackRoots`** — held by the `Validator` wrapper and marked during Ruby's
 ///   GC mark phase (`DataTypeFunctions::mark`).
-///   For one-off validation functions (module-level `valid?`, `validate!`, etc.),
-///   where no persistent `Validator` exists, a [`CallbackRootGuard`](crate::CallbackRootGuard)
-///   temporarily registers the same roots via `gc_register_address` for the duration
-///   of the call.
 ///
 /// * **`CompilationRoots`** — registered via `gc_register_address` immediately when
 ///   added, so callbacks are protected during schema compilation (before the
-///   `Validator` wrapper and its mark function exist). Unregistered on drop.
+///   `Validator` wrapper and its mark function exist) and for the whole of a one-off
+///   call (module-level `valid?`, `validate!`, etc.), which has no wrapper.
+///   Unregistered on drop.
 ///
 /// Both collections hold the **same** Ruby objects; they differ only in *when* and
 /// *how* they protect them from the GC.
@@ -526,7 +521,6 @@ pub fn make_options_from_kwargs(
     let mut registry = None;
     let mut retriever = None;
     let retriever_was_provided = retriever_val.is_some();
-    let mut has_ruby_callbacks = false;
     let callback_roots = Arc::new(Mutex::new(Vec::new()));
     let compilation_roots = Arc::new(CompilationRoots::default());
 
@@ -612,7 +606,6 @@ pub fn make_options_from_kwargs(
 
     if let Some(formats_hash) = formats {
         for item in formats_hash.enumeratorize("each", ()) {
-            has_ruby_callbacks = true;
             let pair: magnus::RArray = magnus::TryConvert::try_convert(item?)?;
             let name: String = pair.entry(0)?;
             let callback: Value = pair.entry(1)?;
@@ -663,7 +656,6 @@ pub fn make_options_from_kwargs(
 
     if let Some(keywords_hash) = keywords {
         for item in keywords_hash.enumeratorize("each", ()) {
-            has_ruby_callbacks = true;
             let pair: magnus::RArray = magnus::TryConvert::try_convert(item?)?;
             let name: String = pair.entry(0)?;
             let callback: Value = pair.entry(1)?;
@@ -852,7 +844,6 @@ pub fn make_options_from_kwargs(
         options: opts,
         registry,
         retriever,
-        has_ruby_callbacks,
         callback_roots,
         compilation_roots,
     })

@@ -1207,6 +1207,37 @@ RSpec.describe "Custom keywords" do
       GC.stress = original_stress
     end
 
+    it "keeps keyword validator instances alive through one-off validation calls" do
+      schema = { "properties" => { "a" => { "customKeyword" => true }, "b" => { "customKeyword" => true } } }
+      instance = { "a" => 1, "b" => 1 }
+      calls = {
+        "valid?" => ->(keywords) { JSONSchema.valid?(schema, instance, keywords: keywords) },
+        "validate!" => ->(keywords) { JSONSchema.validate!(schema, instance, keywords: keywords) },
+        "each_error" => ->(keywords) { JSONSchema.each_error(schema, instance, keywords: keywords).to_a },
+        "evaluate" => ->(keywords) { JSONSchema.evaluate(schema, instance, keywords: keywords) }
+      }
+
+      calls.each do |label, call|
+        refs = []
+        alive = []
+        keyword_class = Class.new do
+          define_method(:initialize) do |_parent_schema, _value, _schema_path|
+            refs << WeakRef.new(self)
+          end
+
+          define_method(:validate) do |_instance|
+            GC.start(full_mark: true, immediate_sweep: true)
+            GC.compact if GC.respond_to?(:compact)
+            alive << refs.all?(&:weakref_alive?)
+          end
+        end
+
+        call.call({ "customKeyword" => keyword_class })
+
+        expect(alive.uniq).to eq([true]), "#{label}: a keyword instance was collected during the call"
+      end
+    end
+
     it "keeps keyword validator classes alive until custom keywords are compiled" do
       LIFETIME_STRESS_ITERATIONS.times do |iteration|
         observed_alive = nil
