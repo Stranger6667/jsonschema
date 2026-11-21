@@ -12,67 +12,90 @@
 
 ### Fixed
 
+#### References and `$schema`
+
 - `$ref` to a `$dynamicAnchor` resolving through the dynamic scope like `$dynamicRef`, to an outer `$dynamicAnchor` of the same name instead of the schema it names. [#1923](https://github.com/Stranger6667/jsonschema/issues/1923)
 - `$dynamicRef` in a `$ref` cycle resolving as on the first pass through the cycle, ignoring a `$dynamicAnchor` that a later pass brings into the dynamic scope.
 - `$recursiveRef` stopping at a resource without `$recursiveAnchor: true` in the dynamic scope instead of resolving to the outermost resource with `$recursiveAnchor: true`.
 - `$dynamicRef` landing in another resource leaving the resource that holds it out of the dynamic scope.
-- `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
 - `async_options().with_retriever` discarding the base URI set by `with_base_uri`.
-- `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
 - `Validator` results depending on how references name a schema that a `$ref` cycle passes through, such as `cycle` and `#` inside it.
-- Evaluation paths of custom keyword errors leaving out the `$ref` the keyword was reached through.
 - `Validator` results for a schema that references itself with `#` differing from the same schema reached through a `$ref`, such as `{"not": {"$ref": "#"}}` rejecting every instance.
 - A subschema's own `$schema` ignored through a `$ref` and in the meta-schema check, which could fail or pass it against the wrong draft.
 - `validator_map_for` entries accepting every value for a subschema in Draft 2019-09 or later under a Draft 7 or earlier root.
 - `validator_map_for` entries below the root differing from the same subschema reached through a `$ref`.
-- Evaluation paths below a subschema reached both inline and through a `$ref` taking part of their path from the other route.
 - `$recursiveRef` and `$dynamicRef` inside a subschema with its own `$id` leaving the resource that holds it out of the dynamic scope when that subschema is reached inline or through a JSON Pointer `$ref`.
-- `unevaluatedItems` in Draft 2019-09 treating items matched by `contains` as evaluated.
-- `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.
-- `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
-- `contentEncoding` going unchecked in Draft 7 beside an unsupported `contentMediaType`.
-- `contentEncoding` and `contentMediaType` asserted in Draft 6, which does not define them.
-- `evaluate` messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
-- `#[jsonschema::validator]` `evaluate` output reporting a passing unit for an unknown `contentEncoding` in Draft 7.
-- `#[jsonschema::validator]` `evaluate` output for a `$ref`, `$dynamicRef` or `$recursiveRef` landing on the schema that holds it differing from `Validator::evaluate`.
-- `#[jsonschema::validator]` reporting content that decodes to invalid UTF-8 beside `contentMediaType` at the schema root instead of at `contentEncoding`.
-- `#[jsonschema::validator]` errors for `unevaluatedProperties` and `unevaluatedItems` counting members as evaluated by a subschema that fails, such as an `allOf` branch.
-- `#[jsonschema::validator]` accepting instances of a type that `type` leaves out when keywords for that type are beside it.
-- `#[jsonschema::validator]` resolving a `$ref` reached through another `$ref` against the schema it started from instead of the resource the first one entered, so `propertyNames` accepted names and `oneOf` rejected instances that `Validator` does not.
-- `#[jsonschema::validator]` leaving out the `type` error when a `const` or `enum` beside it accepts only values of that type.
-- `#[jsonschema::validator]` going through a `$ref` cycle once more when its references name one schema in different ways, such as `cycle` and `#` inside it, and applying another schema in place of the one a JSON Pointer reaches through an embedded `$id` resource.
-- `#[jsonschema::validator]` reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
-- `#[jsonschema::validator]` leaving out the `maxLength` error when `minLength` is above `maxLength`.
-- `#[jsonschema::validator]` `iter_errors` reporting the errors of a root that references itself with `$ref: "#"` beside other keywords twice, such as `{"$ref": "#", "minimum": 1}`.
-- `#[jsonschema::validator]` leaving out all errors but the first of a subschema with `$recursiveAnchor` below the root of a schema that uses `$recursiveRef`, such as an `anyOf` error beside a failing `minProperties`.
-- `#[jsonschema::validator]` reporting fewer errors than `Validator` from `iter_errors` and `evaluate`, or the same error more than once beside a `$ref` to the same schema, where a `$recursiveRef` or `$dynamicRef` comes back to the instance it holds, such as a schema with `$recursiveAnchor` that references itself from `allOf`.
-- `#[jsonschema::validator]` `is_valid` taking time exponential in the instance depth on a `$ref` cycle that reaches each nested instance more than once, in a schema with `$recursiveRef` or `$dynamicRef`.
-- `#[jsonschema::validator]` reporting `propertyNames` errors with another kind and in another order than `Validator`, and leaving them out where `additionalProperties: false` beside `patternProperties` rejects the same names.
-- `#[jsonschema::validator]` errors reporting other evaluation paths, absolute keyword locations and schema paths than `Validator`, such as an evaluation path without the `$ref` it went through.
-- `#[jsonschema::validator]` errors reporting absolute keyword locations with the JSON Pointer from the document root instead of from the embedded `$id` resource a `$ref` pointer enters, such as `inner#/$defs/inner/minProperties` instead of `inner#/minProperties`.
-- `#[jsonschema::validator]` reporting errors more than once, accepting other instances than `Validator`, or overflowing the stack on a `$ref` cycle that comes back to the instance it holds, such as a schema referencing itself from both `allOf` and `additionalProperties`.
-- `#[jsonschema::validator]` `unevaluatedProperties` and `unevaluatedItems` resolving references in a subschema with its own `$id` against the resource around it, and leaving that subschema out of the dynamic scope.
-- `#[jsonschema::validator]` reading `resources` in the draft of the schema instead of the draft their own `$schema` names, such as the anchors a Draft 4 `id` sets.
-- `#[jsonschema::validator]` reading a subschema in the draft of the schema holding it instead of the draft or meta-schema its own `$schema` names, such as an embedded resource written in Draft 7.
-- `evaluate` output for `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.
-- `evaluate` output for one `required` name beside `properties` and `additionalProperties: false` reporting the name inside the `additionalProperties` unit, and only when missing.
-- `evaluate` output for `additionalProperties: false` reporting one error for the whole object instead of a failing unit for each extra member.
-- `evaluate` output for two `required` names beside `properties` reporting them inside the `properties` unit, failing it, and only when missing.
-- `evaluate` output for `propertyNames: false` reporting one error for the whole object instead of a failing unit for each name.
-- `evaluate` output for `dependentRequired` and the array form of `dependencies` reporting missing names in a nested unit at a schema location that does not exist.
-- `evaluate` output for array-form `items` and `additionalItems` missing their annotations, and for `additionalItems` reporting the extra items in one error instead of a unit for each.
-- `evaluate` output for `contains` beside `minContains` or `maxContains` missing the matching items and their indices, and locating the subschema at the bound keyword instead of at `contains`.
-- `evaluate` output for `then` and `else` reported inside the `if` unit instead of in units of their own.
-- `#[jsonschema::validator]` overflowing the stack on a `$ref` cycle through the same instance in a schema with `$recursiveRef` or `$dynamicRef`.
-- `#[jsonschema::validator]` reporting a `false` schema error instead of the errors of the referenced schema at a `$ref` that closes a cycle, in a schema with `$recursiveRef` or `$dynamicRef`.
-- `evaluate` output for `oneOf` with more than one valid subschema reporting a different message than `validate`.
+
+#### `evaluate` output
+
+- Schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
+- Messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
+- `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.
+- One `required` name beside `properties` and `additionalProperties: false` reporting the name inside the `additionalProperties` unit, and only when missing.
+- `additionalProperties: false` reporting one error for the whole object instead of a failing unit for each extra member.
+- Two `required` names beside `properties` reporting them inside the `properties` unit, failing it, and only when missing.
+- `propertyNames: false` reporting one error for the whole object instead of a failing unit for each name.
+- `dependentRequired` and the array form of `dependencies` reporting missing names in a nested unit at a schema location that does not exist.
+- Array-form `items` and `additionalItems` missing their annotations, and `additionalItems` reporting the extra items in one error instead of a unit for each.
+- `contains` beside `minContains` or `maxContains` missing the matching items and their indices, and locating the subschema at the bound keyword instead of at `contains`.
+- `then` and `else` reported inside the `if` unit instead of in units of their own.
+- `oneOf` with more than one valid subschema reporting a different message than `validate`.
+- `contains` annotating an instance that is not an array.
+- Locating a `$ref` target at the URI its document was registered under instead of the `$id` that document declares.
+
+#### Error locations and messages
+
+- Evaluation paths of custom keyword errors leaving out the `$ref` the keyword was reached through.
+- Evaluation paths below a subschema reached both inline and through a `$ref` taking part of their path from the other route.
 - Error messages for `minContains` and `maxContains` claiming that no item is valid under the `contains` subschema.
-- `evaluate` output for `contains` annotating an instance that is not an array.
 - Evaluation paths of `propertyNames` errors leaving out a `$ref` inside `propertyNames`.
-- `unevaluatedProperties` and `unevaluatedItems` errors and `evaluate` output counting members as evaluated by a subschema that fails, such as a `$ref` target.
 - `absolute_keyword_location` of errors for names missing under `dependentRequired` or `dependencies` pointing to a schema location that does not exist.
 - `absolute_keyword_location` of errors from a resource without a base URI, such as one registered under a `json-schema:///` URI, naming the `$ref` or other keyword that reached it from a resource with one, instead of being absent.
+- `propertyNames` errors reporting `propertyNames` as their absolute keyword location instead of the keyword that rejected the name.
+
+#### Keywords
+
+- `unevaluatedItems` in Draft 2019-09 treating items matched by `contains` as evaluated.
+- `contentEncoding` going unchecked in Draft 7 beside an unsupported `contentMediaType`.
+- `contentEncoding` and `contentMediaType` asserted in Draft 6, which does not define them.
+- `unevaluatedProperties` and `unevaluatedItems` errors and `evaluate` output counting members as evaluated by a subschema that fails, such as a `$ref` target.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `f64`, such as `1e-400`, with the `arbitrary-precision` feature.
+- `pattern` with a large bounded count the regex engine matches, such as `^x?.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
+
+#### `dereference`
+
+- `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
+- `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
+- `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.
+
+#### `#[jsonschema::validator]`
+
+- `evaluate` output reporting a passing unit for an unknown `contentEncoding` in Draft 7.
+- `evaluate` output for a `$ref`, `$dynamicRef` or `$recursiveRef` landing on the schema that holds it differing from `Validator::evaluate`.
+- Reporting content that decodes to invalid UTF-8 beside `contentMediaType` at the schema root instead of at `contentEncoding`.
+- Errors for `unevaluatedProperties` and `unevaluatedItems` counting members as evaluated by a subschema that fails, such as an `allOf` branch.
+- Accepting instances of a type that `type` leaves out when keywords for that type are beside it.
+- Resolving a `$ref` reached through another `$ref` against the schema it started from instead of the resource the first one entered, so `propertyNames` accepted names and `oneOf` rejected instances that `Validator` does not.
+- Leaving out the `type` error when a `const` or `enum` beside it accepts only values of that type.
+- Going through a `$ref` cycle once more when its references name one schema in different ways, such as `cycle` and `#` inside it, and applying another schema in place of the one a JSON Pointer reaches through an embedded `$id` resource.
+- Reporting the errors of different keywords in another order than `Validator`, including the error `validate` returns.
+- Leaving out the `maxLength` error when `minLength` is above `maxLength`.
+- `iter_errors` reporting the errors of a root that references itself with `$ref: "#"` beside other keywords twice, such as `{"$ref": "#", "minimum": 1}`.
+- Leaving out all errors but the first of a subschema with `$recursiveAnchor` below the root of a schema that uses `$recursiveRef`, such as an `anyOf` error beside a failing `minProperties`.
+- Reporting fewer errors than `Validator` from `iter_errors` and `evaluate`, or the same error more than once beside a `$ref` to the same schema, where a `$recursiveRef` or `$dynamicRef` comes back to the instance it holds, such as a schema with `$recursiveAnchor` that references itself from `allOf`.
+- `is_valid` taking time exponential in the instance depth on a `$ref` cycle that reaches each nested instance more than once, in a schema with `$recursiveRef` or `$dynamicRef`.
+- Reporting `propertyNames` errors with another kind and in another order than `Validator`, and leaving them out where `additionalProperties: false` beside `patternProperties` rejects the same names.
+- Errors reporting other evaluation paths, absolute keyword locations and schema paths than `Validator`, such as an evaluation path without the `$ref` it went through.
+- Errors reporting absolute keyword locations with the JSON Pointer from the document root instead of from the embedded `$id` resource a `$ref` pointer enters, such as `inner#/$defs/inner/minProperties` instead of `inner#/minProperties`.
+- Reporting errors more than once, accepting other instances than `Validator`, or overflowing the stack on a `$ref` cycle that comes back to the instance it holds, such as a schema referencing itself from both `allOf` and `additionalProperties`.
+- `unevaluatedProperties` and `unevaluatedItems` resolving references in a subschema with its own `$id` against the resource around it, and leaving that subschema out of the dynamic scope.
+- Reading `resources` in the draft of the schema instead of the draft their own `$schema` names, such as the anchors a Draft 4 `id` sets.
+- Reading a subschema in the draft of the schema holding it instead of the draft or meta-schema its own `$schema` names, such as an embedded resource written in Draft 7.
+- Overflowing the stack on a `$ref` cycle through the same instance in a schema with `$recursiveRef` or `$dynamicRef`.
+- Reporting a `false` schema error instead of the errors of the referenced schema at a `$ref` that closes a cycle, in a schema with `$recursiveRef` or `$dynamicRef`.
+
+#### Canonicalization
+
 - `satisfiability` answering `Unknown` for an array where only some elements are valid under both `contains` and `items`.
 - `satisfiability` answering `Unknown` for an object that must break `additionalProperties`, `patternProperties` or `propertyNames`.
 - `satisfiability` answering `Unknown` for a number that must miss a `multipleOf`, such as a non-integer.
@@ -80,24 +103,17 @@
 - Stack overflow in `canonicalize` for `unevaluatedProperties` or `unevaluatedItems` reaching itself through a `$ref`, such as one in `dependentSchemas`.
 - `subtract` keeping a difference `satisfiability` cannot decide for a union of three or more object variants where one variant is narrowed.
 - `canonicalize` keeping `oneOf` over references to unions of tagged objects that share no tag value, where a plain union says the same.
-- `pattern` with a large bounded count the regex engine matches, such as `^x?.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
-- `evaluate` output locating a `$ref` target at the URI its document was registered under instead of the `$id` that document declares.
-- `propertyNames` errors reporting `propertyNames` as their absolute keyword location instead of the keyword that rejected the name.
 
 ### Performance
 
+#### Building validators
+
 - Fewer allocations per subschema when building a validator.
 - Faster validator builds for valid schemas, which skip collecting meta-schema errors.
+
+#### Validation
+
 - Linear-time `validate` and `iter_errors` for recursive schemas that reach one member through several keywords, such as `properties` and a matching `patternProperties`.
-- Faster expansion of `#[jsonschema::validator]` for schemas with many `$ref`s, without copying each referenced schema.
-- Faster release builds and smaller binaries for `#[jsonschema::validator]`, with subschema checks no longer forced inline.
-- Faster compilation of `#[jsonschema::validator]` output, with `validate` and `iter_errors` sharing one generated error function per subschema.
-- Faster compilation of `#[jsonschema::validator]` output for schemas with many `$ref`s, checking each referenced schema's validity once before reporting its errors.
-- Faster compilation of `#[jsonschema::validator]` output for schemas with many `type: array` subschemas whose `items` is the same `$ref`, reporting their errors through one shared function.
-- Faster compilation of `#[jsonschema::validator]` output, with fewer closures in the generated code.
-- Faster release builds of `#[jsonschema::validator]` output for schemas with large subschemas that no `$ref` names, with the `evaluate` code of each in a function of its own.
-- Linear-time `#[jsonschema::validator]` validation below a `$ref` cycle that reaches one instance through two keywords, such as two `oneOf` branches, instead of validating the instance once per path to it.
-- Fewer allocations when `#[jsonschema::validator]` reports errors, with the errors of one keyword sharing its schema location.
 - Lower cost of collecting errors over the valid parts of an instance.
 - Fewer allocations in `evaluate` for arrays, with every `items` and `additionalItems` annotation sharing one value.
 - Lower cost of `evaluate` for arrays whose `items` is a single `type`, such as `{"type": "number"}`, with consecutive accepted items recorded together instead of as output units per item.
@@ -105,6 +121,18 @@
 - `unevaluatedProperties` matching names against sequence-shaped `patternProperties`, such as `^[a-z0-9-]+$` or `^[1-5](?:[0-9]{2}|XX)$`, without a regex engine.
 - `properties` and a sibling `unevaluatedProperties` checked in one pass over the object by `is_valid`.
 - `pattern` and `patternProperties` with fixed-length optional groups, exactly repeated groups, a leading group of alternatives, or a run of varying length after fixed characters, such as `^[a-z][a-z0-9-_]{1,63}$`, matched without a regex engine.
+
+#### `#[jsonschema::validator]`
+
+- Faster expansion for schemas with many `$ref`s, without copying each referenced schema.
+- Faster release builds and smaller binaries, with subschema checks no longer forced inline.
+- Faster compilation of the generated code, with `validate` and `iter_errors` sharing one generated error function per subschema.
+- Faster compilation of the generated code for schemas with many `$ref`s, checking each referenced schema's validity once before reporting its errors.
+- Faster compilation of the generated code for schemas with many `type: array` subschemas whose `items` is the same `$ref`, reporting their errors through one shared function.
+- Faster compilation of the generated code, with fewer closures in it.
+- Faster release builds of the generated code for schemas with large subschemas that no `$ref` names, with the `evaluate` code of each in a function of its own.
+- Linear-time validation below a `$ref` cycle that reaches one instance through two keywords, such as two `oneOf` branches, instead of validating the instance once per path to it.
+- Fewer allocations when reporting errors, with the errors of one keyword sharing its schema location.
 
 ### Removed
 
