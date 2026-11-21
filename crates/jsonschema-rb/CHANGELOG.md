@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-11-21
+
 ### Added
 
 - `syntax: :engine` on `RegexOptions` and `FancyRegexOptions` to match `pattern` and `patternProperties` in the regex engine's own syntax, without the ECMA 262 translation. [#1895](https://github.com/Stranger6667/jsonschema/issues/1895)
@@ -852,7 +854,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.62.0...HEAD
+[0.62.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.2...ruby-v0.62.0
 [0.61.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.1...ruby-v0.61.2
 [0.61.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.0...ruby-v0.61.1
 [0.61.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.60.2...ruby-v0.61.0
