@@ -14,51 +14,70 @@
 
 ### Fixed
 
+#### References and `$schema`
+
 - `$ref` to a `$dynamicAnchor` resolving through the dynamic scope like `$dynamicRef`, to an outer `$dynamicAnchor` of the same name instead of the schema it names. [#1923](https://github.com/Stranger6667/jsonschema/issues/1923)
 - `$dynamicRef` in a `$ref` cycle resolving as on the first pass through the cycle, ignoring a `$dynamicAnchor` that a later pass brings into the dynamic scope.
 - `$recursiveRef` stopping at a resource without `$recursiveAnchor: true` in the dynamic scope instead of resolving to the outermost resource with `$recursiveAnchor: true`.
 - `$dynamicRef` landing in another resource leaving the resource that holds it out of the dynamic scope.
-- `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
-- `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
 - `Validator` results depending on how references name a schema that a `$ref` cycle passes through, such as `cycle` and `#` inside it.
-- Evaluation paths of custom keyword errors leaving out the `$ref` the keyword was reached through.
 - `Validator` results for a schema that references itself with `#` differing from the same schema reached through a `$ref`, such as `{"not": {"$ref": "#"}}` rejecting every instance.
 - A subschema's own `$schema` ignored through a `$ref` and in the meta-schema check, which could fail or pass it against the wrong draft.
 - `validator_map_for` entries accepting every value for a subschema in Draft 2019-09 or later under a Draft 7 or earlier root.
 - `validator_map_for` entries below the root differing from the same subschema reached through a `$ref`.
-- Evaluation paths below a subschema reached both inline and through a `$ref` taking part of their path from the other route.
 - `$recursiveRef` and `$dynamicRef` inside a subschema with its own `$id` leaving the resource that holds it out of the dynamic scope when that subschema is reached inline or through a JSON Pointer `$ref`.
-- `unevaluatedItems` in Draft 2019-09 treating items matched by `contains` as evaluated.
-- `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.
-- `evaluate` output for schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
-- `contentEncoding` going unchecked in Draft 7 beside an unsupported `contentMediaType`.
-- `contentEncoding` and `contentMediaType` asserted in Draft 6, which does not define them.
-- `evaluate` messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
-- `evaluate` output for `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.
-- `evaluate` output for one `required` name beside `properties` and `additionalProperties: false` reporting the name inside the `additionalProperties` unit, and only when missing.
-- `evaluate` output for `additionalProperties: false` reporting one error for the whole object instead of a failing unit for each extra member.
-- `evaluate` output for two `required` names beside `properties` reporting them inside the `properties` unit, failing it, and only when missing.
-- `evaluate` output for `propertyNames: false` reporting one error for the whole object instead of a failing unit for each name.
-- `evaluate` output for `dependentRequired` and the array form of `dependencies` reporting missing names in a nested unit at a schema location that does not exist.
-- `evaluate` output for array-form `items` and `additionalItems` missing their annotations, and for `additionalItems` reporting the extra items in one error instead of a unit for each.
-- `evaluate` output for `contains` beside `minContains` or `maxContains` missing the matching items and their indices, and locating the subschema at the bound keyword instead of at `contains`.
-- `evaluate` output for `then` and `else` reported inside the `if` unit instead of in units of their own.
-- `evaluate` output for `oneOf` with more than one valid subschema reporting a different message than `validate`.
+
+#### `evaluate` output
+
+- Schemas with both `minLength` and `maxLength` leaving out the `maxLength` unit for accepted strings, and nesting it under a failing `minLength` unit for longer ones.
+- Messages for a `type` that lists several types differing from `validate`, as `is not of types (null, string)` instead of `is not of types "null", "string"`.
+- `properties` or `patternProperties` beside `additionalProperties` reporting their subschemas inside the `additionalProperties` unit instead of in units of their own.
+- One `required` name beside `properties` and `additionalProperties: false` reporting the name inside the `additionalProperties` unit, and only when missing.
+- `additionalProperties: false` reporting one error for the whole object instead of a failing unit for each extra member.
+- Two `required` names beside `properties` reporting them inside the `properties` unit, failing it, and only when missing.
+- `propertyNames: false` reporting one error for the whole object instead of a failing unit for each name.
+- `dependentRequired` and the array form of `dependencies` reporting missing names in a nested unit at a schema location that does not exist.
+- Array-form `items` and `additionalItems` missing their annotations, and `additionalItems` reporting the extra items in one error instead of a unit for each.
+- `contains` beside `minContains` or `maxContains` missing the matching items and their indices, and locating the subschema at the bound keyword instead of at `contains`.
+- `then` and `else` reported inside the `if` unit instead of in units of their own.
+- `oneOf` with more than one valid subschema reporting a different message than `validate`.
+- `contains` annotating an instance that is not an array.
+- Locating a `$ref` target at the URI its document was registered under instead of the `$id` that document declares.
+
+#### Error locations and messages
+
+- Evaluation paths of custom keyword errors leaving out the `$ref` the keyword was reached through.
+- Evaluation paths below a subschema reached both inline and through a `$ref` taking part of their path from the other route.
 - Error messages for `minContains` and `maxContains` claiming that no item is valid under the `contains` subschema.
-- `evaluate` output for `contains` annotating an instance that is not an array.
 - Evaluation paths of `propertyNames` errors leaving out a `$ref` inside `propertyNames`.
-- `unevaluatedProperties` and `unevaluatedItems` errors and `evaluate` output counting members as evaluated by a subschema that fails, such as a `$ref` target.
 - `absolute_keyword_location` of errors for names missing under `dependentRequired` or `dependencies` pointing to a schema location that does not exist.
 - `absolute_keyword_location` of errors from a resource without a base URI, such as one registered under a `json-schema:///` URI, naming the `$ref` or other keyword that reached it from a resource with one, instead of being absent.
+- `propertyNames` errors reporting `propertyNames` as their absolute keyword location instead of the keyword that rejected the name.
+
+#### Keywords
+
+- `unevaluatedItems` in Draft 2019-09 treating items matched by `contains` as evaluated.
+- `contentEncoding` going unchecked in Draft 7 beside an unsupported `contentMediaType`.
+- `contentEncoding` and `contentMediaType` asserted in Draft 6, which does not define them.
+- `unevaluatedProperties` and `unevaluatedItems` errors and `evaluate` output counting members as evaluated by a subschema that fails, such as a `$ref` target.
 - `multipleOf` with an integer divisor above 2^53 accepting numbers too small for `float`, such as `Decimal("1e-400")`.
 - `pattern` with a large bounded count the regex engine matches, such as `^x?.{0,404600}$`, failing with a regex engine error on the empty string when the size limit was raised to compile it.
-- `evaluate` output locating a `$ref` target at the URI its document was registered under instead of the `$id` that document declares.
-- `propertyNames` errors reporting `propertyNames` as their absolute keyword location instead of the keyword that rejected the name.
+
+#### `dereference`
+
+- `dereference` dropping siblings of `$ref` in Draft 2019-09 and later when the referenced schema defines the same keyword with another value or is a boolean.
+- `dereference` merging siblings of `$ref` into the referenced schema in Draft 2019-09 and later when they change what its keywords accept, such as `properties` beside `additionalProperties`.
+- `dereference` keeping siblings of `$ref` that Draft 4, 6 and 7 ignore, such as `minimum` or `$id`.
 
 ### Performance
 
+#### Building validators
+
 - Fewer allocations per subschema when building a validator.
 - Faster validator builds for valid schemas, which skip collecting meta-schema errors.
+
+#### Validation
+
 - Lower cost of collecting errors over the valid parts of an instance.
 - Fewer allocations in `evaluate` for arrays, with every `items` and `additionalItems` annotation sharing one value.
 - Lower cost of `evaluate` for arrays whose `items` is a single `type`, such as `{"type": "number"}`, with consecutive accepted items recorded together instead of as output units per item.
