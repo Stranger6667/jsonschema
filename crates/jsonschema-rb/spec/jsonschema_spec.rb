@@ -2851,6 +2851,17 @@ RSpec.describe "A custom keyword that raises" do
     errors = JSONSchema.validator_for({ "k" => 1 }, keywords: { "k" => keyword }).each_error(1).to_a
     expect(errors.map { |e| [e.message, e.kind.name, e.cause.class] }).to eq([["iter boom", "k", ArgumentError]])
   end
+
+  it "reports a non-exception from iter_errors by its text" do
+    keyword = Class.new do
+      def initialize(*); end
+      def validate(_instance) = nil
+      def iter_errors(_instance) = ["first", :second]
+    end
+    errors = JSONSchema.validator_for({ "k" => 1 }, keywords: { "k" => keyword }).each_error(1).to_a
+    expect(errors.map { |e| [e.message, e.cause.class, e.cause.message] })
+      .to eq([["first", RuntimeError, "first"], ["second", RuntimeError, "second"]])
+  end
 end
 
 RSpec.describe "An error instance that is a Hash subclass" do
