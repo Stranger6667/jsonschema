@@ -22,6 +22,8 @@ magnus-tests = ["magnus", "magnus/embed"]
 jsonb = ["serde_json"]
 # Builds `jsonb` bytes; for tests and fixture generation, not for validation.
 jsonb-testkit = ["jsonb"]
+# The `json::JsonText` instance representation: reads JSON text in place.
+json-text = ["serde_json"]
 macros = []
 conformance = []
 arbitrary-precision = ["serde_json/arbitrary_precision", "dep:num-bigint"]

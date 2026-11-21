@@ -7,6 +7,7 @@
 #![allow(clippy::cast_possible_wrap)]
 use std::{
     any::Any,
+    borrow::Cow,
     cell::RefCell,
     collections::VecDeque,
     fmt::Write as _,
@@ -20,7 +21,10 @@ use email::EmailOptions;
 use http::HttpOptions;
 use jsonschema::{
     canonical::json::canonical_number,
-    json::{inspect, Pyo3},
+    json::{
+        inspect, Array, Json, JsonNumber, JsonText, JsonTextDocument, JsonTextNode, Node, Object,
+        Pyo3,
+    },
     paths::{Location, LocationSegment},
     Draft, Retrieve, ValidationOptions,
 };
@@ -29,7 +33,7 @@ use pyo3::{
     ffi::{PyImport_GetModule, PyList_New, PyList_SetItem, PyUnicode_AsUTF8AndSize, Py_DECREF},
     intern,
     prelude::*,
-    types::{PyAny, PyBool, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple, PyType},
+    types::{PyAny, PyBool, PyBytes, PyDict, PyFloat, PyInt, PyList, PyString, PyTuple, PyType},
     wrap_pyfunction,
 };
 use referencing::{parse_index, unescape_segment};
@@ -908,36 +912,27 @@ struct CustomKeyword {
     instance: Py<PyAny>,
 }
 
-impl<'i> jsonschema::Keyword<'i, Pyo3> for CustomKeyword {
-    fn validate(
+impl CustomKeyword {
+    fn validate_object<'i>(
         &self,
-        instance: Borrowed<'i, 'i, PyAny>,
+        instance: &Bound<'_, PyAny>,
     ) -> Result<(), jsonschema::ValidationError<'i>> {
         let py = instance.py();
-        match self
-            .instance
-            .call_method1(py, "validate", (instance.to_owned(),))
-        {
+        match self.instance.call_method1(py, "validate", (instance,)) {
             Ok(_) => Ok(()),
-            Err(e) => {
-                let msg = e.value(py).to_string();
-                CUSTOM_KEYWORD_CAUSE.with(|cell| {
-                    cell.borrow_mut().push_back(e);
-                });
-                Err(jsonschema::ValidationError::custom(msg))
-            }
+            Err(error) => Err(custom_error_with_cause(py, error)),
         }
     }
 
-    fn is_valid(&self, instance: Borrowed<'i, 'i, PyAny>) -> bool {
+    fn is_valid_object(&self, instance: &Bound<'_, PyAny>) -> bool {
         self.instance
-            .call_method1(instance.py(), "validate", (instance.to_owned(),))
+            .call_method1(instance.py(), "validate", (instance,))
             .is_ok()
     }
 
-    fn iter_errors(
+    fn iter_errors_object<'i>(
         &self,
-        instance: Borrowed<'i, 'i, PyAny>,
+        instance: &Bound<'_, PyAny>,
     ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
         let py = instance.py();
         // Without an `iter_errors` method, fall back to the single-error `validate` path.
@@ -947,12 +942,9 @@ impl<'i> jsonschema::Keyword<'i, Pyo3> for CustomKeyword {
             .hasattr("iter_errors")
             .unwrap_or(false)
         {
-            return boxed_error_iter(self.validate(instance).err());
+            return boxed_error_iter(self.validate_object(instance).err());
         }
-        let iterable = match self
-            .instance
-            .call_method1(py, "iter_errors", (instance.to_owned(),))
-        {
+        let iterable = match self.instance.call_method1(py, "iter_errors", (instance,)) {
             Ok(iterable) => iterable,
             Err(error) => return boxed_error_iter(Some(custom_error_with_cause(py, error))),
         };
@@ -970,6 +962,95 @@ impl<'i> jsonschema::Keyword<'i, Pyo3> for CustomKeyword {
         }
         Box::new(errors.into_iter())
     }
+}
+
+impl<'i> jsonschema::Keyword<'i, Pyo3> for CustomKeyword {
+    fn validate(
+        &self,
+        instance: Borrowed<'i, 'i, PyAny>,
+    ) -> Result<(), jsonschema::ValidationError<'i>> {
+        self.validate_object(&instance.to_owned())
+    }
+
+    fn is_valid(&self, instance: Borrowed<'i, 'i, PyAny>) -> bool {
+        self.is_valid_object(&instance.to_owned())
+    }
+
+    fn iter_errors(
+        &self,
+        instance: Borrowed<'i, 'i, PyAny>,
+    ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
+        self.iter_errors_object(&instance.to_owned())
+    }
+}
+
+// The keyword class reads Python objects, so a node of JSON text becomes one first.
+impl<'i> jsonschema::Keyword<'i, JsonText> for CustomKeyword {
+    fn validate(&self, instance: JsonTextNode<'i>) -> Result<(), jsonschema::ValidationError<'i>> {
+        Python::attach(|py| self.validate_object(&keyword_instance(py, &instance)))
+    }
+
+    fn is_valid(&self, instance: JsonTextNode<'i>) -> bool {
+        Python::attach(|py| self.is_valid_object(&keyword_instance(py, &instance)))
+    }
+
+    fn iter_errors(
+        &self,
+        instance: JsonTextNode<'i>,
+    ) -> Box<dyn Iterator<Item = jsonschema::ValidationError<'i>> + 'i> {
+        Python::attach(|py| self.iter_errors_object(&keyword_instance(py, &instance)))
+    }
+}
+
+// What a keyword reads. An instance Python cannot hold, such as an integer past
+// `sys.get_int_max_str_digits()`, raises as `json.loads` does: the panic carries the error to
+// `handle_format_checked_panic`, which re-raises it.
+fn keyword_instance<'py>(py: Python<'py>, node: &JsonTextNode<'_>) -> Bound<'py, PyAny> {
+    text_node_to_python(py, node).unwrap_or_else(|error| {
+        LAST_FORMAT_ERROR.with(|last| *last.borrow_mut() = Some(error));
+        std::panic::set_hook(Box::new(|_| {}));
+        panic!("Building the instance failed")
+    })
+}
+
+// What `json.loads` builds: members in document order, `int` for integers, `float` otherwise.
+fn text_node_to_python<'py>(
+    py: Python<'py>,
+    node: &JsonTextNode<'_>,
+) -> PyResult<Bound<'py, PyAny>> {
+    if let Some(object) = node.as_object() {
+        let dict = PyDict::new(py);
+        for (name, value) in object.members() {
+            dict.set_item(name.as_ref(), text_node_to_python(py, &value)?)?;
+        }
+        return Ok(dict.into_any());
+    }
+    if let Some(array) = node.as_array() {
+        let list = PyList::empty(py);
+        for element in array.elements() {
+            list.append(text_node_to_python(py, &element)?)?;
+        }
+        return Ok(list.into_any());
+    }
+    if let Some(string) = node.as_string() {
+        return Ok(PyString::new(py, &string).into_any());
+    }
+    if let Some(number) = node.as_number() {
+        if let Some(value) = number.as_i64() {
+            return Ok(value.into_pyobject(py)?.into_any());
+        }
+        let digits = JsonNumber::as_str(&number);
+        if digits.contains(['.', 'e', 'E']) {
+            // Past `f64` this is infinite, as with `json.loads`.
+            let value: f64 = digits.parse().expect("a checked number");
+            return Ok(PyFloat::new(py, value).into_any());
+        }
+        return py.get_type::<PyInt>().call1((digits.as_ref(),));
+    }
+    Ok(match node.as_boolean() {
+        Some(value) => PyBool::new(py, value).to_owned().into_any(),
+        None => py.None().into_bound(py),
+    })
 }
 
 // Build a custom `ValidationError` from a Python exception, queuing the exception as the error's
@@ -1009,7 +1090,7 @@ impl Drop for KeywordCauseScope {
     }
 }
 
-fn make_options<'a>(
+fn make_options<'a, F: Json>(
     draft: Option<u8>,
     formats: Option<&Bound<'a, PyDict>>,
     validate_formats: Option<bool>,
@@ -1023,8 +1104,11 @@ fn make_options<'a>(
     keywords: Option<&Bound<'a, PyDict>>,
     vocabularies: Option<Vec<String>>,
     offline: Option<bool>,
-) -> PyResult<ValidationOptions<'a, Arc<dyn Retrieve>, Pyo3>> {
-    let mut options = jsonschema::options_for::<Pyo3>();
+) -> PyResult<ValidationOptions<'a, Arc<dyn Retrieve>, F>>
+where
+    CustomKeyword: for<'i> jsonschema::Keyword<'i, F>,
+{
+    let mut options = jsonschema::options_for::<F>();
     #[cfg(not(target_arch = "wasm32"))]
     {
         options = options.with_retriever(DetachedRetriever(None));
@@ -1209,7 +1293,7 @@ fn make_options<'a>(
 
                         match callback.call1(py, (py_schema, py_value, py_path_list)) {
                             Ok(instance) => Ok(Box::new(CustomKeyword { instance })
-                                as Box<dyn for<'i> jsonschema::Keyword<'i, Pyo3>>),
+                                as Box<dyn for<'i> jsonschema::Keyword<'i, F>>),
                             Err(e) => Err(jsonschema::ValidationError::custom(format!(
                                 "Failed to instantiate keyword class '{name_for_error}': {e}"
                             ))),
@@ -1387,7 +1471,7 @@ fn is_valid(
     vocabularies: Option<Vec<String>>,
     offline: Option<bool>,
 ) -> PyResult<bool> {
-    let options = make_options(
+    let options = make_options::<Pyo3>(
         draft,
         formats,
         validate_formats,
@@ -1445,7 +1529,7 @@ fn validate(
     vocabularies: Option<Vec<String>>,
     offline: Option<bool>,
 ) -> PyResult<()> {
-    let options = make_options(
+    let options = make_options::<Pyo3>(
         draft,
         formats,
         validate_formats,
@@ -1503,7 +1587,7 @@ fn iter_errors(
     vocabularies: Option<Vec<String>>,
     offline: Option<bool>,
 ) -> PyResult<ValidationErrorIter> {
-    let options = make_options(
+    let options = make_options::<Pyo3>(
         draft,
         formats,
         validate_formats,
@@ -1562,7 +1646,7 @@ fn evaluate(
     offline: Option<bool>,
 ) -> PyResult<PyEvaluation> {
     let _scope = KeywordCauseScope::enter();
-    let options = make_options(
+    let options = make_options::<Pyo3>(
         draft,
         formats,
         validate_formats,
@@ -1601,6 +1685,197 @@ fn handle_format_checked_panic(err: Box<dyn Any + Send>) -> PyErr {
             exceptions::PyRuntimeError::new_err(format!("Validation panicked: {err:?}"))
         }
     })
+}
+
+/// JsonTextValidator(schema, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None, vocabularies=None, offline=None)
+///
+/// A validator for instances given as JSON text, without building Python objects for them. The
+/// draft comes from `draft`, or from the schema's `$schema` (Draft 2020-12 without one).
+///
+///     >>> validator = JsonTextValidator({"minimum": 5})
+///     >>> validator.is_valid("3")
+///     False
+#[pyclass(module = "jsonschema_rs", frozen)]
+struct JsonTextValidator {
+    validator: jsonschema::Validator<JsonText>,
+    mask: Option<String>,
+}
+
+fn json_text<'a>(instance: &'a Bound<'_, PyAny>) -> PyResult<Cow<'a, [u8]>> {
+    if let Ok(string) = instance.cast::<PyString>() {
+        return Ok(Cow::Borrowed(string.to_str()?.as_bytes()));
+    }
+    if let Ok(bytes) = instance.cast::<PyBytes>() {
+        let data = bytes.as_bytes();
+        // `json.loads` also reads UTF-16 and UTF-32, and UTF-8 behind a byte order mark, none of
+        // which UTF-8 JSON text starts with.
+        let other_encoding = data.starts_with(b"\xef\xbb\xbf")
+            || data.starts_with(b"\xfe\xff")
+            || data.starts_with(b"\xff\xfe")
+            || (data.len() >= 2 && (data[0] == 0 || data[1] == 0));
+        if !other_encoding {
+            return Ok(Cow::Borrowed(data));
+        }
+        let encoding = instance
+            .py()
+            .import("json")?
+            .call_method1("detect_encoding", (bytes,))?;
+        let text = bytes.call_method1("decode", (encoding,))?;
+        return Ok(Cow::Owned(
+            text.cast_into::<PyString>()?.to_str()?.as_bytes().to_vec(),
+        ));
+    }
+    Err(exceptions::PyTypeError::new_err(format!(
+        "JSON text must be str or bytes, not {}",
+        instance.get_type().name()?
+    )))
+}
+
+fn parse_json_text(text: &[u8]) -> PyResult<JsonTextDocument<'_>> {
+    JsonText::parse(text).map_err(|error| PyValueError::new_err(format!("Invalid JSON: {error}")))
+}
+
+#[pymethods]
+impl JsonTextValidator {
+    #[new]
+    #[pyo3(signature = (schema, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None, vocabularies=None, offline=None))]
+    fn new(
+        py: Python<'_>,
+        schema: &Bound<'_, PyAny>,
+        draft: Option<u8>,
+        formats: Option<&Bound<'_, PyDict>>,
+        validate_formats: Option<bool>,
+        ignore_unknown_formats: Option<bool>,
+        retriever: Option<&Bound<'_, PyAny>>,
+        registry: Option<&registry::Registry>,
+        mask: Option<String>,
+        base_uri: Option<String>,
+        pattern_options: Option<&Bound<'_, PyAny>>,
+        email_options: Option<&Bound<'_, PyAny>>,
+        http_options: Option<&Bound<'_, PyAny>>,
+        keywords: Option<&Bound<'_, PyDict>>,
+        vocabularies: Option<Vec<String>>,
+        offline: Option<bool>,
+    ) -> PyResult<Self> {
+        let schema = parse_schema_str(schema)?;
+        let options = make_options::<JsonText>(
+            draft,
+            formats,
+            validate_formats,
+            ignore_unknown_formats,
+            retriever,
+            registry,
+            base_uri,
+            pattern_options,
+            email_options,
+            http_options,
+            keywords,
+            vocabularies,
+            offline,
+        )?;
+        match options.build(&schema) {
+            Ok(validator) => Ok(Self { validator, mask }),
+            Err(error) => Err(into_py_err(py, error, mask.as_deref(), None)?),
+        }
+    }
+    /// is_valid(instance)
+    ///
+    /// Return whether the JSON text `instance` holds a valid document. Stops at the first error.
+    ///
+    ///     >>> validator = JsonTextValidator({"minimum": 5})
+    ///     >>> validator.is_valid(b"3")
+    ///     False
+    fn is_valid(&self, instance: &Bound<'_, PyAny>) -> PyResult<bool> {
+        let text = json_text(instance)?;
+        let document = parse_json_text(&text)?;
+        panic::catch_unwind(AssertUnwindSafe(|| {
+            self.validator.is_valid(document.root())
+        }))
+        .map_err(handle_format_checked_panic)
+    }
+    /// validate(instance)
+    ///
+    /// Raise `ValidationError` for the first error of the document in the JSON text `instance`.
+    ///
+    ///     >>> validator = JsonTextValidator({"minimum": 5})
+    ///     >>> validator.validate("3")
+    ///     ...
+    ///     ValidationError: 3 is less than the minimum of 5
+    fn validate(&self, py: Python<'_>, instance: &Bound<'_, PyAny>) -> PyResult<()> {
+        let text = json_text(instance)?;
+        let document = parse_json_text(&text)?;
+        let _scope = KeywordCauseScope::enter();
+        let error = panic::catch_unwind(AssertUnwindSafe(|| {
+            self.validator.validate(document.root()).err()
+        }))
+        .map_err(handle_format_checked_panic)?;
+        match error {
+            Some(error) => {
+                let root = text_node_to_python(py, &document.root())?;
+                Err(into_py_err(py, error, self.mask.as_deref(), Some(&root))?)
+            }
+            None => Ok(()),
+        }
+    }
+    /// iter_errors(instance)
+    ///
+    /// Iterate over every `ValidationError` of the document in the JSON text `instance`.
+    ///
+    ///     >>> validator = JsonTextValidator({"minimum": 5})
+    ///     >>> print(next(validator.iter_errors("3")).message)
+    ///     3 is less than the minimum of 5
+    fn iter_errors(
+        &self,
+        py: Python<'_>,
+        instance: &Bound<'_, PyAny>,
+    ) -> PyResult<ValidationErrorIter> {
+        let text = json_text(instance)?;
+        let document = parse_json_text(&text)?;
+        let _scope = KeywordCauseScope::enter();
+        let mut errors = vec![];
+        panic::catch_unwind(AssertUnwindSafe(|| {
+            // Built once, on the first error, so errors carry what `json.loads` builds.
+            let mut root = None;
+            for error in self.validator.iter_errors(document.root()) {
+                if root.is_none() {
+                    root = Some(text_node_to_python(py, &document.root())?);
+                }
+                errors.push(into_py_err(py, error, self.mask.as_deref(), root.as_ref())?);
+            }
+            PyResult::Ok(())
+        }))
+        .map_err(handle_format_checked_panic)??;
+        Ok(ValidationErrorIter {
+            iter: errors.into_iter(),
+        })
+    }
+    /// evaluate(instance)
+    ///
+    /// Evaluate the document in the JSON text `instance` and return an `Evaluation` holding the
+    /// output formats.
+    ///
+    ///     >>> validator = JsonTextValidator({"type": "integer"})
+    ///     >>> validator.evaluate("true").flag()["valid"]
+    ///     False
+    fn evaluate(&self, instance: &Bound<'_, PyAny>) -> PyResult<PyEvaluation> {
+        let text = json_text(instance)?;
+        let document = parse_json_text(&text)?;
+        let _scope = KeywordCauseScope::enter();
+        let evaluation = panic::catch_unwind(AssertUnwindSafe(|| {
+            self.validator.evaluate(document.root())
+        }))
+        .map_err(handle_format_checked_panic)?;
+        Ok(PyEvaluation::new(evaluation))
+    }
+    fn __repr__(&self) -> &'static str {
+        match self.validator.draft() {
+            Draft::Draft4 => "<JsonTextValidator: Draft4>",
+            Draft::Draft6 => "<JsonTextValidator: Draft6>",
+            Draft::Draft7 => "<JsonTextValidator: Draft7>",
+            Draft::Draft201909 => "<JsonTextValidator: Draft201909>",
+            _ => "<JsonTextValidator: Draft202012>",
+        }
+    }
 }
 
 #[pyclass(module = "jsonschema_rs", subclass)]
@@ -1754,7 +2029,7 @@ fn validator_map_for(
     offline: Option<bool>,
 ) -> PyResult<ValidatorMap> {
     let schema = parse_schema_str(schema)?;
-    let options = make_options(
+    let options = make_options::<Pyo3>(
         None,
         formats,
         validate_formats,
@@ -1804,7 +2079,7 @@ fn bundle(
     offline: Option<bool>,
 ) -> PyResult<Py<PyAny>> {
     let schema_value = ser::to_value(schema)?;
-    let options = make_options(
+    let options = make_options::<Pyo3>(
         draft, None, None, None, retriever, registry, base_uri, None, None, None, None, None,
         offline,
     )?;
@@ -1846,7 +2121,7 @@ fn dereference(
     offline: Option<bool>,
 ) -> PyResult<Py<PyAny>> {
     let schema_value = ser::to_value(schema)?;
-    let options = make_options(
+    let options = make_options::<Pyo3>(
         draft, None, None, None, retriever, registry, base_uri, None, None, None, None, None,
         offline,
     )?;
@@ -1932,7 +2207,7 @@ fn validator_for_impl(
     offline: Option<bool>,
 ) -> PyResult<Validator> {
     let schema = parse_schema_str(schema)?;
-    let options = make_options(
+    let options = make_options::<Pyo3>(
         draft,
         formats,
         validate_formats,
@@ -2552,6 +2827,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
     module.add_wrapped(wrap_pyfunction!(validator_map_for))?;
     module.add_class::<ValidatorMap>()?;
+    module.add_class::<JsonTextValidator>()?;
     module.add_wrapped(wrap_pyfunction!(bundle))?;
     module.add_wrapped(wrap_pyfunction!(dereference))?;
     module.add_wrapped(wrap_pyfunction!(validator_cls_for))?;

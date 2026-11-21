@@ -112,22 +112,22 @@ jobs:
         run: >
           cargo test --no-fail-fast --workspace --tests
           --exclude jsonschema-py --exclude jsonschema-rb --exclude jsonschema-value --exclude benchmark-suite --exclude jsonschema-testsuite-pyo3 --exclude jsonschema-bench-pyo3 --exclude jsonschema-testsuite-magnus --exclude jsonschema-bench-magnus --exclude jsonschema-example-pyo3 --exclude jsonschema-example-magnus
-          --features jsonschema/conformance,jsonschema/resolve-http,jsonschema/resolve-file,jsonschema/resolve-async,jsonschema/tls-aws-lc-rs,jsonschema/tls-ring,jsonschema/arbitrary-precision,jsonschema/macros,jsonschema/pyo3,jsonschema/jsonb,referencing/retrieve-async,jsonschema-macros/arbitrary-precision,jsonschema-macros/float-roundtrip
+          --features jsonschema/conformance,jsonschema/resolve-http,jsonschema/resolve-file,jsonschema/resolve-async,jsonschema/tls-aws-lc-rs,jsonschema/tls-ring,jsonschema/arbitrary-precision,jsonschema/macros,jsonschema/pyo3,jsonschema/jsonb,jsonschema/json-text,referencing/retrieve-async,jsonschema-macros/arbitrary-precision,jsonschema-macros/float-roundtrip
           -- --skip ui_compile_failures
 
-      - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros,jsonb-testkit"
+      - run: cargo test --no-fail-fast -p jsonschema-value --features "pyo3-tests,conformance,arbitrary-precision,macros,jsonb-testkit,json-text"
 
       # The only run of the crate's default feature set, where numbers past `f64` take the
       # digit-based fallbacks instead of the exact arithmetic `arbitrary-precision` brings.
-      - run: cargo test --no-fail-fast -p jsonschema-value --features "conformance,macros,jsonb-testkit"
+      - run: cargo test --no-fail-fast -p jsonschema-value --features "conformance,macros,jsonb-testkit,json-text"
 
       # `serde_json` features enabled by another crate while `jsonschema`'s own stay off.
       - run: cargo test --no-fail-fast --manifest-path crates/jsonschema-unified-serde-json/Cargo.toml
 
-      # Every other job enabling `jsonb` also enables `arbitrary-precision`. The feature set rebuilds
-      # `jsonschema` from scratch and nothing in it is platform-specific, so Windows skips it.
+      # Every other job enabling `jsonb` or `json-text` also enables `arbitrary-precision`. The feature
+      # set rebuilds `jsonschema` from scratch and nothing in it is platform-specific, so Windows skips it.
       - if: runner.os != 'Windows'
-        run: cargo test --no-fail-fast -p jsonschema --features jsonb,macros --test jsonb --test suite
+        run: cargo test --no-fail-fast -p jsonschema --features jsonb,json-text,macros --test jsonb --test suite
 
   test-cross:
     strategy:
@@ -167,18 +167,18 @@ jobs:
         # tests take most of an hour. Test targets are named one by one to leave out the latter.
         run: >
           cross test --target ${{ matrix.target }} --no-fail-fast
-          --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest,jsonb -p jsonschema
+          --features conformance,resolve-http,resolve-file,resolve-async,tls-aws-lc-rs,tls-ring,arbitrary-precision,macros,reqwest,jsonb,json-text -p jsonschema
           --lib --test annotation_suite --test bundle --test codegen --test custom_representation --test dereference
           --test jsonb --test lazy_instance --test leak --test output_suite --test ref_chain --test suite
           -- --skip canonical::
 
-      - name: Test jsonb on ${{ matrix.target }}
+      - name: Test jsonb and JSON text on ${{ matrix.target }}
         env:
           CROSS_CONTAINER_OPTS: >-
             --env XDG_CACHE_HOME=/tmp/.cache
             --env XDG_DATA_HOME=/tmp/.local/share
         # Reads `jsonb-corpus-be.tsv`, captured from a PostgreSQL server on this architecture.
-        run: cross test --target ${{ matrix.target }} --tests --no-fail-fast --features jsonb-testkit,conformance -p jsonschema-value
+        run: cross test --target ${{ matrix.target }} --tests --no-fail-fast --features jsonb-testkit,json-text,conformance -p jsonschema-value
 
   test-jsonb-postgres:
     name: jsonb against PostgreSQL
@@ -356,7 +356,7 @@ jobs:
       - name: Run tests without arbitrary-precision
         run: |
           cargo llvm-cov --no-report -p jsonschema --features macros
-          cargo llvm-cov --no-report -p jsonschema-value --features conformance,macros,jsonb-testkit
+          cargo llvm-cov --no-report -p jsonschema-value --features conformance,macros,jsonb-testkit,json-text
 
       - name: Generate merged coverage report
         run: cargo llvm-cov report --lcov --output-path lcov.info

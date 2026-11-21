@@ -10,7 +10,7 @@ name = "jsonschema_rb"
 path = "../../src/lib.rs"
 
 [dependencies]
-jsonschema = { version = "0.62.0", default-features = false, features = ["magnus", "arbitrary-precision", "resolve-http", "resolve-file", "tls-ring", "macros", "idna"] }
+jsonschema = { version = "0.62.0", default-features = false, features = ["magnus", "arbitrary-precision", "resolve-http", "resolve-file", "tls-ring", "macros", "idna", "json-text"] }
 magnus = { version = "0.9", features = ["rb-sys"] }
 rb-sys = "0.9"
 referencing = "0.62.0"

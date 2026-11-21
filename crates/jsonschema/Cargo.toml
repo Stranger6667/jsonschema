@@ -40,6 +40,8 @@ magnus = ["jsonschema-value/magnus", "dep:magnus"]
 pyo3 = ["jsonschema-value/pyo3", "dep:pyo3"]
 # The `json::Jsonb` instance representation for Postgres `jsonb` values.
 jsonb = ["jsonschema-value/jsonb"]
+# The `json::JsonText` instance representation: reads JSON text in place.
+json-text = ["jsonschema-value/json-text"]
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
 # Use rustls-no-provider to allow manual selection of crypto backend
@@ -176,3 +178,8 @@ required-features = ["macros"]
 harness = false
 name = "jsonb"
 required-features = ["jsonb"]
+
+[[bench]]
+harness = false
+name = "json_text"
+required-features = ["json-text"]

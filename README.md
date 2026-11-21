@@ -130,6 +130,7 @@ For detailed benchmarks, see our [full performance comparison](https://github.co
 | `pyo3` | | Validating Python objects in place, and `backend = Pyo3` for the macro |
 | `magnus` | | Validating Ruby objects in place, and `backend = Magnus` for the macro |
 | `jsonb` | | Validating Postgres `jsonb` values in place |
+| `json-text` | | Validating JSON text without building a `serde_json::Value` |
 
 Turning off `idna` drops the IDNA and ICU dependencies; `idn-hostname` and `idn-email` are then
 treated as unknown formats.

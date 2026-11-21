@@ -10,6 +10,8 @@ pub mod numeric_check;
 pub mod types;
 pub mod unique;
 
+#[cfg(feature = "json-text")]
+pub mod json_text;
 #[cfg(feature = "jsonb")]
 pub mod jsonb;
 #[cfg(feature = "magnus")]
@@ -20,6 +22,8 @@ mod pyo3;
 mod serde_json;
 mod serde_number;
 
+#[cfg(feature = "json-text")]
+pub use json_text::{JsonText, JsonTextDocument, JsonTextNode};
 #[cfg(feature = "jsonb")]
 pub use jsonb::{Jsonb, JsonbNode};
 #[cfg(feature = "magnus")]

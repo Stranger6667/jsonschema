@@ -573,6 +573,42 @@ module JSONSchema
 
     def inspect: () -> String
   end
+
+  # Validates instances given as JSON text, without building Ruby objects for them.
+  class JsonTextValidator
+    def initialize: (
+      untyped schema,
+      ?draft: draft?,
+      ?validate_formats: bool?,
+      ?ignore_unknown_formats: bool?,
+      ?vocabularies: Array[String]?,
+      ?base_uri: String?,
+      ?retriever: (^(String) -> untyped)?,
+      ?mask: String?,
+      ?formats: Hash[String, ^(String) -> bool]?,
+      ?keywords: Hash[String, Class]?,
+      ?registry: Registry?,
+      ?pattern_options: (RegexOptions | FancyRegexOptions)?,
+      ?email_options: EmailOptions?,
+      ?http_options: HttpOptions?,
+      ?offline: bool?
+    ) -> void
+
+    # Whether the JSON text holds a valid document.
+    def valid?: (String text) -> bool
+
+    # Raise on the first error of the document in the JSON text.
+    def validate!: (String text) -> nil
+
+    # Iterate validation errors. Returns Array when no block given, nil when block given.
+    def each_error: (String text) -> Array[ValidationError]
+                  | (String text) { (ValidationError) -> void } -> nil
+
+    # Evaluate the document in the JSON text and return structured output.
+    def evaluate: (String text) -> Evaluation
+
+    def inspect: () -> String
+  end
   public
 
   # Validators for every subschema, keyed by URI fragment such as `"#/$defs/User"`.

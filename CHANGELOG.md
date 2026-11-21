@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `json::JsonText`, validating JSON text without building a `serde_json::Value`, behind the `json-text` feature.
+
 ### Fixed
 
 - `$ref` to a bundled meta-schema of a draft other than the schema's own, such as `https://json-schema.org/draft/2020-12/schema` from a Draft 7 schema, failing to resolve.

@@ -106,14 +106,7 @@ def pytest_generate_tests(metafunc):
     )
 
 
-def runtime_validator(draft, schema, external_schemas, validate_formats):
-    cls = {
-        "4": jsonschema_rs.Draft4Validator,
-        "6": jsonschema_rs.Draft6Validator,
-        "7": jsonschema_rs.Draft7Validator,
-        "2019-09": jsonschema_rs.Draft201909Validator,
-        "2020-12": jsonschema_rs.Draft202012Validator,
-    }[draft]
+def validator_kwargs(schema, external_schemas, validate_formats):
     retriever = make_retriever(external_schemas)
     kwargs = {"retriever": retriever}
     if validate_formats is not None:
@@ -122,7 +115,56 @@ def runtime_validator(draft, schema, external_schemas, validate_formats):
     meta_schema = schema.get("$schema") if isinstance(schema, dict) else None
     if meta_schema in external_schemas:
         kwargs["registry"] = jsonschema_rs.Registry([(meta_schema, external_schemas[meta_schema])], retriever=retriever)
-    return cls(schema, **kwargs)
+    return kwargs
+
+
+def runtime_validator(draft, schema, external_schemas, validate_formats):
+    cls = {
+        "4": jsonschema_rs.Draft4Validator,
+        "6": jsonschema_rs.Draft6Validator,
+        "7": jsonschema_rs.Draft7Validator,
+        "2019-09": jsonschema_rs.Draft201909Validator,
+        "2020-12": jsonschema_rs.Draft202012Validator,
+    }[draft]
+    return cls(schema, **validator_kwargs(schema, external_schemas, validate_formats))
+
+
+# `json.dumps` rejects `Decimal`, so literals past `float` precision are written as the suite has them.
+def json_text(value):
+    if isinstance(value, Decimal):
+        return str(value)
+    if isinstance(value, dict):
+        return "{" + ",".join(f"{json.dumps(key)}:{json_text(item)}" for key, item in value.items()) + "}"
+    if isinstance(value, list):
+        return "[" + ",".join(json_text(item) for item in value) + "]"
+    return json.dumps(value)
+
+
+def test_draft_json_text(
+    filename, draft, schema, external_schemas, instance, expected, description, validate_formats, case_id
+):
+    error_message = f"[{filename}] {description}: {schema} | {instance}"
+    validator = jsonschema_rs.JsonTextValidator(
+        schema,
+        draft={
+            "4": jsonschema_rs.Draft4,
+            "6": jsonschema_rs.Draft6,
+            "7": jsonschema_rs.Draft7,
+            "2019-09": jsonschema_rs.Draft201909,
+            "2020-12": jsonschema_rs.Draft202012,
+        }[draft],
+        **validator_kwargs(schema, external_schemas, validate_formats),
+    )
+    text = json_text(instance)
+    assert validator.is_valid(text) is expected, f"is_valid mismatch: {error_message}"
+    assert validator.is_valid(text.encode()) is expected, f"is_valid over bytes mismatch: {error_message}"
+    if expected:
+        validator.validate(text)
+    else:
+        with pytest.raises(jsonschema_rs.ValidationError):
+            validator.validate(text)
+    assert (list(validator.iter_errors(text)) == []) is expected, f"iter_errors mismatch: {error_message}"
+    assert validator.evaluate(text).flag()["valid"] is expected, f"evaluate mismatch: {error_message}"
 
 
 def test_draft(filename, draft, schema, external_schemas, instance, expected, description, validate_formats, case_id):

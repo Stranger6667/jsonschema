@@ -57,6 +57,16 @@ module SuiteHelpers
   def self.unencodable?(value)
     value.is_a?(String) && value.include?(REPLACEMENT_CHARACTER)
   end
+
+  # `JSON.generate` writes a `BigDecimal` as a string, so numbers are written out by hand.
+  def self.json_text(value)
+    case value
+    when BigDecimal then value.to_s("F")
+    when Hash then "{#{value.map { |key, item| "#{JSON.generate(key)}:#{json_text(item)}" }.join(',')}}"
+    when Array then "[#{value.map { |item| json_text(item) }.join(',')}]"
+    else JSON.generate(value)
+    end
+  end
 end
 
 RSpec.describe "JSON Schema Test Suite" do
@@ -134,6 +144,16 @@ RSpec.describe "JSON Schema Test Suite" do
                   eval_result = JSONSchema.evaluate(schema, data, **opts)
                   expect(eval_result.valid?).to eq(expected_valid),
                                                 "evaluate.valid? expected #{expected_valid}.\n#{error_ctx}"
+
+                  # The same instance as JSON text.
+                  text_validator = JSONSchema::JsonTextValidator.new(schema, **opts)
+                  text = SuiteHelpers.json_text(data)
+                  expect(text_validator.valid?(text)).to be(expected_valid),
+                                                         "JsonTextValidator valid? mismatch.\n#{error_ctx}"
+                  expect(text_validator.each_error(text).empty?).to be(expected_valid),
+                                                                    "JsonTextValidator each_error mismatch.\n#{error_ctx}"
+                  expect(text_validator.evaluate(text).valid?).to be(expected_valid),
+                                                                  "JsonTextValidator evaluate mismatch.\n#{error_ctx}"
 
                   # `JSONSchemaTestSuite` holds one `backend = Magnus` validator per suite case.
                   expect(JSONSchemaTestSuite.valid?(case_id, data)).to be(expected_valid),

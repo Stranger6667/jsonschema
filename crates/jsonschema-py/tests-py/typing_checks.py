@@ -28,6 +28,13 @@ def build_from_union(schema: Schema) -> list[jsonschema_rs.Validator]:
     ]
 
 
+def json_text(schema: Schema, text: str | bytes) -> list[str]:
+    validator = jsonschema_rs.JsonTextValidator(schema, draft=jsonschema_rs.Draft7, validate_formats=True)
+    assert_type(validator.is_valid(text), bool)
+    validator.validate(text)
+    return [error.message for error in validator.iter_errors(text)]
+
+
 def module_functions(schema: Schema, instance: object) -> list[str]:
     jsonschema_rs.validate(schema, instance, vocabularies=("https://json-schema.org/draft/2020-12/vocab/core",))
     assert jsonschema_rs.is_valid(schema, instance)

@@ -35,6 +35,21 @@ when "evaluate"
   validator = JSONSchema.validator_for(schema)
   instance = instance.call
   iterations.times { validator.evaluate(instance).list }
+when "text-valid"
+  validator = JSONSchema::JsonTextValidator.new(schema)
+  text = File.read(File.join(DATA, instance_file))
+  iterations.times { validator.valid?(text) }
+when "text-validate"
+  # One error, on a scalar, in a large document: what building an error costs.
+  data = JSON.parse(File.read(File.join(DATA, instance_file)))
+  data["info"]["version"] = 1
+  validator = JSONSchema::JsonTextValidator.new(schema)
+  text = JSON.generate(data)
+  iterations.times do
+    validator.validate!(text)
+  rescue JSONSchema::ValidationError
+    nil
+  end
 when "codegen-valid", "codegen-validate"
   # `JSONSchemaBench` holds a `backend = Magnus` validator per benchmark schema.
   require_relative "support/jsonschema_bench_magnus"
