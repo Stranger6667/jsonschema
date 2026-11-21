@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-11-21
+
 ### Added
 
 - `syntax="engine"` on `RegexOptions` and `FancyRegexOptions` to match `pattern` and `patternProperties` in the regex engine's own syntax, without the ECMA 262 translation. [#1895](https://github.com/Stranger6667/jsonschema/issues/1895)
@@ -1823,7 +1825,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.61.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.62.0...HEAD
+[0.62.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.61.2...python-v0.62.0
 [0.61.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.61.1...python-v0.61.2
 [0.61.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.61.0...python-v0.61.1
 [0.61.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.60.3...python-v0.61.0
