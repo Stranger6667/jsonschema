@@ -23,3 +23,7 @@ benchmarks:
     exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb fhir validate 50000
   - name: "ruby-validate-recursive"
     exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb recursive validate 700
+  - name: "ruby-evaluate-openapi"
+    exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb openapi evaluate 1
+  - name: "ruby-evaluate-fhir"
+    exec: ruby --disable-gems -Ilib bench/codspeed_bench.rb fhir evaluate 1700

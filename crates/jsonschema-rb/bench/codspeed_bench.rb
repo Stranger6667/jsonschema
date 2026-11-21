@@ -31,6 +31,10 @@ when "validate"
   validator = JSONSchema.validator_for(schema)
   instance = instance.call
   iterations.times { validator.validate!(instance) }
+when "evaluate"
+  validator = JSONSchema.validator_for(schema)
+  instance = instance.call
+  iterations.times { validator.evaluate(instance).list }
 when "codegen-valid", "codegen-validate"
   # `JSONSchemaBench` holds a `backend = Magnus` validator per benchmark schema.
   require_relative "support/jsonschema_bench_magnus"
