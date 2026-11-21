@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `HttpOptions::add_root_certificate` accepting a file without certificates.
+- `HttpOptions::add_root_certificate` reporting invalid PEM as an HTTP client build error instead of a certificate parse error that names the file.
+
 ## [0.62.0] - 2026-11-21
 
 ### Added

@@ -145,6 +145,25 @@ def test_http_options_invalid_cert_path():
         validator_for({"$ref": "https://example.com/schema.json"}, http_options=opts)
 
 
+@pytest.mark.parametrize(
+    ("content", "expected"),
+    (
+        ("", "Failed to configure HTTP options: Failed to read certificate file '{path}': no certificates found"),
+        (
+            "-----BEGIN CERTIFICATE-----\n!!!!\n-----END CERTIFICATE-----\n",
+            "Failed to configure HTTP options: Failed to parse certificate '{path}': builder error",
+        ),
+    ),
+    ids=("no certificates", "invalid base64"),
+)
+def test_http_options_unusable_cert_file(tmp_path, content, expected):
+    path = tmp_path / "ca.pem"
+    path.write_text(content)
+    with pytest.raises(RuntimeError) as exc:
+        validator_for({"type": "string"}, http_options=HttpOptions(ca_cert=str(path)))
+    assert str(exc.value) == expected.format(path=path)
+
+
 def test_http_fetch_external_schema():
     # Fetches the JSON Schema 2020-12 meta-schema over HTTPS (requires network)
     schema = {"$ref": "https://json-schema.org/draft/2020-12/schema"}

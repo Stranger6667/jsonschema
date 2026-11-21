@@ -2,6 +2,7 @@
 
 require "spec_helper"
 require "bigdecimal"
+require "tempfile"
 require "weakref"
 require_relative "support/codegen_backend"
 
@@ -1889,6 +1890,14 @@ RSpec.describe JSONSchema::HttpOptions do
     opts = JSONSchema::HttpOptions.new(ca_cert: "/nonexistent.pem")
     expect { JSONSchema.validator_for({ "type" => "string" }, http_options: opts) }
       .to raise_error(ArgumentError, "Failed to read certificate file '/nonexistent.pem': No such file or directory (os error 2)")
+  end
+
+  it "raises ArgumentError for a CA certificate file without certificates" do
+    Tempfile.create("ca.pem") do |file|
+      opts = JSONSchema::HttpOptions.new(ca_cert: file.path)
+      expect { JSONSchema.validator_for({ "type" => "string" }, http_options: opts) }
+        .to raise_error(ArgumentError, "Failed to read certificate file '#{file.path}': no certificates found")
+    end
   end
 
   it "raises ArgumentError for negative timeout" do
