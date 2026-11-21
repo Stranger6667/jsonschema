@@ -1033,6 +1033,124 @@ fn test_root_referencing_itself_matches_runtime(
     }
 }
 
+const RECURSIVE_REF_TO_INLINE_RESOURCE_HOLDING_IT: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","allOf":[{"$id":"x","properties":{"s":true},"$recursiveRef":"#"}]}"##;
+const ANCHORED_RECURSIVE_REF_TO_INLINE_RESOURCE_HOLDING_IT: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","allOf":[{"$id":"x","$recursiveAnchor":true,"properties":{"s":true},"$recursiveRef":"#"}]}"##;
+const RECURSIVE_REF_TO_ROOT_HOLDING_IT: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","properties":{"s":true},"$recursiveRef":"#"}"##;
+const RECURSIVE_REF_TO_TARGET_HOLDING_IT: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$ref":"x","$defs":{"x":{"$id":"x","properties":{"s":true},"$recursiveRef":"#"}}}"##;
+const RECURSIVE_REF_HELD_BY_ITS_TARGET_LANDING_ON_ROOT: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$recursiveAnchor":true,"required":["a"],"properties":{"p":{"$ref":"x"}},"$defs":{"x":{"$id":"x","$recursiveAnchor":true,"$recursiveRef":"#"}}}"##;
+const RECURSIVE_REF_HELD_BY_ITS_TARGET_LOOPING_THROUGH_ROOT: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$recursiveAnchor":true,"properties":{"s":true},"allOf":[{"$ref":"x"}],"$defs":{"x":{"$id":"x","$recursiveAnchor":true,"$recursiveRef":"#"}}}"##;
+const REF_TO_INLINE_RESOURCE_HOLDING_IT: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","allOf":[{"$id":"x","properties":{"s":true},"$ref":"#"}]}"##;
+const DYNAMIC_REF_TO_INLINE_RESOURCE_HOLDING_IT: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","allOf":[{"$id":"x","$dynamicAnchor":"n","properties":{"s":true},"$dynamicRef":"#n"}]}"##;
+const DYNAMIC_REF_HELD_BY_ITS_TARGET_LANDING_ON_ROOT: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"n","required":["a"],"properties":{"p":{"$ref":"x"}},"$defs":{"x":{"$id":"x","$dynamicAnchor":"n","$dynamicRef":"#n"}}}"##;
+const DYNAMIC_REF_HELD_BY_ITS_TARGET_LOOPING_THROUGH_ROOT: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"n","properties":{"s":true},"allOf":[{"$ref":"x"}],"$defs":{"x":{"$id":"x","$dynamicAnchor":"n","$dynamicRef":"#n"}}}"##;
+const DYNAMIC_REF_LANDING_ON_ROOT_HOLDING_IT: &str = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"n","properties":{"s":true},"$dynamicRef":"other#n","$defs":{"other":{"$id":"other","$dynamicAnchor":"n","type":"integer"}}}"#;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","allOf":[{"$id":"x","properties":{"s":true},"$recursiveRef":"#"}]}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefToInlineResourceHoldingIt;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","allOf":[{"$id":"x","$recursiveAnchor":true,"properties":{"s":true},"$recursiveRef":"#"}]}"##,
+    draft = Draft201909
+)]
+struct AnchoredRecursiveRefToInlineResourceHoldingIt;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","properties":{"s":true},"$recursiveRef":"#"}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefToRootHoldingIt;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$ref":"x","$defs":{"x":{"$id":"x","properties":{"s":true},"$recursiveRef":"#"}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefToTargetHoldingIt;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$recursiveAnchor":true,"required":["a"],"properties":{"p":{"$ref":"x"}},"$defs":{"x":{"$id":"x","$recursiveAnchor":true,"$recursiveRef":"#"}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefHeldByItsTargetLandingOnRoot;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/root","$recursiveAnchor":true,"properties":{"s":true},"allOf":[{"$ref":"x"}],"$defs":{"x":{"$id":"x","$recursiveAnchor":true,"$recursiveRef":"#"}}}"##,
+    draft = Draft201909
+)]
+struct RecursiveRefHeldByItsTargetLoopingThroughRoot;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","allOf":[{"$id":"x","properties":{"s":true},"$ref":"#"}]}"##
+)]
+struct RefToInlineResourceHoldingIt;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","allOf":[{"$id":"x","$dynamicAnchor":"n","properties":{"s":true},"$dynamicRef":"#n"}]}"##
+)]
+struct DynamicRefToInlineResourceHoldingIt;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"n","required":["a"],"properties":{"p":{"$ref":"x"}},"$defs":{"x":{"$id":"x","$dynamicAnchor":"n","$dynamicRef":"#n"}}}"##
+)]
+struct DynamicRefHeldByItsTargetLandingOnRoot;
+
+#[jsonschema::validator(
+    schema = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"n","properties":{"s":true},"allOf":[{"$ref":"x"}],"$defs":{"x":{"$id":"x","$dynamicAnchor":"n","$dynamicRef":"#n"}}}"##
+)]
+struct DynamicRefHeldByItsTargetLoopingThroughRoot;
+
+#[jsonschema::validator(
+    schema = r#"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/root","$dynamicAnchor":"n","properties":{"s":true},"$dynamicRef":"other#n","$defs":{"other":{"$id":"other","$dynamicAnchor":"n","type":"integer"}}}"#
+)]
+struct DynamicRefLandingOnRootHoldingIt;
+
+// A `$ref` or `$dynamicRef` landing on the schema holding it applies nothing. A `$recursiveRef`
+// naming that schema enters it as a reference target, until the cycle guard stops it, and one
+// landing elsewhere through the dynamic scope applies the schema it lands on.
+#[test_case(RecursiveRefToInlineResourceHoldingIt::is_valid, RecursiveRefToInlineResourceHoldingIt::validate, RecursiveRefToInlineResourceHoldingIt::iter_errors, RecursiveRefToInlineResourceHoldingIt::evaluate, RECURSIVE_REF_TO_INLINE_RESOURCE_HOLDING_IT ; "recursive_ref_in_inline_resource")]
+#[test_case(AnchoredRecursiveRefToInlineResourceHoldingIt::is_valid, AnchoredRecursiveRefToInlineResourceHoldingIt::validate, AnchoredRecursiveRefToInlineResourceHoldingIt::iter_errors, AnchoredRecursiveRefToInlineResourceHoldingIt::evaluate, ANCHORED_RECURSIVE_REF_TO_INLINE_RESOURCE_HOLDING_IT ; "anchored_recursive_ref_in_inline_resource")]
+#[test_case(RecursiveRefToRootHoldingIt::is_valid, RecursiveRefToRootHoldingIt::validate, RecursiveRefToRootHoldingIt::iter_errors, RecursiveRefToRootHoldingIt::evaluate, RECURSIVE_REF_TO_ROOT_HOLDING_IT ; "recursive_ref_in_root")]
+#[test_case(RecursiveRefToTargetHoldingIt::is_valid, RecursiveRefToTargetHoldingIt::validate, RecursiveRefToTargetHoldingIt::iter_errors, RecursiveRefToTargetHoldingIt::evaluate, RECURSIVE_REF_TO_TARGET_HOLDING_IT ; "recursive_ref_in_reference_target")]
+#[test_case(RecursiveRefHeldByItsTargetLandingOnRoot::is_valid, RecursiveRefHeldByItsTargetLandingOnRoot::validate, RecursiveRefHeldByItsTargetLandingOnRoot::iter_errors, RecursiveRefHeldByItsTargetLandingOnRoot::evaluate, RECURSIVE_REF_HELD_BY_ITS_TARGET_LANDING_ON_ROOT ; "recursive_ref_landing_on_outer_resource")]
+#[test_case(RecursiveRefHeldByItsTargetLoopingThroughRoot::is_valid, RecursiveRefHeldByItsTargetLoopingThroughRoot::validate, RecursiveRefHeldByItsTargetLoopingThroughRoot::iter_errors, RecursiveRefHeldByItsTargetLoopingThroughRoot::evaluate, RECURSIVE_REF_HELD_BY_ITS_TARGET_LOOPING_THROUGH_ROOT ; "recursive_ref_looping_through_outer_resource")]
+#[test_case(RefToInlineResourceHoldingIt::is_valid, RefToInlineResourceHoldingIt::validate, RefToInlineResourceHoldingIt::iter_errors, RefToInlineResourceHoldingIt::evaluate, REF_TO_INLINE_RESOURCE_HOLDING_IT ; "ref_in_inline_resource")]
+#[test_case(DynamicRefToInlineResourceHoldingIt::is_valid, DynamicRefToInlineResourceHoldingIt::validate, DynamicRefToInlineResourceHoldingIt::iter_errors, DynamicRefToInlineResourceHoldingIt::evaluate, DYNAMIC_REF_TO_INLINE_RESOURCE_HOLDING_IT ; "dynamic_ref_in_inline_resource")]
+#[test_case(DynamicRefHeldByItsTargetLandingOnRoot::is_valid, DynamicRefHeldByItsTargetLandingOnRoot::validate, DynamicRefHeldByItsTargetLandingOnRoot::iter_errors, DynamicRefHeldByItsTargetLandingOnRoot::evaluate, DYNAMIC_REF_HELD_BY_ITS_TARGET_LANDING_ON_ROOT ; "dynamic_ref_landing_on_outer_resource")]
+#[test_case(DynamicRefHeldByItsTargetLoopingThroughRoot::is_valid, DynamicRefHeldByItsTargetLoopingThroughRoot::validate, DynamicRefHeldByItsTargetLoopingThroughRoot::iter_errors, DynamicRefHeldByItsTargetLoopingThroughRoot::evaluate, DYNAMIC_REF_HELD_BY_ITS_TARGET_LOOPING_THROUGH_ROOT ; "dynamic_ref_looping_through_outer_resource")]
+#[test_case(DynamicRefLandingOnRootHoldingIt::is_valid, DynamicRefLandingOnRootHoldingIt::validate, DynamicRefLandingOnRootHoldingIt::iter_errors, DynamicRefLandingOnRootHoldingIt::evaluate, DYNAMIC_REF_LANDING_ON_ROOT_HOLDING_IT ; "dynamic_ref_landing_on_root_holding_it")]
+fn test_reference_to_the_schema_holding_it_matches_runtime(
+    is_valid: IsValidFn,
+    validate: ValidateFn,
+    iter_errors: IterErrorsFn,
+    evaluate: EvaluateFn,
+    schema: &str,
+) {
+    let schema = serde_json::from_str(schema).expect("valid JSON");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    for instance in [
+        serde_json::json!({"s": 1}),
+        serde_json::json!(1),
+        serde_json::json!({"a": 1}),
+        serde_json::json!({"a": 1, "p": {}}),
+        serde_json::json!({"a": 1, "p": {"a": 1}}),
+    ] {
+        assert_validate_parity(
+            is_valid(&instance),
+            validate(&instance),
+            &runtime,
+            &instance,
+        );
+        assert_iter_errors_parity(iter_errors(&instance), &runtime, &instance);
+        assert_eq!(
+            evaluation_outputs(&evaluate(&instance)),
+            evaluation_outputs(&runtime.evaluate(&instance)),
+            "{instance}"
+        );
+    }
+}
+
 const RECURSIVE_REF_IN_EMBEDDED_RESOURCE: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$id":"https://example.com/x","$recursiveAnchor":true,"type":"object","properties":{"c":{"$id":"inner","$recursiveAnchor":true,"properties":{"c":{"$recursiveRef":"#"}}}}}"##;
 const RECURSIVE_REF_IN_EMBEDDED_RESOURCE_BEHIND_REF: &str = r##"{"$schema":"https://json-schema.org/draft/2019-09/schema","$ref":"https://example.com/x","$defs":{"x":{"$id":"https://example.com/x","$recursiveAnchor":true,"type":"object","properties":{"c":{"$id":"inner","$recursiveAnchor":true,"properties":{"c":{"$recursiveRef":"#"}}}}}}}"##;
 const DYNAMIC_REF_IN_EMBEDDED_RESOURCE: &str = r##"{"$schema":"https://json-schema.org/draft/2020-12/schema","$id":"https://example.com/x","$dynamicAnchor":"node","type":"object","properties":{"c":{"$id":"inner","$dynamicAnchor":"node","properties":{"c":{"$dynamicRef":"#node"}}}}}"##;

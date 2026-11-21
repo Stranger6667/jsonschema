@@ -175,6 +175,9 @@ enum TreeUnit {
         anchor: Option<String>,
         /// A `$recursiveRef` resolves through the dynamic scope.
         recursive: bool,
+        /// The address of the schema holding a `$ref` or `$dynamicRef`, which applies nothing where
+        /// it lands on that schema, as the runtime compiles nothing for it there.
+        holder: Option<usize>,
     },
     /// Array-form `items` or `prefixItems`, with a range of `Tree::tuples`.
     Tuple {
@@ -204,6 +207,8 @@ enum TreeUnit {
 }
 
 struct TreeSchema {
+    /// The address of its JSON value.
+    address: usize,
     pointer: String,
     /// Its index in `Tree::resources`.
     resource: usize,
@@ -352,7 +357,9 @@ impl Tree {
         }
         let pointer = place.pointer.clone();
         let index = self.schemas.len();
+        let address = std::ptr::from_ref(schema).addr();
         self.schemas.push(TreeSchema {
+            address,
             pointer: String::new(),
             resource: 0,
             base: None,
@@ -365,7 +372,7 @@ impl Tree {
             enclosing: None,
         });
         self.by_pointer.insert(place, index);
-        self.inline.push(std::ptr::from_ref(schema).addr());
+        self.inline.push(address);
         // The root keeps the configured draft.
         let added = match schema {
             Value::Object(keywords) if index != 0 => ctx.with_dialect_of(keywords, |ctx| {
@@ -437,7 +444,7 @@ impl Tree {
             if let Some(reference) = reference.filter(|_| !ctx.draft.supports_adjacent_validation())
             {
                 // The keywords beside `$ref` apply from Draft 2019-09 on.
-                let units = self.reference(ctx, index, "$ref", reference)?;
+                let units = self.reference(ctx, schema, "$ref", reference)?;
                 self.finish(ctx, index, pointer, None, units.into_iter().collect());
                 return Ok(index);
             }
@@ -713,7 +720,7 @@ impl Tree {
                 });
             }
             if let Some(reference) = reference {
-                units.extend(self.reference(ctx, index, "$ref", reference)?);
+                units.extend(self.reference(ctx, schema, "$ref", reference)?);
             }
             for keyword in ["$recursiveRef", "$dynamicRef"] {
                 if let Some(reference) = keywords
@@ -721,7 +728,7 @@ impl Tree {
                     .and_then(Value::as_str)
                     .filter(|_| ctx.draft.is_known_keyword(keyword))
                 {
-                    units.extend(self.reference(ctx, index, keyword, reference)?);
+                    units.extend(self.reference(ctx, schema, keyword, reference)?);
                 }
             }
             // Custom keywords apply last, in the schema's order.
@@ -768,6 +775,7 @@ impl Tree {
             .filter(|at| at.len() != pointer.len())
             .map(str::to_string);
         self.schemas[index] = TreeSchema {
+            address: self.schemas[index].address,
             pointer,
             resource,
             base,
@@ -800,12 +808,13 @@ impl Tree {
         id
     }
 
-    /// The unit of a `$ref`, `$dynamicRef` or `$recursiveRef` in the schema at `index`; none for a
-    /// reference to that schema itself, as the runtime compiles none, or one that does not resolve.
+    /// The unit of a `$ref`, `$dynamicRef` or `$recursiveRef` in `holder`; none for one that does
+    /// not resolve, or for a `$ref`, or a `$dynamicRef` resolving without a dynamic anchor, naming
+    /// `holder` itself, as the runtime compiles none.
     fn reference<E: ValueEmitter>(
         &mut self,
         ctx: &mut CompileContext<'_, E>,
-        index: usize,
+        holder: &Value,
         keyword: &'static str,
         reference: &str,
     ) -> syn::Result<Option<TreeUnit>> {
@@ -825,7 +834,9 @@ impl Tree {
         self.function = outer_function;
         self.inline = outer_inline;
         let target = target?;
-        if target == index {
+        // A `$recursiveRef` enters the schema it lands on, the one holding it too.
+        let holder = (keyword != "$recursiveRef").then(|| std::ptr::from_ref(holder).addr());
+        if anchor.is_none() && holder == Some(self.schemas[target].address) {
             return Ok(None);
         }
         Ok(Some(TreeUnit::Ref {
@@ -835,6 +846,7 @@ impl Tree {
             function,
             anchor,
             recursive,
+            holder,
         }))
     }
 
@@ -1202,6 +1214,24 @@ pub(super) fn compile<E: ValueEmitter>(
             _ => None,
         })
         .collect();
+    // A `$recursiveRef` naming the schema holding it re-enters that schema's code on its instance.
+    let reentered_by_holder: HashSet<usize> = tree
+        .schemas
+        .iter()
+        .flat_map(|schema| {
+            tree.units[schema.first..schema.first + schema.count]
+                .iter()
+                .filter_map(|unit| match unit {
+                    TreeUnit::Ref {
+                        target,
+                        function,
+                        holder: None,
+                        ..
+                    } if tree.schemas[*target].address == schema.address => Some(*function),
+                    _ => None,
+                })
+        })
+        .collect();
     // A `$ref` re-entering a target while the target's code compiles enters it under the guard
     // that code shares with its own references to the target.
     let mut guarded = Vec::new();
@@ -1220,7 +1250,9 @@ pub(super) fn compile<E: ValueEmitter>(
                 }
                 within = ctx.compiled_within.get(outer).and_then(Option::as_ref);
             }
-            if entered_statically.contains(&id) && ctx.reentered_targets.contains(location) {
+            if reentered_by_holder.contains(&id)
+                || (entered_statically.contains(&id) && ctx.reentered_targets.contains(location))
+            {
                 guards.insert(id, format_ident!("__guard_{}", guarded.len()));
                 guarded.push(format_ident!(
                     "{}",
@@ -2426,6 +2458,7 @@ impl Code<'_> {
                 function,
                 anchor,
                 recursive,
+                holder,
                 ..
             } => {
                 let guard = self.guard(*function);
@@ -2443,14 +2476,19 @@ impl Code<'_> {
                         );
                     };
                 }
-                let landings = self.landings(*target, anchor.as_deref(), *recursive);
+                let lands_on_holder =
+                    |schema: usize| *holder == Some(self.tree.schemas[schema].address);
+                let (on_holder, landings): (Vec<usize>, Vec<usize>) = self
+                    .landings(*target, anchor.as_deref(), *recursive)
+                    .into_iter()
+                    .partition(|&landed| lands_on_holder(landed));
                 let anchor = anchor
                     .as_ref()
                     .map_or_else(|| quote! { None }, |anchor| quote! { Some(#anchor) });
-                let arms = landings.into_iter().map(|landed| {
+                let landed_nodes = landings.iter().map(|&landed| {
                     let evaluate = Self::evaluate_fn(landed);
                     quote! {
-                        #landed => __e.landed::<__J>(
+                        __e.landed::<__J>(
                             #index,
                             #landed,
                             __landing.pushed,
@@ -2458,24 +2496,51 @@ impl Code<'_> {
                             instance,
                             __path,
                             __position,
-                        ),
+                        )
+                    }
+                });
+                let static_node = quote! {
+                    __e.reference_node::<__J>(
+                        #index,
+                        #guard,
+                        __landing.pushed,
+                        #evaluate,
+                        instance,
+                        __path,
+                        __position,
+                    )
+                };
+                if on_holder.is_empty() && !lands_on_holder(*target) {
+                    return quote! {{
+                        let __landing = __e.resolve(#index, #anchor, #recursive);
+                        let __node = match __landing.schema {
+                            #(#landings => #landed_nodes,)*
+                            _ => #static_node,
+                        };
+                        __units = __e.push(__units, __node);
+                    }};
+                }
+                // Landing on the schema holding it, it applies nothing.
+                let on_holder = (!on_holder.is_empty() && !lands_on_holder(*target))
+                    .then(|| quote! { #(#on_holder)|* => {} });
+                let fallback = (!lands_on_holder(*target)).then(|| {
+                    quote! {
+                        let __node = #static_node;
+                        __units = __e.push(__units, __node);
                     }
                 });
                 quote! {{
                     let __landing = __e.resolve(#index, #anchor, #recursive);
-                    let __node = match __landing.schema {
-                        #(#arms)*
-                        _ => __e.reference_node::<__J>(
-                            #index,
-                            #guard,
-                            __landing.pushed,
-                            #evaluate,
-                            instance,
-                            __path,
-                            __position,
-                        ),
-                    };
-                    __units = __e.push(__units, __node);
+                    match __landing.schema {
+                        #(
+                            #landings => {
+                                let __node = #landed_nodes;
+                                __units = __e.push(__units, __node);
+                            }
+                        )*
+                        #on_holder
+                        _ => { #fallback }
+                    }
                 }}
             }
         }
