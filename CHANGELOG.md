@@ -5,6 +5,7 @@
 ### Fixed
 
 - `HttpOptions::add_root_certificate` accepting a file without certificates.
+- Draft 4 schemas with an empty `enum`, or one with equal members such as `[0, 0.0]`, passing the meta-schema check.
 - `HttpOptions::add_root_certificate` reporting invalid PEM as an HTTP client build error instead of a certificate parse error that names the file.
 
 ## [0.62.0] - 2026-11-21

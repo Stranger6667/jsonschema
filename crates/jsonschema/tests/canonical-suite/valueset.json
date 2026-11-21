@@ -910,8 +910,8 @@
     "description": "ir: draft 4 integer beside another type keeps the numeric-form guard on the integer members",
     "draft": "draft4",
     "schemas": [
-      {"type": ["integer", "string"], "enum": [2, 2.0, "x"]},
-      {"allOf": [{"enum": [2, 2.0, "x"]}, {"type": ["integer", "string"]}]},
+      {"type": ["integer", "string"], "enum": [2, "x"]},
+      {"allOf": [{"enum": [2, "x"]}, {"type": ["integer", "string"]}]},
       {"anyOf": [{"type": "integer", "enum": [2]}, {"enum": ["x"]}]}
     ],
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"enum": [2], "type": "integer"}, {"enum": ["x"]}]},
@@ -928,7 +928,7 @@
     "description": "ir: draft 4 a number beside integer accepts every numeric form, so the value set needs no guard",
     "draft": "draft4",
     "schemas": [
-      {"type": ["integer", "number"], "enum": [2, 2.0, "x"]},
+      {"type": ["integer", "number"], "enum": [2, "x"]},
       {"enum": [2]}
     ],
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "enum": [2]},
@@ -942,7 +942,7 @@
   {
     "description": "ir: draft 4 integer beside null splits the value set across the two type guards",
     "draft": "draft4",
-    "schema": {"type": ["integer", "null"], "enum": [2, 2.0, null]},
+    "schema": {"type": ["integer", "null"], "enum": [2, null]},
     "expected": {"$schema": "http://json-schema.org/draft-04/schema#", "anyOf": [{"enum": [2], "type": "integer"}, {"type": "null"}]},
     "tests": [
       {"data": 2, "valid": true},
