@@ -4,6 +4,7 @@
 
 ### Fixed
 
+- Error messages for an empty `enum` ending after "is not one of" instead of naming the empty `enum`.
 - `HttpOptions::add_root_certificate` accepting a file without certificates.
 - `HttpOptions::add_root_certificate` reporting invalid PEM as an HTTP client build error instead of a certificate parse error that names the file.
 
