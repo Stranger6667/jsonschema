@@ -10,6 +10,8 @@
 - `HttpOptions::add_root_certificate` accepting a file without certificates.
 - Draft 4 schemas with an empty `enum`, or one with equal members such as `[0, 0.0]`, passing the meta-schema check.
 - `HttpOptions::add_root_certificate` reporting invalid PEM as an HTTP client build error instead of a certificate parse error that names the file.
+- Named backreferences such as `(?<n>x)\k<n>` failing to build in `pattern`, `patternProperties` and `propertyNames`.
+- Patterns with a backreference or lookaround matching `\d`, `\w`, `\s` and `.` beyond ECMA 262, and rejecting a backreference to a group that did not match.
 
 ## [0.62.0] - 2026-11-21
 

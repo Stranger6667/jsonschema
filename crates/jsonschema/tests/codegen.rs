@@ -2017,6 +2017,49 @@ fn test_huge_count_pattern_properties_parity(instance: serde_json::Value) {
     );
 }
 
+#[jsonschema::validator(schema = r#"{"pattern":"^(?<n>\\d)\\k<n>$"}"#)]
+struct NamedBackreferencePatternValidator;
+
+#[jsonschema::validator(schema = r#"{"pattern":"^(a)?\\1b$"}"#)]
+struct UnmatchedGroupBackreferencePatternValidator;
+
+#[jsonschema::validator(
+    schema = r#"{"patternProperties":{"^(?<n>.)\\k<n>$":false},"propertyNames":{"pattern":"^(?<n>.)\\k<n>"}}"#
+)]
+struct NamedBackreferenceKeysValidator;
+
+#[test_case(serde_json::json!("33") ; "repeated digit")]
+#[test_case(serde_json::json!("34") ; "different digits")]
+#[test_case(serde_json::json!("٣٣") ; "repeated non-ascii digit")]
+#[test_case(serde_json::json!("b") ; "unmatched group")]
+#[test_case(serde_json::json!("ab") ; "matched group without a repeat")]
+fn test_backreference_pattern_parity(instance: serde_json::Value) {
+    assert_validate_parity_for(
+        &serde_json::json!({"pattern":"^(?<n>\\d)\\k<n>$"}),
+        NamedBackreferencePatternValidator::is_valid(&instance),
+        NamedBackreferencePatternValidator::validate(&instance),
+        &instance,
+    );
+    assert_validate_parity_for(
+        &serde_json::json!({"pattern":"^(a)?\\1b$"}),
+        UnmatchedGroupBackreferencePatternValidator::is_valid(&instance),
+        UnmatchedGroupBackreferencePatternValidator::validate(&instance),
+        &instance,
+    );
+}
+
+#[test_case(serde_json::json!({"aa": 1}) ; "key the pattern map forbids")]
+#[test_case(serde_json::json!({"aab": 1}) ; "allowed key")]
+#[test_case(serde_json::json!({"ab": 1}) ; "key without a repeat")]
+fn test_backreference_keys_parity(instance: serde_json::Value) {
+    assert_validate_parity_for(
+        &serde_json::json!({"patternProperties":{"^(?<n>.)\\k<n>$":false},"propertyNames":{"pattern":"^(?<n>.)\\k<n>"}}),
+        NamedBackreferenceKeysValidator::is_valid(&instance),
+        NamedBackreferenceKeysValidator::validate(&instance),
+        &instance,
+    );
+}
+
 #[jsonschema::validator(schema = r#"{"type":"string","format":"ipv4"}"#, draft = referencing::Draft::Draft7, validate_formats = true)]
 struct FormatBuiltinParityValidator;
 

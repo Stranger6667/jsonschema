@@ -377,7 +377,7 @@ fn invalid_regex<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{tests_util, PatternOptions, PatternSyntax};
+    use crate::{tests_util, Draft, PatternOptions, PatternSyntax};
     use serde_json::{json, Value};
     use test_case::test_case;
 
@@ -887,6 +887,141 @@ mod tests {
         let instance = json!(instance);
         assert_eq!(validator.is_valid(&instance), expected);
         assert_eq!(validator.validate(&instance).is_ok(), expected);
+    }
+
+    // A backreference to a group that has not matched matches the empty string, and the class
+    // escapes and `.` keep their ECMA 262 meaning beside a backreference or a lookbehind.
+    #[test_case(r"^(?<n>x)\k<n>$", "xx", true; "named backreference")]
+    #[test_case(r"^(?<n>x)\k<n>$", "x", false; "named backreference without a repeat")]
+    #[test_case(r"^(?<n>x)\k<n>$", "xy", false; "named backreference to other text")]
+    #[test_case(r"^(?:(?<n>a)|(?<n>b))\k<n>$", "bb", true; "duplicate name in the second branch")]
+    #[test_case(r"^(?:(?<n>a)|(?<n>b))\k<n>$", "aa", true; "duplicate name in the first branch")]
+    #[test_case(r"^(?:(?<n>a)|(?<n>b))\k<n>$", "ab", false; "duplicate name with other text")]
+    #[test_case(r"^(?<$>.)\k<$>$", "aa", true; "dollar group name")]
+    #[test_case(r"^(?<a>.)\k<a>$", "zz", true; "escaped group name")]
+    #[test_case(r"^(?<n>\d)\k<n>$", "33", true; "digit class beside a named backreference")]
+    #[test_case(r"^(?<n>\d)\k<n>$", "٣٣", false; "non-ascii digit beside a named backreference")]
+    #[test_case(r"^(\w)\1$", "éé", false; "non-ascii letter beside a backreference")]
+    #[test_case(r"^(?<n>.)\k<n>$", "\r\r", false; "dot beside a named backreference")]
+    #[test_case(r"^(a)?\1b$", "b", true; "backreference to a group that did not match")]
+    #[test_case(r"^(a)?\1b$", "aab", true; "backreference to a group that matched")]
+    #[test_case(r"^(a)?\1b$", "ab", false; "backreference to a group that matched without a repeat")]
+    #[test_case(r"^\1(a)$", "a", true; "forward backreference")]
+    #[test_case(r"(?<=\d)x", "3x", true; "digit class in a lookbehind")]
+    #[test_case(r"(?<=\d)x", "٣x", false; "non-ascii digit in a lookbehind")]
+    fn ecma_backreferences(pattern: &str, text: &str, is_matching: bool) {
+        let schema = json!({"pattern": pattern});
+        let text = json!(text);
+        for draft in [Draft::Draft7, Draft::Draft202012] {
+            for options in [
+                crate::options().with_draft(draft),
+                crate::options()
+                    .with_draft(draft)
+                    .with_pattern_options(PatternOptions::fancy_regex()),
+            ] {
+                let validator = options.build(&schema).expect("a valid pattern");
+                assert_eq!(
+                    (
+                        validator.is_valid(&text),
+                        validator.validate(&text).is_ok(),
+                        validator.evaluate(&text).flag().valid,
+                    ),
+                    (is_matching, is_matching, is_matching)
+                );
+            }
+        }
+    }
+
+    // Names play no part in matching, so a named group needs no backtracking engine.
+    #[test_case(r"^(?<$>x)$", "x", true; "dollar group name")]
+    #[test_case(r"^(?<$>x)$", "y", false; "dollar group name on other text")]
+    #[test_case(r"^(?:(?<n>a)|(?<n>b))$", "b", true; "duplicate group name")]
+    fn named_groups(pattern: &str, text: &str, is_matching: bool) {
+        let schema = json!({"pattern": pattern});
+        let text = json!(text);
+        let fancy = crate::options()
+            .with_pattern_options(PatternOptions::fancy_regex())
+            .build(&schema)
+            .expect("a valid pattern");
+        let regex = crate::options()
+            .with_pattern_options(PatternOptions::regex())
+            .build(&schema)
+            .expect("a valid pattern");
+        assert_eq!(
+            (fancy.is_valid(&text), regex.is_valid(&text)),
+            (is_matching, is_matching)
+        );
+    }
+
+    #[test_case(r"(?<n>x)\k<n>"; "named backreference")]
+    #[test_case(r"(a)\1"; "numbered backreference")]
+    fn backreference_unsupported_by_regex_engine(pattern: &str) {
+        tests_util::assert_compile_error_with(
+            &crate::options().with_pattern_options(PatternOptions::regex()),
+            &json!({"pattern": pattern}),
+            &format!("{} is not a \"regex\"", json!(pattern)),
+            "/pattern",
+        );
+    }
+
+    // `pattern` builds exactly the regular expressions `format: "regex"` accepts.
+    #[test_case(r"(?<n>x)\k<n>", true; "named backreference")]
+    #[test_case(r"(?<$_>x)\k<$_>", true; "named backreference with a dollar name")]
+    #[test_case(r"(?<a>x)\k<a>", true; "named backreference with an escaped name")]
+    #[test_case(r"(?<π>x)\k<π>", true; "named backreference with a non-ascii name")]
+    #[test_case(r"(?<n>a)|(?<n>b)", true; "duplicate name in different alternatives")]
+    #[test_case(r"(a)\1", true; "backreference")]
+    #[test_case(r"\1(a)", true; "forward backreference")]
+    #[test_case(r"\k", false; "bare k escape")]
+    #[test_case(r"\k<n>", false; "backreference to a missing name")]
+    #[test_case(r"(?<n>a)\k<m>", false; "backreference to another name")]
+    #[test_case(r"(?<n>a)\k", false; "bare k escape beside a named group")]
+    #[test_case(r"(?<n>a)\k<n", false; "unclosed name reference")]
+    #[test_case(r"(?<n>a)[\k<n>]", false; "named backreference in a class")]
+    #[test_case(r"(?<a>x)(?<a>y)", false; "duplicate name in one alternative")]
+    #[test_case(r"(?<a-b>x)", false; "dash in group name")]
+    #[test_case(r"(a)\2", false; "backreference beyond the group count")]
+    fn regex_format_agrees_with_pattern(pattern: &str, is_valid: bool) {
+        for draft in [Draft::Draft7, Draft::Draft202012] {
+            let format = crate::options()
+                .with_draft(draft)
+                .should_validate_formats(true)
+                .build(&json!({"format": "regex"}))
+                .expect("a valid schema");
+            assert_eq!(
+                (
+                    format.is_valid(&json!(pattern)),
+                    crate::options()
+                        .with_draft(draft)
+                        .build(&json!({"pattern": pattern}))
+                        .is_ok(),
+                ),
+                (is_valid, is_valid)
+            );
+        }
+    }
+
+    #[test_case(&json!({"patternProperties": {r"^(?<n>.)\k<n>$": false}}), &json!({"aa": 1}), false; "patternProperties")]
+    #[test_case(&json!({"patternProperties": {r"^(?<n>.)\k<n>$": false}}), &json!({"ab": 1}), true; "patternProperties on another key")]
+    #[test_case(&json!({"patternProperties": {r"^(?<n>.)\k<n>$": {}}, "additionalProperties": false}), &json!({"aa": 1}), true; "additionalProperties")]
+    #[test_case(&json!({"patternProperties": {r"^(?<n>.)\k<n>$": {}}, "additionalProperties": false}), &json!({"ab": 1}), false; "additionalProperties on another key")]
+    #[test_case(&json!({"propertyNames": {"pattern": r"^(?<n>.)\k<n>$"}}), &json!({"aa": 1}), true; "propertyNames")]
+    #[test_case(&json!({"propertyNames": {"pattern": r"^(?<n>.)\k<n>$"}}), &json!({"ab": 1}), false; "propertyNames on another key")]
+    fn named_backreference_in_keys(schema: &Value, instance: &Value, expected: bool) {
+        for draft in [Draft::Draft7, Draft::Draft202012] {
+            let validator = crate::options()
+                .with_draft(draft)
+                .build(schema)
+                .expect("a valid schema");
+            assert_eq!(
+                (
+                    validator.is_valid(instance),
+                    validator.validate(instance).is_ok(),
+                    validator.evaluate(instance).flag().valid,
+                ),
+                (expected, expected, expected)
+            );
+        }
     }
 
     #[test]
