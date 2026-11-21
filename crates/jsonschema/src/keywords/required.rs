@@ -67,16 +67,6 @@ impl<F: Json> Validate<F> for EveryDeclaredRequiredValidator<F> {
             .evaluate_with_location(instance, location, instance_location, tracker, ctx)
     }
 
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.inner.evaluate(instance, location, tracker, ctx)
-    }
-
     fn is_valid_alone(&self) -> bool {
         false
     }
@@ -126,16 +116,6 @@ impl<F: Json> Validate<F> for CheckedBySiblingValidator<F> {
     ) -> EvaluationResult {
         self.inner
             .evaluate_with_location(instance, location, instance_location, tracker, ctx)
-    }
-
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.inner.evaluate(instance, location, tracker, ctx)
     }
 
     fn is_valid_alone(&self) -> bool {

@@ -63,22 +63,6 @@ impl<F: Json> Validate<F> for RefValidator<F> {
             .collect_errors(instance, location, Some(&child_tracker), ctx, errors);
     }
 
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
-    }
-
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
@@ -152,22 +136,6 @@ impl<F: Json, T: Validate<F>> Validate<F> for DirectRefValidator<T> {
         let child_tracker = RefTracker::new(&self.ref_location, &self.ref_target_base, tracker);
         self.inner
             .collect_errors(instance, location, Some(&child_tracker), ctx, errors);
-    }
-
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
     }
 
     fn evaluate_with_location(

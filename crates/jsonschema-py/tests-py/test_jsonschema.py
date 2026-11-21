@@ -256,6 +256,28 @@ def test_two_references_per_level(length):
     assert error.instance_path == ["next"] * (length + 1)
 
 
+# Each object is entered by `outer`, then again by `inner` walking the rest of the chain
+NESTED_RECURSIVE_SCHEMA = {
+    "$defs": {
+        "outer": {"allOf": [{"$ref": "#/$defs/inner"}], "additionalProperties": {"$ref": "#/$defs/outer"}},
+        "inner": {"type": "object", "additionalProperties": {"$ref": "#/$defs/inner"}},
+    },
+    "$ref": "#/$defs/outer",
+}
+
+
+@pytest.mark.parametrize("length", (40, 100))
+def test_two_recursive_references_at_one_instance(length):
+    instance, innermost = chain(length)
+    assert is_valid(NESTED_RECURSIVE_SCHEMA, instance)
+    innermost["next"] = instance
+    assert is_valid(NESTED_RECURSIVE_SCHEMA, instance)
+    innermost["next"] = 1
+    # `inner` reports the value once per `outer` above it, and once more from `outer` at the value
+    paths = [error.instance_path for error in iter_errors(NESTED_RECURSIVE_SCHEMA, instance)]
+    assert paths == [["next"] * (length + 1)] * (length + 2)
+
+
 def cyclic_dict():
     instance = {}
     instance["foo"] = instance

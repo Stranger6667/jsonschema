@@ -169,22 +169,6 @@ impl<F: Json> Validate<F> for SingleOneOfValidator<F> {
         }
     }
 
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
-    }
-
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
@@ -250,22 +234,6 @@ impl<F: Json, D: Dispatch<F>> Validate<F> for OneOfValidator<F, D> {
                     .collect(),
             ))
         }
-    }
-
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
     }
 
     fn evaluate_with_location(
