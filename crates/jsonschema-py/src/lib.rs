@@ -1787,6 +1787,9 @@ fn validator_map_for(
 /// draft-appropriate container (`definitions` for Draft 4/6/7, `$defs` for
 /// Draft 2019-09/2020-12). Original `$ref` values are preserved unchanged.
 ///
+/// :raises ReferencingError: if a referenced document cannot be retrieved.
+/// :raises ValueError: for any other `$ref` that cannot be resolved.
+///
 ///     >>> bundled = bundle({"$ref": "https://example.com/thing.json"}, registry=my_registry)
 ///
 #[pyfunction]
@@ -1826,7 +1829,8 @@ fn bundle(
 /// :param offline: Refuse to fetch anything outside ``registry``.
 /// :param draft: Optional draft version (e.g. ``jsonschema_rs.Draft202012``).
 /// :param base_uri: Optional base URI for the root schema.
-/// :raises ReferencingError: if any `$ref` cannot be resolved.
+/// :raises ReferencingError: if a referenced document cannot be retrieved.
+/// :raises ValueError: for any other `$ref` that cannot be resolved.
 ///
 ///     >>> result = dereference({"$defs": {"t": {"type": "string"}}, "properties": {"x": {"$ref": "#/$defs/t"}}})
 ///
