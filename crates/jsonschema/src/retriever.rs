@@ -56,17 +56,28 @@ impl std::error::Error for HttpRetrieverError {
     }
 }
 
-/// Load a certificate from a PEM file.
+/// Load every certificate from a PEM file.
 #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
-fn load_certificate(path: &std::path::Path) -> Result<reqwest::Certificate, HttpRetrieverError> {
+fn load_certificates(
+    path: &std::path::Path,
+) -> Result<Vec<reqwest::Certificate>, HttpRetrieverError> {
     let cert_data = std::fs::read(path).map_err(|e| HttpRetrieverError::CertificateRead {
         path: path.to_path_buf(),
         source: e,
     })?;
-    reqwest::Certificate::from_pem(&cert_data).map_err(|e| HttpRetrieverError::CertificateParse {
-        path: path.to_path_buf(),
-        source: e,
-    })
+    let certificates = reqwest::Certificate::from_pem_bundle(&cert_data).map_err(|e| {
+        HttpRetrieverError::CertificateParse {
+            path: path.to_path_buf(),
+            source: e,
+        }
+    })?;
+    if certificates.is_empty() {
+        return Err(HttpRetrieverError::CertificateRead {
+            path: path.to_path_buf(),
+            source: std::io::Error::new(std::io::ErrorKind::InvalidData, "no certificates found"),
+        });
+    }
+    Ok(certificates)
 }
 
 /// Configure an HTTP client builder with the given options.
@@ -85,7 +96,9 @@ macro_rules! configure_http_client {
             builder = builder.danger_accept_invalid_certs(true);
         }
         if let Some(ref cert_path) = &$options.root_certificate {
-            builder = builder.add_root_certificate(load_certificate(cert_path)?);
+            for certificate in load_certificates(cert_path)? {
+                builder = builder.add_root_certificate(certificate);
+            }
         }
         builder
     }};
@@ -507,6 +520,8 @@ mod tests {
     use serde_json::json;
     #[cfg(all(not(target_arch = "wasm32"), feature = "resolve-file"))]
     use std::io::Write;
+    #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
+    use test_case::test_case;
 
     /// Serve `body` as JSON to one request on a local port and return the URL it answers on.
     #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
@@ -765,22 +780,39 @@ mod tests {
         assert!(result.unwrap_err().to_string().contains("Unknown scheme"));
     }
 
-    #[test]
+    #[test_case(b"", "Failed to read certificate file '{path}': no certificates found"; "empty file")]
+    #[test_case(b"not a certificate\n", "Failed to read certificate file '{path}': no certificates found"; "no PEM section")]
+    #[test_case(
+        b"-----BEGIN PRIVATE KEY-----\nAAAA\n-----END PRIVATE KEY-----\n",
+        "Failed to read certificate file '{path}': no certificates found";
+        "only a private key"
+    )]
+    #[test_case(
+        b"-----BEGIN CERTIFICATE-----\n!!!!\n-----END CERTIFICATE-----\n",
+        "Failed to parse certificate '{path}': builder error";
+        "invalid base64"
+    )]
+    #[test_case(
+        b"-----BEGIN CERTIFICATE-----\nAAAA\n",
+        "Failed to parse certificate '{path}': builder error";
+        "unterminated section"
+    )]
+    #[test_case(
+        b"-----BEGIN CERTIFICATE-----\nAAAA\n-----END CERTIFICATE-----\n",
+        "Failed to build HTTP client: builder error";
+        "not a DER certificate"
+    )]
     #[cfg(all(feature = "resolve-http", not(target_arch = "wasm32")))]
-    fn test_http_retriever_error_invalid_certificate() {
-        use std::io::Write;
-
-        let mut temp = tempfile::NamedTempFile::new().unwrap();
-        temp.write_all(b"-----BEGIN CERTIFICATE-----\ninvalid\n-----END CERTIFICATE-----")
-            .unwrap();
-        temp.flush().unwrap();
+    fn test_http_retriever_unusable_certificate_file(content: &[u8], expected: &str) {
+        let temp = tempfile::NamedTempFile::new().unwrap();
+        std::fs::write(temp.path(), content).unwrap();
 
         let options = HttpOptions::new().add_root_certificate(temp.path());
-        let result = HttpRetriever::new(&options);
-        assert!(result.is_err());
-        let err = result.unwrap_err();
-        assert!(matches!(err, HttpRetrieverError::ClientBuild(_)));
-        assert!(err.to_string().contains("Failed to build HTTP client"));
+        let error = HttpRetriever::new(&options).unwrap_err();
+        assert_eq!(
+            error.to_string(),
+            expected.replace("{path}", &temp.path().display().to_string())
+        );
     }
 
     #[tokio::test]

@@ -2,6 +2,11 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- `HttpOptions(ca_cert=...)` accepting a file without certificates.
+- `HttpOptions(ca_cert=...)` reporting invalid PEM as an HTTP client build error instead of a certificate parse error that names the file.
+
 ## [0.62.0] - 2026-11-21
 
 ### Added
