@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.62.0] - 2026-11-21
+
 ### Added
 
 - `PatternOptions::syntax` with `PatternSyntax::Engine` to match `pattern` and `patternProperties` in the regex engine's own syntax, without the ECMA 262 translation. [#1895](https://github.com/Stranger6667/jsonschema/issues/1895)
@@ -2215,7 +2217,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.2...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.62.0...HEAD
+[0.62.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.2...rust-v0.62.0
 [0.61.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.1...rust-v0.61.2
 [0.61.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.0...rust-v0.61.1
 [0.61.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.60.2...rust-v0.61.0
