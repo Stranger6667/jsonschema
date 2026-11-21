@@ -473,7 +473,7 @@ impl<'i> jsonschema::Keyword<'i, Magnus> for RubyKeyword {
 }
 
 // Wrap a yielded Ruby value as an `Error`, preserving exception instances so they surface as
-// `#cause`; a non-exception is reported through a generic `RuntimeError`.
+// `#cause`; a non-exception becomes a `RuntimeError` holding its text.
 fn ruby_value_to_error(ruby: &Ruby, value: Value) -> Error {
     if let Ok(exception) = Exception::try_convert(value) {
         return Error::from(exception);
@@ -481,7 +481,13 @@ fn ruby_value_to_error(ruby: &Ruby, value: Value) -> Error {
     let message = value
         .funcall::<_, _, String>("to_s", ())
         .unwrap_or_else(|_| "custom keyword error".to_string());
-    Error::new(ruby.exception_runtime_error(), message)
+    match ruby
+        .exception_runtime_error()
+        .new_instance((message.as_str(),))
+    {
+        Ok(exception) => Error::from(exception),
+        Err(error) => error,
+    }
 }
 
 // Build a custom `ValidationError` from a Ruby error, queuing the exception as the error's cause so
