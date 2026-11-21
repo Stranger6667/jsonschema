@@ -1462,6 +1462,146 @@ mod tests {
         );
     }
 
+    const ROOT_DRAFTS: [(Draft, &str); 5] = [
+        (Draft::Draft4, "http://json-schema.org/draft-04/schema#"),
+        (Draft::Draft6, "http://json-schema.org/draft-06/schema#"),
+        (Draft::Draft7, "http://json-schema.org/draft-07/schema#"),
+        (
+            Draft::Draft201909,
+            "https://json-schema.org/draft/2019-09/schema",
+        ),
+        (
+            Draft::Draft202012,
+            "https://json-schema.org/draft/2020-12/schema",
+        ),
+    ];
+
+    // Every root draft, set with `with_draft`, declared with `$schema`, or left to the default
+    fn meta_schema_reference_roots(target: &str) -> Vec<(Option<Draft>, Value)> {
+        let mut roots = vec![(None, json!({"$ref": target}))];
+        for (draft, uri) in ROOT_DRAFTS {
+            roots.push((Some(draft), json!({"$ref": target})));
+            roots.push((None, json!({"$schema": uri, "$ref": target})));
+        }
+        roots
+    }
+
+    #[test_case("http://json-schema.org/draft-04/schema#")]
+    #[test_case("http://json-schema.org/draft-06/schema#")]
+    #[test_case("http://json-schema.org/draft-07/schema#")]
+    #[test_case("https://json-schema.org/draft/2019-09/schema")]
+    #[test_case("https://json-schema.org/draft/2019-09/meta/validation")]
+    #[test_case("https://json-schema.org/draft/2020-12/schema")]
+    #[test_case("https://json-schema.org/draft/2020-12/meta/validation")]
+    fn test_bundled_meta_schema_reference_resolves(target: &str) {
+        for (draft, schema) in meta_schema_reference_roots(target) {
+            for offline in [false, true] {
+                let mut options = crate::options();
+                if let Some(draft) = draft {
+                    options = options.with_draft(draft);
+                }
+                if offline {
+                    options = options.offline();
+                }
+                let validator = options.build(&schema).unwrap_or_else(|error| {
+                    panic!("{schema} (draft {draft:?}, offline {offline}): {error}")
+                });
+                assert!(validator.is_valid(&json!({"type": "string"})));
+                assert!(!validator.is_valid(&json!({"type": 12})));
+            }
+        }
+    }
+
+    #[test_case(
+        "http://json-schema.org/draft-03/schema#",
+        "http://json-schema.org/draft-03/schema"
+    )]
+    #[test_case(
+        "http://json-schema.org/draft-07/hyper-schema#",
+        "http://json-schema.org/draft-07/hyper-schema"
+    )]
+    #[test_case(
+        "https://json-schema.org/draft/2020-12/output/schema",
+        "https://json-schema.org/draft/2020-12/output/schema"
+    )]
+    #[test_case(
+        "https://json-schema.org/draft/next/schema",
+        "https://json-schema.org/draft/next/schema"
+    )]
+    #[test_case(
+        "https://json-schema.org/draft/2019-09/meta/format-annotation",
+        "https://json-schema.org/draft/2019-09/meta/format-annotation"
+    )]
+    fn test_offline_refuses_unbundled_meta_schema_reference(target: &str, uri: &str) {
+        let error = crate::options()
+            .offline()
+            .build(&json!({"$ref": target}))
+            .expect_err("must refuse to fetch");
+        assert_eq!(
+            error.to_string(),
+            format!(
+                "Resource '{uri}' is not present in a registry and retrieving it failed: \
+                 Retrieval is disabled, cannot fetch {uri}"
+            )
+        );
+    }
+
+    // The `$ref` sits in a registry resource, prepared under its own draft
+    #[test_case(
+        Draft::Draft202012,
+        "https://example.com/meta",
+        "http://json-schema.org/draft-04/schema#"
+    )]
+    #[test_case(
+        Draft::Draft202012,
+        "https://example.com/meta",
+        "https://json-schema.org/draft/2019-09/meta/validation"
+    )]
+    #[test_case(
+        Draft::Draft7,
+        "https://example.com/meta",
+        "https://json-schema.org/draft/2020-12/schema"
+    )]
+    #[test_case(Draft::Draft7, "https://json-schema.org/draft/2020-12/alias", "schema"; "relative reference")]
+    #[test_case(Draft::Draft7, "https://json-schema.org/draft/2020-12/schema", "meta/validation"; "replaced bundled meta-schema")]
+    fn test_bundled_meta_schema_reference_resolves_with_registry(
+        registry_draft: Draft,
+        uri: &str,
+        target: &str,
+    ) {
+        let registry = Registry::new()
+            .draft(registry_draft)
+            .add(uri, json!({"$ref": target}))
+            .expect("a valid URI")
+            .prepare()
+            .expect("a valid registry");
+        for (draft, schema) in meta_schema_reference_roots(uri) {
+            let mut options = crate::options().with_registry(&registry).offline();
+            if let Some(draft) = draft {
+                options = options.with_draft(draft);
+            }
+            let validator = options
+                .build(&schema)
+                .unwrap_or_else(|error| panic!("{schema} (draft {draft:?}): {error}"));
+            assert!(validator.is_valid(&json!({"type": "string"})));
+            assert!(!validator.is_valid(&json!({"type": 12})));
+        }
+    }
+
+    #[test_case(Draft::Draft7, "https://json-schema.org/draft/2020-12/schema")]
+    #[test_case(Draft::Draft202012, "http://json-schema.org/draft-07/schema#")]
+    fn test_bundled_meta_schema_reference_resolves_in_validator_map(draft: Draft, target: &str) {
+        let schema = json!({"properties": {"meta": {"$ref": target}}});
+        let map = crate::options()
+            .with_draft(draft)
+            .offline()
+            .build_map(&schema)
+            .expect("a valid schema");
+        let validator = map.get("#/properties/meta").expect("a subschema");
+        assert!(validator.is_valid(&json!({"type": "string"})));
+        assert!(!validator.is_valid(&json!({"type": 12})));
+    }
+
     #[cfg(all(feature = "resolve-async", not(target_family = "wasm")))]
     #[tokio::test]
     async fn test_async_offline_refuses_remote_references() {

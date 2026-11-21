@@ -695,7 +695,8 @@
 //! ## Offline validation
 //!
 //! [`ValidationOptions::offline`] disables retrieval, so a reference that is not already in the
-//! registry fails at construction instead of being fetched:
+//! registry fails at construction instead of being fetched. The meta-schemas of every supported
+//! draft ship with the crate, so references to them resolve whatever the draft of the schema:
 //!
 //! ```rust
 //! # fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -703,6 +704,10 @@
 //!
 //! let schema = json!({"$ref": "https://example.com/schema.json"});
 //! assert!(jsonschema::options().offline().build(&schema).is_err());
+//!
+//! let schema = json!({"$ref": "https://json-schema.org/draft/2020-12/schema"});
+//! let validator = jsonschema::draft7::options().offline().build(&schema)?;
+//! assert!(!validator.is_valid(&json!({"type": 12})));
 //! # Ok(())
 //! # }
 //! ```

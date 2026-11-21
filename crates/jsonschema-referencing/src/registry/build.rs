@@ -2,7 +2,11 @@
 //!
 //! [`StoredResource`] holds a borrowed, owned or shared ([`Arc<Value>`]) document.
 
-use std::{collections::VecDeque, num::NonZeroUsize, sync::Arc};
+use std::{
+    collections::{BTreeSet, VecDeque},
+    num::NonZeroUsize,
+    sync::Arc,
+};
 
 use ahash::{AHashMap, AHashSet};
 use fluent_uri::Uri;
@@ -10,7 +14,7 @@ use serde_json::Value;
 
 use crate::{
     cache::UriCache,
-    meta::{metas_for_draft, META_SCHEMAS_ALL},
+    meta::{bundled_meta_schema_draft, metas_for_draft, META_SCHEMAS_ALL},
     path::JsonPointerSegment,
     pointer::{parse_index, pointer, ParsedPointer, ParsedPointerSegment},
     resource::unescape_segment,
@@ -125,7 +129,8 @@ struct DeferredTarget<'a> {
 /// Lifetime-free traversal state passed to external-resource collection helpers.
 struct CrawlState {
     external: AHashSet<(String, Uri<String>, ReferenceKind)>,
-    found_metaschema_ref: bool,
+    /// Drafts whose bundled meta-schemas a reference names.
+    referenced_meta_schema_drafts: BTreeSet<Draft>,
     /// Schema/base/draft contexts already walked by `record_refs_recursive`.
     visited_schemas: AHashSet<VisitedSchemaContext>,
     deferred_refs: Vec<PendingLocalRef>,
@@ -137,7 +142,7 @@ impl CrawlState {
     fn new(retrieve_known_draft_meta_schemas: bool) -> Self {
         Self {
             external: AHashSet::new(),
-            found_metaschema_ref: false,
+            referenced_meta_schema_drafts: BTreeSet::new(),
             visited_schemas: AHashSet::new(),
             deferred_refs: Vec::new(),
             retrieve_known_draft_meta_schemas,
@@ -296,13 +301,7 @@ fn fetch_and_index<'a>(
         fetch_external_resources(state, documents, known_resources, default_draft, retriever)?;
     }
 
-    finalize_index(
-        state,
-        documents,
-        known_resources,
-        resolution_cache,
-        default_draft,
-    )
+    finalize_index(state, documents, known_resources, resolution_cache)
 }
 
 /// Async [`fetch_and_index`]; each round retrieves its external resources with one `join_all`.
@@ -321,13 +320,7 @@ async fn fetch_and_index_async<'a>(
             .await?;
     }
 
-    finalize_index(
-        state,
-        documents,
-        known_resources,
-        resolution_cache,
-        default_draft,
-    )
+    finalize_index(state, documents, known_resources, resolution_cache)
 }
 
 /// Convert resources into stored documents, register them with the
@@ -514,15 +507,8 @@ fn finalize_index<'a>(
     documents: &mut ResourceStore<'a>,
     known_resources: &mut KnownResources,
     resolution_cache: &mut UriCache,
-    default_draft: Draft,
 ) -> Result<(), Error> {
-    inject_metaschemas(
-        state.crawl.found_metaschema_ref,
-        documents,
-        known_resources,
-        default_draft,
-        state,
-    )?;
+    inject_metaschemas(documents, known_resources, state)?;
 
     if !state.queue.is_empty() {
         let mut visited_local_refs = VisitedLocalRefs::new();
@@ -1061,15 +1047,18 @@ fn record_refs<'doc>(
         let Some(reference) = reference else {
             continue;
         };
-        let is_local = reference.starts_with('#');
-        if (!is_local
-            && (reference.starts_with("https://json-schema.org/draft/")
-                || reference.starts_with("http://json-schema.org/draft-")))
-            || base.as_str().starts_with("https://json-schema.org/draft/")
-        {
-            if key == "$ref" {
-                crawl.found_metaschema_ref = true;
+        // A bundled meta-schema references only the meta-schemas of its own draft
+        if base.as_str().starts_with("https://json-schema.org/draft/") {
+            if let Some(draft) = bundled_meta_schema_draft(doc_key.as_str()) {
+                crawl.referenced_meta_schema_drafts.insert(draft);
+                continue;
             }
+        }
+        let is_local = reference.starts_with('#');
+        if key == "$schema"
+            && (reference.starts_with("https://json-schema.org/draft/")
+                || reference.starts_with("http://json-schema.org/draft-"))
+        {
             continue;
         }
         if is_local {
@@ -1081,7 +1070,18 @@ fn record_refs<'doc>(
             }
             continue;
         }
-        let resolved = (*resolution_cache.resolve_against(&base.borrow(), reference)?).clone();
+        // Bundled meta-schemas are injected after the crawl, whatever draft names them. An
+        // absolute reference names one without resolution.
+        if let Some(draft) = bundled_meta_schema_draft(reference) {
+            crawl.referenced_meta_schema_drafts.insert(draft);
+            continue;
+        }
+        let resolved = resolution_cache.resolve_against(&base.borrow(), reference)?;
+        if let Some(draft) = bundled_meta_schema_draft(resolved.as_str()) {
+            crawl.referenced_meta_schema_drafts.insert(draft);
+            continue;
+        }
+        let resolved = (*resolved).clone();
 
         let kind = if key == "$schema" {
             ReferenceKind::DollarSchema
@@ -1196,10 +1196,8 @@ fn enqueue_fragment_entry(
 }
 
 fn inject_metaschemas<'a>(
-    found_metaschema_ref: bool,
     documents: &mut ResourceStore<'a>,
     known_resources: &mut KnownResources,
-    draft_version: Draft,
     state: &mut BuildState<'a>,
 ) -> Result<(), Error> {
     // A `$schema` naming one of the bundled vocabulary meta-schemas is never retrieved, so the
@@ -1208,13 +1206,26 @@ fn inject_metaschemas<'a>(
         .custom_metaschemas
         .iter()
         .any(|uri| uri.starts_with("https://json-schema.org/draft/"));
-    let schemas: &[(&str, &Value)] = if names_bundled_meta_schema {
-        META_SCHEMAS_ALL.as_slice()
-    } else if found_metaschema_ref {
-        metas_for_draft(draft_version)
-    } else {
-        return Ok(());
-    };
+    if names_bundled_meta_schema {
+        return inject_bundled(
+            META_SCHEMAS_ALL.as_slice(),
+            documents,
+            known_resources,
+            state,
+        );
+    }
+    for draft in std::mem::take(&mut state.crawl.referenced_meta_schema_drafts) {
+        inject_bundled(metas_for_draft(draft), documents, known_resources, state)?;
+    }
+    Ok(())
+}
+
+fn inject_bundled<'a>(
+    schemas: &[(&str, &'static Value)],
+    documents: &mut ResourceStore<'a>,
+    known_resources: &mut KnownResources,
+    state: &mut BuildState<'a>,
+) -> Result<(), Error> {
     for (uri, schema) in schemas {
         let key = Arc::new(uri::from_str(uri.trim_end_matches('#'))?);
         if documents.contains_key(&key) {

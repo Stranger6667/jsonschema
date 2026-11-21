@@ -4,6 +4,8 @@
 
 ### Fixed
 
+- `$ref` to a bundled meta-schema of a draft other than the schema's own, such as `https://json-schema.org/draft/2020-12/schema` from a Draft 7 schema, failing to resolve.
+- `$ref` to a `json-schema.org` URI with no bundled meta-schema, such as `http://json-schema.org/draft-03/schema#`, never retrieved.
 - Error messages for an empty `enum` ending after "is not one of" instead of naming the empty `enum`.
 - `HttpOptions(ca_cert=...)` accepting a file without certificates.
 - Draft 4 schemas with an empty `enum`, or one with equal members such as `[0, 0.0]`, passing the meta-schema check.
