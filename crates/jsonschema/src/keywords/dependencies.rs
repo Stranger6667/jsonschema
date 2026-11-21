@@ -144,22 +144,6 @@ impl<F: Json> Validate<F> for DependenciesValidator<F> {
         }
     }
 
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
-    }
-
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
@@ -415,22 +399,6 @@ impl<F: Json> Validate<F> for DependentSchemasValidator<F> {
                 node.collect_errors(instance, location, tracker, ctx, errors);
             }
         }
-    }
-
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
     }
 
     fn evaluate_with_location(

@@ -125,22 +125,6 @@ impl<F: Json, D: Dispatch<F>> Validate<F> for AnyOfValidator<F, D> {
         ));
     }
 
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
-    }
-
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
@@ -258,22 +242,6 @@ impl<F: Json> Validate<F> for SingleAnyOfValidator<F> {
             instance.lazy_value(),
             vec![branch],
         ));
-    }
-
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
     }
 
     fn evaluate_with_location(

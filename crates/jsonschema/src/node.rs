@@ -489,22 +489,6 @@ impl<F: Json> Validate<F> for PendingSchemaNode<F> {
         ctx.exit::<F>(node_id, identity);
     }
 
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_with_location(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
-    }
-
     fn evaluate_with_location(
         &self,
         instance: &F::Node<'_>,
@@ -1176,22 +1160,6 @@ impl<F: Json> Validate<F> for SchemaNode<F> {
                 }
             }
         }
-    }
-
-    fn evaluate(
-        &self,
-        instance: &F::Node<'_>,
-        location: &LazyLocation,
-        tracker: Option<&RefTracker>,
-        ctx: &mut ValidationContext,
-    ) -> EvaluationResult {
-        self.evaluate_at(
-            instance,
-            location,
-            ctx.instance_position(location),
-            tracker,
-            ctx,
-        )
     }
 
     fn evaluate_with_location(
