@@ -1872,6 +1872,31 @@ fn pattern_with_a_huge_count_canonicalizes(pattern: &str) {
     );
 }
 
+// The values the pattern rejects leave the `enum`; `\d` matches ASCII digits only.
+#[test_case(r"^(?<n>\d)\k<n>$"; "named backreference")]
+#[test_case(r"^(\d)\1$"; "numbered backreference")]
+fn pattern_with_a_backreference_canonicalizes(pattern: &str) {
+    let schema = json!({"type": "string", "pattern": pattern, "enum": ["11", "12", "٣٣"]});
+    let canonical = canonicalize(&schema).expect("canonicalizes");
+    assert_eq!(
+        canonical.to_json_schema(),
+        json!({"$schema": "https://json-schema.org/draft/2020-12/schema", "const": "11"})
+    );
+}
+
+// The `regex` engine has no backreferences.
+#[test]
+fn named_backreference_under_the_regex_engine() {
+    let error = options()
+        .with_pattern_options(PatternOptions::regex())
+        .canonicalize(&json!({"pattern": r"(?<n>x)\k<n>"}))
+        .unwrap_err();
+    assert_eq!(
+        error.to_string(),
+        r#"invalid regular expression: "(?<n>x)\\k<n>""#
+    );
+}
+
 // The suite checks only the error variant; the `Display` message is exercised here.
 #[test_case(&json!(42), "schema must be a boolean or object, got: 42"; "invalid schema type")]
 #[test_case(&json!({"pattern": "["}), "invalid regular expression: \"[\""; "invalid pattern")]

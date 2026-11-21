@@ -6,13 +6,52 @@
 //! to 2019-09 cite the ES5.1 dialect, which has no `u` flag. Unicode property names and values are
 //! checked for shape only, not against the Unicode tables.
 
-use std::{borrow::Cow, cmp::Ordering};
+use std::{borrow::Cow, cmp::Ordering, ops::Range};
 
 /// Whether `pattern` is a syntactically valid ECMA-262 regular expression under the `u` flag, or
 /// differs from one only by escaping non-alphanumeric characters.
 #[must_use]
 pub fn is_valid_ecma_regex(pattern: &str) -> bool {
     Parser::new(pattern).parse().is_ok()
+}
+
+/// The lookarounds, named groups and backreferences of `pattern`, in pattern order, or `None` if
+/// it is not valid as [`is_valid_ecma_regex`] reads it.
+pub(crate) fn constructs(pattern: &str) -> Option<Vec<Construct<'_>>> {
+    Parser::new(pattern).parse().ok()
+}
+
+/// A construct only a backtracking engine supports, or one written differently for it.
+pub(crate) struct Construct<'a> {
+    /// The bytes of the pattern it is written as: up to the body of a group, all of a reference.
+    pub(crate) span: Range<usize>,
+    pub(crate) kind: ConstructKind<'a>,
+}
+
+impl Construct<'_> {
+    /// The number of the group this declares under `name`, if it is one.
+    pub(crate) fn group_named(&self, name: &str) -> Option<u64> {
+        match &self.kind {
+            ConstructKind::NamedGroup {
+                number,
+                name: declared,
+            } if declared == name => Some(*number),
+            _ => None,
+        }
+    }
+}
+
+pub(crate) enum ConstructKind<'a> {
+    /// `(?=` or `(?!`.
+    Lookahead,
+    /// `(?<=` or `(?<!`.
+    Lookbehind,
+    /// `(?<name>`, the capturing group `number` counting from one.
+    NamedGroup { number: u64, name: Cow<'a, str> },
+    /// `\N`.
+    Backreference(u64),
+    /// `\k<name>`.
+    NamedBackreference(Cow<'a, str>),
 }
 
 struct SyntaxError;
@@ -64,11 +103,8 @@ struct Parser<'a> {
     /// The pattern itself is the outermost frame, so this is never empty.
     frames: Vec<Frame<'a>>,
     capturing_groups: u64,
-    /// The largest `\N` seen, checked against `capturing_groups` once the whole pattern is read.
-    largest_backreference: u64,
-    /// Every `\k<name>` seen, checked against the declared names once the whole pattern is read.
-    referenced_names: Vec<Cow<'a, str>>,
-    declared_names: Vec<Cow<'a, str>>,
+    /// Backreferences are checked against the groups once the whole pattern is read.
+    constructs: Vec<Construct<'a>>,
 }
 
 impl<'a> Parser<'a> {
@@ -79,10 +115,15 @@ impl<'a> Parser<'a> {
             previous: Previous::Nothing,
             frames: vec![Frame::new(GroupKind::NonCapturing)],
             capturing_groups: 0,
-            largest_backreference: 0,
-            referenced_names: Vec::new(),
-            declared_names: Vec::new(),
+            constructs: Vec::new(),
         }
+    }
+
+    fn record(&mut self, start: usize, kind: ConstructKind<'a>) {
+        self.constructs.push(Construct {
+            span: start..self.position,
+            kind,
+        });
     }
 
     fn peek(&self) -> Option<char> {
@@ -122,7 +163,7 @@ impl<'a> Parser<'a> {
             .expect("the outermost frame is never popped")
     }
 
-    fn parse(mut self) -> Parsed<()> {
+    fn parse(mut self) -> Parsed<Vec<Construct<'a>>> {
         while let Some(c) = self.peek() {
             self.position += c.len_utf8();
             match c {
@@ -153,17 +194,27 @@ impl<'a> Parser<'a> {
                 _ => self.previous = Previous::Atom,
             }
         }
-        if self.frames.len() != 1 || self.largest_backreference > self.capturing_groups {
+        if self.frames.len() != 1 {
             return Err(SyntaxError);
         }
-        if self
-            .referenced_names
+        let resolves = |kind: &ConstructKind<'_>| match kind {
+            ConstructKind::Backreference(number) => *number <= self.capturing_groups,
+            ConstructKind::NamedBackreference(name) => self
+                .constructs
+                .iter()
+                .any(|construct| construct.group_named(name).is_some()),
+            ConstructKind::Lookahead
+            | ConstructKind::Lookbehind
+            | ConstructKind::NamedGroup { .. } => true,
+        };
+        if !self
+            .constructs
             .iter()
-            .any(|name| !self.declared_names.contains(name))
+            .all(|construct| resolves(&construct.kind))
         {
             return Err(SyntaxError);
         }
-        Ok(())
+        Ok(self.constructs)
     }
 
     /// A quantifier was consumed: it must follow an atom and may take a lazy marker.
@@ -201,18 +252,25 @@ impl<'a> Parser<'a> {
 
     /// The opening paren is consumed.
     fn open_group(&mut self) -> Parsed<()> {
+        let start = self.position - 1;
         let kind = if self.eat('?') {
             match self.bump()? {
                 ':' => GroupKind::NonCapturing,
-                '=' | '!' => GroupKind::Lookaround,
+                '=' | '!' => {
+                    self.record(start, ConstructKind::Lookahead);
+                    GroupKind::Lookaround
+                }
                 '<' => {
                     if matches!(self.peek(), Some('=' | '!')) {
                         self.position += 1;
+                        self.record(start, ConstructKind::Lookbehind);
                         GroupKind::Lookaround
                     } else {
                         let name = self.group_name()?;
-                        self.declare_name(name)?;
+                        self.declare_name(name.clone())?;
                         self.capturing_groups += 1;
+                        let number = self.capturing_groups;
+                        self.record(start, ConstructKind::NamedGroup { number, name });
                         GroupKind::Capturing
                     }
                 }
@@ -286,7 +344,6 @@ impl<'a> Parser<'a> {
         {
             return Err(SyntaxError);
         }
-        self.declared_names.push(name.clone());
         self.current_frame().current_alternative.push(name);
         Ok(())
     }
@@ -332,6 +389,7 @@ impl<'a> Parser<'a> {
 
     /// An escape outside a class; the backslash is consumed.
     fn atom_escape(&mut self) -> Parsed<Previous> {
+        let start = self.position - 1;
         match self.bump()? {
             'b' | 'B' => return Ok(Previous::Assertion),
             'd' | 'D' | 's' | 'S' | 'w' | 'W' => {}
@@ -339,12 +397,12 @@ impl<'a> Parser<'a> {
             'k' => {
                 self.expect('<')?;
                 let name = self.group_name()?;
-                self.referenced_names.push(name);
+                self.record(start, ConstructKind::NamedBackreference(name));
             }
             '1'..='9' => {
                 self.position -= 1;
                 let number = self.decimal_digits()?.parse().unwrap_or(u64::MAX);
-                self.largest_backreference = self.largest_backreference.max(number);
+                self.record(start, ConstructKind::Backreference(number));
             }
             c => {
                 self.character_escape(c)?;

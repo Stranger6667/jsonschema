@@ -2,7 +2,7 @@ mod repetition;
 mod sequence;
 mod syntax;
 
-use std::{borrow::Cow, fmt::Write};
+use std::{borrow::Cow, fmt::Write, ops::Range};
 
 use regex_syntax::{
     ast::{
@@ -15,10 +15,12 @@ use regex_syntax::{
 pub use repetition::{search_form, RepeatedClass, Search};
 pub use sequence::Sequence;
 pub use syntax::is_valid_ecma_regex;
+use syntax::{Construct, ConstructKind};
 
 /// Convert ECMA Script 262 regex to Rust regex on the best effort basis.
 ///
-/// NOTE: Patterns with look arounds and backreferences are not supported.
+/// Lookarounds and backreferences are written for `fancy-regex`: a backreference to a group that
+/// has not matched matches the empty string, as in ECMA 262.
 ///
 /// # Errors
 ///
@@ -26,51 +28,124 @@ pub use syntax::is_valid_ecma_regex;
 #[allow(clippy::result_unit_err)]
 pub fn to_rust_regex(pattern: &str) -> Result<Cow<'_, str>, ()> {
     let mut pattern = escape_class_set_syntax(pattern);
+    let mut backtracking: Option<Backtracking> = None;
     let ast = loop {
-        match Parser::new().parse(&pattern) {
+        let source = backtracking
+            .as_ref()
+            .map_or(pattern.as_ref(), |backtracking| {
+                backtracking.masked.as_str()
+            });
+        let error = match Parser::new().parse(source) {
             Ok(ast) => break ast,
-            Err(error) if *error.kind() == ErrorKind::EscapeUnrecognized => {
-                let Span { start, end } = error.span();
-                let source = error.pattern();
-                if &source[start.offset..end.offset] == r"\c" {
-                    if let Some(letter) = &source[end.offset..].chars().next() {
-                        if letter.is_ascii_alphabetic() {
-                            let start = start.offset;
-                            let end = end.offset + 1;
-                            let replacement = ((*letter as u8) % 32) as char;
-                            match pattern {
-                                Cow::Borrowed(_) => {
-                                    let prefix = &source[..start];
-                                    let suffix = &source[end..];
-                                    pattern = Cow::Owned(format!("{prefix}{replacement}{suffix}"));
-                                }
-                                Cow::Owned(ref mut buffer) => {
-                                    let mut char_buffer = [0; 4];
-                                    let replacement = replacement.encode_utf8(&mut char_buffer);
-                                    buffer.replace_range(start..end, replacement);
-                                }
-                            }
-                            continue;
-                        }
-                    }
-                }
-                return Err(());
-            }
-            Err(error)
-                if matches!(
-                    error.kind(),
-                    ErrorKind::UnsupportedLookAround | ErrorKind::UnsupportedBackreference
-                ) =>
-            {
-                // Can't translate patterns with look arounds & backreferences
-                return Ok(pattern);
-            }
-            Err(_) => {
-                return Err(());
-            }
+            Err(error) => error,
         };
+        if let Some((span, control)) = control_escape(&error) {
+            match pattern {
+                Cow::Borrowed(source) => {
+                    let prefix = &source[..span.start];
+                    let suffix = &source[span.end..];
+                    pattern = Cow::Owned(format!("{prefix}{control}{suffix}"));
+                }
+                Cow::Owned(ref mut buffer) => {
+                    let mut char_buffer = [0; 4];
+                    buffer.replace_range(span, control.encode_utf8(&mut char_buffer));
+                }
+            }
+            backtracking = None;
+            continue;
+        }
+        if backtracking.is_none() {
+            backtracking = Backtracking::new(&pattern);
+            if backtracking.is_some() {
+                continue;
+            }
+        }
+        if matches!(
+            error.kind(),
+            ErrorKind::UnsupportedLookAround | ErrorKind::UnsupportedBackreference
+        ) {
+            // Not ECMA 262, so left as written for the engine to read.
+            return Ok(pattern);
+        }
+        return Err(());
     };
-    ast::visit(&ast, Ecma262Translator::new(pattern)).map_err(|_| ())
+    let edits = backtracking.map_or_else(Vec::new, |backtracking| backtracking.edits);
+    ast::visit(&ast, Ecma262Translator::new(pattern, edits)).map_err(|_| ())
+}
+
+/// The bytes of a `\cX` control escape the parser rejects, and the character it stands for.
+fn control_escape(error: &ast::Error) -> Option<(Range<usize>, char)> {
+    if *error.kind() != ErrorKind::EscapeUnrecognized {
+        return None;
+    }
+    let Span { start, end } = error.span();
+    let source = error.pattern();
+    if &source[start.offset..end.offset] != r"\c" {
+        return None;
+    }
+    let letter = source[end.offset..]
+        .chars()
+        .next()
+        .filter(char::is_ascii_alphabetic)?;
+    Some((start.offset..end.offset + 1, ((letter as u8) % 32) as char))
+}
+
+/// A pattern holding lookarounds, named groups or backreferences, which the regex parser rejects
+/// or which `fancy-regex` reads differently.
+struct Backtracking {
+    /// The pattern with each such construct replaced by text of the same length that the parser
+    /// accepts, so the spans of everything else are spans in the pattern.
+    masked: String,
+    /// What each construct is written as for `fancy-regex`.
+    edits: Vec<Edit>,
+}
+
+impl Backtracking {
+    /// `None` when `pattern` is not valid ECMA 262.
+    fn new(pattern: &str) -> Option<Self> {
+        let constructs = syntax::constructs(pattern)?;
+        let mut masked = pattern.to_owned();
+        let mut edits = Vec::new();
+        for Construct { span, kind } in &constructs {
+            let (mask, edit) = match kind {
+                ConstructKind::Lookahead => ("(?:", None),
+                ConstructKind::Lookbehind => ("(?:_", None),
+                // Names play no part in matching, and `fancy-regex` reads fewer of them.
+                ConstructKind::NamedGroup { .. } => ("(", Some(Cow::Borrowed("("))),
+                ConstructKind::Backreference(number) => {
+                    ("", Some(Cow::Owned(backreference(&[*number]))))
+                }
+                // A name used by groups in different alternatives refers to the one that matched.
+                ConstructKind::NamedBackreference(name) => {
+                    let numbers: Vec<u64> = constructs
+                        .iter()
+                        .filter_map(|construct| construct.group_named(name))
+                        .collect();
+                    ("", Some(Cow::Owned(backreference(&numbers))))
+                }
+            };
+            let filler = "_".repeat(span.len() - mask.len());
+            masked.replace_range(span.clone(), &format!("{mask}{filler}"));
+            if let Some(edit) = edit {
+                edits.push((span.clone(), edit));
+            }
+        }
+        Some(Self { masked, edits })
+    }
+}
+
+/// A backreference to the first of the groups `numbers` that has matched, or the empty string.
+fn backreference(numbers: &[u64]) -> String {
+    let mut text = String::new();
+    for (index, number) in numbers.iter().enumerate() {
+        if index > 0 {
+            text.push('|');
+        }
+        // Writing to a `String` cannot fail.
+        let _ = write!(text, r"(?({number})\{number}");
+    }
+    text.extend(std::iter::repeat_n(')', numbers.len()));
+    text
 }
 
 #[derive(Clone, Copy, PartialEq)]
@@ -193,35 +268,23 @@ fn escape_class_set_syntax(pattern: &str) -> Cow<'_, str> {
     Cow::Owned(translated)
 }
 
+/// A byte range of the pattern and the text replacing it.
+type Edit = (Range<usize>, Cow<'static, str>);
+
 struct Ecma262Translator<'a> {
     pattern: Cow<'a, str>,
-    offset: usize,
+    /// Applied together once the whole pattern is visited.
+    edits: Vec<Edit>,
 }
 
 impl<'a> Ecma262Translator<'a> {
-    fn new(input: Cow<'a, str>) -> Self {
-        Self {
-            pattern: input,
-            offset: 0,
-        }
+    fn new(pattern: Cow<'a, str>, edits: Vec<Edit>) -> Self {
+        Self { pattern, edits }
     }
 
-    fn replace_impl(&mut self, span: &Span, replacement: &str) {
-        let Span { start, end } = span;
-        match self.pattern {
-            Cow::Borrowed(pattern) => {
-                let prefix = &pattern[..start.offset];
-                let suffix = &pattern[end.offset..];
-                self.pattern = Cow::Owned(format!("{prefix}{replacement}{suffix}"));
-            }
-            Cow::Owned(ref mut buffer) => {
-                buffer.replace_range(
-                    start.offset + self.offset..end.offset + self.offset,
-                    replacement,
-                );
-            }
-        }
-        self.offset += replacement.len() - (end.offset - start.offset);
+    fn replace_impl(&mut self, span: &Span, replacement: impl Into<Cow<'static, str>>) {
+        self.edits
+            .push((span.start.offset..span.end.offset, replacement.into()));
     }
 
     fn replace(&mut self, cls: &ClassPerl) {
@@ -249,7 +312,7 @@ impl<'a> Ecma262Translator<'a> {
                     );
                 }
                 replacement.push(']');
-                self.replace_impl(&cls.span, &replacement);
+                self.replace_impl(&cls.span, replacement);
             }
         }
     }
@@ -259,8 +322,20 @@ impl<'a> Visitor for Ecma262Translator<'a> {
     type Output = Cow<'a, str>;
     type Err = ast::Error;
 
-    fn finish(self) -> Result<Self::Output, Self::Err> {
-        Ok(self.pattern)
+    fn finish(mut self) -> Result<Self::Output, Self::Err> {
+        if self.edits.is_empty() {
+            return Ok(self.pattern);
+        }
+        self.edits.sort_unstable_by_key(|(span, _)| span.start);
+        let mut translated = String::with_capacity(self.pattern.len());
+        let mut position = 0;
+        for (span, replacement) in &self.edits {
+            translated.push_str(&self.pattern[position..span.start]);
+            translated.push_str(replacement);
+            position = span.end;
+        }
+        translated.push_str(&self.pattern[position..]);
+        Ok(Cow::Owned(translated))
     }
 
     fn visit_class_set_item_pre(&mut self, item: &ast::ClassSetItem) -> Result<(), Self::Err> {
@@ -637,9 +712,22 @@ mod tests {
     #[test_case(r"[^&]", r"[^&]"; "single ampersand is unchanged")]
     #[test_case(r"a&&b", r"a&&b"; "operator syntax outside a class is unchanged")]
     #[test_case(r"\d.[\w.]\D.", r"[0-9][^\n\r\x{2028}\x{2029}][[A-Za-z0-9_].][^0-9][^\n\r\x{2028}\x{2029}]"; "dots mixed with class escapes")]
+    #[test_case(r"(?<n>\d)\k<n>", r"([0-9])(?(1)\1)"; "named backreference")]
+    #[test_case(r"(a)\1+", r"(a)(?(1)\1)+"; "quantified backreference")]
+    #[test_case(r"(?<n>a)|(?<n>b)\k<n>", r"(a)|(b)(?(1)\1|(?(2)\2))"; "backreference to a duplicate name")]
+    #[test_case(r"(?<!\d)\w(?=\s)", r"(?<![0-9])[A-Za-z0-9_](?=[\x{9}-\x{d}\x{20}-\x{20}\x{a0}-\x{a0}\x{1680}-\x{1680}\x{2000}-\x{200a}\x{2028}-\x{2029}\x{202f}-\x{202f}\x{205f}-\x{205f}\x{3000}-\x{3000}\x{feff}-\x{feff}])"; "class escapes in lookarounds")]
+    #[test_case(r"\cA(?=\w)", "\u{1}(?=[A-Za-z0-9_])"; "control escape before a lookahead")]
+    #[test_case(r"(?=\w)\cA", "(?=[A-Za-z0-9_])\u{1}"; "control escape after a lookahead")]
+    #[test_case(r"(?i)(?=a)\d", r"(?i)(?=a)\d"; "lookahead outside ecma 262 is left as written")]
     fn test_ecma262_to_rust_regex(input: &str, expected: &str) {
         let result = to_rust_regex(input).unwrap();
         assert_eq!(result, expected);
+    }
+
+    #[test_case(r"^[a-z]+$"; "nothing to translate")]
+    #[test_case(r"(?=a)b"; "lookahead with nothing to translate")]
+    fn untranslated_pattern_is_borrowed(input: &str) {
+        assert!(matches!(to_rust_regex(input), Ok(Cow::Borrowed(text)) if text == input));
     }
 
     const ECMA_WHITESPACE: [char; 25] = [
@@ -713,6 +801,7 @@ mod tests {
     #[test_case(r"\"; "trailing backslash")]
     #[test_case(r"[a-\w]"; "invalid character range")]
     #[test_case(r"[z--]"; "invalid range ending in a hyphen")]
+    #[test_case(r"(?<n>a)\uD83D"; "lone surrogate escape beside a named group")]
     fn test_invalid_regex(input: &str) {
         let result = to_rust_regex(input);
         assert!(result.is_err(), "Expected error for input: {input}");
