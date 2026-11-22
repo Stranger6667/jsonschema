@@ -5,7 +5,7 @@ use crate::{
     keywords::{
         self,
         custom::{CustomKeyword, KeywordFactory},
-        format::Format,
+        format::CustomFormat,
         unevaluated_items::PendingItemsValidators,
         unevaluated_properties::PendingPropertyValidators,
         BoxedValidator, BuiltinKeyword, Keyword,
@@ -84,7 +84,7 @@ pub(crate) trait CompilationOptions<F: Json> {
         content_encoding: &str,
     ) -> Option<ContentEncodingConverterType>;
     fn get_keyword_factory(&self, name: &str) -> Option<&Arc<dyn KeywordFactory<F>>>;
-    fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)>;
+    fn get_format(&self, format: &str) -> Option<(&String, &CustomFormat)>;
     fn pattern_options(&self) -> PatternEngineOptions;
     fn pattern_cache(&self) -> Option<&PatternCache>;
     fn email_options(&self) -> Option<&email_address::Options>;
@@ -122,7 +122,7 @@ impl<R, F: Json> CompilationOptions<F> for ValidationOptions<'_, R, F> {
         ValidationOptions::get_keyword_factory(self, name)
     }
 
-    fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
+    fn get_format(&self, format: &str) -> Option<(&String, &CustomFormat)> {
         ValidationOptions::get_format(self, format)
     }
 
@@ -698,7 +698,7 @@ impl<'a, F: Json> Context<'a, F> {
     pub(crate) fn is_keyword_overridden(&self, name: &str) -> bool {
         self.get_keyword_factory(name).is_some()
     }
-    pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
+    pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &CustomFormat)> {
         self.config.get_format(format)
     }
     pub(crate) fn mark_seen(&self, identity: &TargetIdentity) {

@@ -126,6 +126,16 @@ validator.is_valid("USD")  # True
 validator.is_valid("invalid")  # False
 ```
 
+To check numbers, wrap the function in `number_format`; it receives an `int`, `float` or `Decimal`:
+
+```python
+is_int32 = jsonschema_rs.number_format(lambda number: -(2**31) <= number < 2**31)
+validator = jsonschema_rs.validator_for(
+    {"format": "int32"}, formats={"int32": is_int32}, validate_formats=True
+)
+assert not validator.is_valid(2**31)
+```
+
 ### Validating JSON Text
 
 When instances arrive as JSON text, such as request bodies or queue messages, `JsonTextValidator`

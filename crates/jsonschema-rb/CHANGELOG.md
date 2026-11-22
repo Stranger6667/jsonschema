@@ -5,6 +5,7 @@
 ### Added
 
 - `JsonTextValidator`, validating instances given as JSON text without building Ruby objects for them.
+- `JSONSchema.number_format`, a custom `format` check that reads numbers.
 
 ### Fixed
 

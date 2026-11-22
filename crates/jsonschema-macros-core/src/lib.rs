@@ -71,6 +71,7 @@ pub mod bench {
             runtime_crate_alias: None,
             validate_formats: None,
             custom_formats: HashMap::new(),
+            custom_number_formats: HashMap::new(),
             custom_keywords: HashMap::new(),
             content_media_types: HashMap::new(),
             content_encodings: HashMap::new(),
@@ -142,6 +143,8 @@ struct ResourceEntry {
 struct FormatEntry {
     name: String,
     path: syn::Path,
+    /// Written as `number(...)`: a format that reads numbers.
+    reads_numbers: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -321,7 +324,20 @@ fn parse_named_fn_paths(input: ParseStream, entry_kind: &str) -> syn::Result<Vec
     while !content.is_empty() {
         let name: LitStr = content.parse()?;
         content.parse::<Token![=>]>()?;
-        let path: syn::Path = content.parse()?;
+        let mut path: syn::Path = content.parse()?;
+        let reads_numbers = content.peek(syn::token::Paren);
+        if reads_numbers {
+            let wraps_numbers = entry_kind == "format" && path.is_ident("number");
+            if !wraps_numbers {
+                return Err(syn::Error::new_spanned(
+                    path,
+                    "Only `number(...)` wraps a format function, for a format that reads numbers",
+                ));
+            }
+            let check;
+            syn::parenthesized!(check in content);
+            path = check.parse()?;
+        }
         ensure_callable_path(&path, entry_kind)?;
         let name_value = name.value();
         if !seen.insert(name_value.clone()) {
@@ -333,6 +349,7 @@ fn parse_named_fn_paths(input: ParseStream, entry_kind: &str) -> syn::Result<Vec
         entries.push(FormatEntry {
             name: name_value,
             path,
+            reads_numbers,
         });
         if content.peek(Token![,]) {
             content.parse::<Token![,]>()?;
@@ -908,6 +925,16 @@ so the generated methods cannot depend on type parameters",
         custom_formats: attr
             .formats
             .iter()
+            .filter(|entry| !entry.reads_numbers)
+            .map(|entry| {
+                let path = &entry.path;
+                (entry.name.clone(), quote! { #path })
+            })
+            .collect(),
+        custom_number_formats: attr
+            .formats
+            .iter()
+            .filter(|entry| entry.reads_numbers)
             .map(|entry| {
                 let path = &entry.path;
                 (entry.name.clone(), quote! { #path })

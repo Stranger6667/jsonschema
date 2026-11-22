@@ -800,7 +800,7 @@ pub fn value_to_ruby(ruby: &Ruby, value: &JsonValue) -> Result<Value, Error> {
 }
 
 #[inline]
-fn number_to_ruby(ruby: &Ruby, number: &Number) -> Result<Value, Error> {
+pub(crate) fn number_to_ruby(ruby: &Ruby, number: &Number) -> Result<Value, Error> {
     if let Some(i) = number.as_i64() {
         return Ok(ruby.into_value(i));
     }

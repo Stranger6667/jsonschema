@@ -5,6 +5,7 @@
 ### Added
 
 - `JsonTextValidator`, validating instances given as JSON text in `str` or `bytes` without building Python objects for them.
+- `number_format`, a custom `format` check that reads numbers.
 
 ### Fixed
 

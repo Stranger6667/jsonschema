@@ -179,7 +179,9 @@
 //! - `vocabularies = ["<uri>"]` -> [`ValidationOptions::with_vocabulary`]
 //! - `validate_formats = true|false` -> [`ValidationOptions::should_validate_formats`]
 //! - `ignore_unknown_formats = true|false` -> [`ValidationOptions::should_ignore_unknown_formats`]
-//! - `formats = { "name" => crate::path::to::fn }` -> [`ValidationOptions::with_format`]
+//! - `formats = { "name" => crate::path::to::fn, "other" => number(crate::path::to::fn) }` ->
+//!   [`ValidationOptions::with_format`], and [`ValidationOptions::with_number_format`] for
+//!   `number(...)`
 //! - `keywords = { "name" => crate::path::to::factory }` -> [`ValidationOptions::with_keyword`]
 //! - `content_media_types = { "type" => crate::path::to::fn }` -> [`ValidationOptions::with_content_media_type`]
 //! - `content_encodings = { "name" => { check = ..., convert = ... } }` -> [`ValidationOptions::with_content_encoding`]
@@ -911,7 +913,8 @@
 //!
 //! ### Notes on Custom Format Validators
 //!
-//! - Custom format validators are only called for string instances.
+//! - A custom format checks strings; [`ValidationOptions::with_number_format`] registers one that
+//!   checks numbers. Instances of other types pass the format.
 //! - In Draft 2019-09 and 2020-12, `format` checks nothing unless you call
 //!   `.should_validate_formats(true)`.
 //!

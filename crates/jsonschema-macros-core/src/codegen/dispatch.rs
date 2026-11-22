@@ -9,7 +9,7 @@ use super::{
     draft::DraftExt,
     expr::{call_errors, ErrorsBlock, IsValidExpr, RefErrors},
     keywords,
-    keywords::format::format_emits_assertion,
+    keywords::format::{format_emits_assertion, reads_numbers},
     CompiledExpr,
 };
 
@@ -49,16 +49,19 @@ pub(super) fn compile_typed<E: ValueEmitter>(
             || schema.contains_key("pattern")))
         || schema
             .get("format")
-            .is_some_and(|value| format_emits_assertion(ctx, value))
+            .is_some_and(|value| format_emits_assertion(ctx, value) && !reads_numbers(ctx, value))
         || (ctx.draft.supports_content_validation_keywords()
             && (schema.contains_key("contentEncoding") || schema.contains_key("contentMediaType")));
 
-    let has_number = validation_vocab_enabled
+    let has_number = (validation_vocab_enabled
         && (schema.contains_key("minimum")
             || schema.contains_key("maximum")
             || schema.contains_key("exclusiveMinimum")
             || schema.contains_key("exclusiveMaximum")
-            || schema.contains_key("multipleOf"));
+            || schema.contains_key("multipleOf")))
+        || schema
+            .get("format")
+            .is_some_and(|value| ctx.validates_formats() && reads_numbers(ctx, value));
 
     let has_array = (validation_vocab_enabled
         && (schema.contains_key("minItems")

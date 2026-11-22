@@ -12,6 +12,10 @@ fn is_literal_x(value: &str) -> bool {
     value == "x"
 }
 
+fn is_even_number(number: &serde_json::Number) -> bool {
+    number.as_i64().is_some_and(|value| value % 2 == 0)
+}
+
 struct EvenKeyword;
 
 impl<'i> jsonschema::Keyword<'i> for EvenKeyword {
@@ -4914,6 +4918,21 @@ fn test_custom_format_validation_override_in_draft201909(
     );
 }
 
+#[test_case(serde_json::json!(4), true ; "even number")]
+#[test_case(serde_json::json!(5), false ; "odd number")]
+#[test_case(serde_json::json!([2, 3]), false ; "odd item")]
+#[test_case(serde_json::json!("5"), true ; "string")]
+fn test_number_format(instance: serde_json::Value, expected: bool) {
+    assert_eq!(EvaluateNumberFormat::is_valid(&instance), expected);
+    assert_eq!(EvaluateNumberFormat::validate(&instance).is_ok(), expected);
+    assert_eq!(
+        EvaluateNumberFormat::iter_errors(&instance)
+            .next()
+            .is_none(),
+        expected
+    );
+}
+
 #[test_case(serde_json::json!("x"), true ; "custom_overrides_builtin_accepts_x")]
 #[test_case(serde_json::json!("foo@example.com"), false ; "custom_overrides_builtin_rejects_email")]
 fn test_custom_format_overrides_builtin(instance: serde_json::Value, expected: bool) {
@@ -9162,6 +9181,10 @@ struct EvaluateCustomKeywordErrors;
 struct EvaluateCustomKeywordKnownName;
 #[jsonschema::validator(schema = r#"{"type":"string","format":"currency"}"#, draft = Draft7, formats = { "currency" => crate::is_currency_format })]
 struct EvaluateCustomFormat;
+#[jsonschema::validator(schema = r#"{"format":"even","items":{"format":"even"}}"#, draft = Draft7, formats = { "even" => number(crate::is_even_number) })]
+struct EvaluateNumberFormat;
+#[jsonschema::validator(schema = r#"{"type":"integer","format":"even"}"#, draft = Draft7, formats = { "even" => number(crate::is_even_number) })]
+struct EvaluateIntegerNumberFormat;
 #[jsonschema::validator(schema = r#"{"type":"string","format":"currency"}"#, draft = Draft201909, validate_formats = true, formats = { "currency" => crate::is_currency_format })]
 struct EvaluateCustomFormatAsserted;
 #[jsonschema::validator(schema = r#"{"type":"string","format":"email"}"#, draft = Draft7, validate_formats = true, formats = { "email" => crate::is_literal_x })]
@@ -9554,6 +9577,8 @@ fn test_evaluate_with_resources_matches_runtime(
 #[test_case(EvaluateCustomKeywordErrors::evaluate, serde_json::json!({"properties": {"a": {"multi": true}}, "multi": true}), |options| options.with_keyword("multi", multi_error_factory) ; "custom_keyword_errors")]
 #[test_case(EvaluateCustomKeywordKnownName::evaluate, serde_json::json!({"description": "strings-bad", "title": "t"}), |options| options.with_keyword("description", string_gate_factory) ; "custom_keyword_known_name")]
 #[test_case(EvaluateCustomFormat::evaluate, serde_json::json!({"type": "string", "format": "currency"}), |options| options.with_draft(Draft::Draft7).with_format("currency", is_currency_format) ; "custom_format")]
+#[test_case(EvaluateNumberFormat::evaluate, serde_json::json!({"format": "even", "items": {"format": "even"}}), |options| options.with_draft(Draft::Draft7).with_number_format("even", is_even_number) ; "number_format")]
+#[test_case(EvaluateIntegerNumberFormat::evaluate, serde_json::json!({"type": "integer", "format": "even"}), |options| options.with_draft(Draft::Draft7).with_number_format("even", is_even_number) ; "integer_number_format")]
 #[test_case(EvaluateCustomFormatAsserted::evaluate, serde_json::json!({"type": "string", "format": "currency"}), |options| options.with_draft(Draft::Draft201909).with_format("currency", is_currency_format).should_validate_formats(true) ; "custom_format_asserted")]
 #[test_case(EvaluateCustomFormatOverride::evaluate, serde_json::json!({"type": "string", "format": "email"}), |options| options.with_draft(Draft::Draft7).with_format("email", is_literal_x).should_validate_formats(true) ; "custom_format_override")]
 #[test_case(EvaluateIgnoredUnknownFormat::evaluate, serde_json::json!({"type": "string", "format": "made-up"}), |options| options.with_draft(Draft::Draft7).should_validate_formats(true).should_ignore_unknown_formats(true) ; "ignored_unknown_format")]

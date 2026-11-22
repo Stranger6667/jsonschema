@@ -116,6 +116,14 @@ def test_custom_formats():
     assert not validator.is_valid('"abc"')
 
 
+def test_number_formats():
+    is_even = jsonschema_rs.number_format(lambda number: number % 2 == 0)
+    validator = JsonTextValidator({"format": "even"}, formats={"even": is_even}, validate_formats=True)
+    assert validator.is_valid("4")
+    assert not validator.is_valid("3")
+    assert validator.is_valid('"3"')
+
+
 def test_mask_hides_the_instance():
     with pytest.raises(ValidationError) as excinfo:
         JsonTextValidator({"type": "integer"}, mask="[REDACTED]").validate('"secret"')

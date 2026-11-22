@@ -8,7 +8,8 @@ use std::{
 };
 
 use email_address::{EmailAddress, Options as EmailAddressOptions};
-use serde_json::{Map, Value};
+use jsonschema_value::JsonNumber;
+use serde_json::{Map, Number, Value};
 use strum::VariantArray;
 use unicode_general_category::{get_general_category, GeneralCategory};
 use uuid_simd::{parse_hyphenated, Out};
@@ -1183,29 +1184,31 @@ macro_rules! impl_format_evaluate {
             if !instance.is_string() {
                 return EvaluationResult::valid_empty();
             }
-            let mut collected = Vec::new();
-            // The description depends on the error kind and the instance alone; see `Validate::evaluate`.
-            Validate::<F>::collect_errors(
-                self,
-                instance,
-                &LazyLocation::new(),
-                None,
-                ctx,
-                &mut collected,
-            );
-            let errors: Vec<_> = collected
-                .iter()
-                .map(crate::evaluation::ErrorDescription::from_validation_error)
-                .collect();
-            let mut result = if errors.is_empty() {
-                EvaluationResult::valid_empty()
-            } else {
-                EvaluationResult::invalid_empty(errors)
-            };
-            result.annotate(self.annotation.clone());
-            result
+            evaluate_format::<F>(self, instance, ctx, &self.annotation)
         }
     };
+}
+
+fn evaluate_format<F: Json>(
+    validator: &impl Validate<F>,
+    instance: &F::Node<'_>,
+    ctx: &mut ValidationContext,
+    annotation: &Annotations,
+) -> EvaluationResult {
+    let mut collected = Vec::new();
+    // The description depends on the error kind and the instance alone; see `Validate::evaluate`.
+    validator.collect_errors(instance, &LazyLocation::new(), None, ctx, &mut collected);
+    let errors: Vec<_> = collected
+        .iter()
+        .map(crate::evaluation::ErrorDescription::from_validation_error)
+        .collect();
+    let mut result = if errors.is_empty() {
+        EvaluationResult::valid_empty()
+    } else {
+        EvaluationResult::invalid_empty(errors)
+    };
+    result.annotate(annotation.clone());
+    result
 }
 
 macro_rules! format_validators {
@@ -1459,13 +1462,13 @@ struct CustomFormatValidator {
     location: Location,
     annotation: Annotations,
     format_name: String,
-    check: Arc<dyn Format>,
+    check: CustomFormat,
 }
 impl CustomFormatValidator {
     pub(crate) fn compile<'a, F: Json>(
         ctx: &compiler::Context<F>,
         format_name: String,
-        check: Arc<dyn Format>,
+        check: CustomFormat,
     ) -> CompilationResult<'a, F> {
         let location = ctx.location().join("format");
         let annotation = Annotations::new(Value::String(format_name.clone()));
@@ -1500,14 +1503,30 @@ impl<F: Json> Validate<F> for CustomFormatValidator {
     }
 
     fn is_valid(&self, instance: &F::Node<'_>, _ctx: &mut ValidationContext) -> bool {
-        if let Some(item) = instance.as_string() {
-            self.check.is_valid(&item)
-        } else {
-            true
+        match &self.check {
+            CustomFormat::String(check) => instance.as_string().is_none_or(|text| check(&text)),
+            CustomFormat::Number(check) => instance
+                .as_number()
+                .is_none_or(|number| check(&number.to_number())),
         }
     }
 
-    impl_format_evaluate!();
+    fn evaluate(
+        &self,
+        instance: &F::Node<'_>,
+        _location: &LazyLocation,
+        _tracker: Option<&RefTracker>,
+        ctx: &mut ValidationContext,
+    ) -> EvaluationResult {
+        let reads = match self.check {
+            CustomFormat::String(_) => instance.is_string(),
+            CustomFormat::Number(_) => instance.is_number(),
+        };
+        if !reads {
+            return EvaluationResult::valid_empty();
+        }
+        evaluate_format::<F>(self, instance, ctx, &self.annotation)
+    }
 }
 
 /// Format annotation-only validator used when format assertion is disabled.
@@ -1558,18 +1577,11 @@ impl<F: Json> Validate<F> for AnnotationOnlyFormatValidator {
     }
 }
 
-pub(crate) trait Format: Send + Sync + 'static {
-    fn is_valid(&self, value: &str) -> bool;
-}
-
-impl<F> Format for F
-where
-    F: Fn(&str) -> bool + Send + Sync + 'static,
-{
-    #[inline]
-    fn is_valid(&self, value: &str) -> bool {
-        self(value)
-    }
+/// A registered `format` check and the instance type it reads; instances of other types pass it.
+#[derive(Clone)]
+pub(crate) enum CustomFormat {
+    String(Arc<dyn Fn(&str) -> bool + Send + Sync>),
+    Number(Arc<dyn Fn(&Number) -> bool + Send + Sync>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, VariantArray)]

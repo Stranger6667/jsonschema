@@ -218,6 +218,8 @@ pub(crate) struct CodegenConfig {
     pub(crate) runtime_crate_alias: Option<TokenStream>,
     pub(crate) validate_formats: Option<bool>,
     pub(crate) custom_formats: HashMap<String, TokenStream>,
+    /// Formats registered with `number(...)`, which read numbers.
+    pub(crate) custom_number_formats: HashMap<String, TokenStream>,
     pub(crate) custom_keywords: HashMap<String, TokenStream>,
     pub(crate) content_media_types: HashMap<String, TokenStream>,
     pub(crate) content_encodings: HashMap<String, (TokenStream, TokenStream)>,

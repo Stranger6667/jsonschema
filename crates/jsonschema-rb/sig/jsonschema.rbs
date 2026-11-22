@@ -373,6 +373,13 @@ module JSONSchema
     ?base_uri: String?
   ) -> Canonical::CanonicalSchema
 
+  # A `format` check that reads numbers, for the `formats` option; other instances pass it.
+  def self.number_format: (^(Numeric) -> bool check) -> NumberFormat
+
+  # A `format` check that reads numbers, made by `JSONSchema.number_format`.
+  class NumberFormat
+  end
+
   # Create a validator with auto-detected draft version.
   def self.validator_for: (
     untyped schema,
@@ -382,7 +389,7 @@ module JSONSchema
     ?base_uri: String?,
     ?retriever: (^(String) -> untyped)?,
     ?mask: String?,
-    ?formats: Hash[String, ^(String) -> bool]?,
+    ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?,
     ?keywords: Hash[String, Class]?,
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
@@ -451,7 +458,7 @@ module JSONSchema
     ?base_uri: String?,
     ?retriever: (^(String) -> untyped)?,
     ?mask: String?,
-    ?formats: Hash[String, ^(String) -> bool]?,
+    ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?,
     ?keywords: Hash[String, Class]?,
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
@@ -471,7 +478,7 @@ module JSONSchema
     ?base_uri: String?,
     ?retriever: (^(String) -> untyped)?,
     ?mask: String?,
-    ?formats: Hash[String, ^(String) -> bool]?,
+    ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?,
     ?keywords: Hash[String, Class]?,
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
@@ -491,7 +498,7 @@ module JSONSchema
     ?base_uri: String?,
     ?retriever: (^(String) -> untyped)?,
     ?mask: String?,
-    ?formats: Hash[String, ^(String) -> bool]?,
+    ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?,
     ?keywords: Hash[String, Class]?,
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
@@ -509,7 +516,7 @@ module JSONSchema
     ?base_uri: String?,
     ?retriever: (^(String) -> untyped)?,
     ?mask: String?,
-    ?formats: Hash[String, ^(String) -> bool]?,
+    ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?,
     ?keywords: Hash[String, Class]?,
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
@@ -528,7 +535,7 @@ module JSONSchema
     ?vocabularies: Array[String]?,
     ?base_uri: String?,
     ?retriever: (^(String) -> untyped)?,
-    ?formats: Hash[String, ^(String) -> bool]?,
+    ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?,
     ?keywords: Hash[String, Class]?,
     ?registry: Registry?,
     ?pattern_options: (RegexOptions | FancyRegexOptions)?,
@@ -549,7 +556,7 @@ module JSONSchema
       ?base_uri: String?,
       ?retriever: (^(String) -> untyped)?,
       ?mask: String?,
-      ?formats: Hash[String, ^(String) -> bool]?,
+      ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?,
       ?keywords: Hash[String, Class]?,
       ?registry: Registry?,
       ?pattern_options: (RegexOptions | FancyRegexOptions)?,
@@ -585,7 +592,7 @@ module JSONSchema
       ?base_uri: String?,
       ?retriever: (^(String) -> untyped)?,
       ?mask: String?,
-      ?formats: Hash[String, ^(String) -> bool]?,
+      ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?,
       ?keywords: Hash[String, Class]?,
       ?registry: Registry?,
       ?pattern_options: (RegexOptions | FancyRegexOptions)?,

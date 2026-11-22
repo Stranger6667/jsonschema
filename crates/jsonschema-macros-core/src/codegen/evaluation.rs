@@ -18,7 +18,7 @@ use super::{
     },
     keywords::{
         content::{checks_encoding, checks_media_type},
-        format::format_emits_assertion,
+        format::{format_emits_assertion, reads_numbers},
         one_of::{branch_discriminator, BranchDiscriminator, DiscriminatorLiteral},
         pattern_properties::name_match_expr,
         unevaluated_items::unevaluated_items,
@@ -66,8 +66,10 @@ struct Unit {
     keyword: String,
     /// Another keyword its errors are reported at.
     alias: Option<&'static str>,
-    /// Its annotation of a string instance.
-    string_annotation: Option<Value>,
+    /// Its annotation of an instance of the type it reads.
+    annotation: Option<Value>,
+    /// The annotation goes to numbers rather than strings.
+    annotates_numbers: bool,
     /// A schema of its keyword alone, checked directly when `evaluate` skips the errors run.
     check: Option<LeafCheck>,
     /// Index of its generated check, which reports its errors without the errors run.
@@ -100,7 +102,8 @@ impl Unit {
         Unit {
             keyword: keyword.to_string(),
             alias: None,
-            string_annotation: None,
+            annotation: None,
+            annotates_numbers: false,
             check: None,
             direct: None,
         }
@@ -111,8 +114,9 @@ impl Unit {
         self
     }
 
-    fn annotating(mut self, value: &Value) -> Self {
-        self.string_annotation = Some(value.clone());
+    fn annotating(mut self, value: &Value, annotates_numbers: bool) -> Self {
+        self.annotation = Some(value.clone());
+        self.annotates_numbers = annotates_numbers;
         self
     }
 }
@@ -1156,7 +1160,7 @@ pub(super) fn compile<E: ValueEmitter>(
                 TreeUnit::Leaf(unit) => (
                     unit.keyword.as_str(),
                     unit.alias.map(|alias| vec![alias]).unwrap_or_default(),
-                    unit.string_annotation.as_ref(),
+                    unit.annotation.as_ref(),
                 ),
                 // The errors run reports the count errors at the bound keywords.
                 TreeUnit::Contains { .. } => ("contains", vec!["minContains", "maxContains"], None),
@@ -1375,9 +1379,7 @@ pub(super) fn compile<E: ValueEmitter>(
             schema.annotations.is_none()
                 && tree.units[schema.first..schema.first + schema.count]
                     .iter()
-                    .all(|unit| {
-                        matches!(unit, TreeUnit::Leaf(unit) if unit.string_annotation.is_none())
-                    })
+                    .all(|unit| matches!(unit, TreeUnit::Leaf(unit) if unit.annotation.is_none()))
         })
         .collect();
     let mut callable = callable(&tree);
@@ -1815,10 +1817,10 @@ impl Code<'_> {
         };
         match &self.tree.units[index] {
             TreeUnit::Leaf(unit) => {
-                let annotated = if unit.string_annotation.is_some() {
-                    E::instance_is_string()
-                } else {
-                    quote! { false }
+                let annotated = match (&unit.annotation, unit.annotates_numbers) {
+                    (Some(_), false) => E::instance_is_string(),
+                    (Some(_), true) => E::instance_is_number(),
+                    (None, _) => quote! { false },
                 };
                 if self.reporting {
                     return quote! {
@@ -2851,7 +2853,7 @@ fn unit<E: ValueEmitter>(
         (_, "uniqueItems") if value == &Value::Bool(false) => None,
         // With format validation on, the runtime gives an ignored unknown format no unit.
         (_, "format") if ctx.validates_formats() && !format_emits_assertion(ctx, value) => None,
-        (_, "format") => Some(unit.annotating(value)),
+        (_, "format") => Some(unit.annotating(value, reads_numbers(ctx, value))),
         // Draft 7 asserts content: the runtime skips an unsupported media type or encoding, and
         // reports both keywords in the unit of a supported media type.
         (Draft::Draft7, "contentMediaType")
@@ -2876,7 +2878,7 @@ fn unit<E: ValueEmitter>(
         (Draft::Draft7, _) => Some(unit),
         (_, "contentSchema") if !keywords.contains_key("contentMediaType") => None,
         (_, "contentEncoding" | "contentMediaType" | "contentSchema") => {
-            Some(unit.annotating(value))
+            Some(unit.annotating(value, false))
         }
         _ => Some(unit),
     }

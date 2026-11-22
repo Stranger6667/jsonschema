@@ -10,7 +10,7 @@ use magnus::{
     prelude::*,
     scan_args::{get_kwargs, scan_args, KwArgs},
     value::Opaque,
-    Error, Exception, RArray, RHash, RModule, Ruby, Symbol, TryConvert, Value,
+    DataTypeFunctions, Error, Exception, RArray, RHash, RModule, Ruby, Symbol, TryConvert, Value,
 };
 
 use jsonschema::json::{
@@ -21,7 +21,7 @@ use crate::{
     json_text::text_node_to_ruby,
     registry::Registry,
     retriever::{make_retriever, DetachedRetriever, RubyRetriever},
-    ser::{map_to_ruby, value_to_ruby},
+    ser::{map_to_ruby, number_to_ruby, value_to_ruby},
     static_id::{define_rb_intern, StaticId},
     CUSTOM_KEYWORD_CAUSE, LAST_CALLBACK_ERROR,
 };
@@ -374,8 +374,18 @@ struct RubyFormatChecker {
 impl RubyFormatChecker {
     fn check(&self, value: &str) -> bool {
         let ruby = Ruby::get().expect("Ruby VM should be initialized");
-        let proc = ruby.get_inner(self.proc);
-        let result: Result<bool, _> = proc.call((value,));
+        Self::outcome(ruby.get_inner(self.proc).call((value,)))
+    }
+
+    fn check_number(&self, number: &serde_json::Number) -> bool {
+        let ruby = Ruby::get().expect("Ruby VM should be initialized");
+        Self::outcome(
+            number_to_ruby(&ruby, number)
+                .and_then(|number| ruby.get_inner(self.proc).call((number,))),
+        )
+    }
+
+    fn outcome(result: Result<bool, Error>) -> bool {
         magnus_invalidate_members_cache();
         match result {
             Ok(v) => v,
@@ -387,6 +397,32 @@ impl RubyFormatChecker {
             }
         }
     }
+}
+
+/// A `format` check that reads numbers, made by `JSONSchema.number_format`.
+#[derive(magnus::TypedData)]
+#[magnus(class = "JSONSchema::NumberFormat", free_immediately, mark)]
+pub struct NumberFormat {
+    check: Opaque<Value>,
+}
+
+impl DataTypeFunctions for NumberFormat {
+    fn mark(&self, marker: &magnus::gc::Marker) {
+        marker.mark(self.check);
+    }
+}
+
+fn number_format(ruby: &Ruby, check: Value) -> Result<NumberFormat, Error> {
+    let responds_to_call: bool = check.funcall("respond_to?", (SYM_CALL.to_symbol(),))?;
+    if !responds_to_call {
+        return Err(Error::new(
+            ruby.exception_type_error(),
+            "number_format expects a callable (Proc or Lambda)",
+        ));
+    }
+    Ok(NumberFormat {
+        check: Opaque::from(check),
+    })
 }
 
 /// Wrapper for a Ruby custom keyword validator factory.
@@ -665,7 +701,13 @@ where
         for item in formats_hash.enumeratorize("each", ()) {
             let pair: magnus::RArray = magnus::TryConvert::try_convert(item?)?;
             let name: String = pair.entry(0)?;
-            let callback: Value = pair.entry(1)?;
+            let mut callback: Value = pair.entry(1)?;
+            let reads_numbers = if let Ok(number_format) = <&NumberFormat>::try_convert(callback) {
+                callback = ruby.get_inner(number_format.check);
+                true
+            } else {
+                false
+            };
 
             let responds_to_call: bool =
                 callback.funcall("respond_to?", (SYM_CALL.to_symbol(),))?;
@@ -707,7 +749,13 @@ where
                 proc: Opaque::from(proc),
             };
 
-            opts = opts.with_format(name, move |value: &str| checker.check(value));
+            opts = if reads_numbers {
+                opts.with_number_format(name, move |number: &serde_json::Number| {
+                    checker.check_number(number)
+                })
+            } else {
+                opts.with_format(name, move |value: &str| checker.check(value))
+            };
         }
     }
 
@@ -1223,6 +1271,8 @@ impl HttpOptions {
 }
 
 pub fn define_classes(ruby: &Ruby, module: &RModule) -> Result<(), Error> {
+    module.define_class("NumberFormat", ruby.class_object())?;
+    module.define_singleton_method("number_format", function!(number_format, 1))?;
     let email_class = module.define_class("EmailOptions", ruby.class_object())?;
     email_class.define_singleton_method("new", function!(EmailOptions::new_impl, -1))?;
     email_class.define_method("require_tld", method!(EmailOptions::require_tld, 0))?;

@@ -1,0 +1,5 @@
+error: Only `number(...)` wraps a format function, for a format that reads numbers
+ --> tests/ui/unknown_format_wrapper.rs:9:19
+  |
+9 |         "even" => length(crate::even)
+  |                   ^^^^^^

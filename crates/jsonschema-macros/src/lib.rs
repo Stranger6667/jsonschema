@@ -82,6 +82,7 @@ use proc_macro::TokenStream;
 ///     validate_formats = true,
 ///     formats = {
 ///         "currency" => crate::formats::is_currency,
+///         "int32" => number(crate::formats::is_int32),
 ///     },
 ///     pattern_options = {
 ///         engine = regex,

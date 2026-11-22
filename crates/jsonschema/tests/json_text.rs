@@ -3,7 +3,7 @@ use jsonschema::{
     json::{JsonText, JsonTextNode, Node, Object},
     Keyword, ValidationError,
 };
-use serde_json::json;
+use serde_json::{json, Number};
 use test_case::test_case;
 
 struct EvenLength;
@@ -46,4 +46,22 @@ fn custom_keywords_read_json_text(text: &str, valid: bool) {
         vec!["odd number of members".to_string()]
     };
     assert_eq!(errors, expected);
+}
+
+#[test_case("42", true ; "integer in range")]
+#[test_case("2147483648", false ; "integer out of range")]
+#[test_case(r#""text""#, true ; "string")]
+fn number_formats_read_json_text(text: &str, valid: bool) {
+    let validator = jsonschema::options_for::<JsonText>()
+        .with_number_format("int32", |number: &Number| {
+            number
+                .as_i64()
+                .is_some_and(|value| i32::try_from(value).is_ok())
+        })
+        .should_validate_formats(true)
+        .build(&json!({"format": "int32"}))
+        .expect("valid schema");
+    let document = JsonText::parse(text.as_bytes()).expect("valid JSON");
+    assert_eq!(validator.is_valid(document.root()), valid);
+    assert_eq!(validator.validate(document.root()).is_ok(), valid);
 }

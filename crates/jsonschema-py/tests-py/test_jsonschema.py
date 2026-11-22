@@ -22,6 +22,7 @@ from jsonschema_rs import (
     evaluate,
     is_valid,
     iter_errors,
+    number_format,
     validate,
     validator_for,
     validator_map_for,
@@ -1153,6 +1154,61 @@ def test_custom_format():
     assert validator.is_valid("USD")
     assert not validator.is_valid(42)
     assert not validator.is_valid("invalid")
+
+
+def is_int32(number):
+    return isinstance(number, int) and -(2**31) <= number < 2**31
+
+
+@pytest.mark.parametrize(
+    "instance, valid",
+    [
+        (42, True),
+        (2**31, False),
+        (1.5, False),
+        (2**70, False),
+        ("text", True),
+        ([2**31], True),
+    ],
+)
+def test_number_format(instance, valid):
+    validator = validator_for({"format": "int32"}, formats={"int32": number_format(is_int32)}, validate_formats=True)
+    assert validator.is_valid(instance) is valid
+    assert (not list(validator.iter_errors(instance))) is valid
+
+
+def test_number_format_receives_python_numbers():
+    seen = []
+
+    def record(number):
+        seen.append(number)
+        return True
+
+    validator = validator_for(
+        {"items": {"format": "any"}}, formats={"any": number_format(record)}, validate_formats=True
+    )
+    assert validator.is_valid([1, 1.5, 2**70, Decimal("1e400")])
+    assert seen == [1, 1.5, 2**70, Decimal("1e400")]
+    assert [type(number) for number in seen] == [int, float, int, Decimal]
+
+
+def test_number_format_with_exception():
+    def fail(_):
+        raise ValueError("Invalid number")
+
+    validator = validator_for({"format": "number"}, formats={"number": number_format(fail)}, validate_formats=True)
+    with pytest.raises(ValueError, match="Invalid number"):
+        validator.is_valid(42)
+    assert validator.is_valid("text")
+
+
+def test_number_format_is_callable():
+    assert number_format(is_int32)(42) is True
+
+
+def test_number_format_requires_a_callable():
+    with pytest.raises(TypeError, match="number_format expects a callable"):
+        number_format(42)
 
 
 def test_custom_format_invalid_callback():
