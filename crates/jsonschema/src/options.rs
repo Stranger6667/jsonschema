@@ -7,7 +7,7 @@ use crate::{
     content_media_type::{ContentMediaTypeCheckType, DEFAULT_CONTENT_MEDIA_TYPE_CHECKS},
     keywords::{
         custom::KeywordFactory,
-        format::{builtin_format, Format},
+        format::{builtin_format, CustomFormat},
     },
     paths::Location,
     regex::{Compiled, LazyRegex, SequenceMatcher},
@@ -17,7 +17,7 @@ use crate::{
 use ahash::{AHashMap, AHashSet};
 use email_address::Options as EmailAddressOptions;
 use referencing::{Draft, Retrieve};
-use serde_json::Value;
+use serde_json::{Number, Value};
 use std::{
     fmt,
     marker::PhantomData,
@@ -35,7 +35,7 @@ pub struct ValidationOptions<'i, R = Arc<dyn Retrieve>, F: Json = SerdeJson> {
     pub(crate) base_uri: Option<String>,
     pub(crate) retriever: R,
     pub(crate) registry: Option<&'i referencing::Registry<'i>>,
-    formats: AHashMap<String, Arc<dyn Format>>,
+    formats: AHashMap<String, CustomFormat>,
     validate_formats: Option<bool>,
     pub(crate) validate_schema: bool,
     ignore_unknown_formats: bool,
@@ -366,10 +366,40 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
         N: Into<String>,
         Check: Fn(&str) -> bool + Send + Sync + 'static,
     {
-        self.formats.insert(name.into(), Arc::new(format));
+        self.formats
+            .insert(name.into(), CustomFormat::String(Arc::new(format)));
         self
     }
-    pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &Arc<dyn Format>)> {
+    /// Register a custom format validator that checks numbers; instances of other types pass it.
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// # use serde_json::{json, Number};
+    /// fn int32(number: &Number) -> bool {
+    ///     number.as_i64().is_some_and(|value| i32::try_from(value).is_ok())
+    /// }
+    /// let validator = jsonschema::options()
+    ///     .with_number_format("int32", int32)
+    ///     .should_validate_formats(true)
+    ///     .build(&json!({"format": "int32"}))
+    ///     .expect("Valid schema");
+    ///
+    /// assert!(validator.is_valid(&json!(42)));
+    /// assert!(!validator.is_valid(&json!(2_147_483_648_i64)));
+    /// assert!(validator.is_valid(&json!("42")));
+    /// ```
+    #[must_use]
+    pub fn with_number_format<N, Check>(mut self, name: N, format: Check) -> Self
+    where
+        N: Into<String>,
+        Check: Fn(&Number) -> bool + Send + Sync + 'static,
+    {
+        self.formats
+            .insert(name.into(), CustomFormat::Number(Arc::new(format)));
+        self
+    }
+    pub(crate) fn get_format(&self, format: &str) -> Option<(&String, &CustomFormat)> {
         self.formats.get_key_value(format)
     }
 
@@ -1390,7 +1420,7 @@ impl From<EmailAddressOptions> for EmailOptions {
 mod tests {
     use super::*;
     use referencing::{Registry, Resource, Retrieve, Uri};
-    use serde_json::{json, Value};
+    use serde_json::{json, Number, Value};
     use std::sync::Mutex;
     use test_case::test_case;
 
@@ -1629,6 +1659,41 @@ mod tests {
             .expect("Valid schema");
         assert!(!validator.is_valid(&json!("foo")));
         assert!(validator.is_valid(&json!("foo42!")));
+    }
+
+    fn int32(number: &Number) -> bool {
+        number
+            .as_i64()
+            .is_some_and(|value| i32::try_from(value).is_ok())
+    }
+
+    #[test_case(&json!(42), true ; "integer in range")]
+    #[test_case(&json!(2_147_483_648_i64), false ; "integer out of range")]
+    #[test_case(&json!(1.5), false ; "fraction")]
+    #[test_case(&json!("text"), true ; "string")]
+    #[test_case(&json!([2_147_483_648_i64]), true ; "array")]
+    fn number_format(instance: &Value, valid: bool) {
+        let validator = crate::options()
+            .with_number_format("int32", int32)
+            .should_validate_formats(true)
+            .build(&json!({"format": "int32"}))
+            .expect("Valid schema");
+        assert_eq!(validator.is_valid(instance), valid);
+        assert_eq!(validator.validate(instance).is_ok(), valid);
+        assert_eq!(validator.iter_errors(instance).next().is_none(), valid);
+        assert_eq!(validator.evaluate(instance).flag().valid, valid);
+    }
+
+    #[test]
+    fn number_format_error() {
+        let validator = crate::options()
+            .with_number_format("int32", int32)
+            .should_validate_formats(true)
+            .build(&json!({"format": "int32"}))
+            .expect("Valid schema");
+        let instance = json!(2_147_483_648_i64);
+        let error = validator.validate(&instance).expect_err("Out of range");
+        assert_eq!(error.to_string(), r#"2147483648 is not a "int32""#);
     }
 
     #[test]

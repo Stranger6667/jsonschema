@@ -149,6 +149,14 @@ validator = JSONSchema.validator_for(
 )
 ```
 
+To check numbers, wrap the callable in `JSONSchema.number_format`; it receives an `Integer`, `Float` or `BigDecimal`:
+
+```ruby
+int32 = JSONSchema.number_format(->(number) { number.between?(-(2**31), (2**31) - 1) })
+validator = JSONSchema.validator_for({ "format" => "int32" }, validate_formats: true, formats: { "int32" => int32 })
+validator.valid?(2**31) # => false
+```
+
 ### Custom keyword validators
 
 ```ruby

@@ -658,6 +658,22 @@ class Draft202012Validator(Validator):
     """
 
 @final
+class NumberFormat:
+    """A `format` check that reads numbers, made by `number_format`; calling it runs the check."""
+
+    def __call__(self, number: int | float | Decimal) -> bool: ...
+
+def number_format(check: Callable[[int | float | Decimal], bool]) -> NumberFormat:
+    """A `format` check that reads numbers, for the `formats` argument.
+
+    `check` receives an `int`, `float` or `Decimal`; instances of other types pass the format.
+
+    >>> is_int32 = number_format(lambda number: isinstance(number, int) and -(2**31) <= number < 2**31)
+    >>> validator_for({"format": "int32"}, formats={"int32": is_int32}, validate_formats=True).is_valid(2**31)
+    False
+    """
+
+@final
 class JsonTextValidator:
     """A validator for instances given as JSON text, without building Python objects for them.
 
@@ -1043,6 +1059,8 @@ __all__ = [
     "validator_for",
     "validator_map_for",
     "ValidatorMap",
+    "number_format",
+    "NumberFormat",
     "Draft4",
     "Draft6",
     "Draft7",

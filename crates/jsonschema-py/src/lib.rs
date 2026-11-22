@@ -98,6 +98,39 @@ fn float_spells(value: f64, text: &str) -> bool {
         || (value.fract() == 0.0 && same_value(&format!("{value:.1}")))
 }
 
+/// Convert a JSON number to a Python object. Integers stay exact; a literal no float holds becomes
+/// `Decimal`.
+pub(crate) fn number_to_python(py: Python<'_>, n: &serde_json::Number) -> PyResult<Py<PyAny>> {
+    // With arbitrary precision, try to parse as integer first, then fall back to float
+    if let Some(i) = n.as_i64() {
+        Ok(pyo3::types::PyInt::new(py, i).into_any().unbind())
+    } else if let Some(u) = n.as_u64() {
+        Ok(pyo3::types::PyInt::new(py, u).into_any().unbind())
+    } else {
+        // For values that don't fit in i64/u64, check the string representation
+        let s = n.as_str();
+        let is_float = s.bytes().any(|b| b == b'.' || b == b'e' || b == b'E');
+        if is_float {
+            if let Some(f) = n.as_f64().filter(|f| float_spells(*f, s)) {
+                Ok(pyo3::types::PyFloat::new(py, f).into_any().unbind())
+            } else {
+                // Fall back to decimal.Decimal for values no float carries, so Python callers
+                // observe the exact literal from JSON instead of ValueError/inf when numbers
+                // exceed binary64 limits, or a rounded neighbour when they exceed its
+                // precision. A canonical bound can sit a fraction away from a round number,
+                // and rounding it there would accept values the schema rejects.
+                let decimal_type =
+                    unsafe { PyType::from_borrowed_type_ptr(py, types::DECIMAL_TYPE) };
+                decimal_type.call1((s,)).map(|obj| obj.into_any().unbind())
+            }
+        } else {
+            // Large integer - parse from string representation
+            let int_type = py.get_type::<pyo3::types::PyInt>();
+            int_type.call1((s,)).map(|obj| obj.into_any().unbind())
+        }
+    }
+}
+
 /// Convert a serde_json::Value to a Python object. Integers stay exact; a literal no float holds
 /// becomes `Decimal`.
 pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyResult<Py<PyAny>> {
@@ -107,36 +140,7 @@ pub(crate) fn value_to_python(py: Python<'_>, value: &serde_json::Value) -> PyRe
             .to_owned()
             .into_any()
             .unbind()),
-        serde_json::Value::Number(n) => {
-            // With arbitrary precision, try to parse as integer first, then fall back to float
-            if let Some(i) = n.as_i64() {
-                Ok(pyo3::types::PyInt::new(py, i).into_any().unbind())
-            } else if let Some(u) = n.as_u64() {
-                Ok(pyo3::types::PyInt::new(py, u).into_any().unbind())
-            } else {
-                // For values that don't fit in i64/u64, check the string representation
-                let s = n.as_str();
-                let is_float = s.bytes().any(|b| b == b'.' || b == b'e' || b == b'E');
-                if is_float {
-                    if let Some(f) = n.as_f64().filter(|f| float_spells(*f, s)) {
-                        Ok(pyo3::types::PyFloat::new(py, f).into_any().unbind())
-                    } else {
-                        // Fall back to decimal.Decimal for values no float carries, so Python callers
-                        // observe the exact literal from JSON instead of ValueError/inf when numbers
-                        // exceed binary64 limits, or a rounded neighbour when they exceed its
-                        // precision. A canonical bound can sit a fraction away from a round number,
-                        // and rounding it there would accept values the schema rejects.
-                        let decimal_type =
-                            unsafe { PyType::from_borrowed_type_ptr(py, types::DECIMAL_TYPE) };
-                        decimal_type.call1((s,)).map(|obj| obj.into_any().unbind())
-                    }
-                } else {
-                    // Large integer - parse from string representation
-                    let int_type = py.get_type::<pyo3::types::PyInt>();
-                    int_type.call1((s,)).map(|obj| obj.into_any().unbind())
-                }
-            }
-        }
+        serde_json::Value::Number(n) => number_to_python(py, n),
         serde_json::Value::String(s) => Ok(PyString::new(py, s).into_any().unbind()),
         serde_json::Value::Array(arr) => {
             let len = arr.len() as pyo3::ffi::Py_ssize_t;
@@ -1127,6 +1131,50 @@ impl Drop for KeywordCauseScope {
     }
 }
 
+/// A `format` check that reads numbers, made by `number_format`.
+#[pyclass(module = "jsonschema_rs", frozen)]
+struct NumberFormat {
+    check: Py<PyAny>,
+}
+
+#[pymethods]
+impl NumberFormat {
+    fn __call__(&self, py: Python<'_>, number: &Bound<'_, PyAny>) -> PyResult<Py<PyAny>> {
+        self.check.call1(py, (number,))
+    }
+}
+
+/// number_format(check)
+///
+/// A `format` check that reads numbers, for the `formats` argument. `check` receives an `int`,
+/// `float` or `Decimal`; instances of other types pass the format.
+#[pyfunction]
+fn number_format(check: &Bound<'_, PyAny>) -> PyResult<NumberFormat> {
+    if !check.is_callable() {
+        return Err(exceptions::PyTypeError::new_err(
+            "number_format expects a callable",
+        ));
+    }
+    Ok(NumberFormat {
+        check: check.clone().unbind(),
+    })
+}
+
+// A format check's result; a Python error is stored and re-raised once validation unwinds.
+fn format_outcome(result: PyResult<bool>) -> bool {
+    match result {
+        Ok(valid) => valid,
+        Err(error) => {
+            LAST_FORMAT_ERROR.with(|last| {
+                *last.borrow_mut() = Some(error);
+            });
+            std::panic::set_hook(Box::new(|_| {}));
+            // Caught by `handle_format_checked_panic`, which re-raises the stored error
+            panic!("Format checker failed")
+        }
+    }
+}
+
 fn make_options<'a, F: Json>(
     draft: Option<u8>,
     formats: Option<&Bound<'a, PyDict>>,
@@ -1171,32 +1219,31 @@ where
     let retriever_was_provided = retriever.is_some();
     if let Some(formats) = formats {
         for (name, callback) in formats.iter() {
+            if let Ok(number_format) = callback.cast::<NumberFormat>() {
+                let check = number_format.get().check.clone_ref(callback.py());
+                options = options.with_number_format(
+                    name.to_string(),
+                    move |number: &serde_json::Number| {
+                        format_outcome(Python::attach(|py| {
+                            let number = number_to_python(py, number)?;
+                            check.call1(py, (number,))?.is_truthy(py)
+                        }))
+                    },
+                );
+                continue;
+            }
             if !callback.is_callable() {
                 return Err(exceptions::PyValueError::new_err(format!(
                     "Format checker for '{name}' must be a callable",
                 )));
             }
             let callback: Py<PyAny> = callback.clone().unbind();
-            let call_py_callback = move |value: &str| {
-                Python::attach(|py| {
+            options = options.with_format(name.to_string(), move |value: &str| {
+                format_outcome(Python::attach(|py| {
                     let value = PyString::new(py, value);
                     callback.call(py, (value,), None)?.is_truthy(py)
-                })
-            };
-            options =
-                options.with_format(name.to_string(), move |value: &str| match call_py_callback(
-                    value,
-                ) {
-                    Ok(r) => r,
-                    Err(e) => {
-                        LAST_FORMAT_ERROR.with(|last| {
-                            *last.borrow_mut() = Some(e);
-                        });
-                        std::panic::set_hook(Box::new(|_| {}));
-                        // Caught by `handle_format_checked_panic`, which re-raises the stored error
-                        panic!("Format checker failed")
-                    }
-                });
+                }))
+            });
         }
     }
     if let Some(retriever) = retriever {
@@ -2871,6 +2918,8 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(evaluate))?;
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
     module.add_wrapped(wrap_pyfunction!(validator_map_for))?;
+    module.add_wrapped(wrap_pyfunction!(number_format))?;
+    module.add_class::<NumberFormat>()?;
     module.add_class::<ValidatorMap>()?;
     module.add_class::<JsonTextValidator>()?;
     module.add_wrapped(wrap_pyfunction!(bundle))?;

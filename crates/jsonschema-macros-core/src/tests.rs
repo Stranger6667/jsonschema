@@ -95,6 +95,7 @@ pub(crate) fn test_config_with_draft(schema: Value, draft: Draft) -> CodegenConf
         runtime_crate_alias: None,
         validate_formats: None,
         custom_formats: HashMap::new(),
+        custom_number_formats: HashMap::new(),
         custom_keywords: HashMap::new(),
         content_media_types: HashMap::new(),
         content_encodings: HashMap::new(),

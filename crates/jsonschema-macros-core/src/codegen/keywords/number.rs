@@ -1,5 +1,6 @@
 use super::{
     super::{CompileContext, CompiledExpr},
+    format,
     minmax::{self, ComparisonOp},
     multiple_of,
 };
@@ -66,6 +67,13 @@ pub(in super::super) fn compile<E: ValueEmitter>(
 
     if let Some(value) = schema.get("multipleOf") {
         items.push(multiple_of::compile(ctx, value));
+    }
+
+    if let Some(compiled) = schema
+        .get("format")
+        .and_then(|value| format::compile_number(ctx, value))
+    {
+        items.push(compiled);
     }
 
     CompiledExpr::combine_and(items)

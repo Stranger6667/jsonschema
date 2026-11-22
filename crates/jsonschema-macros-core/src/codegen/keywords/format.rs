@@ -178,13 +178,40 @@ pub(crate) fn format_emits_assertion<E: ValueEmitter>(
         return false;
     }
 
-    if ctx.config.custom_formats.contains_key(format_name) {
+    if ctx.config.custom_formats.contains_key(format_name)
+        || ctx.config.custom_number_formats.contains_key(format_name)
+    {
         return true;
     }
     if compile_builtin_format_check(ctx, format_name).is_some() {
         return true;
     }
     !ctx.are_unknown_formats_ignored()
+}
+
+/// Whether `value` names a format registered with `number(...)`.
+pub(crate) fn reads_numbers<E: ValueEmitter>(ctx: &CompileContext<'_, E>, value: &Value) -> bool {
+    value
+        .as_str()
+        .is_some_and(|name| ctx.config.custom_number_formats.contains_key(name))
+}
+
+/// The check of a format registered with `number(...)`, where `n` holds the number.
+pub(crate) fn compile_number<E: ValueEmitter>(
+    ctx: &CompileContext<'_, E>,
+    value: &Value,
+) -> Option<CompiledExpr> {
+    let format_name = value.as_str()?;
+    if !ctx.validates_formats() {
+        return None;
+    }
+    let check = ctx.config.custom_number_formats.get(format_name)?;
+    let schema_path = ctx.schema_path_for_keyword("format");
+    Some(format_check::<E>(
+        &schema_path,
+        format_name,
+        quote! { #check(n) },
+    ))
 }
 
 pub(crate) fn compile<E: ValueEmitter>(
@@ -196,6 +223,10 @@ pub(crate) fn compile<E: ValueEmitter>(
     };
 
     if !ctx.validates_formats() {
+        return None;
+    }
+
+    if ctx.config.custom_number_formats.contains_key(format_name) {
         return None;
     }
 

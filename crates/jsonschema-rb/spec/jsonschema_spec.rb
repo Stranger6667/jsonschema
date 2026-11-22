@@ -421,6 +421,48 @@ RSpec.describe "Custom formats" do
     expect { validator.each_error("a") { |_error| nil } }.to raise_error(ArgumentError, "boom")
   end
 
+  describe "number formats" do
+    int32 = JSONSchema.number_format(->(number) { number.is_a?(Integer) && number.between?(-(2**31), (2**31) - 1) })
+
+    [
+      [42, true],
+      [2**31, false],
+      [1.5, false],
+      ["text", true],
+      [[2**31], true]
+    ].each do |instance, valid|
+      it "returns #{valid} for #{instance.inspect}" do
+        validator = JSONSchema.validator_for({ "format" => "int32" }, validate_formats: true, formats: { "int32" => int32 })
+        expect(validator.valid?(instance)).to be valid
+        expect(validator.each_error(instance).empty?).to be valid
+      end
+    end
+
+    it "passes Ruby numbers to the check" do
+      seen = []
+      record = JSONSchema.number_format(lambda do |number|
+        seen << number
+        true
+      end)
+      validator = JSONSchema.validator_for(
+        { "items" => { "format" => "any" } }, validate_formats: true, formats: { "any" => record }
+      )
+      expect(validator.valid?([1, 1.5, 2**70])).to be true
+      expect(seen).to eq([1, 1.5, 2**70])
+    end
+
+    it "raises the check's error" do
+      fail_check = JSONSchema.number_format(->(_number) { raise ArgumentError, "boom" })
+      validator = JSONSchema.validator_for({ "format" => "n" }, validate_formats: true, formats: { "n" => fail_check })
+      expect { validator.valid?(1) }.to raise_error(ArgumentError, "boom")
+      expect(validator.valid?("text")).to be true
+    end
+
+    it "requires a callable" do
+      expect { JSONSchema.number_format(42) }.to raise_error(TypeError, "number_format expects a callable (Proc or Lambda)")
+    end
+  end
+
   describe "with module-level functions" do
     it "validates with custom format" do
       schema = { "type" => "string", "format" => "my-format" }

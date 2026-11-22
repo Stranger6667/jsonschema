@@ -23,6 +23,10 @@ def build_through_class(
 def build_from_union(schema: Schema) -> list[jsonschema_rs.Validator]:
     return [
         jsonschema_rs.validator_for(schema, formats={"currency": is_currency}),
+        jsonschema_rs.validator_for(
+            schema,
+            formats={"currency": is_currency, "int32": jsonschema_rs.number_format(lambda number: number < 2**31)},
+        ),
         jsonschema_rs.Draft4Validator(schema),
         jsonschema_rs.validator_cls_for(schema)(schema),
     ]

@@ -5,6 +5,7 @@
 ### Added
 
 - `json::JsonText`, validating JSON text without building a `serde_json::Value`, behind the `json-text` feature.
+- `ValidationOptions::with_number_format`, a custom `format` check that reads numbers, written as `number(...)` in `#[validator]`.
 
 ### Fixed
 
