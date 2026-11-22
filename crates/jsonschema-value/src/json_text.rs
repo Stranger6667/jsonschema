@@ -3,6 +3,15 @@
 //! [`JsonText::parse`] checks the whole document once, as `serde_json` would, and records one
 //! token per key and value. Nodes then read the text through those tokens without scanning it.
 
+#[cfg(target_arch = "aarch64")]
+use std::arch::aarch64::{
+    vceqq_u8, vcleq_u8, vdupq_n_u8, vget_lane_u64, vld1q_u8, vorrq_u8, vreinterpret_u64_u8,
+    vreinterpretq_u16_u8, vshrn_n_u16,
+};
+#[cfg(target_arch = "x86_64")]
+use std::arch::x86_64::{
+    _mm_cmpeq_epi8, _mm_loadu_si128, _mm_min_epu8, _mm_movemask_epi8, _mm_or_si128, _mm_set1_epi8,
+};
 use std::{borrow::Cow, sync::OnceLock};
 
 use serde_json::{Number, Value};
@@ -377,14 +386,7 @@ fn check_string(bytes: &[u8], open: usize) -> Option<(usize, bool)> {
     let mut at = open + 1;
     let mut escaped = false;
     loop {
-        while let Some(chunk) = bytes[at..].first_chunk::<8>() {
-            let special = special_bytes(u64::from_le_bytes(*chunk));
-            if special != 0 {
-                at += (special.trailing_zeros() / 8) as usize;
-                break;
-            }
-            at += 8;
-        }
+        at = skip_plain_bytes(bytes, at);
         match *bytes.get(at)? {
             b'"' => return Some((at, escaped)),
             b'\\' => {
@@ -399,6 +401,64 @@ fn check_string(bytes: &[u8], open: usize) -> Option<(usize, bool)> {
             _ => at += 1,
         }
     }
+}
+
+/// The offset of the first `"`, `\\` or control character from `at`, or of the last few bytes,
+/// too few to read as a word.
+#[inline]
+fn skip_plain_bytes(bytes: &[u8], mut at: usize) -> usize {
+    #[cfg(any(target_arch = "x86_64", target_arch = "aarch64"))]
+    while let Some(chunk) = bytes[at..].first_chunk::<16>() {
+        if let Some(offset) = first_special_lane(chunk) {
+            return at + offset;
+        }
+        at += 16;
+    }
+    while let Some(chunk) = bytes[at..].first_chunk::<8>() {
+        let special = special_bytes(u64::from_le_bytes(*chunk));
+        if special != 0 {
+            return at + (special.trailing_zeros() / 8) as usize;
+        }
+        at += 8;
+    }
+    at
+}
+
+/// The offset of the first byte of `chunk` that is `"`, `\\` or a control character.
+#[cfg(target_arch = "x86_64")]
+#[inline]
+fn first_special_lane(chunk: &[u8; 16]) -> Option<usize> {
+    // SAFETY: SSE2 is part of the x86_64 baseline, and the load reads the sixteen bytes of `chunk`.
+    #[allow(unsafe_code)]
+    let mask = unsafe {
+        let lanes = _mm_loadu_si128(chunk.as_ptr().cast());
+        let quote = _mm_cmpeq_epi8(lanes, _mm_set1_epi8(i8::from_ne_bytes(*b"\"")));
+        let backslash = _mm_cmpeq_epi8(lanes, _mm_set1_epi8(i8::from_ne_bytes(*b"\\")));
+        // A byte at most 0x1F equals its minimum with 0x1F.
+        let control = _mm_cmpeq_epi8(_mm_min_epu8(lanes, _mm_set1_epi8(0x1F)), lanes);
+        _mm_movemask_epi8(_mm_or_si128(_mm_or_si128(quote, backslash), control))
+    };
+    // The mask fills only the low sixteen bits, so it is never negative.
+    (mask != 0).then(|| mask.unsigned_abs().trailing_zeros() as usize)
+}
+
+/// The offset of the first byte of `chunk` that is `"`, `\\` or a control character.
+#[cfg(target_arch = "aarch64")]
+#[inline]
+fn first_special_lane(chunk: &[u8; 16]) -> Option<usize> {
+    // SAFETY: NEON is part of the aarch64 baseline, and the load reads the sixteen bytes of `chunk`.
+    #[allow(unsafe_code)]
+    let mask = unsafe {
+        let lanes = vld1q_u8(chunk.as_ptr());
+        let quote = vceqq_u8(lanes, vdupq_n_u8(b'"'));
+        let backslash = vceqq_u8(lanes, vdupq_n_u8(b'\\'));
+        let control = vcleq_u8(lanes, vdupq_n_u8(0x1F));
+        let special = vorrq_u8(vorrq_u8(quote, backslash), control);
+        // Narrowing each byte pair by four bits keeps four bits per byte in one word.
+        let nibbles = vshrn_n_u16::<4>(vreinterpretq_u16_u8(special));
+        vget_lane_u64::<0>(vreinterpret_u64_u8(nibbles))
+    };
+    (mask != 0).then(|| (mask.trailing_zeros() / 4) as usize)
 }
 
 /// `\uXXXX` at `at`; surrogates must pair, as `serde_json` requires for strings.
