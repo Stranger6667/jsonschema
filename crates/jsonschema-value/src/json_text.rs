@@ -357,11 +357,12 @@ fn check_key(
     Some(skip_whitespace(bytes, colon + 1))
 }
 
+const ONES: u64 = 0x0101_0101_0101_0101;
+const HIGH: u64 = 0x8080_8080_8080_8080;
+
 /// Bytes of `word` that are `"`, `\` or a control character have their high bit set; the lowest
 /// set bit is exact, those above it may be false positives.
 fn special_bytes(word: u64) -> u64 {
-    const ONES: u64 = 0x0101_0101_0101_0101;
-    const HIGH: u64 = 0x8080_8080_8080_8080;
     let quote = word ^ (ONES * u64::from(b'"'));
     let backslash = word ^ (ONES * u64::from(b'\\'));
     ((quote.wrapping_sub(ONES) & !quote)
@@ -443,14 +444,29 @@ fn check_literal(
     Some(end)
 }
 
+/// Bytes of `word` that are not ASCII digits have their high bit set; the lowest set bit is exact,
+/// those above it may be false positives.
+fn non_digit_bytes(word: u64) -> u64 {
+    (word.wrapping_add(ONES * 0x46) | word.wrapping_sub(ONES * 0x30)) & HIGH
+}
+
+/// The offset past the ASCII digits starting at `at`.
+fn digit_run_end(bytes: &[u8], mut at: usize) -> usize {
+    while let Some(chunk) = bytes[at..].first_chunk::<8>() {
+        let non_digit = non_digit_bytes(u64::from_le_bytes(*chunk));
+        if non_digit != 0 {
+            return at + (non_digit.trailing_zeros() / 8) as usize;
+        }
+        at += 8;
+    }
+    while matches!(bytes.get(at), Some(b'0'..=b'9')) {
+        at += 1;
+    }
+    at
+}
+
 /// The number's token, holding its value when it is an integer that fits, and its end.
 fn check_number(bytes: &[u8], start: usize) -> Option<(Token, usize)> {
-    let digits = |mut at: usize| {
-        while matches!(bytes.get(at), Some(b'0'..=b'9')) {
-            at += 1;
-        }
-        at
-    };
     let negative = bytes.get(start) == Some(&b'-');
     let mut at = start + usize::from(negative);
     let integer_start = at;
@@ -473,7 +489,7 @@ fn check_number(bytes: &[u8], start: usize) -> Option<(Token, usize)> {
         if !matches!(bytes.get(at + 1), Some(b'0'..=b'9')) {
             return None;
         }
-        at = digits(at + 1);
+        at = digit_run_end(bytes, at + 1);
         integer = false;
     }
     let mut exponent = false;
@@ -487,7 +503,9 @@ fn check_number(bytes: &[u8], start: usize) -> Option<(Token, usize)> {
         if !matches!(bytes.get(at), Some(b'0'..=b'9')) {
             return None;
         }
-        at = digits(at);
+        while matches!(bytes.get(at), Some(b'0'..=b'9')) {
+            at += 1;
+        }
     }
     // `serde_json` rejects a number past `f64` unless its `arbitrary_precision` keeps the digits,
     // which any crate in the build can turn on, so it decides.
