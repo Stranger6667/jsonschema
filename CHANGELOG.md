@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-11-22
+
 ### Added
 
 - `json::JsonText`, validating JSON text without building a `serde_json::Value`, behind the `json-text` feature.
@@ -2233,7 +2235,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.62.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.63.0...HEAD
+[0.63.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.62.0...rust-v0.63.0
 [0.62.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.2...rust-v0.62.0
 [0.61.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.1...rust-v0.61.2
 [0.61.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.0...rust-v0.61.1
