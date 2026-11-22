@@ -1642,6 +1642,15 @@ pub(crate) fn builtin_format(draft: Draft, format: &str) -> Option<BuiltinFormat
     }
 }
 
+/// The names of the built-in formats `draft` checks, each once.
+pub(crate) fn builtin_formats(draft: Draft) -> impl Iterator<Item = &'static str> {
+    BuiltinFormat::VARIANTS
+        .iter()
+        .copied()
+        .filter(move |format| builtin_format(draft, format.as_str()) == Some(*format))
+        .map(BuiltinFormat::as_str)
+}
+
 impl BuiltinFormat {
     #[must_use]
     pub(crate) const fn as_str(self) -> &'static str {

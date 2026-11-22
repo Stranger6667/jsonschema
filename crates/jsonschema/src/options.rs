@@ -7,7 +7,7 @@ use crate::{
     content_media_type::{ContentMediaTypeCheckType, DEFAULT_CONTENT_MEDIA_TYPE_CHECKS},
     keywords::{
         custom::KeywordFactory,
-        format::{builtin_format, CustomFormat},
+        format::{builtin_format, builtin_formats, CustomFormat},
     },
     paths::Location,
     regex::{Compiled, LazyRegex, SequenceMatcher},
@@ -410,6 +410,33 @@ impl<'i, R, F: Json> ValidationOptions<'i, R, F> {
     #[must_use]
     pub fn is_known_format(&self, draft: Draft, name: &str) -> bool {
         self.get_format(name).is_some() || builtin_format(draft, name).is_some()
+    }
+    /// The names of the formats with a check under `draft`, sorted and without duplicates.
+    ///
+    /// Lists the built-in formats and those registered here, with
+    /// [`with_format`](Self::with_format) or [`with_number_format`](Self::with_number_format).
+    /// `idn-email` and `idn-hostname` appear only with the `idna` feature.
+    ///
+    /// Whether a `format` asserts depends on the draft, the meta-schema and
+    /// [`ValidationOptions::should_validate_formats`], as for
+    /// [`is_known_format`](Self::is_known_format).
+    ///
+    /// # Example
+    ///
+    /// ```rust
+    /// use jsonschema::Draft;
+    ///
+    /// assert!(jsonschema::options()
+    ///     .known_formats(Draft::Draft202012)
+    ///     .contains(&"iri"));
+    /// ```
+    #[must_use]
+    pub fn known_formats(&self, draft: Draft) -> Vec<&str> {
+        let mut names: Vec<&str> = builtin_formats(draft).collect();
+        names.extend(self.formats.keys().map(String::as_str));
+        names.sort_unstable();
+        names.dedup();
+        names
     }
     /// Disable schema validation during compilation.
     ///
@@ -1475,6 +1502,87 @@ mod tests {
     #[test]
     fn test_an_international_format_is_unknown_without_its_feature() {
         assert!(!crate::options().is_known_format(Draft::Draft7, "idn-email"));
+    }
+
+    #[test_case(Draft::Draft7, "duration", false; "a format the draft does not carry")]
+    #[test_case(Draft::Draft7, "uuid", false; "a format added after the draft")]
+    #[test_case(Draft::Draft202012, "duration", true; "a format the draft carries")]
+    #[test_case(Draft::Draft202012, "uuid", true; "a format added by the draft")]
+    fn test_known_formats_follow_the_draft(draft: Draft, name: &str, listed: bool) {
+        assert_eq!(
+            crate::options().known_formats(draft).contains(&name),
+            listed
+        );
+    }
+
+    #[test]
+    fn test_known_formats_are_sorted_unique_and_known() {
+        const CANDIDATES: [&str; 19] = [
+            "date",
+            "date-time",
+            "duration",
+            "email",
+            "hostname",
+            "idn-email",
+            "idn-hostname",
+            "ipv4",
+            "ipv6",
+            "iri",
+            "iri-reference",
+            "json-pointer",
+            "regex",
+            "relative-json-pointer",
+            "time",
+            "uri",
+            "uri-reference",
+            "uri-template",
+            "uuid",
+        ];
+        for draft in [
+            Draft::Draft4,
+            Draft::Draft6,
+            Draft::Draft7,
+            Draft::Draft201909,
+            Draft::Draft202012,
+        ] {
+            let options = crate::options();
+            let names = options.known_formats(draft);
+            assert!(
+                names.windows(2).all(|pair| pair[0] < pair[1]),
+                "{draft:?}: {names:?} is not sorted and unique"
+            );
+            assert_eq!(names.iter().filter(|name| **name == "hostname").count(), 1);
+            for name in &names {
+                assert!(options.is_known_format(draft, name), "{draft:?}: {name}");
+            }
+            for name in CANDIDATES {
+                assert_eq!(
+                    names.contains(&name),
+                    options.is_known_format(draft, name),
+                    "{draft:?}: {name}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn test_a_registered_format_is_listed() {
+        let options = crate::options().with_format("ends-with-42", custom);
+        assert!(options
+            .known_formats(Draft::Draft202012)
+            .contains(&"ends-with-42"));
+        assert!(!crate::options()
+            .known_formats(Draft::Draft202012)
+            .contains(&"ends-with-42"));
+    }
+
+    #[cfg(feature = "idna")]
+    #[test]
+    fn test_the_international_formats_are_listed_with_their_feature() {
+        let options = crate::options();
+        let names = options.known_formats(Draft::Draft202012);
+        assert!(names.contains(&"idn-hostname"));
+        assert!(names.contains(&"idn-email"));
     }
 
     #[test]
