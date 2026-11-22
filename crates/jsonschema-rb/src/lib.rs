@@ -19,7 +19,8 @@ mod validator_map;
 use jsonschema::{
     json::{
         magnus_child, magnus_invalidate_members_cache, magnus_is_object, magnus_probe_root,
-        magnus_take_pending_error, Json, Magnus, MagnusPendingErrorScope, RbNode,
+        magnus_take_pending_error, Array, Json, JsonText, JsonTextNode, Magnus,
+        MagnusPendingErrorScope, Node, Object, RbNode,
     },
     paths::LocationSegment,
     ValidationOptions,
@@ -47,6 +48,7 @@ use std::{
 use crate::{
     error_kind::ValidationErrorKind,
     evaluation::Evaluation,
+    json_text::text_node_to_ruby,
     options::{
         extract_evaluate_kwargs, extract_kwargs, extract_kwargs_no_draft, make_options_from_kwargs,
         parse_draft_symbol, CallbackRoots, CompilationRoots, CompilationRootsRef, ExtractedKwargs,
@@ -252,7 +254,7 @@ fn build_verbose_message(
     mut message: String,
     schema_path: &jsonschema::paths::Location,
     instance_path: &jsonschema::paths::Location,
-    root_instance: Option<RbNode<'_>>,
+    root_instance: Option<InstanceRoot<'_>>,
     failing_instance: &serde_json::Value,
     mask: Option<&str>,
 ) -> String {
@@ -320,14 +322,14 @@ fn build_verbose_message(
         let segment = unescape_segment(segment);
         let segment = segment.as_ref();
         let is_index = match current {
-            Some(node) if magnus_is_object(node) => false,
+            Some(node) if node.is_object() => false,
             _ => is_index_segment(segment),
         };
         message.push('[');
         push_segment(&mut message, segment, is_index);
         message.push(']');
 
-        current = current.and_then(|node| magnus_child(node, segment, is_index));
+        current = current.and_then(|node| node.child(segment, is_index));
     }
     message.push_str(":\n    ");
 
@@ -348,6 +350,57 @@ fn error_message(error: &jsonschema::ValidationError<'_>, mask: Option<&str>) ->
     } else {
         error.to_string()
     }
+}
+
+/// Where an error reads its instance from: the Ruby object validated, or the JSON text.
+#[derive(Clone, Copy)]
+pub(crate) enum InstanceRoot<'a> {
+    Object(RbNode<'a>),
+    Text(JsonTextNode<'a>),
+}
+
+impl InstanceRoot<'_> {
+    fn is_object(self) -> bool {
+        match self {
+            InstanceRoot::Object(node) => magnus_is_object(node),
+            InstanceRoot::Text(node) => node.as_object().is_some(),
+        }
+    }
+
+    fn child(self, segment: &str, is_index: bool) -> Option<Self> {
+        match self {
+            InstanceRoot::Object(node) => magnus_child(node, segment, is_index).map(Self::Object),
+            InstanceRoot::Text(node) => if is_index {
+                node.as_array()?.elements().nth(segment.parse().ok()?)
+            } else {
+                node.as_object()?.get(&JsonText::prepare_key(segment))
+            }
+            .map(Self::Text),
+        }
+    }
+
+    // The instance at `location`, or `None` to convert the error's JSON copy instead. JSON text
+    // builds only that value, as `JSON.parse` would, never the rest of the document.
+    fn instance_at(self, ruby: &Ruby, location: &str) -> Result<Option<Value>, Error> {
+        match self {
+            InstanceRoot::Object(root) => Ok(plain_instance_at(ruby, root, location)),
+            InstanceRoot::Text(root) => text_node_at(root, location)
+                .map(|node| text_node_to_ruby(ruby, &node))
+                .transpose(),
+        }
+    }
+}
+
+fn text_node_at<'a>(root: JsonTextNode<'a>, location: &str) -> Option<JsonTextNode<'a>> {
+    let mut current = root;
+    for segment in location.split('/').skip(1) {
+        current = if let Some(object) = current.as_object() {
+            object.get(&JsonText::prepare_key(&unescape_segment(segment)))?
+        } else {
+            current.as_array()?.elements().nth(parse_index(segment)?)?
+        };
+    }
+    Some(current)
 }
 
 // The Ruby value at `location` under `root` when it holds only plain JSON types; `None` makes the
@@ -425,7 +478,7 @@ fn is_plain_json(ruby: &Ruby, value: Value, depth: u16) -> bool {
 fn into_ruby_error(
     ruby: &Ruby,
     error: jsonschema::ValidationError<'_>,
-    root_instance: Option<RbNode<'_>>,
+    root_instance: Option<InstanceRoot<'_>>,
     message: &str,
     mask: Option<&str>,
 ) -> Result<Value, Error> {
@@ -459,8 +512,10 @@ fn into_ruby_error(
     let kind_obj = ValidationErrorKind::new(ruby, &parts.kind, mask)?;
     // Scalars convert faster than the path to them is followed.
     let original = match parts.instance.as_ref() {
-        serde_json::Value::Array(_) | serde_json::Value::Object(_) => root_instance
-            .and_then(|root| plain_instance_at(ruby, root, parts.instance_path.as_str())),
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => match root_instance {
+            Some(root) => root.instance_at(ruby, parts.instance_path.as_str())?,
+            None => None,
+        },
         _ => None,
     };
     let rb_instance = match original {
@@ -516,7 +571,7 @@ fn into_ruby_error(
 fn to_ruby_error_value(
     ruby: &Ruby,
     error: jsonschema::ValidationError<'_>,
-    root_instance: Option<RbNode<'_>>,
+    root_instance: Option<InstanceRoot<'_>>,
     mask: Option<&str>,
 ) -> Result<Value, Error> {
     let message = error_message(&error, mask);
@@ -531,7 +586,7 @@ pub(crate) fn referencing_error(ruby: &Ruby, message: String) -> Error {
 fn raise_validation_error(
     ruby: &Ruby,
     error: jsonschema::ValidationError<'_>,
-    root_instance: Option<RbNode<'_>>,
+    root_instance: Option<InstanceRoot<'_>>,
     mask: Option<&str>,
 ) -> Error {
     let message = error_message(&error, mask);
@@ -681,7 +736,7 @@ impl Validator {
                 Ok(Err(error)) => Err(raise_validation_error(
                     ruby,
                     error,
-                    Some(node),
+                    Some(InstanceRoot::Object(node)),
                     rb_self.mask.as_deref(),
                 )),
                 Err(err) => Err(handle_callback_panic(ruby, err)),
@@ -706,7 +761,7 @@ impl Validator {
                             let ruby_error = to_ruby_error_value(
                                 ruby,
                                 error,
-                                Some(node),
+                                Some(InstanceRoot::Object(node)),
                                 rb_self.mask.as_deref(),
                             )?;
                             ruby.yield_value::<Value, Value>(ruby_error)?;
@@ -728,7 +783,7 @@ impl Validator {
                         arr.push(to_ruby_error_value(
                             ruby,
                             error,
-                            Some(node),
+                            Some(InstanceRoot::Object(node)),
                             rb_self.mask.as_deref(),
                         )?)?;
                     }
@@ -990,7 +1045,7 @@ fn validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
             Ok(Err(error)) => Err(raise_validation_error(
                 ruby,
                 error,
-                Some(node),
+                Some(InstanceRoot::Object(node)),
                 parsed.mask.as_deref(),
             )),
             Err(err) => Err(handle_callback_panic(ruby, err)),
@@ -1027,8 +1082,12 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
             loop {
                 match catch_unwind_silent(AssertUnwindSafe(|| iter.next())) {
                     Ok(Some(error)) => {
-                        let ruby_error =
-                            to_ruby_error_value(ruby, error, Some(node), parsed.mask.as_deref())?;
+                        let ruby_error = to_ruby_error_value(
+                            ruby,
+                            error,
+                            Some(InstanceRoot::Object(node)),
+                            parsed.mask.as_deref(),
+                        )?;
                         ruby.yield_value::<Value, Value>(ruby_error)?;
                     }
                     Ok(None) => break,
@@ -1047,7 +1106,7 @@ fn each_error(ruby: &Ruby, args: &[Value]) -> Result<Value, Error> {
                     arr.push(to_ruby_error_value(
                         ruby,
                         error,
-                        Some(node),
+                        Some(InstanceRoot::Object(node)),
                         parsed.mask.as_deref(),
                     )?)?;
                 }
@@ -1270,7 +1329,7 @@ fn meta_validate(ruby: &Ruby, args: &[Value]) -> Result<(), Error> {
         }
         #[allow(unsafe_code)]
         let node = RbNode::new(schema.as_raw());
-        raise_validation_error(ruby, error, Some(node), None)
+        raise_validation_error(ruby, error, Some(InstanceRoot::Object(node)), None)
     };
     if let Some(registry) = registry {
         let json_schema = to_schema_value(ruby, schema)?;

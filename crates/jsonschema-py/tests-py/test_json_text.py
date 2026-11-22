@@ -222,3 +222,15 @@ def test_custom_keywords_raise_for_integers_python_cannot_build(method):
         if method == "iter_errors":
             list(result)
     assert type(excinfo.value) is ValueError
+
+
+# An error builds only its own instance, so values elsewhere in the document never need converting.
+@pytest.mark.skipif(not hasattr(sys, "get_int_max_str_digits"), reason="no integer string limit")
+def test_errors_build_only_their_own_instance():
+    text = '{"age": 5, "big": ' + "1" * (sys.get_int_max_str_digits() + 1) + ', "tags": [1, 1]}'
+    validator = JsonTextValidator(SCHEMA)
+    assert not validator.is_valid(text)
+    with pytest.raises(ValidationError) as excinfo:
+        validator.validate(text)
+    assert excinfo.value.instance == [1, 1]
+    assert [error.instance for error in validator.iter_errors(text)] == [[1, 1]]

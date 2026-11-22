@@ -363,7 +363,7 @@ impl ValidationErrorKind {
         py: Python<'_>,
         kind: jsonschema::error::ValidationErrorKind,
         mask: Option<&str>,
-        root: Option<&Bound<'_, PyAny>>,
+        root: Option<InstanceRoot<'_, '_>>,
     ) -> PyResult<Self> {
         Ok(match kind {
             jsonschema::error::ValidationErrorKind::AdditionalItems { limit } => {
@@ -679,7 +679,7 @@ fn convert_validation_context(
     py: Python<'_>,
     context: Vec<Vec<jsonschema::error::ValidationError<'static>>>,
     mask: Option<&str>,
-    root: Option<&Bound<'_, PyAny>>,
+    root: Option<InstanceRoot<'_, '_>>,
 ) -> PyResult<Py<PyList>> {
     unsafe {
         let outer_len = context.len() as pyo3::ffi::Py_ssize_t;
@@ -767,6 +767,42 @@ fn location_to_list(py: Python<'_>, location: &Location) -> PyResult<Py<PyList>>
     })
 }
 
+/// Where an error reads its instance from: the Python object validated, or the JSON text.
+#[derive(Clone, Copy)]
+pub(crate) enum InstanceRoot<'a, 'py> {
+    Object(&'a Bound<'py, PyAny>),
+    Text(JsonTextNode<'a>),
+}
+
+impl<'py> InstanceRoot<'_, 'py> {
+    // The instance at `location`, or `None` to convert the error's JSON copy instead. JSON text
+    // builds only that value, as `json.loads` would, never the rest of the document.
+    fn instance_at(
+        &self,
+        py: Python<'py>,
+        location: &Location,
+    ) -> PyResult<Option<Bound<'py, PyAny>>> {
+        match self {
+            InstanceRoot::Object(root) => Ok(plain_instance_at(root, location)),
+            InstanceRoot::Text(root) => text_node_at(*root, location)
+                .map(|node| text_node_to_python(py, &node))
+                .transpose(),
+        }
+    }
+}
+
+fn text_node_at<'a>(root: JsonTextNode<'a>, location: &Location) -> Option<JsonTextNode<'a>> {
+    let mut current = root;
+    for segment in location.as_str().split('/').skip(1) {
+        current = if let Some(object) = current.as_object() {
+            object.get(&JsonText::prepare_key(&unescape_segment(segment)))?
+        } else {
+            current.as_array()?.elements().nth(parse_index(segment)?)?
+        };
+    }
+    Some(current)
+}
+
 // The object at `location` under `root`, when it and everything in it are plain JSON types, which
 // convert to and from JSON unchanged; `None` otherwise, and the caller converts the JSON value.
 fn plain_instance_at<'py>(
@@ -819,7 +855,7 @@ fn into_validation_error_args(
     py: Python<'_>,
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
-    root: Option<&Bound<'_, PyAny>>,
+    root: Option<InstanceRoot<'_, '_>>,
 ) -> PyResult<ValidationErrorArgs> {
     // Sized for the message plus what `to_error_message` appends, so neither reallocates.
     let mut message = String::with_capacity(256);
@@ -845,9 +881,10 @@ fn into_validation_error_args(
     let kind = ValidationErrorKind::try_new(py, parts.kind, mask, root)?;
     // Scalars convert faster than the path to them is followed.
     let original = match parts.instance.as_ref() {
-        serde_json::Value::Array(_) | serde_json::Value::Object(_) => {
-            root.and_then(|root| plain_instance_at(root, &parts.instance_path))
-        }
+        serde_json::Value::Array(_) | serde_json::Value::Object(_) => match root {
+            Some(root) => root.instance_at(py, &parts.instance_path)?,
+            None => None,
+        },
         _ => None,
     };
     let instance = match original {
@@ -872,7 +909,7 @@ pub(crate) fn into_py_err(
     py: Python<'_>,
     error: jsonschema::ValidationError<'_>,
     mask: Option<&str>,
-    root: Option<&Bound<'_, PyAny>>,
+    root: Option<InstanceRoot<'_, '_>>,
 ) -> PyResult<PyErr> {
     let args = into_validation_error_args(py, error, mask, root)?;
     let is_custom = matches!(args.kind, ValidationErrorKind::Custom { .. });
@@ -1338,7 +1375,12 @@ fn iter_on_error(
 
         panic::catch_unwind(AssertUnwindSafe(|| {
             for error in validator.iter_errors(node) {
-                pyerrors.push(into_py_err(py, error, mask, Some(instance))?);
+                pyerrors.push(into_py_err(
+                    py,
+                    error,
+                    mask,
+                    Some(InstanceRoot::Object(instance)),
+                )?);
             }
             PyResult::Ok(())
         }))
@@ -1364,7 +1406,14 @@ fn raise_on_error(
             .err();
         error.map_or_else(
             || Ok(()),
-            |err| Err(into_py_err(py, err, mask, Some(instance))?),
+            |err| {
+                Err(into_py_err(
+                    py,
+                    err,
+                    mask,
+                    Some(InstanceRoot::Object(instance)),
+                )?)
+            },
         )
     })
 }
@@ -1811,8 +1860,8 @@ impl JsonTextValidator {
         .map_err(handle_format_checked_panic)?;
         match error {
             Some(error) => {
-                let root = text_node_to_python(py, &document.root())?;
-                Err(into_py_err(py, error, self.mask.as_deref(), Some(&root))?)
+                let root = InstanceRoot::Text(document.root());
+                Err(into_py_err(py, error, self.mask.as_deref(), Some(root))?)
             }
             None => Ok(()),
         }
@@ -1834,13 +1883,9 @@ impl JsonTextValidator {
         let _scope = KeywordCauseScope::enter();
         let mut errors = vec![];
         panic::catch_unwind(AssertUnwindSafe(|| {
-            // Built once, on the first error, so errors carry what `json.loads` builds.
-            let mut root = None;
+            let root = InstanceRoot::Text(document.root());
             for error in self.validator.iter_errors(document.root()) {
-                if root.is_none() {
-                    root = Some(text_node_to_python(py, &document.root())?);
-                }
-                errors.push(into_py_err(py, error, self.mask.as_deref(), root.as_ref())?);
+                errors.push(into_py_err(py, error, self.mask.as_deref(), Some(root))?);
             }
             PyResult::Ok(())
         }))
