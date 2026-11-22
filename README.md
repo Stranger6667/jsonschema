@@ -81,7 +81,7 @@ Try `jsonschema` in the browser in the WebAssembly [playground](https://jsonsche
 - 🎨 Structured Output v1 reports (flag/list/hierarchical)
 - ✨ Meta-schema validation for schema documents, including custom metaschemas
 - 🧮 Experimental schema canonicalization
-- 🧩 Validation of custom in-memory JSON representations
+- 🧩 Validation of raw JSON text and custom in-memory JSON representations
 - 🔗 Bindings for [Python](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-py) and [Ruby](https://github.com/Stranger6667/jsonschema/tree/master/crates/jsonschema-rb)
 - 🚀 WebAssembly support
 - 💻 Command Line Interface
