@@ -1,12 +1,10 @@
 //! `JSONSchema::JsonTextValidator`: validates instances given as JSON text.
 use std::panic::AssertUnwindSafe;
 
-use jsonschema::json::{
-    Array, JsonNumber, JsonText, JsonTextDocument, JsonTextNode, Node, Object, RbNode,
-};
+use jsonschema::json::{Array, JsonNumber, JsonText, JsonTextDocument, JsonTextNode, Node, Object};
 use magnus::{
-    function, method, prelude::*, rb_sys::AsRawValue, scan_args::scan_args, DataTypeFunctions,
-    Error, RModule, RString, Ruby, Value,
+    function, method, prelude::*, scan_args::scan_args, DataTypeFunctions, Error, RModule, RString,
+    Ruby, Value,
 };
 
 use crate::{
@@ -14,7 +12,7 @@ use crate::{
     options::{extract_kwargs, CallbackRoots, CompilationRootsRef},
     raise_validation_error,
     ser::to_schema_value,
-    to_ruby_error_value, BuiltValidator, Evaluation, KeywordCauseScope,
+    to_ruby_error_value, BuiltValidator, Evaluation, InstanceRoot, KeywordCauseScope,
 };
 
 /// A validator for instances given as JSON text, without building Ruby objects for them.
@@ -155,16 +153,12 @@ impl JsonTextValidator {
             rb_self.validator.validate(document.root())
         })) {
             Ok(Ok(())) => Ok(()),
-            Ok(Err(error)) => {
-                // Errors read the instance and its path from what `JSON.parse` builds.
-                let root = text_node_to_ruby(ruby, &document.root())?;
-                Err(raise_validation_error(
-                    ruby,
-                    error,
-                    Some(RbNode::new(root.as_raw())),
-                    rb_self.mask.as_deref(),
-                ))
-            }
+            Ok(Err(error)) => Err(raise_validation_error(
+                ruby,
+                error,
+                Some(InstanceRoot::Text(document.root())),
+                rb_self.mask.as_deref(),
+            )),
             Err(err) => Err(handle_callback_panic(ruby, err)),
         }
     }
@@ -173,17 +167,11 @@ impl JsonTextValidator {
         let text = json_text(ruby, instance)?;
         let document = parse(ruby, &text)?;
         let _scope = KeywordCauseScope::enter();
-        // Errors read the instance and its path from what `JSON.parse` builds, made on the first.
-        let mut root: Option<Value> = None;
-        let mut convert = |error| {
-            let root = match root {
-                Some(root) => root,
-                None => *root.insert(text_node_to_ruby(ruby, &document.root())?),
-            };
+        let convert = |error| {
             to_ruby_error_value(
                 ruby,
                 error,
-                Some(RbNode::new(root.as_raw())),
+                Some(InstanceRoot::Text(document.root())),
                 rb_self.mask.as_deref(),
             )
         };
