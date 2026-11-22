@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.63.0] - 2026-11-22
+
 ### Added
 
 - `JsonTextValidator`, validating instances given as JSON text without building Ruby objects for them.
@@ -871,7 +873,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.62.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.63.0...HEAD
+[0.63.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.62.0...ruby-v0.63.0
 [0.62.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.2...ruby-v0.62.0
 [0.61.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.1...ruby-v0.61.2
 [0.61.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.0...ruby-v0.61.1
