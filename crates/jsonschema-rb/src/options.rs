@@ -425,6 +425,41 @@ fn number_format(ruby: &Ruby, check: Value) -> Result<NumberFormat, Error> {
     })
 }
 
+/// known_formats(draft, formats: nil) -> Array[String]
+///
+/// The names of the formats with a check under `draft`, sorted and without duplicates: the
+/// built-in formats and those in `formats`.
+fn known_formats(ruby: &Ruby, args: &[Value]) -> Result<Vec<String>, Error> {
+    let parsed_args = scan_args::<(Value,), (), (), (), _, ()>(args)?;
+    let (draft,) = parsed_args.required;
+    let draft = parse_draft_symbol(ruby, draft)?;
+    let kw: KwArgs<(), (Option<Option<RHash>>,), ()> =
+        get_kwargs(parsed_args.keywords, &[], &[*KW_FORMATS])?;
+    let parsed = make_options_from_kwargs::<Magnus>(
+        ruby,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        kw.optional.0.flatten(),
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+        None,
+    )?;
+    Ok(parsed
+        .options
+        .known_formats(draft)
+        .into_iter()
+        .map(str::to_owned)
+        .collect())
+}
+
 /// Wrapper for a Ruby custom keyword validator factory.
 struct RubyKeywordFactory {
     class: Opaque<Value>,
@@ -1273,6 +1308,7 @@ impl HttpOptions {
 pub fn define_classes(ruby: &Ruby, module: &RModule) -> Result<(), Error> {
     module.define_class("NumberFormat", ruby.class_object())?;
     module.define_singleton_method("number_format", function!(number_format, 1))?;
+    module.define_singleton_method("known_formats", function!(known_formats, -1))?;
     let email_class = module.define_class("EmailOptions", ruby.class_object())?;
     email_class.define_singleton_method("new", function!(EmailOptions::new_impl, -1))?;
     email_class.define_method("require_tld", method!(EmailOptions::require_tld, 0))?;

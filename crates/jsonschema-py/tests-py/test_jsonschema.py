@@ -16,12 +16,18 @@ from jsonschema_rs import (
     Draft7Validator,
     Draft201909Validator,
     Draft202012Validator,
+    Draft4,
+    Draft6,
+    Draft7,
+    Draft201909,
+    Draft202012,
     Registry,
     ValidationError,
     ValidationErrorKind,
     evaluate,
     is_valid,
     iter_errors,
+    known_formats,
     number_format,
     validate,
     validator_for,
@@ -1204,6 +1210,43 @@ def test_number_format_with_exception():
 
 def test_number_format_is_callable():
     assert number_format(is_int32)(42) is True
+
+
+@pytest.mark.parametrize(
+    "draft, name, listed",
+    [
+        (Draft7, "duration", False),
+        (Draft7, "uuid", False),
+        (Draft202012, "duration", True),
+        (Draft202012, "uuid", True),
+        (Draft202012, "idn-hostname", True),
+        (Draft202012, "currency", False),
+    ],
+)
+def test_known_formats_follow_the_draft(draft, name, listed):
+    assert (name in known_formats(draft)) is listed
+
+
+@pytest.mark.parametrize("draft", [Draft4, Draft6, Draft7, Draft201909, Draft202012])
+def test_known_formats_are_sorted_and_unique(draft):
+    names = known_formats(draft, formats={"hostname": lambda _: True})
+    assert names == sorted(set(names))
+
+
+def test_known_formats_list_registered_formats():
+    names = known_formats(Draft202012, formats={"currency": lambda _: True, "int32": number_format(is_int32)})
+    assert "currency" in names
+    assert "int32" in names
+
+
+def test_known_formats_unknown_draft():
+    with pytest.raises(ValueError, match="Unknown draft: 42"):
+        known_formats(42)
+
+
+def test_known_formats_require_callables():
+    with pytest.raises(ValueError, match="Format checker for 'currency' must be a callable"):
+        known_formats(Draft202012, formats={"currency": 42})
 
 
 def test_number_format_requires_a_callable():

@@ -380,6 +380,10 @@ module JSONSchema
   class NumberFormat
   end
 
+  # The names of the formats with a check under `draft`, sorted and without duplicates: the
+  # built-in formats and those in `formats`.
+  def self.known_formats: (draft draft, ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?) -> Array[String]
+
   # Create a validator with auto-detected draft version.
   def self.validator_for: (
     untyped schema,
