@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.63.1] - 2026-11-23
+
 ### Added
 
 - `known_formats`, the names of the formats with a check under a draft, built in and registered.
@@ -1847,7 +1849,8 @@
 ## 0.1.0 - 2020-06-09
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.63.0...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/python-v0.63.1...HEAD
+[0.63.1]: https://github.com/Stranger6667/jsonschema/compare/python-v0.63.0...python-v0.63.1
 [0.63.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.62.0...python-v0.63.0
 [0.62.0]: https://github.com/Stranger6667/jsonschema/compare/python-v0.61.2...python-v0.62.0
 [0.61.2]: https://github.com/Stranger6667/jsonschema/compare/python-v0.61.1...python-v0.61.2
