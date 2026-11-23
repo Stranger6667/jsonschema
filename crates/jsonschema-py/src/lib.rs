@@ -1160,6 +1160,24 @@ fn number_format(check: &Bound<'_, PyAny>) -> PyResult<NumberFormat> {
     })
 }
 
+/// known_formats(draft, formats=None)
+///
+/// The names of the formats with a check under `draft`, sorted and without duplicates: the
+/// built-in formats and those in `formats`.
+#[pyfunction]
+#[pyo3(signature = (draft, formats=None))]
+fn known_formats(draft: u8, formats: Option<&Bound<'_, PyDict>>) -> PyResult<Vec<String>> {
+    let draft = get_draft(draft)?;
+    let options = make_options::<Pyo3>(
+        None, formats, None, None, None, None, None, None, None, None, None, None, None,
+    )?;
+    Ok(options
+        .known_formats(draft)
+        .into_iter()
+        .map(str::to_owned)
+        .collect())
+}
+
 // A format check's result; a Python error is stored and re-raised once validation unwinds.
 fn format_outcome(result: PyResult<bool>) -> bool {
     match result {
@@ -2919,6 +2937,7 @@ fn jsonschema_rs(py: Python<'_>, module: &Bound<'_, PyModule>) -> PyResult<()> {
     module.add_wrapped(wrap_pyfunction!(validator_for))?;
     module.add_wrapped(wrap_pyfunction!(validator_map_for))?;
     module.add_wrapped(wrap_pyfunction!(number_format))?;
+    module.add_wrapped(wrap_pyfunction!(known_formats))?;
     module.add_class::<NumberFormat>()?;
     module.add_class::<ValidatorMap>()?;
     module.add_class::<JsonTextValidator>()?;

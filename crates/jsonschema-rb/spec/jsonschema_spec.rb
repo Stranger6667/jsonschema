@@ -463,6 +463,43 @@ RSpec.describe "Custom formats" do
     end
   end
 
+  describe ".known_formats" do
+    [
+      [:draft7, "duration", false],
+      [:draft7, "uuid", false],
+      [:draft202012, "duration", true],
+      [:draft202012, "uuid", true],
+      [:draft202012, "idn-hostname", true],
+      [:draft202012, "currency", false]
+    ].each do |draft, name, listed|
+      it "lists #{name} under #{draft}: #{listed}" do
+        expect(JSONSchema.known_formats(draft).include?(name)).to be listed
+      end
+    end
+
+    %i[draft4 draft6 draft7 draft201909 draft202012].each do |draft|
+      it "is sorted and unique under #{draft}" do
+        names = JSONSchema.known_formats(draft, formats: { "hostname" => ->(_value) { true } })
+        expect(names).to eq(names.uniq.sort)
+      end
+    end
+
+    it "lists registered formats" do
+      int32 = JSONSchema.number_format(->(_number) { true })
+      names = JSONSchema.known_formats(:draft202012, formats: { "currency" => ->(_value) { true }, "int32" => int32 })
+      expect(names).to include("currency", "int32")
+    end
+
+    it "rejects an unknown draft" do
+      expect { JSONSchema.known_formats(:draft3) }.to raise_error(ArgumentError, /Unknown draft: :draft3/)
+    end
+
+    it "requires callables" do
+      expect { JSONSchema.known_formats(:draft202012, formats: { "currency" => 42 }) }
+        .to raise_error(TypeError, "Format checker for 'currency' must be a callable (Proc or Lambda)")
+    end
+  end
+
   describe "with module-level functions" do
     it "validates with custom format" do
       schema = { "type" => "string", "format" => "my-format" }

@@ -157,6 +157,12 @@ validator = JSONSchema.validator_for({ "format" => "int32" }, validate_formats: 
 validator.valid?(2**31) # => false
 ```
 
+`JSONSchema.known_formats` lists the formats with a check under a draft, built in and from `formats`:
+
+```ruby
+JSONSchema.known_formats(:draft202012, formats: { "phone" => phone_format }).include?("phone") # => true
+```
+
 ### Custom keyword validators
 
 ```ruby

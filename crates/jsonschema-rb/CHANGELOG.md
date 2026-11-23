@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `JSONSchema.known_formats`, the names of the formats with a check under a draft, built in and registered.
+
 ## [0.63.0] - 2026-11-22
 
 ### Added

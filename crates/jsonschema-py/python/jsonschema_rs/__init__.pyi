@@ -673,6 +673,15 @@ def number_format(check: Callable[[int | float | Decimal], bool]) -> NumberForma
     False
     """
 
+def known_formats(draft: int, formats: dict[str, _FormatFunc] | None = None) -> list[str]:
+    """The names of the formats with a check under `draft`, sorted and without duplicates.
+
+    Lists the built-in formats and those in `formats`.
+
+    >>> "uuid" in known_formats(Draft202012)
+    True
+    """
+
 @final
 class JsonTextValidator:
     """A validator for instances given as JSON text, without building Python objects for them.
@@ -1060,6 +1069,7 @@ __all__ = [
     "validator_map_for",
     "ValidatorMap",
     "number_format",
+    "known_formats",
     "NumberFormat",
     "Draft4",
     "Draft6",

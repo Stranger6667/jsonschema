@@ -136,6 +136,13 @@ validator = jsonschema_rs.validator_for(
 assert not validator.is_valid(2**31)
 ```
 
+`known_formats` lists the formats with a check under a draft, built in and from `formats`:
+
+```python
+names = jsonschema_rs.known_formats(jsonschema_rs.Draft202012, formats={"currency": is_currency})
+assert "uuid" in names and "currency" in names
+```
+
 ### Validating JSON Text
 
 When instances arrive as JSON text, such as request bodies or queue messages, `JsonTextValidator`
