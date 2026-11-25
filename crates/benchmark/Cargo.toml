@@ -1,7 +1,7 @@
 [package]
 name = "benchmark"
 version = "0.1.0"
-rust-version = "1.80"
+rust-version.workspace = true
 readme = "README.md"
 license.workspace = true
 repository.workspace = true

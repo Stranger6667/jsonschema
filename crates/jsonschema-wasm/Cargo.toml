@@ -2,7 +2,7 @@
 name = "jsonschema-wasm"
 version = "0.63.1"
 edition = "2021"
-rust-version = "1.83.0"
+rust-version.workspace = true
 license = "MIT"
 description = "WebAssembly bindings for the jsonschema crate"
 repository = "https://github.com/Stranger6667/jsonschema"
