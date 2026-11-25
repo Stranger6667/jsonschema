@@ -1915,6 +1915,25 @@ fn test_canonicalize_at_resolves_document_references(pointer: &str) {
     );
 }
 
+const ENCODED_KEYS_DOCUMENT: &str = r#"{"$defs": {
+    "Pet Store": {"type": "integer", "minimum": 1},
+    "Café": {"type": "integer", "minimum": 1},
+    "a%20b": {"type": "string"}
+}}"#;
+
+// A pasted `$ref` is a URI fragment, so the pointer in it is percent-encoded.
+#[test_case("#/$defs/Pet%20Store", "integer"; "encoded space")]
+#[test_case("#/$defs/Caf%C3%A9", "integer"; "encoded non-ASCII")]
+#[test_case("/$defs/Pet Store", "integer"; "pointer")]
+#[test_case("#/$defs/a%2520b", "string"; "encoded percent sign")]
+#[test_case("/$defs/a%20b", "string"; "pointer with a percent sign")]
+fn test_canonicalize_at_decodes_pasted_references(pointer: &str, expected: &str) {
+    let dir = tempdir().unwrap();
+    let schema = create_temp_file(&dir, "schema.json", ENCODED_KEYS_DOCUMENT);
+
+    assert_eq!(canonicalize_at(&schema, pointer)["type"], expected);
+}
+
 #[test]
 fn test_canonicalize_at_names_recursive_definitions_readably() {
     let dir = tempdir().unwrap();
@@ -1959,15 +1978,16 @@ fn test_canonicalize_at_reports_a_contradiction() {
     );
 }
 
-#[test]
-fn test_canonicalize_at_root_matches_the_whole_document() {
+#[test_case(""; "empty pointer")]
+#[test_case("#"; "empty fragment")]
+fn test_canonicalize_at_root_matches_the_whole_document(pointer: &str) {
     let dir = tempdir().unwrap();
     let schema = create_temp_file(&dir, "schema.json", PET_DOCUMENT);
 
     let whole = cli().arg("canonicalize").arg(&schema).output().unwrap();
     assert!(whole.status.success());
     assert_eq!(
-        canonicalize_at(&schema, ""),
+        canonicalize_at(&schema, pointer),
         serde_json::from_slice::<Value>(&whole.stdout).unwrap()
     );
 }
@@ -2167,6 +2187,9 @@ fn test_canonicalize_at_reads_yaml() {
 #[test_case("/$defs/Pett", "'/$defs' has no 'Pett'"; "mistyped leaf")]
 #[test_case("/property/pet", "the document root has no 'property'"; "mistyped root member")]
 #[test_case("$defs/Pet", "is not a JSON Pointer"; "missing leading slash")]
+#[test_case("#/$defs/%FF", "is not valid UTF-8"; "encoded invalid UTF-8")]
+#[test_case("#%2F$defs%2FPet", "is not a JSON Pointer"; "encoded leading slash")]
+#[test_case("#/$defs%2FPett", "'/$defs' has no 'Pett'"; "encoded slash separates segments")]
 #[test_case("/$defs/Named/required/0", "is of type string, not a schema"; "not a schema")]
 fn test_canonicalize_at_rejects_a_bad_pointer(pointer: &str, expected: &str) {
     let dir = tempdir().unwrap();
