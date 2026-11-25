@@ -656,16 +656,24 @@ fn build_resource_registry(
     Ok(builder.prepare()?)
 }
 
-// A `$ref` is usually copied with its leading `#`; an empty pointer is the document root.
-fn parse_pointer(at: &str) -> Result<&str, String> {
-    let pointer = at.strip_prefix('#').unwrap_or(at);
-    if pointer.is_empty() || pointer.starts_with('/') {
-        Ok(pointer)
-    } else {
-        Err(format!(
+// A `$ref` is usually copied with its leading `#`, as a URI fragment whose pointer is
+// percent-encoded; an empty pointer is the document root.
+fn parse_pointer(at: &str) -> Result<Cow<'_, str>, String> {
+    let fragment = at.strip_prefix('#');
+    let pointer = fragment.unwrap_or(at);
+    if !pointer.is_empty() && !pointer.starts_with('/') {
+        return Err(format!(
             "'{at}' is not a JSON Pointer: it must be empty or start with '/'"
-        ))
+        ));
     }
+    let Some(fragment) = fragment else {
+        return Ok(Cow::Borrowed(at));
+    };
+    percent_encoding::percent_decode_str(fragment)
+        .decode_utf8()
+        .map_err(|_| {
+            format!("'{at}' is not a JSON Pointer: its percent-encoding is not valid UTF-8")
+        })
 }
 
 // Which segment is wrong is the whole question when a pointer is typed by hand.
@@ -1350,12 +1358,11 @@ fn run_canonicalize(args: CanonicalizeArgs) -> ExitCode {
     };
 
     // An empty pointer is the document root: the no-flag behaviour.
-    let pointer = match at.as_deref().map(parse_pointer) {
-        None | Some(Ok("")) => None,
-        Some(Ok(pointer)) => Some(pointer),
-        Some(Err(error)) => return fail_with_error(error),
+    let pointer = match at.as_deref().map(parse_pointer).transpose() {
+        Ok(pointer) => pointer.filter(|pointer| !pointer.is_empty()),
+        Err(error) => return fail_with_error(error),
     };
-    if let Some(pointer) = pointer {
+    if let Some(pointer) = &pointer {
         if let Err(error) = check_pointer(&schema_json, pointer) {
             return fail_with_error(error);
         }
@@ -1373,7 +1380,7 @@ fn run_canonicalize(args: CanonicalizeArgs) -> ExitCode {
         Ok(prepared) => prepared,
         Err(error) => return fail_with_error(error),
     };
-    let canonical = match pointer {
+    let canonical = match &pointer {
         Some(pointer) => prepared.canonicalize_at(pointer),
         None => prepared.canonicalize(),
     };

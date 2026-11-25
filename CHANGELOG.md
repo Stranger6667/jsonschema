@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Fixed
+
+- **CLI**: `jsonschema-cli canonicalize --at` not finding a pasted `$ref` with percent-encoded characters, such as `#/$defs/Pet%20Store`.
+
 ## [0.63.1] - 2026-11-23
 
 ### Added
