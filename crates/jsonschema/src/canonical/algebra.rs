@@ -3049,12 +3049,11 @@ fn union_type_sets(left: JsonTypeSet, right: JsonTypeSet) -> JsonTypeSet {
 /// A `String` node, collapsed to `False` when no string fits and to the empty string when
 /// `maxLength: 0` leaves only that one.
 pub(crate) fn string_leaf(mut leaf: StringLeaf, ctx: &CanonicalizationContext) -> Schema {
-    if formats_conflict(&leaf) || patterns_conflict(&leaf) {
+    if formats_conflict(&leaf) || patterns_conflict(&leaf) || lengths_conflict(&leaf, ctx) {
         return Schema::falsy();
     }
     absorb_empty_exclusion(&mut leaf);
-    // No barred-pattern counterpart: a format has a length window to test against, a regex has
-    // none, so nothing prunes one that cannot bite.
+    // No barred-pattern counterpart: nothing prunes a barred pattern that cannot bite.
     prune_excluded_formats(&mut leaf);
     prune_excluded(&mut leaf, ctx);
     let Some(leaf) = NonEmpty::new(leaf) else {
@@ -5854,20 +5853,26 @@ fn intersect_string_leaves(first: StringLeaf, second: StringLeaf) -> StringLeaf 
     }
 }
 
-/// Whether the leaf's formats and length window leave no string. A format whose grammar pins a
-/// length narrows the window; two such formats of different lengths accept nothing.
+/// Whether the leaf both demands and bars one format, which no string can satisfy.
+fn formats_conflict(leaf: &StringLeaf) -> bool {
+    leaf.excluded_formats
+        .iter()
+        .any(|format| leaf.formats.contains(format))
+}
+
+/// Whether no length fits `minLength`, `maxLength`, the formats and the patterns at once. A format
+/// whose grammar pins a length narrows the lengths left, and so does a pattern: no string is
+/// shorter than its shortest match, and none is longer than its longest one where `^` and `$`
+/// make every match span the whole string. A pattern no lengths are derived for narrows nothing.
 /// e.g.  allOf [
 ///         {"type": "string", "format": "date"},
 ///         {"type": "string", "format": "uuid"}
 ///       ]  =>  false
-fn formats_conflict(leaf: &StringLeaf) -> bool {
-    if leaf
-        .excluded_formats
-        .iter()
-        .any(|format| leaf.formats.contains(format))
-    {
-        return true;
-    }
+/// e.g.  {"type": "string", "maxLength": 3, "pattern": "^[0-9]{4}$"}  =>  false
+/// e.g.  {"type": "string", "maxLength": 3, "pattern": "[0-9]{4}"}  =>  false
+/// e.g.  {"type": "string", "minLength": 5, "pattern": "[0-9]{4}"}  =>  unchanged: a longer string
+///       holds a match
+fn lengths_conflict(leaf: &StringLeaf, ctx: &CanonicalizationContext) -> bool {
     let mut window = leaf.lengths.clone();
     for format in &leaf.formats {
         let Some((minimum, maximum)) = format.length_window() else {
@@ -5876,6 +5881,15 @@ fn formats_conflict(leaf: &StringLeaf) -> bool {
         window = window.intersect(LengthBounds {
             minimum: Some(BoundCardinality::from(minimum)),
             maximum: Some(BoundCardinality::from(maximum)),
+        });
+    }
+    for pattern in &leaf.patterns {
+        let Some(lengths) = ctx.pattern_lengths(pattern) else {
+            continue;
+        };
+        window = window.intersect(LengthBounds {
+            minimum: Some(BoundCardinality::from(lengths.minimum)),
+            maximum: lengths.maximum.map(BoundCardinality::from),
         });
     }
     window.is_empty()

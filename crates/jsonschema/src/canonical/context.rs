@@ -10,6 +10,7 @@ use std::{
 
 use ahash::{AHashMap, AHashSet};
 
+use jsonschema_regex::SearchLengths;
 use referencing::Draft;
 
 use crate::{
@@ -65,6 +66,8 @@ pub(crate) struct CanonicalizationContext {
     /// The compiled patterns of the document this run reads, which outlive it: every run over that
     /// document translates and compiles the same texts under the same engine.
     shared_regexes: Option<SharedRegexes>,
+    /// `None` caches a pattern no lengths are derived for.
+    pattern_lengths: RefCell<AHashMap<Arc<str>, Option<SearchLengths>>>,
     /// An `allOf` over unions takes the product of their branches, which reaches the same pair
     /// of nodes many times.
     intersections: RefCell<AHashMap<(Schema, Schema), Remembered>>,
@@ -124,6 +127,7 @@ impl CanonicalizationContext {
             validate_formats,
             regex_cache: RefCell::new(AHashMap::new()),
             shared_regexes: None,
+            pattern_lengths: RefCell::new(AHashMap::new()),
             intersections: RefCell::new(AHashMap::new()),
             uncheckable_facets: RefCell::new(AHashMap::new()),
             inexact_intersection: Cell::new(false),
@@ -528,6 +532,19 @@ impl CanonicalizationContext {
         compiled
     }
 
+    /// How long a string matching `pattern` is, or `None` where no lengths are derived. Derived
+    /// once per run and cached.
+    pub(crate) fn pattern_lengths(&self, pattern: &Arc<str>) -> Option<SearchLengths> {
+        if let Some(cached) = self.pattern_lengths.borrow().get(pattern) {
+            return *cached;
+        }
+        let lengths = search_lengths(self.pattern_options, pattern);
+        self.pattern_lengths
+            .borrow_mut()
+            .insert(Arc::clone(pattern), lengths);
+        lengths
+    }
+
     /// The facets of `schema` no checker covers, walking the node the first time it is asked about.
     pub(crate) fn uncheckable_facets(
         &self,
@@ -674,6 +691,16 @@ fn compile(options: PatternEngineOptions, pattern: &str) -> Option<CompiledMatch
         .ok()
         .map(CompiledMatcher::FancyRegex),
     }
+}
+
+fn search_lengths(options: PatternEngineOptions, pattern: &str) -> Option<SearchLengths> {
+    let translated = match (options.syntax(), options) {
+        (PatternSyntax::Ecma262, _) => jsonschema_regex::to_rust_regex(pattern).ok()?,
+        (PatternSyntax::Engine, PatternEngineOptions::Regex { .. }) => Cow::Borrowed(pattern),
+        // The lengths are read off the `regex` syntax, and fancy-regex parses its own.
+        (PatternSyntax::Engine, PatternEngineOptions::FancyRegex { .. }) => return None,
+    };
+    SearchLengths::from_translated(&translated)
 }
 
 #[cfg(test)]

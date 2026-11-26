@@ -8,6 +8,7 @@
 - Pre-built wheels for Linux on `armv7l`, `ppc64le`, `s390x` and `riscv64`.
 - Pre-built wheels for `musllinux` on `armv7l` and `i686`.
 - Pre-built wheels for PyPy on macOS `arm64`.
+- Canonicalization of a `pattern` that cannot fit `minLength` or `maxLength`, which reduces to `false`.
 
 ## [0.63.2] - 2026-11-26
 
