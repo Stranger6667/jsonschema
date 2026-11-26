@@ -115,7 +115,7 @@ pub(crate) fn compile<E: ValueEmitter>(
 
 /// Build the errors block. It iterates the instance's keys, like `is_valid`, with
 /// `additionalProperties: false` aggregating unexpected keys into one trailing error.
-fn build_errors_block<E: ValueEmitter>(
+pub(super) fn build_errors_block<E: ValueEmitter>(
     compiled_props: &[(&str, CompiledExpr)],
     use_known_keys_precheck: bool,
     wildcard_arm_body: &CompiledExpr,
