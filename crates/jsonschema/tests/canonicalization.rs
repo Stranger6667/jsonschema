@@ -6,8 +6,9 @@ use std::{
 
 use jsonschema::{
     canonical::{
-        options, CanonicalKind, CanonicalSchema, CanonicalView, Cause, Containment, Distinctness,
-        ObjectViolationView, OperandMismatch, RawReason, Satisfiability, UnsatisfiableReason,
+        options, CanonicalKind, CanonicalSchema, CanonicalView, CanonicalizeOptions, Cause,
+        Containment, Distinctness, ObjectViolationView, OperandMismatch, RawReason, Satisfiability,
+        UnsatisfiableReason,
     },
     canonicalize, validator_for, CanonicalizationError, Draft, JsonType, PatternOptions,
     PatternSyntax, Registry, Retrieve, Uri,
@@ -2797,6 +2798,8 @@ fn hash_ignores_the_definition_map() {
 #[test_case(&json!({"type": "string"}), &json!({"minLength": 4}), &json!({"type": "string", "minLength": 4}); "bound folds into the string leaf")]
 #[test_case(&json!({"const": "A"}), &json!({"pattern": "^A$"}), &json!({"const": "A"}); "matching pattern keeps the constant")]
 #[test_case(&json!({"const": "A"}), &json!({"const": "B"}), &json!({"not": {}}); "disjoint constants fold to false")]
+#[test_case(&json!({"type": "string", "maxLength": 3}), &json!({"type": "string", "pattern": "^VC-[0-9]{4}$"}), &json!({"not": {}}); "pattern longer than maxLength folds to false")]
+#[test_case(&json!({"type": "string", "minLength": 1, "maxLength": 8}), &json!({"type": "string", "pattern": "^BK-"}), &json!({"type": "string", "minLength": 1, "maxLength": 8, "pattern": "^BK-"}); "pattern fitting the lengths stays")]
 fn intersect_folds(left: &Value, right: &Value, expected: &Value) {
     let left = canonicalize(left).expect("canonicalizes");
     let right = canonicalize(right).expect("canonicalizes");
@@ -7730,6 +7733,26 @@ fn pattern_syntax(schema: &Value, syntax: PatternSyntax, expected: &Value) {
     let mut output = canonical.to_json_schema();
     output.as_object_mut().expect("an object").remove("$schema");
     assert_eq!(&output, expected);
+}
+
+// The fancy-regex engine reads its own syntax with its own parser, so no length is derived there.
+#[test_case(options(), Satisfiability::No; "default engine")]
+#[test_case(options().with_pattern_options(PatternOptions::regex()), Satisfiability::No; "regex engine")]
+#[test_case(
+    options().with_pattern_options(PatternOptions::regex().syntax(PatternSyntax::Engine)),
+    Satisfiability::No;
+    "regex engine syntax"
+)]
+#[test_case(
+    options().with_pattern_options(PatternOptions::fancy_regex().syntax(PatternSyntax::Engine)),
+    Satisfiability::Unknown;
+    "fancy-regex engine syntax"
+)]
+fn pattern_longer_than_max_length(options: CanonicalizeOptions<'static>, expected: Satisfiability) {
+    let canonical = options
+        .canonicalize(&json!({"type": "string", "maxLength": 3, "pattern": "^VC-[0-9]{4}$"}))
+        .expect("canonicalizes");
+    assert_eq!(canonical.satisfiability(), expected);
 }
 
 #[test]

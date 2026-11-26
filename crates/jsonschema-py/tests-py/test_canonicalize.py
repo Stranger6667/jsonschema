@@ -673,6 +673,11 @@ def test_pattern_options_rejects_other_types():
         ),
         ({"const": "A"}, {"pattern": "^A$"}, {"$schema": DRAFT202012, "const": "A"}),
         ({"const": "A"}, {"const": "B"}, {"$schema": DRAFT202012, "not": {}}),
+        (
+            {"type": "string", "maxLength": 3},
+            {"type": "string", "pattern": "^VC-[0-9]{4}$"},
+            {"$schema": DRAFT202012, "not": {}},
+        ),
     ],
 )
 def test_intersect(left, right, expected):

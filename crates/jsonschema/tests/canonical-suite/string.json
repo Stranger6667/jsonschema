@@ -525,5 +525,113 @@
       {"data": null, "valid": true},
       {"data": "a", "valid": false}
     ]
+  },
+  {
+    "description": "a pattern whose every match is longer than maxLength accepts nothing",
+    "schemas": [
+      {"type": "string", "maxLength": 3, "pattern": "^VC-[0-9]{4}$"},
+      {"allOf": [{"type": "string", "maxLength": 3}, {"pattern": "^VC-[0-9]{4}$"}]}
+    ],
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": "VC-", "valid": false},
+      {"data": "VC-1234", "valid": false}
+    ]
+  },
+  {
+    "description": "an unanchored pattern whose shortest match is longer than maxLength accepts nothing",
+    "schema": {"type": "string", "maxLength": 2, "pattern": "abc"},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": "ab", "valid": false},
+      {"data": "abc", "valid": false}
+    ]
+  },
+  {
+    "description": "a pattern anchored at both ends whose longest match is shorter than minLength accepts nothing",
+    "schema": {"type": "string", "minLength": 8, "pattern": "^(?:[a-z]{2,4}|[0-9]{6})$"},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": "abcd", "valid": false},
+      {"data": "abcdefgh", "valid": false}
+    ]
+  },
+  {
+    "description": "two patterns whose matches never share a length accept nothing",
+    "schema": {"type": "string", "allOf": [{"pattern": "^a{3}$"}, {"pattern": "^[a-z]{5}$"}]},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": "aaa", "valid": false},
+      {"data": "aaaaa", "valid": false}
+    ]
+  },
+  {
+    "description": "a format of fixed length beside a pattern of another fixed length accepts nothing",
+    "schema": {"type": "string", "format": "date", "pattern": "^[0-9]{4}$"},
+    "validate_formats": true,
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "not": {}},
+    "satisfiable": false,
+    "tests": [
+      {"data": "2024", "valid": false},
+      {"data": "2024-01-01", "valid": false}
+    ]
+  },
+  {
+    "description": "an unanchored pattern matches inside a longer string, so minLength above its match length stays",
+    "schema": {"type": "string", "minLength": 8, "pattern": "[a-z]{2,4}"},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "minLength": 8, "pattern": "[a-z]{2,4}"},
+    "tests": [
+      {"data": "1234ab5678", "valid": true},
+      {"data": "ab", "valid": false}
+    ]
+  },
+  {
+    "description": "a pattern anchored at the start alone matches a longer string, so minLength above its match length stays",
+    "schema": {"type": "string", "minLength": 8, "pattern": "^[a-z]{2}"},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "minLength": 8, "pattern": "^[a-z]{2}"},
+    "tests": [
+      {"data": "ab345678", "valid": true},
+      {"data": "ab", "valid": false}
+    ]
+  },
+  {
+    "description": "an unbounded repetition has no longest match, so minLength stays",
+    "schema": {"type": "string", "minLength": 8, "pattern": "^a+$"},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "minLength": 8, "pattern": "^a+$"},
+    "tests": [
+      {"data": "aaaaaaaa", "valid": true},
+      {"data": "aaa", "valid": false}
+    ]
+  },
+  {
+    "description": "an alternative short enough for maxLength keeps the pattern",
+    "schema": {"type": "string", "maxLength": 3, "pattern": "^(?:ab|abcdef)$"},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "maxLength": 3, "pattern": "^(?:ab|abcdef)$"},
+    "tests": [
+      {"data": "ab", "valid": true},
+      {"data": "abcdef", "valid": false}
+    ]
+  },
+  {
+    "description": "a character outside the Basic Multilingual Plane counts once for the pattern and for maxLength",
+    "schema": {"type": "string", "maxLength": 1, "pattern": "^.$"},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "maxLength": 1, "pattern": "^.$"},
+    "tests": [
+      {"data": "\ud83d\ude00", "valid": true},
+      {"data": "ab", "valid": false}
+    ]
+  },
+  {
+    "description": "a literal outside the Basic Multilingual Plane counts once for the pattern and for maxLength",
+    "schema": {"type": "string", "minLength": 1, "maxLength": 1, "pattern": "^\ud83d\ude00$"},
+    "expected": {"$schema": "https://json-schema.org/draft/2020-12/schema", "type": "string", "minLength": 1, "maxLength": 1, "pattern": "^\ud83d\ude00$"},
+    "tests": [
+      {"data": "\ud83d\ude00", "valid": true},
+      {"data": "a", "valid": false}
+    ]
   }
 ]

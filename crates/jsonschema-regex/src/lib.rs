@@ -1,3 +1,4 @@
+mod lengths;
 mod repetition;
 mod sequence;
 mod syntax;
@@ -12,6 +13,7 @@ use regex_syntax::{
     hir::{Class, Hir, HirKind},
 };
 
+pub use lengths::SearchLengths;
 pub use repetition::{search_form, RepeatedClass, Search};
 pub use sequence::Sequence;
 pub use syntax::is_valid_ecma_regex;

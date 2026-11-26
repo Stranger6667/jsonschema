@@ -5,6 +5,7 @@
 ### Added
 
 - `mask:` hiding instance values in `Evaluation` outputs, and on `JSONSchema.evaluate`.
+- Canonicalization of a `pattern` that cannot fit `minLength` or `maxLength`, which reduces to `false`.
 
 ## [0.63.2] - 2026-11-26
 
