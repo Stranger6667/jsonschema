@@ -8,6 +8,8 @@ repository.workspace = true
 edition.workspace = true
 authors.workspace = true
 publish = false
+# The Python sdist ships this crate as a workspace member; building the bindings never reads the data.
+exclude = ["data"]
 
 [dependencies]
 serde.workspace = true
