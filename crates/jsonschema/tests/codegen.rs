@@ -3263,6 +3263,25 @@ fn test_property_names_covered_by_pattern_match_runtime(instance: serde_json::Va
     );
 }
 
+#[test_case(serde_json::json!({}) ; "empty_object")]
+#[test_case(serde_json::json!({"a": 1}) ; "one_property")]
+#[test_case(serde_json::json!({"a": 1, "c": 2}) ; "two_properties")]
+fn test_additional_properties_false_errors_match_runtime(instance: serde_json::Value) {
+    let schema = serde_json::json!({"type":"object","additionalProperties":false});
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    assert_validate_parity(
+        AdditionalPropertiesFalseValidator::is_valid(&instance),
+        AdditionalPropertiesFalseValidator::validate(&instance),
+        &runtime,
+        &instance,
+    );
+    assert_iter_errors_parity(
+        AdditionalPropertiesFalseValidator::iter_errors(&instance),
+        &runtime,
+        &instance,
+    );
+}
+
 #[test_case(serde_json::json!({}), true ; "empty_allowed")]
 #[test_case(serde_json::json!({"a": 1}), false ; "any_property_rejected")]
 #[test_case(serde_json::json!("not an object"), false ; "non_object_rejected_by_type")]

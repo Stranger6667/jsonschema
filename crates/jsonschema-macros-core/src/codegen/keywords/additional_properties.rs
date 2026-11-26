@@ -5,6 +5,7 @@ use super::{
         CompileContext, CompiledExpr,
     },
     pattern_coverage::build_pattern_coverage,
+    properties::build_errors_block,
 };
 use crate::codegen::emit::ValueEmitter;
 use quote::{format_ident, quote};
@@ -61,7 +62,6 @@ pub(crate) fn compile<E: ValueEmitter>(
     pattern_properties: Option<&Value>,
     compiled: Option<&CompiledExpr>,
 ) -> Option<CompiledExpr> {
-    let err_instance = E::err_instance(format_ident!("instance"));
     let additional_properties = additional_properties?;
 
     // `patternProperties` combined with a false or schema `additionalProperties` is fused into a
@@ -73,10 +73,10 @@ pub(crate) fn compile<E: ValueEmitter>(
 
     let schema_path = ctx.schema_path_for_keyword("additionalProperties");
     match additional_properties {
-        Value::Bool(false) => Some(CompiledExpr::from_bool_expr(
+        // Reports as beside an empty `properties`, like the runtime
+        Value::Bool(false) => Some(CompiledExpr::with_errors(
             E::object_is_empty(format_ident!("obj")),
-            &schema_path,
-            &err_instance,
+            build_errors_block::<E>(&[], true, &CompiledExpr::always_true(), &schema_path),
         )),
         Value::Bool(true) => None,
         schema => {

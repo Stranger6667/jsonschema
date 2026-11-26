@@ -1361,19 +1361,37 @@ mod __validator_impl {
                                 let __path = &__path.push("empty");
                                 match __json::narrow_object(instance) {
                                     Some(obj) => {
-                                        if let Some(__e) = '__first_error: {
-                                            if !(__ObjectExt::is_empty(&obj)) {
-                                                break '__first_error Some(
-                                                    __err::false_schema(
+                                        let mut __unexpected: Vec<String> = Vec::new();
+                                        for (key, value) in __ObjectExt::members(&obj) {
+                                            let key_str = (&*key);
+                                            match key_str {
+                                                _ => {
+                                                    if __errors.first_only() {
+                                                        return __errors
+                                                            .push(
+                                                                __err::additional_properties(
+                                                                    "/properties/empty/additionalProperties",
+                                                                    __path.into(),
+                                                                    __NodeExt::lazy_value(&instance),
+                                                                    vec![key.to_string()],
+                                                                ),
+                                                            );
+                                                    }
+                                                    __unexpected.push(key.to_string());
+                                                }
+                                            }
+                                        }
+                                        if !__unexpected.is_empty() {
+                                            if __errors
+                                                .push(
+                                                    __err::additional_properties(
                                                         "/properties/empty/additionalProperties",
                                                         __path.into(),
                                                         __NodeExt::lazy_value(&instance),
+                                                        __unexpected,
                                                     ),
-                                                );
-                                            }
-                                            None
-                                        } {
-                                            if __errors.push(__e) {
+                                                )
+                                            {
                                                 return true;
                                             }
                                         }

@@ -328,16 +328,43 @@ impl<F: Json> Validate<F> for AdditionalPropertiesFalseValidator {
         _ctx: &mut ValidationContext,
     ) -> Result<(), ValidationError<'i>> {
         if let Some(object) = instance.as_object() {
-            if let Some((_, value)) = object.members().next() {
-                return Err(ValidationError::false_schema(
+            if let Some((property, _)) = object.members().next() {
+                return Err(ValidationError::additional_properties(
                     self.site.location.clone(),
                     crate::paths::capture_evaluation_path(tracker, &self.site.location),
                     location.into(),
-                    value.lazy_value(),
+                    instance.lazy_value(),
+                    vec![property.as_ref().to_owned()],
                 ));
             }
         }
         Ok(())
+    }
+
+    fn collect_errors<'i>(
+        &self,
+        instance: &F::Node<'i>,
+        location: &LazyLocation,
+        tracker: Option<&RefTracker>,
+        _ctx: &mut ValidationContext,
+        errors: &mut Vec<ValidationError<'i>>,
+    ) {
+        let Some(object) = instance.as_object() else {
+            return;
+        };
+        let unexpected: Vec<_> = object
+            .members()
+            .map(|(property, _)| property.as_ref().to_owned())
+            .collect();
+        if !unexpected.is_empty() {
+            errors.push(ValidationError::additional_properties(
+                self.site.location.clone(),
+                crate::paths::capture_evaluation_path(tracker, &self.site.location),
+                location.into(),
+                instance.lazy_value(),
+                unexpected,
+            ));
+        }
     }
 
     fn evaluate(
@@ -2158,7 +2185,9 @@ pub(crate) fn compile<'a, F: Json>(
 
 #[cfg(test)]
 mod tests {
-    use crate::{properties::HASHMAP_THRESHOLD, tests_util, PatternOptions};
+    use crate::{
+        error::ValidationErrorKind, properties::HASHMAP_THRESHOLD, tests_util, PatternOptions,
+    };
     use serde_json::{json, Map, Value};
     use test_case::test_case;
 
@@ -3206,5 +3235,41 @@ mod tests {
     )]
     fn fused_evaluate_reports_each_keyword(schema: &Value, instance: &Value, expected: &[&str]) {
         assert_eq!(tests_util::evaluation_outline(schema, instance), expected);
+    }
+
+    // Without `properties`, `additionalProperties: false` reports like it does beside an empty one
+    #[test_case(&json!({"additionalProperties": false}); "false alone")]
+    #[test_case(&json!({"properties": {}, "additionalProperties": false}); "beside empty properties")]
+    fn false_reports_every_unexpected_property(schema: &Value) {
+        let validator = crate::validator_for(schema).expect("Invalid schema");
+        let instance = json!({"a": 1, "c": 2});
+        let first = validator.validate(&instance).expect_err("Should fail");
+        assert_eq!(
+            first.to_string(),
+            "Additional properties are not allowed ('a' was unexpected)"
+        );
+        assert!(matches!(
+            first.kind(),
+            ValidationErrorKind::AdditionalProperties { .. }
+        ));
+        assert_eq!(first.instance().as_ref(), &instance);
+        let errors: Vec<_> = validator
+            .iter_errors(&instance)
+            .map(|error| {
+                (
+                    error.to_string(),
+                    error.instance_path().to_string(),
+                    error.schema_path().to_string(),
+                )
+            })
+            .collect();
+        assert_eq!(
+            errors,
+            [(
+                "Additional properties are not allowed ('a', 'c' were unexpected)".to_string(),
+                String::new(),
+                "/additionalProperties".to_string(),
+            )]
+        );
     }
 }
