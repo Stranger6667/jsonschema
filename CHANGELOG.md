@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.63.2] - 2026-11-26
+
 ### Fixed
 
 - **CLI**: `jsonschema-cli canonicalize --at` not finding a pasted `$ref` with percent-encoded characters, such as `#/$defs/Pet%20Store`.
@@ -2246,7 +2248,8 @@ Old names are retained for backward compatibility but will be removed in a futur
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.63.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.63.2...HEAD
+[0.63.2]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.63.1...rust-v0.63.2
 [0.63.1]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.63.0...rust-v0.63.1
 [0.63.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.62.0...rust-v0.63.0
 [0.62.0]: https://github.com/Stranger6667/jsonschema/compare/rust-v0.61.2...rust-v0.62.0
