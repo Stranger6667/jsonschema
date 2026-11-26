@@ -70,3 +70,31 @@ def test_masking_with_multiple_errors():
     assert len(errors) == 2
     assert all("[HIDDEN]" in str(error) for error in errors)
     assert all("123" not in str(error) and "invalid" not in str(error) for error in errors)
+
+
+SCHEMA = {"properties": {"password": {"minLength": 8}, "code": {"type": "integer"}}}
+
+
+@pytest.mark.parametrize(
+    "evaluate",
+    [
+        lambda: jsonschema_rs.validator_for(SCHEMA, mask="[REDACTED]").evaluate(
+            {"password": "secret", "code": "secret"}
+        ),
+        lambda: jsonschema_rs.evaluate(SCHEMA, {"password": "secret", "code": "secret"}, mask="[REDACTED]"),
+        lambda: jsonschema_rs.JsonTextValidator(SCHEMA, mask="[REDACTED]").evaluate(
+            '{"password": "secret", "code": "secret"}'
+        ),
+    ],
+    ids=["validator", "function", "json text"],
+)
+def test_masking_evaluate(evaluate):
+    evaluation = evaluate()
+
+    assert [error["error"] for error in evaluation.errors()] == [
+        "[REDACTED] is shorter than 8 characters",
+        '[REDACTED] is not of type "integer"',
+    ]
+    for output in (evaluation.list(), evaluation.hierarchical()):
+        assert "secret" not in repr(output)
+        assert "[REDACTED]" in repr(output)

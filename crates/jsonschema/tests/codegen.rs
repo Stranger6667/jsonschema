@@ -576,6 +576,40 @@ fn test_large_subschemas_match_runtime(instance: serde_json::Value) {
     );
 }
 
+const MASKED: &str = r#"{"properties":{"type":{"type":"integer"},"length":{"minLength":10},"contains":{"contains":{"type":"integer"}},"one_of":{"oneOf":[{},{}]},"false":false},"additionalProperties":false}"#;
+
+#[jsonschema::validator(
+    schema = r#"{"properties":{"type":{"type":"integer"},"length":{"minLength":10},"contains":{"contains":{"type":"integer"}},"one_of":{"oneOf":[{},{}]},"false":false},"additionalProperties":false}"#
+)]
+struct MaskedValidator;
+
+const MASKED_WITH_UNEVALUATED: &str = r#"{"properties":{"type":{"type":"integer"},"length":{"minLength":10},"contains":{"contains":{"type":"integer"}},"one_of":{"oneOf":[{},{}]},"false":false},"unevaluatedProperties":{"type":"integer"}}"#;
+
+// `unevaluatedProperties` makes `evaluate` take its errors from an errors run.
+#[jsonschema::validator(
+    schema = r#"{"properties":{"type":{"type":"integer"},"length":{"minLength":10},"contains":{"contains":{"type":"integer"}},"one_of":{"oneOf":[{},{}]},"false":false},"unevaluatedProperties":{"type":"integer"}}"#
+)]
+struct MaskedWithUnevaluatedValidator;
+
+fn masked_messages(evaluation: &jsonschema::Evaluation) -> Vec<String> {
+    evaluation
+        .iter_errors()
+        .map(|entry| entry.error.masked_with("[REDACTED]").to_string())
+        .collect()
+}
+
+#[test_case(MaskedValidator::evaluate, MASKED ; "checks")]
+#[test_case(MaskedWithUnevaluatedValidator::evaluate, MASKED_WITH_UNEVALUATED ; "errors run")]
+fn test_masked_evaluate_matches_runtime(evaluate: EvaluateFn, schema: &str) {
+    let schema: serde_json::Value = serde_json::from_str(schema).expect("valid JSON");
+    let runtime = jsonschema::validator_for(&schema).expect("valid schema");
+    let instance = serde_json::json!({"type": "secret", "length": "secret", "contains": ["secret"], "one_of": "secret", "false": "secret", "other": "secret"});
+    assert_eq!(
+        masked_messages(&evaluate(&instance)),
+        masked_messages(&runtime.evaluate(&instance)),
+    );
+}
+
 const NO_VALIDATION_META_SCHEMA: &str = r#"{"$id":"json-schema:///meta/no-validation","$schema":"https://json-schema.org/draft/2020-12/schema","$vocabulary":{"https://json-schema.org/draft/2020-12/vocab/core":true,"https://json-schema.org/draft/2020-12/vocab/applicator":true,"https://json-schema.org/draft/2020-12/vocab/validation":false,"https://json-schema.org/draft/2020-12/vocab/unevaluated":true,"https://json-schema.org/draft/2020-12/vocab/format-annotation":true}}"#;
 const SUBSCHEMA_IN_DRAFT_4: &str = r#"{"properties":{"a":{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"}}}"#;
 const BRANCH_IN_DRAFT_4: &str = r#"{"anyOf":[{"$schema":"http://json-schema.org/draft-04/schema#","type":"integer"},{"type":"string"}]}"#;

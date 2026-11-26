@@ -144,9 +144,9 @@ impl<F: Json> Validate<F> for NullTypeValidator {
         if Validate::<F>::is_valid(self, instance, ctx) {
             EvaluationResult::valid_empty()
         } else {
-            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
-                "type",
-                format!(r#"{} is not of type "null""#, instance.to_value()),
+            EvaluationResult::invalid_empty(vec![ErrorDescription::not_of_type(
+                &instance.to_value(),
+                "null",
             )])
         }
     }
@@ -200,9 +200,9 @@ impl<F: Json> Validate<F> for BooleanTypeValidator {
         if Validate::<F>::is_valid(self, instance, ctx) {
             EvaluationResult::valid_empty()
         } else {
-            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
-                "type",
-                format!(r#"{} is not of type "boolean""#, instance.to_value()),
+            EvaluationResult::invalid_empty(vec![ErrorDescription::not_of_type(
+                &instance.to_value(),
+                "boolean",
             )])
         }
     }
@@ -257,9 +257,9 @@ impl<F: Json> Validate<F> for StringTypeValidator {
         if Validate::<F>::is_valid(self, instance, ctx) {
             EvaluationResult::valid_empty()
         } else {
-            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
-                "type",
-                format!(r#"{} is not of type "string""#, instance.to_value()),
+            EvaluationResult::invalid_empty(vec![ErrorDescription::not_of_type(
+                &instance.to_value(),
+                "string",
             )])
         }
     }
@@ -314,9 +314,9 @@ impl<F: Json> Validate<F> for ArrayTypeValidator {
         if Validate::<F>::is_valid(self, instance, ctx) {
             EvaluationResult::valid_empty()
         } else {
-            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
-                "type",
-                format!(r#"{} is not of type "array""#, instance.to_value()),
+            EvaluationResult::invalid_empty(vec![ErrorDescription::not_of_type(
+                &instance.to_value(),
+                "array",
             )])
         }
     }
@@ -375,9 +375,9 @@ impl<F: Json> Validate<F> for ObjectTypeValidator {
         if Validate::<F>::is_valid(self, instance, ctx) {
             EvaluationResult::valid_empty()
         } else {
-            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
-                "type",
-                format!(r#"{} is not of type "object""#, instance.to_value()),
+            EvaluationResult::invalid_empty(vec![ErrorDescription::not_of_type(
+                &instance.to_value(),
+                "object",
             )])
         }
     }
@@ -431,9 +431,9 @@ impl<F: Json> Validate<F> for NumberTypeValidator {
         if Validate::<F>::is_valid(self, instance, ctx) {
             EvaluationResult::valid_empty()
         } else {
-            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
-                "type",
-                format!(r#"{} is not of type "number""#, instance.to_value()),
+            EvaluationResult::invalid_empty(vec![ErrorDescription::not_of_type(
+                &instance.to_value(),
+                "number",
             )])
         }
     }
@@ -487,9 +487,9 @@ impl<F: Json> Validate<F> for IntegerTypeValidator {
         if Validate::<F>::is_valid(self, instance, ctx) {
             EvaluationResult::valid_empty()
         } else {
-            EvaluationResult::invalid_empty(vec![ErrorDescription::new(
-                "type",
-                format!(r#"{} is not of type "integer""#, instance.to_value()),
+            EvaluationResult::invalid_empty(vec![ErrorDescription::not_of_type(
+                &instance.to_value(),
+                "integer",
             )])
         }
     }

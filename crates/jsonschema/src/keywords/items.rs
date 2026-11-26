@@ -792,12 +792,8 @@ impl AbsorbedKeywords {
         tracker: Option<&RefTracker>,
         ctx: &mut ValidationContext,
     ) -> EvaluationNode {
-        let error = (!is_array).then(|| {
-            ErrorDescription::new(
-                "type",
-                format!(r#"{} is not of type "array""#, instance.to_value()),
-            )
-        });
+        let error =
+            (!is_array).then(|| ErrorDescription::not_of_type(&instance.to_value(), "array"));
         unit(&self.type_, error, instance_location, tracker, ctx)
     }
 

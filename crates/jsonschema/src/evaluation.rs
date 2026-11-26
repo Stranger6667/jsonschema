@@ -1,12 +1,18 @@
-use crate::{paths::Location, ValidationError};
+use crate::{
+    error::{InstanceValue, ValidationErrorKind, DEFAULT_PLACEHOLDER},
+    paths::Location,
+    ValidationError,
+};
 use ahash::AHashMap;
 use referencing::{JsonPointerSegment, Uri};
 use serde::{
     ser::{SerializeMap, SerializeSeq, SerializeStruct},
     Serialize,
 };
+use serde_json::Value;
 use std::{
     borrow::Cow,
+    cell::Cell,
     fmt,
     sync::{Arc, LazyLock, OnceLock},
 };
@@ -123,35 +129,63 @@ impl serde::Serialize for Annotations {
 pub struct ErrorDescription {
     keyword: Cow<'static, str>,
     message: String,
+    masked: Masked,
+}
+
+/// How the masked form of a message differs from the message.
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum Masked {
+    /// The message names no instance value.
+    Unchanged,
+    /// The instance value is `start..end` of the message.
+    Value { start: u32, end: u32 },
+    /// The message is `..start` of the stored text, and its masked form, worded differently and
+    /// naming no instance value, is `start..`.
+    Text { start: u32 },
 }
 
 impl ErrorDescription {
-    /// A `keyword` error with `message`, for generated validators.
+    /// The error of `instance` not being of type `expected`.
     #[doc(hidden)]
-    #[inline]
     #[must_use]
-    pub fn described(keyword: &'static str, message: String) -> Self {
-        Self::new(keyword, message)
+    pub fn not_of_type(instance: &Value, expected: &str) -> Self {
+        // Fits the message for short instances without growing.
+        let mut message = String::with_capacity(64);
+        fmt::Write::write_fmt(&mut message, format_args!("{instance}"))
+            .expect("formatting into memory cannot fail");
+        let end = to_u32(message.len());
+        message.push_str(" is not of type \"");
+        message.push_str(expected);
+        message.push('"');
+        Self {
+            keyword: Cow::Borrowed("type"),
+            message,
+            masked: Masked::Value { start: 0, end },
+        }
     }
 
+    #[cfg(test)]
     #[inline]
     #[must_use]
     pub(crate) fn new(keyword: &'static str, message: String) -> Self {
         Self {
             keyword: Cow::Borrowed(keyword),
             message,
+            masked: Masked::Unchanged,
         }
     }
 
     #[inline]
     #[must_use]
     pub(crate) fn from_validation_error(e: &ValidationError<'_>) -> Self {
+        let (message, masked) = render_message(e);
         ErrorDescription {
             keyword: match e.kind().keyword_name() {
                 Ok(keyword) => Cow::Borrowed(keyword),
                 Err(custom) => Cow::Owned(custom.to_owned()),
             },
-            message: render_message(e),
+            message,
+            masked,
         }
     }
 
@@ -165,7 +199,10 @@ impl ErrorDescription {
     /// Returns the inner [`String`] of the error description.
     #[inline]
     #[must_use]
-    pub fn into_inner(self) -> String {
+    pub fn into_inner(mut self) -> String {
+        if let Masked::Text { start } = self.masked {
+            self.message.truncate(start as usize);
+        }
         self.message
     }
 
@@ -173,57 +210,215 @@ impl ErrorDescription {
     #[inline]
     #[must_use]
     pub fn message(&self) -> &str {
-        &self.message
+        match self.masked {
+            Masked::Text { start } => &self.message[..start as usize],
+            _ => &self.message,
+        }
+    }
+
+    /// Returns a wrapper that displays the message with `"value"` in place of instance values.
+    #[must_use]
+    pub fn masked(&self) -> MaskedErrorDescription<'_, 'static> {
+        self.masked_with(DEFAULT_PLACEHOLDER)
+    }
+
+    /// Returns a wrapper that displays the message with `placeholder` in place of instance values,
+    /// as [`ValidationError::masked_with`] does.
+    ///
+    /// ```rust
+    /// # use serde_json::json;
+    /// let validator = jsonschema::validator_for(&json!({"type": "integer"}))?;
+    /// let evaluation = validator.evaluate(&json!("secret"));
+    /// let entry = evaluation.iter_errors().next().expect("one error");
+    /// assert_eq!(
+    ///     entry.error.masked_with("[REDACTED]").to_string(),
+    ///     r#"[REDACTED] is not of type "integer""#
+    /// );
+    /// # Ok::<(), Box<dyn std::error::Error>>(())
+    /// ```
+    #[must_use]
+    pub fn masked_with<'b, 'c>(
+        &'b self,
+        placeholder: impl Into<Cow<'c, str>>,
+    ) -> MaskedErrorDescription<'b, 'c> {
+        MaskedErrorDescription {
+            description: self,
+            placeholder: placeholder.into(),
+        }
+    }
+
+    fn write_masked(&self, f: &mut fmt::Formatter<'_>, placeholder: &str) -> fmt::Result {
+        match &self.masked {
+            Masked::Unchanged => f.write_str(&self.message),
+            Masked::Value { start, end } => {
+                f.write_str(&self.message[..*start as usize])?;
+                f.write_str(placeholder)?;
+                f.write_str(&self.message[*end as usize..])
+            }
+            Masked::Text { start } => f.write_str(&self.message[*start as usize..]),
+        }
     }
 }
 
-/// Formats `error` into a stack buffer first, so a message that fits `MESSAGE_BUFFER` is allocated
-/// once at its final length instead of growing through every power of two below it.
-fn render_message(error: &ValidationError<'_>) -> String {
+/// A wrapper that displays an [`ErrorDescription`] with a placeholder in place of instance
+/// values.
+#[derive(Debug)]
+pub struct MaskedErrorDescription<'b, 'c> {
+    description: &'b ErrorDescription,
+    placeholder: Cow<'c, str>,
+}
+
+impl fmt::Display for MaskedErrorDescription<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        self.description.write_masked(f, &self.placeholder)
+    }
+}
+
+fn to_u32(position: usize) -> u32 {
+    u32::try_from(position).expect("error messages are shorter than 4 GiB")
+}
+
+/// The message of `error`, and how its masked form differs from it.
+///
+/// Formats into a stack buffer first, so a message that fits `MESSAGE_BUFFER` is allocated once
+/// at its final length instead of growing through every power of two below it.
+fn render_message(error: &ValidationError<'_>) -> (String, Masked) {
+    let written = Cell::new(0);
+    let span = Cell::new(None);
     let mut writer = MessageWriter {
         buffer: [0; MESSAGE_BUFFER],
-        len: 0,
+        written: &written,
         spilled: None,
     };
-    fmt::write(&mut writer, format_args!("{error}")).expect("formatting into memory cannot fail");
-    match writer.spilled {
-        Some(message) => message,
-        None => std::str::from_utf8(&writer.buffer[..writer.len])
-            .expect("only whole `str` pieces are written")
-            .to_owned(),
+    let value = RecordedValue {
+        value: InstanceValue(error),
+        written: &written,
+        span: &span,
+    };
+    fmt::write(
+        &mut writer,
+        format_args!(
+            "{}",
+            Message {
+                error,
+                value: &value,
+                masked: false,
+            }
+        ),
+    )
+    .expect("formatting into memory cannot fail");
+    let mut message = writer.into_string();
+    let masked = match span.get() {
+        Some((start, end)) => Masked::Value {
+            start: to_u32(start),
+            end: to_u32(end),
+        },
+        // The masked form counts the items these list.
+        None if matches!(
+            error.kind(),
+            ValidationErrorKind::AdditionalItems { .. }
+                | ValidationErrorKind::UnevaluatedItems { .. }
+        ) =>
+        {
+            append_masked_text(error, &mut message)
+        }
+        None => Masked::Unchanged,
+    };
+    (message, masked)
+}
+
+/// Appends the masked form of `error`, which names no instance value, to its `message`.
+#[cold]
+fn append_masked_text(error: &ValidationError<'_>, message: &mut String) -> Masked {
+    let start = to_u32(message.len());
+    fmt::Write::write_fmt(
+        message,
+        format_args!(
+            "{}",
+            Message {
+                error,
+                value: &"",
+                masked: true,
+            }
+        ),
+    )
+    .expect("formatting into memory cannot fail");
+    Masked::Text { start }
+}
+
+/// The message of `error` with `value` in place of its instance.
+struct Message<'a, 'e> {
+    error: &'a ValidationError<'e>,
+    value: &'a dyn fmt::Display,
+    masked: bool,
+}
+
+impl fmt::Display for Message<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        crate::error::write_message(self.error, f, self.value, self.masked)
+    }
+}
+
+/// Writes `value`, recording where in the message it went.
+struct RecordedValue<'a, 'e> {
+    value: InstanceValue<'a, 'e>,
+    written: &'a Cell<usize>,
+    span: &'a Cell<Option<(usize, usize)>>,
+}
+
+impl fmt::Display for RecordedValue<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let start = self.written.get();
+        fmt::Display::fmt(&self.value, f)?;
+        let earlier = self.span.replace(Some((start, self.written.get())));
+        debug_assert!(earlier.is_none(), "messages name the instance once");
+        Ok(())
     }
 }
 
 const MESSAGE_BUFFER: usize = 128;
 
-struct MessageWriter {
+/// Counts what it writes into `written`.
+struct MessageWriter<'a> {
     buffer: [u8; MESSAGE_BUFFER],
-    len: usize,
+    written: &'a Cell<usize>,
     spilled: Option<String>,
 }
 
-impl fmt::Write for MessageWriter {
+impl MessageWriter<'_> {
+    fn into_string(self) -> String {
+        match self.spilled {
+            Some(message) => message,
+            None => std::str::from_utf8(&self.buffer[..self.written.get()])
+                .expect("only whole `str` pieces are written")
+                .to_owned(),
+        }
+    }
+}
+
+impl fmt::Write for MessageWriter<'_> {
     fn write_str(&mut self, piece: &str) -> fmt::Result {
+        let len = self.written.get();
         if let Some(message) = &mut self.spilled {
             message.push_str(piece);
-        } else if let Some(slot) = self.buffer.get_mut(self.len..self.len + piece.len()) {
+        } else if let Some(slot) = self.buffer.get_mut(len..len + piece.len()) {
             slot.copy_from_slice(piece.as_bytes());
-            self.len += piece.len();
         } else {
-            let written = std::str::from_utf8(&self.buffer[..self.len])
+            let written = std::str::from_utf8(&self.buffer[..len])
                 .expect("only whole `str` pieces are written");
-            let mut message = String::with_capacity(self.len + piece.len());
+            let mut message = String::with_capacity(len + piece.len());
             message.push_str(written);
             message.push_str(piece);
             self.spilled = Some(message);
         }
+        self.written.set(len + piece.len());
         Ok(())
     }
 }
 
 impl fmt::Display for ErrorDescription {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        f.write_str(&self.message)
+        f.write_str(self.message())
     }
 }
 
@@ -1026,6 +1221,7 @@ impl Evaluation {
         ListOutput {
             arena: &self.arena,
             root: self.root,
+            mask: None,
         }
     }
     /// Returns the hierarchical output format.
@@ -1119,6 +1315,7 @@ impl Evaluation {
         HierarchicalOutput {
             arena: &self.arena,
             root: self.root,
+            mask: None,
         }
     }
     /// Returns an iterator over all annotations produced during evaluation.
@@ -1239,6 +1436,25 @@ pub struct FlagOutput {
 pub struct ListOutput<'a> {
     arena: &'a EvaluationArena,
     root: u32,
+    mask: Option<Cow<'a, str>>,
+}
+
+impl<'a> ListOutput<'a> {
+    /// This output with `"value"` in place of instance values in its error messages.
+    #[must_use]
+    pub fn masked(self) -> Self {
+        self.masked_with(DEFAULT_PLACEHOLDER)
+    }
+
+    /// This output with `placeholder` in place of instance values in its error messages, as
+    /// [`ErrorDescription::masked_with`] writes them.
+    #[must_use]
+    pub fn masked_with(self, placeholder: impl Into<Cow<'a, str>>) -> Self {
+        ListOutput {
+            mask: Some(placeholder.into()),
+            ..self
+        }
+    }
 }
 
 /// Hierarchical output format providing a tree structure of evaluation results.
@@ -1248,6 +1464,25 @@ pub struct ListOutput<'a> {
 pub struct HierarchicalOutput<'a> {
     arena: &'a EvaluationArena,
     root: u32,
+    mask: Option<Cow<'a, str>>,
+}
+
+impl<'a> HierarchicalOutput<'a> {
+    /// This output with `"value"` in place of instance values in its error messages.
+    #[must_use]
+    pub fn masked(self) -> Self {
+        self.masked_with(DEFAULT_PLACEHOLDER)
+    }
+
+    /// This output with `placeholder` in place of instance values in its error messages, as
+    /// [`ErrorDescription::masked_with`] writes them.
+    #[must_use]
+    pub fn masked_with(self, placeholder: impl Into<Cow<'a, str>>) -> Self {
+        HierarchicalOutput {
+            mask: Some(placeholder.into()),
+            ..self
+        }
+    }
 }
 
 impl Serialize for ListOutput<'_> {
@@ -1255,7 +1490,7 @@ impl Serialize for ListOutput<'_> {
     where
         S: serde::Serializer,
     {
-        serialize_list(self.arena, self.root, serializer)
+        serialize_list(self.arena, self.root, self.mask.as_deref(), serializer)
     }
 }
 
@@ -1264,11 +1499,16 @@ impl Serialize for HierarchicalOutput<'_> {
     where
         S: serde::Serializer,
     {
-        serialize_hierarchical(self.arena, self.root, serializer)
+        serialize_hierarchical(self.arena, self.root, self.mask.as_deref(), serializer)
     }
 }
 
-fn serialize_list<S>(arena: &EvaluationArena, root: u32, serializer: S) -> Result<S::Ok, S::Error>
+fn serialize_list<S>(
+    arena: &EvaluationArena,
+    root: u32,
+    mask: Option<&str>,
+    serializer: S,
+) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
@@ -1276,19 +1516,20 @@ where
     state.serialize_field("valid", &arena.node(root).valid)?;
     let mut units = Vec::new();
     collect_list_entries(arena, root, &mut units);
-    state.serialize_field("details", &ListEntries { arena, units })?;
+    state.serialize_field("details", &ListEntries { arena, mask, units })?;
     state.end()
 }
 
 fn serialize_hierarchical<S>(
     arena: &EvaluationArena,
     root: u32,
+    mask: Option<&str>,
     serializer: S,
 ) -> Result<S::Ok, S::Error>
 where
     S: serde::Serializer,
 {
-    serialize_unit(arena, root, serializer, true)
+    serialize_unit(arena, root, mask, serializer, true)
 }
 
 fn collect_list_entries(arena: &EvaluationArena, index: u32, out: &mut Vec<Unit>) {
@@ -1314,6 +1555,7 @@ fn collect_list_entries(arena: &EvaluationArena, index: u32, out: &mut Vec<Unit>
 fn serialize_unit<S>(
     arena: &EvaluationArena,
     index: u32,
+    mask: Option<&str>,
     serializer: S,
     include_children: bool,
 ) -> Result<S::Ok, S::Error>
@@ -1336,10 +1578,16 @@ where
         state.serialize_field("droppedAnnotations", annotations)?;
     }
     if !node.errors.is_empty() {
-        state.serialize_field("errors", &ErrorEntriesSerializer(&node.errors))?;
+        state.serialize_field(
+            "errors",
+            &ErrorEntriesSerializer {
+                errors: &node.errors,
+                mask,
+            },
+        )?;
     }
     if include_children && node.first_child != NO_NODE {
-        state.serialize_field("details", &DetailsSerializer { arena, index })?;
+        state.serialize_field("details", &DetailsSerializer { arena, index, mask })?;
     }
     state.end()
 }
@@ -1580,6 +1828,7 @@ impl<'a> Iterator for OutputUnitChildren<'a> {
 /// The list output's units, in pre-order.
 struct ListEntries<'a> {
     arena: &'a EvaluationArena,
+    mask: Option<&'a str>,
     units: Vec<Unit>,
 }
 
@@ -1593,6 +1842,7 @@ impl Serialize for ListEntries<'_> {
             seq.serialize_element(&ListEntry {
                 arena: self.arena,
                 unit,
+                mask: self.mask,
             })?;
         }
         seq.end()
@@ -1602,6 +1852,7 @@ impl Serialize for ListEntries<'_> {
 struct ListEntry<'a> {
     arena: &'a EvaluationArena,
     unit: Unit,
+    mask: Option<&'a str>,
 }
 
 impl Serialize for ListEntry<'_> {
@@ -1610,7 +1861,7 @@ impl Serialize for ListEntry<'_> {
         S: serde::Serializer,
     {
         match self.unit {
-            Unit::Node(index) => serialize_unit(self.arena, index, serializer, false),
+            Unit::Node(index) => serialize_unit(self.arena, index, self.mask, serializer, false),
             Unit::RunItem { run, item, unit } => {
                 serialize_run_unit(self.arena, run, item, unit, serializer, false)
             }
@@ -1621,6 +1872,7 @@ impl Serialize for ListEntry<'_> {
 struct DetailsSerializer<'a> {
     arena: &'a EvaluationArena,
     index: u32,
+    mask: Option<&'a str>,
 }
 
 impl Serialize for DetailsSerializer<'_> {
@@ -1633,7 +1885,11 @@ impl Serialize for DetailsSerializer<'_> {
         let mut link = arena.node(self.index).first_child;
         while link != NO_NODE {
             if link & RUN_LINK == 0 {
-                seq.serialize_element(&SeqEntry { arena, index: link })?;
+                seq.serialize_element(&SeqEntry {
+                    arena,
+                    index: link,
+                    mask: self.mask,
+                })?;
                 link = arena.node(link).next_sibling;
             } else {
                 let run = link & !RUN_LINK;
@@ -1656,6 +1912,7 @@ impl Serialize for DetailsSerializer<'_> {
 struct SeqEntry<'a> {
     arena: &'a EvaluationArena,
     index: u32,
+    mask: Option<&'a str>,
 }
 
 impl Serialize for SeqEntry<'_> {
@@ -1663,7 +1920,7 @@ impl Serialize for SeqEntry<'_> {
     where
         S: serde::Serializer,
     {
-        serialize_unit(self.arena, self.index, serializer, true)
+        serialize_unit(self.arena, self.index, self.mask, serializer, true)
     }
 }
 
@@ -1792,6 +2049,26 @@ pub struct ErrorEntry<'a> {
     pub error: &'a ErrorDescription,
 }
 
+impl<'a> ErrorEntry<'a> {
+    /// Returns a wrapper that displays this entry with `"value"` in place of instance values.
+    #[must_use]
+    pub fn masked(&self) -> MaskedErrorEntry<'a, 'static> {
+        self.masked_with(DEFAULT_PLACEHOLDER)
+    }
+
+    /// Returns a wrapper that displays this entry with `placeholder` in place of instance values.
+    #[must_use]
+    pub fn masked_with<'c>(
+        &self,
+        placeholder: impl Into<Cow<'c, str>>,
+    ) -> MaskedErrorEntry<'a, 'c> {
+        MaskedErrorEntry {
+            entry: *self,
+            placeholder: placeholder.into(),
+        }
+    }
+}
+
 impl fmt::Display for ErrorEntry<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         if self.instance_location.is_empty() {
@@ -1799,6 +2076,22 @@ impl fmt::Display for ErrorEntry<'_> {
         } else {
             write!(f, "{}: {}", self.instance_location, self.error)
         }
+    }
+}
+
+/// A wrapper that displays an [`ErrorEntry`] with a placeholder in place of instance values.
+#[derive(Debug)]
+pub struct MaskedErrorEntry<'a, 'c> {
+    entry: ErrorEntry<'a>,
+    placeholder: Cow<'c, str>,
+}
+
+impl fmt::Display for MaskedErrorEntry<'_, '_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        if !self.entry.instance_location.is_empty() {
+            write!(f, "{}: ", self.entry.instance_location)?;
+        }
+        self.entry.error.write_masked(f, &self.placeholder)
     }
 }
 
@@ -1994,19 +2287,25 @@ impl<'a> Iterator for ErrorIter<'a> {
     }
 }
 
-struct ErrorEntriesSerializer<'a>(&'a [ErrorDescription]);
+struct ErrorEntriesSerializer<'a> {
+    errors: &'a [ErrorDescription],
+    mask: Option<&'a str>,
+}
 
 impl<'a> Serialize for ErrorEntriesSerializer<'a> {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
         S: serde::Serializer,
     {
-        let mut grouped: Vec<(&'a str, Vec<&'a str>)> = Vec::new();
+        let mut grouped: Vec<(&'a str, Vec<Cow<'a, str>>)> = Vec::new();
         let mut indexes: AHashMap<&'a str, usize> = AHashMap::new();
 
-        for error in self.0 {
+        for error in self.errors {
             let keyword = error.keyword();
-            let msg = error.message();
+            let msg = match self.mask {
+                Some(mask) => Cow::Owned(error.masked_with(mask).to_string()),
+                None => Cow::Borrowed(error.message()),
+            };
             if let Some(&idx) = indexes.get(keyword) {
                 grouped[idx].1.push(msg);
             } else {
@@ -2018,7 +2317,7 @@ impl<'a> Serialize for ErrorEntriesSerializer<'a> {
         let mut map = serializer.serialize_map(Some(grouped.len()))?;
         for (keyword, messages) in grouped {
             if messages.len() == 1 {
-                map.serialize_entry(keyword, messages[0])?;
+                map.serialize_entry(keyword, &messages[0])?;
             } else {
                 map.serialize_entry(keyword, &messages)?;
             }
@@ -3649,7 +3948,7 @@ pub mod generated {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use serde_json::{json, Value};
+    use serde_json::json;
     use std::sync::Arc;
     use test_case::test_case;
 
@@ -3663,10 +3962,7 @@ mod tests {
 
     impl ErrorDescription {
         fn from_string(s: &str) -> Self {
-            ErrorDescription {
-                keyword: "error".into(),
-                message: s.to_string(),
-            }
+            ErrorDescription::new("error", s.to_string())
         }
     }
 
@@ -4175,7 +4471,10 @@ mod tests {
 
     #[test]
     fn error_entries_serialization_empty() {
-        let entries = ErrorEntriesSerializer(&[]);
+        let entries = ErrorEntriesSerializer {
+            errors: &[],
+            mask: None,
+        };
         let serialized = serde_json::to_value(&entries).expect("serialization succeeds");
         assert!(serialized.is_object());
         assert_eq!(serialized.as_object().unwrap().len(), 0);
@@ -4184,7 +4483,10 @@ mod tests {
     #[test]
     fn error_entries_serialization_single() {
         let errors = vec![ErrorDescription::from_string("test error")];
-        let entries = ErrorEntriesSerializer(&errors);
+        let entries = ErrorEntriesSerializer {
+            errors: &errors,
+            mask: None,
+        };
         let serialized = serde_json::to_value(&entries).expect("serialization succeeds");
         assert!(serialized.is_object());
         assert_eq!(serialized.as_object().unwrap().len(), 1);
@@ -4198,7 +4500,10 @@ mod tests {
             ErrorDescription::new("beta", "error 2".to_string()),
             ErrorDescription::new("gamma", "error 3".to_string()),
         ];
-        let entries = ErrorEntriesSerializer(&errors);
+        let entries = ErrorEntriesSerializer {
+            errors: &errors,
+            mask: None,
+        };
         let serialized = serde_json::to_value(&entries).expect("serialization succeeds");
         assert_eq!(serialized.as_object().unwrap().len(), 3);
         assert!(serialized.get("alpha").is_some());
@@ -4212,7 +4517,10 @@ mod tests {
             ErrorDescription::new("required", "\"foo\" is required".to_string()),
             ErrorDescription::new("required", "\"bar\" is required".to_string()),
         ];
-        let entries = ErrorEntriesSerializer(&errors);
+        let entries = ErrorEntriesSerializer {
+            errors: &errors,
+            mask: None,
+        };
         let serialized = serde_json::to_value(&entries).expect("serialization succeeds");
         let value = serialized
             .get("required")

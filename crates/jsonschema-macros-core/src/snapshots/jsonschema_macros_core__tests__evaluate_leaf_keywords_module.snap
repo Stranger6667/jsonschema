@@ -111,9 +111,8 @@ mod __validator_impl {
                 return Vec::new();
             }
             vec![
-                __eval::ErrorDescription::described("type",
-                format!("{} is not of type \"string\"", __eval::instance_value:: <
-                jsonschema::json::SerdeJson > (instance)),)
+                __eval::ErrorDescription::not_of_type(& __eval::instance_value:: <
+                jsonschema::json::SerdeJson > (instance), "string",)
             ]
         }
         fn __direct_1<'__i>(

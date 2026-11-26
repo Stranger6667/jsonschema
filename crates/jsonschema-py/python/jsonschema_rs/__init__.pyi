@@ -313,6 +313,7 @@ def evaluate(
     ignore_unknown_formats: bool = True,
     retriever: RetrieverProtocol | None = None,
     registry: Registry | None = None,
+    mask: str | None = None,
     base_uri: str | None = None,
     pattern_options: PatternOptionsType | None = None,
     email_options: EmailOptions | None = None,

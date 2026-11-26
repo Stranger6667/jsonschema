@@ -1315,7 +1315,7 @@ pub use error::{
 };
 pub use evaluation::{
     AnnotationEntry, ErrorEntry, Evaluation, FlagOutput, HierarchicalOutput, ListOutput,
-    OutputUnit, OutputUnitChildren,
+    MaskedErrorEntry, OutputUnit, OutputUnitChildren,
 };
 pub use http::HttpOptions;
 #[doc(inline)]
