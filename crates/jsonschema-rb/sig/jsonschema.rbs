@@ -537,6 +537,7 @@ module JSONSchema
     ?validate_formats: bool?,
     ?ignore_unknown_formats: bool?,
     ?vocabularies: Array[String]?,
+    ?mask: String?,
     ?base_uri: String?,
     ?retriever: (^(String) -> untyped)?,
     ?formats: Hash[String, (^(String) -> bool) | NumberFormat]?,

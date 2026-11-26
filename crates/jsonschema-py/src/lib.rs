@@ -200,7 +200,11 @@ fn annotation_entry_to_py(
     Ok(dict.into())
 }
 
-fn error_entry_to_py(py: Python<'_>, entry: jsonschema::ErrorEntry<'_>) -> PyResult<Py<PyAny>> {
+fn error_entry_to_py(
+    py: Python<'_>,
+    entry: jsonschema::ErrorEntry<'_>,
+    mask: Option<&str>,
+) -> PyResult<Py<PyAny>> {
     let dict = PyDict::new(py);
     dict.set_item("schemaLocation", entry.schema_location)?;
     if let Some(uri) = entry.absolute_keyword_location {
@@ -209,18 +213,22 @@ fn error_entry_to_py(py: Python<'_>, entry: jsonschema::ErrorEntry<'_>) -> PyRes
         dict.set_item("absoluteKeywordLocation", py.None())?;
     }
     dict.set_item("instanceLocation", entry.instance_location.as_str())?;
-    dict.set_item("error", entry.error.to_string())?;
+    dict.set_item("error", output::message(entry.error, mask))?;
     Ok(dict.into())
 }
 
 #[pyclass(module = "jsonschema_rs", name = "Evaluation")]
 struct PyEvaluation {
     inner: jsonschema::Evaluation,
+    mask: Option<String>,
 }
 
 impl PyEvaluation {
-    fn new(evaluation: jsonschema::Evaluation) -> Self {
-        PyEvaluation { inner: evaluation }
+    fn new(evaluation: jsonschema::Evaluation, mask: Option<String>) -> Self {
+        PyEvaluation {
+            inner: evaluation,
+            mask,
+        }
     }
 }
 
@@ -239,14 +247,18 @@ impl PyEvaluation {
 
     /// Return the list output as a dict.
     fn list(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        Ok(output::list(py, self.inner.root())?.into_any().unbind())
+        Ok(output::list(py, self.inner.root(), self.mask.as_deref())?
+            .into_any()
+            .unbind())
     }
 
     /// Return the hierarchical output as a dict.
     fn hierarchical(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
-        Ok(output::hierarchical(py, self.inner.root())?
-            .into_any()
-            .unbind())
+        Ok(
+            output::hierarchical(py, self.inner.root(), self.mask.as_deref())?
+                .into_any()
+                .unbind(),
+        )
     }
 
     /// Return collected annotations for all evaluated nodes.
@@ -262,7 +274,7 @@ impl PyEvaluation {
     fn errors(&self, py: Python<'_>) -> PyResult<Py<PyAny>> {
         let entries = PyList::empty(py);
         for entry in self.inner.iter_errors() {
-            entries.append(error_entry_to_py(py, entry)?)?;
+            entries.append(error_entry_to_py(py, entry, self.mask.as_deref())?)?;
         }
         Ok(entries.into())
     }
@@ -1729,7 +1741,7 @@ fn iter_errors(
     }
 }
 
-/// evaluate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None, vocabularies=None, offline=None)
+/// evaluate(schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=True, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None, vocabularies=None, offline=None)
 ///
 /// Evaluate `instance` against `schema` and return an `Evaluation` holding the output formats.
 ///
@@ -1739,7 +1751,7 @@ fn iter_errors(
 ///     >>> print(evaluation.errors()[0]["error"])
 ///     "oops" is not of type "integer"
 #[pyfunction]
-#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None, vocabularies=None, offline=None))]
+#[pyo3(signature = (schema, instance, draft=None, formats=None, validate_formats=None, ignore_unknown_formats=true, retriever=None, registry=None, mask=None, base_uri=None, pattern_options=None, email_options=None, http_options=None, keywords=None, vocabularies=None, offline=None))]
 #[allow(clippy::needless_pass_by_value)]
 fn evaluate(
     py: Python<'_>,
@@ -1751,6 +1763,7 @@ fn evaluate(
     ignore_unknown_formats: Option<bool>,
     retriever: Option<&Bound<'_, PyAny>>,
     registry: Option<&registry::Registry>,
+    mask: Option<String>,
     base_uri: Option<String>,
     pattern_options: Option<&Bound<'_, PyAny>>,
     email_options: Option<&Bound<'_, PyAny>>,
@@ -1778,7 +1791,7 @@ fn evaluate(
     let schema = ser::to_value(schema)?;
     let validator = match options.build(&schema) {
         Ok(validator) => validator,
-        Err(error) => return Err(into_py_err(py, error, None, None)?),
+        Err(error) => return Err(into_py_err(py, error, mask.as_deref(), None)?),
     };
     let evaluation = surface_pending_errors(instance, runs_python(formats, keywords), || {
         panic::catch_unwind(AssertUnwindSafe(|| {
@@ -1786,7 +1799,7 @@ fn evaluate(
         }))
         .map_err(handle_format_checked_panic)
     })?;
-    Ok(PyEvaluation::new(evaluation))
+    Ok(PyEvaluation::new(evaluation, mask))
 }
 
 #[allow(clippy::needless_pass_by_value)]
@@ -1975,7 +1988,7 @@ impl JsonTextValidator {
             self.validator.evaluate(document.root())
         }))
         .map_err(handle_format_checked_panic)?;
-        Ok(PyEvaluation::new(evaluation))
+        Ok(PyEvaluation::new(evaluation, self.mask.clone()))
     }
     fn __repr__(&self) -> &'static str {
         match self.validator.draft() {
@@ -2473,7 +2486,7 @@ impl Validator {
                 self.validator.evaluate(instance.as_borrowed())
             }))
             .map_err(handle_format_checked_panic)?;
-            Ok(PyEvaluation::new(evaluation))
+            Ok(PyEvaluation::new(evaluation, self.mask.clone()))
         })
     }
     fn __repr__(&self) -> &'static str {

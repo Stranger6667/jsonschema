@@ -104,10 +104,26 @@ RSpec.describe JSONSchema do
       expect(eval_result.errors.size).to eq(1)
     end
 
-    it "rejects mask option" do
-      schema = { "type" => "string" }
-      expect { JSONSchema.evaluate(schema, 42, mask: "[HIDDEN]") }
-        .to raise_error(ArgumentError, /unknown keyword: :mask/)
+    {
+      "validator" => lambda { |schema, instance|
+        JSONSchema.validator_for(schema, mask: "[REDACTED]").evaluate(instance)
+      },
+      "function" => ->(schema, instance) { JSONSchema.evaluate(schema, instance, mask: "[REDACTED]") },
+      "json text" => lambda { |schema, instance|
+        JSONSchema::JsonTextValidator.new(schema, mask: "[REDACTED]").evaluate(JSON.generate(instance))
+      }
+    }.each do |name, evaluate|
+      it "masks instance values in outputs from the #{name}" do
+        schema = { "properties" => { "password" => { "minLength" => 8 }, "code" => { "type" => "integer" } } }
+        evaluation = evaluate.call(schema, { "password" => "secret", "code" => "secret" })
+        expect(evaluation.errors.map { |entry| entry[:error] }).to eq(
+          ["[REDACTED] is shorter than 8 characters", '[REDACTED] is not of type "integer"']
+        )
+        [evaluation.list, evaluation.hierarchical].each do |output|
+          expect(output.inspect).not_to include("secret")
+          expect(output.inspect).to include("[REDACTED]")
+        end
+      end
     end
   end
 

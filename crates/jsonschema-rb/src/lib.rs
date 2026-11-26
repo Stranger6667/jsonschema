@@ -50,9 +50,8 @@ use crate::{
     evaluation::Evaluation,
     json_text::text_node_to_ruby,
     options::{
-        extract_evaluate_kwargs, extract_kwargs, extract_kwargs_no_draft, make_options_from_kwargs,
-        parse_draft_symbol, CallbackRoots, CompilationRoots, CompilationRootsRef, ExtractedKwargs,
-        ParsedOptions,
+        extract_kwargs, extract_kwargs_no_draft, make_options_from_kwargs, parse_draft_symbol,
+        CallbackRoots, CompilationRoots, CompilationRootsRef, ExtractedKwargs, ParsedOptions,
     },
     registry::Registry,
     retriever::{retriever_error_message, RubyRetriever},
@@ -799,7 +798,7 @@ impl Validator {
             let _scope = KeywordCauseScope::enter();
             let result = catch_unwind_silent(AssertUnwindSafe(|| rb_self.validator.evaluate(node)));
             match result {
-                Ok(output) => Ok(Evaluation::new(output)),
+                Ok(output) => Ok(Evaluation::new(output, rb_self.mask.clone())),
                 Err(err) => Err(handle_callback_panic(ruby, err)),
             }
         })
@@ -1121,10 +1120,11 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
     let _scope = KeywordCauseScope::enter();
     let parsed_args = scan_args::<(Value, Value), (), (), (), _, ()>(args)?;
     let (schema, instance) = parsed_args.required;
-    let kw = extract_evaluate_kwargs(ruby, parsed_args.keywords)?;
+    let kw = extract_kwargs(ruby, parsed_args.keywords)?;
 
     let json_schema = to_schema_value(ruby, schema)?;
     let parsed = build_parsed_options::<Magnus>(ruby, kw, None)?;
+    let mask = parsed.mask;
     let BuiltValidator {
         validator,
         compilation_roots: _compilation_roots,
@@ -1141,7 +1141,7 @@ fn evaluate(ruby: &Ruby, args: &[Value]) -> Result<Evaluation, Error> {
 
     surface_pending_errors(instance, |node| {
         match catch_unwind_silent(AssertUnwindSafe(|| validator.evaluate(node))) {
-            Ok(output) => Ok(Evaluation::new(output)),
+            Ok(output) => Ok(Evaluation::new(output, mask)),
             Err(err) => Err(handle_callback_panic(ruby, err)),
         }
     })

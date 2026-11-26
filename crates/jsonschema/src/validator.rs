@@ -2581,4 +2581,149 @@ mod tests {
         let list = serde_json::to_value(validator.evaluate(instance).list()).expect("List output");
         assert_eq!(&list, expected);
     }
+
+    #[test_case(&json!({"type": "null"}), &json!("secret"); "null")]
+    #[test_case(&json!({"type": "boolean"}), &json!("secret"); "boolean")]
+    #[test_case(&json!({"type": "string"}), &json!(["secret"]); "string")]
+    #[test_case(&json!({"type": "array"}), &json!("secret"); "array")]
+    #[test_case(&json!({"type": "array", "items": {"type": "string"}}), &json!("secret"); "array with items")]
+    #[test_case(&json!({"type": "object"}), &json!("secret"); "object")]
+    #[test_case(&json!({"type": "number"}), &json!("secret"); "number")]
+    #[test_case(&json!({"type": "integer"}), &json!("secret"); "integer")]
+    #[test_case(&json!({"type": ["integer", "null"]}), &json!("secret"); "several types")]
+    #[test_case(&json!({"minLength": 10}), &json!("secret"); "min length")]
+    #[test_case(&json!({"maxLength": 1}), &json!("secret".repeat(30)); "message longer than the stack buffer")]
+    fn evaluate_masked_message_matches_validate(schema: &Value, instance: &Value) {
+        let validator = crate::validator_for(schema).expect("Valid schema");
+        let expected = validator
+            .validate(instance)
+            .expect_err("Should fail")
+            .masked_with("[REDACTED]")
+            .to_string();
+        let evaluation = validator.evaluate(instance);
+        let messages: Vec<_> = evaluation
+            .iter_errors()
+            .map(|entry| entry.error.masked_with("[REDACTED]").to_string())
+            .collect();
+        assert_eq!(messages, vec![expected]);
+    }
+
+    #[test_case(&json!({"type": "integer"}), &json!("secret"); "type")]
+    #[test_case(&json!({"type": ["integer", "null"]}), &json!("secret"); "several types")]
+    #[test_case(&json!({"enum": ["x", "y"]}), &json!("secret"); "enum")]
+    #[test_case(&json!({"minLength": 10}), &json!("secret"); "min length")]
+    #[test_case(&json!({"format": "email"}), &json!("secret"); "format")]
+    #[test_case(&json!({"oneOf": [{"type": "string"}, {"minLength": 1}]}), &json!("secret"); "one of")]
+    #[test_case(&json!({"anyOf": [{"type": "integer"}, {"const": 1}]}), &json!("secret"); "any of")]
+    #[test_case(&json!({"not": {"type": "string"}}), &json!("secret"); "not")]
+    #[test_case(&json!({"properties": {"a": false}}), &json!({"a": "secret"}); "false property")]
+    #[test_case(&json!({"properties": {"a": {"type": "integer"}}}), &json!({"a": "secret"}); "property")]
+    #[test_case(&json!({"additionalProperties": false}), &json!({"a": "secret"}); "additional properties")]
+    #[test_case(&json!({"propertyNames": {"maxLength": 1}}), &json!({"secret": 1}); "property names")]
+    #[test_case(&json!({"unevaluatedProperties": false}), &json!({"a": "secret"}); "unevaluated properties")]
+    #[test_case(&json!({"prefixItems": [true], "items": false}), &json!([1, "secret"]); "false items")]
+    #[test_case(&json!({"$schema": "https://json-schema.org/draft/2019-09/schema", "items": [true], "additionalItems": {"type": "integer"}}), &json!([1, "secret"]); "additional items")]
+    #[test_case(&json!({"type": "array", "minItems": 2, "items": {"type": "string"}}), &json!(["secret"]); "min items")]
+    #[test_case(&json!({"type": "array", "items": {"type": "string"}}), &json!("secret"); "array type")]
+    #[test_case(&json!({"contains": {"type": "integer"}}), &json!(["secret"]); "contains")]
+    #[test_case(&json!({"contains": {"type": "string"}, "maxContains": 0}), &json!(["secret"]); "max contains")]
+    #[test_case(&json!({"unevaluatedItems": false}), &json!(["secret"]); "unevaluated items")]
+    #[test_case(&json!({"dependentSchemas": {"a": {"properties": {"a": {"type": "integer"}}}}}), &json!({"a": "secret"}); "dependent schemas")]
+    #[test_case(&json!({"$schema": "http://json-schema.org/draft-07/schema#", "dependencies": {"a": {"properties": {"a": {"type": "integer"}}}}}), &json!({"a": "secret"}); "dependencies")]
+    #[test_case(&json!({"$ref": "#/$defs/a", "$defs": {"a": {"type": "integer"}}}), &json!("secret"); "reference")]
+    fn evaluate_messages_masked(schema: &Value, instance: &Value) {
+        let validator = crate::options()
+            .should_validate_formats(true)
+            .build(schema)
+            .expect("Valid schema");
+        let evaluation = validator.evaluate(instance);
+        let plain: Vec<_> = evaluation
+            .iter_errors()
+            .map(|entry| entry.error.to_string())
+            .collect();
+        let masked: Vec<_> = evaluation
+            .iter_errors()
+            .map(|entry| entry.error.masked_with("[REDACTED]").to_string())
+            .collect();
+        assert!(plain.iter().any(|message| message.contains("secret")));
+        assert!(
+            masked.iter().all(|message| !message.contains("secret")),
+            "{masked:?}"
+        );
+        assert!(masked.iter().any(|message| message.contains("[REDACTED]")));
+    }
+
+    #[test]
+    fn evaluate_masked_message_reworded() {
+        // The masked message counts the unexpected items instead of listing them.
+        let validator =
+            crate::validator_for(&json!({"unevaluatedItems": false})).expect("Valid schema");
+        let evaluation = validator.evaluate(&json!(["secret"]));
+        let messages: Vec<_> = evaluation
+            .iter_errors()
+            .map(|entry| entry.error.masked_with("[REDACTED]").to_string())
+            .collect();
+        assert_eq!(
+            messages,
+            vec![
+                "Unevaluated items are not allowed (1 item)",
+                "False schema does not allow [REDACTED]",
+            ]
+        );
+    }
+
+    #[test_case(|evaluation: &crate::Evaluation| serde_json::to_string(&evaluation.list()).expect("List output"), |evaluation: &crate::Evaluation| serde_json::to_string(&evaluation.list().masked_with("[REDACTED]")).expect("List output"); "list")]
+    #[test_case(|evaluation: &crate::Evaluation| serde_json::to_string(&evaluation.hierarchical()).expect("Hierarchical output"), |evaluation: &crate::Evaluation| serde_json::to_string(&evaluation.hierarchical().masked_with("[REDACTED]")).expect("Hierarchical output"); "hierarchical")]
+    #[test_case(|evaluation: &crate::Evaluation| evaluation.iter_errors().map(|entry| entry.to_string()).collect(), |evaluation: &crate::Evaluation| evaluation.iter_errors().map(|entry| entry.masked_with("[REDACTED]").to_string()).collect(); "entries")]
+    fn evaluate_outputs_masked(
+        plain: fn(&crate::Evaluation) -> String,
+        masked: fn(&crate::Evaluation) -> String,
+    ) {
+        let validator = crate::validator_for(&json!({
+            "properties": {"password": {"minLength": 8}, "items": {"unevaluatedItems": false}}
+        }))
+        .expect("Valid schema");
+        let evaluation = validator.evaluate(&json!({"password": "secret", "items": ["secret"]}));
+        let masked = masked(&evaluation);
+        assert!(plain(&evaluation).contains("secret"));
+        assert!(!masked.contains("secret"), "{masked}");
+        assert!(masked.contains("[REDACTED]"), "{masked}");
+    }
+
+    #[test_case(|evaluation: &crate::Evaluation| evaluation.iter_errors().map(|entry| entry.error.masked().to_string()).collect(), |evaluation: &crate::Evaluation| evaluation.iter_errors().map(|entry| entry.error.masked_with("value").to_string()).collect(); "descriptions")]
+    #[test_case(|evaluation: &crate::Evaluation| evaluation.iter_errors().map(|entry| entry.masked().to_string()).collect(), |evaluation: &crate::Evaluation| evaluation.iter_errors().map(|entry| entry.masked_with("value").to_string()).collect(); "entries")]
+    #[test_case(|evaluation: &crate::Evaluation| serde_json::to_string(&evaluation.list().masked()).expect("List output"), |evaluation: &crate::Evaluation| serde_json::to_string(&evaluation.list().masked_with("value")).expect("List output"); "list")]
+    #[test_case(|evaluation: &crate::Evaluation| serde_json::to_string(&evaluation.hierarchical().masked()).expect("Hierarchical output"), |evaluation: &crate::Evaluation| serde_json::to_string(&evaluation.hierarchical().masked_with("value")).expect("Hierarchical output"); "hierarchical")]
+    fn evaluate_outputs_masked_with_value_by_default(
+        masked: fn(&crate::Evaluation) -> String,
+        explicit: fn(&crate::Evaluation) -> String,
+    ) {
+        let validator = crate::validator_for(&json!({"properties": {"a": {"type": "integer"}}}))
+            .expect("Valid schema");
+        let evaluation = validator.evaluate(&json!({"a": "secret"}));
+        let masked = masked(&evaluation);
+        assert!(!masked.contains("secret"), "{masked}");
+        assert_eq!(masked, explicit(&evaluation));
+    }
+
+    #[test]
+    fn evaluate_entries_masked() {
+        let validator = crate::validator_for(&json!({
+            "properties": {"a": {"type": "integer"}},
+            "minProperties": 2
+        }))
+        .expect("Valid schema");
+        let evaluation = validator.evaluate(&json!({"a": "secret"}));
+        let entries: Vec<_> = evaluation
+            .iter_errors()
+            .map(|entry| entry.masked_with("[REDACTED]").to_string())
+            .collect();
+        assert_eq!(
+            entries,
+            vec![
+                "[REDACTED] has less than 2 properties",
+                r#"/a: [REDACTED] is not of type "integer""#,
+            ]
+        );
+    }
 }

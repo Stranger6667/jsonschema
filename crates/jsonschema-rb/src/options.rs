@@ -135,34 +135,11 @@ fn base_option_ids() -> [StaticId; 9] {
         *KW_REGISTRY,
     ]
 }
-fn base_option_ids_no_mask() -> [StaticId; 8] {
-    [
-        *KW_DRAFT,
-        *KW_VALIDATE_FORMATS,
-        *KW_IGNORE_UNKNOWN_FORMATS,
-        *KW_BASE_URI,
-        *KW_RETRIEVER,
-        *KW_FORMATS,
-        *KW_KEYWORDS,
-        *KW_REGISTRY,
-    ]
-}
-
 type BaseKwargs = (
     Option<Value>,
     Option<bool>,
     Option<bool>,
     Option<String>,
-    Option<String>,
-    Option<Value>,
-    Option<RHash>,
-    Option<RHash>,
-    Option<Value>,
-);
-type BaseKwargsNoMask = (
-    Option<Value>,
-    Option<bool>,
-    Option<bool>,
     Option<String>,
     Option<Value>,
     Option<RHash>,
@@ -242,46 +219,6 @@ pub fn extract_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error>
 
     Ok(ExtractedKwargs {
         base: base_kw.optional,
-        vocabularies,
-        pattern_options,
-        email_options,
-        http_options,
-        offline,
-    })
-}
-
-pub fn extract_evaluate_kwargs(_ruby: &Ruby, kw: RHash) -> Result<ExtractedKwargs, Error> {
-    let vocabularies = extract_vocabularies(&kw)?;
-    let pattern_options = extract_and_delete(&kw, *KW_PATTERN_OPTIONS)?;
-    let email_options = extract_and_delete(&kw, *KW_EMAIL_OPTIONS)?;
-    let http_options = extract_and_delete(&kw, *KW_HTTP_OPTIONS)?;
-    let offline = extract_offline(&kw)?;
-
-    let ids = base_option_ids_no_mask();
-    let base_kw: KwArgs<(), BaseKwargsNoMask, ()> = get_kwargs(kw, &[], &ids)?;
-    let (
-        draft,
-        validate_formats,
-        ignore_unknown_formats,
-        base_uri,
-        retriever,
-        formats,
-        keywords,
-        registry,
-    ) = base_kw.optional;
-
-    Ok(ExtractedKwargs {
-        base: (
-            draft,
-            validate_formats,
-            ignore_unknown_formats,
-            None,
-            base_uri,
-            retriever,
-            formats,
-            keywords,
-            registry,
-        ),
         vocabularies,
         pattern_options,
         email_options,

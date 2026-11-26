@@ -1,4 +1,4 @@
-use std::marker::PhantomData;
+use std::borrow::Cow;
 
 use ahash::AHashMap;
 use jsonschema::{output::ErrorDescription, OutputUnit};
@@ -19,7 +19,7 @@ struct OutputBuilder<'a, 'py> {
     /// Units share location strings, so each shared one becomes a single `str`. Keyed by address:
     /// the evaluation is borrowed for `'a`, so no address is freed and reused meanwhile.
     locations: AHashMap<(*const u8, usize), Bound<'py, PyString>>,
-    evaluation: PhantomData<&'a str>,
+    mask: Option<&'a str>,
 }
 
 struct Keys<'py> {
@@ -34,7 +34,7 @@ struct Keys<'py> {
 }
 
 impl<'a, 'py> OutputBuilder<'a, 'py> {
-    fn new(py: Python<'py>) -> Self {
+    fn new(py: Python<'py>, mask: Option<&'a str>) -> Self {
         OutputBuilder {
             py,
             keys: Keys {
@@ -48,7 +48,7 @@ impl<'a, 'py> OutputBuilder<'a, 'py> {
                 valid: intern!(py, "valid").clone(),
             },
             locations: AHashMap::new(),
-            evaluation: PhantomData,
+            mask,
         }
     }
 
@@ -82,7 +82,8 @@ impl<'a, 'py> OutputBuilder<'a, 'py> {
             )?;
         }
         if !unit.errors().is_empty() {
-            dict.set_item(&self.keys.errors, errors_to_python(py, unit.errors())?)?;
+            let errors = errors_to_python(py, unit.errors(), self.mask)?;
+            dict.set_item(&self.keys.errors, errors)?;
         }
         let evaluation_path = self.location(unit.evaluation_path().as_str());
         dict.set_item(&self.keys.evaluation_path, evaluation_path)?;
@@ -117,23 +118,32 @@ impl<'a, 'py> OutputBuilder<'a, 'py> {
     }
 }
 
+/// The message of `error`, with `mask` in place of instance values when set.
+pub(crate) fn message<'e>(error: &'e ErrorDescription, mask: Option<&str>) -> Cow<'e, str> {
+    match mask {
+        Some(mask) => Cow::Owned(error.masked_with(mask).to_string()),
+        None => Cow::Borrowed(error.message()),
+    }
+}
+
 /// Messages grouped by keyword: one message as a `str`, several as a `list`.
 fn errors_to_python<'py>(
     py: Python<'py>,
     errors: &[ErrorDescription],
+    mask: Option<&str>,
 ) -> PyResult<Bound<'py, PyDict>> {
     let dict = PyDict::new(py);
     if let [error] = errors {
-        dict.set_item(error.keyword(), error.message())?;
+        dict.set_item(error.keyword(), message(error, mask))?;
         return Ok(dict);
     }
     let mut sorted: Vec<&ErrorDescription> = errors.iter().collect();
     sorted.sort_by_key(|error| error.keyword());
     for group in sorted.chunk_by(|left, right| left.keyword() == right.keyword()) {
         if let [error] = group {
-            dict.set_item(error.keyword(), error.message())?;
+            dict.set_item(error.keyword(), message(error, mask))?;
         } else {
-            let messages = PyList::new(py, group.iter().map(|error| error.message()))?;
+            let messages = PyList::new(py, group.iter().map(|error| message(error, mask)))?;
             dict.set_item(group[0].keyword(), messages)?;
         }
     }
@@ -146,8 +156,12 @@ pub(crate) fn flag(py: Python<'_>, valid: bool) -> PyResult<Bound<'_, PyDict>> {
     Ok(dict)
 }
 
-pub(crate) fn list<'py>(py: Python<'py>, root: OutputUnit<'_>) -> PyResult<Bound<'py, PyDict>> {
-    let mut builder = OutputBuilder::new(py);
+pub(crate) fn list<'py>(
+    py: Python<'py>,
+    root: OutputUnit<'_>,
+    mask: Option<&str>,
+) -> PyResult<Bound<'py, PyDict>> {
+    let mut builder = OutputBuilder::new(py, mask);
     let details = PyList::empty(py);
     builder.list(root, &details)?;
     let dict = PyDict::new(py);
@@ -159,6 +173,7 @@ pub(crate) fn list<'py>(py: Python<'py>, root: OutputUnit<'_>) -> PyResult<Bound
 pub(crate) fn hierarchical<'py>(
     py: Python<'py>,
     root: OutputUnit<'_>,
+    mask: Option<&str>,
 ) -> PyResult<Bound<'py, PyDict>> {
-    OutputBuilder::new(py).hierarchical(root)
+    OutputBuilder::new(py, mask).hierarchical(root)
 }

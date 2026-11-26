@@ -316,9 +316,8 @@ mod __validator_impl {
                 return Vec::new();
             }
             vec![
-                __eval::ErrorDescription::described("type",
-                format!("{} is not of type \"integer\"", __eval::instance_value:: <
-                jsonschema::json::SerdeJson > (instance)),)
+                __eval::ErrorDescription::not_of_type(& __eval::instance_value:: <
+                jsonschema::json::SerdeJson > (instance), "integer",)
             ]
         }
         fn __direct_2<'__i>(

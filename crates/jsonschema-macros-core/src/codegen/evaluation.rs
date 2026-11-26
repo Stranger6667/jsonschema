@@ -80,7 +80,7 @@ struct Unit {
 enum DirectErrors {
     /// The errors code of its keyword alone.
     Reported(TokenStream),
-    /// The message of a single `type`, with a slot for the instance.
+    /// The error of a single `type`, naming that type.
     NotOfType(String),
 }
 
@@ -1330,7 +1330,7 @@ pub(super) fn compile<E: ValueEmitter>(
         .iter()
         .enumerate()
         .map(|(index, (is_valid, errors))| match errors {
-            DirectErrors::NotOfType(message) => {
+            DirectErrors::NotOfType(type_) => {
                 let name = format_ident!("__not_of_type_{index}");
                 quote! {
                     fn #name(
@@ -1343,9 +1343,9 @@ pub(super) fn compile<E: ValueEmitter>(
                         } {
                             return Vec::new();
                         }
-                        vec![__eval::ErrorDescription::described(
-                            "type",
-                            format!(#message, __eval::instance_value::<#json>(instance)),
+                        vec![__eval::ErrorDescription::not_of_type(
+                            &__eval::instance_value::<#json>(instance),
+                            #type_,
                         )]
                     }
                 }
@@ -1541,13 +1541,11 @@ fn direct_checks<E: ValueEmitter>(
         let is_valid = check.is_valid_token_stream();
         let errors = match schema.get("type") {
             // The runtime words a single type's error without building it.
-            Some(Value::String(type_)) => {
-                DirectErrors::NotOfType(format!(r#"{{}} is not of type "{type_}""#))
-            }
+            Some(Value::String(type_)) => DirectErrors::NotOfType(type_.clone()),
             _ => DirectErrors::Reported(check.errors.as_token_stream()),
         };
         let key = match &errors {
-            DirectErrors::NotOfType(message) => format!("{is_valid}{message}"),
+            DirectErrors::NotOfType(type_) => format!("{is_valid} type {type_}"),
             DirectErrors::Reported(errors) => format!("{is_valid}{errors}"),
         };
         let count = direct.len();

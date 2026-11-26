@@ -1,6 +1,8 @@
 //! Evaluation output wrapper for Ruby
 //!
 //! Provides full JSON Schema output format support: flag, list, and hierarchical.
+use std::borrow::Cow;
+
 use jsonschema::{output::ErrorDescription, OutputUnit};
 use magnus::{method, prelude::*, Error, RArray, RHash, RModule, Ruby, Value};
 
@@ -20,11 +22,15 @@ define_rb_intern!(static ID_DETAILS: "details");
 #[magnus::wrap(class = "JSONSchema::Evaluation", free_immediately, size)]
 pub struct Evaluation {
     inner: jsonschema::Evaluation,
+    mask: Option<String>,
 }
 
 impl Evaluation {
-    pub fn new(output: jsonschema::Evaluation) -> Self {
-        Evaluation { inner: output }
+    pub fn new(output: jsonschema::Evaluation, mask: Option<String>) -> Self {
+        Evaluation {
+            inner: output,
+            mask,
+        }
     }
 
     fn is_valid(&self) -> bool {
@@ -43,7 +49,7 @@ impl Evaluation {
     fn list(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
         let root = rb_self.inner.root();
         let details = ruby.ary_new();
-        list_units(ruby, root, details)?;
+        list_units(ruby, root, details, rb_self.mask.as_deref())?;
         let hash = ruby.hash_new_capa(2);
         hash.aset(ID_VALID.to_symbol(), root.valid())?;
         hash.aset(ID_DETAILS.to_symbol(), details)?;
@@ -52,7 +58,7 @@ impl Evaluation {
 
     /// Nested tree structure following the schema structure.
     fn hierarchical(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
-        Ok(unit_to_ruby(ruby, rb_self.inner.root(), true)?.as_value())
+        Ok(unit_to_ruby(ruby, rb_self.inner.root(), true, rb_self.mask.as_deref())?.as_value())
     }
 
     fn annotations(ruby: &Ruby, rb_self: &Self) -> Result<Value, Error> {
@@ -94,7 +100,10 @@ impl Evaluation {
                 hash.aset(abs_kw_loc, ruby.qnil())?;
             }
             hash.aset(inst_loc, entry.instance_location.as_str())?;
-            hash.aset(error_key, entry.error.to_string())?;
+            hash.aset(
+                error_key,
+                message(entry.error, rb_self.mask.as_deref()).as_ref(),
+            )?;
             arr.push(hash)?;
         }
         Ok(arr.as_value())
@@ -107,7 +116,12 @@ impl Evaluation {
 
 // Builds an output unit straight into a Ruby Hash, with the keys and order the serialized
 // output has.
-fn unit_to_ruby(ruby: &Ruby, unit: OutputUnit<'_>, nested: bool) -> Result<RHash, Error> {
+fn unit_to_ruby(
+    ruby: &Ruby,
+    unit: OutputUnit<'_>,
+    nested: bool,
+    mask: Option<&str>,
+) -> Result<RHash, Error> {
     // Inserted with one `bulk_insert` call.
     let mut pairs = [ruby.qnil().as_value(); 16];
     let mut len = 0;
@@ -147,7 +161,7 @@ fn unit_to_ruby(ruby: &Ruby, unit: OutputUnit<'_>, nested: bool) -> Result<RHash
     if !unit.errors().is_empty() {
         push(
             ID_ERRORS.to_symbol().as_value(),
-            errors_to_ruby(ruby, unit.errors())?.as_value(),
+            errors_to_ruby(ruby, unit.errors(), mask)?.as_value(),
         );
     }
     if nested {
@@ -155,7 +169,7 @@ fn unit_to_ruby(ruby: &Ruby, unit: OutputUnit<'_>, nested: bool) -> Result<RHash
         if children.peek().is_some() {
             let details = ruby.ary_new();
             for child in children {
-                details.push(unit_to_ruby(ruby, child, true)?)?;
+                details.push(unit_to_ruby(ruby, child, true, mask)?)?;
             }
             push(ID_DETAILS.to_symbol().as_value(), details.as_value());
         }
@@ -165,16 +179,33 @@ fn unit_to_ruby(ruby: &Ruby, unit: OutputUnit<'_>, nested: bool) -> Result<RHash
     Ok(hash)
 }
 
-fn list_units(ruby: &Ruby, unit: OutputUnit<'_>, out: RArray) -> Result<(), Error> {
-    out.push(unit_to_ruby(ruby, unit, false)?)?;
+fn list_units(
+    ruby: &Ruby,
+    unit: OutputUnit<'_>,
+    out: RArray,
+    mask: Option<&str>,
+) -> Result<(), Error> {
+    out.push(unit_to_ruby(ruby, unit, false, mask)?)?;
     for child in unit.children() {
-        list_units(ruby, child, out)?;
+        list_units(ruby, child, out, mask)?;
     }
     Ok(())
 }
 
+/// The message of `error`, with `mask` in place of instance values when set.
+fn message<'e>(error: &'e ErrorDescription, mask: Option<&str>) -> Cow<'e, str> {
+    match mask {
+        Some(mask) => Cow::Owned(error.masked_with(mask).to_string()),
+        None => Cow::Borrowed(error.message()),
+    }
+}
+
 /// Messages grouped by keyword in first-seen order: one message as a String, several as an Array.
-fn errors_to_ruby(ruby: &Ruby, errors: &[ErrorDescription]) -> Result<RHash, Error> {
+fn errors_to_ruby(
+    ruby: &Ruby,
+    errors: &[ErrorDescription],
+    mask: Option<&str>,
+) -> Result<RHash, Error> {
     let hash = ruby.hash_new();
     for (index, error) in errors.iter().enumerate() {
         let keyword = error.keyword();
@@ -184,12 +215,17 @@ fn errors_to_ruby(ruby: &Ruby, errors: &[ErrorDescription]) -> Result<RHash, Err
         let mut messages = errors[index..]
             .iter()
             .filter(|other| other.keyword() == keyword)
-            .map(ErrorDescription::message);
+            .map(|error| message(error, mask));
         let first = messages.next().expect("the current error has this keyword");
         match messages.next() {
-            None => hash.aset(keyword, first)?,
+            None => hash.aset(keyword, first.as_ref())?,
             Some(second) => {
-                let all = ruby.ary_from_iter([first, second].into_iter().chain(messages));
+                let all = ruby.ary_from_iter(
+                    [first, second]
+                        .into_iter()
+                        .chain(messages)
+                        .map(|message| ruby.str_new(&message)),
+                );
                 hash.aset(keyword, all)?;
             }
         }

@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `masked` and `masked_with` on `ErrorDescription`, `ErrorEntry`, `ListOutput` and `HierarchicalOutput`, writing `evaluate` output with a placeholder in place of instance values, as on `ValidationError`.
+
 ## [0.63.2] - 2026-11-26
 
 ### Fixed

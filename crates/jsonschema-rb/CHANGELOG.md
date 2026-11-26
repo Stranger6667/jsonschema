@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Added
+
+- `mask:` hiding instance values in `Evaluation` outputs, and on `JSONSchema.evaluate`.
+
 ## [0.63.2] - 2026-11-26
 
 ### Fixed

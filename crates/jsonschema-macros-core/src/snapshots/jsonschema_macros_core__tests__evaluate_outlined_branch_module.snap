@@ -1,6 +1,5 @@
 ---
 source: crates/jsonschema-macros-core/src/tests.rs
-assertion_line: 513
 expression: "render_config_for::<crate::codegen::emit_serde::SerdeEmitter>(&config)"
 ---
 struct Validator;
@@ -834,9 +833,8 @@ mod __validator_impl {
                 return Vec::new();
             }
             vec![
-                __eval::ErrorDescription::described("type",
-                format!("{} is not of type \"integer\"", __eval::instance_value:: <
-                jsonschema::json::SerdeJson > (instance)),)
+                __eval::ErrorDescription::not_of_type(& __eval::instance_value:: <
+                jsonschema::json::SerdeJson > (instance), "integer",)
             ]
         }
         fn __not_of_type_1(
@@ -849,9 +847,8 @@ mod __validator_impl {
                 return Vec::new();
             }
             vec![
-                __eval::ErrorDescription::described("type",
-                format!("{} is not of type \"null\"", __eval::instance_value:: <
-                jsonschema::json::SerdeJson > (instance)),)
+                __eval::ErrorDescription::not_of_type(& __eval::instance_value:: <
+                jsonschema::json::SerdeJson > (instance), "null",)
             ]
         }
         type __J = jsonschema::json::SerdeJson;

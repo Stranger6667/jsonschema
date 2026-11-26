@@ -212,7 +212,7 @@ impl JsonTextValidator {
         catch_unwind_silent(AssertUnwindSafe(|| {
             rb_self.validator.evaluate(document.root())
         }))
-        .map(Evaluation::new)
+        .map(|output| Evaluation::new(output, rb_self.mask.clone()))
         .map_err(|err| handle_callback_panic(ruby, err))
     }
 
