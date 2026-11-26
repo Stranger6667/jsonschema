@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [0.63.2] - 2026-11-26
+
 ### Fixed
 
 - `additionalProperties: false` without `properties` or `patternProperties` reporting a false-schema error for one property instead of an `additionalProperties` error naming every unexpected property. [#2046](https://github.com/Stranger6667/jsonschema/issues/2046)
@@ -883,7 +885,8 @@
 
 - Initial public release
 
-[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.63.1...HEAD
+[Unreleased]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.63.2...HEAD
+[0.63.2]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.63.1...ruby-v0.63.2
 [0.63.1]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.63.0...ruby-v0.63.1
 [0.63.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.62.0...ruby-v0.63.0
 [0.62.0]: https://github.com/Stranger6667/jsonschema/compare/ruby-v0.61.2...ruby-v0.62.0
