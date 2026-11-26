@@ -60,6 +60,10 @@ Funding = 'https://github.com/sponsors/Stranger6667'
 python-source = "python"
 strip = true
 include = [{ path = "rust-toolchain.toml", format = ["sdist"] }]
+exclude = [
+  { path = "tests-py/**", format = ["sdist"] },
+  { path = "benches/**", format = ["sdist"] },
+]
 
 [tool.ruff]
 line-length = 120
