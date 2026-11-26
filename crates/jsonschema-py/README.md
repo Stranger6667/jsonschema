@@ -900,13 +900,16 @@ A complete extension with its build and test commands lives in
 
 ## Python support
 
-`jsonschema-rs` supports CPython 3.10 through 3.14 and PyPy 3.10+.
+`jsonschema-rs` supports CPython 3.10 through 3.15, including free-threaded 3.14 and 3.15, and PyPy 3.11.
 
 Pre-built wheels are available for:
 
-- **Linux**: `x86_64`, `i686`, `aarch64` (glibc and musl)
-- **macOS**: `x86_64`, `aarch64`, `universal2`
+- **Linux** (glibc): `x86_64`, `i686`, `aarch64`, `armv7l`, `ppc64le`, `s390x`, `riscv64`
+- **Linux** (musl): `x86_64`, `i686`, `aarch64`, `armv7l`
+- **macOS**: `x86_64`, `arm64`
 - **Windows**: `x64`, `x86`, `arm64`
+
+Free-threaded CPython and PyPy wheels are limited to `x86_64` and `arm64`.
 
 ## Troubleshooting
 
