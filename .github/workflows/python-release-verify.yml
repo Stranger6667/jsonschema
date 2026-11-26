@@ -40,6 +40,80 @@ jobs:
           manylinux: 2_28
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
 
+  # No hosted runners for these architectures: the wheels are cross-compiled, then run under emulation.
+  # Pull requests stop at the import check; the emulated test suite is too slow to run on each of them.
+  cross-test:
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - target: armv7
+            manylinux: auto
+            platform: linux/arm/v7
+            image: slim
+          - target: ppc64le
+            manylinux: auto
+            platform: linux/ppc64le
+            image: slim
+          - target: s390x
+            manylinux: auto
+            platform: linux/s390x
+            image: slim
+          - target: riscv64
+            manylinux: auto
+            platform: linux/riscv64
+            image: slim
+          - target: armv7
+            manylinux: musllinux_1_2
+            platform: linux/arm/v7
+            image: alpine
+          - target: i686
+            manylinux: musllinux_1_2
+            platform: linux/386
+            image: alpine
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    name: Test wheels for ${{ matrix.target }} (${{ matrix.manylinux == 'auto' && 'manylinux' || 'musllinux' }})
+    # Fat LTO with a single codegen unit is for published wheels; tests do not need it.
+    env:
+      CARGO_PROFILE_RELEASE_LTO: "false"
+      CARGO_PROFILE_RELEASE_CODEGEN_UNITS: "16"
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          submodules: true
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: ${{ env.PYTHON_ABI_VERSION }}
+      - name: Build wheel
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
+      - name: Build test suite wheel
+        if: github.event_name != 'pull_request'
+        uses: messense/maturin-action@e83996d129638aa358a18fbd1dfb82f0b0fb5d3b # v1.51.0
+        with:
+          target: ${{ matrix.target }}
+          manylinux: ${{ matrix.manylinux }}
+          args: -m crates/jsonschema-testsuite-pyo3/Cargo.toml --features abi3 --out dist --interpreter ${{ env.PYTHON_ABI_VERSION }}
+      - uses: uraimo/run-on-arch-action@9893a0f995e5148dcc313ba661820f3992cffcc1 # v3.3
+        name: Install and test wheels
+        with:
+          base_image: '--platform=${{ matrix.platform }} python:${{ env.PYTHON_ABI_VERSION }}-${{ matrix.image }}'
+          shell: /bin/sh
+          # The image's pip rejects `riscv64` wheels.
+          run: |
+            pip install --upgrade pip
+            pip install dist/jsonschema_rs-*.whl
+            python -c "import jsonschema_rs; assert jsonschema_rs.is_valid({'type': 'string'}, 'foo')"
+            if [ "${{ github.event_name }}" != "pull_request" ]; then
+              pip install "$(ls dist/jsonschema_rs-*.whl)[tests]" dist/jsonschema_testsuite_pyo3-*.whl
+              cd crates/jsonschema-py
+              python -m pytest tests-py
+            fi
+
   pyodide-check:
     runs-on: ubuntu-24.04
     timeout-minutes: 30

@@ -136,6 +136,18 @@ jobs:
             manylinux: auto
           - target: aarch64
             manylinux: 2_28
+          - target: armv7
+            manylinux: auto
+            platform: linux/arm/v7
+          - target: ppc64le
+            manylinux: auto
+            platform: linux/ppc64le
+          - target: s390x
+            manylinux: auto
+            platform: linux/s390x
+          - target: riscv64
+            manylinux: auto
+            platform: linux/riscv64
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -171,6 +183,17 @@ jobs:
             python${{ env.PYTHON_ABI_VERSION }} -m venv venv
             venv/bin/pip install -U pip wheel
             venv/bin/pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall
+      - uses: uraimo/run-on-arch-action@9893a0f995e5148dcc313ba661820f3992cffcc1 # v3.3
+        if: matrix.platform
+        name: Install built wheel on emulated architecture
+        with:
+          base_image: '--platform=${{ matrix.platform }} python:${{ env.PYTHON_ABI_VERSION }}-slim'
+          shell: /bin/sh
+          # The image's pip rejects `riscv64` wheels.
+          run: |
+            pip install --upgrade pip
+            pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall
+            python -c "import jsonschema_rs; assert jsonschema_rs.is_valid({'type': 'string'}, 'foo')"
       - name: Upload wheels
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -186,6 +209,10 @@ jobs:
             arch: amd64
           - target: aarch64
             arch: aarch64
+          - target: armv7
+            arch: arm/v7
+          - target: i686
+            arch: "386"
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: astral-sh/setup-uv@1db35dd8eee11c5894872e0b383ae6c406cf738d # v10.4.0
@@ -205,7 +232,9 @@ jobs:
           githubToken: ${{ github.token }}
           shell: /bin/sh
           install: apk add --no-cache py3-pip
-          run: pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall --break-system-packages
+          run: |
+            pip install ${{ env.PACKAGE_NAME }} --no-index --find-links dist/ --force-reinstall --break-system-packages
+            python -c "import jsonschema_rs; assert jsonschema_rs.is_valid({'type': 'string'}, 'foo')"
       - name: Upload wheels
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -334,6 +363,10 @@ jobs:
             target: x86_64
             artifact: wheel-macos-pypy
             manylinux: ''
+          - os: macos-15
+            target: aarch64
+            artifact: wheel-macos-pypy-aarch64
+            manylinux: ''
           - os: windows-2025
             target: x64
             artifact: wheel-windows-pypy
@@ -381,10 +414,14 @@ jobs:
           target: ${{ matrix.target }}
           args: --release -m crates/jsonschema-py/Cargo.toml --out dist --interpreter ${{ env.PYTHON_PATH }}
       - name: Install built wheel - PyPy
-        if: ${{ matrix.target != 'aarch64' }}
+        if: ${{ matrix.target != 'aarch64' || runner.os == 'macOS' }}
         run: |
           uv venv --python ${{ env.PYPY_VERSION }}
           uv pip install dist/${{ env.PACKAGE_NAME }}-*.whl --force-reinstall
+      - name: Import built wheel - PyPy on macOS ARM
+        if: ${{ matrix.target == 'aarch64' && runner.os == 'macOS' }}
+        run: |
+          uv run --no-project python -c "import jsonschema_rs; assert jsonschema_rs.is_valid({'type': 'string'}, 'foo')"
       - name: Upload wheels
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
