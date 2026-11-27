@@ -3,7 +3,7 @@
 
 use crate::error::ValidationError;
 use ahash::AHashMap;
-use data_encoding::{BASE32, BASE32HEX, BASE64, BASE64URL, HEXUPPER};
+use data_encoding::{BASE32, BASE32HEX, BASE64, BASE64URL, HEXUPPER_PERMISSIVE};
 use std::sync::LazyLock;
 
 pub(crate) type ContentEncodingCheckType = fn(&str) -> bool;
@@ -65,18 +65,14 @@ pub fn from_base32hex(instance_string: &str) -> Result<Option<String>, Validatio
 // RFC 4648 §8: Base 16 Encoding
 // https://datatracker.ietf.org/doc/html/rfc4648#section-8
 pub fn is_base16(instance_string: &str) -> bool {
-    HEXUPPER.decode(instance_string.as_bytes()).is_ok()
-        || HEXUPPER
-            .decode(instance_string.to_uppercase().as_bytes())
-            .is_ok()
+    HEXUPPER_PERMISSIVE
+        .decode(instance_string.as_bytes())
+        .is_ok()
 }
 
 pub fn from_base16(instance_string: &str) -> Result<Option<String>, ValidationError<'static>> {
     // Base16 is case-insensitive per RFC 4648
-    let result = HEXUPPER
-        .decode(instance_string.as_bytes())
-        .or_else(|_| HEXUPPER.decode(instance_string.to_uppercase().as_bytes()));
-    match result {
+    match HEXUPPER_PERMISSIVE.decode(instance_string.as_bytes()) {
         Ok(value) => Ok(Some(String::from_utf8(value)?)),
         Err(_) => Ok(None),
     }
@@ -181,6 +177,7 @@ mod tests {
     #[test_case(TEST_BASE16_MIXED, true ; "valid base16 mixed case")]
     #[test_case("not valid", false ; "invalid base16 text")]
     #[test_case("GHIJ", false ; "base16 invalid chars G-J")]
+    #[test_case("\u{fb00}", false ; "base16 rejects unicode ligature ff")]
     fn test_is_base16(input: &str, expected: bool) {
         assert_eq!(is_base16(input), expected);
     }
@@ -189,6 +186,7 @@ mod tests {
     #[test_case(TEST_BASE16_LOWER, Some(TEST_STRING) ; "decode base16 lowercase")]
     #[test_case(TEST_BASE16_MIXED, Some(TEST_STRING) ; "decode base16 mixed")]
     #[test_case("GHIJ", None ; "decode invalid base16")]
+    #[test_case("\u{fb00}", None ; "decode rejects unicode ligature ff")]
     fn test_from_base16(input: &str, expected: Option<&str>) {
         assert_eq!(
             from_base16(input).unwrap(),
