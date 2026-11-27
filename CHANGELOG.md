@@ -7,6 +7,10 @@
 - `masked` and `masked_with` on `ErrorDescription`, `ErrorEntry`, `ListOutput` and `HierarchicalOutput`, writing `evaluate` output with a placeholder in place of instance values, as on `ValidationError`.
 - Canonicalization of a `pattern` that cannot fit `minLength` or `maxLength`, which reduces to `false`.
 
+### Fixed
+
+- `CanonicalSchema::satisfiability` answering `Unknown` for Draft 4 schemas that need an integer.
+
 ## [0.63.2] - 2026-11-26
 
 ### Fixed

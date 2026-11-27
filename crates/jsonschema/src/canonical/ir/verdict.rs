@@ -18,6 +18,14 @@ pub(crate) enum UncheckableFacet {
     Undecided,
 }
 
+/// Which spellings of a value a verdict speaks for. Draft 4 types `1` as an integer and `1.0` as a
+/// number though the two are equal, so a schema can accept one spelling and reject the other.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Spelling {
+    Every,
+    Written,
+}
+
 impl Verdict {
     pub(crate) fn from_bool(accepted: bool) -> Self {
         if accepted {
