@@ -15,7 +15,8 @@ use crate::{
             BoundRational, CanonicalJson, ContainsFacet, Discrete, Distinctness, Divisors,
             ExcludedDivisors, IntegerBounds, IntegerLeaf, IntegerLeaves, LengthBounds, NonEmpty,
             NumberLeaf, NumberLeaves, ObjectLeaf, ObjectLeaves, ObjectViolation, PropertyMap,
-            Round, Schema, SchemaKind, Side, StringLeaf, StringLeaves, UncheckableFacet, Verdict,
+            Round, Schema, SchemaKind, Side, Spelling, StringLeaf, StringLeaves, UncheckableFacet,
+            Verdict,
         },
         negate, parse, DefinitionMap,
     },
@@ -2062,9 +2063,10 @@ fn holds_a_value_the_siblings_miss(
             let Value::Object(map) = candidate else {
                 return ControlFlow::Continue(());
             };
-            if object_leaf_accepts(&leaves[index], &map, ctx) == Verdict::Accepts
+            if object_leaf_accepts(&leaves[index], &map, Spelling::Every, ctx) == Verdict::Accepts
                 && leaves.iter().enumerate().all(|(sibling, leaf)| {
-                    sibling == index || object_leaf_accepts(leaf, &map, ctx) == Verdict::Rejects
+                    sibling == index
+                        || object_leaf_accepts(leaf, &map, Spelling::Every, ctx) == Verdict::Rejects
                 })
             {
                 return ControlFlow::Break(());
@@ -3016,12 +3018,18 @@ fn leaf_absorbs_member(
 ) -> bool {
     match member.as_value() {
         // Absorbing a member narrows the schema, so only a definite admission absorbs one.
-        Value::Array(items) => arrays
-            .iter()
-            .any(|leaf| matches!(array_leaf_accepts(leaf, items, ctx), Verdict::Accepts)),
-        Value::Object(map) => objects
-            .iter()
-            .any(|leaf| matches!(object_leaf_accepts(leaf, map, ctx), Verdict::Accepts)),
+        Value::Array(items) => arrays.iter().any(|leaf| {
+            matches!(
+                array_leaf_accepts(leaf, items, Spelling::Every, ctx),
+                Verdict::Accepts
+            )
+        }),
+        Value::Object(map) => objects.iter().any(|leaf| {
+            matches!(
+                object_leaf_accepts(leaf, map, Spelling::Every, ctx),
+                Verdict::Accepts
+            )
+        }),
         Value::String(_) => strings.iter().any(|(leaf, matchers)| {
             matches!(
                 string_leaf_accepts(leaf, matchers, member, UncheckableFacet::Undecided),
@@ -3943,7 +3951,12 @@ fn satisfies_distinctness(leaf: &ArrayLeaf, elements: &[Value]) -> bool {
 
 /// Whether the leaf accepts `items`: length, distinctness, `contains` counts, and each element's
 /// schema.
-fn array_leaf_accepts(leaf: &ArrayLeaf, items: &[Value], ctx: &CanonicalizationContext) -> Verdict {
+fn array_leaf_accepts(
+    leaf: &ArrayLeaf,
+    items: &[Value],
+    spelling: Spelling,
+    ctx: &CanonicalizationContext,
+) -> Verdict {
     if !leaf
         .lengths
         .contains(&BoundCardinality::from(items.len() as u64))
@@ -3958,7 +3971,9 @@ fn array_leaf_accepts(leaf: &ArrayLeaf, items: &[Value], ctx: &CanonicalizationC
             .iter()
             .enumerate()
             .map(|(index, element)| match element_schema(leaf, index) {
-                Some(schema) => accepts_value(schema, element, UncheckableFacet::Undecided, ctx),
+                Some(schema) => {
+                    accepts_spelling(schema, element, UncheckableFacet::Undecided, spelling, ctx)
+                }
                 None => Verdict::Accepts,
             }),
     ))
@@ -4724,6 +4739,28 @@ pub(crate) fn accepts_value(
     uncheckable: UncheckableFacet,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
+    accepts_spelling(schema, value, uncheckable, Spelling::Every, ctx)
+}
+
+/// Whether `schema` accepts `value` the way it is written, which is what exhibiting an instance
+/// takes.
+// e.g.  Draft 4, {"type": "integer", "minimum": 1} accepts `1` as written and rejects `1.0`
+pub(crate) fn accepts_written_value(
+    schema: &Schema,
+    value: &Value,
+    uncheckable: UncheckableFacet,
+    ctx: &CanonicalizationContext,
+) -> Verdict {
+    accepts_spelling(schema, value, uncheckable, Spelling::Written, ctx)
+}
+
+fn accepts_spelling(
+    schema: &Schema,
+    value: &Value,
+    uncheckable: UncheckableFacet,
+    spelling: Spelling,
+    ctx: &CanonicalizationContext,
+) -> Verdict {
     // An unresolvable pointer says nothing about the value; a resolvable one is handled by the
     // intersection below like any other node.
     if holds_unreadable_reference(schema, ctx) {
@@ -4742,8 +4779,15 @@ pub(crate) fn accepts_value(
         ctx.record_inexact_intersection();
         return Verdict::Unknown;
     }
-    if resolved(intersection, ctx) != member {
-        return Verdict::Rejects;
+    let accepted = resolved(intersection, ctx);
+    if accepted != member {
+        if matches!(spelling, Spelling::Every) || !matches!(ctx.draft(), Draft::Draft4) {
+            return Verdict::Rejects;
+        }
+        let written = accepts_as_written(&accepted, value, ctx);
+        if written != Verdict::Accepts {
+            return written;
+        }
     }
     // Intersection reads a facet no checker covers the way a validator without one does, so its
     // "yes" is definite only when the schema carries none.
@@ -4753,6 +4797,32 @@ pub(crate) fn accepts_value(
         return Verdict::Unknown;
     }
     Verdict::Accepts
+}
+
+/// Whether `value` as written is among `accepted`, the part of its equality class a Draft 4 schema
+/// accepts.
+fn accepts_as_written(accepted: &Schema, value: &Value, ctx: &CanonicalizationContext) -> Verdict {
+    // The arms are guarded on the value, so they cannot be enumerated.
+    #[allow(clippy::wildcard_enum_match_arm)]
+    match (accepted.kind(), value) {
+        (SchemaKind::False, _) => Verdict::Rejects,
+        // The integer form of a whole number: the value itself when written without a fraction.
+        (
+            SchemaKind::TypedGroup {
+                ty: JsonType::Integer,
+                ..
+            },
+            Value::Number(number),
+        ) if number.is_i64() || number.is_u64() => Verdict::Accepts,
+        // What an element or a property value is pinned to is read off the leaf.
+        (SchemaKind::Array(leaf), Value::Array(items)) => {
+            array_leaf_accepts(leaf.get(), items, Spelling::Written, ctx)
+        }
+        (SchemaKind::Object(leaf), Value::Object(map)) => {
+            object_leaf_accepts(leaf.get(), map, Spelling::Written, ctx)
+        }
+        _ => Verdict::Unknown,
+    }
 }
 
 /// Whether `schema` contains a `$ref` this run cannot resolve: one whose target is not in the map.
@@ -5426,6 +5496,7 @@ fn restrict_object_member(
 fn object_leaf_accepts(
     leaf: &ObjectLeaf,
     map: &serde_json::Map<String, Value>,
+    spelling: Spelling,
     ctx: &CanonicalizationContext,
 ) -> Verdict {
     if !leaf
@@ -5468,7 +5539,13 @@ fn object_leaf_accepts(
                 {
                     continue;
                 }
-                match accepts_value(additional, value, UncheckableFacet::Undecided, ctx) {
+                match accepts_spelling(
+                    additional,
+                    value,
+                    UncheckableFacet::Undecided,
+                    spelling,
+                    ctx,
+                ) {
                     Verdict::Rejects => return Verdict::Accepts,
                     Verdict::Unknown => satisfied = Verdict::Unknown,
                     Verdict::Accepts => {}
@@ -5482,7 +5559,7 @@ fn object_leaf_accepts(
                 if !matches_key(pattern, key, ctx) {
                     continue;
                 }
-                match accepts_value(schema, value, UncheckableFacet::Undecided, ctx) {
+                match accepts_spelling(schema, value, UncheckableFacet::Undecided, spelling, ctx) {
                     Verdict::Rejects => return Verdict::Accepts,
                     Verdict::Unknown => satisfied = Verdict::Unknown,
                     Verdict::Accepts => {}
@@ -5499,10 +5576,16 @@ fn object_leaf_accepts(
             leaf.properties.get(key.as_str()),
             additional_for_key(leaf, key, ctx),
         ) {
-            (Some(schema), _) => accepts_value(schema, value, UncheckableFacet::Undecided, ctx),
-            (None, Some(additional)) => {
-                accepts_value(additional, value, UncheckableFacet::Undecided, ctx)
+            (Some(schema), _) => {
+                accepts_spelling(schema, value, UncheckableFacet::Undecided, spelling, ctx)
             }
+            (None, Some(additional)) => accepts_spelling(
+                additional,
+                value,
+                UncheckableFacet::Undecided,
+                spelling,
+                ctx,
+            ),
             (None, None) => Verdict::Accepts,
         };
         if named == Verdict::Rejects {
@@ -5511,7 +5594,7 @@ fn object_leaf_accepts(
         named.and(Verdict::all(leaf.pattern_properties.iter().map(
             |(pattern, schema)| {
                 if matches_key(pattern, key, ctx) {
-                    accepts_value(schema, value, UncheckableFacet::Undecided, ctx)
+                    accepts_spelling(schema, value, UncheckableFacet::Undecided, spelling, ctx)
                 } else {
                     Verdict::Accepts
                 }

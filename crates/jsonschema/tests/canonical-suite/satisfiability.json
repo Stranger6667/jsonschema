@@ -3890,5 +3890,249 @@
       "$schema": "https://json-schema.org/draft/2020-12/schema",
       "not": {}
     }
+  },
+  {
+    "description": "draft4 integer with a minimum holds that minimum",
+    "schema": {
+      "type": "integer",
+      "minimum": 1
+    },
+    "draft": "draft4",
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": 1,
+        "valid": true
+      },
+      {
+        "data": 1.0,
+        "valid": false
+      },
+      {
+        "data": 0,
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "minimum": 1,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "draft4 integer window of two values holds one",
+    "schemas": [
+      {
+        "type": "integer",
+        "minimum": 1000,
+        "maximum": 1001
+      },
+      {
+        "allOf": [
+          {
+            "type": "integer",
+            "minimum": 1000
+          },
+          {
+            "type": "integer",
+            "maximum": 1001
+          }
+        ]
+      }
+    ],
+    "draft": "draft4",
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": 1000,
+        "valid": true
+      },
+      {
+        "data": 1000.0,
+        "valid": false
+      },
+      {
+        "data": 1002,
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "maximum": 1001,
+      "minimum": 1000,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "draft4 integer above a boolean exclusive minimum holds the next integer",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "exclusiveMinimum": true
+    },
+    "draft": "draft4",
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 2,
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "minimum": 2,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "draft4 integer below a boolean exclusive maximum holds the previous integer",
+    "schema": {
+      "type": "integer",
+      "maximum": 1,
+      "exclusiveMaximum": true
+    },
+    "draft": "draft4",
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": 1,
+        "valid": false
+      },
+      {
+        "data": 0,
+        "valid": true
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "maximum": 0,
+      "type": "integer"
+    }
+  },
+  {
+    "description": "draft4 integer window with reversed bounds accepts nothing",
+    "schema": {
+      "type": "integer",
+      "minimum": 5,
+      "maximum": 4
+    },
+    "draft": "draft4",
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "draft4 integer window between two neighbouring integers accepts nothing",
+    "schema": {
+      "type": "integer",
+      "minimum": 1.2,
+      "maximum": 1.8
+    },
+    "draft": "draft4",
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "draft4 integer window emptied by boolean exclusive bounds accepts nothing",
+    "schema": {
+      "type": "integer",
+      "minimum": 1,
+      "exclusiveMinimum": true,
+      "maximum": 2,
+      "exclusiveMaximum": true
+    },
+    "draft": "draft4",
+    "satisfiability": "no",
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "not": {}
+    }
+  },
+  {
+    "description": "draft4 array demanding an integer element holds one",
+    "schema": {
+      "type": "array",
+      "items": {
+        "type": "integer",
+        "minimum": 1
+      },
+      "minItems": 1
+    },
+    "draft": "draft4",
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": [
+          1
+        ],
+        "valid": true
+      },
+      {
+        "data": [
+          1.0
+        ],
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "items": {
+        "minimum": 1,
+        "type": "integer"
+      },
+      "minItems": 1,
+      "type": "array"
+    }
+  },
+  {
+    "description": "draft4 object requiring an integer property holds one",
+    "schema": {
+      "type": "object",
+      "properties": {
+        "a": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a"
+      ]
+    },
+    "draft": "draft4",
+    "satisfiability": "yes",
+    "tests": [
+      {
+        "data": {
+          "a": 1
+        },
+        "valid": true
+      },
+      {
+        "data": {
+          "a": 1.0
+        },
+        "valid": false
+      }
+    ],
+    "expected": {
+      "$schema": "http://json-schema.org/draft-04/schema#",
+      "properties": {
+        "a": {
+          "type": "integer"
+        }
+      },
+      "required": [
+        "a"
+      ],
+      "type": "object"
+    }
   }
 ]

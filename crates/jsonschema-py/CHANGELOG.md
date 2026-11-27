@@ -10,6 +10,10 @@
 - Pre-built wheels for PyPy on macOS `arm64`.
 - Canonicalization of a `pattern` that cannot fit `minLength` or `maxLength`, which reduces to `false`.
 
+### Fixed
+
+- `CanonicalSchema.satisfiability()` answering `UNKNOWN` for Draft 4 schemas that need an integer.
+
 ## [0.63.2] - 2026-11-26
 
 ### Fixed

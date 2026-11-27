@@ -403,7 +403,12 @@ impl CanonicalSchema {
             &context,
             &mut |candidate| {
                 let (verdict, inexact) = context.probe(|| {
-                    algebra::accepts_value(node, &candidate, UncheckableFacet::Undecided, &context)
+                    algebra::accepts_written_value(
+                        node,
+                        &candidate,
+                        UncheckableFacet::Undecided,
+                        &context,
+                    )
                 });
                 if verdict == Verdict::Accepts && !inexact && !context.outgrew_distribution() {
                     answer = Satisfiability::Yes;

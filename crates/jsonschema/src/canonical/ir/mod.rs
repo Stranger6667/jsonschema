@@ -41,7 +41,7 @@ pub(crate) use property_map::PropertyMap;
 pub(crate) use raw::RawJson;
 pub use raw::RawReason;
 pub(crate) use string_leaves::StringLeaves;
-pub(crate) use verdict::{UncheckableFacet, Verdict};
+pub(crate) use verdict::{Spelling, UncheckableFacet, Verdict};
 
 /// A format name kept inline for the built-in set and shared only when the draft does not recognize
 /// it. Canonicalization preserves the latter because it cannot decide its assertion semantics.
