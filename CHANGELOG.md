@@ -9,6 +9,7 @@
 
 ### Fixed
 
+- `contentEncoding: base16` accepting strings with characters whose uppercase form is a hex digit, such as U+FB00 (LATIN SMALL LIGATURE FF).
 - `CanonicalSchema::satisfiability` answering `Unknown` for Draft 4 schemas that need an integer.
 
 ## [0.63.2] - 2026-11-26
